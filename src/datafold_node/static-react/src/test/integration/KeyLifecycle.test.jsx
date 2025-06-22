@@ -58,7 +58,7 @@ describe('Key lifecycle workflow', () => {
           })
         }
       }
-      if (url === '/api/data/mutate') {
+      if (url === '/api/mutation') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) })
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
@@ -86,7 +86,7 @@ describe('Key lifecycle workflow', () => {
     await user.click(screen.getByRole('button', { name: /Sign and Send Like/i }))
 
     await waitFor(() => {
-      expect(fetch).toHaveBeenCalledWith('/api/data/mutate', expect.any(Object))
+      expect(fetch).toHaveBeenCalledWith('/api/mutation', expect.any(Object))
     })
 
     await user.click(screen.getByText('Clear Keys'))

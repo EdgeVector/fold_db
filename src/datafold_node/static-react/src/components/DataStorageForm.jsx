@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PaperAirplaneIcon, ExclamationTriangleIcon, ShieldCheckIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useSigning } from '../hooks/useSigning';
 import { getAllSchemasWithState, getSchemasByState, approveSchema } from '../api/schemaClient';
+import { MutationClient } from '../api/mutationClient';
 
 const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
   const [value1, setValue1] = useState('sample-value-1');
@@ -104,19 +105,13 @@ const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
             throw new Error('Failed to sign message - please check your key pair');
         }
 
-        const response = await fetch('/api/mutation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(signedMessage),
-        });
+        const response = await MutationClient.executeMutation(signedMessage);
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        if (!response.success) {
+            throw new Error(response.error || 'Mutation failed');
         }
 
-        setMutationResult(data);
+        setMutationResult(response);
 
     } catch (err) {
         setMutationError(err.message);

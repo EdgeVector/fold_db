@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { isRangeSchema, getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
+import { API_ENDPOINTS } from '../../api/endpoints'
 
 function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
   const [expandedSchemas, setExpandedSchemas] = useState({})
@@ -123,7 +124,7 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
         throw new Error(`Failed to fetch sample: ${resp.status}`)
       }
       const schema = await resp.json()
-      const createResp = await fetch('/api/schema', {
+      const createResp = await fetch(API_ENDPOINTS.SCHEMA, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

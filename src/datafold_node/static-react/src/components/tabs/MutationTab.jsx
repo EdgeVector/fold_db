@@ -2,6 +2,7 @@ import { useState } from 'react'
 import SchemaSelector from './mutation/SchemaSelector'
 import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
+import { MutationClient } from '../../api/mutationClient'
 import {
   isRangeSchema,
   formatRangeSchemaMutation,
@@ -55,12 +56,13 @@ function MutationTab({ schemas, onResult }) {
     }
 
     try {
-      const response = await fetch('/api/data/mutate', { // Note: now hits the secured endpoint
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mutation)
-      })
-      const data = await response.json()
+      const response = await MutationClient.executeMutation(mutation)
+      
+      if (!response.success) {
+        throw new Error(response.error || 'Mutation failed')
+      }
+      
+      const data = response
       
       if (!response.ok) {
         const errData = { error: data.error || `Mutation failed with status ${response.status}`, status: response.status, details: data }
