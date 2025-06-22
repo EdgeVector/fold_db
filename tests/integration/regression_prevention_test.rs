@@ -575,7 +575,7 @@ fn test_edge_cases_prevention() {
             "edge_field",
             value.clone(),
             &format!("edge_case_{}", description),
-        ).expect(&format!("Failed to execute {} mutation", description));
+        ).unwrap_or_else(|_| panic!("Failed to execute {} mutation", description));
         
         assert!(result.success, "Edge case {} should be handled correctly", description);
         
@@ -589,7 +589,7 @@ fn test_edge_cases_prevention() {
             &stored_schema,
             "edge_field",
             None,
-        ).expect(&format!("Failed to query {} value", description));
+        ).unwrap_or_else(|_| panic!("Failed to query {} value", description));
         
         assert_eq!(query_result, value, "Edge case {} should round-trip correctly", description);
         
@@ -624,7 +624,7 @@ fn test_edge_cases_prevention() {
             "edge_field",
             large_data.clone(),
             &format!("large_data_{}", description),
-        ).expect(&format!("Failed to execute large data mutation: {}", description));
+        ).unwrap_or_else(|_| panic!("Failed to execute large data mutation: {}", description));
         
         let duration = start_time.elapsed();
         
@@ -642,7 +642,7 @@ fn test_edge_cases_prevention() {
             &stored_schema,
             "edge_field",
             None,
-        ).expect(&format!("Failed to query large data: {}", description));
+        ).unwrap_or_else(|_| panic!("Failed to query large data: {}", description));
         
         let query_duration = query_start.elapsed();
         
@@ -702,7 +702,7 @@ fn test_edge_cases_prevention() {
             "edge_field",
             value.clone(),
             &format!("special_char_{}", description),
-        ).expect(&format!("Failed to execute special character mutation: {}", description));
+        ).unwrap_or_else(|_| panic!("Failed to execute special character mutation: {}", description));
         
         assert!(result.success, "Special characters {} should be handled correctly", description);
         
@@ -715,7 +715,7 @@ fn test_edge_cases_prevention() {
             &stored_schema,
             "edge_field",
             None,
-        ).expect(&format!("Failed to query special characters: {}", description));
+        ).unwrap_or_else(|_| panic!("Failed to query special characters: {}", description));
         
         assert_eq!(query_result, value);
         println!("✅ Special characters handled: {}", description);
@@ -739,7 +739,7 @@ fn test_edge_cases_prevention() {
             "edge_field",
             rapid_value,
             &format!("rapid_mutation_{}", i),
-        ).expect(&format!("Failed to execute rapid mutation {}", i));
+        ).unwrap_or_else(|_| panic!("Failed to execute rapid mutation {}", i));
         
         assert!(result.success, "Rapid mutation {} should succeed", i);
         
@@ -1235,7 +1235,7 @@ fn test_data_consistency_safeguards() {
             field_name,
             test_value.clone(),
             "schema_validation",
-        ).expect(&format!("Failed to validate field {}", field_name));
+        ).unwrap_or_else(|_| panic!("Failed to validate field {}", field_name));
         
         assert!(validation_result.success, "Field {} should still be functional", field_name);
         
@@ -1244,7 +1244,7 @@ fn test_data_consistency_safeguards() {
             &retrieved_schema,
             field_name,
             None,
-        ).expect(&format!("Failed to query field {}", field_name));
+        ).unwrap_or_else(|_| panic!("Failed to query field {}", field_name));
         
         assert_eq!(validation_query, test_value);
     }

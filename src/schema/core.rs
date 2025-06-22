@@ -228,16 +228,30 @@ impl SchemaCore {
     pub fn approve_schema(&self, schema_name: &str) -> Result<(), SchemaError> {
         info!("Approving schema '{}'", schema_name);
 
-        // Check if schema exists in available
-        let schema_to_approve = {
+        // Check if schema exists and validate current state
+        let (schema, current_state) = {
             let available = self.available.lock().map_err(|_| {
                 SchemaError::InvalidData("Failed to acquire schema lock".to_string())
             })?;
-            available.get(schema_name).map(|(schema, _)| schema.clone())
+            available.get(schema_name).cloned()
+                .ok_or_else(|| SchemaError::NotFound(format!("Schema '{}' not found", schema_name)))?
         };
 
-        let schema = schema_to_approve
-            .ok_or_else(|| SchemaError::NotFound(format!("Schema '{}' not found", schema_name)))?;
+        // Validate state transition: Available and Blocked schemas can be approved
+        match current_state {
+            SchemaState::Available => {
+                info!("✅ Schema '{}' is in Available state, proceeding with approval", schema_name);
+            }
+            SchemaState::Approved => {
+                return Err(SchemaError::InvalidData(format!(
+                    "Schema '{}' is already approved. Use block operation to change to blocked state.",
+                    schema_name
+                )));
+            }
+            SchemaState::Blocked => {
+                info!("✅ Schema '{}' is in Blocked state, re-approving", schema_name);
+            }
+        }
 
         info!(
             "Schema '{}' to approve has {} fields: {:?}",
@@ -297,9 +311,13 @@ impl SchemaCore {
             }
         }
 
-        // Transforms are already registered during initial schema loading
-        // TransformManager will auto-reload transforms when it receives the SchemaChanged event
-        info!("✅ Transform registration handled by event-driven TransformManager reload");
+        // CRITICAL: Re-register transforms that target this newly approved schema
+        // When a schema is approved, transforms in OTHER schemas that were previously
+        // skipped due to target schema state validation should now be registered
+        info!("🔄 Re-registering transforms that target newly approved schema '{}'", schema_name);
+        if let Err(e) = self.reregister_transforms_for_approved_schema(schema_name) {
+            log::warn!("Failed to re-register transforms for approved schema '{}': {}", schema_name, e);
+        }
 
         // Publish SchemaLoaded event for approval
         use crate::fold_db_core::infrastructure::message_bus::schema_events::SchemaLoaded;
@@ -316,6 +334,78 @@ impl SchemaCore {
         }
 
         info!("Schema '{}' approved successfully", schema_name);
+        Ok(())
+    }
+
+    /// Re-register transforms that target a newly approved schema
+    /// This method is called when a schema is approved to ensure that transforms
+    /// in OTHER schemas that were previously skipped due to target schema state
+    /// validation are now registered
+    fn reregister_transforms_for_approved_schema(&self, target_schema_name: &str) -> Result<(), SchemaError> {
+        info!("🔍 Checking all schemas for transforms targeting newly approved schema '{}'", target_schema_name);
+        
+        let available_schemas = {
+            let available = self.available.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+            })?;
+            available.clone()
+        };
+
+        let mut transforms_registered = 0;
+        
+        for (schema_name, (schema, _)) in available_schemas {
+            info!("🔍 Checking schema '{}' for transforms targeting '{}'", schema_name, target_schema_name);
+            
+            for (field_name, field) in &schema.fields {
+                if let Some(transform) = field.transform() {
+                    // Parse the transform output to get the target schema
+                    let output_parts: Vec<&str> = transform.get_output().split('.').collect();
+                    if output_parts.len() == 2 && output_parts[0] == target_schema_name {
+                        let transform_id = format!("{}.{}", schema_name, field_name);
+                        
+                        info!("🎯 Found transform '{}' targeting newly approved schema '{}'", transform_id, target_schema_name);
+                        
+                        // Check if this transform is already registered
+                        match self.db_ops.get_transform(&transform_id) {
+                            Ok(Some(_)) => {
+                                info!("✅ Transform '{}' already registered, skipping", transform_id);
+                                continue;
+                            }
+                            Ok(None) => {
+                                info!("📋 Registering previously skipped transform '{}'", transform_id);
+                                
+                                // Store the transform in the database
+                                if let Err(e) = self.db_ops.store_transform(&transform_id, transform) {
+                                    log::error!("Failed to store transform {}: {}", transform_id, e);
+                                    continue;
+                                }
+                                
+                                // Create field-to-transform mappings
+                                for input_field in transform.get_inputs() {
+                                    if let Err(e) = self.store_field_to_transform_mapping(input_field, &transform_id) {
+                                        log::error!(
+                                            "Failed to store field mapping '{}' → '{}': {}",
+                                            input_field, transform_id, e
+                                        );
+                                    } else {
+                                        info!("✅ Stored field mapping: '{}' → '{}' transform", input_field, transform_id);
+                                    }
+                                }
+                                
+                                transforms_registered += 1;
+                                info!("✅ Registered transform '{}' for newly approved target schema '{}'", transform_id, target_schema_name);
+                            }
+                            Err(e) => {
+                                log::error!("Error checking if transform '{}' exists: {}", transform_id, e);
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        info!("🎉 Re-registered {} transforms targeting newly approved schema '{}'", transforms_registered, target_schema_name);
         Ok(())
     }
 
@@ -373,6 +463,35 @@ impl SchemaCore {
     /// Block a schema from queries and mutations
     pub fn block_schema(&self, schema_name: &str) -> Result<(), SchemaError> {
         info!("Blocking schema '{}'", schema_name);
+
+        // Check current state and validate transition
+        let current_state = {
+            let available = self.available.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+            })?;
+            available.get(schema_name)
+                .map(|(_, state)| *state)
+                .ok_or_else(|| SchemaError::NotFound(format!("Schema '{}' not found", schema_name)))?
+        };
+
+        // Validate state transition: only Approved schemas can be blocked
+        match current_state {
+            SchemaState::Approved => {
+                info!("✅ Schema '{}' is in Approved state, proceeding with blocking", schema_name);
+            }
+            SchemaState::Available => {
+                return Err(SchemaError::InvalidData(format!(
+                    "Schema '{}' is in Available state. Only approved schemas can be blocked. Approve the schema first.",
+                    schema_name
+                )));
+            }
+            SchemaState::Blocked => {
+                return Err(SchemaError::InvalidData(format!(
+                    "Schema '{}' is already blocked.",
+                    schema_name
+                )));
+            }
+        }
 
         // Remove from active schemas but keep in available
         {

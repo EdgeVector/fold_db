@@ -394,6 +394,7 @@ fn test_range_field_lookup_hash_functionality() {
 }
 
 #[test]
+#[allow(clippy::unnecessary_to_owned)]
 fn test_range_field_mutations_and_queries() {
     println!("🧪 TEST: Range Field Mutations and Queries");
     println!("   This validates complete CRUD operations on Range field data");
@@ -432,7 +433,7 @@ fn test_range_field_mutations_and_queries() {
             "profile_data", 
             "user_id",
             user_data.clone(),
-        ).expect(&format!("Failed to create user {}", user_key));
+        ).unwrap_or_else(|_| panic!("Failed to create user {}", user_key));
         
         created_uuids.push(aref_uuid);
         println!("✅ Created user {}: {}", user_key, user_data["name"]);
@@ -493,7 +494,7 @@ fn test_range_field_mutations_and_queries() {
             "profile_data",
             "user_id", 
             updated_data.clone(),
-        ).expect(&format!("Failed to update user {}", user_key));
+        ).unwrap_or_else(|_| panic!("Failed to update user {}", user_key));
         
         println!("✅ Updated user {}: {}", user_key, updated_data["name"]);
     }

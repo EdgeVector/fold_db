@@ -88,9 +88,24 @@ impl EventMonitor {
         message_bus: &Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
         info!(
-            "🎯 EventMonitor: TransformTriggered received - transform_id: {}",
+            "🎯 DIAGNOSTIC: EventMonitor received TransformTriggered - transform_id: {}",
             event.transform_id
         );
+        
+        // Check if transform exists before executing
+        match manager.transform_exists(&event.transform_id) {
+            Ok(true) => {
+                info!("✅ DIAGNOSTIC: Transform {} exists, proceeding with execution", event.transform_id);
+            }
+            Ok(false) => {
+                error!("❌ DIAGNOSTIC: Transform {} does not exist, skipping execution", event.transform_id);
+                return Err(SchemaError::InvalidData(format!("Transform '{}' does not exist", event.transform_id)));
+            }
+            Err(e) => {
+                error!("❌ DIAGNOSTIC: Error checking if transform {} exists: {}", event.transform_id, e);
+                return Err(e);
+            }
+        }
 
         // Execute the transform directly
         match manager.execute_transform_now(&event.transform_id) {

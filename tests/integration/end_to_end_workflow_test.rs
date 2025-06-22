@@ -363,7 +363,7 @@ fn test_complete_mutation_to_query_workflow() {
             "UserProfile",
             field_name,
             value.clone(),
-        ).expect(&format!("Failed to mutate {}", field_name));
+        ).unwrap_or_else(|_| panic!("Failed to mutate {}", field_name));
         
         println!("✅ Mutated {}: {} -> {}", field_name, &value, &aref_uuid);
         mutation_results.push((field_name, aref_uuid, value));
@@ -374,7 +374,7 @@ fn test_complete_mutation_to_query_workflow() {
     
     for (field_name, _aref_uuid, expected_value) in &mutation_results {
         let result = fixture.query_field_value("UserProfile", field_name)
-            .expect(&format!("Failed to query {}", field_name));
+            .unwrap_or_else(|_| panic!("Failed to query {}", field_name));
         
         // For simple range fields, we expect an object with the extracted range key containing our value
         // The key will be extracted from the value by the AtomManager
@@ -396,7 +396,7 @@ fn test_complete_mutation_to_query_workflow() {
     
     for (field_name, _aref_uuid, expected_value) in &mutation_results {
         let result = fixture.query_field_value("UserProfile", field_name)
-            .expect(&format!("Failed to re-query {}", field_name));
+            .unwrap_or_else(|_| panic!("Failed to re-query {}", field_name));
         
         // For simple range fields, expect the value to be in a range map
         if let Some(range_map) = result.as_object() {
@@ -563,10 +563,10 @@ fn test_multi_schema_dependency_chain() {
             expected_value.clone(),
             "transform_simulation",
             2000,
-        ).expect(&format!("Failed to store transform result for {}.{}", schema_name, field_name));
+        ).unwrap_or_else(|_| panic!("Failed to store transform result for {}.{}", schema_name, field_name));
         
         let result = fixture.query_field_value(schema_name, field_name)
-            .expect(&format!("Failed to query transform result for {}.{}", schema_name, field_name));
+            .unwrap_or_else(|_| panic!("Failed to query transform result for {}.{}", schema_name, field_name));
         
         assert_eq!(result, expected_value);
         println!("✅ Transform result verified: {}.{} = {}", schema_name, field_name, result);
@@ -838,7 +838,7 @@ fn test_error_recovery_scenarios() {
     }
     
     // Try to corrupt with invalid data types (system should handle gracefully)
-    let corruption_attempts = vec![
+    let corruption_attempts = [
         json!(null),
         json!([1, 2, 3]),
         json!({"deeply": {"nested": {"invalid": "structure"}}}),
@@ -940,7 +940,7 @@ fn test_workflow_performance_characteristics() {
             user_data,
             &format!("bulk_test_{}", i),
             1000,
-        ).expect(&format!("Failed to insert bulk data item {}", i));
+        ).unwrap_or_else(|_| panic!("Failed to insert bulk data item {}", i));
         
         if i % 10 == 0 {
             println!("Inserted {} items", i + 1);
@@ -959,7 +959,7 @@ fn test_workflow_performance_characteristics() {
     
     for i in 0..query_count {
         let _result = fixture.query_field_value("UserProfile", "first_name")
-            .expect(&format!("Failed to query item {}", i));
+            .unwrap_or_else(|_| panic!("Failed to query item {}", i));
         
         if i % 10 == 0 {
             println!("Completed {} queries", i + 1);
@@ -987,11 +987,11 @@ fn test_workflow_performance_characteristics() {
                 data,
                 &format!("mixed_test_{}", i),
                 1000,
-            ).expect(&format!("Failed mixed mutation {}", i));
+            ).unwrap_or_else(|_| panic!("Failed mixed mutation {}", i));
         } else {
             // Query
             let _result = fixture.query_field_value("UserProfile", "last_name")
-                .expect(&format!("Failed mixed query {}", i));
+                .unwrap_or_else(|_| panic!("Failed mixed query {}", i));
         }
         
         if i % 10 == 0 {

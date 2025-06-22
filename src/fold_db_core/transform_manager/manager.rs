@@ -102,7 +102,30 @@ impl TransformManager {
             transform_outputs,
         ) = Self::load_persisted_mappings_direct(&db_ops)?;
         
-        // DEBUG: Log loaded field mappings during initialization
+        // CRITICAL FIX: Clean up field mappings that reference non-loaded transforms
+        let loaded_transform_ids: std::collections::HashSet<String> = registered_transforms.keys().cloned().collect();
+        let mut cleaned_field_to_transforms = std::collections::HashMap::new();
+        
+        for (field_key, transform_ids) in field_to_transforms {
+            let valid_transforms: std::collections::HashSet<String> = transform_ids
+                .into_iter()
+                .filter(|transform_id| {
+                    if loaded_transform_ids.contains(transform_id) {
+                        true
+                    } else {
+                        error!("🧹 CLEANUP: Removing orphaned field mapping '{}' -> '{}' (transform not loaded)", field_key, transform_id);
+                        false
+                    }
+                })
+                .collect();
+            
+            if !valid_transforms.is_empty() {
+                cleaned_field_to_transforms.insert(field_key, valid_transforms);
+            }
+        }
+        let field_to_transforms = cleaned_field_to_transforms;
+        
+        // DEBUG: Log cleaned field mappings during initialization
         info!("🔍 DEBUG TransformManager::new(): Loaded field_to_transforms with {} entries:", field_to_transforms.len());
         for (field_key, transforms) in &field_to_transforms {
             info!("  📋 '{}' -> {:?}", field_key, transforms);
@@ -341,20 +364,42 @@ impl TransformRunner for TransformManager {
     /// DEPRECATED: Direct execution removed - use TransformOrchestrator::add_transform() instead
     /// This method now only queues the transform for execution by the orchestrator
     fn execute_transform_now(&self, transform_id: &str) -> Result<JsonValue, SchemaError> {
-        info!("🚀 TransformManager: Executing transform now: {}", transform_id);
+        info!("🚀 DIAGNOSTIC: TransformManager executing transform: {}", transform_id);
         
         // Load the transform from the database
         let transform = match self.db_ops.get_transform(transform_id) {
-            Ok(Some(transform)) => transform,
+            Ok(Some(transform)) => {
+                info!("✅ DIAGNOSTIC: Transform '{}' loaded - output: {}, inputs: {:?}",
+                      transform_id, transform.get_output(), transform.get_inputs());
+                transform
+            }
             Ok(None) => {
-                error!("❌ Transform '{}' not found", transform_id);
+                error!("❌ DIAGNOSTIC: Transform '{}' not found in database", transform_id);
                 return Err(SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)));
             }
             Err(e) => {
-                error!("❌ Failed to load transform '{}': {}", transform_id, e);
+                error!("❌ DIAGNOSTIC: Failed to load transform '{}': {}", transform_id, e);
                 return Err(SchemaError::InvalidData(format!("Failed to load transform: {}", e)));
             }
         };
+        
+        // Check if output schema already exists
+        let output_parts: Vec<&str> = transform.get_output().split('.').collect();
+        if output_parts.len() == 2 {
+            let output_schema = output_parts[0];
+            match self.db_ops.get_schema(output_schema) {
+                Ok(Some(_)) => {
+                    error!("🚨 DIAGNOSTIC: Output schema '{}' already exists! This will cause 'Schema already exists' error", output_schema);
+                    return Err(SchemaError::InvalidData(format!("Schema '{}' already exists. Schemas are immutable and cannot be updated. Create a new schema with a different name instead.", output_schema)));
+                }
+                Ok(None) => {
+                    info!("✅ DIAGNOSTIC: Output schema '{}' does not exist yet, proceeding", output_schema);
+                }
+                Err(e) => {
+                    error!("❌ DIAGNOSTIC: Error checking if output schema '{}' exists: {}", output_schema, e);
+                }
+            }
+        }
         
         // Execute the transform using the execution module (call as static method)
         let result = TransformManager::execute_single_transform(
@@ -362,6 +407,8 @@ impl TransformRunner for TransformManager {
             &transform,
             &self.db_ops
         )?;
+        
+        info!("✅ DIAGNOSTIC: Transform '{}' executed successfully, result: {}", transform_id, result);
         
         // Store the result (call as static method)
         Self::store_transform_result_generic(

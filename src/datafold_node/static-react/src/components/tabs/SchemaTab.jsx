@@ -355,7 +355,7 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
                   Approve
                 </button>
               )}
-              {state.toLowerCase() === 'available' && (
+              {state.toLowerCase() === 'approved' && (
                 <button
                   className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                   onClick={(e) => {
@@ -366,15 +366,15 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
                   Block
                 </button>
               )}
-              {(state.toLowerCase() === 'approved' || state.toLowerCase() === 'blocked') && (
+              {state.toLowerCase() === 'blocked' && (
                 <button
-                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                   onClick={(e) => {
                     e.stopPropagation()
-                    unloadSchema(schema.name)
+                    approveSchema(schema.name)
                   }}
                 >
-                  Unload
+                  Re-approve
                 </button>
               )}
             </div>
@@ -472,12 +472,6 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
                           className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
                         >
                           Approve
-                        </button>
-                        <button
-                          onClick={() => blockSchema(schema.name)}
-                          className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-                        >
-                          Block
                         </button>
                       </div>
                     </div>

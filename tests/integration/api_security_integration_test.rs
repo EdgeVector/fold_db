@@ -241,7 +241,7 @@ async fn test_security_recommendations() {
     }
     
     // This test always passes - it's just for documentation
-    assert!(true);
+    // This test always passes - it's just for documentation
 }
 
 /// Example test showing how to implement endpoint-specific security

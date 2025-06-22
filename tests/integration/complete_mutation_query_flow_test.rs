@@ -209,7 +209,7 @@ fn test_multiple_field_mutations_and_queries() {
     for (field_name, value, source) in &test_cases {
         println!("📝 Mutating field: {}", field_name);
         let aref_uuid = mutate_field_value(&fixture, "TransformBase", field_name, value.clone(), source)
-            .expect(&format!("Failed to mutate {}", field_name));
+            .unwrap_or_else(|_| panic!("Failed to mutate {}", field_name));
         aref_uuids.push(aref_uuid);
     }
     
@@ -217,7 +217,7 @@ fn test_multiple_field_mutations_and_queries() {
     for (field_name, expected_value, _) in &test_cases {
         println!("🔍 Querying field: {}", field_name);
         let result = query_field_value(&fixture, &schema, field_name, expected_value)
-            .expect(&format!("Failed to query {}", field_name));
+            .unwrap_or_else(|_| panic!("Failed to query {}", field_name));
         
         assert_eq!(&result, expected_value, "Field {} should return correct value", field_name);
     }
@@ -237,7 +237,7 @@ fn test_multiple_mutation_cycles_on_same_field() {
     let schema = create_transform_base_schema();
     
     // Test multiple mutation cycles on the same field
-    let mutation_cycles = vec![
+    let mutation_cycles = [
         (json!("initial_value"), "cycle_1"),
         (json!(100), "cycle_2"),
         (json!("updated_value"), "cycle_3"),
@@ -251,12 +251,12 @@ fn test_multiple_mutation_cycles_on_same_field() {
         
         // Perform mutation
         let aref_uuid = mutate_field_value(&fixture, "TransformBase", "value1", value.clone(), source)
-            .expect(&format!("Failed to mutate in cycle {}", i + 1));
+            .unwrap_or_else(|_| panic!("Failed to mutate in cycle {}", i + 1));
         aref_uuids.push(aref_uuid.clone());
         
         // Verify query returns the latest value
         let result = query_field_value(&fixture, &schema, "value1", value)
-            .expect(&format!("Failed to query in cycle {}", i + 1));
+            .unwrap_or_else(|_| panic!("Failed to query in cycle {}", i + 1));
         
         assert_eq!(&result, value, "Cycle {}: Query should return latest mutated value", i + 1);
         
@@ -304,11 +304,11 @@ fn test_mutation_query_flow_with_different_data_types() {
         
         // Perform mutation
         let aref_uuid = mutate_field_value(&fixture, "TransformBase", "value1", value.clone(), &source)
-            .expect(&format!("Failed to mutate {} data type", data_type));
+            .unwrap_or_else(|_| panic!("Failed to mutate {} data type", data_type));
         
         // Verify query returns correct value
         let result = query_field_value(&fixture, &schema, "value1", &value)
-            .expect(&format!("Failed to query {} data type", data_type));
+            .unwrap_or_else(|_| panic!("Failed to query {} data type", data_type));
         
         assert_eq!(result, value, "Data type {}: Query should return correct value", data_type);
         
@@ -492,10 +492,10 @@ fn test_complete_mutation_query_integration_workflow() {
     
     for (field_name, value, source) in &initial_values {
         mutate_field_value(&fixture, "TransformBase", field_name, value.clone(), source)
-            .expect(&format!("Failed initial mutation for {}", field_name));
+            .unwrap_or_else(|_| panic!("Failed initial mutation for {}", field_name));
         
         query_field_value(&fixture, &schema, field_name, value)
-            .expect(&format!("Failed initial query for {}", field_name));
+            .unwrap_or_else(|_| panic!("Failed initial query for {}", field_name));
     }
     
     // Phase 2: Complex Data Updates
@@ -523,10 +523,10 @@ fn test_complete_mutation_query_integration_workflow() {
         let cycle_value = json!(format!("rapid_cycle_{}", cycle));
         
         mutate_field_value(&fixture, "TransformBase", "value2", cycle_value.clone(), &format!("rapid_cycle_{}", cycle))
-            .expect(&format!("Failed rapid cycle {} mutation", cycle));
+            .unwrap_or_else(|_| panic!("Failed rapid cycle {} mutation", cycle));
         
         query_field_value(&fixture, &schema, "value2", &cycle_value)
-            .expect(&format!("Failed rapid cycle {} query", cycle));
+            .unwrap_or_else(|_| panic!("Failed rapid cycle {} query", cycle));
         
         // Small delay between cycles
         thread::sleep(Duration::from_millis(50));

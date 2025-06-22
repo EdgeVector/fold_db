@@ -35,6 +35,34 @@ impl SchemaCore {
 
                 let transform_id = format!("{}.{}", schema.name, field_name);
 
+                // CRITICAL FIX: Check target schema state before registering transform
+                let output_parts: Vec<&str> = transform.get_output().split('.').collect();
+                if output_parts.len() == 2 {
+                    let target_schema_name = output_parts[0];
+                    
+                    // Check if target schema exists and is approved
+                    match self.db_ops.get_schema_state(target_schema_name) {
+                        Ok(Some(crate::schema::core::SchemaState::Approved | crate::schema::core::SchemaState::Blocked)) => {
+                            info!("✅ Target schema '{}' is approved, registering transform '{}'", target_schema_name, transform_id);
+                        }
+                        Ok(Some(state)) => {
+                            info!("⏸️ Skipping transform '{}' - target schema '{}' state is {:?} (not approved)", transform_id, target_schema_name, state);
+                            continue;
+                        }
+                        Ok(None) => {
+                            info!("⏸️ Skipping transform '{}' - target schema '{}' not found", transform_id, target_schema_name);
+                            continue;
+                        }
+                        Err(e) => {
+                            log::error!("❌ Error checking target schema '{}' state for transform '{}': {}", target_schema_name, transform_id, e);
+                            continue;
+                        }
+                    }
+                } else {
+                    log::error!("❌ Invalid transform output format '{}' for transform '{}' - expected 'Schema.field'", transform.get_output(), transform_id);
+                    continue;
+                }
+
                 // Store the transform in the database so it can be loaded by TransformManager
                 if let Err(e) = self.db_ops.store_transform(&transform_id, transform) {
                     log::error!("Failed to store transform {}: {}", transform_id, e);
