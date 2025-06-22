@@ -12,12 +12,14 @@ import IngestionTab from './components/tabs/IngestionTab'
 import KeyManagementTab from './components/tabs/KeyManagementTab'
 import LogSidebar from './components/LogSidebar'
 import { useKeyGeneration } from './hooks/useKeyGeneration'
+import { useKeyAuthentication } from './hooks/useKeyAuthentication'
 
 function App() {
-  const [activeTab, setActiveTab] = useState('schemas')
+  const [activeTab, setActiveTab] = useState('keys') // Default to keys tab
   const [results, setResults] = useState(null)
   const [schemas, setSchemas] = useState([])
   const keyGenerationResult = useKeyGeneration()
+  const keyAuth = useKeyAuthentication()
 
   useEffect(() => {
     fetchSchemas()
@@ -75,6 +77,10 @@ function App() {
   }
 
   const handleTabChange = (tab) => {
+    // If not authenticated, only allow Keys tab
+    if (!keyAuth.isAuthenticated && tab !== 'keys') {
+      return
+    }
     setActiveTab(tab)
     setResults(null)
   }
@@ -119,6 +125,7 @@ function App() {
           <KeyManagementTab
             onResult={handleOperationResult}
             keyGenerationResult={keyGenerationResult}
+            keyAuth={keyAuth}
           />
         )
       default:
@@ -134,66 +141,111 @@ function App() {
           <StatusSection />
 
           <div className="mt-6">
+            {/* Authentication Warning */}
+            {!keyAuth.isAuthenticated && (
+              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-yellow-800">
+                      Authentication Required
+                    </h3>
+                    <div className="mt-2 text-sm text-yellow-700">
+                      <p>Please set up your private key in the Keys tab to access other features.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex border-b border-gray-200">
               <button
               className={`px-4 py-2 text-sm font-medium ${
                 activeTab === 'schemas'
                   ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : keyAuth.isAuthenticated
+                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'text-gray-300 cursor-not-allowed'
               }`}
               onClick={() => handleTabChange('schemas')}
+              disabled={!keyAuth.isAuthenticated}
             >
               Schemas
+              {!keyAuth.isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium ${
                 activeTab === 'query'
                   ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : keyAuth.isAuthenticated
+                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'text-gray-300 cursor-not-allowed'
               }`}
               onClick={() => handleTabChange('query')}
+              disabled={!keyAuth.isAuthenticated}
             >
               Query
+              {!keyAuth.isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium ${
                 activeTab === 'mutation'
                   ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : keyAuth.isAuthenticated
+                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'text-gray-300 cursor-not-allowed'
               }`}
               onClick={() => handleTabChange('mutation')}
+              disabled={!keyAuth.isAuthenticated}
             >
               Mutation
+              {!keyAuth.isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium ${
                 activeTab === 'ingestion'
                   ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : keyAuth.isAuthenticated
+                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'text-gray-300 cursor-not-allowed'
               }`}
               onClick={() => handleTabChange('ingestion')}
+              disabled={!keyAuth.isAuthenticated}
             >
               Ingestion
+              {!keyAuth.isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium ${
                 activeTab === 'transforms'
                   ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : keyAuth.isAuthenticated
+                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'text-gray-300 cursor-not-allowed'
               }`}
               onClick={() => handleTabChange('transforms')}
+              disabled={!keyAuth.isAuthenticated}
             >
               Transforms
+              {!keyAuth.isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium ${
                 activeTab === 'dependencies'
                   ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : keyAuth.isAuthenticated
+                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'text-gray-300 cursor-not-allowed'
               }`}
               onClick={() => handleTabChange('dependencies')}
+              disabled={!keyAuth.isAuthenticated}
             >
               Dependencies
+              {!keyAuth.isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
             </button>
             <button
               className={`px-4 py-2 text-sm font-medium ${
@@ -204,6 +256,7 @@ function App() {
               onClick={() => handleTabChange('keys')}
             >
               Keys
+              {keyAuth.isAuthenticated && <span className="ml-1 text-xs">✓</span>}
             </button>
             </div>
 

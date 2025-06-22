@@ -3,16 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import DataStorageForm from '../DataStorageForm';
 import { useKeyLifecycle } from '../../hooks/useKeyLifecycle';
-import { getSystemPublicKey } from '../../api/securityClient';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
 import * as ed from '@noble/ed25519';
 
-function KeyManagementTab({ onResult, keyGenerationResult }) {
+function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
     const [isRegistering, setIsRegistering] = useState(false);
     const [registrationStatus, setRegistrationStatus] = useState(null); // State for feedback
-    const [currentSystemPublicKey, setCurrentSystemPublicKey] = useState(null);
-    const [fetchingSystemKey, setFetchingSystemKey] = useState(false);
     const [copiedField, setCopiedField] = useState(null);
     
     // Private key input state
@@ -26,31 +23,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
     const { keyPair, publicKeyBase64, error, isGenerating } = result;
     useKeyLifecycle(clearKeys);
 
-    // Fetch current system public key on component mount
-    useEffect(() => {
-        fetchSystemPublicKey();
-    }, []);
-
-    const fetchSystemPublicKey = async () => {
-        setFetchingSystemKey(true);
-        try {
-            const response = await getSystemPublicKey();
-            if (response.success && response.key) {
-                setCurrentSystemPublicKey({
-                    publicKey: response.key.public_key,
-                    keyId: response.key.id
-                });
-            } else {
-                // No system key registered yet, or error - this is fine
-                setCurrentSystemPublicKey(null);
-            }
-        } catch (error) {
-            console.error('Failed to fetch system public key:', error);
-            setCurrentSystemPublicKey(null);
-        } finally {
-            setFetchingSystemKey(false);
-        }
-    };
+    // System public key is now managed by keyAuth hook
 
     const copyToClipboard = async (text, field) => {
         try {
@@ -62,38 +35,11 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
         }
     };
 
-    // Validate private key against system public key
-    const validatePrivateKey = async (privateKeyBase64) => {
-        if (!currentSystemPublicKey?.publicKey) {
-            return { valid: false, error: 'No system public key available for validation' };
-        }
-
-        try {
-            setIsValidatingPrivateKey(true);
-            
-            // Convert base64 private key to bytes
-            const privateKeyBytes = base64ToBytes(privateKeyBase64);
-            
-            // Generate public key from private key
-            const derivedPublicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
-            const derivedPublicKeyBase64 = bytesToBase64(derivedPublicKeyBytes);
-            
-            // Compare with system public key
-            const matches = derivedPublicKeyBase64 === currentSystemPublicKey.publicKey;
-            
-            return {
-                valid: matches,
-                derivedPublicKey: derivedPublicKeyBase64,
-                error: matches ? null : 'Private key does not match the system public key'
-            };
-        } catch (error) {
-            return {
-                valid: false,
-                error: `Invalid private key format: ${error.message}`
-            };
-        } finally {
-            setIsValidatingPrivateKey(false);
-        }
+    // Clear authentication when keys are cleared
+    const handleClearKeys = () => {
+        clearKeys();
+        keyAuth.clearAuthentication();
+        clearPrivateKeyInput();
     };
 
     const handlePrivateKeySubmit = async () => {
@@ -102,26 +48,41 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
             return;
         }
 
-        const validation = await validatePrivateKey(privateKeyInput.trim());
-        setPrivateKeyValidation(validation);
-        
-        if (validation.valid) {
-            // Store the private key in the key generation result state for use by other components
-            const privateKeyBytes = base64ToBytes(privateKeyInput.trim());
-            const publicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
+        setIsValidatingPrivateKey(true);
+        try {
+            // Use the keyAuth hook's validatePrivateKey method
+            const isValid = await keyAuth.validatePrivateKey(privateKeyInput.trim());
             
-            // Update the parent component's state with the validated key pair
-            if (keyGenerationResult && keyGenerationResult.result && keyGenerationResult.setResult) {
-                keyGenerationResult.setResult(prev => ({
-                    ...prev,
-                    keyPair: {
-                        privateKey: privateKeyBytes,
-                        publicKey: publicKeyBytes
-                    },
-                    publicKeyBase64: currentSystemPublicKey.publicKey,
-                    error: null
-                }));
+            setPrivateKeyValidation({
+                valid: isValid,
+                error: isValid ? null : 'Private key does not match the system public key'
+            });
+            
+            if (isValid) {
+                // Store the private key in the key generation result state for use by other components
+                const privateKeyBytes = base64ToBytes(privateKeyInput.trim());
+                const publicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
+                
+                // Update the parent component's state with the validated key pair
+                if (keyGenerationResult && keyGenerationResult.result && keyGenerationResult.setResult) {
+                    keyGenerationResult.setResult(prev => ({
+                        ...prev,
+                        keyPair: {
+                            privateKey: privateKeyBytes,
+                            publicKey: publicKeyBytes
+                        },
+                        publicKeyBase64: keyAuth.systemPublicKey,
+                        error: null
+                    }));
+                }
             }
+        } catch (error) {
+            setPrivateKeyValidation({
+                valid: false,
+                error: `Validation failed: ${error.message}`
+            });
+        } finally {
+            setIsValidatingPrivateKey(false);
         }
     };
 
@@ -129,6 +90,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
         setPrivateKeyInput('');
         setPrivateKeyValidation(null);
         setShowPrivateKeyInput(false);
+        keyAuth.clearAuthentication();
     };
 
     const handleRegister = async () => {
@@ -137,15 +99,17 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
         setRegistrationStatus(null); // Clear previous status
         try {
             const success = await registerPublicKey(publicKeyBase64);
+            
             const status = {
                 success,
                 message: success ? 'Public key registered successfully!' : 'Failed to register public key.',
             };
             setRegistrationStatus(status);
             onResult(status); // Also update the main result panel
-            // Fetch the updated system public key after successful registration
+            
+            // Refresh system public key after successful registration
             if (success) {
-                await fetchSystemPublicKey();
+                await keyAuth.refreshSystemKey();
             }
         } catch (e) {
             const status = { success: false, message: e.message };
@@ -167,7 +131,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                     {isGenerating ? 'Generating...' : 'Generate New Keypair'}
                 </button>
                 <button
-                    onClick={clearKeys}
+                    onClick={handleClearKeys}
                     disabled={!publicKeyBase64}
                     className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:bg-gray-400"
                 >
@@ -204,19 +168,19 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                     <ShieldCheckIcon className="h-5 w-5 text-blue-400 mr-2 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-blue-700 flex-1">
                         <p className="font-medium">Current System Public Key:</p>
-                        {fetchingSystemKey ? (
+                        {keyAuth.isLoading ? (
                             <p className="text-blue-600">Loading...</p>
-                        ) : currentSystemPublicKey ? (
+                        ) : keyAuth.systemPublicKey ? (
                             <div className="mt-2">
                                 <div className="flex">
                                     <input
                                         type="text"
-                                        value={currentSystemPublicKey.publicKey}
+                                        value={keyAuth.systemPublicKey}
                                         readOnly
                                         className="flex-1 px-2 py-1 border border-blue-300 rounded-l-md bg-blue-50 text-xs font-mono"
                                     />
                                     <button
-                                        onClick={() => copyToClipboard(currentSystemPublicKey.publicKey, 'system')}
+                                        onClick={() => copyToClipboard(keyAuth.systemPublicKey, 'system')}
                                         className="px-2 py-1 border border-l-0 border-blue-300 rounded-r-md bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         {copiedField === 'system' ? (
@@ -226,11 +190,14 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                                         )}
                                     </button>
                                 </div>
-                                {currentSystemPublicKey.keyId && (
-                                    <p className="text-xs text-blue-600 mt-1">Key ID: {currentSystemPublicKey.keyId}</p>
+                                {keyAuth.systemKeyId && (
+                                    <p className="text-xs text-blue-600 mt-1">Key ID: {keyAuth.systemKeyId}</p>
                                 )}
-                                {publicKeyBase64 === currentSystemPublicKey.publicKey && (
+                                {publicKeyBase64 === keyAuth.systemPublicKey && (
                                     <p className="text-xs text-green-600 mt-1">✅ This matches your newly registered key!</p>
+                                )}
+                                {keyAuth.isAuthenticated && (
+                                    <p className="text-xs text-green-600 mt-1">🔓 Authenticated - Private key loaded!</p>
                                 )}
                             </div>
                         ) : (
@@ -240,7 +207,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                 </div>
             </div>
 {/* Private Key Input Section */}
-            {currentSystemPublicKey && !keyPair && (
+            {keyAuth.systemPublicKey && !keyPair && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-yellow-400 mr-2 flex-shrink-0 mt-0.5" />
