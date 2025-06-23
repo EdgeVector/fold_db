@@ -21,6 +21,11 @@ function AppContent() {
   const keyGenerationResult = useKeyGeneration()
   const keyAuth = useAuth()
 
+  // Debug authentication state changes
+  useEffect(() => {
+    console.log('🎯 App: keyAuth.isAuthenticated changed to:', keyAuth.isAuthenticated);
+  }, [keyAuth.isAuthenticated]);
+
   useEffect(() => {
     fetchSchemas()
   }, [])

@@ -61,27 +61,44 @@ function useKeyAuthentication(): KeyAuthenticationState {
   };
 
   const validatePrivateKey = useCallback(async (privateKeyBase64: string): Promise<boolean> => {
+    console.log('🔑 validatePrivateKey called, systemPublicKey:', systemPublicKey, 'systemKeyId:', systemKeyId);
     if (!systemPublicKey || !systemKeyId) {
+      console.log('🔑 Missing systemPublicKey or systemKeyId, returning false');
       return false;
     }
 
     try {
       // Convert base64 private key to bytes
+      console.log('🔑 Converting private key from base64...');
       const privateKeyBytes = base64ToBytes(privateKeyBase64);
       
       // Generate public key from private key
+      console.log('🔑 Generating public key from private key...');
       const derivedPublicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
       const derivedPublicKeyBase64 = btoa(String.fromCharCode(...derivedPublicKeyBytes));
       
       // Check if derived public key matches system public key
       const matches = derivedPublicKeyBase64 === systemPublicKey;
+      console.log('🔑 Key comparison:', {
+        derived: derivedPublicKeyBase64,
+        system: systemPublicKey,
+        matches
+      });
       
       if (matches) {
+        console.log('🔑 Keys match! Setting authentication state...');
         // Store private key and public key ID for signing operations
         setPrivateKey(privateKeyBytes);
         setPublicKeyId(systemKeyId);
         setIsAuthenticated(true);
+        console.log('🔑 Authentication state set to true');
+        
+        // Force immediate state propagation with a small delay to ensure React state updates
+        setTimeout(() => {
+          console.log('🔑 Authentication state should now be propagated');
+        }, 50);
       } else {
+        console.log('🔑 Keys do not match, clearing authentication state');
         setPrivateKey(null);
         setPublicKeyId(null);
         setIsAuthenticated(false);
