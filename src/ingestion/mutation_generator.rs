@@ -2,7 +2,8 @@
 
 use crate::ingestion::{IngestionError, IngestionResult};
 use crate::schema::types::{Mutation, MutationType};
-use log::{debug, info, warn};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -24,7 +25,9 @@ impl MutationGenerator {
         trust_distance: u32,
         pub_key: String,
     ) -> IngestionResult<Vec<Mutation>> {
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Generating mutations for schema '{}' with {} mappers",
             schema_name,
             mutation_mappers.len()
@@ -35,21 +38,40 @@ impl MutationGenerator {
 
         // Process each mutation mapper
         for (json_path, schema_path) in mutation_mappers {
-            debug!("Processing mapper: {} -> {}", json_path, schema_path);
+            log_feature!(
+                LogFeature::Ingestion,
+                debug,
+                "Processing mapper: {} -> {}",
+                json_path,
+                schema_path
+            );
 
             // Extract value from JSON using the path
             match self.extract_value_from_json_path(json_data, json_path) {
                 Ok(Some(value)) => {
                     // Parse the schema path to get the field name
                     let field_name = self.parse_schema_field_path(schema_path)?;
-                    info!("Mapped {} = {:?} to field {}", json_path, value, field_name);
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Mapped {} = {:?} to field {}",
+                        json_path,
+                        value,
+                        field_name
+                    );
                     fields_and_values.insert(field_name, value);
                 }
                 Ok(None) => {
-                    warn!("No value found at JSON path: {}", json_path);
+                    log_feature!(LogFeature::Ingestion, warn, "No value found at JSON path: {}", json_path);
                 }
                 Err(e) => {
-                    warn!("Failed to extract value from path '{}': {}", json_path, e);
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "Failed to extract value from path '{}': {}",
+                        json_path,
+                        e
+                    );
                 }
             }
         }
@@ -64,12 +86,14 @@ impl MutationGenerator {
                 mutation_type: MutationType::Create,
             };
             mutations.push(mutation);
-            info!(
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
                 "Created mutation with {} fields",
                 mutations[0].fields_and_values.len()
             );
         } else {
-            warn!("No valid field mappings found, no mutations generated");
+            log_feature!(LogFeature::Ingestion, warn, "No valid field mappings found, no mutations generated");
         }
 
         Ok(mutations)
@@ -193,7 +217,11 @@ impl MutationGenerator {
         _trust_distance: u32,
         _pub_key: String,
     ) -> IngestionResult<Vec<Mutation>> {
-        warn!("Collection mutations are no longer supported - collections have been removed from the schema system");
+        log_feature!(
+            LogFeature::Ingestion,
+            warn,
+            "Collection mutations are no longer supported - collections have been removed from the schema system"
+        );
         Ok(Vec::new())
     }
 

@@ -4,6 +4,8 @@
 //! for all security operations including authentication, encryption, and key management.
 
 use crate::security::{PublicKeyInfo, SignedMessage, VerificationResult};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -177,12 +179,16 @@ impl SecurityAuditLogger {
         match &event {
             SecurityEvent::KeyRegistration { key_id, owner_id, success, .. } => {
                 if *success {
-                    log::info!(
+                    log_feature!(
+                        LogFeature::Permissions,
+                        info,
                         "SECURITY_AUDIT: Key registered - key_id={}, owner_id={}, client={:?}",
                         key_id, owner_id, client_id
                     );
                 } else {
-                    log::warn!(
+                    log_feature!(
+                        LogFeature::Permissions,
+                        warn,
                         "SECURITY_AUDIT: Key registration failed - key_id={}, owner_id={}, client={:?}",
                         key_id, owner_id, client_id
                     );
@@ -190,12 +196,16 @@ impl SecurityAuditLogger {
             }
             SecurityEvent::SignatureVerification { key_id, success, .. } => {
                 if *success {
-                    log::info!(
+                    log_feature!(
+                        LogFeature::Permissions,
+                        info,
                         "SECURITY_AUDIT: Signature verified - key_id={}, client={:?}",
                         key_id, client_id
                     );
                 } else {
-                    log::warn!(
+                    log_feature!(
+                        LogFeature::Permissions,
+                        warn,
                         "SECURITY_AUDIT: Signature verification failed - key_id={}, client={:?}",
                         key_id, client_id
                     );
@@ -203,19 +213,25 @@ impl SecurityAuditLogger {
             }
             SecurityEvent::AuthenticationAttempt { endpoint, success, .. } => {
                 if *success {
-                    log::info!(
+                    log_feature!(
+                        LogFeature::Permissions,
+                        info,
                         "SECURITY_AUDIT: Authentication successful - endpoint={}, client={:?}",
                         endpoint, client_id
                     );
                 } else {
-                    log::warn!(
+                    log_feature!(
+                        LogFeature::Permissions,
+                        warn,
                         "SECURITY_AUDIT: Authentication failed - endpoint={}, client={:?}",
                         endpoint, client_id
                     );
                 }
             }
             _ => {
-                log::info!(
+                log_feature!(
+                    LogFeature::Permissions,
+                    info,
                     "SECURITY_AUDIT: Event logged - type={}, client={:?}",
                     self.event_operation_name(&event), client_id
                 );

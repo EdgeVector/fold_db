@@ -1,5 +1,6 @@
 use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
-use log::{info, warn};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 
 /// Manages and enforces access control policies in the database.
 ///
@@ -51,7 +52,9 @@ impl PermissionManager {
         // Check trust distance first
         let trust_allowed = match permissions_policy.read_policy {
             TrustDistance::NoRequirement => {
-                info!(
+                log_feature!(
+                    LogFeature::Permissions,
+                    info,
                     "READ PERMISSION: pub_key={} - NoRequirement policy, allowing access",
                     pub_key
                 );
@@ -59,9 +62,14 @@ impl PermissionManager {
             }
             TrustDistance::Distance(required_distance) => {
                 let allowed = trust_distance <= required_distance;
-                info!(
+                log_feature!(
+                    LogFeature::Permissions,
+                    info,
                     "READ PERMISSION: pub_key={} - Distance check: {} <= {} = {}",
-                    pub_key, trust_distance, required_distance, allowed
+                    pub_key,
+                    trust_distance,
+                    required_distance,
+                    allowed
                 );
                 allowed
             }
@@ -69,7 +77,9 @@ impl PermissionManager {
 
         // If trust distance check passes, allow access
         if trust_allowed {
-            info!(
+            log_feature!(
+                LogFeature::Permissions,
+                info,
                 "READ PERMISSION: pub_key={} - Trust distance check PASSED",
                 pub_key
             );
@@ -77,18 +87,38 @@ impl PermissionManager {
         }
 
         // If trust distance check fails, check explicit permissions
-        warn!("READ PERMISSION: pub_key={} - Trust distance check FAILED, checking explicit permissions", pub_key);
+        log_feature!(
+            LogFeature::Permissions,
+            warn,
+            "READ PERMISSION: pub_key={} - Trust distance check FAILED, checking explicit permissions",
+            pub_key
+        );
         permissions_policy.explicit_read_policy.as_ref().map_or_else(
             || {
-                warn!("READ PERMISSION: pub_key={} - No explicit permissions configured, ACCESS DENIED", pub_key);
+                log_feature!(
+                    LogFeature::Permissions,
+                    warn,
+                    "READ PERMISSION: pub_key={} - No explicit permissions configured, ACCESS DENIED",
+                    pub_key
+                );
                 false
             },
             |explicit_policy| {
                 let allowed = explicit_policy.counts_by_pub_key.contains_key(pub_key);
                 if allowed {
-                    info!("READ PERMISSION: pub_key={} - Explicit permission found, ACCESS GRANTED", pub_key);
+                    log_feature!(
+                        LogFeature::Permissions,
+                        info,
+                        "READ PERMISSION: pub_key={} - Explicit permission found, ACCESS GRANTED",
+                        pub_key
+                    );
                 } else {
-                    warn!("READ PERMISSION: pub_key={} - No explicit permission found, ACCESS DENIED", pub_key);
+                    log_feature!(
+                        LogFeature::Permissions,
+                        warn,
+                        "READ PERMISSION: pub_key={} - No explicit permission found, ACCESS DENIED",
+                        pub_key
+                    );
                 }
                 allowed
             }
@@ -132,7 +162,11 @@ impl PermissionManager {
             TrustDistance::Distance(required_distance) => {
                 // Calculate result and print it before returning
                 let result = trust_distance <= required_distance;
-                info!("Trust distance check for {pub_key}: {trust_distance} <= {required_distance} = {result}");
+                log_feature!(
+                    LogFeature::Permissions,
+                    info,
+                    "Trust distance check for {pub_key}: {trust_distance} <= {required_distance} = {result}"
+                );
                 result
             }
         };
@@ -145,12 +179,20 @@ impl PermissionManager {
         // If trust distance check fails, check explicit permissions
         permissions_policy.explicit_write_policy.as_ref().map_or_else(
             || {
-                warn!("Trust distance failed and no explicit permissions for {pub_key}");
+                log_feature!(
+                    LogFeature::Permissions,
+                    warn,
+                    "Trust distance failed and no explicit permissions for {pub_key}"
+                );
                 false
             },
             |explicit_policy| {
                 let allowed = explicit_policy.counts_by_pub_key.contains_key(pub_key);
-                warn!("Trust distance failed checking explicit permission for {pub_key}: {allowed}");
+                log_feature!(
+                    LogFeature::Permissions,
+                    warn,
+                    "Trust distance failed checking explicit permission for {pub_key}: {allowed}"
+                );
                 allowed
             }
         )

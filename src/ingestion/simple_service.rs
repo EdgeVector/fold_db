@@ -7,7 +7,8 @@ use crate::ingestion::openrouter_service::{AISchemaResponse, OpenRouterService};
 use crate::ingestion::schema_stripper::SchemaStripper;
 use crate::ingestion::{IngestionConfig, IngestionError, IngestionResponse, IngestionResult};
 use crate::schema::types::{Mutation, Operation};
-use log::{error, info};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 use serde_json::Value;
 
 /// Simplified ingestion service that works with DataFoldNode
@@ -39,7 +40,7 @@ impl SimpleIngestionService {
         request: IngestionRequest,
         node: &mut DataFoldNode,
     ) -> IngestionResult<IngestionResponse> {
-        info!("Starting JSON ingestion process with DataFoldNode");
+        log_feature!(LogFeature::Ingestion, info, "Starting JSON ingestion process with DataFoldNode");
 
         if !self.config.is_ready() {
             return Ok(IngestionResponse::failure(vec![
@@ -52,7 +53,9 @@ impl SimpleIngestionService {
 
         // Step 2: Get available schemas and strip them
         let available_schemas = self.get_stripped_available_schemas_from_node(node)?;
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Retrieved {} available schemas",
             available_schemas.as_object().map(|o| o.len()).unwrap_or(0)
         );
@@ -62,7 +65,9 @@ impl SimpleIngestionService {
             .openrouter_service
             .get_schema_recommendation(&request.data, &available_schemas)
             .await?;
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Received AI recommendation: {} existing schemas, new schema: {}",
             ai_response.existing_schemas.len(),
             ai_response.new_schemas.is_some()
@@ -83,7 +88,7 @@ impl SimpleIngestionService {
             request.pub_key.unwrap_or_else(|| "default".to_string()),
         )?;
 
-        info!("Generated {} mutations", mutations.len());
+        log_feature!(LogFeature::Ingestion, info, "Generated {} mutations", mutations.len());
 
         // Step 6: Execute mutations if requested
         let mutations_executed = if request
@@ -95,7 +100,9 @@ impl SimpleIngestionService {
             0
         };
 
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Ingestion completed successfully: schema '{}', {} mutations generated, {} executed",
             schema_name,
             mutations.len(),
@@ -169,14 +176,14 @@ impl SimpleIngestionService {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
             let schema_name = &ai_response.existing_schemas[0];
-            info!("Using existing schema: {}", schema_name);
+            log_feature!(LogFeature::Ingestion, info, "Using existing schema: {}", schema_name);
             return Ok(schema_name.clone());
         }
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
             let schema_name = self.create_new_schema_with_node(new_schema_def, node)?;
-            info!("Created new schema: {}", schema_name);
+            log_feature!(LogFeature::Ingestion, info, "Created new schema: {}", schema_name);
             return Ok(schema_name);
         }
 
@@ -191,7 +198,7 @@ impl SimpleIngestionService {
         schema_def: &Value,
         node: &mut DataFoldNode,
     ) -> IngestionResult<String> {
-        info!("Creating new schema from AI definition");
+        log_feature!(LogFeature::Ingestion, info, "Creating new schema from AI definition");
 
         // Parse the schema definition
         let schema = self.parse_schema_definition(schema_def)?;
@@ -201,7 +208,7 @@ impl SimpleIngestionService {
         node.load_schema(schema)
             .map_err(|e| IngestionError::SchemaCreationError(e.to_string()))?;
 
-        info!("New schema '{}' created and approved", schema_name);
+        log_feature!(LogFeature::Ingestion, info, "New schema '{}' created and approved", schema_name);
         Ok(schema_name)
     }
 
@@ -210,14 +217,16 @@ impl SimpleIngestionService {
         &self,
         schema_def: &Value,
     ) -> IngestionResult<crate::schema::Schema> {
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Parsing schema definition: {}",
             serde_json::to_string_pretty(schema_def).unwrap_or_else(|_| "Invalid JSON".to_string())
         );
 
         // Try to parse as a complete Schema first
         if let Ok(schema) = serde_json::from_value::<crate::schema::Schema>(schema_def.clone()) {
-            info!("Successfully parsed as complete Schema");
+            log_feature!(LogFeature::Ingestion, info, "Successfully parsed as complete Schema");
             return Ok(schema);
         }
 
@@ -225,13 +234,13 @@ impl SimpleIngestionService {
         if let Some(obj) = schema_def.as_object() {
             if obj.len() == 1 {
                 let (schema_name, schema_content) = obj.iter().next().unwrap();
-                info!("Found wrapped schema with name: {}", schema_name);
+                log_feature!(LogFeature::Ingestion, info, "Found wrapped schema with name: {}", schema_name);
 
                 // Try to parse the wrapped content
                 if let Ok(schema) =
                     serde_json::from_value::<crate::schema::Schema>(schema_content.clone())
                 {
-                    info!("Successfully parsed wrapped schema");
+                    log_feature!(LogFeature::Ingestion, info, "Successfully parsed wrapped schema");
                     return Ok(schema);
                 }
 
@@ -251,7 +260,9 @@ impl SimpleIngestionService {
         schema_name: &str,
         schema_content: &Value,
     ) -> IngestionResult<crate::schema::Schema> {
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Creating basic schema from wrapped definition for: {}",
             schema_name
         );
@@ -264,7 +275,9 @@ impl SimpleIngestionService {
 
         // Add fields if provided
         if let Some(Value::Object(fields)) = obj.get("fields") {
-            info!(
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
                 "Processing {} fields for schema {}",
                 fields.len(),
                 schema_name
@@ -273,11 +286,19 @@ impl SimpleIngestionService {
                 // Create a basic field for each field in the definition
                 let field = self.create_basic_field()?;
                 schema.add_field(field_name.clone(), field);
-                info!("Added field '{}' to schema '{}'", field_name, schema_name);
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Added field '{}' to schema '{}'",
+                    field_name,
+                    schema_name
+                );
             }
         }
 
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Successfully created schema '{}' with {} fields",
             schema_name,
             schema.fields.len()
@@ -369,15 +390,20 @@ impl SimpleIngestionService {
             match node.execute_operation(operation) {
                 Ok(_) => {
                     executed_count += 1;
-                    info!(
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
                         "Successfully executed mutation for schema '{}'",
                         mutation.schema_name
                     );
                 }
                 Err(e) => {
-                    error!(
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
                         "Failed to execute mutation for schema '{}': {}",
-                        mutation.schema_name, e
+                        mutation.schema_name,
+                        e
                     );
                     // Continue with other mutations even if one fails
                 }

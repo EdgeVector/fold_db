@@ -9,7 +9,8 @@ use crate::ingestion::{
 };
 use crate::schema::types::{JsonSchemaDefinition, Mutation};
 use crate::schema::{Schema, SchemaCore};
-use log::{error, info};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -62,7 +63,7 @@ impl IngestionCore {
         &self,
         request: IngestionRequest,
     ) -> IngestionResult<IngestionResponse> {
-        info!("Starting JSON ingestion process");
+        log_feature!(LogFeature::Ingestion, info, "Starting JSON ingestion process");
 
         // Step 1: Validate configuration
         self.validate_configuration()?;
@@ -110,7 +111,7 @@ impl IngestionCore {
         } else {
             0
         };
-        info!("Retrieved {} available schemas", schema_count);
+        log_feature!(LogFeature::Ingestion, info, "Retrieved {} available schemas", schema_count);
         Ok(available_schemas)
     }
 
@@ -121,7 +122,9 @@ impl IngestionCore {
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
         let ai_response = self.get_ai_schema_recommendation(data, available_schemas).await?;
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Received AI recommendation: {} existing schemas, new schema: {}",
             ai_response.existing_schemas.len(),
             ai_response.new_schemas.is_some()
@@ -151,7 +154,7 @@ impl IngestionCore {
             request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
         )?;
 
-        info!("Generated {} mutations", mutations.len());
+        log_feature!(LogFeature::Ingestion, info, "Generated {} mutations", mutations.len());
         Ok(mutations)
     }
 
@@ -170,7 +173,9 @@ impl IngestionCore {
 
     /// Logs the completion of the ingestion process.
     fn log_completion(&self, schema_name: &str, mutations_count: usize, mutations_executed: usize) {
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Ingestion completed successfully: schema '{}', {} mutations generated, {} executed",
             schema_name, mutations_count, mutations_executed
         );
@@ -215,14 +220,14 @@ impl IngestionCore {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
             let schema_name = &ai_response.existing_schemas[0];
-            info!("Using existing schema: {}", schema_name);
+            log_feature!(LogFeature::Ingestion, info, "Using existing schema: {}", schema_name);
             return Ok(schema_name.clone());
         }
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
             let schema_name = self.create_new_schema(new_schema_def).await?;
-            info!("Created new schema: {}", schema_name);
+            log_feature!(LogFeature::Ingestion, info, "Created new schema: {}", schema_name);
             return Ok(schema_name);
         }
 
@@ -233,7 +238,7 @@ impl IngestionCore {
 
     /// Create a new schema from AI response
     async fn create_new_schema(&self, schema_def: &Value) -> IngestionResult<String> {
-        info!("Creating new schema from AI definition");
+        log_feature!(LogFeature::Ingestion, info, "Creating new schema from AI definition");
 
         // Parse the schema definition
         let schema = self.parse_schema_definition(schema_def)?;
@@ -249,7 +254,7 @@ impl IngestionCore {
             .approve_schema(&schema_name)
             .map_err(IngestionError::SchemaSystemError)?;
 
-        info!("New schema '{}' created and approved", schema_name);
+        log_feature!(LogFeature::Ingestion, info, "New schema '{}' created and approved", schema_name);
         Ok(schema_name)
     }
 
@@ -344,15 +349,20 @@ impl IngestionCore {
             match self.execute_single_mutation(mutation).await {
                 Ok(()) => {
                     executed_count += 1;
-                    info!(
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
                         "Successfully executed mutation for schema '{}'",
                         mutation.schema_name
                     );
                 }
                 Err(e) => {
-                    error!(
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
                         "Failed to execute mutation for schema '{}': {}",
-                        mutation.schema_name, e
+                        mutation.schema_name,
+                        e
                     );
                     // Continue with other mutations even if one fails
                 }

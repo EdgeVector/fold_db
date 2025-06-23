@@ -9,6 +9,8 @@ use crate::{
     },
 };
 use base64::{engine::general_purpose, Engine as _};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
 
@@ -103,13 +105,13 @@ impl MessageVerifier {
                         .write()
                         .map_err(|_| SecurityError::KeyNotFound("Failed to acquire write lock".to_string()))?;
                     *key_lock = Some(persisted_key);
-                    log::info!("Loaded system public key from database");
+                    log_feature!(LogFeature::Permissions, info, "Loaded system public key from database");
                 }
                 Ok(None) => {
-                    log::info!("No system public key found in database.");
+                    log_feature!(LogFeature::Permissions, info, "No system public key found in database.");
                 }
                 Err(e) => {
-                    log::warn!("Failed to load persisted public key: {}", e);
+                    log_feature!(LogFeature::Permissions, warn, "Failed to load persisted public key: {}", e);
                     // Don't fail initialization - continue without persisted key
                 }
             }
@@ -122,11 +124,11 @@ impl MessageVerifier {
         if let Some(db_ops) = &self.db_ops {
             match db_ops.set_system_public_key(key_info) {
                 Ok(()) => {
-                    log::debug!("Persisted system public key");
+                    log_feature!(LogFeature::Permissions, debug, "Persisted system public key");
                     Ok(())
                 }
                 Err(e) => {
-                    log::error!("Failed to persist system public key: {}", e);
+                    log_feature!(LogFeature::Permissions, error, "Failed to persist system public key: {}", e);
                     // Don't fail the operation - key is still in memory
                     Ok(())
                 }
@@ -153,7 +155,7 @@ impl MessageVerifier {
         // Then persist to database
         self.persist_public_key(&key_to_store)?;
 
-        log::info!("Registered system public key");
+        log_feature!(LogFeature::Permissions, info, "Registered system public key");
         Ok(())
     }
 
@@ -171,12 +173,21 @@ impl MessageVerifier {
         // Remove from database
         if let Some(db_ops) = &self.db_ops {
             match db_ops.delete_system_public_key() {
-                Ok(_) => log::debug!("Removed system public key from database"),
-                Err(e) => log::error!("Failed to remove system public key from database: {}", e),
+                Ok(_) => log_feature!(
+                    LogFeature::Permissions,
+                    debug,
+                    "Removed system public key from database"
+                ),
+                Err(e) => log_feature!(
+                    LogFeature::Permissions,
+                    error,
+                    "Failed to remove system public key from database: {}",
+                    e
+                ),
             }
         }
 
-        log::info!("Removed system public key");
+        log_feature!(LogFeature::Permissions, info, "Removed system public key");
         Ok(())
     }
 

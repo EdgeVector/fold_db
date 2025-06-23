@@ -1,7 +1,8 @@
 //! OpenRouter API service for AI-powered schema analysis
 
 use crate::ingestion::{IngestionConfig, IngestionError, IngestionResult};
-use log::{info, warn};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -88,23 +89,31 @@ impl OpenRouterService {
         sample_json: &Value,
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Sample JSON data: {}",
             serde_json::to_string_pretty(sample_json)
                 .unwrap_or_else(|_| "Invalid JSON".to_string())
         );
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Available schemas: {}",
             serde_json::to_string_pretty(available_schemas).unwrap_or_else(|_| "{}".to_string())
         );
 
         let prompt = self.create_prompt(sample_json, available_schemas);
 
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Sending request to OpenRouter API with model: {}",
             self.config.openrouter_model
         );
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "AI Request Prompt (length: {} chars): {}",
             prompt.len(),
             if prompt.len() > 1000 {
@@ -115,13 +124,15 @@ impl OpenRouterService {
         );
 
         let response = self.call_openrouter_api(&prompt).await?;
-        info!("=== FULL AI RESPONSE ===");
-        info!(
+        log_feature!(LogFeature::Ingestion, info, "=== FULL AI RESPONSE ===");
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "AI Response (length: {} chars):\n{}",
             response.len(),
             response
         );
-        info!("=== END AI RESPONSE ===");
+        log_feature!(LogFeature::Ingestion, info, "=== END AI RESPONSE ===");
 
         self.parse_ai_response(&response)
     }
@@ -173,24 +184,38 @@ The response must be valid JSON."#,
         let mut last_error = None;
 
         for attempt in 1..=self.config.max_retries {
-            info!(
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
                 "OpenRouter API attempt {} of {}",
-                attempt, self.config.max_retries
+                attempt,
+                self.config.max_retries
             );
 
             match self.make_api_request(&request).await {
                 Ok(response) => {
-                    info!("OpenRouter API call successful on attempt {}", attempt);
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "OpenRouter API call successful on attempt {}",
+                        attempt
+                    );
                     return Ok(response);
                 }
                 Err(e) => {
-                    warn!("OpenRouter API attempt {} failed: {}", attempt, e);
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "OpenRouter API attempt {} failed: {}",
+                        attempt,
+                        e
+                    );
                     last_error = Some(e);
 
                     if attempt < self.config.max_retries {
                         // Exponential backoff
                         let delay = Duration::from_secs(2_u64.pow(attempt - 1));
-                        info!("Retrying in {:?}", delay);
+                        log_feature!(LogFeature::Ingestion, info, "Retrying in {:?}", delay);
                         tokio::time::sleep(delay).await;
                     }
                 }
@@ -234,8 +259,14 @@ The response must be valid JSON."#,
         let openrouter_response: OpenRouterResponse = response.json().await?;
 
         if let Some(usage) = &openrouter_response.usage {
-            info!("OpenRouter API usage - Prompt tokens: {:?}, Completion tokens: {:?}, Total tokens: {:?}",
-                  usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "OpenRouter API usage - Prompt tokens: {:?}, Completion tokens: {:?}, Total tokens: {:?}",
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.total_tokens
+            );
         }
 
         if openrouter_response.choices.is_empty() {
@@ -249,12 +280,12 @@ The response must be valid JSON."#,
 
     /// Parse the AI response
     fn parse_ai_response(&self, response_text: &str) -> IngestionResult<AISchemaResponse> {
-        info!("=== PARSING AI RESPONSE ===");
-        info!("Raw AI response text: {}", response_text);
+        log_feature!(LogFeature::Ingestion, info, "=== PARSING AI RESPONSE ===");
+        log_feature!(LogFeature::Ingestion, info, "Raw AI response text: {}", response_text);
 
         // Try to extract JSON from the response
         let json_str = self.extract_json_from_response(response_text)?;
-        info!("Extracted JSON string: {}", json_str);
+        log_feature!(LogFeature::Ingestion, info, "Extracted JSON string: {}", json_str);
 
         // Parse the JSON
         let parsed: Value = serde_json::from_str(&json_str).map_err(|e| {
@@ -264,7 +295,9 @@ The response must be valid JSON."#,
             ))
         })?;
 
-        info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Parsed JSON value: {}",
             serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| "Invalid JSON".to_string())
         );
@@ -272,9 +305,11 @@ The response must be valid JSON."#,
         // Validate and convert to AISchemaResponse
         let result = self.validate_and_convert_response(parsed)?;
 
-        info!("=== FINAL PARSED AI RESPONSE ===");
-        info!("Existing schemas: {:?}", result.existing_schemas);
-        info!(
+        log_feature!(LogFeature::Ingestion, info, "=== FINAL PARSED AI RESPONSE ===");
+        log_feature!(LogFeature::Ingestion, info, "Existing schemas: {:?}", result.existing_schemas);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "New schemas: {}",
             result
                 .new_schemas
@@ -283,8 +318,8 @@ The response must be valid JSON."#,
                     .unwrap_or_else(|_| "Invalid JSON".to_string()))
                 .unwrap_or_else(|| "None".to_string())
         );
-        info!("Mutation mappers: {:?}", result.mutation_mappers);
-        info!("=== END PARSED AI RESPONSE ===");
+        log_feature!(LogFeature::Ingestion, info, "Mutation mappers: {:?}", result.mutation_mappers);
+        log_feature!(LogFeature::Ingestion, info, "=== END PARSED AI RESPONSE ===");
 
         Ok(result)
     }

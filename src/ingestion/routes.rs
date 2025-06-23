@@ -5,7 +5,8 @@ use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::{IngestionConfig, IngestionResponse};
 use actix_web::{web, HttpResponse, Responder};
-use log::{error, info, warn};
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs;
@@ -16,13 +17,13 @@ pub async fn process_json(
     request: web::Json<IngestionRequest>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    info!("Received JSON ingestion request");
+    log_feature!(LogFeature::Ingestion, info, "Received JSON ingestion request");
 
     // Try to create a simple ingestion service
     let service = match create_simple_ingestion_service().await {
         Ok(service) => service,
         Err(e) => {
-            error!("Failed to initialize ingestion service: {}", e);
+            log_feature!(LogFeature::Ingestion, error, "Failed to initialize ingestion service: {}", e);
             return HttpResponse::ServiceUnavailable().json(IngestionResponse::failure(vec![
                 format!("Ingestion service not available: {}", e),
             ]));
@@ -39,15 +40,15 @@ pub async fn process_json(
     {
         Ok(response) => {
             if response.success {
-                info!("Ingestion completed successfully");
+                log_feature!(LogFeature::Ingestion, info, "Ingestion completed successfully");
                 HttpResponse::Ok().json(response)
             } else {
-                error!("Ingestion failed: {:?}", response.errors);
+                log_feature!(LogFeature::Ingestion, error, "Ingestion failed: {:?}", response.errors);
                 HttpResponse::InternalServerError().json(response)
             }
         }
         Err(e) => {
-            error!("Ingestion processing failed: {}", e);
+            log_feature!(LogFeature::Ingestion, error, "Ingestion processing failed: {}", e);
             HttpResponse::InternalServerError().json(IngestionResponse::failure(vec![format!(
                 "Processing failed: {}",
                 e
@@ -58,23 +59,23 @@ pub async fn process_json(
 
 /// Get ingestion status
 pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
-    info!("Received ingestion status request");
+    log_feature!(LogFeature::Ingestion, info, "Received ingestion status request");
 
     match create_simple_ingestion_service().await {
         Ok(service) => match service.get_status() {
             Ok(status) => {
-                info!("Returning ingestion status");
+                log_feature!(LogFeature::Ingestion, info, "Returning ingestion status");
                 HttpResponse::Ok().json(status)
             }
             Err(e) => {
-                error!("Failed to get ingestion status: {}", e);
+                log_feature!(LogFeature::Ingestion, error, "Failed to get ingestion status: {}", e);
                 HttpResponse::InternalServerError().json(json!({
                     "error": format!("Failed to get status: {}", e)
                 }))
             }
         },
         Err(e) => {
-            warn!("Ingestion service not available: {}", e);
+            log_feature!(LogFeature::Ingestion, warn, "Ingestion service not available: {}", e);
             HttpResponse::ServiceUnavailable().json(json!({
                 "error": format!("Ingestion service not available: {}", e),
                 "enabled": false,
@@ -128,7 +129,7 @@ pub async fn health_check(_state: web::Data<AppState>) -> impl Responder {
 
 /// Get ingestion configuration (without sensitive data)
 pub async fn get_config(_state: web::Data<AppState>) -> impl Responder {
-    info!("Received ingestion config request");
+    log_feature!(LogFeature::Ingestion, info, "Received ingestion config request");
 
     // Use the allow_empty version to get current config status
     let config = IngestionConfig::from_env_allow_empty();
@@ -149,19 +150,19 @@ pub async fn validate_json(
     request: web::Json<serde_json::Value>,
     _state: web::Data<AppState>,
 ) -> impl Responder {
-    info!("Received JSON validation request");
+    log_feature!(LogFeature::Ingestion, info, "Received JSON validation request");
 
     match create_simple_ingestion_service().await {
         Ok(service) => match service.validate_input(&request.into_inner()) {
             Ok(()) => {
-                info!("JSON validation successful");
+                log_feature!(LogFeature::Ingestion, info, "JSON validation successful");
                 HttpResponse::Ok().json(json!({
                     "valid": true,
                     "message": "JSON data is valid for ingestion"
                 }))
             }
             Err(e) => {
-                info!("JSON validation failed: {}", e);
+                log_feature!(LogFeature::Ingestion, info, "JSON validation failed: {}", e);
                 HttpResponse::BadRequest().json(json!({
                     "valid": false,
                     "error": format!("Validation failed: {}", e)
@@ -190,7 +191,7 @@ pub struct OpenRouterConfigResponse {
 
 /// Get OpenRouter configuration
 pub async fn get_openrouter_config(_state: web::Data<AppState>) -> impl Responder {
-    info!("Received OpenRouter config request");
+    log_feature!(LogFeature::Ingestion, info, "Received OpenRouter config request");
 
     // Use the allow_empty version to get current config without requiring API key
     let config = IngestionConfig::from_env_allow_empty();
@@ -208,20 +209,20 @@ pub async fn save_openrouter_config(
     request: web::Json<OpenRouterConfigRequest>,
     _state: web::Data<AppState>,
 ) -> impl Responder {
-    info!("Received OpenRouter config save request");
+    log_feature!(LogFeature::Ingestion, info, "Received OpenRouter config save request");
 
     let config = request.into_inner();
 
     match save_openrouter_config_to_file(&config) {
         Ok(()) => {
-            info!("OpenRouter configuration saved successfully");
+            log_feature!(LogFeature::Ingestion, info, "OpenRouter configuration saved successfully");
             HttpResponse::Ok().json(json!({
                 "success": true,
                 "message": "Configuration saved successfully"
             }))
         }
         Err(e) => {
-            error!("Failed to save OpenRouter config: {}", e);
+            log_feature!(LogFeature::Ingestion, error, "Failed to save OpenRouter config: {}", e);
             HttpResponse::InternalServerError().json(json!({
                 "success": false,
                 "error": format!("Failed to save configuration: {}", e)
@@ -265,7 +266,7 @@ fn save_openrouter_config_to_file(
     let content = serde_json::to_string_pretty(&config_response)?;
     fs::write(&config_path, content)?;
 
-    info!("OpenRouter config saved to: {:?}", config_path);
+    log_feature!(LogFeature::Ingestion, info, "OpenRouter config saved to: {:?}", config_path);
     Ok(())
 }
 

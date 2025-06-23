@@ -1,6 +1,8 @@
 use crate::permissions::permission_manager::PermissionManager;
 use crate::schema::types::{Field, Mutation, Query, SchemaError};
 use crate::schema::SchemaCore;
+use crate::logging::features::LogFeature;
+use crate::log_feature;
 
 /// Provides a high-level interface for permission validation on schema operations.
 ///
@@ -70,9 +72,9 @@ impl PermissionWrapper {
         field_name: &str,
         schema_manager: &SchemaCore,
     ) -> FieldPermissionResult {
-        use log::info;
-
-        info!(
+        log_feature!(
+            LogFeature::Permissions,
+            info,
             "FIELD PERMISSION CHECK: schema={}, field={}, pub_key={}, trust_distance={}",
             query.schema_name, field_name, query.pub_key, query.trust_distance
         );
@@ -100,9 +102,12 @@ impl PermissionWrapper {
 
         schema.fields.get(field_name).map_or_else(
             || {
-                info!(
+                log_feature!(
+                    LogFeature::Permissions,
+                    info,
                     "FIELD PERMISSION CHECK: field {} not found in schema {}",
-                    field_name, query.schema_name
+                    field_name,
+                    query.schema_name
                 );
                 FieldPermissionResult {
                     field_name: field_name.to_string(),
@@ -114,9 +119,12 @@ impl PermissionWrapper {
             },
             |field| {
                 let policy = field.permission_policy();
-                info!(
+                log_feature!(
+                    LogFeature::Permissions,
+                    info,
                     "FIELD PERMISSION CHECK: field={}, policy={:?}",
-                    field_name, policy
+                    field_name,
+                    policy
                 );
 
                 let allowed = self.permission_manager.has_read_permission(
@@ -125,9 +133,12 @@ impl PermissionWrapper {
                     query.trust_distance,
                 );
 
-                info!(
+                log_feature!(
+                    LogFeature::Permissions,
+                    info,
                     "FIELD PERMISSION CHECK RESULT: field={}, allowed={}",
-                    field_name, allowed
+                    field_name,
+                    allowed
                 );
 
                 FieldPermissionResult {
