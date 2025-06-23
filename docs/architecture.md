@@ -446,9 +446,9 @@ pub enum FoldDbError {
 
 **Feature-Based Logging:**
 ```rust
-log_transform_info!("Transform executed successfully");
-log_network_debug!("Peer connection established");
-log_schema_error!("Schema validation failed");
+log_feature!(LogFeature::Transform, info, "Transform executed successfully");
+log_feature!(LogFeature::Network, debug, "Peer connection established");
+log_feature!(LogFeature::Schema, error, "Schema validation failed");
 ```
 
 **Log Levels:**
