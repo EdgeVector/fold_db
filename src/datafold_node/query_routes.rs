@@ -8,6 +8,8 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use base64::{engine::general_purpose, Engine as _};
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 
 /// Execute an operation (query or mutation).
 #[derive(Deserialize)]
@@ -41,7 +43,9 @@ pub async fn execute_operation(
 /// Execute a query.
 pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) -> impl Responder {
     let query_value = query.into_inner();
-    log::info!(
+    log_feature!(
+        LogFeature::Query,
+        info,
         "Received query request: {}",
         serde_json::to_string(&query_value).unwrap_or_else(|_| "Invalid JSON".to_string())
     );
@@ -83,7 +87,7 @@ pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) 
 
     match node_guard.query(internal_query) {
         Ok(results) => {
-            log::info!("Query executed successfully");
+            log_feature!(LogFeature::Query, info, "Query executed successfully");
             // Convert Vec<Result<Value, SchemaError>> to Vec<Value> with errors as JSON
             let unwrapped: Vec<Value> = results
                 .into_iter()
@@ -92,7 +96,7 @@ pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) 
             HttpResponse::Ok().json(json!({"data": unwrapped}))
         }
         Err(e) => {
-            log::error!("Query execution failed: {}", e);
+            log_feature!(LogFeature::Query, error, "Query execution failed: {}", e);
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to execute query: {}", e)}))
         }
@@ -110,14 +114,16 @@ pub async fn execute_mutation(
     let verification_result = node_guard.security_manager.verify_message(&signed_message);
 
     if let Err(e) = verification_result {
-        log::warn!("Signature verification failed: {}", e);
+        log_feature!(LogFeature::Mutation, warn, "Signature verification failed: {}", e);
         return HttpResponse::Unauthorized()
             .json(json!({"error": format!("Signature verification failed: {}", e)}));
     }
 
     let verification_data = verification_result.unwrap();
     if !verification_data.is_valid {
-        log::warn!(
+        log_feature!(
+            LogFeature::Mutation,
+            warn,
             "Invalid signature for public key: {}",
             signed_message.public_key_id
         );
@@ -128,7 +134,7 @@ pub async fn execute_mutation(
     let decoded_payload = match general_purpose::STANDARD.decode(&signed_message.payload) {
         Ok(bytes) => bytes,
         Err(e) => {
-            log::warn!("Base64 decoding failed: {}", e);
+            log_feature!(LogFeature::Mutation, warn, "Base64 decoding failed: {}", e);
             return HttpResponse::BadRequest().json(json!({"error": "Invalid base64 payload"}));
         }
     };
@@ -136,13 +142,15 @@ pub async fn execute_mutation(
     let mutation_value: Value = match serde_json::from_slice(&decoded_payload) {
         Ok(val) => val,
         Err(e) => {
-            log::warn!("Payload JSON parsing failed: {}", e);
+            log_feature!(LogFeature::Mutation, warn, "Payload JSON parsing failed: {}", e);
             return HttpResponse::BadRequest()
                 .json(json!({"error": "Invalid JSON payload format"}));
         }
     };
 
-    log::info!(
+    log_feature!(
+        LogFeature::Mutation,
+        info,
         "Received mutation request: {}",
         serde_json::to_string(&mutation_value).unwrap_or_else(|_| "Invalid JSON".to_string())
     );
@@ -197,11 +205,11 @@ pub async fn execute_mutation(
 
     match node_guard.mutate(internal_mutation) {
         Ok(_) => {
-            log::info!("Mutation executed successfully");
+            log_feature!(LogFeature::Mutation, info, "Mutation executed successfully");
             HttpResponse::Ok().json(json!({"success": true}))
         }
         Err(e) => {
-            log::error!("Mutation execution failed: {}", e);
+            log_feature!(LogFeature::Mutation, error, "Mutation execution failed: {}", e);
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to execute mutation: {}", e)}))
         }

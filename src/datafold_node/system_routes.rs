@@ -1,4 +1,6 @@
 use actix_web::{web, HttpResponse, Responder};
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -63,14 +65,18 @@ pub async fn reset_database(
 
     match restart_result {
         Ok(_) => {
-            log::info!("Database reset completed successfully");
+            log_feature!(
+                LogFeature::HttpServer,
+                info,
+                "Database reset completed successfully"
+            );
             HttpResponse::Ok().json(ResetDatabaseResponse {
                 success: true,
                 message: "Database reset successfully. All data has been cleared.".to_string(),
             })
         }
         Err(e) => {
-            log::error!("Database reset failed: {}", e);
+            log_feature!(LogFeature::HttpServer, error, "Database reset failed: {}", e);
             HttpResponse::InternalServerError().json(ResetDatabaseResponse {
                 success: false,
                 message: format!("Database reset failed: {}", e),

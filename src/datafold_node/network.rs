@@ -1,4 +1,5 @@
-use log::info;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -39,9 +40,12 @@ impl DataFoldNode {
 
         let local_peer_id = network_core.local_peer_id();
         network_core.register_node_id(&self.node_id, local_peer_id);
-        info!(
+        log_feature!(
+            LogFeature::Network,
+            info,
             "Registered node ID {} with peer ID {}",
-            self.node_id, local_peer_id
+            self.node_id,
+            local_peer_id
         );
 
         self.network = Some(Arc::new(tokio::sync::Mutex::new(network_core)));
@@ -88,7 +92,7 @@ impl DataFoldNode {
     pub async fn stop_network(&self) -> FoldDbResult<()> {
         if let Some(network) = &self.network {
             let mut network_guard = network.lock().await;
-            info!("Stopping network service");
+            log_feature!(LogFeature::Network, info, "Stopping network service");
             network_guard.stop();
             Ok(())
         } else {
@@ -114,7 +118,7 @@ impl DataFoldNode {
         if let Some(network) = &self.network {
             let network_guard = network.lock().await;
 
-            info!("Triggering mDNS discovery...");
+            log_feature!(LogFeature::Network, info, "Triggering mDNS discovery...");
 
             let known_peers: Vec<PeerId> = network_guard.known_peers().iter().cloned().collect();
 
@@ -193,14 +197,26 @@ impl DataFoldNode {
                 .get_node_id_for_peer(&peer_id)
                 .unwrap_or_else(|| peer_id.to_string());
 
-            info!("Forwarding request to node {} (peer {})", node_id, peer_id);
+            log_feature!(
+                LogFeature::Network,
+                info,
+                "Forwarding request to node {} (peer {})",
+                node_id,
+                peer_id
+            );
 
             let response = network
                 .forward_request(peer_id, request)
                 .await
                 .map_err(|e| FoldDbError::Network(e.into()))?;
 
-            info!("Received response from node {} (peer {})", node_id, peer_id);
+            log_feature!(
+                LogFeature::Network,
+                info,
+                "Received response from node {} (peer {})",
+                node_id,
+                peer_id
+            );
 
             Ok(response)
         } else {
@@ -233,12 +249,12 @@ impl DataFoldNode {
 
     /// Restart the node by reinitializing all components
     pub async fn restart(&mut self) -> FoldDbResult<()> {
-        info!("Restarting DataFoldNode...");
+        log_feature!(LogFeature::Network, info, "Restarting DataFoldNode...");
 
         if self.network.is_some() {
-            info!("Stopping network service for restart");
+            log_feature!(LogFeature::Network, info, "Stopping network service for restart");
             if let Err(e) = self.stop_network().await {
-                log::warn!("Failed to stop network during restart: {}", e);
+                log_feature!(LogFeature::Network, warn, "Failed to stop network during restart: {}", e);
             }
         }
 
@@ -249,7 +265,7 @@ impl DataFoldNode {
             .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?
             .to_string();
 
-        info!("Closing existing database");
+        log_feature!(LogFeature::Network, info, "Closing existing database");
         let old_db = std::mem::replace(
             &mut self.db,
             Arc::new(Mutex::new(FoldDB::new(&format!("{}_temp", storage_path))?)),
@@ -259,7 +275,7 @@ impl DataFoldNode {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        info!("Reinitializing database");
+        log_feature!(LogFeature::Network, info, "Reinitializing database");
         let new_db = Arc::new(Mutex::new(FoldDB::new(&storage_path)?));
         self.db = new_db;
 
@@ -275,13 +291,13 @@ impl DataFoldNode {
                 .map_err(|e| FoldDbError::SecurityError(e.to_string()))?,
         );
 
-        info!("DataFoldNode restart completed successfully");
+        log_feature!(LogFeature::Network, info, "DataFoldNode restart completed successfully");
         Ok(())
     }
 
     /// Perform a soft restart that preserves network connections
     pub async fn soft_restart(&mut self) -> FoldDbResult<()> {
-        info!("Performing soft restart of DataFoldNode...");
+        log_feature!(LogFeature::Network, info, "Performing soft restart of DataFoldNode...");
 
         let storage_path = self
             .config
@@ -290,7 +306,7 @@ impl DataFoldNode {
             .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?
             .to_string();
 
-        info!("Closing existing database");
+        log_feature!(LogFeature::Network, info, "Closing existing database");
         let old_db = std::mem::replace(
             &mut self.db,
             Arc::new(Mutex::new(FoldDB::new(&format!("{}_temp", storage_path))?)),
@@ -300,11 +316,11 @@ impl DataFoldNode {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        info!("Reinitializing database");
+        log_feature!(LogFeature::Network, info, "Reinitializing database");
         let new_db = Arc::new(Mutex::new(FoldDB::new(&storage_path)?));
         self.db = new_db;
 
-        info!("DataFoldNode soft restart completed successfully");
+        log_feature!(LogFeature::Network, info, "DataFoldNode soft restart completed successfully");
         Ok(())
     }
 }

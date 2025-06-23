@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use log::{error, info};
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
@@ -23,7 +24,12 @@ impl TcpServer {
             let response = match Self::process_request(&request, node.clone()).await {
                 Ok(resp) => resp,
                 Err(e) => {
-                    error!("Error processing request: {}", e);
+                    log_feature!(
+                        LogFeature::TcpServer,
+                        error,
+                        "Error processing request: {}",
+                        e
+                    );
                     json!({ "error": format!("Error processing request: {}", e) })
                 }
             };
@@ -31,7 +37,7 @@ impl TcpServer {
             if let Err(e) = send_response(&mut socket, &response).await {
                 match &e {
                     FoldDbError::Io(io_err) if io_err.kind() == std::io::ErrorKind::BrokenPipe => {
-                        info!("Client disconnected while sending response");
+                        log_feature!(LogFeature::TcpServer, info, "Client disconnected while sending response");
                         return Ok(());
                     }
                     _ => return Err(e),

@@ -9,6 +9,8 @@ use crate::security::{
 use actix_web::{web, HttpResponse, Result as ActixResult};
 use serde_json::json;
 use std::sync::Arc;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 
 /// Get the security manager from the node
 async fn get_security_manager(data: &web::Data<AppState>) -> Arc<SecurityManager> {
@@ -26,7 +28,7 @@ pub async fn register_system_public_key(
     match security_manager.register_system_public_key(request.into_inner()) {
         Ok(response) => Ok(HttpResponse::Ok().json(response)),
         Err(e) => {
-            log::error!("Failed to register public key: {}", e);
+            log_feature!(LogFeature::HttpServer, error, "Failed to register public key: {}", e);
             // Let the framework handle the error response
             Err(actix_web::error::ErrorBadRequest(e.to_string()))
         }

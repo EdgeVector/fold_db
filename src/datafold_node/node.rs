@@ -1,4 +1,5 @@
-use log::info;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -131,7 +132,7 @@ impl DataFoldNode {
 
     /// Loads an existing database node from the specified configuration.
 pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
-        info!("Loading DataFoldNode from config");
+        log_feature!(LogFeature::Database, info, "Loading DataFoldNode from config");
         let node = Self::new(config)?;
 
         // Delegate to SchemaCore for unified schema discovery and loading
@@ -146,7 +147,11 @@ pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
             })?;
         }
 
-        info!("DataFoldNode loaded successfully with schema system initialized");
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "DataFoldNode loaded successfully with schema system initialized"
+        );
         Ok(node)
     }
 

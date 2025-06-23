@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use crate::error::{FoldDbError, FoldDbResult};
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 
 use super::config::NodeInfo;
 use super::DataFoldNode;
@@ -95,7 +97,9 @@ impl DataFoldNode {
     /// Only approved schemas are accessible - available and blocked schemas are denied.
     pub fn check_schema_permission(&self, schema_name: &str) -> FoldDbResult<bool> {
         let db = self.db.lock().map_err(|e| {
-            log::error!(
+            log_feature!(
+                LogFeature::Permissions,
+                error,
                 "Failed to lock database mutex for permission check: {:?}",
                 e
             );
@@ -106,18 +110,20 @@ impl DataFoldNode {
         match db.schema_manager.get_schema_state(schema_name) {
             Some(crate::schema::core::SchemaState::Approved) => Ok(true),
             Some(crate::schema::core::SchemaState::Available) => {
-                log::warn!(
+                log_feature!(
+                    LogFeature::Permissions,
+                    warn,
                     "Schema '{}' is available but not approved - access denied",
                     schema_name
                 );
                 Ok(false)
             }
             Some(crate::schema::core::SchemaState::Blocked) => {
-                log::warn!("Schema '{}' is blocked - access denied", schema_name);
+                log_feature!(LogFeature::Permissions, warn, "Schema '{}' is blocked - access denied", schema_name);
                 Ok(false)
             }
             None => {
-                log::warn!("Schema '{}' not found - access denied", schema_name);
+                log_feature!(LogFeature::Permissions, warn, "Schema '{}' not found - access denied", schema_name);
                 Ok(false)
             }
         }

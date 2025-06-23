@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::{Mutation, Operation, Query, Transform};
 use crate::schema::SchemaError;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 
 use super::DataFoldNode;
 
@@ -213,7 +215,9 @@ impl DataFoldNode {
             db.get_schema_permissions(node_id)
         };
 
-        log::error!(
+        log_feature!(
+            LogFeature::Permissions,
+            error,
             "Permission denied for {} on schema '{}': Node '{}' permissions: {:?}",
             operation_type,
             schema_name,

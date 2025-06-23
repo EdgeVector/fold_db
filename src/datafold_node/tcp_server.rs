@@ -1,6 +1,7 @@
 use crate::datafold_node::DataFoldNode;
 use crate::error::FoldDbResult;
-use log::{error, info};
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -98,7 +99,7 @@ impl TcpServer {
     pub async fn new(node: DataFoldNode, port: u16) -> FoldDbResult<Self> {
         let addr = format!("127.0.0.1:{}", port);
         let listener = TcpListener::bind(&addr).await?;
-        info!("TCP server listening on {}", addr);
+        log_feature!(LogFeature::TcpServer, info, "TCP server listening on {}", addr);
 
         // Register this node's address with the network if available
         if let Ok(mut net) = node.get_network_mut().await {
@@ -150,11 +151,11 @@ impl TcpServer {
     /// }
     /// ```
     pub async fn run(&self) -> FoldDbResult<()> {
-        info!("TCP server running...");
+        log_feature!(LogFeature::TcpServer, info, "TCP server running...");
 
         loop {
             let (socket, _) = self.listener.accept().await?;
-            info!("New client connected");
+            log_feature!(LogFeature::TcpServer, info, "New client connected");
 
             // Clone the node reference for the new connection
             let node_clone = self.node.clone();
@@ -162,7 +163,7 @@ impl TcpServer {
             // Spawn a new task to handle the connection
             tokio::spawn(async move {
                 if let Err(e) = Self::handle_connection(socket, node_clone).await {
-                    error!("Error handling connection: {}", e);
+                    log_feature!(LogFeature::TcpServer, error, "Error handling connection: {}", e);
                 }
             });
         }
