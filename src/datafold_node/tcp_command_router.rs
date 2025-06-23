@@ -3,7 +3,8 @@ use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::operations::MutationType;
 use crate::schema::Schema;
 use libp2p::PeerId;
-use log::info;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -14,7 +15,9 @@ impl TcpServer {
         request: &Value,
         node: Arc<Mutex<DataFoldNode>>,
     ) -> FoldDbResult<Value> {
-        info!(
+        log_feature!(
+            LogFeature::TcpServer,
+            info,
             "Processing request: {}",
             serde_json::to_string_pretty(request).unwrap_or_else(|_| request.to_string())
         );
@@ -31,7 +34,9 @@ impl TcpServer {
             };
 
             if target_node_id != local_node_id {
-                info!(
+                log_feature!(
+                    LogFeature::TcpServer,
+                    info,
                     "Request targeted for node {}, forwarding...",
                     target_node_id
                 );
@@ -309,20 +314,35 @@ impl TcpServer {
 
         let peer_id = match network.get_peer_id_for_node(target_node_id) {
             Some(id) => {
-                info!("Found PeerId {} for node ID {}", id, target_node_id);
+                log_feature!(
+                    LogFeature::TcpServer,
+                    info,
+                    "Found PeerId {} for node ID {}",
+                    id,
+                    target_node_id
+                );
                 id
             }
             None => match target_node_id.parse::<PeerId>() {
                 Ok(id) => {
-                    info!("Parsed node ID {} as PeerId {}", target_node_id, id);
+                    log_feature!(
+                        LogFeature::TcpServer,
+                        info,
+                        "Parsed node ID {} as PeerId {}",
+                        target_node_id,
+                        id
+                    );
                     network.register_node_id(target_node_id, id);
                     id
                 }
                 Err(_) => {
                     let id = PeerId::random();
-                    info!(
+                    log_feature!(
+                        LogFeature::TcpServer,
+                        info,
                         "Using placeholder PeerId {} for node ID {}",
-                        id, target_node_id
+                        id,
+                        target_node_id
                     );
                     network.register_node_id(target_node_id, id);
                     id
@@ -353,22 +373,30 @@ impl TcpServer {
             "unknown".to_string()
         };
 
-        info!(
+        log_feature!(
+            LogFeature::TcpServer,
+            info,
             "Assuming schema {} is available on target node",
             schema_name
         );
-        info!(
+        log_feature!(
+            LogFeature::TcpServer,
+            info,
             "Forwarding request to node {} (peer {})",
-            target_node_id, peer_id
+            target_node_id,
+            peer_id
         );
 
         let response = node_guard
             .forward_request(peer_id, forwarded_request)
             .await?;
 
-        info!(
+        log_feature!(
+            LogFeature::TcpServer,
+            info,
             "Received response from node {} (peer {})",
-            target_node_id, peer_id
+            target_node_id,
+            peer_id
         );
         Ok(response)
     }

@@ -8,7 +8,8 @@ use crate::ingestion::routes as ingestion_routes;
 use actix_cors::Cors;
 use actix_files::Files;
 use actix_web::{web, App, HttpServer as ActixHttpServer};
-use log::info;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -60,7 +61,9 @@ impl DataFoldHttpServer {
     pub async fn new(node: DataFoldNode, bind_address: &str) -> FoldDbResult<Self> {
         // Initialize the enhanced logging system
         if let Err(e) = crate::logging::LoggingSystem::init_default().await {
-            log::warn!(
+            log_feature!(
+                LogFeature::HttpServer,
+                warn,
                 "Failed to initialize enhanced logging system, falling back to web logger: {}",
                 e
             );
@@ -90,7 +93,12 @@ impl DataFoldHttpServer {
     /// * There is an error binding to the specified address
     /// * There is an error starting the server
     pub async fn run(&self) -> FoldDbResult<()> {
-        info!("HTTP server running on {}", self.bind_address);
+        log_feature!(
+            LogFeature::HttpServer,
+            info,
+            "HTTP server running on {}",
+            self.bind_address
+        );
 
         // Create shared application state
         let app_state = web::Data::new(AppState {
