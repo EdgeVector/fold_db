@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { PaperAirplaneIcon, ExclamationTriangleIcon, ShieldCheckIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { signPayload } from '../utils/authenticationWrapper';
-import { getAllSchemasWithState, getSchemasByState, approveSchema } from '../api/schemaClient';
+import { getAllSchemasWithState, approveSchema } from '../api/schemaClient';
 import { MutationClient } from '../api/mutationClient';
 
-const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
+const DataStorageForm = ({ keyPair, publicKeyBase64: _publicKeyBase64 }) => {
   const [value1, setValue1] = useState('sample-value-1');
   const [value2, setValue2] = useState('sample-value-2');
   const [mutationResult, setMutationResult] = useState(null);
@@ -31,7 +31,7 @@ const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
       } else {
         setSchemasError(response.error || 'Failed to fetch schemas');
       }
-    } catch (error) {
+    } catch {
       setSchemasError('An error occurred while fetching schemas');
     } finally {
       setSchemasLoading(false);
@@ -47,7 +47,7 @@ const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
       } else {
         setSchemasError(response.error || 'Failed to approve schema');
       }
-    } catch (error) {
+    } catch {
       setSchemasError('An error occurred while approving schema');
     }
   };

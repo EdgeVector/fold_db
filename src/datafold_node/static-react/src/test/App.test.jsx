@@ -1,9 +1,39 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import App from '../App'
+import { renderWithRedux, createAuthenticatedState, createUnauthenticatedState } from './utils/testHelpers'
 
 // Mock fetch globally
 global.fetch = vi.fn()
+
+// Mock Ed25519 functions for authentication
+vi.mock('@noble/ed25519', () => ({
+  utils: { randomPrivateKey: vi.fn(() => new Uint8Array(32).fill(1)) },
+  getPublicKeyAsync: vi.fn(() => Promise.resolve(new Uint8Array(32).fill(2))),
+  signAsync: vi.fn(() => Promise.resolve(new Uint8Array(64).fill(3)))
+}))
+
+// Mock API calls for authentication
+vi.mock('../api/securityClient', () => ({
+  getSystemPublicKey: vi.fn(() => Promise.resolve({
+    success: true,
+    key: {
+      public_key: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+      id: 'SYSTEM_WIDE_PUBLIC_KEY'
+    }
+  }))
+}))
+
+// Mock Redux thunks to prevent state override
+vi.mock('../store/authSlice', async () => {
+  const actual = await vi.importActual('../store/authSlice')
+  return {
+    ...actual,
+    initializeSystemKey: vi.fn(() => ({ type: 'auth/initializeSystemKey/fulfilled', payload: {} })),
+    validatePrivateKey: vi.fn(() => ({ type: 'auth/validatePrivateKey/fulfilled', payload: {} })),
+    refreshSystemKey: vi.fn(() => ({ type: 'auth/refreshSystemKey/fulfilled', payload: {} }))
+  }
+})
 
 // Mock the components to focus on App logic
 vi.mock('../components/Header', () => ({
@@ -113,8 +143,17 @@ describe('App Component', () => {
     })
   })
 
-  it('renders main layout components', async () => {
-    render(<App />)
+  it('renders main layout components when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
+    
+    expect(screen.getByTestId('header')).toBeInTheDocument()
+    expect(screen.getByTestId('footer')).toBeInTheDocument()
+    expect(screen.getByTestId('status-section')).toBeInTheDocument()
+    expect(screen.getByTestId('log-sidebar')).toBeInTheDocument()
+  })
+
+  it('renders main layout components when unauthenticated', async () => {
+    renderWithRedux(<App />, { initialState: createUnauthenticatedState() })
     
     expect(screen.getByTestId('header')).toBeInTheDocument()
     expect(screen.getByTestId('footer')).toBeInTheDocument()
@@ -123,46 +162,64 @@ describe('App Component', () => {
   })
 
   it('renders all navigation tabs', async () => {
-    render(<App />)
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     expect(screen.getByText('Schemas')).toBeInTheDocument()
     expect(screen.getByText('Query')).toBeInTheDocument()
     expect(screen.getByText('Mutation')).toBeInTheDocument()
     expect(screen.getByText('Transforms')).toBeInTheDocument()
     expect(screen.getByText('Dependencies')).toBeInTheDocument()
+    expect(screen.getByText('Keys')).toBeInTheDocument()
   })
 
-  it('starts with schemas tab active', async () => {
-    render(<App />)
+  it('starts with keys tab active when unauthenticated', async () => {
+    renderWithRedux(<App />, { initialState: createUnauthenticatedState() })
+    
+    // Should default to Keys tab when unauthenticated
+    const keysButton = screen.getByText('Keys')
+    expect(keysButton).toHaveClass('text-primary', 'border-b-2', 'border-primary')
+  })
+
+  it('allows switching to schemas tab when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
+    
+    // Click schemas tab
+    const schemasButton = screen.getByText('Schemas')
+    fireEvent.click(schemasButton)
     
     await waitFor(() => {
       expect(screen.getByTestId('schema-tab')).toBeInTheDocument()
     })
     
-    const schemasButton = screen.getByText('Schemas')
     expect(schemasButton).toHaveClass('text-primary', 'border-b-2', 'border-primary')
   })
 
-  it('fetches schemas on mount', async () => {
-    render(<App />)
+  it('fetches schemas on mount when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith('/api/schemas')
     })
+    
+    // Switch to schemas tab to see results
+    fireEvent.click(screen.getByText('Schemas'))
     
     await waitFor(() => {
       expect(screen.getByText('Schema Tab - 1 schemas')).toBeInTheDocument()
     })
   })
 
-  it('handles schema fetch error gracefully', async () => {
+  it('handles schema fetch error gracefully when authenticated', async () => {
     fetch.mockRejectedValue(new Error('Network error'))
     
-    render(<App />)
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith('/api/schemas')
     })
+    
+    // Switch to schemas tab
+    fireEvent.click(screen.getByText('Schemas'))
     
     // Should still render with empty schemas
     await waitFor(() => {
@@ -170,10 +227,11 @@ describe('App Component', () => {
     })
   })
 
-  it('switches tabs correctly', async () => {
-    render(<App />)
+  it('switches tabs correctly when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
-    // Wait for initial load
+    // Start with schemas tab
+    fireEvent.click(screen.getByText('Schemas'))
     await waitFor(() => {
       expect(screen.getByTestId('schema-tab')).toBeInTheDocument()
     })
@@ -197,19 +255,41 @@ describe('App Component', () => {
     expect(screen.getByTestId('dependencies-tab')).toBeInTheDocument()
   })
 
-  it('updates tab styling when switching', async () => {
-    render(<App />)
+  it('prevents tab switching when unauthenticated (AUTH-003)', async () => {
+    renderWithRedux(<App />, { initialState: createUnauthenticatedState() })
     
-    await waitFor(() => {
-      expect(screen.getByTestId('schema-tab')).toBeInTheDocument()
-    })
+    // Should start on Keys tab
+    expect(screen.getByText('Key Management')).toBeInTheDocument()
+    
+    // Other tabs should be disabled
+    const schemasTab = screen.getByText('Schemas')
+    const queryTab = screen.getByText('Query')
+    
+    expect(schemasTab).toHaveAttribute('disabled')
+    expect(queryTab).toHaveAttribute('disabled')
+    
+    // Clicking disabled tabs should not switch content
+    fireEvent.click(schemasTab)
+    expect(screen.queryByTestId('schema-tab')).not.toBeInTheDocument()
+    expect(screen.getByText('Key Management')).toBeInTheDocument()
+  })
+
+  it('updates tab styling when switching (authenticated)', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     const queryButton = screen.getByText('Query')
     const schemasButton = screen.getByText('Schemas')
+    const keysButton = screen.getByText('Keys')
     
-    // Initially schemas is active
+    // Initially keys is active
+    expect(keysButton).toHaveClass('text-primary')
+    expect(schemasButton).toHaveClass('text-gray-500')
+    
+    // Click schemas tab
+    fireEvent.click(schemasButton)
+    
     expect(schemasButton).toHaveClass('text-primary')
-    expect(queryButton).toHaveClass('text-gray-500')
+    expect(keysButton).toHaveClass('text-gray-500')
     
     // Click query tab
     fireEvent.click(queryButton)
@@ -218,9 +298,11 @@ describe('App Component', () => {
     expect(schemasButton).toHaveClass('text-gray-500')
   })
 
-  it('clears results when switching tabs', async () => {
-    render(<App />)
+  it('clears results when switching tabs (authenticated)', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
+    // Switch to schemas tab
+    fireEvent.click(screen.getByText('Schemas'))
     await waitFor(() => {
       expect(screen.getByTestId('schema-tab')).toBeInTheDocument()
     })
@@ -236,9 +318,11 @@ describe('App Component', () => {
     expect(screen.queryByTestId('results-section')).not.toBeInTheDocument()
   })
 
-  it('displays results when operation completes', async () => {
-    render(<App />)
+  it('displays results when operation completes (authenticated)', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
+    // Switch to schemas tab
+    fireEvent.click(screen.getByText('Schemas'))
     await waitFor(() => {
       expect(screen.getByTestId('schema-tab')).toBeInTheDocument()
     })
@@ -250,9 +334,11 @@ describe('App Component', () => {
     expect(screen.getByText('Results: {"success":true}')).toBeInTheDocument()
   })
 
-  it('refetches schemas when schema is updated', async () => {
-    render(<App />)
+  it('refetches schemas when schema is updated (authenticated)', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
+    // Switch to schemas tab
+    fireEvent.click(screen.getByText('Schemas'))
     await waitFor(() => {
       expect(screen.getByTestId('schema-tab')).toBeInTheDocument()
     })
@@ -278,9 +364,11 @@ describe('App Component', () => {
     })
   })
 
-  it('passes correct props to tab components', async () => {
-    render(<App />)
+  it('passes correct props to tab components when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
+    // Switch to schemas tab
+    fireEvent.click(screen.getByText('Schemas'))
     await waitFor(() => {
       expect(screen.getByText('Schema Tab - 1 schemas')).toBeInTheDocument()
     })
@@ -302,8 +390,8 @@ describe('App Component', () => {
     expect(screen.getByText('Dependencies Tab - 1 schemas')).toBeInTheDocument()
   })
 
-  it('handles results from different tabs', async () => {
-    render(<App />)
+  it('handles results from different tabs when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     // Test query tab result
     fireEvent.click(screen.getByText('Query'))
@@ -333,7 +421,7 @@ describe('App Component', () => {
     expect(screen.getByText('Results: {"transform":"test"}')).toBeInTheDocument()
   })
 
-  it('filters schemas by approved state', async () => {
+  it('filters schemas by approved state when authenticated', async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -343,8 +431,10 @@ describe('App Component', () => {
       })
     })
 
-    render(<App />)
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
 
+    // Switch to schemas tab
+    fireEvent.click(screen.getByText('Schemas'))
     await waitFor(() => {
       expect(screen.getByText('Schema Tab - 1 schemas')).toBeInTheDocument()
     })

@@ -3,14 +3,19 @@
 import React, { useState, useEffect } from 'react';
 import DataStorageForm from '../DataStorageForm';
 import { useKeyLifecycle } from '../../hooks/useKeyLifecycle';
-import { useAuth } from '../../auth/useAuth';
+import { useAppSelector, useAppDispatch } from '../../store/hooks';
+import { validatePrivateKey, clearAuthentication, refreshSystemKey } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
 import * as ed from '@noble/ed25519';
 
 function KeyManagementTab({ onResult, keyGenerationResult }) {
-    // Use global authentication context
-    const activeKeyAuth = useAuth();
+    // Redux state and dispatch
+    const dispatch = useAppDispatch();
+    const authState = useAppSelector(state => state.auth);
+    const { isAuthenticated, systemPublicKey, systemKeyId, isLoading, error: _authError } = authState;
+    
+    
     const [isRegistering, setIsRegistering] = useState(false);
     const [registrationStatus, setRegistrationStatus] = useState(null); // State for feedback
     const [copiedField, setCopiedField] = useState(null);
@@ -26,21 +31,10 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
     const { keyPair, publicKeyBase64, error, isGenerating } = result;
     
     // Enhanced lifecycle management with multiple cleanup functions
-    useKeyLifecycle([clearKeys, () => activeKeyAuth.clearAuthentication()]);
+    useKeyLifecycle([clearKeys, () => dispatch(clearAuthentication())]);
 
     // Auto-authentication when conditions are met
     useEffect(() => {
-        // Always log the current state for debugging
-        console.log('🔍 Auto-auth useEffect triggered with state:', {
-            hasKeyPair: !!keyPair,
-            hasPrivateKey: !!(keyPair && keyPair.privateKey),
-            hasPublicKeyBase64: !!publicKeyBase64,
-            publicKeyBase64: publicKeyBase64,
-            hasSystemPublicKey: !!activeKeyAuth.systemPublicKey,
-            systemPublicKey: activeKeyAuth.systemPublicKey,
-            keysMatch: publicKeyBase64 === activeKeyAuth.systemPublicKey,
-            isAuthenticated: activeKeyAuth.isAuthenticated
-        });
 
         const attemptAutoAuthentication = async () => {
             // Only attempt auto-auth if:
@@ -51,41 +45,31 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
             if (keyPair &&
                 keyPair.privateKey &&
                 publicKeyBase64 &&
-                activeKeyAuth.systemPublicKey &&
-                publicKeyBase64 === activeKeyAuth.systemPublicKey &&
-                !activeKeyAuth.isAuthenticated) {
-                
-                console.log('🚀 Auto-authentication conditions met, attempting authentication...');
+                systemPublicKey &&
+                publicKeyBase64 === systemPublicKey &&
+                !isAuthenticated) {
                 
                 try {
                     // Wait a moment to ensure system state is stable
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     // Refresh system key first
-                    await activeKeyAuth.refreshSystemKey();
+                    await dispatch(refreshSystemKey()).unwrap();
                     
                     // Wait again after refresh
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
                     // Attempt authentication
                     const privateKeyBase64 = bytesToBase64(keyPair.privateKey);
-                    const authResult = await activeKeyAuth.validatePrivateKey(privateKeyBase64);
-                    
-                    console.log('🚀 Auto-authentication result:', {
-                        authResult,
-                        isAuthenticated: activeKeyAuth.isAuthenticated,
-                        systemKey: activeKeyAuth.systemPublicKey,
-                        localKey: publicKeyBase64,
-                        keysMatch: publicKeyBase64 === activeKeyAuth.systemPublicKey
-                    });
-                } catch (error) {
-                    console.error('🚀 Auto-authentication failed:', error);
+                    await dispatch(validatePrivateKey(privateKeyBase64)).unwrap();
+                } catch {
+                    // Auto-authentication failed silently
                 }
             }
         };
 
         attemptAutoAuthentication();
-    }, [keyPair, publicKeyBase64, activeKeyAuth.systemPublicKey, activeKeyAuth.isAuthenticated]);
+    }, [keyPair, publicKeyBase64, systemPublicKey, isAuthenticated, dispatch]);
 
     // System public key is now managed by keyAuth hook
 
@@ -113,8 +97,9 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
 
         setIsValidatingPrivateKey(true);
         try {
-            // Use the activeKeyAuth's validatePrivateKey method
-            const isValid = await activeKeyAuth.validatePrivateKey(privateKeyInput.trim());
+            // Use Redux validatePrivateKey action
+            const result = await dispatch(validatePrivateKey(privateKeyInput.trim())).unwrap();
+            const isValid = result.isAuthenticated;
             
             setPrivateKeyValidation({
                 valid: isValid,
@@ -134,7 +119,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                             privateKey: privateKeyBytes,
                             publicKey: publicKeyBytes
                         },
-                        publicKeyBase64: activeKeyAuth.systemPublicKey,
+                        publicKeyBase64: systemPublicKey,
                         error: null
                     }));
                 }
@@ -159,7 +144,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
     // Cancel private key input and clear authentication
     const handleCancelPrivateKeyInput = () => {
         clearPrivateKeyInput();
-        activeKeyAuth.clearAuthentication();
+        dispatch(clearAuthentication());
     };
 
     const handleRegister = async () => {
@@ -168,7 +153,6 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
         setRegistrationStatus(null); // Clear previous status
         try {
             const success = await registerPublicKey(publicKeyBase64);
-            console.log('🎯 Registration result:', success);
             
             const status = {
                 success,
@@ -179,36 +163,18 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
             
             // Refresh system public key after successful registration
             if (success) {
-                console.log('🎯 Registration successful, refreshing system key...');
-                await activeKeyAuth.refreshSystemKey();
-                console.log('🎯 System key refreshed, systemPublicKey:', activeKeyAuth.systemPublicKey);
+                await dispatch(refreshSystemKey()).unwrap();
                 
                 // If user has a local private key from generation, auto-authenticate
-                console.log('🎯 Checking keyPair:', !!keyPair, 'privateKey:', !!keyPair?.privateKey);
                 if (keyPair && keyPair.privateKey) {
-                    console.log('🎯 Starting auto-authentication...');
                     // Simple delay to ensure React state has updated
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
                     const privateKeyBase64 = bytesToBase64(keyPair.privateKey);
-                    console.log('🎯 About to validate private key...');
-                    const authResult = await activeKeyAuth.validatePrivateKey(privateKeyBase64);
-                    
-                    console.log('🔐 Auto-authentication attempt:', {
-                        generatedKey: bytesToBase64(keyPair.publicKey),
-                        systemKey: activeKeyAuth.systemPublicKey,
-                        keysMatch: bytesToBase64(keyPair.publicKey) === activeKeyAuth.systemPublicKey,
-                        authResult,
-                        isAuthenticated: activeKeyAuth.isAuthenticated
-                    });
-                } else {
-                    console.log('🎯 No keyPair or privateKey available for auto-auth');
+                    await dispatch(validatePrivateKey(privateKeyBase64)).unwrap();
                 }
-            } else {
-                console.log('🎯 Registration failed, skipping auto-auth');
             }
         } catch (e) {
-            console.error('🎯 Registration error:', e);
             const status = { success: false, message: e.message };
             setRegistrationStatus(status);
             onResult(status);
@@ -216,12 +182,6 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
         setIsRegistering(false);
     };
 
-    console.log('🟡 KeyManagementTab render:', {
-        publicKeyBase64: !!publicKeyBase64,
-        isRegistering,
-        keyPair: !!keyPair,
-        handleRegister: typeof handleRegister
-    });
 
     return (
         <div className="p-4 bg-white rounded-lg shadow">
@@ -242,10 +202,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                     Clear Keys
                 </button>
                 <button
-                    onClick={() => {
-                        console.log('🔴 Button clicked!', { publicKeyBase64: !!publicKeyBase64, isRegistering });
-                        handleRegister();
-                    }}
+                    onClick={handleRegister}
                     disabled={!publicKeyBase64 || isRegistering}
                     className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-400"
                 >
@@ -275,19 +232,19 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                     <ShieldCheckIcon className="h-5 w-5 text-blue-400 mr-2 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-blue-700 flex-1">
                         <p className="font-medium">Current System Public Key:</p>
-                        {activeKeyAuth.isLoading ? (
+                        {isLoading ? (
                             <p className="text-blue-600">Loading...</p>
-                        ) : activeKeyAuth.systemPublicKey ? (
+                        ) : systemPublicKey ? (
                             <div className="mt-2">
                                 <div className="flex">
                                     <input
                                         type="text"
-                                        value={activeKeyAuth.systemPublicKey}
+                                        value={systemPublicKey}
                                         readOnly
                                         className="flex-1 px-2 py-1 border border-blue-300 rounded-l-md bg-blue-50 text-xs font-mono"
                                     />
                                     <button
-                                        onClick={() => copyToClipboard(activeKeyAuth.systemPublicKey, 'system')}
+                                        onClick={() => copyToClipboard(systemPublicKey, 'system')}
                                         className="px-2 py-1 border border-l-0 border-blue-300 rounded-r-md bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         {copiedField === 'system' ? (
@@ -297,13 +254,13 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                                         )}
                                     </button>
                                 </div>
-                                {activeKeyAuth.systemKeyId && (
-                                    <p className="text-xs text-blue-600 mt-1">Key ID: {activeKeyAuth.systemKeyId}</p>
+                                {systemKeyId && (
+                                    <p className="text-xs text-blue-600 mt-1">Key ID: {systemKeyId}</p>
                                 )}
-                                {publicKeyBase64 === activeKeyAuth.systemPublicKey && (
+                                {publicKeyBase64 === systemPublicKey && (
                                     <p className="text-xs text-green-600 mt-1">✅ This matches your newly registered key!</p>
                                 )}
-                                {activeKeyAuth.isAuthenticated && (
+                                {isAuthenticated && (
                                     <p className="text-xs text-green-600 mt-1">🔓 Authenticated - Private key loaded!</p>
                                 )}
                             </div>
@@ -314,7 +271,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                 </div>
             </div>
 {/* Private Key Input Section */}
-            {activeKeyAuth.systemPublicKey && !keyPair && (
+{systemPublicKey && !keyPair && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-yellow-400 mr-2 flex-shrink-0 mt-0.5" />

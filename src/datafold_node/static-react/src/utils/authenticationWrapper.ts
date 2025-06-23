@@ -1,5 +1,5 @@
 import { createSignedMessage } from './signing';
-import { getAuthContextInstance } from '../auth/useAuth';
+import { store } from '../store/store';
 
 /**
  * Validates authentication state and returns the authenticated context.
@@ -8,13 +8,13 @@ import { getAuthContextInstance } from '../auth/useAuth';
  * @throws Error if authentication is required but missing
  */
 function requireAuth() {
-  const authContext = getAuthContextInstance();
+  const authState = store.getState().auth;
   
-  if (!authContext?.isAuthenticated || !authContext?.privateKey || !authContext?.publicKeyId) {
+  if (!authState?.isAuthenticated || !authState?.privateKey || !authState?.systemKeyId) {
     throw new Error('Authentication required: This operation requires valid authentication');
   }
   
-  return authContext;
+  return authState;
 }
 
 /**
@@ -42,7 +42,7 @@ export async function signedRequest<T>(requestFunction: () => Promise<T>): Promi
  * @throws Error if authentication is required but missing
  */
 export async function signPayload(payload: any) {
-  const authContext = requireAuth();
+  const authState = requireAuth();
   
-  return await createSignedMessage(payload, authContext.publicKeyId!, authContext.privateKey!);
+  return await createSignedMessage(payload, authState.systemKeyId!, authState.privateKey!);
 }

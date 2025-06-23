@@ -17,9 +17,12 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "@noble/ed25519": "^2.3.0",
+    "@reduxjs/toolkit": "^2.8.2",
+    "@types/react-redux": "^7.1.34",
     "buffer": "^6.0.3",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-redux": "^9.2.0"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.10",

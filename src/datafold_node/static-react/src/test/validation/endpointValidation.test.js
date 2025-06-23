@@ -30,7 +30,7 @@ describe('API Endpoint Validation', () => {
   });
 
   describe('No Hardcoded URLs', () => {
-    const testFiles = [
+    const _testFiles = [
       // Add paths to components that should not have hardcoded API URLs
       'DataStorageForm.jsx',
       'MutationTab.jsx',

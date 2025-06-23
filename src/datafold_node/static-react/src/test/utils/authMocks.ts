@@ -39,41 +39,6 @@ export function createSigningMocks() {
   }
 }
 
-/**
- * Creates authenticated state mock for authentication context
- */
-export function createAuthenticatedStateMock() {
-  return {
-    isAuthenticated: true,
-    systemPublicKey: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
-    systemKeyId: 'SYSTEM_WIDE_PUBLIC_KEY',
-    privateKey: new Uint8Array(32).fill(1),
-    publicKeyId: 'SYSTEM_WIDE_PUBLIC_KEY',
-    isLoading: false,
-    error: null,
-    validatePrivateKey: vi.fn(),
-    clearAuthentication: vi.fn(),
-    refreshSystemKey: vi.fn()
-  }
-}
-
-/**
- * Creates unauthenticated state mock for authentication context
- */
-export function createUnauthenticatedStateMock() {
-  return {
-    isAuthenticated: false,
-    systemPublicKey: null,
-    systemKeyId: null,
-    privateKey: null,
-    publicKeyId: null,
-    isLoading: false,
-    error: null,
-    validatePrivateKey: vi.fn(),
-    clearAuthentication: vi.fn(),
-    refreshSystemKey: vi.fn()
-  }
-}
 
 /**
  * Creates common fetch mock for security API endpoints
@@ -132,8 +97,6 @@ export function setupAuthTestEnvironment() {
   vi.clearAllMocks()
   
   return {
-    fetch: global.fetch,
-    authenticatedState: createAuthenticatedStateMock(),
-    unauthenticatedState: createUnauthenticatedStateMock()
+    fetch: global.fetch
   }
 }

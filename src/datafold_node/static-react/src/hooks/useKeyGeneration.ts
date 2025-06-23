@@ -61,19 +61,11 @@ export function useKeyGeneration(): KeyGenerationState {
         expires_at: null // No expiration by default
       };
 
-      console.log('🔥 Registering public key:', publicKeyBase64);
       const data: ApiResponse = await registerPublicKeyApi(requestBody);
       const success = data.success ?? false;
       
-      if (success) {
-        console.log('🔥 Registration successful, attempting auto-authentication...');
-        // Trigger auto-authentication after successful registration
-        // This will be handled by the consuming component
-      }
-      
       return success;
     } catch (error) {
-      console.error('Failed to register public key:', error);
       return false;
     }
   }, []);

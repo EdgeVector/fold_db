@@ -1,10 +1,40 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import App from '../../App'
+import { renderWithRedux, createAuthenticatedState, createUnauthenticatedState } from '../utils/testHelpers'
 
 // Mock fetch globally
 global.fetch = vi.fn()
+
+// Mock Ed25519 functions for authentication
+vi.mock('@noble/ed25519', () => ({
+  utils: { randomPrivateKey: vi.fn(() => new Uint8Array(32).fill(1)) },
+  getPublicKeyAsync: vi.fn(() => Promise.resolve(new Uint8Array(32).fill(2))),
+  signAsync: vi.fn(() => Promise.resolve(new Uint8Array(64).fill(3)))
+}))
+
+// Mock API calls for authentication
+vi.mock('../../api/securityClient', () => ({
+  getSystemPublicKey: vi.fn(() => Promise.resolve({
+    success: true,
+    key: {
+      public_key: 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+      id: 'SYSTEM_WIDE_PUBLIC_KEY'
+    }
+  }))
+}))
+
+// Mock Redux thunks to prevent state override
+vi.mock('../../store/authSlice', async () => {
+  const actual = await vi.importActual('../../store/authSlice')
+  return {
+    ...actual,
+    initializeSystemKey: vi.fn(() => ({ type: 'auth/initializeSystemKey/fulfilled', payload: {} })),
+    validatePrivateKey: vi.fn(() => ({ type: 'auth/validatePrivateKey/fulfilled', payload: {} })),
+    refreshSystemKey: vi.fn(() => ({ type: 'auth/refreshSystemKey/fulfilled', payload: {} }))
+  }
+})
 
 describe('App Integration Tests', () => {
   let user
@@ -76,8 +106,8 @@ describe('App Integration Tests', () => {
     })
   })
 
-  it('renders main application components', async () => {
-    render(<App />)
+  it('renders main application components when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     // Check for main UI elements
     expect(screen.getByText('DataFold Node')).toBeInTheDocument()
@@ -92,8 +122,33 @@ describe('App Integration Tests', () => {
     expect(screen.getByText('Dependencies')).toBeInTheDocument()
   })
 
-  it('loads and displays schemas', async () => {
-    render(<App />)
+  it('renders main application with locked tabs when unauthenticated', async () => {
+    renderWithRedux(<App />, { initialState: createUnauthenticatedState() })
+    
+    // Check for main UI elements
+    expect(screen.getByText('DataFold Node')).toBeInTheDocument()
+    expect(screen.getByText('Authentication Required')).toBeInTheDocument()
+    
+    // Check that tabs are locked (AUTH-003 behavior)
+    const tabs = ['Schemas', 'Query', 'Mutation', 'Ingestion', 'Transforms', 'Dependencies']
+    tabs.forEach(tabName => {
+      const tab = screen.getByText(tabName)
+      expect(tab).toHaveClass('text-gray-300', 'cursor-not-allowed')
+      expect(tab).toHaveAttribute('disabled')
+    })
+    
+    // Keys tab should be accessible
+    const keysTab = screen.getByText('Keys')
+    expect(keysTab).toHaveClass('text-primary')
+    expect(keysTab).not.toHaveAttribute('disabled')
+  })
+
+  it('loads and displays schemas when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
+    
+    // Switch to schemas tab
+    const schemasTab = screen.getByText('Schemas')
+    await fireEvent.click(schemasTab)
     
     // Wait for schemas to load
     await waitFor(() => {
@@ -105,12 +160,21 @@ describe('App Integration Tests', () => {
     expect(fetch).toHaveBeenCalledWith('/api/schemas')
   })
 
-  it('switches between tabs correctly', async () => {
-    render(<App />)
+  it('switches between tabs correctly when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
-    // Initially on Schemas tab
+    // Initially on Keys tab (default)
+    const keysTab = screen.getByText('Keys')
+    expect(keysTab).toHaveClass('text-primary')
+    
+    // Click Schemas tab
     const schemasTab = screen.getByText('Schemas')
-    expect(schemasTab).toHaveClass('text-primary')
+    await user.click(schemasTab)
+    
+    // Check Schemas tab is active
+    await waitFor(() => {
+      expect(schemasTab).toHaveClass('text-primary')
+    })
     
     // Click Query tab
     const queryTab = screen.getByText('Query')
@@ -133,11 +197,30 @@ describe('App Integration Tests', () => {
     })
   })
 
-  it('handles API errors gracefully', async () => {
+  it('prevents tab switching when unauthenticated (AUTH-003)', async () => {
+    renderWithRedux(<App />, { initialState: createUnauthenticatedState() })
+    
+    // Initially on Keys tab (only accessible tab when unauthenticated)
+    const keysTab = screen.getByText('Keys')
+    expect(keysTab).toHaveClass('text-primary')
+    
+    // Try to click other tabs - they should be disabled
+    const schemasTab = screen.getByText('Schemas')
+    expect(schemasTab).toHaveAttribute('disabled')
+    
+    // Clicking disabled tab should not change active tab
+    await user.click(schemasTab)
+    
+    // Should still be on Keys tab
+    expect(keysTab).toHaveClass('text-primary')
+    expect(schemasTab).not.toHaveClass('text-primary')
+  })
+
+  it('handles API errors gracefully when authenticated', async () => {
     // Mock API error
     fetch.mockRejectedValueOnce(new Error('Network error'))
     
-    render(<App />)
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     // Should still render the UI even with API error
     await waitFor(() => {
@@ -146,8 +229,8 @@ describe('App Integration Tests', () => {
     })
   })
 
-  it('displays transform queue status', async () => {
-    render(<App />)
+  it('displays transform queue status when authenticated', async () => {
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     // Click Transforms tab
     const transformsTab = screen.getByText('Transforms')
@@ -160,12 +243,14 @@ describe('App Integration Tests', () => {
   })
 
   it('shows system status controls', async () => {
-    render(<App />)
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
+    // Check for status controls
+    expect(screen.getByText('Reset Database')).toBeInTheDocument()
   })
 
   it('displays log sidebar', async () => {
-    render(<App />)
+    renderWithRedux(<App />, { initialState: createAuthenticatedState() })
     
     // Check for log sidebar
     expect(screen.getByText('Logs')).toBeInTheDocument()
