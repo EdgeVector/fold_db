@@ -1,21 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
-import { 
-  bytesToBase64, 
-  base64ToBytes, 
-  hexToBytes, 
-  bytesToHex, 
-  sign, 
-  generateKeyPairWithBase64 
+import {
+  bytesToBase64,
+  base64ToBytes,
+  hexToBytes,
+  bytesToHex,
+  sign,
+  generateEd25519KeyPair
 } from '../../utils/ed25519'
+import { createEd25519Mocks } from '../utils/authMocks'
 
 // Mock @noble/ed25519
-vi.mock('@noble/ed25519', () => ({
-  utils: { 
-    randomPrivateKey: vi.fn(() => new Uint8Array(32).fill(1)) 
-  },
-  getPublicKeyAsync: vi.fn(() => Promise.resolve(new Uint8Array(32).fill(2))),
-  signAsync: vi.fn(() => Promise.resolve(new Uint8Array(64).fill(3)))
-}))
+vi.mock('@noble/ed25519', () => createEd25519Mocks())
 
 describe('Ed25519 Utility Functions', () => {
   describe('bytesToBase64', () => {
@@ -106,16 +101,19 @@ describe('Ed25519 Utility Functions', () => {
     })
   })
 
-  describe('generateKeyPairWithBase64', () => {
-    it('generates keypair and returns base64 public key', async () => {
-      const result = await generateKeyPairWithBase64()
+  describe('generateEd25519KeyPair', () => {
+    it('generates keypair with private and public keys', async () => {
+      const keyPair = await generateEd25519KeyPair()
       
-      expect(result).toHaveProperty('keyPair')
-      expect(result).toHaveProperty('publicKeyBase64')
+      expect(keyPair).toHaveProperty('privateKey')
+      expect(keyPair).toHaveProperty('publicKey')
       
-      expect(result.keyPair.privateKey).toEqual(new Uint8Array(32).fill(1))
-      expect(result.keyPair.publicKey).toEqual(new Uint8Array(32).fill(2))
-      expect(result.publicKeyBase64).toBe('AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=')
+      expect(keyPair.privateKey).toEqual(new Uint8Array(32).fill(1))
+      expect(keyPair.publicKey).toEqual(new Uint8Array(32).fill(2))
+      
+      // Test that we can manually convert to base64
+      const publicKeyBase64 = bytesToBase64(keyPair.publicKey)
+      expect(publicKeyBase64).toBe('AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=')
     })
 
     it('throws error when key generation fails', async () => {
@@ -124,7 +122,7 @@ describe('Ed25519 Utility Functions', () => {
         throw new Error('Key generation failed')
       })
 
-      await expect(generateKeyPairWithBase64()).rejects.toThrow('Failed to generate Ed25519 keypair: Key generation failed')
+      await expect(generateEd25519KeyPair()).rejects.toThrow('Failed to generate Ed25519 keypair: Key generation failed')
     })
   })
 

@@ -24,6 +24,8 @@
 | 2025-06-22 12:43:00 | Analysis | Proposed | Active | Confirmed as main implementation task - clear scope | User |
 | 2025-06-22 12:54:00 | Updated | Active | Active | Changed to mandatory authentication - always sign, block if not authenticated | User |
 | 2025-06-22 12:58:00 | Updated | Active | Active | Switched to unified authentication wrapper approach with specific protected operations | User |
+| 2025-06-22 16:17:00 | Started | Active | InProgress | Implementation started - authentication wrapper created and API clients updated | Assistant |
+| 2025-06-22 18:02:00 | Status Change | InProgress | Complete | Implementation finished - signedRequest wrapper functional, all protected operations secured | AI Agent |
 
 ## Current Implementation Analysis
 
@@ -172,15 +174,15 @@ export const getPublicSchemas = async () => {
 
 ## Verification (Unified Authentication Wrapper)
 
-- [ ] `signedRequest()` wrapper function created and functional
-- [ ] Protected operations (queries, mutations, schema approval/blocking) use the wrapper
-- [ ] Unprotected operations (system public key, public schemas) remain unchanged
-- [ ] Wrapper blocks protected operations when not authenticated
-- [ ] Wrapper signs requests when authenticated using [`createSignedMessage()`](../../../src/datafold_node/static-react/src/utils/signing.ts:28)
-- [ ] Unified error message displayed for authentication failures
-- [ ] Clear separation between protected and unprotected operations
-- [ ] [`createSignedMessage()`](../../../src/datafold_node/static-react/src/utils/signing.ts:28) used without modification
-- [ ] Backend receives and verifies signed requests correctly
+- [x] `signedRequest()` wrapper function created and functional
+- [x] Protected operations (queries, mutations, schema approval/blocking) use the wrapper
+- [x] Unprotected operations (system public key, public schemas) remain unchanged
+- [x] Wrapper blocks protected operations when not authenticated
+- [x] Wrapper signs requests when authenticated using [`createSignedMessage()`](../../../src/datafold_node/static-react/src/utils/signing.ts:28)
+- [x] Unified error message displayed for authentication failures
+- [x] Clear separation between protected and unprotected operations
+- [x] [`createSignedMessage()`](../../../src/datafold_node/static-react/src/utils/signing.ts:28) used without modification
+- [x] Backend receives and verifies signed requests correctly
 
 ## Files Modified (Specific)
 

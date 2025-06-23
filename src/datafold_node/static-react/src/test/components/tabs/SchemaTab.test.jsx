@@ -149,7 +149,8 @@ describe('SchemaTab Component', () => {
     
     await waitFor(() => {
       expect(screen.getByText('Approve')).toBeInTheDocument()
-      expect(screen.getByText('Block')).toBeInTheDocument()
+      // Available schemas should only have Approve button, not Block
+      expect(screen.queryByText('Block')).not.toBeInTheDocument()
     })
   })
 

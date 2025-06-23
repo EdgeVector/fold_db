@@ -1,4 +1,6 @@
 import type { ApiResponse } from '../types/api';
+import { signedRequest } from '../utils/authenticationWrapper';
+import { get as httpGet, signedPost as httpSignedPost } from '../utils/httpClient';
 
 const API_BASE_URL = '/api/schemas';
 
@@ -25,82 +27,15 @@ interface SchemasWithStateResponse {
 }
 
 async function get<T>(endpoint: string): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch (e) {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
+  return httpGet<T>(API_BASE_URL, endpoint);
 }
 
-async function post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
 
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch (e) {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
+async function signedPost<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+  return httpSignedPost<T>(API_BASE_URL, endpoint, body);
 }
 
+// UNPROTECTED OPERATIONS - No authentication required
 export async function getSchemasByState(
   state: 'available' | 'approved' | 'blocked'
 ): Promise<ApiResponse<SchemasByStateResponse>> {
@@ -111,18 +46,19 @@ export async function getAllSchemasWithState(): Promise<ApiResponse<SchemasWithS
   return get<SchemasWithStateResponse>('');
 }
 
+export async function getSchemaStatus(): Promise<ApiResponse<any>> {
+  return get('/status');
+}
+
+// PROTECTED OPERATIONS - Require authentication and signing
 export async function getSchema(name: string): Promise<ApiResponse<Schema>> {
-  return get<Schema>(`/${name}`);
+  return await signedRequest(() => get<Schema>(`/${name}`));
 }
 
 export async function approveSchema(name: string): Promise<ApiResponse<any>> {
-  return post(`/${name}/approve`, {});
+  return await signedRequest(() => signedPost(`/${name}/approve`, {}));
 }
 
 export async function blockSchema(name: string): Promise<ApiResponse<any>> {
-  return post(`/${name}/block`, {});
-}
-
-export async function getSchemaStatus(): Promise<ApiResponse<any>> {
-  return get('/status');
+  return await signedRequest(() => signedPost(`/${name}/block`, {}));
 }

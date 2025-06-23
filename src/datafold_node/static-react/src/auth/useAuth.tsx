@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { getSystemPublicKey } from '../api/securityClient';
 import { base64ToBytes } from '../utils/ed25519';
 import * as ed from '@noble/ed25519';
 
-interface KeyAuthenticationState {
+export interface KeyAuthenticationState {
   isAuthenticated: boolean;
   systemPublicKey: string | null;
   systemKeyId: string | null;
+  privateKey: Uint8Array | null;
+  publicKeyId: string | null;
   isLoading: boolean;
   error: string | null;
   validatePrivateKey: (privateKeyBase64: string) => Promise<boolean>;
@@ -14,10 +16,19 @@ interface KeyAuthenticationState {
   refreshSystemKey: () => Promise<void>;
 }
 
-export function useKeyAuthentication(): KeyAuthenticationState {
+// Global instance for non-hook access (needed by AUTH-002)
+let globalAuthInstance: KeyAuthenticationState | null = null;
+
+// Create the context
+const AuthenticationContext = createContext<KeyAuthenticationState | null>(null);
+
+// Main authentication hook that provides all the logic
+function useKeyAuthentication(): KeyAuthenticationState {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [systemPublicKey, setSystemPublicKey] = useState<string | null>(null);
   const [systemKeyId, setSystemKeyId] = useState<string | null>(null);
+  const [privateKey, setPrivateKey] = useState<Uint8Array | null>(null);
+  const [publicKeyId, setPublicKeyId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +61,7 @@ export function useKeyAuthentication(): KeyAuthenticationState {
   };
 
   const validatePrivateKey = useCallback(async (privateKeyBase64: string): Promise<boolean> => {
-    if (!systemPublicKey) {
+    if (!systemPublicKey || !systemKeyId) {
       return false;
     }
 
@@ -64,18 +75,32 @@ export function useKeyAuthentication(): KeyAuthenticationState {
       
       // Check if derived public key matches system public key
       const matches = derivedPublicKeyBase64 === systemPublicKey;
-      setIsAuthenticated(matches);
+      
+      if (matches) {
+        // Store private key and public key ID for signing operations
+        setPrivateKey(privateKeyBytes);
+        setPublicKeyId(systemKeyId);
+        setIsAuthenticated(true);
+      } else {
+        setPrivateKey(null);
+        setPublicKeyId(null);
+        setIsAuthenticated(false);
+      }
       
       return matches;
     } catch (err) {
       console.error('Private key validation failed:', err);
+      setPrivateKey(null);
+      setPublicKeyId(null);
       setIsAuthenticated(false);
       return false;
     }
-  }, [systemPublicKey]);
+  }, [systemPublicKey, systemKeyId]);
 
   const clearAuthentication = useCallback(() => {
     setIsAuthenticated(false);
+    setPrivateKey(null);
+    setPublicKeyId(null);
   }, []);
 
   const refreshSystemKey = useCallback(async () => {
@@ -121,10 +146,44 @@ export function useKeyAuthentication(): KeyAuthenticationState {
     isAuthenticated,
     systemPublicKey,
     systemKeyId,
+    privateKey,
+    publicKeyId,
     isLoading,
     error,
     validatePrivateKey,
     clearAuthentication,
     refreshSystemKey,
   };
+}
+
+interface AuthenticationProviderProps {
+  children: ReactNode;
+}
+
+export function AuthenticationProvider({ children }: AuthenticationProviderProps) {
+  // Use the internal useKeyAuthentication hook
+  const authState = useKeyAuthentication();
+  
+  // Store global instance for non-hook access
+  globalAuthInstance = authState;
+
+  return (
+    <AuthenticationContext.Provider value={authState}>
+      {children}
+    </AuthenticationContext.Provider>
+  );
+}
+
+// Hook for React components - simple wrapper around context
+export function useAuth(): KeyAuthenticationState {
+  const context = useContext(AuthenticationContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthenticationProvider');
+  }
+  return context;
+}
+
+// Non-hook access function for AUTH-002's signedRequest() wrapper
+export function getAuthContextInstance(): KeyAuthenticationState | null {
+  return globalAuthInstance;
 }

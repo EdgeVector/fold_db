@@ -5,85 +5,16 @@ import type {
   KeyRegistrationResponse,
 } from '../types/api';
 import type { KeyRegistrationRequest } from '../types/cryptography';
+import { get as httpGet, post as httpPost } from '../utils/httpClient';
 
 const API_BASE_URL = '/api/security';
 
 async function post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch (e) {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    // The backend sometimes returns success without a data field
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
+  return httpPost<T>(API_BASE_URL, endpoint, body);
 }
 
 async function get<T>(endpoint: string): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch (e) {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
+  return httpGet<T>(API_BASE_URL, endpoint);
 }
 
 export async function verifyMessage(

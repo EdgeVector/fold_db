@@ -3,10 +3,16 @@ import { useEffect } from 'react';
 const LOGOUT_EVENT = 'logout';
 const SESSION_EXPIRED_EVENT = 'session-expired';
 
-export function useKeyLifecycle(clearKeys: () => void) {
+/**
+ * Enhanced key lifecycle hook that supports multiple cleanup functions
+ * for better separation of concerns and comprehensive cleanup coordination.
+ */
+export function useKeyLifecycle(cleanupFunctions: (() => void) | (() => void)[]) {
   useEffect(() => {
     const handleCleanup = () => {
-      clearKeys();
+      // Support both single function and array of functions
+      const functions = Array.isArray(cleanupFunctions) ? cleanupFunctions : [cleanupFunctions];
+      functions.forEach(fn => fn());
     };
 
     window.addEventListener('beforeunload', handleCleanup);
@@ -18,5 +24,5 @@ export function useKeyLifecycle(clearKeys: () => void) {
       window.removeEventListener(LOGOUT_EVENT, handleCleanup);
       window.removeEventListener(SESSION_EXPIRED_EVENT, handleCleanup);
     };
-  }, [clearKeys]);
+  }, [cleanupFunctions]);
 }

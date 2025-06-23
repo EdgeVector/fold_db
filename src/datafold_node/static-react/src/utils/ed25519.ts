@@ -1,8 +1,7 @@
-// Ed25519 cryptographic utilities using @noble/ed25519
+// Ed25519 utility functions - kept minimal for only required functions
 
 import * as ed from '@noble/ed25519';
 import type { KeyPair } from '../types/cryptography';
-import { Buffer } from 'buffer/';
 
 /**
  * Generate a new Ed25519 keypair
@@ -31,7 +30,7 @@ export async function generateEd25519KeyPair(): Promise<KeyPair> {
  * @returns The Base64-encoded string.
  */
 export function bytesToBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64');
+  return btoa(String.fromCharCode(...bytes));
 }
 
 /**
@@ -55,14 +54,34 @@ export function base64ToBytes(base64: string): Uint8Array {
  * @returns The decoded byte array.
  */
 export function hexToBytes(hex: string): Uint8Array {
+  if (hex.length === 0) {
+    return new Uint8Array([]);
+  }
+  
   if (hex.length % 2 !== 0) {
     throw new Error('Hex string must have an even length');
   }
+  
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, 2), 16);
+    const byte = parseInt(hex.substr(i, 2), 16);
+    if (isNaN(byte)) {
+      throw new Error(`Invalid hex character at position ${i}`);
+    }
+    bytes[i / 2] = byte;
   }
   return bytes;
+}
+
+/**
+ * Convert a Uint8Array to a hex string.
+ * @param bytes - The byte array to convert.
+ * @returns The hex-encoded string.
+ */
+export function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /**
@@ -83,9 +102,9 @@ export async function sign(
 }
 
 /**
- * Verify an Ed25519 signature.
- * @param signature - The signature to verify.
- * @param message - The original message.
+ * Verify a signature using an Ed25519 public key.
+ * @param signature - The signature to verify (Uint8Array).
+ * @param message - The original message (Uint8Array).
  * @param publicKey - The public key to use for verification.
  * @returns Promise<boolean> - True if the signature is valid.
  */
@@ -97,35 +116,7 @@ export async function verify(
   try {
     return await ed.verifyAsync(signature, message, publicKey);
   } catch (error) {
-    // verification failures can throw, so we treat them as invalid signature
-    return false;
+    throw new Error(`Failed to verify signature: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
-export const bytesToHex = (bytes) => {
-  return Buffer.from(bytes).toString('hex');
-};
-
-export const signMessage = async (privateKey, message) => {
-  const messageBytes = new TextEncoder().encode(message);
-  const signature = await sign(messageBytes, privateKey);
-  return bytesToBase64(signature);
-};
-
-export const generateKeyPairWithHex = async () => {
-  const { privateKey, publicKey } = await generateEd25519KeyPair();
-  return {
-    keyPair: { privateKey, publicKey },
-    publicKeyHex: bytesToHex(publicKey),
-    privateKeyHex: bytesToHex(privateKey),
-  };
-};
-
-export const generateKeyPairWithBase64 = async () => {
-  const { privateKey, publicKey } = await generateEd25519KeyPair();
-  return {
-    keyPair: { privateKey, publicKey },
-    publicKeyBase64: bytesToBase64(publicKey),
-    privateKeyHex: bytesToHex(privateKey), // Keep private key in hex for local display/storage if needed
-  };
-};

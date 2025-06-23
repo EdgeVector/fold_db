@@ -3,11 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import DataStorageForm from '../DataStorageForm';
 import { useKeyLifecycle } from '../../hooks/useKeyLifecycle';
+import { useAuth } from '../../auth/useAuth';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
 import * as ed from '@noble/ed25519';
 
-function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
+function KeyManagementTab({ onResult, keyGenerationResult }) {
+    // Use global authentication context
+    const activeKeyAuth = useAuth();
     const [isRegistering, setIsRegistering] = useState(false);
     const [registrationStatus, setRegistrationStatus] = useState(null); // State for feedback
     const [copiedField, setCopiedField] = useState(null);
@@ -21,7 +24,9 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
     // Destructure the state and functions from the prop
     const { result, generateKeyPair, clearKeys, registerPublicKey } = keyGenerationResult;
     const { keyPair, publicKeyBase64, error, isGenerating } = result;
-    useKeyLifecycle(clearKeys);
+    
+    // Enhanced lifecycle management with multiple cleanup functions
+    useKeyLifecycle([clearKeys, () => activeKeyAuth.clearAuthentication()]);
 
     // System public key is now managed by keyAuth hook
 
@@ -35,11 +40,10 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
         }
     };
 
-    // Clear authentication when keys are cleared
+    // Manual cleanup that includes UI state (lifecycle hook handles keys & auth)
     const handleClearKeys = () => {
-        clearKeys();
-        keyAuth.clearAuthentication();
-        clearPrivateKeyInput();
+        clearKeys(); // This triggers useKeyLifecycle cleanup for keys & auth
+        clearPrivateKeyInput(); // Clear UI state not handled by lifecycle
     };
 
     const handlePrivateKeySubmit = async () => {
@@ -50,8 +54,8 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
 
         setIsValidatingPrivateKey(true);
         try {
-            // Use the keyAuth hook's validatePrivateKey method
-            const isValid = await keyAuth.validatePrivateKey(privateKeyInput.trim());
+            // Use the activeKeyAuth's validatePrivateKey method
+            const isValid = await activeKeyAuth.validatePrivateKey(privateKeyInput.trim());
             
             setPrivateKeyValidation({
                 valid: isValid,
@@ -71,7 +75,7 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
                             privateKey: privateKeyBytes,
                             publicKey: publicKeyBytes
                         },
-                        publicKeyBase64: keyAuth.systemPublicKey,
+                        publicKeyBase64: activeKeyAuth.systemPublicKey,
                         error: null
                     }));
                 }
@@ -86,11 +90,17 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
         }
     };
 
+    // Clear only private key input UI state (no auth clearing - handled by parent)
     const clearPrivateKeyInput = () => {
         setPrivateKeyInput('');
         setPrivateKeyValidation(null);
         setShowPrivateKeyInput(false);
-        keyAuth.clearAuthentication();
+    };
+
+    // Cancel private key input and clear authentication
+    const handleCancelPrivateKeyInput = () => {
+        clearPrivateKeyInput();
+        activeKeyAuth.clearAuthentication();
     };
 
     const handleRegister = async () => {
@@ -109,7 +119,7 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
             
             // Refresh system public key after successful registration
             if (success) {
-                await keyAuth.refreshSystemKey();
+                await activeKeyAuth.refreshSystemKey();
             }
         } catch (e) {
             const status = { success: false, message: e.message };
@@ -168,19 +178,19 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
                     <ShieldCheckIcon className="h-5 w-5 text-blue-400 mr-2 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-blue-700 flex-1">
                         <p className="font-medium">Current System Public Key:</p>
-                        {keyAuth.isLoading ? (
+                        {activeKeyAuth.isLoading ? (
                             <p className="text-blue-600">Loading...</p>
-                        ) : keyAuth.systemPublicKey ? (
+                        ) : activeKeyAuth.systemPublicKey ? (
                             <div className="mt-2">
                                 <div className="flex">
                                     <input
                                         type="text"
-                                        value={keyAuth.systemPublicKey}
+                                        value={activeKeyAuth.systemPublicKey}
                                         readOnly
                                         className="flex-1 px-2 py-1 border border-blue-300 rounded-l-md bg-blue-50 text-xs font-mono"
                                     />
                                     <button
-                                        onClick={() => copyToClipboard(keyAuth.systemPublicKey, 'system')}
+                                        onClick={() => copyToClipboard(activeKeyAuth.systemPublicKey, 'system')}
                                         className="px-2 py-1 border border-l-0 border-blue-300 rounded-r-md bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         {copiedField === 'system' ? (
@@ -190,13 +200,13 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
                                         )}
                                     </button>
                                 </div>
-                                {keyAuth.systemKeyId && (
-                                    <p className="text-xs text-blue-600 mt-1">Key ID: {keyAuth.systemKeyId}</p>
+                                {activeKeyAuth.systemKeyId && (
+                                    <p className="text-xs text-blue-600 mt-1">Key ID: {activeKeyAuth.systemKeyId}</p>
                                 )}
-                                {publicKeyBase64 === keyAuth.systemPublicKey && (
+                                {publicKeyBase64 === activeKeyAuth.systemPublicKey && (
                                     <p className="text-xs text-green-600 mt-1">✅ This matches your newly registered key!</p>
                                 )}
-                                {keyAuth.isAuthenticated && (
+                                {activeKeyAuth.isAuthenticated && (
                                     <p className="text-xs text-green-600 mt-1">🔓 Authenticated - Private key loaded!</p>
                                 )}
                             </div>
@@ -207,7 +217,7 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
                 </div>
             </div>
 {/* Private Key Input Section */}
-            {keyAuth.systemPublicKey && !keyPair && (
+            {activeKeyAuth.systemPublicKey && !keyPair && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-yellow-400 mr-2 flex-shrink-0 mt-0.5" />
@@ -268,7 +278,7 @@ function KeyManagementTab({ onResult, keyGenerationResult, keyAuth }) {
                                             {isValidatingPrivateKey ? 'Validating...' : 'Validate & Import'}
                                         </button>
                                         <button
-                                            onClick={clearPrivateKeyInput}
+                                            onClick={handleCancelPrivateKeyInput}
                                             className="inline-flex items-center px-3 py-2 border border-gray-300 text-xs font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
                                         >
                                             Cancel

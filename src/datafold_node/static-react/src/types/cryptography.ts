@@ -19,11 +19,6 @@ export interface KeyGenerationState {
   registerPublicKey: (publicKeyBase64: string) => Promise<boolean>;
 }
 
-export interface SecurityApiResponse {
-  success: boolean;
-  message?: string;
-  data?: any;
-}
 
 export interface KeyRegistrationRequest {
   public_key: string;

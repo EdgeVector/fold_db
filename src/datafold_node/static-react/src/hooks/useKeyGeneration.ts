@@ -4,10 +4,10 @@ import { useState, useCallback } from 'react';
 import type {
   KeyGenerationState,
   KeyGenerationResult,
-  SecurityApiResponse,
   KeyRegistrationRequest,
 } from '../types/cryptography';
-import { generateKeyPairWithBase64 } from '../utils/ed25519';
+import type { ApiResponse } from '../types/api';
+import { generateEd25519KeyPair, bytesToBase64 } from '../utils/ed25519';
 import { registerPublicKey as registerPublicKeyApi } from '../api/securityClient';
 
 const INITIAL_RESULT: KeyGenerationResult = {
@@ -24,7 +24,8 @@ export function useKeyGeneration(): KeyGenerationState {
     setResult(prev => ({ ...prev, isGenerating: true, error: null }));
     
     try {
-      const { keyPair, publicKeyBase64 } = await generateKeyPairWithBase64();
+      const keyPair = await generateEd25519KeyPair();
+      const publicKeyBase64 = bytesToBase64(keyPair.publicKey);
 
       setResult({
         keyPair,
@@ -60,7 +61,7 @@ export function useKeyGeneration(): KeyGenerationState {
         expires_at: null // No expiration by default
       };
 
-      const data: SecurityApiResponse = await registerPublicKeyApi(requestBody);
+      const data: ApiResponse = await registerPublicKeyApi(requestBody);
       return data.success ?? false;
     } catch (error) {
       console.error('Failed to register public key:', error);

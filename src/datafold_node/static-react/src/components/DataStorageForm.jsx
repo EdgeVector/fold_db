@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PaperAirplaneIcon, ExclamationTriangleIcon, ShieldCheckIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
-import { useSigning } from '../hooks/useSigning';
+import { signPayload } from '../utils/authenticationWrapper';
 import { getAllSchemasWithState, getSchemasByState, approveSchema } from '../api/schemaClient';
 import { MutationClient } from '../api/mutationClient';
 
@@ -14,7 +14,6 @@ const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
   const [schemas, setSchemas] = useState({});
   const [schemasLoading, setSchemasLoading] = useState(false);
   const [schemasError, setSchemasError] = useState(null);
-  const { signPayload } = useSigning();
 
   // Fetch schemas with their states on component mount
   useEffect(() => {
@@ -78,11 +77,6 @@ const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
     setMutationError(null);
     setIsLoading(true);
 
-    if (!keyPair || !publicKeyBase64) {
-      setMutationError("Keypair not available. Please generate and register a key first.");
-      setIsLoading(false);
-      return;
-    }
 
     const mutationPayload = {
       type: 'mutation',
@@ -95,14 +89,10 @@ const DataStorageForm = ({ keyPair, publicKeyBase64 }) => {
     };
     
     try {
-        const signedMessage = await signPayload(
-          mutationPayload,
-          publicKeyBase64,
-          keyPair.privateKey
-        );
+        const signedMessage = await signPayload(mutationPayload);
 
         if (!signedMessage) {
-            throw new Error('Failed to sign message - please check your key pair');
+            throw new Error('Failed to sign message - please check your authentication');
         }
 
         const response = await MutationClient.executeMutation(signedMessage);

@@ -12,14 +12,14 @@ import IngestionTab from './components/tabs/IngestionTab'
 import KeyManagementTab from './components/tabs/KeyManagementTab'
 import LogSidebar from './components/LogSidebar'
 import { useKeyGeneration } from './hooks/useKeyGeneration'
-import { useKeyAuthentication } from './hooks/useKeyAuthentication'
+import { useAuth, AuthenticationProvider } from './auth/useAuth'
 
-function App() {
+function AppContent() {
   const [activeTab, setActiveTab] = useState('keys') // Default to keys tab
   const [results, setResults] = useState(null)
   const [schemas, setSchemas] = useState([])
   const keyGenerationResult = useKeyGeneration()
-  const keyAuth = useKeyAuthentication()
+  const keyAuth = useAuth()
 
   useEffect(() => {
     fetchSchemas()
@@ -271,6 +271,14 @@ function App() {
       </div>
       <LogSidebar />
     </div>
+  )
+}
+
+function App() {
+  return (
+    <AuthenticationProvider>
+      <AppContent />
+    </AuthenticationProvider>
   )
 }
 

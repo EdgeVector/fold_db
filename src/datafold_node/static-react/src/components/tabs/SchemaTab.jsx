@@ -357,15 +357,26 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
                 </button>
               )}
               {state.toLowerCase() === 'approved' && (
-                <button
-                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    blockSchema(schema.name)
-                  }}
-                >
-                  Block
-                </button>
+                <>
+                  <button
+                    className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      unloadSchema(schema.name)
+                    }}
+                  >
+                    Unload
+                  </button>
+                  <button
+                    className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      blockSchema(schema.name)
+                    }}
+                  >
+                    Block
+                  </button>
+                </>
               )}
               {state.toLowerCase() === 'blocked' && (
                 <button

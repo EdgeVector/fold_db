@@ -10,10 +10,10 @@ This document lists all tasks associated with PBI AUTH-001.
 
 | Task ID | Name | Status | Dependencies | Scope | Description |
 | :------ | :--------------------------------------- | :------- | :----------- | :------- | :--------------------------------- |
-| AUTH-001 | [Create Global Authentication Context](./PBI-AUTH-001-AUTH-001.md) | **Minimal** | **None** | **Reduced** | Simple context wrapper around existing `useKeyAuthentication` for global access |
-| AUTH-002 | [Add Automatic Request Signing](./PBI-AUTH-001-AUTH-002.md) | **Active** | **AUTH-001** | **Core** | Create `signedRequest()` wrapper using global context from AUTH-001 |
+| AUTH-001 | [Create Global Authentication Context](./PBI-AUTH-001-AUTH-001.md) | **Complete** | **None** | **Reduced** | Simple context wrapper around existing `useKeyAuthentication` for global access |
+| AUTH-002 | [Add Automatic Request Signing](./PBI-AUTH-001-AUTH-002.md) | **Complete** | **AUTH-001** | **Core** | Create `signedRequest()` wrapper using global context from AUTH-001 |
 | ~~AUTH-003~~ | ~~[Implement Tab Locking/Unlocking UI](./PBI-AUTH-001-AUTH-003.md)~~ | **Eliminated** | **N/A** | **N/A** | ~~Complete UI already implemented in current codebase~~ |
-| AUTH-004 | [Integration Testing](./PBI-AUTH-001-AUTH-004.md) | **Unchanged** | **AUTH-001 + AUTH-002** | **Standard** | Test integration between global context and API signing |
+| AUTH-004 | [Integration Testing](./PBI-AUTH-001-AUTH-004.md) | **Complete** | **AUTH-001 + AUTH-002** | **Standard** | Test integration between global context and API signing |
 
 ## Implementation Order (Dependency Chain)
 
