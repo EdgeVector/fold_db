@@ -3,6 +3,7 @@ use crate::security::types::PublicKeyInfo;
 use crate::schema::types::SchemaError;
 use crate::db_operations::error_utils::ErrorUtils;
 use crate::constants::SINGLE_PUBLIC_KEY_ID;
+use crate::logging::features::{log_feature, LogFeature};
 
 impl DbOperations {
     /// Store the system-wide public key. This will overwrite any existing key.
@@ -32,7 +33,7 @@ impl DbOperations {
 
     pub fn close(&self) {
         if let Err(e) = self.db().flush() {
-            log::error!("Failed to flush database: {}", e);
+            log_feature!(LogFeature::Database, error, "Failed to flush database: {}", e);
         }
     }
 }

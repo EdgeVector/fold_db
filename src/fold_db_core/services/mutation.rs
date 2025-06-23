@@ -16,6 +16,7 @@ use crate::fold_db_core::infrastructure::message_bus::{
     request_events::FieldValueSetRequest,
 };
 use crate::fold_db_core::infrastructure::factory::InfrastructureLogger;
+use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::types::field::FieldVariant;
 use crate::schema::types::schema::Schema;
 use crate::schema::types::Mutation;
@@ -220,7 +221,7 @@ pub fn validate_range_schema_mutation_format(
     mutation: &Mutation,
 ) -> Result<(), SchemaError> {
     if let Some(range_key) = schema.range_key() {
-        log::info!(
+        log_feature!(LogFeature::Mutation, info,
             "🔍 Validating Range schema mutation format for schema: {} with range_key: {}",
             schema.name,
             range_key

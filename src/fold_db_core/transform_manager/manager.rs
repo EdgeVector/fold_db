@@ -3,6 +3,7 @@ use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{SchemaError, Transform};
 use log::{info, error};
+use crate::logging::features::{log_feature, LogFeature};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -76,13 +77,13 @@ impl TransformManager {
                     registered_transforms.insert(transform_id, transform);
                 }
                 Ok(None) => {
-                    log::warn!(
+                    log_feature!(LogFeature::Transform, warn,
                         "Transform '{}' not found in storage during initialization",
                         transform_id
                     );
                 }
                 Err(e) => {
-                    log::error!(
+                    log_feature!(LogFeature::Transform, error,
                         "Failed to load transform '{}' during initialization: {}",
                         transform_id,
                         e

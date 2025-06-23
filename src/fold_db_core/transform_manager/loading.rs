@@ -3,6 +3,7 @@ use crate::schema::types::{SchemaError, Transform, TransformRegistration};
 use crate::transform::TransformExecutor;
 use crate::fold_db_core::transform_manager::utils::*;
 use log::info;
+use crate::logging::features::{log_feature, LogFeature};
 use std::collections::{HashMap, HashSet};
 
 impl TransformManager {
@@ -46,13 +47,13 @@ impl TransformManager {
                     }
                 }
                 Ok(None) => {
-                    log::warn!(
+                    log_feature!(LogFeature::Transform, warn,
                         "Transform '{}' not found in storage during reload",
                         transform_id
                     );
                 }
                 Err(e) => {
-                    log::error!(
+                    log_feature!(LogFeature::Transform, error,
                         "Failed to load transform '{}' during reload: {}",
                         transform_id,
                         e
