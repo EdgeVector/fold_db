@@ -36,121 +36,14 @@ impl LogFeature {
     }
 }
 
-// Transform-specific logging macros
+/// Generic logging macro for all features
 #[macro_export]
-macro_rules! log_transform_debug {
-    ($($arg:tt)*) => {
-        log::debug!(target: "datafold_node::transform", $($arg)*)
+macro_rules! log_feature {
+    ($feature:expr, $level:ident, $($arg:tt)*) => {
+        log::$level!(target: $feature.target(), $($arg)*);
     };
 }
 
-#[macro_export]
-macro_rules! log_transform_info {
-    ($($arg:tt)*) => {
-        log::info!(target: "datafold_node::transform", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_transform_warn {
-    ($($arg:tt)*) => {
-        log::warn!(target: "datafold_node::transform", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_transform_error {
-    ($($arg:tt)*) => {
-        log::error!(target: "datafold_node::transform", $($arg)*)
-    };
-}
-
-// Network-specific logging macros
-#[macro_export]
-macro_rules! log_network_debug {
-    ($($arg:tt)*) => {
-        log::debug!(target: "datafold_node::network", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_network_info {
-    ($($arg:tt)*) => {
-        log::info!(target: "datafold_node::network", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_network_warn {
-    ($($arg:tt)*) => {
-        log::warn!(target: "datafold_node::network", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_network_error {
-    ($($arg:tt)*) => {
-        log::error!(target: "datafold_node::network", $($arg)*)
-    };
-}
-
-// Schema-specific logging macros
-#[macro_export]
-macro_rules! log_schema_debug {
-    ($($arg:tt)*) => {
-        log::debug!(target: "datafold_node::schema", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_schema_info {
-    ($($arg:tt)*) => {
-        log::info!(target: "datafold_node::schema", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_schema_warn {
-    ($($arg:tt)*) => {
-        log::warn!(target: "datafold_node::schema", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_schema_error {
-    ($($arg:tt)*) => {
-        log::error!(target: "datafold_node::schema", $($arg)*)
-    };
-}
-
-// HTTP Server-specific logging macros
-#[macro_export]
-macro_rules! log_http_debug {
-    ($($arg:tt)*) => {
-        log::debug!(target: "datafold_node::http_server", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_http_info {
-    ($($arg:tt)*) => {
-        log::info!(target: "datafold_node::http_server", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_http_warn {
-    ($($arg:tt)*) => {
-        log::warn!(target: "datafold_node::http_server", $($arg)*)
-    };
-}
-
-#[macro_export]
-macro_rules! log_http_error {
-    ($($arg:tt)*) => {
-        log::error!(target: "datafold_node::http_server", $($arg)*)
-    };
-}
 
 // Performance monitoring helper
 pub struct PerformanceTimer {
