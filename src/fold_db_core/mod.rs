@@ -45,6 +45,7 @@ use crate::schema::core::SchemaState;
 use crate::schema::SchemaCore;
 use crate::schema::{Schema, SchemaError};
 use log::{info, warn};
+use crate::logging::features::{log_feature, LogFeature};
 use serde_json::Value;
 use std::time::Instant;
 use crate::schema::types::{Mutation, Query};
@@ -434,12 +435,12 @@ impl FoldDB {
         let operation_type = format!("{:?}", mutation.mutation_type);
         let schema_name = mutation.schema_name.clone();
         
-        log::info!(
+        log_feature!(LogFeature::Mutation, info,
             "Starting mutation execution for schema: {}",
             mutation.schema_name
         );
-        log::info!("Mutation type: {:?}", mutation.mutation_type);
-        log::info!(
+        log_feature!(LogFeature::Mutation, info, "Mutation type: {:?}", mutation.mutation_type);
+        log_feature!(LogFeature::Mutation, info,
             "Fields to mutate: {:?}",
             mutation.fields_and_values.keys().collect::<Vec<_>>()
         );
@@ -523,7 +524,7 @@ impl FoldDB {
     ) -> Result<(), SchemaError> {
         // Check if this is a range schema
         if let Some(range_key) = schema.range_key() {
-            log::info!("🎯 DEBUG: Processing range schema mutation for schema '{}' with range_key '{}'", schema.name, range_key);
+            log_feature!(LogFeature::Mutation, info, "🎯 DEBUG: Processing range schema mutation for schema '{}' with range_key '{}'", schema.name, range_key);
             
             // Extract the range key value from the mutation data
             let range_key_value = mutation.fields_and_values.get(range_key)
@@ -536,7 +537,7 @@ impl FoldDB {
                 _ => range_key_value.to_string().trim_matches('"').to_string(),
             };
             
-            log::info!("🎯 DEBUG: Range key value: '{}'", range_key_str);
+            log_feature!(LogFeature::Mutation, info, "🎯 DEBUG: Range key value: '{}'", range_key_str);
             
             // Use the specialized range schema mutation method
             return mutation_service.update_range_schema_fields(
@@ -546,7 +547,7 @@ impl FoldDB {
                 mutation_hash,
             );
         } else {
-            log::info!("🔍 DEBUG: Processing regular schema mutation for schema '{}'", schema.name);
+            log_feature!(LogFeature::Mutation, info, "🔍 DEBUG: Processing regular schema mutation for schema '{}'", schema.name);
         }
 
         // For non-range schemas, process fields individually
@@ -582,7 +583,7 @@ impl FoldDB {
     /// Execute a transform by ID using direct execution
     /// This executes the transform immediately and returns the result
     pub fn run_transform(&self, transform_id: &str) -> Result<Value, SchemaError> {
-        log::info!("🔄 run_transform called for {} - using direct execution", transform_id);
+        log_feature!(LogFeature::Transform, info, "🔄 run_transform called for {} - using direct execution", transform_id);
         
         // Use direct execution through the transform manager
         match TransformRunner::execute_transform_now(&*self.transform_manager, transform_id) {

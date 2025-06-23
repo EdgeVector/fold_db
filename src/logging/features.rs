@@ -44,6 +44,8 @@ macro_rules! log_feature {
     };
 }
 
+pub use crate::log_feature;
+
 
 // Performance monitoring helper
 pub struct PerformanceTimer {
