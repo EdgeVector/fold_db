@@ -17,7 +17,7 @@ import { useKeyGeneration } from './hooks/useKeyGeneration'
 import { useAppSelector, useAppDispatch } from './store/hooks'
 import { initializeSystemKey } from './store/authSlice'
 
-function AppContent() {
+export function AppContent() {
   const [activeTab, setActiveTab] = useState('keys') // Default to keys tab
   const [results, setResults] = useState(null)
   const [schemas, setSchemas] = useState([])

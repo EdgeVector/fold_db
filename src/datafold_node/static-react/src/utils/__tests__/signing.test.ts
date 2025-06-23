@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateEd25519KeyPair, base64ToBytes, sign, verify } from '../ed25519';
+import { generateEd25519KeyPair, base64ToBytes, verify } from '../ed25519';
 import { createSignedMessage } from '../signing';
 
 // Mock @noble/ed25519 for consistent test results

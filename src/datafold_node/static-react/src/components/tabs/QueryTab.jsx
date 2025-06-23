@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
   isRangeSchema,
-  formatRangeSchemaQuery,
   getRangeKey
 } from '../../utils/rangeSchemaUtils'
 import { API_ENDPOINTS } from '../../api/endpoints'
@@ -10,7 +9,7 @@ function QueryTab({ schemas, onResult }) {
   const [selectedSchema, setSelectedSchema] = useState('')
   const [queryFields, setQueryFields] = useState([])
   const [rangeFilters, setRangeFilters] = useState({})
-  const [rangeKeyValue, setRangeKeyValue] = useState('')
+  const [, setRangeKeyValue] = useState('')
   const [rangeSchemaFilter, setRangeSchemaFilter] = useState({})
 
   const handleSchemaChange = (e) => {

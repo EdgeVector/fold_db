@@ -229,6 +229,14 @@ DataFold uses JSON configuration files. Default config:
 Environment variables:
 - `OPENROUTER_API_KEY` - API key for AI-powered ingestion
 - `DATAFOLD_CONFIG` - Path to configuration file
+
+## 🔐 Public Key Persistence
+
+DataFold stores registered Ed25519 public keys in the sled database. When the node
+starts it loads all saved keys, and new keys are persisted as soon as they are
+registered. This keeps authentication intact across restarts. See
+[PBI SEC-8 documentation](docs/delivery/SEC-8/prd.md) for implementation details.
+
 - `DATAFOLD_LOG_LEVEL` - Logging level (trace, debug, info, warn, error)
 
 ## 📚 Documentation

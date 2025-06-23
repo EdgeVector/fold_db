@@ -1,7 +1,6 @@
 // Key Management Tab wrapper component
 
-import React, { useState, useEffect } from 'react';
-import DataStorageForm from '../DataStorageForm';
+import { useState, useEffect } from 'react';
 import { useKeyLifecycle } from '../../hooks/useKeyLifecycle';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { validatePrivateKey, clearAuthentication, refreshSystemKey } from '../../store/authSlice';
@@ -428,11 +427,6 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                 </div>
             )}
 
-            {keyPair && publicKeyBase64 && (
-                <div className="border-t border-gray-200 mt-6 pt-6">
-                    <DataStorageForm keyPair={keyPair} publicKeyBase64={publicKeyBase64} />
-                </div>
-            )}
         </div>
     );
 }

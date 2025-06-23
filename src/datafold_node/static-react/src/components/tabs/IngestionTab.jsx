@@ -65,7 +65,7 @@ function IngestionTab({ onResult }) {
         const error = await response.json()
         setConfigSaveStatus({ success: false, message: error.error || 'Failed to save configuration' })
       }
-    } catch (error) {
+    } catch {
       setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
     }
 

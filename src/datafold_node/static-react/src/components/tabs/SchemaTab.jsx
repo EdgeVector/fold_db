@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
-import { isRangeSchema, getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
+import { getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
 import { API_ENDPOINTS } from '../../api/endpoints'
 
-function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
+function SchemaTab({ onResult, onSchemaUpdated }) {
   const [expandedSchemas, setExpandedSchemas] = useState({})
-  const [sampleSchemas, setSampleSchemas] = useState([])
+  const [, setSampleSchemas] = useState([])
   const [selectedSample, setSelectedSample] = useState('')
-  const [loadingSample, setLoadingSample] = useState(false)
-  const [samplesError, setSamplesError] = useState(null)
+  const [, setLoadingSample] = useState(false)
+  const [, setSamplesError] = useState(null)
   const [allSchemas, setAllSchemas] = useState([])
 
   useEffect(() => {
@@ -43,7 +43,7 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
     }
   }
 
-  const loadSchema = async (schemaName) => {
+  const _loadSchema = async (schemaName) => {
     try {
       const resp = await fetch(`/api/schema/${schemaName}/load`, { method: 'POST' })
       const data = await resp.json()
@@ -99,7 +99,7 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
     }
   }
 
-  const removeSchema = async (schemaName) => {
+  const _removeSchema = async (schemaName) => {
     try {
       const resp = await fetch(`/api/schema/${schemaName}`, { method: 'DELETE' })
       if (!resp.ok) {
@@ -113,7 +113,7 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
     }
   }
 
-  const loadSampleSchema = async () => {
+  const _loadSampleSchema = async () => {
     if (!selectedSample) return
     setLoadingSample(true)
     setSamplesError(null)

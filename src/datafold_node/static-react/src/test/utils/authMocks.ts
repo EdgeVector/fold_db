@@ -30,7 +30,7 @@ export function setupEd25519Mock() {
  */
 export function createSigningMocks() {
   return {
-    createSignedMessage: vi.fn(async (payload, publicKeyId, privateKey) => ({
+    createSignedMessage: vi.fn(async (payload, publicKeyId, _privateKey) => ({
       payload: btoa(JSON.stringify(payload)),
       signature: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=',
       public_key_id: publicKeyId,

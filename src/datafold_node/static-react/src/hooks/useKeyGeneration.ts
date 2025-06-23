@@ -65,7 +65,7 @@ export function useKeyGeneration(): KeyGenerationState {
       const success = data.success ?? false;
       
       return success;
-    } catch (error) {
+    } catch {
       return false;
     }
   }, []);

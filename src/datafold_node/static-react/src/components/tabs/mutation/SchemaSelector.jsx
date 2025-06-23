@@ -1,4 +1,3 @@
-import React from 'react'
 
 function SchemaSelector({ schemas, selectedSchema, mutationType, onSchemaChange, onTypeChange }) {
   return (

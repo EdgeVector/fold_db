@@ -671,7 +671,7 @@ function KeyManagementTab() {
       {/* UI automatically reflects isAuthenticated state */}
       {isAuthenticated && (
         <div className="secure-section">
-          <h3>Secure Data Mutation: Create Transform</h3>
+          <h3>Secure Operations</h3>
           {/* Content automatically appears when authenticated */}
         </div>
       )}

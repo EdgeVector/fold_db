@@ -5,8 +5,8 @@ import ResultViewer from './mutation/ResultViewer'
 import { MutationClient } from '../../api/mutationClient'
 import {
   isRangeSchema,
-  formatRangeSchemaMutation,
-  validateRangeKey,
+  formatEnhancedRangeSchemaMutation,
+  validateRangeKeyForMutation,
   getRangeKey,
   getNonRangeKeyFields
 } from '../../utils/rangeSchemaUtils'
@@ -36,7 +36,7 @@ function MutationTab({ schemas, onResult }) {
     let mutation
 
     if (isRangeSchema(selectedSchemaObj)) {
-      const rangeKeyError = validateRangeKey(rangeKeyValue, mutationType !== 'Delete')
+      const rangeKeyError = validateRangeKeyForMutation(rangeKeyValue, mutationType !== 'Delete')
       if (rangeKeyError) {
         const errData = { error: rangeKeyError, details: 'Range key validation failed' }
         setResult(errData)
@@ -44,7 +44,7 @@ function MutationTab({ schemas, onResult }) {
         return
       }
       if (mutationType !== 'Delete' && Object.keys(mutationData).length === 0 && !rangeKeyValue.trim()) return
-      mutation = formatRangeSchemaMutation(selectedSchemaObj, mutationType, rangeKeyValue, mutationData)
+      mutation = formatEnhancedRangeSchemaMutation(selectedSchemaObj, mutationType, rangeKeyValue, mutationData)
     } else {
       if (mutationType !== 'Delete' && Object.keys(mutationData).length === 0) return
       mutation = {

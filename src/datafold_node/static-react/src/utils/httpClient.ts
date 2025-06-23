@@ -22,7 +22,7 @@ export async function get<T>(baseUrl: string, endpoint: string): Promise<ApiResp
           success: false,
           error: errorData.error || `HTTP error! status: ${response.status}`,
         };
-      } catch (e) {
+      } catch {
         return {
           success: false,
           error: `HTTP error! status: ${response.status}`,
@@ -61,7 +61,7 @@ export async function post<T>(baseUrl: string, endpoint: string, body: any): Pro
           success: false,
           error: errorData.error || `HTTP error! status: ${response.status}`,
         };
-      } catch (e) {
+      } catch {
         return {
           success: false,
           error: `HTTP error! status: ${response.status}`,
@@ -109,7 +109,7 @@ export async function signedPost<T>(baseUrl: string, endpoint: string, body: any
           success: false,
           error: errorData.error || `HTTP error! status: ${response.status}`,
         };
-      } catch (e) {
+      } catch {
         return {
           success: false,
           error: `HTTP error! status: ${response.status}`,
@@ -150,7 +150,7 @@ export async function signedMessagePost<T>(endpoint: string, signedMessage: any)
           success: false,
           error: errorData.error || `HTTP error! status: ${response.status}`,
         };
-      } catch (e) {
+      } catch {
         return {
           success: false,
           error: `HTTP error! status: ${response.status}`,

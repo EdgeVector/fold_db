@@ -1,4 +1,3 @@
-import React from 'react'
 
 function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isRangeSchema }) {
   if (mutationType === 'Delete') {

@@ -4,8 +4,6 @@ import {
   getRangeKey,
   getNonRangeKeyFields,
   formatRangeSchemaQuery,
-  formatRangeSchemaMutation,
-  validateRangeKey,
   validateRangeKeyForMutation,
   getRangeSchemaInfo
 } from '../rangeSchemaUtils'
@@ -238,78 +236,6 @@ describe('rangeSchemaUtils', () => {
     })
   })
 
-  describe('formatRangeSchemaMutation', () => {
-    const schema = {
-      name: 'UserScores',
-      schema_type: { Range: { range_key: 'user_id' } }
-    }
-
-    it('should format create mutation with range_key', () => {
-      const fieldData = { game_scores: 100, achievements: ['first_win'] }
-      const result = formatRangeSchemaMutation(schema, 'Create', 'user123', fieldData)
-      
-      expect(result).toEqual({
-        type: 'mutation',
-        schema: 'UserScores',
-        mutation_type: 'create',
-        data: {
-          game_scores: 100,
-          achievements: ['first_win'],
-          range_key: 'user123'
-        }
-      })
-    })
-
-    it('should format delete mutation', () => {
-      const result = formatRangeSchemaMutation(schema, 'Delete', 'user123', {})
-      
-      expect(result).toEqual({
-        type: 'mutation',
-        schema: 'UserScores',
-        mutation_type: 'delete',
-        data: {}
-      })
-    })
-
-    it('should trim whitespace from range_key', () => {
-      const fieldData = { game_scores: 100 }
-      const result = formatRangeSchemaMutation(schema, 'Create', '  user123  ', fieldData)
-      
-      expect(result.data.range_key).toBe('user123')
-    })
-
-    it('should handle empty range_key', () => {
-      const fieldData = { game_scores: 100 }
-      const result = formatRangeSchemaMutation(schema, 'Create', '', fieldData)
-      
-      expect(result.data).toEqual({ game_scores: 100 })
-      expect(result.data).not.toHaveProperty('range_key')
-    })
-  })
-
-  describe('validateRangeKey', () => {
-    it('should return null for valid string', () => {
-      expect(validateRangeKey('user123')).toBe(null)
-    })
-
-    it('should return null for empty string', () => {
-      expect(validateRangeKey('')).toBe(null)
-    })
-
-    it('should return null for null', () => {
-      expect(validateRangeKey(null)).toBe(null)
-    })
-
-    it('should return null for undefined', () => {
-      expect(validateRangeKey(undefined)).toBe(null)
-    })
-
-    it('should return error for non-string types', () => {
-      expect(validateRangeKey(123)).toBe('Range key must be a string')
-      expect(validateRangeKey({})).toBe('Range key must be a string')
-      expect(validateRangeKey([])).toBe('Range key must be a string')
-    })
-  })
 
   describe('validateRangeKeyForMutation', () => {
     it('should return null for valid string when required', () => {

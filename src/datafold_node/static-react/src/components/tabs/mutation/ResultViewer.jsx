@@ -1,4 +1,3 @@
-import React from 'react'
 
 function ResultViewer({ result }) {
   if (!result) return null

@@ -92,42 +92,6 @@ export function formatRangeSchemaQuery(schema, fields, rangeFilterValue) {
   return query
 }
 
-/**
- * Formats a range schema mutation with range_key and single values
- */
-export function formatRangeSchemaMutation(schema, mutationType, rangeKeyValue, fieldData) {
-  const mutation = {
-    type: 'mutation',
-    schema: schema.name,
-    mutation_type: mutationType.toLowerCase()
-  }
-  
-  if (mutationType === 'Delete') {
-    mutation.data = {}
-  } else {
-    const data = { ...fieldData }
-    
-    // Add range_key if provided
-    if (rangeKeyValue && rangeKeyValue.trim()) {
-      data.range_key = rangeKeyValue.trim()
-    }
-    
-    mutation.data = data
-  }
-  
-  return mutation
-}
-
-/**
- * Validates a single range key value for simplified queries
- */
-export function validateRangeKey(rangeKeyValue) {
-  if (rangeKeyValue && typeof rangeKeyValue !== 'string') {
-    return 'Range key must be a string'
-  }
-  
-  return null
-}
 
 /**
  * Validates range_key for range schema mutations

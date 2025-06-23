@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const TransformsTab = ({ schemas, onResult }) => {
+const TransformsTab = ({ schemas, _onResult }) => {
   const [transforms, setTransforms] = useState([])
   const [loading, setLoading] = useState({})
   const [error, setError] = useState({})
@@ -53,7 +53,7 @@ const TransformsTab = ({ schemas, onResult }) => {
     return () => clearInterval(interval)
   }, [schemas])
 
-  const handleAddToQueue = async (schemaName, fieldName, transform) => {
+  const handleAddToQueue = async (schemaName, fieldName, _transform) => {
     const transformId = `${schemaName}.${fieldName}`
     console.log('Adding transform to queue:', transformId)
     setLoading(prev => ({ ...prev, [transformId]: true }))
