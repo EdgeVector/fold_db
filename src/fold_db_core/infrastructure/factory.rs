@@ -10,6 +10,7 @@ use crate::fold_db_core::managers::AtomManager;
 use crate::schema::core::SchemaCore;
 use crate::fold_db_core::services::field_retrieval::service::FieldRetrievalService;
 use crate::schema::SchemaError;
+use crate::logging::features::{log_feature, LogFeature};
 
 /// Consolidated factory for creating common infrastructure components
 pub struct InfrastructureFactory;
@@ -89,37 +90,37 @@ pub struct InfrastructureLogger;
 impl InfrastructureLogger {
     /// Log operation start - replaces 🔧 pattern
     pub fn log_operation_start(component: &str, operation: &str, details: &str) {
-        log::info!("🔧 {}: {} - {}", component, operation, details);
+        log_feature!(LogFeature::Database, info, "🔧 {}: {} - {}", component, operation, details);
     }
 
     /// Log operation success - replaces ✅ pattern  
     pub fn log_operation_success(component: &str, operation: &str, details: &str) {
-        log::info!("✅ {}: {} - {}", component, operation, details);
+        log_feature!(LogFeature::Database, info, "✅ {}: {} - {}", component, operation, details);
     }
 
     /// Log operation failure - replaces ❌ pattern
     pub fn log_operation_error(component: &str, operation: &str, error: &str) {
-        log::error!("❌ {}: {} - {}", component, operation, error);
+        log_feature!(LogFeature::Database, error, "❌ {}: {} - {}", component, operation, error);
     }
 
     /// Log debug information - replaces 🎯 pattern
     pub fn log_debug_info(component: &str, info: &str) {
-        log::info!("🎯 DEBUG {}: {}", component, info);
+        log_feature!(LogFeature::Database, info, "🎯 DEBUG {}: {}", component, info);
     }
 
     /// Log investigation/search - replaces 🔍 pattern
     pub fn log_investigation(component: &str, info: &str) {
-        log::info!("🔍 {}: {}", component, info);
+        log_feature!(LogFeature::Database, info, "🔍 {}: {}", component, info);
     }
 
     /// Log processing/execution - replaces 🔄 pattern
     pub fn log_processing(component: &str, info: &str) {
-        log::info!("🔄 {}: {}", component, info);
+        log_feature!(LogFeature::Database, info, "🔄 {}: {}", component, info);
     }
 
     /// Log warning with standard pattern
     pub fn log_warning(component: &str, warning: &str) {
-        log::warn!("⚠️ {}: {}", component, warning);
+        log_feature!(LogFeature::Database, warn, "⚠️ {}: {}", component, warning);
     }
 }
 

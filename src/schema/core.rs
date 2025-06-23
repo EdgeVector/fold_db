@@ -5,6 +5,7 @@ use crate::schema::types::{
     Field, FieldVariant, JsonSchemaDefinition, JsonSchemaField, Schema, SchemaError, SingleField,
 };
 use log::info;
+use crate::logging::features::{log_feature, LogFeature};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -220,7 +221,7 @@ impl SchemaCore {
         use crate::fold_db_core::infrastructure::message_bus::schema_events::SchemaLoaded;
         let schema_loaded_event = SchemaLoaded::new(name.to_string(), "loaded");
         if let Err(e) = self.message_bus.publish(schema_loaded_event) {
-            log::warn!("Failed to publish SchemaLoaded event: {}", e);
+            log_feature!(LogFeature::Schema, warn, "Failed to publish SchemaLoaded event: {}", e);
         }
     }
 
@@ -290,16 +291,16 @@ impl SchemaCore {
                 match self.get_schema(schema_name) {
                     Ok(Some(updated_schema)) => {
                         if let Err(e) = self.persist_schema(&updated_schema) {
-                            log::warn!("Failed to persist schema '{}' with field assignments: {}", schema_name, e);
+                            log_feature!(LogFeature::Schema, warn, "Failed to persist schema '{}' with field assignments: {}", schema_name, e);
                         } else {
                             info!("✅ Schema '{}' with field assignments persisted to sled database", schema_name);
                         }
                     }
                     Ok(None) => {
-                        log::warn!("Schema '{}' not found after field mapping", schema_name);
+                        log_feature!(LogFeature::Schema, warn, "Schema '{}' not found after field mapping", schema_name);
                     }
                     Err(e) => {
-                        log::warn!("Failed to retrieve schema '{}' for persistence: {}", schema_name, e);
+                        log_feature!(LogFeature::Schema, warn, "Failed to retrieve schema '{}' for persistence: {}", schema_name, e);
                     }
                 }
             }
@@ -316,21 +317,21 @@ impl SchemaCore {
         // skipped due to target schema state validation should now be registered
         info!("🔄 Re-registering transforms that target newly approved schema '{}'", schema_name);
         if let Err(e) = self.reregister_transforms_for_approved_schema(schema_name) {
-            log::warn!("Failed to re-register transforms for approved schema '{}': {}", schema_name, e);
+            log_feature!(LogFeature::Schema, warn, "Failed to re-register transforms for approved schema '{}': {}", schema_name, e);
         }
 
         // Publish SchemaLoaded event for approval
         use crate::fold_db_core::infrastructure::message_bus::schema_events::SchemaLoaded;
         let schema_loaded_event = SchemaLoaded::new(schema_name, "approved");
         if let Err(e) = self.message_bus.publish(schema_loaded_event) {
-            log::warn!("Failed to publish SchemaLoaded event for approval: {}", e);
+            log_feature!(LogFeature::Schema, warn, "Failed to publish SchemaLoaded event for approval: {}", e);
         }
 
         // Publish SchemaChanged event for approval
         use crate::fold_db_core::infrastructure::message_bus::schema_events::SchemaChanged;
         let schema_changed_event = SchemaChanged::new(schema_name);
         if let Err(e) = self.message_bus.publish(schema_changed_event) {
-            log::warn!("Failed to publish SchemaChanged event for approval: {}", e);
+            log_feature!(LogFeature::Schema, warn, "Failed to publish SchemaChanged event for approval: {}", e);
         }
 
         info!("Schema '{}' approved successfully", schema_name);
@@ -376,14 +377,14 @@ impl SchemaCore {
                                 
                                 // Store the transform in the database
                                 if let Err(e) = self.db_ops.store_transform(&transform_id, transform) {
-                                    log::error!("Failed to store transform {}: {}", transform_id, e);
+                                    log_feature!(LogFeature::Schema, error, "Failed to store transform {}: {}", transform_id, e);
                                     continue;
                                 }
                                 
                                 // Create field-to-transform mappings
                                 for input_field in transform.get_inputs() {
                                     if let Err(e) = self.store_field_to_transform_mapping(input_field, &transform_id) {
-                                        log::error!(
+                                        log_feature!(LogFeature::Schema, error,
                                             "Failed to store field mapping '{}' → '{}': {}",
                                             input_field, transform_id, e
                                         );
@@ -396,7 +397,7 @@ impl SchemaCore {
                                 info!("✅ Registered transform '{}' for newly approved target schema '{}'", transform_id, target_schema_name);
                             }
                             Err(e) => {
-                                log::error!("Error checking if transform '{}' exists: {}", transform_id, e);
+                                log_feature!(LogFeature::Schema, error, "Error checking if transform '{}' exists: {}", transform_id, e);
                                 continue;
                             }
                         }
@@ -507,7 +508,7 @@ impl SchemaCore {
         use crate::fold_db_core::infrastructure::message_bus::schema_events::SchemaChanged;
         let schema_changed_event = SchemaChanged::new(schema_name);
         if let Err(e) = self.message_bus.publish(schema_changed_event) {
-            log::warn!("Failed to publish SchemaChanged event for blocking: {}", e);
+            log_feature!(LogFeature::Schema, warn, "Failed to publish SchemaChanged event for blocking: {}", e);
         }
         
         info!("Schema '{}' blocked successfully", schema_name);

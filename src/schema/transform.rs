@@ -1,6 +1,7 @@
 use super::SchemaCore;
 use crate::schema::types::{field::common::Field, Schema, SchemaError};
 use log::info;
+use crate::logging::features::{log_feature, LogFeature};
 
 impl SchemaCore {
     pub(crate) fn fix_transform_outputs(&self, schema: &mut Schema) {
@@ -54,18 +55,18 @@ impl SchemaCore {
                             continue;
                         }
                         Err(e) => {
-                            log::error!("❌ Error checking target schema '{}' state for transform '{}': {}", target_schema_name, transform_id, e);
+                            log_feature!(LogFeature::Schema, error, "❌ Error checking target schema '{}' state for transform '{}': {}", target_schema_name, transform_id, e);
                             continue;
                         }
                     }
                 } else {
-                    log::error!("❌ Invalid transform output format '{}' for transform '{}' - expected 'Schema.field'", transform.get_output(), transform_id);
+                    log_feature!(LogFeature::Schema, error, "❌ Invalid transform output format '{}' for transform '{}' - expected 'Schema.field'", transform.get_output(), transform_id);
                     continue;
                 }
 
                 // Store the transform in the database so it can be loaded by TransformManager
                 if let Err(e) = self.db_ops.store_transform(&transform_id, transform) {
-                    log::error!("Failed to store transform {}: {}", transform_id, e);
+                    log_feature!(LogFeature::Schema, error, "Failed to store transform {}: {}", transform_id, e);
                     continue;
                 }
 
@@ -77,7 +78,7 @@ impl SchemaCore {
 
                     // Store field mapping in database for TransformManager to load
                     if let Err(e) = self.store_field_to_transform_mapping(input_field, &transform_id) {
-                        log::error!(
+                        log_feature!(LogFeature::Schema, error,
                             "Failed to store field mapping '{}' → '{}': {}",
                             input_field, transform_id, e
                         );

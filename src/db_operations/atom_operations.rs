@@ -1,6 +1,7 @@
 use super::core::DbOperations;
 use crate::atom::{Atom, AtomRef, AtomRefRange, AtomStatus};
 use crate::schema::SchemaError;
+use crate::logging::features::{log_feature, LogFeature};
 use serde_json::Value;
 
 impl DbOperations {
@@ -37,42 +38,42 @@ impl DbOperations {
         source_pub_key: String,
     ) -> Result<AtomRef, SchemaError> {
         // DIAGNOSTIC: Log the update attempt
-        log::info!("🔍 DIAGNOSTIC: update_atom_ref called - aref_uuid: {}, atom_uuid: {}", aref_uuid, atom_uuid);
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: update_atom_ref called - aref_uuid: {}, atom_uuid: {}", aref_uuid, atom_uuid);
         
         let mut aref = match self.get_item::<AtomRef>(&format!("ref:{}", aref_uuid))? {
             Some(existing_aref) => {
-                log::info!("🔍 DIAGNOSTIC: Found existing AtomRef - current atom_uuid: {}", existing_aref.get_atom_uuid());
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Found existing AtomRef - current atom_uuid: {}", existing_aref.get_atom_uuid());
                 existing_aref
             }
             None => {
-                log::info!("🔍 DIAGNOSTIC: Creating new AtomRef");
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Creating new AtomRef");
                 AtomRef::new(atom_uuid.clone(), source_pub_key)
             }
         };
 
         // DIAGNOSTIC: Log before update
-        log::info!("🔍 DIAGNOSTIC: Before set_atom_uuid - current: {}, new: {}", aref.get_atom_uuid(), atom_uuid);
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Before set_atom_uuid - current: {}, new: {}", aref.get_atom_uuid(), atom_uuid);
         
         aref.set_atom_uuid(atom_uuid.clone());
         
         // DIAGNOSTIC: Log after update
-        log::info!("🔍 DIAGNOSTIC: After set_atom_uuid - updated to: {}", aref.get_atom_uuid());
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: After set_atom_uuid - updated to: {}", aref.get_atom_uuid());
         
         // DIAGNOSTIC: Log before persistence
-        log::info!("🔍 DIAGNOSTIC: About to persist AtomRef with key: ref:{}", aref_uuid);
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: About to persist AtomRef with key: ref:{}", aref_uuid);
         
         self.store_item(&format!("ref:{}", aref_uuid), &aref)?;
         
         // DIAGNOSTIC: Verify persistence by reading back
         match self.get_item::<AtomRef>(&format!("ref:{}", aref_uuid))? {
             Some(persisted_aref) => {
-                log::info!("🔍 DIAGNOSTIC: Persistence verification - stored atom_uuid: {}", persisted_aref.get_atom_uuid());
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Persistence verification - stored atom_uuid: {}", persisted_aref.get_atom_uuid());
                 if persisted_aref.get_atom_uuid() != &atom_uuid {
-                    log::error!("❌ DIAGNOSTIC: PERSISTENCE MISMATCH! Expected: {}, Got: {}", atom_uuid, persisted_aref.get_atom_uuid());
+                    log_feature!(LogFeature::Database, error, "❌ DIAGNOSTIC: PERSISTENCE MISMATCH! Expected: {}, Got: {}", atom_uuid, persisted_aref.get_atom_uuid());
                 }
             }
             None => {
-                log::error!("❌ DIAGNOSTIC: PERSISTENCE FAILED! Could not read back stored AtomRef");
+                log_feature!(LogFeature::Database, error, "❌ DIAGNOSTIC: PERSISTENCE FAILED! Could not read back stored AtomRef");
             }
         }
         
