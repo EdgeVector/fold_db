@@ -9,6 +9,9 @@ This document lists all tasks associated with PBI SEC-7.
 | Task ID | Name | Status | Description |
 | :------ | :--------------------------------------- | :------- | :--------------------------------- |
 | SEC-7-1 | [Add Performance and Audit Logging](./SEC-7-1.md) | InProgress | Add logging and monitoring to the security layers for auditing and performance analysis |
+| SEC-7-2 | [Add Unit Tests for Logging](./SEC-7-2.md) | Proposed | Create unit tests for audit and performance logging modules |
+| SEC-7-3 | [Add Integration Tests for Logging](./SEC-7-3.md) | Proposed | Verify logging behavior across security modules |
+| SEC-7-4 | [E2E Logging Verification](./SEC-7-4.md) | Proposed | Validate logging in full system workflows |
 
 ## Implementation Notes
 
