@@ -89,7 +89,7 @@ pub struct Schema {
 ```rust
 pub struct SchemaField {
     pub permission_policy: PermissionsPolicy,
-    pub ref_atom_uuid: String,
+    pub molecule_uuid: String,
     pub payment_config: FieldPaymentConfig,
 }
 ```

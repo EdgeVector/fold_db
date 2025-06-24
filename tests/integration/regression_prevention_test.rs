@@ -76,7 +76,7 @@ impl RegressionPreventionTestFixture {
         
         // Create field with static AtomRef that should be overridden by dynamic system
         let mut field_with_static_ref = FieldFactory::create_single_field();
-        field_with_static_ref.set_ref_atom_uuid("STATIC_REF_SHOULD_BE_OVERRIDDEN".to_string());
+        field_with_static_ref.set_molecule_uuid("STATIC_REF_SHOULD_BE_OVERRIDDEN".to_string());
         
         problematic_schema.fields.insert(
             "problematic_field".to_string(),
@@ -265,7 +265,7 @@ fn test_atomref_resolution_bug_prevention() {
     
     // Verify static ref is set initially
     if let Some(FieldVariant::Single(field)) = schema.fields.get("problematic_field") {
-        assert_eq!(field.ref_atom_uuid(), Some(&"STATIC_REF_SHOULD_BE_OVERRIDDEN".to_string()));
+        assert_eq!(field.molecule_uuid(), Some(&"STATIC_REF_SHOULD_BE_OVERRIDDEN".to_string()));
         println!("✅ Static AtomRef initially set: STATIC_REF_SHOULD_BE_OVERRIDDEN");
     }
     

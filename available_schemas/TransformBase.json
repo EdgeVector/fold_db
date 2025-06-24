@@ -16,7 +16,7 @@
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "ref_atom_uuid": null,
+
       "field_mappers": {},
       "transform": null,
       "writable": true
@@ -36,7 +36,7 @@
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "ref_atom_uuid": null,
+
       "field_mappers": {},
       "transform": null,
       "writable": true

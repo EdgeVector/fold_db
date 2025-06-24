@@ -32,17 +32,17 @@ impl Field for FieldVariant {
         }
     }
 
-    fn ref_atom_uuid(&self) -> Option<&String> {
+    fn molecule_uuid(&self) -> Option<&String> {
         match self {
-            Self::Single(f) => f.ref_atom_uuid(),
-            Self::Range(f) => f.ref_atom_uuid(),
+            Self::Single(f) => f.molecule_uuid(),
+            Self::Range(f) => f.molecule_uuid(),
         }
     }
 
-    fn set_ref_atom_uuid(&mut self, uuid: String) {
+    fn set_molecule_uuid(&mut self, uuid: String) {
         match self {
-            Self::Single(f) => f.set_ref_atom_uuid(uuid),
-            Self::Range(f) => f.set_ref_atom_uuid(uuid),
+            Self::Single(f) => f.set_molecule_uuid(uuid),
+            Self::Range(f) => f.set_molecule_uuid(uuid),
         }
     }
 
@@ -138,8 +138,8 @@ impl<'de> Deserialize<'de> for FieldVariant {
                     inner: helper.inner,
                     molecule_range: None,
                 };
-                // If there's a ref_atom_uuid, we need to initialize the atom_ref_range
-                if let Some(_ref_atom_uuid) = range_field.inner.ref_atom_uuid.as_ref() {
+                // If there's a molecule_uuid, we need to initialize the molecule_range
+                if let Some(_molecule_uuid) = range_field.inner.molecule_uuid.as_ref() {
                     // We'll initialize it with an empty pub key for now - it will be populated when data is loaded
                     range_field.molecule_range =
                         Some(crate::atom::MoleculeRange::new(String::new()));

@@ -156,7 +156,7 @@ fn test_field_value_set_statistics() {
     let initial_stats = atom_manager.get_stats();
     let initial_requests = initial_stats.requests_processed;
     let initial_atoms = initial_stats.atoms_created;
-    let initial_refs = initial_stats.atom_refs_created;
+    let initial_refs = initial_stats.molecules_created;
     
     // Subscribe to FieldValueSetResponse events
     let mut response_consumer = message_bus.subscribe::<FieldValueSetResponse>();
@@ -184,10 +184,10 @@ fn test_field_value_set_statistics() {
     
     assert_eq!(final_stats.requests_processed, initial_requests + 1, "Should increment requests processed");
     assert_eq!(final_stats.atoms_created, initial_atoms + 1, "Should increment atoms created");
-    assert_eq!(final_stats.atom_refs_created, initial_refs + 1, "Should increment atom refs created");
+    assert_eq!(final_stats.molecules_created, initial_refs + 1, "Should increment molecules created");
     
     println!("✅ FieldValueSetRequest statistics test passed!");
     println!("   Requests processed: {} -> {}", initial_requests, final_stats.requests_processed);
     println!("   Atoms created: {} -> {}", initial_atoms, final_stats.atoms_created);
-    println!("   AtomRefs created: {} -> {}", initial_refs, final_stats.atom_refs_created);
+    println!("   Molecules created: {} -> {}", initial_refs, final_stats.molecules_created);
 }

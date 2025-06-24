@@ -35,8 +35,8 @@ pub enum FoldDbCoreError {
         actual: String,
     },
 
-    /// Ghost UUID detected - ref_atom_uuid points to non-existent Molecule
-    #[error("Ghost UUID detected: field {field_name} has ref_atom_uuid {uuid} but no corresponding Molecule exists")]
+    /// Ghost UUID detected - molecule_uuid points to non-existent Molecule
+    #[error("Ghost UUID detected: field {field_name} has molecule_uuid {uuid} but no corresponding Molecule exists")]
     GhostUuidDetected { field_name: String, uuid: String },
 
     // ========== Field Operation Errors ==========
@@ -445,12 +445,12 @@ impl FoldDbCoreError {
     }
 
     /// Helper for atom ref creation failures
-    pub fn atom_ref_creation_failed(
+    pub fn molecule_creation_failed(
         field_name: impl Into<String>,
         reason: impl Into<String>,
     ) -> Self {
         Self::invalid_field_operation(
-            "create_atom_ref".to_string(),
+            "create_molecule".to_string(),
             field_name,
             format!("Molecule creation failed: {}", reason.into()),
         )

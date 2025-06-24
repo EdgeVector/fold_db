@@ -44,7 +44,7 @@ fn create_transform_base_schema() -> Schema {
             HashMap::new(),
         );
         // Set a static reference that will be overridden by dynamic AtomRef system
-        value1_field.set_ref_atom_uuid("static_ref_value1_should_be_overridden".to_string());
+        value1_field.set_molecule_uuid("static_ref_value1_should_be_overridden".to_string());
         schema.fields.insert("value1".to_string(), FieldVariant::Single(value1_field));
         
         // Create value2 field (Single field) with static ref (to test the bug fix)
@@ -54,7 +54,7 @@ fn create_transform_base_schema() -> Schema {
             HashMap::new(),
         );
         // Set a static reference that will be overridden by dynamic AtomRef system
-        value2_field.set_ref_atom_uuid("static_ref_value2_should_be_overridden".to_string());
+        value2_field.set_molecule_uuid("static_ref_value2_should_be_overridden".to_string());
         schema.fields.insert("value2".to_string(), FieldVariant::Single(value2_field));
         
         println!("✅ TransformBase schema created with fields: {:?}", schema.fields.keys().collect::<Vec<_>>());
@@ -432,10 +432,10 @@ fn test_diagnostic_atomref_bug_prevention() {
     
     let mut schema = create_transform_base_schema();
     
-    // SIMULATE THE BUG: Set a static ref_atom_uuid in the schema field
+    // SIMULATE THE BUG: Set a static molecule_uuid in the schema field
     if let Some(FieldVariant::Single(single_field)) = schema.fields.get_mut("value1") {
         // Set a static reference that should NOT be used by queries
-        single_field.set_ref_atom_uuid("STATIC_REFERENCE_SHOULD_NOT_BE_USED".to_string());
+        single_field.set_molecule_uuid("STATIC_REFERENCE_SHOULD_NOT_BE_USED".to_string());
         println!("🚨 Set static schema reference: STATIC_REFERENCE_SHOULD_NOT_BE_USED");
     }
     

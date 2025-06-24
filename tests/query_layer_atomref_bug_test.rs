@@ -61,7 +61,7 @@ fn test_query_layer_atomref_bug_reproduction() {
     );
     
     // Set the static atom reference (this will become stale)
-    single_field.set_ref_atom_uuid(initial_static_atom_uuid.to_string());
+    single_field.set_molecule_uuid(initial_static_atom_uuid.to_string());
     
     let field_variant = FieldVariant::Single(single_field);
     test_schema.fields.insert("test_field".to_string(), field_variant);

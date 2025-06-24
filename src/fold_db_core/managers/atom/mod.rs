@@ -26,8 +26,6 @@ pub use crate::fold_db_core::shared::EventDrivenAtomStats;
 pub struct AtomManager {
     pub(crate) db_ops: Arc<DbOperations>,
     pub(crate) atoms: Arc<Mutex<HashMap<String, Atom>>>,
-    pub(crate) ref_atoms: Arc<Mutex<HashMap<String, Molecule>>>,
-    pub(crate) ref_ranges: Arc<Mutex<HashMap<String, MoleculeRange>>>,
     pub(crate) molecules: Arc<Mutex<HashMap<String, Molecule>>>,
     pub(crate) molecule_ranges: Arc<Mutex<HashMap<String, MoleculeRange>>>,
     pub(crate) message_bus: Arc<MessageBus>,
@@ -38,8 +36,6 @@ pub struct AtomManager {
 impl AtomManager {
     pub fn new(db_ops: DbOperations, message_bus: Arc<MessageBus>) -> Self {
         let mut atoms = HashMap::new();
-        let mut ref_atoms = HashMap::new();
-        let mut ref_ranges = HashMap::new();
         let mut molecules = HashMap::new();
         let mut molecule_ranges = HashMap::new();
 
@@ -53,11 +49,7 @@ impl AtomManager {
                     atoms.insert(stripped.to_string(), atom);
                 }
             } else if let Some(stripped) = key_str.strip_prefix("ref:") {
-                if let Ok(atom_ref) = serde_json::from_slice::<Molecule>(bytes) {
-                    ref_atoms.insert(stripped.to_string(), atom_ref);
-                } else if let Ok(range) = serde_json::from_slice::<MoleculeRange>(bytes) {
-                    ref_ranges.insert(stripped.to_string(), range);
-                } else if let Ok(molecule) = serde_json::from_slice::<Molecule>(bytes) {
+                if let Ok(molecule) = serde_json::from_slice::<Molecule>(bytes) {
                     molecules.insert(stripped.to_string(), molecule);
                 } else if let Ok(mol_range) = serde_json::from_slice::<MoleculeRange>(bytes) {
                     molecule_ranges.insert(stripped.to_string(), mol_range);
@@ -68,8 +60,6 @@ impl AtomManager {
         let manager = Self {
             db_ops: Arc::new(db_ops),
             atoms: Arc::new(Mutex::new(atoms)),
-            ref_atoms: Arc::new(Mutex::new(ref_atoms)),
-            ref_ranges: Arc::new(Mutex::new(ref_ranges)),
             molecules: Arc::new(Mutex::new(molecules)),
             molecule_ranges: Arc::new(Mutex::new(molecule_ranges)),
             message_bus: Arc::clone(&message_bus),
@@ -129,8 +119,6 @@ impl Clone for AtomManager {
         Self {
             db_ops: Arc::clone(&self.db_ops),
             atoms: Arc::clone(&self.atoms),
-            ref_atoms: Arc::clone(&self.ref_atoms),
-            ref_ranges: Arc::clone(&self.ref_ranges),
             molecules: Arc::clone(&self.molecules),
             molecule_ranges: Arc::clone(&self.molecule_ranges),
             message_bus: Arc::clone(&self.message_bus),

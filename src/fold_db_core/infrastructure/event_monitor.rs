@@ -21,8 +21,8 @@ pub struct EventStatistics {
     pub field_value_sets: u64,
     pub atom_creations: u64,
     pub atom_updates: u64,
-    pub atom_ref_creations: u64,
-    pub atom_ref_updates: u64,
+    pub molecule_creations: u64,
+    pub molecule_updates: u64,
     pub schema_loads: u64,
     pub schema_changes: u64,
     pub transform_triggers: u64,
@@ -92,13 +92,13 @@ impl EventStatistics {
         self.total_events += 1;
     }
 
-    fn increment_atom_ref_creations(&mut self) {
-        self.atom_ref_creations += 1;
+    fn increment_molecule_creations(&mut self) {
+        self.molecule_creations += 1;
         self.total_events += 1;
     }
 
-    fn increment_atom_ref_updates(&mut self) {
-        self.atom_ref_updates += 1;
+    fn increment_molecule_updates(&mut self) {
+        self.molecule_updates += 1;
         self.total_events += 1;
     }
 
@@ -386,8 +386,8 @@ impl EventMonitor {
         info!("  📝 Field Value Sets: {}", stats.field_value_sets);
         info!("  🆕 Atom Creations: {}", stats.atom_creations);
         info!("  🔄 Atom Updates: {}", stats.atom_updates);
-        info!("  🎯 Molecule Creations: {}", stats.atom_ref_creations);
-        info!("  ⚡ Molecule Updates: {}", stats.atom_ref_updates);
+        info!("  🎯 Molecule Creations: {}", stats.molecule_creations);
+        info!("  ⚡ Molecule Updates: {}", stats.molecule_updates);
         info!("  📋 Schema Loads: {}", stats.schema_loads);
         info!("  🔧 Schema Changes: {}", stats.schema_changes);
         info!("  🚀 Transform Triggers: {}", stats.transform_triggers);
@@ -490,7 +490,7 @@ impl EventMonitor {
                         "🔍 EventMonitor: MoleculeCreated - molecule_uuid: {}, type: {}, field_path: {}",
                         event.molecule_uuid, event.molecule_type, event.field_path
                     );
-                    statistics.lock().unwrap().increment_atom_ref_creations();
+                    statistics.lock().unwrap().increment_molecule_creations();
                 }
                 Err(_) => continue,
             }
@@ -508,7 +508,7 @@ impl EventMonitor {
                         "🔍 EventMonitor: MoleculeUpdated - molecule_uuid: {}, operation: {}, field_path: {}",
                         event.molecule_uuid, event.operation, event.field_path
                     );
-                    statistics.lock().unwrap().increment_atom_ref_updates();
+                    statistics.lock().unwrap().increment_molecule_updates();
                 }
                 Err(_) => continue,
             }
@@ -672,7 +672,7 @@ mod tests {
         assert!(stats.total_events >= 4);
         assert!(stats.field_value_sets >= 1);
         assert!(stats.atom_creations >= 1);
-        assert!(stats.atom_ref_creations >= 1);
+        assert!(stats.molecule_creations >= 1);
         assert!(stats.schema_loads >= 1);
 
         monitor.log_summary();

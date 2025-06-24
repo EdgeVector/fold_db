@@ -139,13 +139,13 @@ impl TransformUtils {
         // Check if this is a range field first
         match field {
             FieldVariant::Range(_) => {
-                info!("🔄 Detected range field, using AtomRefRange resolution");
+                info!("🔄 Detected range field, using MoleculeRange resolution");
                 let range_aref_uuid = format!("{}_{}_range", schema.name, field_name);
-                info!("🔍 Looking for AtomRefRange: {}", range_aref_uuid);
+                info!("🔍 Looking for MoleculeRange: {}", range_aref_uuid);
                 
                 match db_ops.get_item::<crate::atom::MoleculeRange>(&format!("ref:{}", range_aref_uuid)) {
                     Ok(Some(range_aref)) => {
-                        info!("✅ Found AtomRefRange with {} entries", range_aref.atom_uuids.len());
+                        info!("✅ Found MoleculeRange with {} entries", range_aref.atom_uuids.len());
                         
                         // BUG FIX 1: Filter by specific range key if provided
                         let entries_to_process: Vec<_> = if let Some(ref target_key) = range_key {
@@ -185,12 +185,12 @@ impl TransformUtils {
                         return Ok(result);
                     }
                     Ok(None) => {
-                        error!("❌ AtomRefRange '{}' not found", range_aref_uuid);
-                        return Err(SchemaError::InvalidField(format!("AtomRefRange '{}' not found", range_aref_uuid)));
+                        error!("❌ MoleculeRange '{}' not found", range_aref_uuid);
+                        return Err(SchemaError::InvalidField(format!("MoleculeRange '{}' not found", range_aref_uuid)));
                     }
                     Err(e) => {
-                        error!("❌ Error loading AtomRefRange '{}': {}", range_aref_uuid, e);
-                        return Err(SchemaError::InvalidField(format!("Error loading AtomRefRange '{}': {}", range_aref_uuid, e)));
+                        error!("❌ Error loading MoleculeRange '{}': {}", range_aref_uuid, e);
+                        return Err(SchemaError::InvalidField(format!("Error loading MoleculeRange '{}': {}", range_aref_uuid, e)));
                     }
                 }
             }
@@ -200,8 +200,8 @@ impl TransformUtils {
         }
         
         // CRITICAL BUG DIAGNOSIS: This reads STATIC schema reference, not dynamic Molecule!
-        let ref_atom_uuid = Self::extract_ref_atom_uuid(field, field_name)?;
-        error!("🚨 CRITICAL BUG: Reading STATIC schema ref_atom_uuid: {}", ref_atom_uuid);
+        let molecule_uuid = Self::extract_molecule_uuid(field, field_name)?;
+        error!("🚨 CRITICAL BUG: Reading STATIC schema molecule_uuid: {}", molecule_uuid);
         error!("🚨 This should be reading from DYNAMIC Molecule system instead!");
 
         // DIAGNOSTIC: Check what the dynamic Molecule system has
@@ -212,7 +212,7 @@ impl TransformUtils {
             Ok(Some(dynamic_aref)) => {
                 let dynamic_atom_uuid = dynamic_aref.get_atom_uuid();
                 error!("🔍 DIAGNOSTIC: Dynamic Molecule points to atom: {}", dynamic_atom_uuid);
-                error!("🚨 MISMATCH DETECTED: Static schema: {} vs Dynamic Molecule: {}", ref_atom_uuid, dynamic_atom_uuid);
+                error!("🚨 MISMATCH DETECTED: Static schema: {} vs Dynamic Molecule: {}", molecule_uuid, dynamic_atom_uuid);
 
                 // Use the CORRECT dynamic Molecule instead of broken static schema reference
                 info!("🔧 APPLYING FIX: Using dynamic Molecule instead of static schema reference");
@@ -229,10 +229,10 @@ impl TransformUtils {
             }
         }
         
-        info!("� Field ref_atom_uuid: {}", ref_atom_uuid);
+        info!("� Field molecule_uuid: {}", molecule_uuid);
         
-        let atom_ref = Self::load_atom_ref(db_ops, &ref_atom_uuid)?;
-        let atom_uuid = atom_ref.get_atom_uuid();
+        let molecule = Self::load_molecule(db_ops, &molecule_uuid)?;
+        let atom_uuid = molecule.get_atom_uuid();
         info!("🔗 Molecule points to atom: {}", atom_uuid);
         
         let atom = Self::load_atom(db_ops, atom_uuid)?;
@@ -244,32 +244,32 @@ impl TransformUtils {
         Ok(content)
     }
     
-    /// Extract ref_atom_uuid from field variant with consistent error handling
-    fn extract_ref_atom_uuid(field: &FieldVariant, field_name: &str) -> Result<String, SchemaError> {
-        let ref_atom_uuid = field.ref_atom_uuid()
+    /// Extract molecule_uuid from field variant with consistent error handling
+    fn extract_molecule_uuid(field: &FieldVariant, field_name: &str) -> Result<String, SchemaError> {
+        let molecule_uuid = field.molecule_uuid()
             .ok_or_else(|| {
-                error!("❌ Field '{}' has no ref_atom_uuid", field_name);
-                SchemaError::InvalidField(format!("Field '{}' has no ref_atom_uuid", field_name))
+                error!("❌ Field '{}' has no molecule_uuid", field_name);
+                SchemaError::InvalidField(format!("Field '{}' has no molecule_uuid", field_name))
             })?
             .clone();
-        Ok(ref_atom_uuid)
+        Ok(molecule_uuid)
     }
     
     /// Load Molecule from database with consistent error handling
-    fn load_atom_ref(
+    fn load_molecule(
         db_ops: &Arc<crate::db_operations::DbOperations>,
-        ref_atom_uuid: &str,
+        molecule_uuid: &str,
     ) -> Result<crate::atom::Molecule, SchemaError> {
         info!("🔍 Loading Molecule from database...");
         
-        match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", ref_atom_uuid)) {
-            Ok(Some(atom_ref)) => Ok(atom_ref),
+        match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", molecule_uuid)) {
+            Ok(Some(molecule)) => Ok(molecule),
             Ok(None) => {
-                error!("❌ Molecule '{}' not found", ref_atom_uuid);
-                Err(SchemaError::InvalidField(format!("Molecule '{}' not found", ref_atom_uuid)))
+                error!("❌ Molecule '{}' not found", molecule_uuid);
+                Err(SchemaError::InvalidField(format!("Molecule '{}' not found", molecule_uuid)))
             }
             Err(e) => {
-                error!("❌ Failed to load Molecule {}: {}", ref_atom_uuid, e);
+                error!("❌ Failed to load Molecule {}: {}", molecule_uuid, e);
                 Err(SchemaError::InvalidField(format!("Failed to load Molecule: {}", e)))
             }
         }
@@ -309,7 +309,7 @@ impl TransformUtils {
     }
 
     /// Standard logging for atom ref operations
-    pub fn log_atom_ref_operation(ref_uuid: &str, atom_uuid: &str, operation: &str) {
+    pub fn log_molecule_operation(ref_uuid: &str, atom_uuid: &str, operation: &str) {
         info!("🔗 Molecule {} - ref:{} -> atom:{}", operation, ref_uuid, atom_uuid);
     }
 

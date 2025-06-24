@@ -46,8 +46,8 @@ impl EventDrivenBaseStats {
 pub struct EventDrivenAtomStats {
     pub atoms_created: u64,
     pub atoms_updated: u64,
-    pub atom_refs_created: u64,
-    pub atom_refs_updated: u64,
+    pub molecules_created: u64,
+    pub molecules_updated: u64,
     pub requests_processed: u64,
     pub requests_failed: u64,
     pub last_activity: Option<Instant>,

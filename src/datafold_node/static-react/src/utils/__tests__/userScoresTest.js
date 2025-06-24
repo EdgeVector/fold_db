@@ -24,7 +24,7 @@ const realUserScoresSchema = {
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "ref_atom_uuid": null,
+      "molecule_uuid": null,
       "field_type": "Range",
       "field_mappers": {},
       "transform": null,
@@ -46,7 +46,7 @@ const realUserScoresSchema = {
         },
         "min_payment": 2
       },
-      "ref_atom_uuid": null,
+      "molecule_uuid": null,
       "field_type": "Range",
       "field_mappers": {},
       "transform": null,
@@ -68,7 +68,7 @@ const realUserScoresSchema = {
         },
         "min_payment": 5
       },
-      "ref_atom_uuid": null,
+      "molecule_uuid": null,
       "field_type": "Range",
       "field_mappers": {},
       "transform": null,
@@ -90,7 +90,7 @@ const realUserScoresSchema = {
         },
         "min_payment": 10
       },
-      "ref_atom_uuid": null,
+      "molecule_uuid": null,
       "field_type": "Range",
       "field_mappers": {},
       "transform": null,
@@ -112,7 +112,7 @@ const realUserScoresSchema = {
         },
         "min_payment": 25
       },
-      "ref_atom_uuid": null,
+      "molecule_uuid": null,
       "field_type": "Range",
       "field_mappers": {},
       "transform": {

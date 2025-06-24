@@ -62,8 +62,8 @@ impl DbOperations {
         for (field_name, field_variant) in &mut schema_with_refs.fields {
             match field_variant {
                 FieldVariant::Single(ref mut field) => {
-                    if field.ref_atom_uuid().is_none() {
-                        // Create placeholder atom and atomref for this field
+                    if field.molecule_uuid().is_none() {
+                        // Create placeholder atom and molecule for this field
                         let placeholder_content = json!({
                             "field_name": field_name,
                             "schema_name": schema_name,
@@ -83,21 +83,21 @@ impl DbOperations {
                         self.store_item(&format!("atom:{}", atom_uuid), &atom)
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store placeholder atom: {}", e)))?;
                         
-                        // Create atomref pointing to the atom
+                        // Create molecule pointing to the atom
                         let molecule = Molecule::new(atom_uuid, "system".to_string());
                         let ref_uuid = molecule.uuid().to_string();
                         
-                        // Store the atomref
+                        // Store the molecule
                         self.store_item(&format!("ref:{}", ref_uuid), &molecule)
-                            .map_err(|e| SchemaError::InvalidData(format!("Failed to store atomref: {}", e)))?;
-                        
-                        // Link the field to the atomref
-                        field.set_ref_atom_uuid(ref_uuid);
+                            .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
+
+                        // Link the field to the molecule
+                        field.set_molecule_uuid(ref_uuid);
                     }
                 }
                 FieldVariant::Range(ref mut field) => {
-                    if field.ref_atom_uuid().is_none() {
-                        // Create placeholder atom and atomref for range field
+                    if field.molecule_uuid().is_none() {
+                        // Create placeholder atom and molecule for range field
                         let placeholder_content = json!({
                             "field_name": field_name,
                             "schema_name": schema_name,
@@ -117,16 +117,16 @@ impl DbOperations {
                         self.store_item(&format!("atom:{}", atom_uuid), &atom)
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store placeholder atom: {}", e)))?;
                         
-                        // Create atomref pointing to the atom
+                        // Create molecule pointing to the atom
                         let molecule = Molecule::new(atom_uuid, "system".to_string());
                         let ref_uuid = molecule.uuid().to_string();
                         
-                        // Store the atomref
+                        // Store the molecule
                         self.store_item(&format!("ref:{}", ref_uuid), &molecule)
-                            .map_err(|e| SchemaError::InvalidData(format!("Failed to store atomref: {}", e)))?;
-                        
-                        // Link the field to the atomref
-                        field.set_ref_atom_uuid(ref_uuid);
+                            .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
+
+                        // Link the field to the molecule
+                        field.set_molecule_uuid(ref_uuid);
                     }
                 }
             }

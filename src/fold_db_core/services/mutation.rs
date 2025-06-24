@@ -65,7 +65,7 @@ impl MutationService {
         }
     }
 
-    /// Update atoms for a range schema mutation (sharing AtomRefRange)
+    /// Update atoms for a range schema mutation (sharing MoleculeRange)
     pub fn update_range_schema_fields(
         &self,
         schema: &Schema,

@@ -139,7 +139,7 @@ impl SchemaCore {
                             schema.fields.keys().collect::<Vec<_>>()
                         );
 
-                        // 🔄 Log ref_atom_uuid values during schema loading
+                        // 🔄 Log molecule_uuid values during schema loading
                         info!(
                             "🔄 SCHEMA_LOAD - Loading schema '{}' with {} fields",
                             name,
@@ -147,13 +147,13 @@ impl SchemaCore {
                         );
                         for (field_name, field_def) in &schema.fields {
                             use crate::schema::types::Field;
-                            match field_def.ref_atom_uuid() {
+                            match field_def.molecule_uuid() {
                                 Some(uuid) => info!(
-                                    "📋 Field {}.{} has ref_atom_uuid: {}",
+                                    "📋 Field {}.{} has molecule_uuid: {}",
                                     name, field_name, uuid
                                 ),
                                 None => info!(
-                                    "📋 Field {}.{} has ref_atom_uuid: None",
+                                    "📋 Field {}.{} has molecule_uuid: None",
                                     name, field_name
                                 ),
                             }
@@ -195,7 +195,7 @@ impl SchemaCore {
                 // Load the actual schema from sled for non-Approved states too
                 match self.db_ops.get_schema(&name) {
                     Ok(Some(mut schema)) => {
-                        // 🔄 Log ref_atom_uuid values during schema loading (non-Approved)
+                        // 🔄 Log molecule_uuid values during schema loading (non-Approved)
                         info!(
                             "🔄 SCHEMA_LOAD - Loading schema '{}' (state: {:?}) with {} fields",
                             name,
@@ -204,13 +204,13 @@ impl SchemaCore {
                         );
                         for (field_name, field_def) in &schema.fields {
                             use crate::schema::types::Field;
-                            match field_def.ref_atom_uuid() {
+                            match field_def.molecule_uuid() {
                                 Some(uuid) => info!(
-                                    "📋 Field {}.{} has ref_atom_uuid: {}",
+                                    "📋 Field {}.{} has molecule_uuid: {}",
                                     name, field_name, uuid
                                 ),
                                 None => info!(
-                                    "📋 Field {}.{} has ref_atom_uuid: None",
+                                    "📋 Field {}.{} has molecule_uuid: None",
                                     name, field_name
                                 ),
                             }

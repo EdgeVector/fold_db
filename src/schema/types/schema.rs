@@ -203,7 +203,7 @@ mod tests {
     fn create_field(policy: PermissionsPolicy) -> FieldVariant {
         let mut single_field =
             SingleField::new(policy, create_default_payment_config(), HashMap::new());
-        single_field.set_ref_atom_uuid(Uuid::new_v4().to_string());
+        single_field.set_molecule_uuid(Uuid::new_v4().to_string());
         FieldVariant::Single(single_field)
     }
 
@@ -257,7 +257,7 @@ mod tests {
         let mut schema = Schema::new("test_schema".to_string());
         let field_name = "test_field".to_string();
         let mut field = create_field(PermissionsPolicy::default());
-        field.set_ref_atom_uuid("test-uuid".to_string());
+        field.set_molecule_uuid("test-uuid".to_string());
 
         // Add field
         schema.add_field(field_name.clone(), field.clone());
@@ -265,7 +265,7 @@ mod tests {
         // Verify field was added
         assert!(schema.fields.contains_key(&field_name));
         let stored_field = schema.fields.get(&field_name).unwrap();
-        assert_eq!(stored_field.ref_atom_uuid(), Some(&"test-uuid".to_string()));
+        assert_eq!(stored_field.molecule_uuid(), Some(&"test-uuid".to_string()));
         assert!(stored_field.field_mappers().is_empty());
     }
 
@@ -306,7 +306,7 @@ mod tests {
             create_default_payment_config(),
             field_mappers.clone(),
         );
-        single_field.set_ref_atom_uuid(Uuid::new_v4().to_string());
+        single_field.set_molecule_uuid(Uuid::new_v4().to_string());
         let field = FieldVariant::Single(single_field);
 
         schema.add_field(field_name.clone(), field);
@@ -373,7 +373,7 @@ mod tests {
                         \"trust_distance_scaling\": \"None\",
                         \"min_payment\": null
                     },
-                    \"ref_atom_uuid\": null,
+                    \"molecule_uuid\": null,
                     \"field_type\": \"Single\",
                     \"field_mappers\": {},
                     \"transform\": \"transform temp_calc { logic: { return 1; } }\"

@@ -18,10 +18,10 @@ pub trait Field {
     fn payment_config(&self) -> &FieldPaymentConfig;
 
     /// Gets the atom reference uuid for this field, if one exists.
-    fn ref_atom_uuid(&self) -> Option<&String>;
+    fn molecule_uuid(&self) -> Option<&String>;
 
     /// Sets the atom reference uuid for this field.
-    fn set_ref_atom_uuid(&mut self, uuid: String);
+    fn set_molecule_uuid(&mut self, uuid: String);
 
     /// Returns any field mappers configured for this field.
     fn field_mappers(&self) -> &HashMap<String, String>;
@@ -52,7 +52,7 @@ pub enum FieldType {
 pub struct FieldCommon {
     pub permission_policy: PermissionsPolicy,
     pub payment_config: FieldPaymentConfig,
-    pub ref_atom_uuid: Option<String>,
+    pub molecule_uuid: Option<String>,
     pub field_mappers: HashMap<String, String>,
     pub transform: Option<Transform>,
     #[serde(default = "default_writable")]
@@ -72,7 +72,7 @@ impl FieldCommon {
         Self {
             permission_policy,
             payment_config,
-            ref_atom_uuid: None,
+            molecule_uuid: None,
             field_mappers,
             transform: None,
             writable: true,
@@ -92,12 +92,12 @@ macro_rules! impl_field {
                 &self.inner.payment_config
             }
 
-            fn ref_atom_uuid(&self) -> Option<&String> {
-                self.inner.ref_atom_uuid.as_ref()
+            fn molecule_uuid(&self) -> Option<&String> {
+                self.inner.molecule_uuid.as_ref()
             }
 
-            fn set_ref_atom_uuid(&mut self, uuid: String) {
-                self.inner.ref_atom_uuid = Some(uuid);
+            fn set_molecule_uuid(&mut self, uuid: String) {
+                self.inner.molecule_uuid = Some(uuid);
             }
 
             fn field_mappers(&self) -> &std::collections::HashMap<String, String> {

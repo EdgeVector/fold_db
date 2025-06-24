@@ -56,24 +56,24 @@ fn test_single_field_complete_operations() {
     fixture.db_ops.store_item(&format!("atom:{}", atom_uuid), &atom)
         .expect("Failed to store atom");
     
-    // Create and store AtomRef
-    let atom_ref = Molecule::new(atom_uuid.clone(), "test_user".to_string());
-    let ref_uuid = atom_ref.uuid().to_string(); // Get the AtomRef's own UUID
-    fixture.db_ops.store_item(&format!("ref:{}", ref_uuid), &atom_ref)
-        .expect("Failed to store AtomRef");
+    // Create and store Molecule
+    let molecule = Molecule::new(atom_uuid.clone(), "test_user".to_string());
+    let molecule_uuid = molecule.uuid().to_string(); // Get the Molecule's own UUID
+    fixture.db_ops.store_item(&format!("ref:{}", molecule_uuid), &molecule)
+        .expect("Failed to store Molecule");
     
-    // Link field to AtomRef
-    single_field.set_ref_atom_uuid(ref_uuid.clone());
-    assert_eq!(single_field.ref_atom_uuid(), Some(&ref_uuid));
-    println!("✅ Single field linked to AtomRef successfully");
+    // Link field to Molecule
+    single_field.set_molecule_uuid(molecule_uuid.clone());
+    assert_eq!(single_field.molecule_uuid(), Some(&molecule_uuid));
+    println!("✅ Single field linked to Molecule successfully");
     
     // Test 4: Verify data retrieval
-    let stored_ref = fixture.db_ops.get_item::<Molecule>(&format!("ref:{}", ref_uuid))
-        .expect("Failed to retrieve AtomRef")
-        .expect("AtomRef should exist");
+    let stored_molecule = fixture.db_ops.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))
+        .expect("Failed to retrieve Molecule")
+        .expect("Molecule should exist");
     
-    // Verify the AtomRef points to the correct atom
-    assert_eq!(stored_ref.get_atom_uuid(), &atom_uuid);
+    // Verify the Molecule points to the correct atom
+    assert_eq!(stored_molecule.get_atom_uuid(), &atom_uuid);
     
     let stored_atom = fixture.db_ops.get_item::<Atom>(&format!("atom:{}", atom_uuid))
         .expect("Failed to retrieve Atom")
@@ -274,7 +274,7 @@ fn test_json_schema_serialization_and_validation() {
             min_payment: None,
         },
         field_mappers: HashMap::new(),
-        ref_atom_uuid: None,
+        molecule_uuid: None,
         field_type: datafold::schema::types::field::FieldType::Single,
         transform: None,
     };
@@ -327,7 +327,7 @@ fn test_json_schema_serialization_and_validation() {
             min_payment: None,
         },
         field_mappers: HashMap::new(),
-        ref_atom_uuid: None,
+        molecule_uuid: None,
         field_type: datafold::schema::types::field::FieldType::Range,
         transform: None,
     };
@@ -378,11 +378,11 @@ fn test_field_factory_comprehensive_functionality() {
     
     // Test 1: Basic field creation
     let basic_single = FieldFactory::create_single_field();
-    assert!(basic_single.ref_atom_uuid().is_none());
+    assert!(basic_single.molecule_uuid().is_none());
     assert!(basic_single.writable());
     
     let basic_range = FieldFactory::create_range_field();
-    assert!(basic_range.ref_atom_uuid().is_none());
+    assert!(basic_range.molecule_uuid().is_none());
     assert!(basic_range.molecule_range().is_none());
     
     println!("✅ Basic field creation works");
@@ -390,7 +390,7 @@ fn test_field_factory_comprehensive_functionality() {
     // Test 2: Field creation with custom configurations
     let custom_permissions = PermissionsPolicy::default();
     let custom_single = FieldFactory::create_single_field_with_permissions(custom_permissions);
-    assert!(custom_single.ref_atom_uuid().is_none());
+    assert!(custom_single.molecule_uuid().is_none());
     
     let custom_payment = FieldPaymentConfig {
         base_multiplier: 2.0,

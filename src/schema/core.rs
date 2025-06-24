@@ -163,15 +163,15 @@ impl SchemaCore {
     fn log_field_refs(&self, schema: &Schema) {
         for (field_name, field) in &schema.fields {
             let ref_uuid = field
-                .ref_atom_uuid()
+                .molecule_uuid()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "None".to_string());
-            info!("📋 Field {}.{} has ref_atom_uuid: {}", schema.name, field_name, ref_uuid);
+            info!("📋 Field {}.{} has molecule_uuid: {}", schema.name, field_name, ref_uuid);
         }
     }
 
     fn persist_if_needed(&self, schema: &Schema) -> Result<(), SchemaError> {
-        let should_persist = schema.fields.values().all(|f| f.ref_atom_uuid().is_none());
+        let should_persist = schema.fields.values().all(|f| f.molecule_uuid().is_none());
         if should_persist {
             self.persist_schema(schema)?;
             info!(
@@ -281,10 +281,10 @@ impl SchemaCore {
 
         // Ensure fields have proper ARefs assigned (persistence happens in map_fields)
         match self.map_fields(schema_name) {
-            Ok(atom_refs) => {
+            Ok(molecules) => {
                 info!(
                     "Schema '{}' field mapping successful: created {} atom references with proper types",
-                    schema_name, atom_refs.len()
+                    schema_name, molecules.len()
                 );
                 
                 // CRITICAL: Persist the schema with field assignments to sled
@@ -737,36 +737,36 @@ impl SchemaCore {
         self.schema_path(schema_name)
     }
 
-    /// Updates the ref_atom_uuid for a specific field in a schema and persists it to disk.
+    /// Updates the molecule_uuid for a specific field in a schema and persists it to disk.
     ///
-    /// **CRITICAL: This is the ONLY method that should set ref_atom_uuid on field definitions**
+    /// **CRITICAL: This is the ONLY method that should set molecule_uuid on field definitions**
     ///
-    /// This method is the central point for managing ref_atom_uuid values to prevent
-    /// "ghost ref_atom_uuid" issues where UUIDs exist but don't point to actual AtomRefs.
+    /// This method is the central point for managing molecule_uuid values to prevent
+    /// "ghost molecule_uuid" issues where UUIDs exist but don't point to actual Molecules.
     ///
     /// **Proper Usage Pattern:**
-    /// 1. Field manager methods (set_field_value, update_field) create AtomRef and return UUID
+    /// 1. Field manager methods (set_field_value, update_field) create Molecule and return UUID
     /// 2. Mutation logic calls this method with the returned UUID
     /// 3. This method sets the UUID on the actual schema (not a clone)
     /// 4. This method persists the schema to disk immediately
-    /// 5. This ensures ref_atom_uuid is only set when AtomRef actually exists
+    /// 5. This ensures molecule_uuid is only set when Molecule actually exists
     ///
-    /// **Why this prevents "ghost ref_atom_uuid" issues:**
-    /// - Centralizes all ref_atom_uuid setting in one place
+    /// **Why this prevents "ghost molecule_uuid" issues:**
+    /// - Centralizes all molecule_uuid setting in one place
     /// - Always persists changes immediately to disk
-    /// - Only called after AtomRef is confirmed to exist
+    /// - Only called after Molecule is confirmed to exist
     /// - Updates both in-memory and on-disk schema representations
     ///
-    /// **DO NOT** set ref_atom_uuid directly on field definitions elsewhere in the code.
-    pub fn update_field_ref_atom_uuid(
+    /// **DO NOT** set molecule_uuid directly on field definitions elsewhere in the code.
+    pub fn update_field_molecule_uuid(
         &self,
         schema_name: &str,
         field_name: &str,
-        ref_atom_uuid: String,
+        molecule_uuid: String,
     ) -> Result<(), SchemaError> {
         info!(
             "🔧 UPDATE_FIELD_REF_ATOM_UUID START - schema: {}, field: {}, uuid: {}",
-            schema_name, field_name, ref_atom_uuid
+            schema_name, field_name, molecule_uuid
         );
 
         let mut schemas = self
@@ -776,9 +776,9 @@ impl SchemaCore {
 
         if let Some(schema) = schemas.get_mut(schema_name) {
             if let Some(field) = schema.fields.get_mut(field_name) {
-                field.set_ref_atom_uuid(ref_atom_uuid.clone());
+                field.set_molecule_uuid(molecule_uuid.clone());
                 info!(
-                    "Field {}.{} ref_atom_uuid updated in memory",
+                    "Field {}.{} molecule_uuid updated in memory",
                     schema_name, field_name
                 );
 
@@ -786,7 +786,7 @@ impl SchemaCore {
                 info!("Persisting updated schema {} to disk", schema_name);
                 self.persist_schema(schema)?;
                 info!(
-                    "Schema {} persisted successfully with updated ref_atom_uuid",
+                    "Schema {} persisted successfully with updated molecule_uuid",
                     schema_name
                 );
 
@@ -797,9 +797,9 @@ impl SchemaCore {
 
                 if let Some((available_schema, _state)) = available.get_mut(schema_name) {
                     if let Some(available_field) = available_schema.fields.get_mut(field_name) {
-                        available_field.set_ref_atom_uuid(ref_atom_uuid);
+                        available_field.set_molecule_uuid(molecule_uuid);
                         info!(
-                            "Available schema {}.{} ref_atom_uuid updated",
+                            "Available schema {}.{} molecule_uuid updated",
                             schema_name, field_name
                         );
                     }
@@ -918,15 +918,15 @@ impl SchemaCore {
             .lock()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
 
-        // First collect all the source field ref_atom_uuids we need
+        // First collect all the source field molecule_uuids we need
         let mut field_mappings = Vec::new();
         if let Some(schema) = schemas.get(schema_name) {
             for (field_name, field) in &schema.fields {
                 for (source_schema_name, source_field_name) in field.field_mappers() {
                     if let Some(source_schema) = schemas.get(source_schema_name) {
                         if let Some(source_field) = source_schema.fields.get(source_field_name) {
-                            if let Some(ref_atom_uuid) = source_field.ref_atom_uuid() {
-                                field_mappings.push((field_name.clone(), ref_atom_uuid.clone()));
+                            if let Some(molecule_uuid) = source_field.molecule_uuid() {
+                                field_mappings.push((field_name.clone(), molecule_uuid.clone()));
                             }
                         }
                     }
@@ -946,54 +946,54 @@ impl SchemaCore {
             .ok_or_else(|| SchemaError::InvalidData(format!("Schema {schema_name} not found")))?;
 
         // Apply the collected mappings
-        for (field_name, ref_atom_uuid) in field_mappings {
+        for (field_name, molecule_uuid) in field_mappings {
             if let Some(field) = schema.fields.get_mut(&field_name) {
-                field.set_ref_atom_uuid(ref_atom_uuid);
+                field.set_molecule_uuid(molecule_uuid);
             }
         }
 
-        let mut atom_refs = Vec::new();
+        let mut molecules = Vec::new();
 
-        // For unmapped fields, create a new ref_atom_uuid and Molecule
+        // For unmapped fields, create a new molecule_uuid and Molecule
         // Only create new Molecules for fields that truly don't have them (None or empty)
         for field in schema.fields.values_mut() {
-            let needs_new_aref = match field.ref_atom_uuid() {
+            let needs_new_aref = match field.molecule_uuid() {
                 None => true,
                 Some(uuid) => uuid.is_empty(),
             };
 
             if needs_new_aref {
-                let ref_atom_uuid = Uuid::new_v4().to_string();
+                let molecule_uuid = Uuid::new_v4().to_string();
 
                 // Create and store the appropriate atom reference type based on field type
-                let key = format!("ref:{}", ref_atom_uuid);
+                let key = format!("ref:{}", molecule_uuid);
                 
                 match field {
                     FieldVariant::Range(_) => {
-                        // For range fields, create AtomRefRange
-                        let atom_ref_range = MoleculeRange::new(ref_atom_uuid.clone());
-                        if let Err(e) = self.db_ops.store_item(&key, &atom_ref_range) {
-                            info!("Failed to persist AtomRefRange '{}': {}", ref_atom_uuid, e);
+                        // For range fields, create MoleculeRange
+                        let molecule_range = MoleculeRange::new(molecule_uuid.clone());
+                        if let Err(e) = self.db_ops.store_item(&key, &molecule_range) {
+                            info!("Failed to persist MoleculeRange '{}': {}", molecule_uuid, e);
                         } else {
-                            info!("✅ Persisted AtomRefRange: {}", key);
+                            info!("✅ Persisted MoleculeRange: {}", key);
                         }
-                        // Create a corresponding AtomRef for the return list
-                        atom_refs.push(Molecule::new(Uuid::new_v4().to_string(), "system".to_string()));
+                        // Create a corresponding Molecule for the return list
+                        molecules.push(Molecule::new(Uuid::new_v4().to_string(), "system".to_string()));
                     }
                     FieldVariant::Single(_) => {
-                        // For single fields, create AtomRef
-                        let atom_ref = Molecule::new(Uuid::new_v4().to_string(), "system".to_string());
-                        if let Err(e) = self.db_ops.store_item(&key, &atom_ref) {
-                            info!("Failed to persist AtomRef '{}': {}", ref_atom_uuid, e);
+                        // For single fields, create Molecule
+                        let molecule = Molecule::new(Uuid::new_v4().to_string(), "system".to_string());
+                        if let Err(e) = self.db_ops.store_item(&key, &molecule) {
+                            info!("Failed to persist Molecule '{}': {}", molecule_uuid, e);
                         } else {
-                            info!("✅ Persisted AtomRef: {}", key);
+                            info!("✅ Persisted Molecule: {}", key);
                         }
-                        atom_refs.push(atom_ref);
+                        molecules.push(molecule);
                     }
                 };
 
-                // Set the ref_atom_uuid in the field - this will be used as the key to find the AtomRef
-                field.set_ref_atom_uuid(ref_atom_uuid);
+                // Set the molecule_uuid in the field - this will be used as the key to find the Molecule
+                field.set_molecule_uuid(molecule_uuid);
             }
         }
 
@@ -1014,7 +1014,7 @@ impl SchemaCore {
             available.insert(schema_name.to_string(), (updated_schema, state));
         }
 
-        Ok(atom_refs)
+        Ok(molecules)
     }
 
     /// Converts a JSON schema field to a FieldVariant.
@@ -1025,8 +1025,8 @@ impl SchemaCore {
             json_field.field_mappers,
         );
 
-        if let Some(ref_atom_uuid) = json_field.ref_atom_uuid {
-            single_field.set_ref_atom_uuid(ref_atom_uuid);
+        if let Some(molecule_uuid) = json_field.molecule_uuid {
+            single_field.set_molecule_uuid(molecule_uuid);
         }
 
         // Add transform if present

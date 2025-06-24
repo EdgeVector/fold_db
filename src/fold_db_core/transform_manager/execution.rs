@@ -47,7 +47,7 @@ impl TransformManager {
         }
     }
     
-    /// Update a field's ref_atom_uuid to point to a new atom and create proper linking
+    /// Update a field's molecule_uuid to point to a new atom and create proper linking
     /// SCHEMA-003: Only updates field values, NOT schema structure (schemas are immutable)
     fn update_field_reference(
         db_ops: &Arc<crate::db_operations::DbOperations>,
@@ -65,16 +65,16 @@ impl TransformManager {
         let field = schema.fields.get(field_name)
             .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in schema '{}'", field_name, schema_name)))?;
         
-        // 3. Get the field's ref_atom_uuid (should already exist in schema)
-        let ref_uuid = field.ref_atom_uuid()
-            .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}.{}' has no ref_atom_uuid - schema may be malformed", schema_name, field_name)))?;
+        // 3. Get the field's molecule_uuid (should already exist in schema)
+        let ref_uuid = field.molecule_uuid()
+            .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}.{}' has no molecule_uuid - schema may be malformed", schema_name, field_name)))?;
         
         // 4. Create/update Molecule to point to the new atom (this is a field VALUE update, not schema structure)
-        let atom_ref = crate::atom::Molecule::new(atom_uuid.to_string(), "transform_system".to_string());
-        db_ops.store_item(&format!("ref:{}", ref_uuid), &atom_ref)?;
+        let molecule = crate::atom::Molecule::new(atom_uuid.to_string(), "transform_system".to_string());
+        db_ops.store_item(&format!("ref:{}", ref_uuid), &molecule)?;
         
         info!("✅ Updated field value reference for '{}.{}' to point to atom {}", schema_name, field_name, atom_uuid);
-        LoggingHelper::log_atom_ref_operation(ref_uuid, atom_uuid, "creation");
+        LoggingHelper::log_molecule_operation(ref_uuid, atom_uuid, "creation");
         
         // SCHEMA-003: Do NOT modify schema structure - only update field value through Molecule
         // The schema remains immutable, we only updated what the field's reference points to

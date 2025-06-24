@@ -109,8 +109,8 @@ impl RangeArchitectureTestFixture {
             self.db_ops.store_item(&format!("atom:{}", atom_uuid), &atom)?;
             
             // Add to range
-            if let Some(atom_ref_range) = range_field.molecule_range_mut() {
-                atom_ref_range.set_atom_uuid(key, atom_uuid);
+            if let Some(molecule_range) = range_field.molecule_range_mut() {
+                molecule_range.set_atom_uuid(key, atom_uuid);
             }
         }
         

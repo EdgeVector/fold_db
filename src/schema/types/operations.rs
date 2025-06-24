@@ -113,16 +113,16 @@ impl Mutation {
         }
     }
 
-    /// **RANGE SCHEMA MUTATION FIX: AtomRefRange Key Standardization**
+    /// **RANGE SCHEMA MUTATION FIX: MoleculeRange Key Standardization**
     ///
-    /// This method fixes a critical bug in range schema processing where AtomRefRange keys
+    /// This method fixes a critical bug in range schema processing where MoleculeRange keys
     /// were inconsistent - sometimes using field names, sometimes using range_key values.
     ///
     /// ## The Problem That Was Solved
     ///
-    /// Before this fix, range schema mutations created inconsistent AtomRefRange keys:
-    /// - Range key field ("abc") would create AtomRefRange with key = field name
-    /// - Non-range key field ({"test_id": "abc", "value": "123"}) would create AtomRefRange with key = field name
+    /// Before this fix, range schema mutations created inconsistent MoleculeRange keys:
+    /// - Range key field ("abc") would create MoleculeRange with key = field name
+    /// - Non-range key field ({"test_id": "abc", "value": "123"}) would create MoleculeRange with key = field name
     ///
     /// This caused major issues:
     /// - Queries couldn't find data because keys were field names instead of range_key values
@@ -131,7 +131,7 @@ impl Mutation {
     ///
     /// ## The Solution: Standardize All Keys to Range Key Values
     ///
-    /// This method transforms ALL fields so their AtomRefRange keys will ALWAYS be the
+    /// This method transforms ALL fields so their MoleculeRange keys will ALWAYS be the
     /// range_key VALUE ("abc"), never field names. This ensures:
     /// - Consistent key structure across all range fields
     /// - Proper data isolation by range_key value
@@ -143,14 +143,14 @@ impl Mutation {
     /// ```text
     /// Input:  "user_id": "abc"
     /// Output: "user_id": {"abc": "abc"}
-    /// Result: AtomRefRange key = "abc" (the range_key VALUE)
+    /// Result: MoleculeRange key = "abc" (the range_key VALUE)
     /// ```
     ///
     /// **Non-range key field transformation:**
     /// ```text
     /// Input:  "score": {"test_id": "abc", "value": "123"}
     /// Output: "score": {"abc": {"test_id": "abc", "value": "123"}}
-    /// Result: AtomRefRange key = "abc" (the range_key VALUE, not "score")
+    /// Result: MoleculeRange key = "abc" (the range_key VALUE, not "score")
     /// ```
     ///
     /// This transformation happens BEFORE the field_manager processes the mutation,
@@ -162,7 +162,7 @@ impl Mutation {
     /// This method ensures that:
     /// - The mutation contains the required range_key field
     /// - The range_key value is valid (not null or empty)
-    /// - All fields get properly transformed for consistent AtomRefRange key structure
+    /// - All fields get properly transformed for consistent MoleculeRange key structure
     pub fn to_range_schema_mutation(
         &self,
         schema: &crate::schema::types::Schema,
@@ -195,13 +195,13 @@ impl Mutation {
                 }
             }
 
-            // **CORE FIX: Transform all fields to use range_key VALUE as AtomRefRange keys**
+            // **CORE FIX: Transform all fields to use range_key VALUE as MoleculeRange keys**
             //
             // This transformation ensures that ALL range fields will have consistent
-            // AtomRefRange keys that are the range_key VALUE, not field names.
+            // MoleculeRange keys that are the range_key VALUE, not field names.
             let mut new_fields_and_values = self.fields_and_values.clone();
             
-            // Convert the range_key value to a string that will be used as the AtomRefRange key
+            // Convert the range_key value to a string that will be used as the MoleculeRange key
             // This handles all JSON value types (string, number, boolean, etc.)
             let range_key_str = match range_key_value {
                 Value::String(s) => s.clone(),
@@ -213,16 +213,16 @@ impl Mutation {
                     .to_string(),
             };
 
-            // Transform EVERY field to ensure consistent AtomRefRange key structure
+            // Transform EVERY field to ensure consistent MoleculeRange key structure
             for (field_name, value) in new_fields_and_values.iter_mut() {
                 let original_value = value.clone();
                 if field_name == range_key {
                     // **RANGE KEY FIELD TRANSFORMATION**
                     // Input:  "user_id": "abc"
                     // Output: "user_id": {"abc": "abc"}
-                    // Result: field_manager will create AtomRefRange with key="abc" (the VALUE)
+                    // Result: field_manager will create MoleculeRange with key="abc" (the VALUE)
                     //
-                    // This ensures the range_key field itself uses its VALUE as the AtomRefRange key,
+                    // This ensures the range_key field itself uses its VALUE as the MoleculeRange key,
                     // not the field name, which is crucial for consistent data organization.
                     let mut obj = serde_json::Map::new();
                     obj.insert(range_key_str.clone(), original_value);

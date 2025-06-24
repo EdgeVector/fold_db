@@ -26,7 +26,7 @@ DataFold Node is a module that provides a complete interface to FoldDB's functio
 - Execute mutations with atomic guarantees
 - Perform queries with field-level permissions
 - Handle versioning and history tracking
-- Manage AtomRefs and version chains
+- Manage Molecules and version chains
 
 ### Permission Management
 - Configure trust distances

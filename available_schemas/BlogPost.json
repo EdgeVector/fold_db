@@ -11,7 +11,6 @@
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "ref_atom_uuid": null,
       "field_type": "Single",
       "field_mappers": {},
       "transform": null,
@@ -33,7 +32,7 @@
         },
         "min_payment": 10
       },
-      "ref_atom_uuid": null,
+
       "field_type": "Single",
       "field_mappers": {},
       "transform": null,
@@ -49,7 +48,7 @@
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "ref_atom_uuid": null,
+
       "field_type": "Single",
       "field_mappers": {},
       "transform": null,
@@ -65,7 +64,7 @@
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "ref_atom_uuid": null,
+
       "field_type": "Single",
       "field_mappers": {},
       "transform": null,
@@ -81,7 +80,7 @@
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "ref_atom_uuid": null,
+
       "field_type": "Collection",
       "field_mappers": {},
       "transform": null,

@@ -123,7 +123,7 @@ impl FieldFactory {
 
         // Create field with ref linked
         let mut field = Self::create_single_field();
-        field.set_ref_atom_uuid(ref_uuid);
+        field.set_molecule_uuid(ref_uuid);
 
         Ok(field)
     }
@@ -351,7 +351,7 @@ mod tests {
     fn test_field_factory_creates_default_single_field() {
         let field = FieldFactory::create_single_field();
         // Test that field was created with expected defaults
-        assert!(field.ref_atom_uuid().is_none());
+        assert!(field.molecule_uuid().is_none());
     }
 
     #[test]

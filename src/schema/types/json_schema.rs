@@ -27,7 +27,7 @@ pub struct JsonSchemaDefinition {
 pub struct JsonSchemaField {
     pub permission_policy: JsonPermissionPolicy,
     #[serde(default)]
-    pub ref_atom_uuid: Option<String>,
+    pub molecule_uuid: Option<String>,
     pub payment_config: JsonFieldPaymentConfig,
     pub field_mappers: HashMap<String, String>,
     #[serde(default = "default_field_type")]

@@ -207,9 +207,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 {field.transform.name}
               </div>
             )}
-            {field.ref_atom_uuid && (
+            {field.molecule_uuid && (
               <div className="text-xs text-gray-500 break-all">
-                {field.ref_atom_uuid}
+                {field.molecule_uuid}
               </div>
             )}
           </div>

@@ -176,17 +176,17 @@ impl FoldDB {
                 
                 // Now proceed with field mapping for all approved schemas
                 for schema_name in approved_schemas {
-                    if let Ok(atom_refs) = schema_manager.map_fields(&schema_name) {
-                        // Persist each atom ref using event-driven communication
-                        for atom_ref in atom_refs {
-                            let aref_uuid = atom_ref.uuid().to_string();
-                            let atom_uuid = atom_ref.get_atom_uuid().clone();
+                    if let Ok(molecules) = schema_manager.map_fields(&schema_name) {
+                        // Persist each molecule using event-driven communication
+                        for molecule in molecules {
+                            let molecule_uuid = molecule.uuid().to_string();
+                            let atom_uuid = molecule.get_atom_uuid().clone();
 
                             // Send MoleculeUpdateRequest via message bus
                             let correlation_id = Uuid::new_v4().to_string();
                             let update_request = MoleculeUpdateRequest {
                                 correlation_id: correlation_id.clone(),
-                                molecule_uuid: aref_uuid.clone(),
+                                molecule_uuid: molecule_uuid.clone(),
                                 atom_uuid,
                                 source_pub_key: "system".to_string(),
                                 molecule_type: "Single".to_string(), // Default type for schema initialization

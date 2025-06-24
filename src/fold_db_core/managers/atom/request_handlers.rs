@@ -147,22 +147,22 @@ impl AtomManager {
 
         let result: Result<(), Box<dyn std::error::Error>> = match request.molecule_type.as_str() {
             "Single" => {
-                let molecule = self.db_ops.update_atom_ref(
+                let molecule = self.db_ops.update_molecule(
                     &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_atoms.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
+                self.molecules.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
                 Ok(())
             }
             "Range" => {
-                let range = self.db_ops.update_atom_ref_range(
+                let range = self.db_ops.update_molecule_range(
                     &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     "default".to_string(), // Default key
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
+                self.molecule_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
                 Ok(())
             }
             _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into())
@@ -181,7 +181,7 @@ impl AtomManager {
                 }
                 
                 let mut stats = self.stats.lock().unwrap();
-                stats.atom_refs_created += 1;
+                stats.molecules_created += 1;
                 drop(stats);
                 
                 MoleculeCreateResponse::new(request.correlation_id, true, None)
@@ -213,12 +213,12 @@ impl AtomManager {
 
         let result: Result<(), Box<dyn std::error::Error>> = match request.molecule_type.as_str() {
             "Single" => {
-                let molecule = self.db_ops.update_atom_ref(
+                let molecule = self.db_ops.update_molecule(
                     &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_atoms.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
+                self.molecules.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
                 Ok(())
             }
             "Range" => {
@@ -227,13 +227,13 @@ impl AtomManager {
                     .and_then(|d| d.get("key"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
-                let range = self.db_ops.update_atom_ref_range(
+                let range = self.db_ops.update_molecule_range(
                     &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     key.to_string(),
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
+                self.molecule_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
                 Ok(())
             }
             _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into())
@@ -252,7 +252,7 @@ impl AtomManager {
                 }
                 
                 let mut stats = self.stats.lock().unwrap();
-                stats.atom_refs_updated += 1;
+                stats.molecules_updated += 1;
                 drop(stats);
                 
                 MoleculeUpdateResponse::new(request.correlation_id, true, None)
