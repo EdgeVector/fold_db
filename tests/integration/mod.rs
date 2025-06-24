@@ -18,3 +18,4 @@ pub mod regression_prevention_test;
 // Security API integration tests
 pub mod security_api_tests;
 pub mod api_security_integration_test;
+pub mod available_schemas_test;

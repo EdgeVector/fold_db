@@ -141,7 +141,7 @@ The SchemaCore has been enhanced with the following methods:
 - `discover_available_schemas()`: Find schemas in available_schemas directory
 - `load_available_schemas_from_directory()`: Load all schemas into SchemaCore
 - `fetch_available_schemas()`: Get schema names from both directories
-- Enhanced `load_schemas_from_disk()`: Loads from both data/schemas and available_schemas
+- Enhanced `load_schemas_from_disk()`: Loads schemas from the data directory only and leaves available_schemas untouched
 
 ## File Format
 
