@@ -15,7 +15,16 @@ function QueryTab({ schemas, onResult }) {
   const handleSchemaChange = (e) => {
     const schemaName = e.target.value
     setSelectedSchema(schemaName)
-    setQueryFields([])
+    
+    // Default to all fields being checked when a schema is selected
+    if (schemaName) {
+      const selectedSchemaObj = schemas.find(s => s.name === schemaName)
+      const allFieldNames = selectedSchemaObj?.fields ? Object.keys(selectedSchemaObj.fields) : []
+      setQueryFields(allFieldNames)
+    } else {
+      setQueryFields([])
+    }
+    
     setRangeFilters({})
     setRangeKeyValue('')
     setRangeSchemaFilter({})
