@@ -345,6 +345,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               )}
             </div>
             <div className="flex items-center space-x-2">
+              {/* Schema State Transition Logic (SCHEMA-001):
+                  - available → approved
+                  - approved → blocked (cannot go directly to unloaded)
+                  - blocked → approved OR blocked → unloaded */}
               {state.toLowerCase() === 'available' && (
                 <button
                   className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
@@ -357,7 +361,27 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 </button>
               )}
               {state.toLowerCase() === 'approved' && (
+                <button
+                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    blockSchema(schema.name)
+                  }}
+                >
+                  Block
+                </button>
+              )}
+              {state.toLowerCase() === 'blocked' && (
                 <>
+                  <button
+                    className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      approveSchema(schema.name)
+                    }}
+                  >
+                    Re-approve
+                  </button>
                   <button
                     className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
                     onClick={(e) => {
@@ -367,27 +391,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                   >
                     Unload
                   </button>
-                  <button
-                    className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      blockSchema(schema.name)
-                    }}
-                  >
-                    Block
-                  </button>
                 </>
-              )}
-              {state.toLowerCase() === 'blocked' && (
-                <button
-                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    approveSchema(schema.name)
-                  }}
-                >
-                  Re-approve
-                </button>
               )}
             </div>
           </div>

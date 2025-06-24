@@ -23,6 +23,12 @@ This policy provides a single, authoritative, and machine-readable source of tru
   - All code changes must be associated with a specific task.
   - All PBIs must be aligned with the PRD when applicable.
 
+- **Project Files**: A doc containing the most up to date and condensed information about the project, built up over time.  Located in docs/project_logic.md  The files should have written logic that that tracks which modules it applies to.  If one does not exist, write one.  This is the format:
+```
+| Logic_ID | Logic | Module | Updated At | Conflicts with |
+```
+When working on any feature, make sure that the project logic file is updated and there are no conflicts.  If there are conflicts, mark it on the document.  Generate a logic ID for every logical process that comes from the user.
+
 # 2. Fundamental Principles
 
 > Rationale: Establishes the foundational rules that govern all work, preventing scope creep, enforcing accountability, and ensuring the integrity of the development process.

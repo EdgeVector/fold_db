@@ -15,12 +15,6 @@ const TransformsTab = ({ schemas, _onResult }) => {
   useEffect(() => {
     console.log('TransformsTab: Processing schemas...', schemas)
     
-    // DIAGNOSTIC: Log schema state information
-    console.log('TransformsTab DIAGNOSTIC: Schema states received:')
-    schemas.forEach(schema => {
-      console.log(`  - ${schema.name}: state="${schema.state}" (type: ${typeof schema.state})`)
-    })
-    
     // Enhanced debug information
     const debug = {
       totalSchemas: schemas.length,
@@ -67,10 +61,6 @@ const TransformsTab = ({ schemas, _onResult }) => {
       // Deep clone the schema to avoid modifying the original
       const processedSchema = JSON.parse(JSON.stringify(schema))
 
-      // DIAGNOSTIC: Check if state is preserved after cloning
-      console.log(`TransformsTab DIAGNOSTIC: Schema "${schema.name}" state before cloning:`, schema.state)
-      console.log(`TransformsTab DIAGNOSTIC: Schema "${schema.name}" state after cloning:`, processedSchema.state)
-
       // Process each field's transform
       Object.entries(processedSchema.fields).forEach(([fieldName, field]) => {
         if (typeof field.transform === 'string') {
@@ -94,11 +84,6 @@ const TransformsTab = ({ schemas, _onResult }) => {
     })
     
     console.log('TransformsTab: Processed transform schemas:', transformSchemas)
-    // DIAGNOSTIC: Log final processed schemas with state info
-    console.log('TransformsTab DIAGNOSTIC: Final processed schemas states:')
-    transformSchemas.forEach(schema => {
-      console.log(`  - ${schema.name}: state="${schema.state}" (preserved: ${schema.state ? 'YES' : 'NO'})`)
-    })
     setTransforms(transformSchemas)
 
     // Fetch transforms from dedicated API
@@ -136,6 +121,19 @@ const TransformsTab = ({ schemas, _onResult }) => {
     const interval = setInterval(fetchQueueInfo, 5000)
     return () => clearInterval(interval)
   }, [schemas])
+
+  const getStateColor = (state) => {
+    switch (state?.toLowerCase()) {
+      case 'approved':
+        return 'bg-green-100 text-green-800'
+      case 'available':
+        return 'bg-blue-100 text-blue-800'
+      case 'blocked':
+        return 'bg-red-100 text-red-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
 
   const handleAddToQueue = async (schemaName, fieldName, _transform) => {
     const transformId = `${schemaName}.${fieldName}`
@@ -196,7 +194,12 @@ const TransformsTab = ({ schemas, _onResult }) => {
         <div className="space-y-6">
           {transforms.map((schema) => (
             <div key={schema.name} className="bg-white shadow rounded-lg p-4">
-              <h3 className="text-lg font-medium text-gray-800 mb-2">{schema.name}</h3>
+              <div className="flex items-center space-x-3 mb-2">
+                <h3 className="text-lg font-medium text-gray-800">{schema.name}</h3>
+                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStateColor(schema.state)}`}>
+                  {schema.state || 'Unknown'}
+                </span>
+              </div>
               <div className="space-y-4">
                 {Object.entries(schema.fields).map(([fieldName, field]) => {
                   if (!field.transform) return null
