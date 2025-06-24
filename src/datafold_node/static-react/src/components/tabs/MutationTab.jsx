@@ -67,12 +67,8 @@ function MutationTab({ schemas, onResult }) {
       
       const data = response
       
-      if (!response.ok) {
-        const errData = { error: data.error || `Mutation failed with status ${response.status}`, status: response.status, details: data }
-        setResult(errData)
-        onResult(errData)
-        return
-      }
+      // Note: Removed response.ok check since response is ApiResponse, not fetch Response
+      // The httpClient already handles HTTP errors and the response.success check above handles failures
       
       setResult(data)
       onResult(data)
