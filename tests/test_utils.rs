@@ -201,9 +201,15 @@ impl CommonTestFixture {
 
         // Unified NodeConfig setup - consolidates 7+ duplicate patterns
         let config = NodeConfig::new(temp_dir.path().to_path_buf());
-        let node = DataFoldNode::load(config).await.map_err(|e| {
+        let mut node = DataFoldNode::load(config).await.map_err(|e| {
             SchemaError::InvalidData(format!("Failed to load DataFoldNode: {}", e))
         })?;
+
+        // Explicitly load transform schemas from available_schemas
+        node.load_schema_from_file("available_schemas/TransformBase.json")
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to load TransformBase schema: {}", e)))?;
+        node.load_schema_from_file("available_schemas/TransformSchema.json")
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to load TransformSchema schema: {}", e)))?;
 
         let node_clone = node.clone();
         {

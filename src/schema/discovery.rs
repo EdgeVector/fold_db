@@ -128,20 +128,31 @@ impl SchemaCore {
                     discovered_schemas.push(schema_name.clone());
 
                     if !loading_sources.contains_key(&schema_name) {
-                        loading_sources.insert(schema_name.clone(), SchemaSource::AvailableDirectory);
+                        loading_sources.insert(
+                            schema_name.clone(),
+                            SchemaSource::AvailableDirectory,
+                        );
                     }
 
-                    if !current_schemas.contains(&schema_name) {
-                        info!(
-                            "Loading new schema '{}' from available_schemas/ (preserving persisted state)",
-                            schema_name
-                        );
-                        if let Err(e) = self.load_schema_internal(schema) {
-                            failed_schemas.push((schema_name, e.to_string()));
-                        }
-                    } else {
-                        info!("Schema '{}' already in memory, skipping reload", schema_name);
+                    // Record schema as available but do not load it automatically
+                    let state = schema_states
+                        .get(&schema_name)
+                        .copied()
+                        .unwrap_or(SchemaState::Available);
+                    {
+                        let mut available = self.available.lock().map_err(|_| {
+                            SchemaError::InvalidData(
+                                "Failed to acquire schema lock".to_string(),
+                            )
+                        })?;
+                        available.insert(schema_name.clone(), (schema, state));
                     }
+
+                    info!(
+                        "Discovered available schema '{}' with state {:?} (not auto-loaded)",
+                        schema_name,
+                        state
+                    );
                 }
             }
             Err(e) => {
