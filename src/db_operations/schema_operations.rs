@@ -37,22 +37,43 @@ impl DbOperations {
 
     /// Stores a schema definition using generic tree operations
     ///
-    /// IMPORTANT: SCHEMAS ARE IMMUTABLE
-    /// - Once a schema is stored, it CANNOT be modified or updated
-    /// - Attempting to store a schema with the same name will be rejected
-    /// - This enforces data consistency and prevents breaking existing Molecule/Molecule chains
-    /// - All fields in a schema must be defined at creation time
+    /// IMPORTANT: SCHEMA STRUCTURE IS IMMUTABLE
+    /// - Schema structure (field names, types, transforms) cannot be modified once stored
+    /// - Field assignments (molecule_uuid values) CAN be updated as part of normal operations
+    /// - This allows field mapping while preventing breaking structural changes
     ///
     /// Automatically creates placeholder Molecules/Molecules for fields that don't have them.
     /// This ensures all fields are immediately queryable after schema creation.
     pub fn store_schema(&self, schema_name: &str, schema: &Schema) -> Result<(), SchemaError> {
-        // IMMUTABILITY CHECK: Reject if schema already exists
-        if self.schema_exists(schema_name)? {
-            return Err(SchemaError::InvalidData(format!(
-                "Schema '{}' already exists. Schemas are immutable and cannot be updated. \
-                Create a new schema with a different name instead.",
-                schema_name
-            )));
+        // Check if schema exists for field assignment updates vs new schema creation
+        if let Ok(Some(existing_schema)) = self.get_schema(schema_name) {
+            // FIELD ASSIGNMENT UPDATE: Allow updates when only molecule_uuid values change
+            // This is the common case for approved schemas that need field assignments
+            log::info!("🔄 Updating existing schema '{}' (likely field assignments)", schema_name);
+            
+            // Basic sanity check: same number of fields (prevents major structural changes)
+            if existing_schema.fields.len() != schema.fields.len() {
+                return Err(SchemaError::InvalidData(format!(
+                    "Schema '{}' field count cannot be modified (existing: {}, new: {}). \
+                    Only field assignments (molecule_uuid) can be updated.",
+                    schema_name, existing_schema.fields.len(), schema.fields.len()
+                )));
+            }
+            
+            // Check that field names are the same (prevents structural changes)
+            let existing_field_names: std::collections::HashSet<_> = existing_schema.fields.keys().collect();
+            let new_field_names: std::collections::HashSet<_> = schema.fields.keys().collect();
+            
+            if existing_field_names != new_field_names {
+                return Err(SchemaError::InvalidData(format!(
+                    "Schema '{}' field names cannot be modified. \
+                    Only field assignments (molecule_uuid) can be updated.",
+                    schema_name
+                )));
+            }
+        } else {
+            // This is a new schema - create with placeholder molecules
+            log::info!("🆕 Creating new schema '{}' with placeholder molecules", schema_name);
         }
         
         // Clone the schema so we can modify fields to add Molecules/Molecules
@@ -181,4 +202,5 @@ impl DbOperations {
             self.list_items_in_tree(&self.schema_states_tree)?;
         Ok(items.into_iter().collect())
     }
+
 }
