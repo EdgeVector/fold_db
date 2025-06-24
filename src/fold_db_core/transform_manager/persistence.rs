@@ -13,20 +13,20 @@ use std::sync::Arc;
 impl TransformManager {
     /// Persist mappings using event-driven operations only
     pub fn persist_mappings_direct(&self) -> Result<(), SchemaError> {
-        // Store aref_to_transforms mapping
+        // Store molecule_to_transforms mapping
         SerializationHelper::store_mapping(
             &self.db_ops,
-            &self.aref_to_transforms,
+            &self.molecule_to_transforms,
             AREF_TO_TRANSFORMS_KEY,
-            "aref_to_transforms"
+            "molecule_to_transforms"
         )?;
 
-        // Store transform_to_arefs mapping
+        // Store transform_to_molecules mapping
         SerializationHelper::store_mapping(
             &self.db_ops,
-            &self.transform_to_arefs,
+            &self.transform_to_molecules,
             TRANSFORM_TO_AREFS_KEY,
-            "transform_to_arefs"
+            "transform_to_molecules"
         )?;
 
         // Store transform_input_names mapping
@@ -80,8 +80,8 @@ impl TransformManager {
         SchemaError,
     > {
         // Simplified initialization - aggressive cleanup
-        let aref_to_transforms = HashMap::new();
-        let transform_to_arefs = HashMap::new();
+        let molecule_to_transforms = HashMap::new();
+        let transform_to_molecules = HashMap::new();
         let transform_input_names = HashMap::new();
 
         // Load field_to_transforms with special debug logging
@@ -104,8 +104,8 @@ impl TransformManager {
         let transform_outputs = HashMap::new();
 
         Ok((
-            aref_to_transforms,
-            transform_to_arefs,
+            molecule_to_transforms,
+            transform_to_molecules,
             transform_input_names,
             field_to_transforms,
             transform_to_fields,

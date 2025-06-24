@@ -103,9 +103,9 @@ impl AtomManager {
 
     pub fn get_atom_history(
         &self,
-        aref_uuid: &str,
+        molecule_uuid: &str,
     ) -> Result<Vec<crate::atom::Atom>, Box<dyn std::error::Error>> {
-        helpers::get_atom_history(&self.db_ops, aref_uuid)
+        helpers::get_atom_history(&self.db_ops, molecule_uuid)
     }
 
     /// Get current statistics for testing

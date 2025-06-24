@@ -24,13 +24,13 @@ pub enum FoldDbCoreError {
     AtomNotFound { id: String },
 
     /// A molecule with the specified UUID was not found
-    #[error("Molecule not found: {aref_uuid}")]
-    MoleculeNotFound { aref_uuid: String },
+    #[error("Molecule not found: {molecule_uuid}")]
+    MoleculeNotFound { molecule_uuid: String },
 
     /// Molecule type mismatch (e.g., expected Collection but found Range)
-    #[error("Molecule type mismatch for {aref_uuid}: expected {expected}, found {actual}")]
+    #[error("Molecule type mismatch for {molecule_uuid}: expected {expected}, found {actual}")]
     MoleculeTypeMismatch {
-        aref_uuid: String,
+        molecule_uuid: String,
         expected: String,
         actual: String,
     },
@@ -136,20 +136,20 @@ impl FoldDbCoreError {
     }
 
     /// Create a MoleculeNotFound error
-    pub fn molecule_not_found(aref_uuid: impl Into<String>) -> Self {
+    pub fn molecule_not_found(molecule_uuid: impl Into<String>) -> Self {
         Self::MoleculeNotFound {
-            aref_uuid: aref_uuid.into(),
+            molecule_uuid: molecule_uuid.into(),
         }
     }
 
     /// Create a MoleculeTypeMismatch error
     pub fn molecule_type_mismatch(
-        aref_uuid: impl Into<String>,
+        molecule_uuid: impl Into<String>,
         expected: impl Into<String>,
         actual: impl Into<String>,
     ) -> Self {
         Self::MoleculeTypeMismatch {
-            aref_uuid: aref_uuid.into(),
+            molecule_uuid: molecule_uuid.into(),
             expected: expected.into(),
             actual: actual.into(),
         }

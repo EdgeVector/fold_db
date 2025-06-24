@@ -155,7 +155,7 @@ fn test_ui_range_filter_query_path() {
     info!("✅ Schema retrieved: {}", stored_schema.name);
     info!("   Fields: {:?}", stored_schema.fields.keys().collect::<Vec<_>>());
     
-    // Additional assertions can be added here to verify that the AtomRefRange objects
+    // Additional assertions can be added here to verify that the MoleculeRange objects
     // were properly created and that the query system can find them
     
     info!("✅ UI Range Filter Test COMPLETED - Event-driven range processing verified");

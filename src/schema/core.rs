@@ -162,11 +162,11 @@ impl SchemaCore {
 
     fn log_field_refs(&self, schema: &Schema) {
         for (field_name, field) in &schema.fields {
-            let ref_uuid = field
+            let molecule_uuid = field
                 .molecule_uuid()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "None".to_string());
-            info!("📋 Field {}.{} has molecule_uuid: {}", schema.name, field_name, ref_uuid);
+            info!("📋 Field {}.{} has molecule_uuid: {}", schema.name, field_name, molecule_uuid);
         }
     }
 
@@ -765,7 +765,7 @@ impl SchemaCore {
         molecule_uuid: String,
     ) -> Result<(), SchemaError> {
         info!(
-            "🔧 UPDATE_FIELD_REF_ATOM_UUID START - schema: {}, field: {}, uuid: {}",
+            "🔧 UPDATE_FIELD_MOLECULE_UUID START - schema: {}, field: {}, uuid: {}",
             schema_name, field_name, molecule_uuid
         );
 
@@ -957,12 +957,12 @@ impl SchemaCore {
         // For unmapped fields, create a new molecule_uuid and Molecule
         // Only create new Molecules for fields that truly don't have them (None or empty)
         for field in schema.fields.values_mut() {
-            let needs_new_aref = match field.molecule_uuid() {
+            let needs_new_molecule = match field.molecule_uuid() {
                 None => true,
                 Some(uuid) => uuid.is_empty(),
             };
 
-            if needs_new_aref {
+            if needs_new_molecule {
                 let molecule_uuid = Uuid::new_v4().to_string();
 
                 // Create and store the appropriate atom reference type based on field type

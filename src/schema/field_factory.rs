@@ -118,12 +118,12 @@ impl FieldFactory {
 
         // Create molecule - Note: Molecule::new takes (atom_uuid, source_pub_key)
         let molecule = Molecule::new(atom_uuid, user_key.to_string());
-        let ref_uuid = molecule.uuid().to_string();
-        db_ops.store_item(&format!("ref:{}", ref_uuid), &molecule)?;
+        let molecule_uuid = molecule.uuid().to_string();
+        db_ops.store_item(&format!("ref:{}", molecule_uuid), &molecule)?;
 
         // Create field with ref linked
         let mut field = Self::create_single_field();
-        field.set_molecule_uuid(ref_uuid);
+        field.set_molecule_uuid(molecule_uuid);
 
         Ok(field)
     }

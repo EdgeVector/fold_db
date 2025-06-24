@@ -47,7 +47,7 @@ fn test_single_field_complete_operations() {
     assert_eq!(single_field.field_mappers(), &metadata);
     println!("✅ Single field properties set successfully");
     
-    // Test 3: Create and link AtomRef
+    // Test 3: Create and link Molecule
     let test_content = json!({"message": "test single field content", "value": 42});
     let atom = Atom::new("TestSchema".to_string(), "test_user".to_string(), test_content.clone());
     let atom_uuid = atom.uuid().to_string(); // Use the atom's own UUID
@@ -97,11 +97,11 @@ fn test_range_field_complete_operations() {
     let mut range_field = FieldFactory::create_range_field();
     println!("✅ Range field created successfully");
     
-    // Test 2: Initialize AtomRefRange
+    // Test 2: Initialize MoleculeRange
     let source_pub_key = "test_user_123".to_string();
     range_field.ensure_molecule_range(source_pub_key.clone());
     assert!(range_field.molecule_range().is_some());
-    println!("✅ Range field AtomRefRange initialized");
+    println!("✅ Range field MoleculeRange initialized");
     
     // Test 3: Add multiple range entries
     let test_data = vec![

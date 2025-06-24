@@ -1,7 +1,7 @@
-//! Comprehensive integration test to diagnose AtomRef update failures
+//! Comprehensive integration test to diagnose Molecule update failures
 //!
 //! This test covers the complete mutation→query flow to identify where
-//! the AtomRef update is failing in the FieldValueSetRequest handler.
+//! the Molecule update is failing in the FieldValueSetRequest handler.
 
 use datafold::fold_db_core::infrastructure::message_bus::{
     MessageBus,
@@ -16,8 +16,8 @@ use std::thread;
 use tempfile::tempdir;
 
 #[test]
-fn test_atomref_update_complete_flow() {
-    println!("🔍 STARTING COMPREHENSIVE ATOMREF UPDATE DIAGNOSIS TEST");
+fn test_molecule_update_complete_flow() {
+    println!("🔍 STARTING COMPREHENSIVE MOLECULE UPDATE DIAGNOSIS TEST");
     
     // Setup database
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -54,16 +54,16 @@ fn test_atomref_update_complete_flow() {
         .expect("Should receive first FieldValueSetResponse");
     
     assert!(response1.success, "First FieldValueSetRequest should succeed");
-    let aref_uuid = response1.molecule_uuid.as_ref().expect("Should return AtomRef UUID");
+    let molecule_uuid = response1.molecule_uuid.as_ref().expect("Should return Molecule UUID");
     
-    println!("✅ STEP 1 COMPLETE: AtomRef UUID: {}", aref_uuid);
+    println!("✅ STEP 1 COMPLETE: Molecule UUID: {}", molecule_uuid);
     
     // Allow time for all logging to be processed
     thread::sleep(Duration::from_millis(200));
     
-    println!("📝 STEP 2: Creating second field value (should update AtomRef)");
+    println!("📝 STEP 2: Creating second field value (should update Molecule)");
     
-    // Create second FieldValueSetRequest for same field (should update AtomRef)
+    // Create second FieldValueSetRequest for same field (should update Molecule)
     let request2 = FieldValueSetRequest::new(
         "test_correlation_002".to_string(),
         "user_schema".to_string(),
@@ -79,17 +79,17 @@ fn test_atomref_update_complete_flow() {
         .expect("Should receive second FieldValueSetResponse");
     
     assert!(response2.success, "Second FieldValueSetRequest should succeed");
-    let aref_uuid_2 = response2.molecule_uuid.as_ref().expect("Should return AtomRef UUID");
+    let molecule_uuid_2 = response2.molecule_uuid.as_ref().expect("Should return Molecule UUID");
     
-    println!("✅ STEP 2 COMPLETE: AtomRef UUID: {}", aref_uuid_2);
+    println!("✅ STEP 2 COMPLETE: Molecule UUID: {}", molecule_uuid_2);
     
     // Allow time for all logging to be processed
     thread::sleep(Duration::from_millis(200));
     
-    println!("🔍 CRITICAL VALIDATION: AtomRef UUIDs should be identical (same field)");
-    assert_eq!(aref_uuid, aref_uuid_2, 
-        "AtomRef UUID should be the same for both requests (same schema.field): {} vs {}", 
-        aref_uuid, aref_uuid_2);
+    println!("🔍 CRITICAL VALIDATION: Molecule UUIDs should be identical (same field)");
+    assert_eq!(molecule_uuid, molecule_uuid_2, 
+        "Molecule UUID should be the same for both requests (same schema.field): {} vs {}", 
+        molecule_uuid, molecule_uuid_2);
     
     println!("📝 STEP 3: Creating third field value (final update test)");
     
@@ -109,27 +109,27 @@ fn test_atomref_update_complete_flow() {
         .expect("Should receive third FieldValueSetResponse");
     
     assert!(response3.success, "Third FieldValueSetRequest should succeed");
-    let aref_uuid_3 = response3.molecule_uuid.as_ref().expect("Should return AtomRef UUID");
+    let molecule_uuid_3 = response3.molecule_uuid.as_ref().expect("Should return Molecule UUID");
     
-    println!("✅ STEP 3 COMPLETE: AtomRef UUID: {}", aref_uuid_3);
+    println!("✅ STEP 3 COMPLETE: Molecule UUID: {}", molecule_uuid_3);
     
     // Allow time for all logging to be processed  
     thread::sleep(Duration::from_millis(500));
     
-    println!("🔍 FINAL VALIDATION: All AtomRef UUIDs should be identical");
-    assert_eq!(aref_uuid, aref_uuid_3, 
-        "All AtomRef UUIDs should match (same schema.field): {} vs {}", 
-        aref_uuid, aref_uuid_3);
+    println!("🔍 FINAL VALIDATION: All Molecule UUIDs should be identical");
+    assert_eq!(molecule_uuid, molecule_uuid_3, 
+        "All Molecule UUIDs should match (same schema.field): {} vs {}", 
+        molecule_uuid, molecule_uuid_3);
     
-    println!("✅ ATOMREF UPDATE DIAGNOSIS TEST COMPLETED SUCCESSFULLY");
+    println!("✅ MOLECULE UPDATE DIAGNOSIS TEST COMPLETED SUCCESSFULLY");
     println!("   - Created 3 atoms for same field");
-    println!("   - Verified AtomRef UUID consistency: {}", aref_uuid);
-    println!("   - Check logs above for detailed AtomRef update flow");
+    println!("   - Verified Molecule UUID consistency: {}", molecule_uuid);
+    println!("   - Check logs above for detailed Molecule update flow");
 }
 
 #[test]
-fn test_atomref_update_different_fields() {
-    println!("🔍 TESTING ATOMREF UPDATE FOR DIFFERENT FIELDS");
+fn test_molecule_update_different_fields() {
+    println!("🔍 TESTING MOLECULE UPDATE FOR DIFFERENT FIELDS");
     
     // Setup database
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -180,14 +180,14 @@ fn test_atomref_update_different_fields() {
     assert!(response_username.success);
     assert!(response_email.success);
     
-    let username_aref = response_username.molecule_uuid.unwrap();
-    let email_aref = response_email.molecule_uuid.unwrap();
+    let username_molecule = response_username.molecule_uuid.unwrap();
+    let email_molecule = response_email.molecule_uuid.unwrap();
     
-    println!("✅ Different fields get different AtomRef UUIDs:");
-    println!("   username AtomRef: {}", username_aref);
-    println!("   email AtomRef: {}", email_aref);
+    println!("✅ Different fields get different Molecule UUIDs:");
+    println!("   username Molecule: {}", username_molecule);
+    println!("   email Molecule: {}", email_molecule);
     
-    // Different fields should have different AtomRef UUIDs
-    assert_ne!(username_aref, email_aref, 
-        "Different fields should have different AtomRef UUIDs");
+    // Different fields should have different Molecule UUIDs
+    assert_ne!(username_molecule, email_molecule, 
+        "Different fields should have different Molecule UUIDs");
 }

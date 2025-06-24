@@ -25,9 +25,9 @@ pub(super) fn handle_fieldvalueset_request(manager: &AtomManager, request: Field
             store_atom_in_cache(manager, atom.clone());
             
             // Step 2: Create appropriate Molecule based on field type
-            let aref_result = create_molecule_for_field(manager, &request, &atom_uuid);
+            let molecule_result = create_molecule_for_field(manager, &request, &atom_uuid);
             
-            match aref_result {
+            match molecule_result {
                 Ok(molecule_uuid) => {
                     handle_successful_field_value_processing(manager, &request, &atom_uuid, &molecule_uuid)
                 }
@@ -156,9 +156,9 @@ fn create_single_molecule(manager: &AtomManager, request: &FieldValueSetRequest,
     );
     
     match single_result {
-        Ok(aref) => {
-            info!("🔍 DIAGNOSTIC: Molecule created successfully, final atom_uuid: {}", aref.get_atom_uuid());
-            manager.molecules.lock().unwrap().insert(molecule_uuid.clone(), aref);
+        Ok(molecule) => {
+            info!("🔍 DIAGNOSTIC: Molecule created successfully, final atom_uuid: {}", molecule.get_atom_uuid());
+            manager.molecules.lock().unwrap().insert(molecule_uuid.clone(), molecule);
             info!("🔍 DIAGNOSTIC: Successfully created and stored Molecule: {}", molecule_uuid);
 
             // Verify the Molecule was properly stored in database
@@ -211,7 +211,7 @@ fn handle_successful_field_value_processing(manager: &AtomManager, request: &Fie
     stats.molecules_created += 1;
     drop(stats);
     
-    info!("✅ Successfully processed FieldValueSetRequest - atom: {}, aref: {}", atom_uuid, molecule_uuid);
+    info!("✅ Successfully processed FieldValueSetRequest - atom: {}, molecule: {}", atom_uuid, molecule_uuid);
     info!("🔍 DIAGNOSTIC: Final mapping - Molecule {} -> Atom {}", molecule_uuid, atom_uuid);
     
     // Publish FieldValueSet event to trigger transform chain

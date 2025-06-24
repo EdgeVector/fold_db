@@ -10,8 +10,8 @@ use std::sync::{Arc, RwLock};
 use crate::fold_db_core::transform_manager::utils::*;
 use std::thread;
 
-pub(super) const AREF_TO_TRANSFORMS_KEY: &str = "map_aref_to_transforms";
-pub(super) const TRANSFORM_TO_AREFS_KEY: &str = "map_transform_to_arefs";
+pub(super) const AREF_TO_TRANSFORMS_KEY: &str = "map_molecule_to_transforms";
+pub(super) const TRANSFORM_TO_AREFS_KEY: &str = "map_transform_to_molecules";
 pub(super) const TRANSFORM_INPUT_NAMES_KEY: &str = "map_transform_input_names";
 pub(super) const FIELD_TO_TRANSFORMS_KEY: &str = "map_field_to_transforms";
 pub(super) const TRANSFORM_TO_FIELDS_KEY: &str = "map_transform_to_fields";
@@ -39,9 +39,9 @@ pub struct TransformManager {
     /// In-memory cache of registered transforms
     pub(super) registered_transforms: RwLock<HashMap<String, Transform>>,
     /// Maps atom reference UUIDs to the transforms that depend on them
-    pub(super) aref_to_transforms: RwLock<HashMap<String, HashSet<String>>>,
+    pub(super) molecule_to_transforms: RwLock<HashMap<String, HashSet<String>>>,
     /// Maps transform IDs to their dependent atom reference UUIDs
-    pub(super) transform_to_arefs: RwLock<HashMap<String, HashSet<String>>>,
+    pub(super) transform_to_molecules: RwLock<HashMap<String, HashSet<String>>>,
     /// Maps transform IDs to input field names keyed by atom ref UUID
     pub(super) transform_input_names: RwLock<HashMap<String, HashMap<String, String>>>,
     /// Maps schema.field keys to transforms triggered by them
@@ -95,8 +95,8 @@ impl TransformManager {
 
         // Load mappings using direct database operations
         let (
-            aref_to_transforms,
-            transform_to_arefs,
+            molecule_to_transforms,
+            transform_to_molecules,
             transform_input_names,
             field_to_transforms,
             transform_to_fields,
@@ -149,8 +149,8 @@ impl TransformManager {
         Ok(Self {
             db_ops,
             registered_transforms: RwLock::new(registered_transforms),
-            aref_to_transforms: RwLock::new(aref_to_transforms),
-            transform_to_arefs: RwLock::new(transform_to_arefs),
+            molecule_to_transforms: RwLock::new(molecule_to_transforms),
+            transform_to_molecules: RwLock::new(transform_to_molecules),
             transform_input_names: RwLock::new(transform_input_names),
             field_to_transforms: RwLock::new(field_to_transforms),
             transform_to_fields: RwLock::new(transform_to_fields),
@@ -175,17 +175,17 @@ impl TransformManager {
     }
 
     /// Gets all transforms that depend on the specified atom reference.
-    pub fn get_dependent_transforms(&self, aref_uuid: &str) -> Result<HashSet<String>, SchemaError> {
-        let aref_to_transforms = self.aref_to_transforms.read()
+    pub fn get_dependent_transforms(&self, molecule_uuid: &str) -> Result<HashSet<String>, SchemaError> {
+        let molecule_to_transforms = self.molecule_to_transforms.read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-        Ok(aref_to_transforms.get(aref_uuid).cloned().unwrap_or_default())
+        Ok(molecule_to_transforms.get(molecule_uuid).cloned().unwrap_or_default())
     }
 
     /// Gets all atom references that a transform depends on.
     pub fn get_transform_inputs(&self, transform_id: &str) -> Result<HashSet<String>, SchemaError> {
-        let transform_to_arefs = self.transform_to_arefs.read()
+        let transform_to_molecules = self.transform_to_molecules.read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-        Ok(transform_to_arefs.get(transform_id).cloned().unwrap_or_default())
+        Ok(transform_to_molecules.get(transform_id).cloned().unwrap_or_default())
     }
 
     /// Gets the output atom reference for a transform.

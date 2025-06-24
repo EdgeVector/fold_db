@@ -359,20 +359,20 @@ fn test_complete_mutation_to_query_workflow() {
     
     let mut mutation_results = Vec::new();
     for (field_name, value) in user_data {
-        let aref_uuid = fixture.mutate_range_field_simple(
+        let molecule_uuid = fixture.mutate_range_field_simple(
             "UserProfile",
             field_name,
             value.clone(),
         ).unwrap_or_else(|_| panic!("Failed to mutate {}", field_name));
         
-        println!("✅ Mutated {}: {} -> {}", field_name, &value, &aref_uuid);
-        mutation_results.push((field_name, aref_uuid, value));
+        println!("✅ Mutated {}: {} -> {}", field_name, &value, &molecule_uuid);
+        mutation_results.push((field_name, molecule_uuid, value));
     }
     
     // Step 2: Query back the mutated data
     println!("🔍 Step 2: Querying mutated data");
     
-    for (field_name, _aref_uuid, expected_value) in &mutation_results {
+    for (field_name, _molecule_uuid, expected_value) in &mutation_results {
         let result = fixture.query_field_value("UserProfile", field_name)
             .unwrap_or_else(|_| panic!("Failed to query {}", field_name));
         
@@ -394,7 +394,7 @@ fn test_complete_mutation_to_query_workflow() {
     // Wait a bit and query again to ensure persistence
     thread::sleep(Duration::from_millis(200));
     
-    for (field_name, _aref_uuid, expected_value) in &mutation_results {
+    for (field_name, _molecule_uuid, expected_value) in &mutation_results {
         let result = fixture.query_field_value("UserProfile", field_name)
             .unwrap_or_else(|_| panic!("Failed to re-query {}", field_name));
         

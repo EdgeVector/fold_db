@@ -47,10 +47,10 @@ pub fn update_molecule_range(
 /// Get atom history for a given atom reference
 pub fn get_atom_history(
     db_ops: &Arc<DbOperations>,
-    aref_uuid: &str,
+    molecule_uuid: &str,
 ) -> Result<Vec<Atom>, Box<dyn std::error::Error>> {
     // Load the atom ref from database
-    let key = format!("ref:{}", aref_uuid);
+    let key = format!("ref:{}", molecule_uuid);
     
     match db_ops.db().get(&key)? {
         Some(bytes) => {

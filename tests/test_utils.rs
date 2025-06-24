@@ -107,10 +107,10 @@ impl TestFixture {
         TransformRegistration {
             transform_id: "test_transform".to_string(),
             transform: Self::create_sample_transform(),
-            input_arefs: vec!["aref1".to_string()],
+            input_molecules: vec!["molecule1".to_string()],
             input_names: vec!["input1".to_string()],
             trigger_fields: vec!["test.field1".to_string()],
-            output_aref: "output_aref".to_string(),
+            output_molecule: "output_molecule".to_string(),
             schema_name: "test".to_string(),
             field_name: "output".to_string(),
         }
@@ -129,10 +129,10 @@ impl TestFixture {
         TransformRegistration {
             transform_id: transform_id.to_string(),
             transform: Self::create_named_transform(transform_id),
-            input_arefs: vec![format!("{}_aref1", transform_id)],
+            input_molecules: vec![format!("{}_molecule1", transform_id)],
             input_names: vec!["input1".to_string()],
             trigger_fields: vec![format!("test.{}_field", transform_id)],
-            output_aref: format!("{}_output_aref", transform_id),
+            output_molecule: format!("{}_output_molecule", transform_id),
             schema_name: "test".to_string(),
             field_name: transform_id.to_string(),
         }

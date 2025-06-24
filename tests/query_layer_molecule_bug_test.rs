@@ -1,7 +1,7 @@
-//! Test to validate the Query Layer AtomRef Bug
+//! Test to validate the Query Layer Molecule Bug
 //!
 //! This test reproduces the exact issue where:
-//! 1. Mutation layer correctly updates dynamic AtomRefs
+//! 1. Mutation layer correctly updates dynamic Molecules
 //! 2. Query layer incorrectly reads static schema references
 //! 3. Result: Query finds old/wrong atom UUIDs
 
@@ -21,9 +21,9 @@ use std::thread;
 use tempfile::tempdir;
 
 #[test]
-fn test_query_layer_atomref_bug_reproduction() {
+fn test_query_layer_molecule_bug_reproduction() {
     InfrastructureLogger::log_investigation(
-        "test_query_layer_atomref_bug_reproduction",
+        "test_query_layer_molecule_bug_reproduction",
         "start",
     );
     
@@ -66,7 +66,7 @@ fn test_query_layer_atomref_bug_reproduction() {
     let field_variant = FieldVariant::Single(single_field);
     test_schema.fields.insert("test_field".to_string(), field_variant);
     
-    // STEP 2: Use mutation layer to create new field value (updates dynamic AtomRef)
+    // STEP 2: Use mutation layer to create new field value (updates dynamic Molecule)
     let mutation_request = FieldValueSetRequest::new(
         "mutation_test".to_string(),
         "test_schema".to_string(),
@@ -82,14 +82,14 @@ fn test_query_layer_atomref_bug_reproduction() {
         .expect("Should receive mutation response");
     
     assert!(mutation_response.success, "Mutation should succeed");
-    let dynamic_aref_uuid = mutation_response.molecule_uuid.expect("Should return AtomRef UUID");
+    let dynamic_molecule_uuid = mutation_response.molecule_uuid.expect("Should return Molecule UUID");
     
-    // STEP 3: Verify dynamic AtomRef was created and points to new atom  
-    let dynamic_aref = db_ops.get_item::<datafold::atom::Molecule>(&format!("ref:{}", dynamic_aref_uuid))
-        .expect("Should be able to query dynamic AtomRef")
-        .expect("Dynamic AtomRef should exist");
+    // STEP 3: Verify dynamic Molecule was created and points to new atom  
+    let dynamic_molecule = db_ops.get_item::<datafold::atom::Molecule>(&format!("ref:{}", dynamic_molecule_uuid))
+        .expect("Should be able to query dynamic Molecule")
+        .expect("Dynamic Molecule should exist");
     
-    let dynamic_atom_uuid = dynamic_aref.get_atom_uuid().clone();
+    let dynamic_atom_uuid = dynamic_molecule.get_atom_uuid().clone();
     
     // CRITICAL TEST: This should be DIFFERENT from the static schema reference
     assert_ne!(dynamic_atom_uuid, initial_static_atom_uuid, 
@@ -131,17 +131,17 @@ fn test_query_layer_atomref_bug_reproduction() {
         .expect("Should receive second mutation response");
     
     assert!(mutation_response_2.success, "Second mutation should succeed");
-    let dynamic_aref_uuid_2 = mutation_response_2.molecule_uuid.expect("Should return same AtomRef UUID");
+    let dynamic_molecule_uuid_2 = mutation_response_2.molecule_uuid.expect("Should return same Molecule UUID");
     
-    // Should reuse the same AtomRef UUID
-    assert_eq!(dynamic_aref_uuid, dynamic_aref_uuid_2, "Should reuse same AtomRef UUID");
+    // Should reuse the same Molecule UUID
+    assert_eq!(dynamic_molecule_uuid, dynamic_molecule_uuid_2, "Should reuse same Molecule UUID");
     
-    // Check that the AtomRef now points to a newer atom
-    let updated_aref = db_ops.get_item::<datafold::atom::Molecule>(&format!("ref:{}", dynamic_aref_uuid))
-        .expect("Should be able to query updated AtomRef")
-        .expect("Updated AtomRef should exist");
+    // Check that the Molecule now points to a newer atom
+    let updated_molecule = db_ops.get_item::<datafold::atom::Molecule>(&format!("ref:{}", dynamic_molecule_uuid))
+        .expect("Should be able to query updated Molecule")
+        .expect("Updated Molecule should exist");
     
-    let updated_atom_uuid = updated_aref.get_atom_uuid().clone();
+    let updated_atom_uuid = updated_molecule.get_atom_uuid().clone();
     assert_ne!(updated_atom_uuid, dynamic_atom_uuid, "Should point to newer atom after second mutation");
     
     // Test query layer again

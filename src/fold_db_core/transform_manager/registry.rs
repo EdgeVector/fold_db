@@ -11,7 +11,7 @@ impl TransformManager {
         &self,
         transform_id: String,
         transform: Transform,
-        output_aref: String,
+        output_molecule: String,
         schema_name: String,
         field_name: String,
     ) -> Result<(), SchemaError> {
@@ -26,10 +26,10 @@ impl TransformManager {
         self.register_transform_event_driven(TransformRegistration {
             transform_id,
             transform,
-            input_arefs: dependencies,
+            input_molecules: dependencies,
             input_names: Vec::new(),
             trigger_fields,
-            output_aref,
+            output_molecule,
             schema_name,
             field_name,
         })?;
@@ -87,14 +87,14 @@ impl TransformManager {
                 }
             }
 
-            // Get the input arefs for this transform
-            let input_arefs = {
-                let mut transform_to_arefs = self.transform_to_arefs.write().map_err(|_| {
+            // Get the input molecules for this transform
+            let input_molecules = {
+                let mut transform_to_molecules = self.transform_to_molecules.write().map_err(|_| {
                     SchemaError::InvalidData(
-                        "Failed to acquire transform_to_arefs lock".to_string(),
+                        "Failed to acquire transform_to_molecules lock".to_string(),
                     )
                 })?;
-                transform_to_arefs.remove(transform_id).unwrap_or_default()
+                transform_to_molecules.remove(transform_id).unwrap_or_default()
             };
 
             // Remove input name mapping
@@ -108,21 +108,21 @@ impl TransformManager {
                 transform_input_names.remove(transform_id);
             }
 
-            // Update the reverse mapping (aref -> transforms)
+            // Update the reverse mapping (molecule -> transforms)
             {
-                let mut aref_to_transforms = self.aref_to_transforms.write().map_err(|_| {
+                let mut molecule_to_transforms = self.molecule_to_transforms.write().map_err(|_| {
                     SchemaError::InvalidData(
-                        "Failed to acquire aref_to_transforms lock".to_string(),
+                        "Failed to acquire molecule_to_transforms lock".to_string(),
                     )
                 })?;
 
-                for aref_uuid in input_arefs {
-                    if let Some(transform_set) = aref_to_transforms.get_mut(&aref_uuid) {
+                for molecule_uuid in input_molecules {
+                    if let Some(transform_set) = molecule_to_transforms.get_mut(&molecule_uuid) {
                         transform_set.remove(transform_id);
 
                         // Remove the entry if the set is empty
                         if transform_set.is_empty() {
-                            aref_to_transforms.remove(&aref_uuid);
+                            molecule_to_transforms.remove(&molecule_uuid);
                         }
                     }
                 }

@@ -1,16 +1,16 @@
 //! Comprehensive Integration Test for Complete Mutation→Query Flow
 //!
 //! This test validates that the complete mutation→query flow works correctly 
-//! after the collection removal and AtomRef bug fixes. It proves that:
+//! after the collection removal and Molecule bug fixes. It proves that:
 //!
-//! 1. **Mutations correctly create/update dynamic AtomRefs** 
-//! 2. **Queries read from the correct dynamic AtomRefs** (not stale static schema refs)
+//! 1. **Mutations correctly create/update dynamic Molecules** 
+//! 2. **Queries read from the correct dynamic Molecules** (not stale static schema refs)
 //! 3. **The Range-only architecture works end-to-end** (no Collection dependencies)
 //! 4. **Multiple mutation cycles work consistently** 
 //! 5. **The system handles both single and multi-field mutations**
 //!
 //! **Root Cause Validation:**
-//! Previously, mutations would create dynamic AtomRefs, but queries would read
+//! Previously, mutations would create dynamic Molecules, but queries would read
 //! static schema references, causing "Atom not found" errors. This test ensures
 //! the fix is working correctly.
 
@@ -43,7 +43,7 @@ fn create_transform_base_schema() -> Schema {
             FieldPaymentConfig::default(),
             HashMap::new(),
         );
-        // Set a static reference that will be overridden by dynamic AtomRef system
+        // Set a static reference that will be overridden by dynamic Molecule system
         value1_field.set_molecule_uuid("static_ref_value1_should_be_overridden".to_string());
         schema.fields.insert("value1".to_string(), FieldVariant::Single(value1_field));
         
@@ -53,12 +53,12 @@ fn create_transform_base_schema() -> Schema {
             FieldPaymentConfig::default(),
             HashMap::new(),
         );
-        // Set a static reference that will be overridden by dynamic AtomRef system
+        // Set a static reference that will be overridden by dynamic Molecule system
         value2_field.set_molecule_uuid("static_ref_value2_should_be_overridden".to_string());
         schema.fields.insert("value2".to_string(), FieldVariant::Single(value2_field));
         
         println!("✅ TransformBase schema created with fields: {:?}", schema.fields.keys().collect::<Vec<_>>());
-        println!("🔧 Static references set (will be overridden by dynamic AtomRef system)");
+        println!("🔧 Static references set (will be overridden by dynamic Molecule system)");
         schema
 }
 
@@ -98,17 +98,17 @@ fn mutate_field_value(
             return Err(format!("Mutation failed: {:?}", response.error).into());
         }
         
-        let aref_uuid = response.molecule_uuid
-            .ok_or("Mutation should return AtomRef UUID")?;
+        let molecule_uuid = response.molecule_uuid
+            .ok_or("Mutation should return Molecule UUID")?;
         
-        println!("✅ Mutation succeeded - AtomRef UUID: {}", aref_uuid);
+        println!("✅ Mutation succeeded - Molecule UUID: {}", molecule_uuid);
         
-        // DIAGNOSTIC: Verify AtomRef was created in database
-        let aref_key = format!("ref:{}", aref_uuid);
-        match fixture.db_ops.get_item::<datafold::atom::Molecule>(&aref_key) {
-            Ok(Some(aref)) => {
-                let atom_uuid = aref.get_atom_uuid();
-                println!("🔍 DIAGNOSTIC: AtomRef {} points to atom {}", aref_uuid, atom_uuid);
+        // DIAGNOSTIC: Verify Molecule was created in database
+        let molecule_key = format!("ref:{}", molecule_uuid);
+        match fixture.db_ops.get_item::<datafold::atom::Molecule>(&molecule_key) {
+            Ok(Some(molecule)) => {
+                let atom_uuid = molecule.get_atom_uuid();
+                println!("🔍 DIAGNOSTIC: Molecule {} points to atom {}", molecule_uuid, atom_uuid);
                 
                 // Verify atom exists and contains expected data
                 let atom_key = format!("atom:{}", atom_uuid);
@@ -125,14 +125,14 @@ fn mutate_field_value(
                 }
             }
             Ok(None) => {
-                println!("❌ DIAGNOSTIC: AtomRef {} not found in database", aref_uuid);
+                println!("❌ DIAGNOSTIC: Molecule {} not found in database", molecule_uuid);
             }
             Err(e) => {
-                println!("❌ DIAGNOSTIC: Error loading AtomRef {}: {}", aref_uuid, e);
+                println!("❌ DIAGNOSTIC: Error loading Molecule {}: {}", molecule_uuid, e);
             }
         }
         
-        Ok(aref_uuid)
+        Ok(molecule_uuid)
     }
     
     /// Query a field value and verify it returns correct data
@@ -173,7 +173,7 @@ fn test_single_field_mutation_to_query_flow() {
     
     // Step 1: Perform mutation on value1 field
     let test_value = json!(42);
-    let aref_uuid = mutate_field_value(&fixture, "TransformBase", "value1", test_value.clone(), "test_source")
+    let molecule_uuid = mutate_field_value(&fixture, "TransformBase", "value1", test_value.clone(), "test_source")
         .expect("Failed to mutate value1");
     
     // Step 2: Query the same field and verify it returns the mutated value
@@ -183,7 +183,7 @@ fn test_single_field_mutation_to_query_flow() {
     assert_eq!(result, test_value, "Query should return the mutated value");
     
     println!("✅ Single field mutation→query flow test PASSED");
-    println!("   AtomRef UUID: {}", aref_uuid);
+    println!("   Molecule UUID: {}", molecule_uuid);
     println!("   Value: {} → {}", test_value, result);
 }
 
@@ -203,14 +203,14 @@ fn test_multiple_field_mutations_and_queries() {
         ("value2", json!(35), "source_b"),
     ];
     
-    let mut aref_uuids = Vec::new();
+    let mut molecule_uuids = Vec::new();
     
     // Step 1: Perform mutations on multiple fields
     for (field_name, value, source) in &test_cases {
         println!("📝 Mutating field: {}", field_name);
-        let aref_uuid = mutate_field_value(&fixture, "TransformBase", field_name, value.clone(), source)
+        let molecule_uuid = mutate_field_value(&fixture, "TransformBase", field_name, value.clone(), source)
             .unwrap_or_else(|_| panic!("Failed to mutate {}", field_name));
-        aref_uuids.push(aref_uuid);
+        molecule_uuids.push(molecule_uuid);
     }
     
     // Step 2: Query all fields and verify they return correct values
@@ -223,13 +223,13 @@ fn test_multiple_field_mutations_and_queries() {
     }
     
     println!("✅ Multiple field mutations and queries test PASSED");
-    println!("   AtomRef UUIDs: {:?}", aref_uuids);
+    println!("   Molecule UUIDs: {:?}", molecule_uuids);
 }
 
 #[test]
 fn test_multiple_mutation_cycles_on_same_field() {
     println!("🧪 TEST: Multiple Mutation Cycles on Same Field");
-    println!("   This validates that AtomRef updates work consistently across multiple mutations");
+    println!("   This validates that Molecule updates work consistently across multiple mutations");
     
     let fixture = TestFixture::new()
         .expect("Failed to create test fixture");
@@ -244,15 +244,15 @@ fn test_multiple_mutation_cycles_on_same_field() {
         (json!(200), "cycle_4"),
     ];
     
-    let mut aref_uuids = Vec::new();
+    let mut molecule_uuids = Vec::new();
     
     for (i, (value, source)) in mutation_cycles.iter().enumerate() {
         println!("📝 Mutation cycle {} of {}", i + 1, mutation_cycles.len());
         
         // Perform mutation
-        let aref_uuid = mutate_field_value(&fixture, "TransformBase", "value1", value.clone(), source)
+        let molecule_uuid = mutate_field_value(&fixture, "TransformBase", "value1", value.clone(), source)
             .unwrap_or_else(|_| panic!("Failed to mutate in cycle {}", i + 1));
-        aref_uuids.push(aref_uuid.clone());
+        molecule_uuids.push(molecule_uuid.clone());
         
         // Verify query returns the latest value
         let result = query_field_value(&fixture, &schema, "value1", value)
@@ -260,11 +260,11 @@ fn test_multiple_mutation_cycles_on_same_field() {
         
         assert_eq!(&result, value, "Cycle {}: Query should return latest mutated value", i + 1);
         
-        // DIAGNOSTIC: Verify AtomRef consistency
+        // DIAGNOSTIC: Verify Molecule consistency
         if i > 0 {
-            // All mutations should reuse the same AtomRef UUID
-            assert_eq!(aref_uuids[i], aref_uuids[0], 
-                "Cycle {}: Should reuse same AtomRef UUID", i + 1);
+            // All mutations should reuse the same Molecule UUID
+            assert_eq!(molecule_uuids[i], molecule_uuids[0], 
+                "Cycle {}: Should reuse same Molecule UUID", i + 1);
         }
         
         println!("✅ Cycle {} completed successfully", i + 1);
@@ -272,7 +272,7 @@ fn test_multiple_mutation_cycles_on_same_field() {
     
     println!("✅ Multiple mutation cycles test PASSED");
     println!("   Total cycles: {}", mutation_cycles.len());
-    println!("   AtomRef UUID (reused): {}", aref_uuids[0]);
+    println!("   Molecule UUID (reused): {}", molecule_uuids[0]);
 }
 
 #[test]
@@ -303,7 +303,7 @@ fn test_mutation_query_flow_with_different_data_types() {
         let source = format!("datatype_{}", data_type);
         
         // Perform mutation
-        let aref_uuid = mutate_field_value(&fixture, "TransformBase", "value1", value.clone(), &source)
+        let molecule_uuid = mutate_field_value(&fixture, "TransformBase", "value1", value.clone(), &source)
             .unwrap_or_else(|_| panic!("Failed to mutate {} data type", data_type));
         
         // Verify query returns correct value
@@ -312,7 +312,7 @@ fn test_mutation_query_flow_with_different_data_types() {
         
         assert_eq!(result, value, "Data type {}: Query should return correct value", data_type);
         
-        println!("✅ Data type {} test passed - AtomRef: {}", data_type, aref_uuid);
+        println!("✅ Data type {} test passed - Molecule: {}", data_type, molecule_uuid);
     }
     
     println!("✅ Different data types test PASSED");
@@ -367,10 +367,10 @@ fn test_concurrent_mutations_and_queries() {
     }
     
     // Verify all operations succeeded
-    for (i, success, aref_uuid, _value) in &results {
+    for (i, success, molecule_uuid, _value) in &results {
         assert!(success, "Concurrent operation {} should succeed", i);
-        assert!(aref_uuid.is_some(), "Concurrent operation {} should return AtomRef UUID", i);
-        println!("✅ Concurrent operation {} succeeded - AtomRef: {:?}", i, aref_uuid);
+        assert!(molecule_uuid.is_some(), "Concurrent operation {} should return Molecule UUID", i);
+        println!("✅ Concurrent operation {} succeeded - Molecule: {:?}", i, molecule_uuid);
     }
     
     // Verify final state is consistent
@@ -409,7 +409,7 @@ fn test_complete_range_only_architecture_validation() {
     // Test that mutations and queries work correctly in Range-only environment
     let test_value = json!({"architecture": "range_only", "collections_removed": true});
     
-    let aref_uuid = mutate_field_value(&fixture, "TransformBase", "value1", test_value.clone(), "range_only_test")
+    let molecule_uuid = mutate_field_value(&fixture, "TransformBase", "value1", test_value.clone(), "range_only_test")
         .expect("Failed to mutate in range-only architecture");
     
     let result = query_field_value(&fixture, &schema, "value1", &test_value)
@@ -418,13 +418,13 @@ fn test_complete_range_only_architecture_validation() {
     assert_eq!(result, test_value, "Range-only architecture should handle mutations and queries correctly");
     
     println!("✅ Range-only architecture validation PASSED");
-    println!("   AtomRef UUID: {}", aref_uuid);
+    println!("   Molecule UUID: {}", molecule_uuid);
     println!("   No Collection dependencies detected");
 }
 
 #[test]
-fn test_diagnostic_atomref_bug_prevention() {
-    println!("🧪 TEST: Diagnostic AtomRef Bug Prevention");
+fn test_diagnostic_molecule_bug_prevention() {
+    println!("🧪 TEST: Diagnostic Molecule Bug Prevention");
     println!("   This validates that the static-schema-reference bug is prevented");
     
     let fixture = TestFixture::new()
@@ -439,35 +439,35 @@ fn test_diagnostic_atomref_bug_prevention() {
         println!("🚨 Set static schema reference: STATIC_REFERENCE_SHOULD_NOT_BE_USED");
     }
     
-    // Perform mutation to create dynamic AtomRef
+    // Perform mutation to create dynamic Molecule
     let test_value = json!("dynamic_value_from_mutation");
-    let dynamic_aref_uuid = mutate_field_value(&fixture, "TransformBase", "value1", test_value.clone(), "bug_prevention_test")
+    let dynamic_molecule_uuid = mutate_field_value(&fixture, "TransformBase", "value1", test_value.clone(), "bug_prevention_test")
         .expect("Failed to mutate with static reference present");
     
-    println!("✅ Dynamic AtomRef created: {}", dynamic_aref_uuid);
+    println!("✅ Dynamic Molecule created: {}", dynamic_molecule_uuid);
     
-    // Verify dynamic AtomRef points to the correct atom
-    let aref_key = format!("ref:{}", dynamic_aref_uuid);
-    let dynamic_aref = fixture.db_ops.get_item::<datafold::atom::Molecule>(&aref_key)
-        .expect("Failed to load dynamic AtomRef")
-        .expect("Dynamic AtomRef should exist");
+    // Verify dynamic Molecule points to the correct atom
+    let molecule_key = format!("ref:{}", dynamic_molecule_uuid);
+    let dynamic_molecule = fixture.db_ops.get_item::<datafold::atom::Molecule>(&molecule_key)
+        .expect("Failed to load dynamic Molecule")
+        .expect("Dynamic Molecule should exist");
     
-    let dynamic_atom_uuid = dynamic_aref.get_atom_uuid();
-    println!("🔍 Dynamic AtomRef points to atom: {}", dynamic_atom_uuid);
+    let dynamic_atom_uuid = dynamic_molecule.get_atom_uuid();
+    println!("🔍 Dynamic Molecule points to atom: {}", dynamic_atom_uuid);
     
-    // CRITICAL TEST: Query should use dynamic AtomRef, NOT static schema reference
+    // CRITICAL TEST: Query should use dynamic Molecule, NOT static schema reference
     let result = query_field_value(&fixture, &schema, "value1", &test_value)
-        .expect("Query should succeed using dynamic AtomRef (bug prevention working)");
+        .expect("Query should succeed using dynamic Molecule (bug prevention working)");
     
-    assert_eq!(result, test_value, "Query should return value from dynamic AtomRef, not static reference");
+    assert_eq!(result, test_value, "Query should return value from dynamic Molecule, not static reference");
     
     // DIAGNOSTIC: Verify static reference was NOT used
     if dynamic_atom_uuid == "STATIC_REFERENCE_SHOULD_NOT_BE_USED" {
-        panic!("❌ BUG DETECTED: Query used static schema reference instead of dynamic AtomRef");
+        panic!("❌ BUG DETECTED: Query used static schema reference instead of dynamic Molecule");
     }
     
-    println!("✅ AtomRef bug prevention test PASSED");
-    println!("   Query correctly used dynamic AtomRef: {}", dynamic_aref_uuid);
+    println!("✅ Molecule bug prevention test PASSED");
+    println!("   Query correctly used dynamic Molecule: {}", dynamic_molecule_uuid);
     println!("   Static schema reference correctly ignored");
 }
 
@@ -547,7 +547,7 @@ fn test_complete_mutation_query_integration_workflow() {
     println!("\n✅ COMPREHENSIVE INTEGRATION TEST PASSED");
     println!("   ✓ All mutation→query flows working correctly");
     println!("   ✓ Range-only architecture functioning properly");
-    println!("   ✓ AtomRef bug fixes validated");
+    println!("   ✓ Molecule bug fixes validated");
     println!("   ✓ System ready for production use");
     println!("   📊 Final state:");
     println!("     value1: {}", final_value1);

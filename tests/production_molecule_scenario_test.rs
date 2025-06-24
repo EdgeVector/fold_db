@@ -3,7 +3,7 @@
 //! This test attempts to reproduce the exact failure pattern where:
 //! - Handler creates atom: f52f7401-017d-4998-813e-96946e0ffc65  
 //! - Query looks for atom: f079c516-b08f-4105-a609-7f55ccdfcf0a (old/wrong)
-//! - AtomRef UUID: affc56e5-17fb-48ad-b73e-353fe1739d7e (should point to new atom)
+//! - Molecule UUID: affc56e5-17fb-48ad-b73e-353fe1739d7e (should point to new atom)
 
 use datafold::fold_db_core::infrastructure::message_bus::{
     MessageBus,
@@ -19,9 +19,9 @@ use std::thread;
 use tempfile::tempdir;
 
 #[test]
-fn test_production_atomref_scenario() {
-    println!("🔍 TESTING PRODUCTION ATOMREF SCENARIO");
-    println!("   Reproducing: AtomRef points to old atom UUID after update");
+fn test_production_molecule_scenario() {
+    println!("🔍 TESTING PRODUCTION MOLECULE SCENARIO");
+    println!("   Reproducing: Molecule points to old atom UUID after update");
     
     // Setup database
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -57,19 +57,19 @@ fn test_production_atomref_scenario() {
         .expect("Should receive initial response");
     
     assert!(response1.success, "Initial request should succeed");
-    let aref_uuid = response1.molecule_uuid.as_ref().expect("Should return Molecule UUID");
-    println!("✅ Initial Molecule created: {}", aref_uuid);
+    let molecule_uuid = response1.molecule_uuid.as_ref().expect("Should return Molecule UUID");
+    println!("✅ Initial Molecule created: {}", molecule_uuid);
     
     // STEP 2: Directly inspect the database to see current state
     println!("🔍 STEP 2: Inspecting database state after initial creation");
-    let stored_aref = db_ops.get_item::<Molecule>(&format!("ref:{}", aref_uuid))
-        .expect("Should be able to query AtomRef")
-        .expect("AtomRef should exist");
+    let stored_molecule = db_ops.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))
+        .expect("Should be able to query Molecule")
+        .expect("Molecule should exist");
     
-    let initial_atom_uuid = stored_aref.get_atom_uuid().clone();
-    println!("✅ Initial atom UUID in AtomRef: {}", initial_atom_uuid);
+    let initial_atom_uuid = stored_molecule.get_atom_uuid().clone();
+    println!("✅ Initial atom UUID in Molecule: {}", initial_atom_uuid);
     
-    // STEP 3: Create second field value (should update AtomRef to new atom)
+    // STEP 3: Create second field value (should update Molecule to new atom)
     println!("📝 STEP 3: Creating updated field value (critical update)");
     let request2 = FieldValueSetRequest::new(
         "updated_value".to_string(),
@@ -86,29 +86,29 @@ fn test_production_atomref_scenario() {
         .expect("Should receive update response");
     
     assert!(response2.success, "Update request should succeed");
-    let aref_uuid_2 = response2.molecule_uuid.as_ref().expect("Should return Molecule UUID");
+    let molecule_uuid_2 = response2.molecule_uuid.as_ref().expect("Should return Molecule UUID");
     
-    // Verify same AtomRef UUID is used
-    assert_eq!(aref_uuid, aref_uuid_2, "Should reuse same Molecule UUID");
-    println!("✅ Update used same Molecule: {}", aref_uuid_2);
+    // Verify same Molecule UUID is used
+    assert_eq!(molecule_uuid, molecule_uuid_2, "Should reuse same Molecule UUID");
+    println!("✅ Update used same Molecule: {}", molecule_uuid_2);
     
-    // STEP 4: CRITICAL VALIDATION - Check if AtomRef points to new atom
-    println!("🔍 STEP 4: CRITICAL VALIDATION - Checking AtomRef update");
-    let updated_aref = db_ops.get_item::<Molecule>(&format!("ref:{}", aref_uuid))
-        .expect("Should be able to query updated AtomRef")
-        .expect("Updated AtomRef should exist");
+    // STEP 4: CRITICAL VALIDATION - Check if Molecule points to new atom
+    println!("🔍 STEP 4: CRITICAL VALIDATION - Checking Molecule update");
+    let updated_molecule = db_ops.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))
+        .expect("Should be able to query updated Molecule")
+        .expect("Updated Molecule should exist");
     
-    let final_atom_uuid = updated_aref.get_atom_uuid().clone();
-    println!("✅ Final atom UUID in AtomRef: {}", final_atom_uuid);
+    let final_atom_uuid = updated_molecule.get_atom_uuid().clone();
+    println!("✅ Final atom UUID in Molecule: {}", final_atom_uuid);
     
-    // CRITICAL TEST: AtomRef should point to NEW atom, not old one
+    // CRITICAL TEST: Molecule should point to NEW atom, not old one
     if final_atom_uuid == initial_atom_uuid {
-        panic!("🚨 ATOMREF UPDATE FAILURE DETECTED! 
-               AtomRef still points to old atom UUID: {}
+        panic!("🚨 MOLECULE UPDATE FAILURE DETECTED!
+               Molecule still points to old atom UUID: {}
                This is the exact bug described in the logs!", final_atom_uuid);
     }
     
-    println!("✅ SUCCESS: AtomRef correctly updated to new atom UUID");
+    println!("✅ SUCCESS: Molecule correctly updated to new atom UUID");
     
     // STEP 5: Verify the new atom exists and old one is different
     println!("🔍 STEP 5: Verifying atom chain integrity");
@@ -126,14 +126,14 @@ fn test_production_atomref_scenario() {
     println!("✅ PRODUCTION SCENARIO TEST PASSED");
     println!("   Initial atom: {}", initial_atom_uuid);
     println!("   Final atom:   {}", final_atom_uuid);
-    println!("   AtomRef:      {}", aref_uuid);
-    println!("   AtomRef correctly points to latest atom");
+    println!("   Molecule:      {}", molecule_uuid);
+    println!("   Molecule correctly points to latest atom");
 }
 
 #[test] 
-fn test_concurrent_atomref_updates() {
-    println!("🔍 TESTING CONCURRENT ATOMREF UPDATES");
-    println!("   Checking for race conditions in AtomRef updates");
+fn test_concurrent_molecule_updates() {
+    println!("🔍 TESTING CONCURRENT MOLECULE UPDATES");
+    println!("   Checking for race conditions in Molecule updates");
     
     // Setup database
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -185,24 +185,24 @@ fn test_concurrent_atomref_updates() {
         }
     }
     
-    // All responses should have the same AtomRef UUID (same field)
-    let first_aref = responses[0].molecule_uuid.as_ref().unwrap();
+    // All responses should have the same Molecule UUID (same field)
+    let first_molecule = responses[0].molecule_uuid.as_ref().unwrap();
     for (i, response) in responses.iter().enumerate() {
-        let aref_uuid = response.molecule_uuid.as_ref().unwrap();
-        assert_eq!(first_aref, aref_uuid,
+        let molecule_uuid = response.molecule_uuid.as_ref().unwrap();
+        assert_eq!(first_molecule, molecule_uuid,
             "All concurrent updates should use same Molecule UUID (response {})", i);
     }
     
     println!("✅ CONCURRENT UPDATE TEST PASSED");
-    println!("   All {} concurrent updates used same Molecule: {}", responses.len(), first_aref);
+    println!("   All {} concurrent updates used same Molecule: {}", responses.len(), first_molecule);
     
-    // Final validation: Check final state of AtomRef
-    let final_aref = db_ops.get_item::<Molecule>(&format!("ref:{}", first_aref))
-        .expect("Should be able to query final AtomRef")
-        .expect("Final AtomRef should exist");
+    // Final validation: Check final state of Molecule
+    let final_molecule = db_ops.get_item::<Molecule>(&format!("ref:{}", first_molecule))
+        .expect("Should be able to query final Molecule")
+        .expect("Final Molecule should exist");
     
-    let final_atom_uuid = final_aref.get_atom_uuid();
-    println!("   Final AtomRef points to atom: {}", final_atom_uuid);
+    let final_atom_uuid = final_molecule.get_atom_uuid();
+    println!("   Final Molecule points to atom: {}", final_atom_uuid);
     
     // Verify the final atom exists
     let final_atom_key = format!("atom:{}", final_atom_uuid);

@@ -74,10 +74,10 @@ impl TransformManager {
         let TransformRegistration {
             transform_id,
             mut transform,
-            input_arefs,
+            input_molecules,
             input_names,
             trigger_fields,
-            output_aref,
+            output_molecule,
             schema_name,
             field_name,
         } = registration;
@@ -85,7 +85,7 @@ impl TransformManager {
         // Validate and prepare transform
         TransformExecutor::validate_transform(&transform)?;
         let output_field = format!("{}.{}", schema_name, field_name);
-        let inputs_len = input_arefs.len();
+        let inputs_len = input_molecules.len();
         transform.set_output(output_field.clone());
 
         // Store transform using direct database operations
@@ -95,10 +95,10 @@ impl TransformManager {
         self.update_in_memory_mappings(
             &transform_id,
             transform,
-            &input_arefs,
+            &input_molecules,
             &input_names,
             &trigger_fields,
-            &output_aref,
+            &output_molecule,
         )?;
 
         info!(
@@ -116,10 +116,10 @@ impl TransformManager {
         &self,
         transform_id: &str,
         transform: Transform,
-        input_arefs: &[String],
+        input_molecules: &[String],
         input_names: &[String],
         trigger_fields: &[String],
-        output_aref: &str,
+        output_molecule: &str,
     ) -> Result<(), SchemaError> {
         // Update registered transforms
         {
@@ -134,16 +134,16 @@ impl TransformManager {
             let mut transform_outputs = self.transform_outputs.write().map_err(|_| {
                 SchemaError::InvalidData("Failed to acquire transform_outputs lock".to_string())
             })?;
-            transform_outputs.insert(transform_id.to_string(), output_aref.to_string());
+            transform_outputs.insert(transform_id.to_string(), output_molecule.to_string());
         }
 
         // Update input atom references
         {
-            let mut transform_to_arefs = self.transform_to_arefs.write().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire transform_to_arefs lock".to_string())
+            let mut transform_to_molecules = self.transform_to_molecules.write().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire transform_to_molecules lock".to_string())
             })?;
-            let aref_set: HashSet<String> = input_arefs.iter().cloned().collect();
-            transform_to_arefs.insert(transform_id.to_string(), aref_set);
+            let molecule_set: HashSet<String> = input_molecules.iter().cloned().collect();
+            transform_to_molecules.insert(transform_id.to_string(), molecule_set);
         }
 
         // Update input names mapping
@@ -151,9 +151,9 @@ impl TransformManager {
             let mut transform_input_names = self.transform_input_names.write().map_err(|_| {
                 SchemaError::InvalidData("Failed to acquire transform_input_names lock".to_string())
             })?;
-            let name_map: HashMap<String, String> = input_arefs.iter()
+            let name_map: HashMap<String, String> = input_molecules.iter()
                 .zip(input_names.iter())
-                .map(|(aref, name)| (aref.clone(), name.clone()))
+                .map(|(molecule, name)| (molecule.clone(), name.clone()))
                 .collect();
             transform_input_names.insert(transform_id.to_string(), name_map);
         }
@@ -161,8 +161,8 @@ impl TransformManager {
         // Update field trigger mappings
         self.update_field_trigger_mappings(transform_id, trigger_fields)?;
 
-        // Update reverse mapping (aref -> transforms)
-        self.update_aref_to_transforms_mapping(transform_id, input_arefs)?;
+        // Update reverse mapping (molecule -> transforms)
+        self.update_molecule_to_transforms_mapping(transform_id, input_molecules)?;
 
         Ok(())
     }
@@ -198,18 +198,18 @@ impl TransformManager {
         Ok(())
     }
 
-    /// Helper method to update aref to transforms mapping
-    pub(super) fn update_aref_to_transforms_mapping(
+    /// Helper method to update molecule to transforms mapping
+    pub(super) fn update_molecule_to_transforms_mapping(
         &self,
         transform_id: &str,
-        input_arefs: &[String],
+        input_molecules: &[String],
     ) -> Result<(), SchemaError> {
-        let mut aref_to_transforms = self.aref_to_transforms.write().map_err(|_| {
-            SchemaError::InvalidData("Failed to acquire aref_to_transforms lock".to_string())
+        let mut molecule_to_transforms = self.molecule_to_transforms.write().map_err(|_| {
+            SchemaError::InvalidData("Failed to acquire molecule_to_transforms lock".to_string())
         })?;
 
-        for aref_uuid in input_arefs {
-            let transform_set = aref_to_transforms.entry(aref_uuid.clone()).or_default();
+        for molecule_uuid in input_molecules {
+            let transform_set = molecule_to_transforms.entry(molecule_uuid.clone()).or_default();
             transform_set.insert(transform_id.to_string());
         }
 

@@ -97,7 +97,7 @@ impl RangeArchitectureTestFixture {
         range_field: &mut RangeField,
         test_data: Vec<(String, serde_json::Value)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Initialize AtomRefRange
+        // Initialize MoleculeRange
         range_field.ensure_molecule_range("test_user".to_string());
         
         for (key, content) in test_data {
@@ -428,14 +428,14 @@ fn test_range_field_mutations_and_queries() {
     
     let mut created_uuids = Vec::new();
     for (user_key, user_data) in &new_users {
-        let aref_uuid = fixture.mutate_range_field(
+        let molecule_uuid = fixture.mutate_range_field(
             "UserCatalog",
             "profile_data", 
             "user_id",
             user_data.clone(),
         ).unwrap_or_else(|_| panic!("Failed to create user {}", user_key));
         
-        created_uuids.push(aref_uuid);
+        created_uuids.push(molecule_uuid);
         println!("✅ Created user {}: {}", user_key, user_data["name"]);
     }
     

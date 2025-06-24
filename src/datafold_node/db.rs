@@ -161,14 +161,14 @@ impl DataFoldNode {
     }
 
     /// Retrieves the version history for a specific atom reference.
-    pub fn get_history(&self, aref_uuid: &str) -> FoldDbResult<Vec<Value>> {
+    pub fn get_history(&self, molecule_uuid: &str) -> FoldDbResult<Vec<Value>> {
         let db = self
             .db
             .lock()
             .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
         let history = db
             .atom_manager
-            .get_atom_history(aref_uuid)
+            .get_atom_history(molecule_uuid)
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
         Ok(history.into_iter().map(|a| a.content().clone()).collect())
     }

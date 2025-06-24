@@ -56,25 +56,25 @@ fn test_field_value_set_request_handler() {
     // Verify the response
     assert_eq!(response.correlation_id, "test_correlation_123");
     assert!(response.success, "FieldValueSetRequest should succeed");
-    assert!(response.molecule_uuid.is_some(), "Should return an AtomRef UUID");
+    assert!(response.molecule_uuid.is_some(), "Should return an Molecule UUID");
     assert!(response.error.is_none(), "Should not have an error");
     
-    // The AtomRef UUID should follow our naming convention
-    let aref_uuid = response.molecule_uuid.unwrap();
+    // The Molecule UUID should follow our naming convention
+    let molecule_uuid = response.molecule_uuid.unwrap();
     assert!(
-        aref_uuid.contains("user_schema_username"), 
-        "AtomRef UUID should contain schema and field name: {}", 
-        aref_uuid
+        molecule_uuid.contains("user_schema_username"), 
+        "Molecule UUID should contain schema and field name: {}", 
+        molecule_uuid
     );
     assert!(
-        aref_uuid.contains("single") || aref_uuid.contains("range"),
-        "AtomRef UUID should indicate field type: {}",
-        aref_uuid
+        molecule_uuid.contains("single") || molecule_uuid.contains("range"),
+        "Molecule UUID should indicate field type: {}",
+        molecule_uuid
     );
     
     println!("✅ FieldValueSetRequest handler test passed!");
     println!("   Correlation ID: {}", response.correlation_id);
-    println!("   AtomRef UUID: {}", aref_uuid);
+    println!("   Molecule UUID: {}", molecule_uuid);
     println!("   Success: {}", response.success);
 }
 
@@ -119,20 +119,20 @@ fn test_field_value_set_request_range_field() {
     // Verify the response
     assert_eq!(response.correlation_id, "test_range_456");
     assert!(response.success, "FieldValueSetRequest should succeed");
-    assert!(response.molecule_uuid.is_some(), "Should return an AtomRef UUID");
+    assert!(response.molecule_uuid.is_some(), "Should return an Molecule UUID");
     assert!(response.error.is_none(), "Should not have an error");
     
-    // The AtomRef UUID should indicate it's a range field
-    let aref_uuid = response.molecule_uuid.unwrap();
+    // The Molecule UUID should indicate it's a range field
+    let molecule_uuid = response.molecule_uuid.unwrap();
     assert!(
-        aref_uuid.contains("range"), 
-        "Range field should create AtomRefRange: {}", 
-        aref_uuid
+        molecule_uuid.contains("range"), 
+        "Range field should create MoleculeRange: {}", 
+        molecule_uuid
     );
     
     println!("✅ FieldValueSetRequest range field test passed!");
     println!("   Correlation ID: {}", response.correlation_id);
-    println!("   AtomRef UUID: {}", aref_uuid);
+    println!("   Molecule UUID: {}", molecule_uuid);
     println!("   Success: {}", response.success);
 }
 

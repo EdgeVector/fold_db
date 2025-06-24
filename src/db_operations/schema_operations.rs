@@ -85,14 +85,14 @@ impl DbOperations {
                         
                         // Create molecule pointing to the atom
                         let molecule = Molecule::new(atom_uuid, "system".to_string());
-                        let ref_uuid = molecule.uuid().to_string();
+                        let molecule_uuid = molecule.uuid().to_string();
                         
                         // Store the molecule
-                        self.store_item(&format!("ref:{}", ref_uuid), &molecule)
+                        self.store_item(&format!("ref:{}", molecule_uuid), &molecule)
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
 
                         // Link the field to the molecule
-                        field.set_molecule_uuid(ref_uuid);
+                        field.set_molecule_uuid(molecule_uuid);
                     }
                 }
                 FieldVariant::Range(ref mut field) => {
@@ -119,14 +119,14 @@ impl DbOperations {
                         
                         // Create molecule pointing to the atom
                         let molecule = Molecule::new(atom_uuid, "system".to_string());
-                        let ref_uuid = molecule.uuid().to_string();
+                        let molecule_uuid = molecule.uuid().to_string();
                         
                         // Store the molecule
-                        self.store_item(&format!("ref:{}", ref_uuid), &molecule)
+                        self.store_item(&format!("ref:{}", molecule_uuid), &molecule)
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
 
                         // Link the field to the molecule
-                        field.set_molecule_uuid(ref_uuid);
+                        field.set_molecule_uuid(molecule_uuid);
                     }
                 }
             }

@@ -124,7 +124,7 @@ impl PersistenceManager {
         Ok(())
     }
 
-    /// Get the underlying tree for advanced operations (use carefully)
+    /// Get the underlying tree for advanced operations (use cmoleculeully)
     pub fn get_tree(&self) -> &Tree {
         &self.tree
     }

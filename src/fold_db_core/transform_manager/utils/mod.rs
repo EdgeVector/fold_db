@@ -140,22 +140,22 @@ impl TransformUtils {
         match field {
             FieldVariant::Range(_) => {
                 info!("🔄 Detected range field, using MoleculeRange resolution");
-                let range_aref_uuid = format!("{}_{}_range", schema.name, field_name);
-                info!("🔍 Looking for MoleculeRange: {}", range_aref_uuid);
+                let range_molecule_uuid = format!("{}_{}_range", schema.name, field_name);
+                info!("🔍 Looking for MoleculeRange: {}", range_molecule_uuid);
                 
-                match db_ops.get_item::<crate::atom::MoleculeRange>(&format!("ref:{}", range_aref_uuid)) {
-                    Ok(Some(range_aref)) => {
-                        info!("✅ Found MoleculeRange with {} entries", range_aref.atom_uuids.len());
+                match db_ops.get_item::<crate::atom::MoleculeRange>(&format!("ref:{}", range_molecule_uuid)) {
+                    Ok(Some(range_molecule)) => {
+                        info!("✅ Found MoleculeRange with {} entries", range_molecule.atom_uuids.len());
                         
                         // BUG FIX 1: Filter by specific range key if provided
                         let entries_to_process: Vec<_> = if let Some(ref target_key) = range_key {
                             info!("🎯 Filtering for specific range key: '{}'", target_key);
-                            range_aref.atom_uuids.iter()
+                            range_molecule.atom_uuids.iter()
                                 .filter(|(key, _)| *key == target_key)
                                 .collect()
                         } else {
                             info!("📋 Processing all range keys");
-                            range_aref.atom_uuids.iter().collect()
+                            range_molecule.atom_uuids.iter().collect()
                         };
                         
                         let mut combined_data = serde_json::Map::new();
@@ -185,12 +185,12 @@ impl TransformUtils {
                         return Ok(result);
                     }
                     Ok(None) => {
-                        error!("❌ MoleculeRange '{}' not found", range_aref_uuid);
-                        return Err(SchemaError::InvalidField(format!("MoleculeRange '{}' not found", range_aref_uuid)));
+                        error!("❌ MoleculeRange '{}' not found", range_molecule_uuid);
+                        return Err(SchemaError::InvalidField(format!("MoleculeRange '{}' not found", range_molecule_uuid)));
                     }
                     Err(e) => {
-                        error!("❌ Error loading MoleculeRange '{}': {}", range_aref_uuid, e);
-                        return Err(SchemaError::InvalidField(format!("Error loading MoleculeRange '{}': {}", range_aref_uuid, e)));
+                        error!("❌ Error loading MoleculeRange '{}': {}", range_molecule_uuid, e);
+                        return Err(SchemaError::InvalidField(format!("Error loading MoleculeRange '{}': {}", range_molecule_uuid, e)));
                     }
                 }
             }
@@ -205,12 +205,12 @@ impl TransformUtils {
         error!("🚨 This should be reading from DYNAMIC Molecule system instead!");
 
         // DIAGNOSTIC: Check what the dynamic Molecule system has
-        let dynamic_aref_uuid = format!("{}_{}_single", schema.name, field_name);
-        error!("🔍 DIAGNOSTIC: Checking dynamic Molecule UUID: {}", dynamic_aref_uuid);
+        let dynamic_molecule_uuid = format!("{}_{}_single", schema.name, field_name);
+        error!("🔍 DIAGNOSTIC: Checking dynamic Molecule UUID: {}", dynamic_molecule_uuid);
         
-        match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", dynamic_aref_uuid)) {
-            Ok(Some(dynamic_aref)) => {
-                let dynamic_atom_uuid = dynamic_aref.get_atom_uuid();
+        match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", dynamic_molecule_uuid)) {
+            Ok(Some(dynamic_molecule)) => {
+                let dynamic_atom_uuid = dynamic_molecule.get_atom_uuid();
                 error!("🔍 DIAGNOSTIC: Dynamic Molecule points to atom: {}", dynamic_atom_uuid);
                 error!("🚨 MISMATCH DETECTED: Static schema: {} vs Dynamic Molecule: {}", molecule_uuid, dynamic_atom_uuid);
 
@@ -309,8 +309,8 @@ impl TransformUtils {
     }
 
     /// Standard logging for atom ref operations
-    pub fn log_molecule_operation(ref_uuid: &str, atom_uuid: &str, operation: &str) {
-        info!("🔗 Molecule {} - ref:{} -> atom:{}", operation, ref_uuid, atom_uuid);
+    pub fn log_molecule_operation(molecule_uuid: &str, atom_uuid: &str, operation: &str) {
+        info!("🔗 Molecule {} - ref:{} -> atom:{}", operation, molecule_uuid, atom_uuid);
     }
 
     /// Standard logging for field mappings state

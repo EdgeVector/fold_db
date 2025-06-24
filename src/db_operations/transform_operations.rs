@@ -40,8 +40,8 @@ impl DbOperations {
 
         // Metadata keys that should be excluded from transform listing
         let metadata_keys = [
-            "map_aref_to_transforms",
-            "map_transform_to_arefs",
+            "map_molecule_to_transforms",
+            "map_transform_to_molecules",
             "map_transform_input_names",
             "map_field_to_transforms",
             "map_transform_to_fields",
@@ -88,7 +88,7 @@ impl DbOperations {
         self.get_item(&key)
     }
 
-    /// Stores a transform mapping (for internal mappings like aref_to_transforms)
+    /// Stores a transform mapping (for internal mappings like molecule_to_transforms)
     pub fn store_transform_mapping(&self, key: &str, data: &[u8]) -> Result<(), SchemaError> {
         self.transforms_tree
             .insert(key.as_bytes(), data)

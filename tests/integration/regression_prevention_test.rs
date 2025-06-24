@@ -4,7 +4,7 @@
 //! and implements safeguards to prevent their reintroduction.
 //!
 //! **Regression Prevention Coverage:**
-//! 1. **AtomRef Resolution Bug Fixes** - Prevent static vs dynamic AtomRef issues
+//! 1. **Molecule Resolution Bug Fixes** - Prevent static vs dynamic Molecule issues
 //! 2. **Transform Trigger Bug Fixes** - Ensure transform triggering works correctly
 //! 3. **Edge Cases Prevention** - Test boundary conditions that could cause issues
 //! 4. **Backwards Compatibility** - Ensure system works with legacy data patterns
@@ -70,11 +70,11 @@ impl RegressionPreventionTestFixture {
         })
     }
     
-    /// Create a schema with pre-existing static AtomRef to test the bug fix
-    fn create_schema_with_static_atomref(&self) -> Result<Schema, Box<dyn std::error::Error>> {
+    /// Create a schema with pre-existing static Molecule to test the bug fix
+    fn create_schema_with_static_molecule(&self) -> Result<Schema, Box<dyn std::error::Error>> {
         let mut problematic_schema = Schema::new("ProblematicSchema".to_string());
         
-        // Create field with static AtomRef that should be overridden by dynamic system
+        // Create field with static Molecule that should be overridden by dynamic system
         let mut field_with_static_ref = FieldFactory::create_single_field();
         field_with_static_ref.set_molecule_uuid("STATIC_REF_SHOULD_BE_OVERRIDDEN".to_string());
         
@@ -135,14 +135,14 @@ impl RegressionPreventionTestFixture {
         })
     }
     
-    /// Perform a complete AtomRef lifecycle validation
-    fn validate_atomref_lifecycle(
+    /// Perform a complete Molecule lifecycle validation
+    fn validate_molecule_lifecycle(
         &self,
         schema_name: &str,
         field_name: &str,
         initial_value: serde_json::Value,
         updated_value: serde_json::Value,
-    ) -> Result<AtomRefLifecycleResult, Box<dyn std::error::Error>> {
+    ) -> Result<MoleculeLifecycleResult, Box<dyn std::error::Error>> {
         // Step 1: Initial mutation
         let initial_result = self.execute_tracked_mutation(
             schema_name,
@@ -155,19 +155,19 @@ impl RegressionPreventionTestFixture {
             return Err(format!("Initial mutation failed: {:?}", initial_result.error).into());
         }
         
-        let initial_aref_uuid = initial_result.molecule_uuid
-            .ok_or("Initial mutation should return AtomRef UUID")?;
+        let initial_molecule_uuid = initial_result.molecule_uuid
+            .ok_or("Initial mutation should return Molecule UUID")?;
         
-        // Step 2: Validate initial AtomRef
-        let initial_aref = self.validate_atomref_exists(&initial_aref_uuid)?;
-        let initial_atom_uuid = initial_aref.get_atom_uuid();
+        // Step 2: Validate initial Molecule
+        let initial_molecule = self.validate_molecule_exists(&initial_molecule_uuid)?;
+        let initial_atom_uuid = initial_molecule.get_atom_uuid();
         let initial_atom = self.validate_atom_exists(initial_atom_uuid)?;
         
         if initial_atom.content() != &initial_value {
             return Err("Initial atom content doesn't match expected value".into());
         }
         
-        // Step 3: Update mutation (should reuse same AtomRef)
+        // Step 3: Update mutation (should reuse same Molecule)
         let update_result = self.execute_tracked_mutation(
             schema_name,
             field_name,
@@ -179,20 +179,20 @@ impl RegressionPreventionTestFixture {
             return Err(format!("Update mutation failed: {:?}", update_result.error).into());
         }
         
-        let update_aref_uuid = update_result.molecule_uuid
-            .ok_or("Update mutation should return AtomRef UUID")?;
+        let update_molecule_uuid = update_result.molecule_uuid
+            .ok_or("Update mutation should return Molecule UUID")?;
         
-        // Step 4: Validate AtomRef reuse
-        if initial_aref_uuid != update_aref_uuid {
+        // Step 4: Validate Molecule reuse
+        if initial_molecule_uuid != update_molecule_uuid {
             return Err(format!(
-                "AtomRef should be reused: initial={}, update={}",
-                initial_aref_uuid, update_aref_uuid
+                "Molecule should be reused: initial={}, update={}",
+                initial_molecule_uuid, update_molecule_uuid
             ).into());
         }
         
         // Step 5: Validate updated content
-        let updated_aref = self.validate_atomref_exists(&update_aref_uuid)?;
-        let updated_atom_uuid = updated_aref.get_atom_uuid();
+        let updated_molecule = self.validate_molecule_exists(&update_molecule_uuid)?;
+        let updated_atom_uuid = updated_molecule.get_atom_uuid();
         let updated_atom = self.validate_atom_exists(updated_atom_uuid)?;
         
         if updated_atom.content() != &updated_value {
@@ -206,19 +206,19 @@ impl RegressionPreventionTestFixture {
             }
         }
         
-        Ok(AtomRefLifecycleResult {
-            initial_aref_uuid: initial_aref_uuid.clone(),
-            update_aref_uuid,
+        Ok(MoleculeLifecycleResult {
+            initial_molecule_uuid: initial_molecule_uuid.clone(),
+            update_molecule_uuid,
             initial_atom_uuid: initial_atom_uuid.clone(),
             updated_atom_uuid: updated_atom_uuid.clone(),
-            atomref_reused: true,
+            molecule_reused: true,
             atom_chain_valid: true,
         })
     }
     
-    fn validate_atomref_exists(&self, aref_uuid: &str) -> Result<Molecule, Box<dyn std::error::Error>> {
-        self.db_ops.get_item::<Molecule>(&format!("ref:{}", aref_uuid))?
-            .ok_or_else(|| format!("AtomRef {} not found", aref_uuid).into())
+    fn validate_molecule_exists(&self, molecule_uuid: &str) -> Result<Molecule, Box<dyn std::error::Error>> {
+        self.db_ops.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))?
+            .ok_or_else(|| format!("Molecule {} not found", molecule_uuid).into())
     }
     
     fn validate_atom_exists(&self, atom_uuid: &str) -> Result<Atom, Box<dyn std::error::Error>> {
@@ -240,37 +240,37 @@ struct MutationResult {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-struct AtomRefLifecycleResult {
-    initial_aref_uuid: String,
-    update_aref_uuid: String,
+struct MoleculeLifecycleResult {
+    initial_molecule_uuid: String,
+    update_molecule_uuid: String,
     initial_atom_uuid: String,
     updated_atom_uuid: String,
-    atomref_reused: bool,
+    molecule_reused: bool,
     atom_chain_valid: bool,
 }
 
 #[test]
-fn test_atomref_resolution_bug_prevention() {
-    println!("🧪 TEST: AtomRef Resolution Bug Prevention");
-    println!("   This validates the fix for static vs dynamic AtomRef resolution issues");
+fn test_molecule_resolution_bug_prevention() {
+    println!("🧪 TEST: Molecule Resolution Bug Prevention");
+    println!("   This validates the fix for static vs dynamic Molecule resolution issues");
     
     let fixture = RegressionPreventionTestFixture::new()
         .expect("Failed to create test fixture");
     
-    // Test 1: Static AtomRef override prevention
-    println!("🔧 Test 1: Static AtomRef Override Prevention");
+    // Test 1: Static Molecule override prevention
+    println!("🔧 Test 1: Static Molecule Override Prevention");
     
-    let schema = fixture.create_schema_with_static_atomref()
-        .expect("Failed to create schema with static AtomRef");
+    let schema = fixture.create_schema_with_static_molecule()
+        .expect("Failed to create schema with static Molecule");
     
     // Verify static ref is set initially
     if let Some(FieldVariant::Single(field)) = schema.fields.get("problematic_field") {
         assert_eq!(field.molecule_uuid(), Some(&"STATIC_REF_SHOULD_BE_OVERRIDDEN".to_string()));
-        println!("✅ Static AtomRef initially set: STATIC_REF_SHOULD_BE_OVERRIDDEN");
+        println!("✅ Static Molecule initially set: STATIC_REF_SHOULD_BE_OVERRIDDEN");
     }
     
-    // Perform mutation that should create dynamic AtomRef
-    let test_value = json!({"message": "Dynamic AtomRef test", "bug_prevention": true});
+    // Perform mutation that should create dynamic Molecule
+    let test_value = json!({"message": "Dynamic Molecule test", "bug_prevention": true});
     let mutation_result = fixture.execute_tracked_mutation(
         "ProblematicSchema",
         "problematic_field",
@@ -278,44 +278,44 @@ fn test_atomref_resolution_bug_prevention() {
         "bug_prevention_test",
     ).expect("Failed to execute mutation");
     
-    assert!(mutation_result.success, "Mutation should succeed despite static AtomRef");
+    assert!(mutation_result.success, "Mutation should succeed despite static Molecule");
     
-    let dynamic_aref_uuid = mutation_result.molecule_uuid
-        .expect("Mutation should return dynamic AtomRef UUID");
+    let dynamic_molecule_uuid = mutation_result.molecule_uuid
+        .expect("Mutation should return dynamic Molecule UUID");
     
-    // CRITICAL: Verify dynamic AtomRef was created and is different from static ref
-    assert_ne!(dynamic_aref_uuid, "STATIC_REF_SHOULD_BE_OVERRIDDEN",
-        "Dynamic AtomRef should override static reference");
+    // CRITICAL: Verify dynamic Molecule was created and is different from static ref
+    assert_ne!(dynamic_molecule_uuid, "STATIC_REF_SHOULD_BE_OVERRIDDEN",
+        "Dynamic Molecule should override static reference");
     
-    println!("✅ Dynamic AtomRef created: {}", dynamic_aref_uuid);
+    println!("✅ Dynamic Molecule created: {}", dynamic_molecule_uuid);
     
-    // Verify dynamic AtomRef points to correct data
-    let dynamic_aref = fixture.validate_atomref_exists(&dynamic_aref_uuid)
-        .expect("Dynamic AtomRef should exist");
+    // Verify dynamic Molecule points to correct data
+    let dynamic_molecule = fixture.validate_molecule_exists(&dynamic_molecule_uuid)
+        .expect("Dynamic Molecule should exist");
     
-    let dynamic_atom = fixture.validate_atom_exists(dynamic_aref.get_atom_uuid())
+    let dynamic_atom = fixture.validate_atom_exists(dynamic_molecule.get_atom_uuid())
         .expect("Dynamic atom should exist");
     
     assert_eq!(dynamic_atom.content(), &test_value);
-    println!("✅ Dynamic AtomRef points to correct data");
+    println!("✅ Dynamic Molecule points to correct data");
     
-    // Test 2: Query uses dynamic AtomRef, not static
-    println!("🔍 Test 2: Query Resolution Uses Dynamic AtomRef");
+    // Test 2: Query uses dynamic Molecule, not static
+    println!("🔍 Test 2: Query Resolution Uses Dynamic Molecule");
     
     let query_result = TransformUtils::resolve_field_value(
         &fixture.db_ops,
         &schema,
         "problematic_field",
         None,
-    ).expect("Query should succeed using dynamic AtomRef");
+    ).expect("Query should succeed using dynamic Molecule");
     
     assert_eq!(query_result, test_value,
-        "Query should return value from dynamic AtomRef, not static reference");
+        "Query should return value from dynamic Molecule, not static reference");
     
-    println!("✅ Query correctly uses dynamic AtomRef");
+    println!("✅ Query correctly uses dynamic Molecule");
     
-    // Test 3: Multiple mutations continue to use same dynamic AtomRef
-    println!("🔄 Test 3: Dynamic AtomRef Persistence Across Mutations");
+    // Test 3: Multiple mutations continue to use same dynamic Molecule
+    println!("🔄 Test 3: Dynamic Molecule Persistence Across Mutations");
     
     let second_value = json!({"message": "Second mutation test", "sequence": 2});
     let second_mutation = fixture.execute_tracked_mutation(
@@ -326,13 +326,13 @@ fn test_atomref_resolution_bug_prevention() {
     ).expect("Failed to execute second mutation");
     
     assert!(second_mutation.success);
-    let second_aref_uuid = second_mutation.molecule_uuid.expect("Second mutation should return AtomRef UUID");
+    let second_molecule_uuid = second_mutation.molecule_uuid.expect("Second mutation should return Molecule UUID");
     
-    // Should reuse the same dynamic AtomRef
-    assert_eq!(dynamic_aref_uuid, second_aref_uuid,
-        "Subsequent mutations should reuse the same dynamic AtomRef");
+    // Should reuse the same dynamic Molecule
+    assert_eq!(dynamic_molecule_uuid, second_molecule_uuid,
+        "Subsequent mutations should reuse the same dynamic Molecule");
     
-    println!("✅ Dynamic AtomRef reused across mutations");
+    println!("✅ Dynamic Molecule reused across mutations");
     
     // Test 4: Normal field behavior remains unchanged
     println!("✅ Test 4: Normal Field Behavior Validation");
@@ -346,15 +346,15 @@ fn test_atomref_resolution_bug_prevention() {
     ).expect("Failed to execute normal field mutation");
     
     assert!(normal_mutation.success);
-    let normal_aref_uuid = normal_mutation.molecule_uuid.expect("Normal mutation should return AtomRef UUID");
+    let normal_molecule_uuid = normal_mutation.molecule_uuid.expect("Normal mutation should return Molecule UUID");
     
-    // Normal field should get its own AtomRef
-    assert_ne!(normal_aref_uuid, dynamic_aref_uuid,
-        "Normal field should have its own AtomRef");
+    // Normal field should get its own Molecule
+    assert_ne!(normal_molecule_uuid, dynamic_molecule_uuid,
+        "Normal field should have its own Molecule");
     
     println!("✅ Normal field behavior unaffected");
     
-    println!("✅ AtomRef Resolution Bug Prevention Test PASSED");
+    println!("✅ Molecule Resolution Bug Prevention Test PASSED");
 }
 
 #[test]
@@ -579,7 +579,7 @@ fn test_edge_cases_prevention() {
         
         assert!(result.success, "Edge case {} should be handled correctly", description);
         
-        // Verify value can be queried back (use stored schema with AtomRefs)
+        // Verify value can be queried back (use stored schema with Molecules)
         let stored_schema = fixture.db_ops.get_schema("EdgeCaseSchema")
             .expect("Failed to retrieve stored schema")
             .expect("Schema should exist after storage");
@@ -631,7 +631,7 @@ fn test_edge_cases_prevention() {
         assert!(result.success, "Large data {} should be handled correctly", description);
         println!("✅ Large data handled: {} bytes in {:?}", size, duration);
         
-        // Verify large data retrieval (use stored schema with AtomRefs)
+        // Verify large data retrieval (use stored schema with Molecules)
         let query_start = Instant::now();
         let stored_schema = fixture.db_ops.get_schema("EdgeCaseSchema")
             .expect("Failed to retrieve stored schema")
@@ -1025,33 +1025,33 @@ fn test_data_consistency_safeguards() {
     fixture.db_ops.store_schema("ConsistencyTestSchema", &consistency_schema)
         .expect("Failed to store consistency test schema");
     
-    // Test 1: AtomRef lifecycle consistency
-    println!("🔗 Test 1: AtomRef Lifecycle Consistency");
+    // Test 1: Molecule lifecycle consistency
+    println!("🔗 Test 1: Molecule Lifecycle Consistency");
     
     let initial_value = json!({"test": "initial", "value": 1});
     let updated_value = json!({"test": "updated", "value": 2});
     
-    let lifecycle_result = fixture.validate_atomref_lifecycle(
+    let lifecycle_result = fixture.validate_molecule_lifecycle(
         "ConsistencyTestSchema",
         "consistency_field",
         initial_value.clone(),
         updated_value.clone(),
-    ).expect("Failed to validate AtomRef lifecycle");
+    ).expect("Failed to validate Molecule lifecycle");
     
-    assert!(lifecycle_result.atomref_reused, "AtomRef should be reused");
+    assert!(lifecycle_result.molecule_reused, "Molecule should be reused");
     assert!(lifecycle_result.atom_chain_valid, "Atom chain should be valid");
     
-    println!("✅ AtomRef lifecycle consistency validated");
-    println!("   Initial AtomRef: {}", lifecycle_result.initial_aref_uuid);
-    println!("   Update AtomRef: {}", lifecycle_result.update_aref_uuid);
-    println!("   AtomRef reused: {}", lifecycle_result.atomref_reused);
+    println!("✅ Molecule lifecycle consistency validated");
+    println!("   Initial Molecule: {}", lifecycle_result.initial_molecule_uuid);
+    println!("   Update Molecule: {}", lifecycle_result.update_molecule_uuid);
+    println!("   Molecule reused: {}", lifecycle_result.molecule_reused);
     
     // Test 2: Multiple field consistency within schema
     println!("🔄 Test 2: Multiple Field Consistency Within Schema");
     
     // Schema already has both fields (schemas are immutable - no updates allowed)
     
-    // Retrieve the stored schema (which has AtomRefs added during storage)
+    // Retrieve the stored schema (which has Molecules added during storage)
     let stored_schema = fixture.db_ops.get_schema("ConsistencyTestSchema")
         .expect("Failed to retrieve stored schema")
         .expect("Schema should exist after storage");
@@ -1076,14 +1076,14 @@ fn test_data_consistency_safeguards() {
     
     assert!(primary_result.success && secondary_result.success);
     
-    // Verify both fields have independent AtomRefs
-    let primary_aref_uuid = primary_result.molecule_uuid.expect("Primary should have AtomRef");
-    let secondary_aref_uuid = secondary_result.molecule_uuid.expect("Secondary should have AtomRef");
+    // Verify both fields have independent Molecules
+    let primary_molecule_uuid = primary_result.molecule_uuid.expect("Primary should have Molecule");
+    let secondary_molecule_uuid = secondary_result.molecule_uuid.expect("Secondary should have Molecule");
     
-    assert_ne!(primary_aref_uuid, secondary_aref_uuid,
-        "Different fields should have different AtomRefs");
+    assert_ne!(primary_molecule_uuid, secondary_molecule_uuid,
+        "Different fields should have different Molecules");
     
-    // Verify data consistency across fields (use stored schema with AtomRefs)
+    // Verify data consistency across fields (use stored schema with Molecules)
     let primary_query = TransformUtils::resolve_field_value(
         &fixture.db_ops,
         &stored_schema,
@@ -1165,25 +1165,25 @@ fn test_data_consistency_safeguards() {
     let successful_mutations = consistency_results_vec.iter().filter(|(_, success, _)| *success).count();
     let failed_mutations = consistency_results_vec.len() - successful_mutations;
     
-    // All successful mutations should have valid AtomRef UUIDs
-    let valid_atomrefs: Vec<_> = consistency_results_vec.iter()
-        .filter_map(|(_, success, aref_uuid)| {
-            if *success { aref_uuid.as_ref() } else { None }
+    // All successful mutations should have valid Molecule UUIDs
+    let valid_molecules: Vec<_> = consistency_results_vec.iter()
+        .filter_map(|(_, success, molecule_uuid)| {
+            if *success { molecule_uuid.as_ref() } else { None }
         })
         .collect();
     
-    // All AtomRefs should be the same (reused for same field)
-    if valid_atomrefs.len() > 1 {
-        let first_aref = valid_atomrefs[0];
-        let all_same = valid_atomrefs.iter().all(|aref| *aref == first_aref);
-        assert!(all_same, "All successful mutations should reuse the same AtomRef");
+    // All Molecules should be the same (reused for same field)
+    if valid_molecules.len() > 1 {
+        let first_molecule = valid_molecules[0];
+        let all_same = valid_molecules.iter().all(|molecule| *molecule == first_molecule);
+        assert!(all_same, "All successful mutations should reuse the same Molecule");
     }
     
     println!("✅ Concurrent mutation consistency:");
     println!("   Successful: {}, Failed: {}", successful_mutations, failed_mutations);
     println!("   Duration: {:?}", concurrent_duration);
-    println!("   AtomRef reuse validated: {} unique AtomRefs", 
-        valid_atomrefs.iter().collect::<std::collections::HashSet<_>>().len());
+    println!("   Molecule reuse validated: {} unique Molecules", 
+        valid_molecules.iter().collect::<std::collections::HashSet<_>>().len());
     
     // Test 4: Data integrity after system stress
     println!("🧪 Test 4: Data Integrity After System Stress");
