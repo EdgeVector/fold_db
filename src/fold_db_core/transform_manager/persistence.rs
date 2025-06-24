@@ -38,6 +38,15 @@ impl TransformManager {
         )?;
 
         // Store field_to_transforms mapping (with debug logging)
+        {
+            let field_mappings = self.field_to_transforms.read().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire field_to_transforms lock".to_string())
+            })?;
+            info!("🔍 DIAGNOSTIC: About to persist field_to_transforms with {} entries:", field_mappings.len());
+            for (field_key, transforms) in field_mappings.iter() {
+                info!("  📋 Persisting '{}' -> {:?}", field_key, transforms);
+            }
+        }
         SerializationHelper::store_mapping(
             &self.db_ops,
             &self.field_to_transforms,

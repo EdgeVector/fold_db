@@ -4,7 +4,7 @@ use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{
     Field, FieldVariant, JsonSchemaDefinition, JsonSchemaField, Schema, SchemaError, SingleField,
 };
-use log::info;
+use log::{info, error};
 use crate::logging::features::{log_feature, LogFeature};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -153,6 +153,20 @@ impl SchemaCore {
                 "📂 Found persisted schema for '{}' in database, using persisted version with field assignments",
                 schema.name
             );
+            
+            // DIAGNOSTIC: Check if persisted schema actually has field assignments
+            let assigned_fields = persisted_schema.fields.values()
+                .filter(|f| f.molecule_uuid().is_some())
+                .count();
+            let total_fields = persisted_schema.fields.len();
+            
+            info!("🔍 DIAGNOSTIC: Persisted schema '{}' has {}/{} fields with molecule_uuid assignments",
+                  schema.name, assigned_fields, total_fields);
+                  
+            if assigned_fields == 0 && total_fields > 0 {
+                log_feature!(LogFeature::Schema, error, "🚨 CRITICAL: Persisted schema '{}' has NO field assignments! This will break transforms!", schema.name);
+            }
+            
             Ok(persisted_schema)
         } else {
             info!("📋 No persisted schema found for '{}', using JSON version", schema.name);
@@ -171,8 +185,13 @@ impl SchemaCore {
     }
 
     fn persist_if_needed(&self, schema: &Schema) -> Result<(), SchemaError> {
-        let should_persist = schema.fields.values().all(|f| f.molecule_uuid().is_none());
-        if should_persist {
+        // CRITICAL FIX: Logic was backwards! We should persist when fields DON'T have molecule_uuid
+        // to create them, OR when they DO have molecule_uuid to save the assignments
+        let has_empty_fields = schema.fields.values().any(|f| f.molecule_uuid().is_none());
+        let has_assigned_fields = schema.fields.values().any(|f| f.molecule_uuid().is_some());
+        
+        if has_empty_fields {
+            info!("🔧 DIAGNOSTIC: Schema '{}' has empty fields, persisting to create molecule_uuid assignments", schema.name);
             self.persist_schema(schema)?;
             info!(
                 "After persist_schema, schema '{}' has {} fields: {:?}",
@@ -180,9 +199,12 @@ impl SchemaCore {
                 schema.fields.len(),
                 schema.fields.keys().collect::<Vec<_>>()
             );
+        } else if has_assigned_fields {
+            info!("🔧 DIAGNOSTIC: Schema '{}' has assigned fields, persisting to save molecule_uuid assignments", schema.name);
+            self.persist_schema(schema)?;
         } else {
             info!(
-                "Skipping persist_schema for '{}' - using persisted version with field assignments",
+                "🔧 DIAGNOSTIC: Schema '{}' has no fields, skipping persistence",
                 schema.name
             );
         }
@@ -723,8 +745,22 @@ impl SchemaCore {
         Ok(None)
     }
 
-    /// Retrieves a schema by name.
+    /// Retrieves a schema by name from any state (Available, Approved, Blocked).
+    ///
+    /// SCHEMA-004: This method returns schemas regardless of state to support UI field display.
+    /// Available schemas show fields but with molecule_uuid: None as expected.
     pub fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
+        // First check the available collection which contains all schemas regardless of state
+        let available = self
+            .available
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire available schema lock".to_string()))?;
+        
+        if let Some((schema, _state)) = available.get(schema_name) {
+            return Ok(Some(schema.clone()));
+        }
+        
+        // Fallback to approved schemas collection for backward compatibility
         let schemas = self
             .schemas
             .lock()

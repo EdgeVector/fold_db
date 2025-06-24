@@ -266,7 +266,9 @@ impl TransformManager {
             }
 
             fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
-                Ok(self.db_ops.get_transform(transform_id)?.is_some())
+                let exists = self.db_ops.get_transform(transform_id)?.is_some();
+                info!("🔍 DIAGNOSTIC: SimpleTransformRunner.transform_exists('{}') = {}", transform_id, exists);
+                Ok(exists)
             }
 
             fn get_transforms_for_field(
@@ -426,7 +428,20 @@ impl TransformRunner for TransformManager {
         let registered_transforms = self.registered_transforms.read().map_err(|_| {
             SchemaError::InvalidData("Failed to acquire registered_transforms lock".to_string())
         })?;
-        Ok(registered_transforms.contains_key(transform_id))
+        let in_memory_exists = registered_transforms.contains_key(transform_id);
+        
+        // Cross-check with database
+        let db_exists = self.db_ops.get_transform(transform_id)?.is_some();
+        
+        info!("🔍 DIAGNOSTIC: TransformManager.transform_exists('{}') - in_memory: {}, database: {}",
+              transform_id, in_memory_exists, db_exists);
+        
+        if in_memory_exists != db_exists {
+            error!("🚨 INCONSISTENCY DETECTED: Transform '{}' - in_memory: {}, database: {}",
+                   transform_id, in_memory_exists, db_exists);
+        }
+        
+        Ok(in_memory_exists)
     }
 
     fn get_transforms_for_field(
