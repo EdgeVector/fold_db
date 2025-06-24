@@ -9,6 +9,7 @@ This document contains the most up-to-date and condensed information about the p
 | SCHEMA-001 | Once approved, schemas cannot be unloaded. They can only transition between approved and blocked states. | schema_manager, schema_routes | 2025-06-23 19:14:00 | None |
 | SCHEMA-002 | Only approved schemas can be mutated or queried by the user. | query_routes, mutation_tab, query_tab, schema_manager | 2025-06-23 19:17:00 | None |
 | SCHEMA-003 | Transforms can write field values to any schema regardless of state, but cannot modify schema structure. | transform_manager, transform_queue, schema_manager | 2025-06-23 19:23:00 | None |
+| SCHEMA-004 | Available schemas are discovered from JSON files only and are not loaded automatically. | schema/discovery, schema/persistence | 2025-06-24 21:49:43 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management

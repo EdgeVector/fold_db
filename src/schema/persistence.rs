@@ -29,19 +29,31 @@ impl SchemaCore {
         self.db_ops.store_schema(&schema.name, schema)
     }
 
-    /// Loads all schema files from both the schemas directory and available_schemas directory and restores their states.
-    /// Schemas marked as Approved will be loaded into active memory.
+    /// Loads schemas from the `schemas` directory and restores their states.
+    ///
+    /// Schemas found in `available_schemas` are only discovered and added to the
+    /// available list but are **not** automatically loaded into memory.
     pub fn load_schemas_from_disk(&self) -> Result<(), SchemaError> {
         let states = self.load_states();
 
-        // Load from default schemas directory
+        // Load from the node's schemas directory
         info!("Loading schemas from {}", self.schemas_dir.display());
         self.load_schemas_from_directory(&self.schemas_dir, &states)?;
 
-        // Load from available_schemas directory
-        let available_schemas_dir = PathBuf::from("available_schemas");
-        info!("Loading schemas from {}", available_schemas_dir.display());
-        self.load_schemas_from_directory(&available_schemas_dir, &states)?;
+        // Discover available schemas without loading them
+        for mut schema in self.discover_available_schemas()? {
+            self.fix_transform_outputs(&mut schema);
+            let name = schema.name.clone();
+            let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
+            let mut available = self.available.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+            })?;
+            available.insert(name.clone(), (schema, state));
+            info!(
+                "Discovered available schema '{}' from available_schemas/ with state: {:?}",
+                name, state
+            );
+        }
 
         // Persist any changes to schema states from newly discovered schemas
         self.persist_states()?;
