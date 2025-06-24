@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 
 const TransformsTab = ({ schemas, _onResult }) => {
   const [transforms, setTransforms] = useState([])
+  const [apiTransforms, setApiTransforms] = useState({})
   const [loading, setLoading] = useState({})
   const [error, setError] = useState({})
+  const [debugInfo, setDebugInfo] = useState({})
   const [queueInfo, setQueueInfo] = useState({
     queue: [],
     length: 0,
@@ -11,12 +13,63 @@ const TransformsTab = ({ schemas, _onResult }) => {
   })
 
   useEffect(() => {
-    // Filter and process schemas with transform fields
-    const transformSchemas = schemas.filter(schema =>
-      Object.values(schema.fields).some(field => field.transform || typeof field.transform === 'string')
-    ).map(schema => {
+    console.log('TransformsTab: Processing schemas...', schemas)
+    
+    // DIAGNOSTIC: Log schema state information
+    console.log('TransformsTab DIAGNOSTIC: Schema states received:')
+    schemas.forEach(schema => {
+      console.log(`  - ${schema.name}: state="${schema.state}" (type: ${typeof schema.state})`)
+    })
+    
+    // Enhanced debug information
+    const debug = {
+      totalSchemas: schemas.length,
+      schemaStates: {},
+      transformFields: {},
+      blockedSchemas: []
+    }
+
+    schemas.forEach(schema => {
+      debug.schemaStates[schema.name] = schema.state
+      debug.transformFields[schema.name] = []
+      
+      if (schema.fields) {
+        Object.entries(schema.fields).forEach(([fieldName, field]) => {
+          if (field.transform !== null && field.transform !== undefined) {
+            debug.transformFields[schema.name].push({
+              field: fieldName,
+              transform: field.transform
+            })
+          }
+        })
+      }
+      
+      if (schema.state !== 'Approved') {
+        debug.blockedSchemas.push({
+          name: schema.name,
+          state: schema.state
+        })
+      }
+    })
+
+    setDebugInfo(debug)
+    console.log('TransformsTab Debug Info:', debug)
+
+    // Filter and process schemas with transform fields - include ALL schemas regardless of state
+    const transformSchemas = schemas.filter(schema => {
+      // Include ALL schemas that have transforms, regardless of approval state
+      const hasTransforms = schema.fields && Object.values(schema.fields).some(field =>
+        field.transform !== null && field.transform !== undefined &&
+        (field.transform || typeof field.transform === 'string')
+      )
+      return hasTransforms
+    }).map(schema => {
       // Deep clone the schema to avoid modifying the original
       const processedSchema = JSON.parse(JSON.stringify(schema))
+
+      // DIAGNOSTIC: Check if state is preserved after cloning
+      console.log(`TransformsTab DIAGNOSTIC: Schema "${schema.name}" state before cloning:`, schema.state)
+      console.log(`TransformsTab DIAGNOSTIC: Schema "${schema.name}" state after cloning:`, processedSchema.state)
 
       // Process each field's transform
       Object.entries(processedSchema.fields).forEach(([fieldName, field]) => {
@@ -30,23 +83,54 @@ const TransformsTab = ({ schemas, _onResult }) => {
               inputs: []
             }
           }
+        } else if (field.transform && typeof field.transform === 'object') {
+          // Ensure output field is set if missing
+          if (!field.transform.output) {
+            field.transform.output = `${schema.name}.${fieldName}`
+          }
         }
       })
       return processedSchema
     })
+    
+    console.log('TransformsTab: Processed transform schemas:', transformSchemas)
+    // DIAGNOSTIC: Log final processed schemas with state info
+    console.log('TransformsTab DIAGNOSTIC: Final processed schemas states:')
+    transformSchemas.forEach(schema => {
+      console.log(`  - ${schema.name}: state="${schema.state}" (preserved: ${schema.state ? 'YES' : 'NO'})`)
+    })
     setTransforms(transformSchemas)
+
+    // Fetch transforms from dedicated API
+    const fetchApiTransforms = async () => {
+      try {
+        console.log('TransformsTab: Fetching from /api/transforms...')
+        const response = await fetch('/api/transforms')
+        const data = await response.json()
+        console.log('TransformsTab: API transforms response:', data)
+        setApiTransforms(data.data || {})
+      } catch (error) {
+        console.error('Failed to fetch API transforms:', error)
+        setApiTransforms({})
+      }
+    }
 
     // Fetch queue information
     const fetchQueueInfo = async () => {
       try {
         const response = await fetch('/api/transforms/queue')
-        const data = await response.json()
-        setQueueInfo(data)
+        if (response.ok) {
+          const data = await response.json()
+          setQueueInfo(data)
+        } else {
+          console.warn('Failed to fetch queue info, status:', response.status)
+        }
       } catch (error) {
         console.error('Failed to fetch transform queue info:', error)
       }
     }
 
+    fetchApiTransforms()
     fetchQueueInfo()
     // Poll for queue updates every 5 seconds
     const interval = setInterval(fetchQueueInfo, 5000)

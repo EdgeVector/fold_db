@@ -52,15 +52,13 @@ export function AppContent() {
         fields: {} // Will be populated below for approved schemas
       }))
       
-      // Filter for approved schemas only (these are the ones available for mutations)
-      const approvedSchemas = schemasWithStates.filter(
-        (s) => s.state && s.state.toLowerCase() === 'approved'
-      )
-      console.log('Approved schemas:', approvedSchemas)
+      // Fetch detailed schema information for ALL schemas (not just approved ones)
+      // This ensures transforms are visible regardless of schema state
+      console.log('All schemas:', schemasWithStates)
       
-      // Fetch detailed schema information for approved schemas
+      // Fetch detailed schema information for all schemas
       const schemasWithDetails = await Promise.all(
-        approvedSchemas.map(async (schema) => {
+        schemasWithStates.map(async (schema) => {
           try {
             console.log(`Fetching details for schema: ${schema.name}`)
             const schemaResponse = await fetch(`/api/schema/${schema.name}`)
