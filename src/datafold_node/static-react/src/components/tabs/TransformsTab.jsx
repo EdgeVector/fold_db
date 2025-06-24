@@ -13,8 +13,6 @@ const TransformsTab = ({ schemas, _onResult }) => {
   })
 
   useEffect(() => {
-    console.log('TransformsTab: Processing schemas...', schemas)
-    
     // Enhanced debug information
     const debug = {
       totalSchemas: schemas.length,
@@ -47,7 +45,6 @@ const TransformsTab = ({ schemas, _onResult }) => {
     })
 
     setDebugInfo(debug)
-    console.log('TransformsTab Debug Info:', debug)
 
     // Filter and process schemas with transform fields - include ALL schemas regardless of state
     const transformSchemas = schemas.filter(schema => {
@@ -83,16 +80,13 @@ const TransformsTab = ({ schemas, _onResult }) => {
       return processedSchema
     })
     
-    console.log('TransformsTab: Processed transform schemas:', transformSchemas)
     setTransforms(transformSchemas)
 
     // Fetch transforms from dedicated API
     const fetchApiTransforms = async () => {
       try {
-        console.log('TransformsTab: Fetching from /api/transforms...')
         const response = await fetch('/api/transforms')
         const data = await response.json()
-        console.log('TransformsTab: API transforms response:', data)
         setApiTransforms(data.data || {})
       } catch (error) {
         console.error('Failed to fetch API transforms:', error)
@@ -137,7 +131,6 @@ const TransformsTab = ({ schemas, _onResult }) => {
 
   const handleAddToQueue = async (schemaName, fieldName, _transform) => {
     const transformId = `${schemaName}.${fieldName}`
-    console.log('Adding transform to queue:', transformId)
     setLoading(prev => ({ ...prev, [transformId]: true }))
     setError(prev => ({ ...prev, [transformId]: null }))
     
@@ -151,12 +144,9 @@ const TransformsTab = ({ schemas, _onResult }) => {
         throw new Error(responseData.error || 'Failed to add transform to queue')
       }
       
-      console.log('Transform added successfully:', responseData)
-      
       // Refresh queue info immediately
       const queueResponse = await fetch('/api/transforms/queue')
       const data = await queueResponse.json()
-      console.log('Updated queue info:', data)
       setQueueInfo(data)
     } catch (error) {
       console.error('Failed to add transform to queue:', error)

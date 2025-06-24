@@ -40,7 +40,7 @@ impl LogFeature {
 #[macro_export]
 macro_rules! log_feature {
     ($feature:expr, $level:ident, $($arg:tt)*) => {
-        log::$level!(target: $feature.target(), $($arg)*);
+        log::$level!(target: $feature.target(), $($arg)*)
     };
 }
 

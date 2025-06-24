@@ -82,7 +82,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       if (schema && (!schema.fields || Object.keys(schema.fields).length === 0)) {
         try {
           const resp = await fetch(`/api/schema/${schemaName}`)
-          console.log('resp', resp)
           if (resp.ok) {
             const schemaData = await resp.json()
             // Update the schema with field details
@@ -347,8 +346,8 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
             <div className="flex items-center space-x-2">
               {/* Schema State Transition Logic (SCHEMA-001):
                   - available → approved
-                  - approved → blocked (cannot go directly to unloaded)
-                  - blocked → approved OR blocked → unloaded */}
+                  - approved → blocked (once approved, cannot be unloaded)
+                  - blocked → approved (once approved, cannot be unloaded) */}
               {state.toLowerCase() === 'available' && (
                 <button
                   className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
@@ -372,26 +371,15 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 </button>
               )}
               {state.toLowerCase() === 'blocked' && (
-                <>
-                  <button
-                    className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      approveSchema(schema.name)
-                    }}
-                  >
-                    Re-approve
-                  </button>
-                  <button
-                    className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      unloadSchema(schema.name)
-                    }}
-                  >
-                    Unload
-                  </button>
-                </>
+                <button
+                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    approveSchema(schema.name)
+                  }}
+                >
+                  Re-approve
+                </button>
               )}
             </div>
           </div>

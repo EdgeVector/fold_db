@@ -43,7 +43,6 @@ export function AppContent() {
     try {
       const response = await fetch('/api/schemas')
       const data = await response.json()
-      console.log('Schemas API response:', data)
       
       // Convert the state map to an array of schema objects with states
       const schemasWithStates = Object.entries(data.data || {}).map(([name, state]) => ({
@@ -52,20 +51,13 @@ export function AppContent() {
         fields: {} // Will be populated below for approved schemas
       }))
       
-      // Fetch detailed schema information for ALL schemas (not just approved ones)
-      // This ensures transforms are visible regardless of schema state
-      console.log('All schemas:', schemasWithStates)
-      
       // Fetch detailed schema information for all schemas
       const schemasWithDetails = await Promise.all(
         schemasWithStates.map(async (schema) => {
           try {
-            console.log(`Fetching details for schema: ${schema.name}`)
             const schemaResponse = await fetch(`/api/schema/${schema.name}`)
-            console.log(`Schema ${schema.name} response status:`, schemaResponse.status)
             if (schemaResponse.ok) {
               const schemaData = await schemaResponse.json()
-              console.log(`Schema ${schema.name} data:`, schemaData)
               return {
                 ...schema,
                 ...schemaData, // Include the full schema data including schema_type
@@ -81,7 +73,6 @@ export function AppContent() {
         })
       )
       
-      console.log('Final schemas with details:', schemasWithDetails)
       setSchemas(schemasWithDetails)
     } catch (error) {
       console.error('Failed to fetch schemas:', error)

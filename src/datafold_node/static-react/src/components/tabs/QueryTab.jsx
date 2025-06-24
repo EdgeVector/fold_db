@@ -177,6 +177,15 @@ function QueryTab({ schemas, onResult }) {
     Object.entries(selectedSchemaFields).filter(([_, field]) => field.field_type === 'Range') :
     []
 
+  // Filter schemas to only include approved ones (SCHEMA-002)
+  const approvedSchemas = schemas.filter(schema => {
+    // Handle different state formats
+    const state = typeof schema.state === 'string'
+      ? schema.state.toLowerCase()
+      : String(schema.state || '').toLowerCase()
+    return state === 'approved'
+  })
+
   return (
     <div className="p-6">
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -184,18 +193,27 @@ function QueryTab({ schemas, onResult }) {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Select Schema
           </label>
-          <select
-            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md"
-            value={selectedSchema}
-            onChange={handleSchemaChange}
-          >
-            <option value="">Select a schema...</option>
-            {schemas.map(schema => (
-              <option key={schema.name} value={schema.name}>
-                {schema.name}
-              </option>
-            ))}
-          </select>
+          {approvedSchemas.length === 0 ? (
+            <div className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-100 border border-gray-300 rounded-md text-gray-500">
+              No approved schemas available for querying
+            </div>
+          ) : (
+            <select
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md"
+              value={selectedSchema}
+              onChange={handleSchemaChange}
+            >
+              <option value="">Select a schema...</option>
+              {approvedSchemas.map(schema => (
+                <option key={schema.name} value={schema.name}>
+                  {schema.name} (approved)
+                </option>
+              ))}
+            </select>
+          )}
+          <p className="mt-1 text-xs text-gray-500">
+            Only approved schemas can be queried (SCHEMA-002)
+          </p>
         </div>
 
         {selectedSchema && (

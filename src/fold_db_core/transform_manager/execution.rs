@@ -3,7 +3,7 @@ use crate::fold_db_core::transform_manager::utils::*;
 use crate::transform::executor::TransformExecutor;
 use crate::schema::types::{Schema, SchemaError};
 use crate::schema::types::field::common::Field;
-use log::{info, error};
+use log::info;
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde_json::Value as JsonValue;
@@ -48,6 +48,7 @@ impl TransformManager {
     }
     
     /// Update a field's ref_atom_uuid to point to a new atom and create proper linking
+    /// SCHEMA-003: Only updates field values, NOT schema structure (schemas are immutable)
     fn update_field_reference(
         db_ops: &Arc<crate::db_operations::DbOperations>,
         schema_name: &str,
@@ -56,72 +57,27 @@ impl TransformManager {
     ) -> Result<(), SchemaError> {
         info!("🔗 Updating field reference: {}.{} -> atom {}", schema_name, field_name, atom_uuid);
         
-        // 1. Load the schema
-        let mut schema = db_ops.get_schema(schema_name)?
+        // 1. Load the schema (read-only - we will NOT modify it)
+        let schema = db_ops.get_schema(schema_name)?
             .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", schema_name)))?;
         
-        // 2. Get the field
-        let field = schema.fields.get_mut(field_name)
+        // 2. Get the field (read-only)
+        let field = schema.fields.get(field_name)
             .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in schema '{}'", field_name, schema_name)))?;
         
-        // 3. Get or create new ref_atom_uuid for the field
-        let ref_uuid = match field.ref_atom_uuid() {
-            Some(existing_ref) => existing_ref.clone(),
-            None => {
-                // Create new UUID for the field reference
-                let new_ref_uuid = uuid::Uuid::new_v4().to_string();
-                field.set_ref_atom_uuid(new_ref_uuid.clone());
-                new_ref_uuid
-            }
-        };
+        // 3. Get the field's ref_atom_uuid (should already exist in schema)
+        let ref_uuid = field.ref_atom_uuid()
+            .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}.{}' has no ref_atom_uuid - schema may be malformed", schema_name, field_name)))?;
         
-        // 4. Create/update AtomRef to point to the new atom
+        // 4. Create/update AtomRef to point to the new atom (this is a field VALUE update, not schema structure)
         let atom_ref = crate::atom::AtomRef::new(atom_uuid.to_string(), "transform_system".to_string());
         db_ops.store_item(&format!("ref:{}", ref_uuid), &atom_ref)?;
         
-        info!("✅ Created/updated AtomRef {} -> atom {}", ref_uuid, atom_uuid);
-        LoggingHelper::log_atom_ref_operation(&ref_uuid, atom_uuid, "creation");
+        info!("✅ Updated field value reference for '{}.{}' to point to atom {}", schema_name, field_name, atom_uuid);
+        LoggingHelper::log_atom_ref_operation(ref_uuid, atom_uuid, "creation");
         
-        // Debug: Verify the atom was stored correctly
-        match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
-            Ok(Some(stored_atom)) => {
-                let content_str = stored_atom.content().to_string();
-                LoggingHelper::log_verification_result("atom", atom_uuid, Some(&content_str));
-            }
-            Ok(None) => {
-                error!("❌ DEBUG: Atom {} was not found after storage!", atom_uuid);
-            }
-            Err(e) => {
-                error!("❌ DEBUG: Error retrieving atom {}: {}", atom_uuid, e);
-            }
-        }
-        
-        // Debug: Verify the AtomRef was stored correctly
-        match db_ops.get_item::<crate::atom::AtomRef>(&format!("ref:{}", ref_uuid)) {
-            Ok(Some(stored_ref)) => {
-                let target_atom_uuid = stored_ref.get_atom_uuid();
-                LoggingHelper::log_verification_result("AtomRef", &ref_uuid, Some(&format!("points to atom: {}", target_atom_uuid)));
-                LoggingHelper::log_atom_ref_operation(&ref_uuid, target_atom_uuid, "verification");
-                
-                // Verify this is NOT pointing to itself (the bug we just fixed)
-                if ref_uuid == *target_atom_uuid {
-                    error!("❌ CRITICAL BUG: AtomRef {} is pointing to itself instead of data atom!", ref_uuid);
-                } else {
-                    info!("✅ VERIFIED: AtomRef {} correctly points to different atom {}", ref_uuid, target_atom_uuid);
-                }
-            }
-            Ok(None) => {
-                error!("❌ DEBUG: AtomRef {} was not found after storage!", ref_uuid);
-            }
-            Err(e) => {
-                error!("❌ DEBUG: Error retrieving AtomRef {}: {}", ref_uuid, e);
-            }
-        }
-        
-        // 5. Save the updated schema
-        db_ops.store_schema(schema_name, &schema)?;
-        
-        info!("✅ Updated schema '{}' with field '{}' pointing to atom {}", schema_name, field_name, atom_uuid);
+        // SCHEMA-003: Do NOT modify schema structure - only update field value through AtomRef
+        // The schema remains immutable, we only updated what the field's reference points to
         
         Ok(())
     }
