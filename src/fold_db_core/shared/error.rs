@@ -23,20 +23,20 @@ pub enum FoldDbCoreError {
     #[error("Atom not found: {id}")]
     AtomNotFound { id: String },
 
-    /// An atom reference with the specified UUID was not found
-    #[error("AtomRef not found: {aref_uuid}")]
-    AtomRefNotFound { aref_uuid: String },
+    /// A molecule with the specified UUID was not found
+    #[error("Molecule not found: {aref_uuid}")]
+    MoleculeNotFound { aref_uuid: String },
 
-    /// Atom reference type mismatch (e.g., expected Collection but found Range)
-    #[error("AtomRef type mismatch for {aref_uuid}: expected {expected}, found {actual}")]
-    AtomRefTypeMismatch {
+    /// Molecule type mismatch (e.g., expected Collection but found Range)
+    #[error("Molecule type mismatch for {aref_uuid}: expected {expected}, found {actual}")]
+    MoleculeTypeMismatch {
         aref_uuid: String,
         expected: String,
         actual: String,
     },
 
-    /// Ghost UUID detected - ref_atom_uuid points to non-existent AtomRef
-    #[error("Ghost UUID detected: field {field_name} has ref_atom_uuid {uuid} but no corresponding AtomRef exists")]
+    /// Ghost UUID detected - ref_atom_uuid points to non-existent Molecule
+    #[error("Ghost UUID detected: field {field_name} has ref_atom_uuid {uuid} but no corresponding Molecule exists")]
     GhostUuidDetected { field_name: String, uuid: String },
 
     // ========== Field Operation Errors ==========
@@ -135,20 +135,20 @@ impl FoldDbCoreError {
         Self::AtomNotFound { id: id.into() }
     }
 
-    /// Create an AtomRefNotFound error
-    pub fn atom_ref_not_found(aref_uuid: impl Into<String>) -> Self {
-        Self::AtomRefNotFound {
+    /// Create a MoleculeNotFound error
+    pub fn molecule_not_found(aref_uuid: impl Into<String>) -> Self {
+        Self::MoleculeNotFound {
             aref_uuid: aref_uuid.into(),
         }
     }
 
-    /// Create an AtomRefTypeMismatch error
-    pub fn atom_ref_type_mismatch(
+    /// Create a MoleculeTypeMismatch error
+    pub fn molecule_type_mismatch(
         aref_uuid: impl Into<String>,
         expected: impl Into<String>,
         actual: impl Into<String>,
     ) -> Self {
-        Self::AtomRefTypeMismatch {
+        Self::MoleculeTypeMismatch {
             aref_uuid: aref_uuid.into(),
             expected: expected.into(),
             actual: actual.into(),
@@ -452,7 +452,7 @@ impl FoldDbCoreError {
         Self::invalid_field_operation(
             "create_atom_ref".to_string(),
             field_name,
-            format!("AtomRef creation failed: {}", reason.into()),
+            format!("Molecule creation failed: {}", reason.into()),
         )
     }
 }

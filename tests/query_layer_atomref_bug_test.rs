@@ -82,10 +82,10 @@ fn test_query_layer_atomref_bug_reproduction() {
         .expect("Should receive mutation response");
     
     assert!(mutation_response.success, "Mutation should succeed");
-    let dynamic_aref_uuid = mutation_response.aref_uuid.expect("Should return AtomRef UUID");
+    let dynamic_aref_uuid = mutation_response.molecule_uuid.expect("Should return AtomRef UUID");
     
     // STEP 3: Verify dynamic AtomRef was created and points to new atom  
-    let dynamic_aref = db_ops.get_item::<datafold::atom::AtomRef>(&format!("ref:{}", dynamic_aref_uuid))
+    let dynamic_aref = db_ops.get_item::<datafold::atom::Molecule>(&format!("ref:{}", dynamic_aref_uuid))
         .expect("Should be able to query dynamic AtomRef")
         .expect("Dynamic AtomRef should exist");
     
@@ -131,13 +131,13 @@ fn test_query_layer_atomref_bug_reproduction() {
         .expect("Should receive second mutation response");
     
     assert!(mutation_response_2.success, "Second mutation should succeed");
-    let dynamic_aref_uuid_2 = mutation_response_2.aref_uuid.expect("Should return same AtomRef UUID");
+    let dynamic_aref_uuid_2 = mutation_response_2.molecule_uuid.expect("Should return same AtomRef UUID");
     
     // Should reuse the same AtomRef UUID
     assert_eq!(dynamic_aref_uuid, dynamic_aref_uuid_2, "Should reuse same AtomRef UUID");
     
     // Check that the AtomRef now points to a newer atom
-    let updated_aref = db_ops.get_item::<datafold::atom::AtomRef>(&format!("ref:{}", dynamic_aref_uuid))
+    let updated_aref = db_ops.get_item::<datafold::atom::Molecule>(&format!("ref:{}", dynamic_aref_uuid))
         .expect("Should be able to query updated AtomRef")
         .expect("Updated AtomRef should exist");
     

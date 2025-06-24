@@ -3,7 +3,7 @@ use crate::schema::core::SchemaState;
 use crate::schema::Schema;
 use crate::schema::SchemaError;
 use crate::schema::types::field::{FieldVariant, common::Field};
-use crate::atom::{Atom, AtomRef, AtomRefBehavior};
+use crate::atom::{Atom, Molecule, MoleculeBehavior};
 use serde_json::json;
 
 impl DbOperations {
@@ -40,10 +40,10 @@ impl DbOperations {
     /// IMPORTANT: SCHEMAS ARE IMMUTABLE
     /// - Once a schema is stored, it CANNOT be modified or updated
     /// - Attempting to store a schema with the same name will be rejected
-    /// - This enforces data consistency and prevents breaking existing AtomRef chains
+    /// - This enforces data consistency and prevents breaking existing Molecule/Molecule chains
     /// - All fields in a schema must be defined at creation time
     ///
-    /// Automatically creates placeholder AtomRefs for fields that don't have them.
+    /// Automatically creates placeholder Molecules/Molecules for fields that don't have them.
     /// This ensures all fields are immediately queryable after schema creation.
     pub fn store_schema(&self, schema_name: &str, schema: &Schema) -> Result<(), SchemaError> {
         // IMMUTABILITY CHECK: Reject if schema already exists
@@ -55,10 +55,10 @@ impl DbOperations {
             )));
         }
         
-        // Clone the schema so we can modify fields to add AtomRefs
+        // Clone the schema so we can modify fields to add Molecules/Molecules
         let mut schema_with_refs = schema.clone();
         
-        // Process each field to ensure it has an AtomRef for immediate queryability
+        // Process each field to ensure it has an Molecule/Molecule for immediate queryability
         for (field_name, field_variant) in &mut schema_with_refs.fields {
             match field_variant {
                 FieldVariant::Single(ref mut field) => {
@@ -84,11 +84,11 @@ impl DbOperations {
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store placeholder atom: {}", e)))?;
                         
                         // Create atomref pointing to the atom
-                        let atom_ref = AtomRef::new(atom_uuid, "system".to_string());
-                        let ref_uuid = atom_ref.uuid().to_string();
+                        let molecule = Molecule::new(atom_uuid, "system".to_string());
+                        let ref_uuid = molecule.uuid().to_string();
                         
                         // Store the atomref
-                        self.store_item(&format!("ref:{}", ref_uuid), &atom_ref)
+                        self.store_item(&format!("ref:{}", ref_uuid), &molecule)
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store atomref: {}", e)))?;
                         
                         // Link the field to the atomref
@@ -118,11 +118,11 @@ impl DbOperations {
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store placeholder atom: {}", e)))?;
                         
                         // Create atomref pointing to the atom
-                        let atom_ref = AtomRef::new(atom_uuid, "system".to_string());
-                        let ref_uuid = atom_ref.uuid().to_string();
+                        let molecule = Molecule::new(atom_uuid, "system".to_string());
+                        let ref_uuid = molecule.uuid().to_string();
                         
                         // Store the atomref
-                        self.store_item(&format!("ref:{}", ref_uuid), &atom_ref)
+                        self.store_item(&format!("ref:{}", ref_uuid), &molecule)
                             .map_err(|e| SchemaError::InvalidData(format!("Failed to store atomref: {}", e)))?;
                         
                         // Link the field to the atomref
@@ -132,7 +132,7 @@ impl DbOperations {
             }
         }
         
-        // Store the immutable schema with AtomRefs
+        // Store the immutable schema with Molecules/Molecules
         self.store_in_tree(&self.schemas_tree, schema_name, &schema_with_refs)
     }
 

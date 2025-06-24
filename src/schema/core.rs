@@ -1,5 +1,5 @@
 use super::validator::SchemaValidator;
-use crate::atom::{AtomRef, AtomRefRange};
+use crate::atom::{Molecule, MoleculeRange};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{
     Field, FieldVariant, JsonSchemaDefinition, JsonSchemaField, Schema, SchemaError, SingleField,
@@ -909,8 +909,8 @@ impl SchemaCore {
     }
 
     /// Maps fields between schemas based on their defined relationships.
-    /// Returns a list of AtomRefs that need to be persisted in FoldDB.
-    pub fn map_fields(&self, schema_name: &str) -> Result<Vec<AtomRef>, SchemaError> {
+    /// Returns a list of Molecules that need to be persisted in FoldDB.
+    pub fn map_fields(&self, schema_name: &str) -> Result<Vec<Molecule>, SchemaError> {
         info!("🔧 Starting field mapping for schema '{}'", schema_name);
         
         let schemas = self
@@ -954,8 +954,8 @@ impl SchemaCore {
 
         let mut atom_refs = Vec::new();
 
-        // For unmapped fields, create a new ref_atom_uuid and AtomRef
-        // Only create new ARefs for fields that truly don't have them (None or empty)
+        // For unmapped fields, create a new ref_atom_uuid and Molecule
+        // Only create new Molecules for fields that truly don't have them (None or empty)
         for field in schema.fields.values_mut() {
             let needs_new_aref = match field.ref_atom_uuid() {
                 None => true,
@@ -971,18 +971,18 @@ impl SchemaCore {
                 match field {
                     FieldVariant::Range(_) => {
                         // For range fields, create AtomRefRange
-                        let atom_ref_range = AtomRefRange::new(ref_atom_uuid.clone());
+                        let atom_ref_range = MoleculeRange::new(ref_atom_uuid.clone());
                         if let Err(e) = self.db_ops.store_item(&key, &atom_ref_range) {
                             info!("Failed to persist AtomRefRange '{}': {}", ref_atom_uuid, e);
                         } else {
                             info!("✅ Persisted AtomRefRange: {}", key);
                         }
                         // Create a corresponding AtomRef for the return list
-                        atom_refs.push(AtomRef::new(Uuid::new_v4().to_string(), "system".to_string()));
+                        atom_refs.push(Molecule::new(Uuid::new_v4().to_string(), "system".to_string()));
                     }
                     FieldVariant::Single(_) => {
                         // For single fields, create AtomRef
-                        let atom_ref = AtomRef::new(Uuid::new_v4().to_string(), "system".to_string());
+                        let atom_ref = Molecule::new(Uuid::new_v4().to_string(), "system".to_string());
                         if let Err(e) = self.db_ops.store_item(&key, &atom_ref) {
                             info!("Failed to persist AtomRef '{}': {}", ref_atom_uuid, e);
                         } else {

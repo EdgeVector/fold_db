@@ -214,9 +214,17 @@ impl StandardInitializers {
         )
     }
 
-    /// Initialize atom ref with standard test configuration
-    pub fn test_atom_ref() -> crate::atom::AtomRef {
-        crate::atom::AtomRef::new(
+    /// Initialize atom ref with standard test configuration (legacy)
+    pub fn test_atom_ref() -> crate::atom::Molecule {
+        crate::atom::Molecule::new(
+            uuid::Uuid::new_v4().to_string(),
+            uuid::Uuid::new_v4().to_string(),
+        )
+    }
+
+    /// Initialize molecule with standard test configuration
+    pub fn test_molecule() -> crate::atom::Molecule {
+        crate::atom::Molecule::new(
             uuid::Uuid::new_v4().to_string(),
             uuid::Uuid::new_v4().to_string(),
         )

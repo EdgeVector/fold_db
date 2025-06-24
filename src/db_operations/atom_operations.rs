@@ -1,5 +1,5 @@
 use super::core::DbOperations;
-use crate::atom::{Atom, AtomRef, AtomRefRange, AtomStatus};
+use crate::atom::{Atom, AtomStatus, Molecule, MoleculeRange};
 use crate::schema::SchemaError;
 use crate::logging::features::{log_feature, LogFeature};
 use serde_json::Value;
@@ -36,18 +36,18 @@ impl DbOperations {
         aref_uuid: &str,
         atom_uuid: String,
         source_pub_key: String,
-    ) -> Result<AtomRef, SchemaError> {
+    ) -> Result<Molecule, SchemaError> {
         // DIAGNOSTIC: Log the update attempt
         log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: update_atom_ref called - aref_uuid: {}, atom_uuid: {}", aref_uuid, atom_uuid);
         
-        let mut aref = match self.get_item::<AtomRef>(&format!("ref:{}", aref_uuid))? {
+        let mut aref = match self.get_item::<Molecule>(&format!("ref:{}", aref_uuid))? {
             Some(existing_aref) => {
-                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Found existing AtomRef - current atom_uuid: {}", existing_aref.get_atom_uuid());
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Found existing Molecule - current atom_uuid: {}", existing_aref.get_atom_uuid());
                 existing_aref
             }
             None => {
-                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Creating new AtomRef");
-                AtomRef::new(atom_uuid.clone(), source_pub_key)
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Creating new Molecule");
+                Molecule::new(atom_uuid.clone(), source_pub_key)
             }
         };
 
@@ -60,12 +60,12 @@ impl DbOperations {
         log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: After set_atom_uuid - updated to: {}", aref.get_atom_uuid());
         
         // DIAGNOSTIC: Log before persistence
-        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: About to persist AtomRef with key: ref:{}", aref_uuid);
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: About to persist Molecule with key: ref:{}", aref_uuid);
         
         self.store_item(&format!("ref:{}", aref_uuid), &aref)?;
         
         // DIAGNOSTIC: Verify persistence by reading back
-        match self.get_item::<AtomRef>(&format!("ref:{}", aref_uuid))? {
+        match self.get_item::<Molecule>(&format!("ref:{}", aref_uuid))? {
             Some(persisted_aref) => {
                 log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Persistence verification - stored atom_uuid: {}", persisted_aref.get_atom_uuid());
                 if persisted_aref.get_atom_uuid() != &atom_uuid {
@@ -73,7 +73,7 @@ impl DbOperations {
                 }
             }
             None => {
-                log_feature!(LogFeature::Database, error, "❌ DIAGNOSTIC: PERSISTENCE FAILED! Could not read back stored AtomRef");
+                log_feature!(LogFeature::Database, error, "❌ DIAGNOSTIC: PERSISTENCE FAILED! Could not read back stored Molecule");
             }
         }
         
@@ -81,21 +81,89 @@ impl DbOperations {
     }
 
 
-    /// Creates or updates a range of atom references
+    /// Creates or updates a molecule reference
+    pub fn update_molecule(
+        &self,
+        molecule_uuid: &str,
+        atom_uuid: String,
+        source_pub_key: String,
+    ) -> Result<Molecule, SchemaError> {
+        // DIAGNOSTIC: Log the update attempt
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: update_molecule called - molecule_uuid: {}, atom_uuid: {}", molecule_uuid, atom_uuid);
+        
+        let mut molecule = match self.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))? {
+            Some(existing_molecule) => {
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Found existing Molecule - current atom_uuid: {}", existing_molecule.get_atom_uuid());
+                existing_molecule
+            }
+            None => {
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Creating new Molecule");
+                Molecule::new(atom_uuid.clone(), source_pub_key)
+            }
+        };
+
+        // DIAGNOSTIC: Log before update
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Before set_atom_uuid - current: {}, new: {}", molecule.get_atom_uuid(), atom_uuid);
+        
+        molecule.set_atom_uuid(atom_uuid.clone());
+        
+        // DIAGNOSTIC: Log after update
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: After set_atom_uuid - updated to: {}", molecule.get_atom_uuid());
+        
+        // DIAGNOSTIC: Log before persistence
+        log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: About to persist Molecule with key: ref:{}", molecule_uuid);
+        
+        self.store_item(&format!("ref:{}", molecule_uuid), &molecule)?;
+        
+        // DIAGNOSTIC: Verify persistence by reading back
+        match self.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))? {
+            Some(persisted_molecule) => {
+                log_feature!(LogFeature::Database, info, "🔍 DIAGNOSTIC: Persistence verification - stored atom_uuid: {}", persisted_molecule.get_atom_uuid());
+                if persisted_molecule.get_atom_uuid() != &atom_uuid {
+                    log_feature!(LogFeature::Database, error, "❌ DIAGNOSTIC: PERSISTENCE MISMATCH! Expected: {}, Got: {}", atom_uuid, persisted_molecule.get_atom_uuid());
+                }
+            }
+            None => {
+                log_feature!(LogFeature::Database, error, "❌ DIAGNOSTIC: PERSISTENCE FAILED! Could not read back stored Molecule");
+            }
+        }
+        
+        Ok(molecule)
+    }
+
+    /// Creates or updates a range of atom references (legacy)
     pub fn update_atom_ref_range(
         &self,
         aref_uuid: &str,
         atom_uuid: String,
         key: String,
         source_pub_key: String,
-    ) -> Result<AtomRefRange, SchemaError> {
-        let mut aref = match self.get_item::<AtomRefRange>(&format!("ref:{}", aref_uuid))? {
+    ) -> Result<MoleculeRange, SchemaError> {
+        let mut aref = match self.get_item::<MoleculeRange>(&format!("ref:{}", aref_uuid))? {
             Some(existing_aref) => existing_aref,
-            None => AtomRefRange::new(source_pub_key),
+            None => MoleculeRange::new(source_pub_key),
         };
 
         aref.set_atom_uuid(key, atom_uuid);
         self.store_item(&format!("ref:{}", aref_uuid), &aref)?;
         Ok(aref)
+    }
+
+    /// Creates or updates a range of molecule references
+    pub fn update_molecule_range(
+        &self,
+        molecule_uuid: &str,
+        atom_uuid: String,
+        key: String,
+        source_pub_key: String,
+    ) -> Result<MoleculeRange, SchemaError> {
+        let mut molecule_range = match self.get_item::<MoleculeRange>(&format!("ref:{}", molecule_uuid))? {
+            Some(existing_range) => existing_range,
+            None => MoleculeRange::new(source_pub_key),
+        };
+
+        molecule_range.set_atom_uuid(key, atom_uuid);
+        self.store_item(&format!("ref:{}", molecule_uuid), &molecule_range)?;
+        Ok(molecule_range)
     }
 }

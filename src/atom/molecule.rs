@@ -1,31 +1,31 @@
-use crate::atom::atom_ref_behavior::AtomRefBehavior;
-use crate::atom::atom_ref_types::{AtomRefStatus, AtomRefUpdate};
+use crate::atom::molecule_behavior::MoleculeBehavior;
+use crate::atom::molecule_types::{MoleculeStatus, MoleculeUpdate};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A reference to a single atom version.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AtomRef {
+pub struct Molecule {
     uuid: String,
     atom_uuid: String,
     updated_at: DateTime<Utc>,
-    status: AtomRefStatus,
-    update_history: Vec<AtomRefUpdate>,
+    status: MoleculeStatus,
+    update_history: Vec<MoleculeUpdate>,
 }
 
-impl AtomRef {
-    /// Creates a new AtomRef pointing to the specified Atom.
+impl Molecule {
+    /// Creates a new Molecule pointing to the specified Atom.
     #[must_use]
     pub fn new(atom_uuid: String, source_pub_key: String) -> Self {
         Self {
             uuid: Uuid::new_v4().to_string(),
             atom_uuid,
             updated_at: Utc::now(),
-            status: AtomRefStatus::Active,
-            update_history: vec![AtomRefUpdate {
+            status: MoleculeStatus::Active,
+            update_history: vec![MoleculeUpdate {
                 timestamp: Utc::now(),
-                status: AtomRefStatus::Active,
+                status: MoleculeStatus::Active,
                 source_pub_key,
             }],
         }
@@ -44,7 +44,7 @@ impl AtomRef {
     }
 }
 
-impl AtomRefBehavior for AtomRef {
+impl MoleculeBehavior for Molecule {
     fn uuid(&self) -> &str {
         &self.uuid
     }
@@ -53,22 +53,22 @@ impl AtomRefBehavior for AtomRef {
         self.updated_at
     }
 
-    fn status(&self) -> &AtomRefStatus {
+    fn status(&self) -> &MoleculeStatus {
         &self.status
     }
 
-    fn set_status(&mut self, status: &AtomRefStatus, source_pub_key: String) {
+    fn set_status(&mut self, status: &MoleculeStatus, source_pub_key: String) {
         let status_clone = status.clone();
         self.status = status_clone.clone();
         self.updated_at = Utc::now();
-        self.update_history.push(AtomRefUpdate {
+        self.update_history.push(MoleculeUpdate {
             timestamp: Utc::now(),
             status: status_clone,
             source_pub_key,
         });
     }
 
-    fn update_history(&self) -> &Vec<AtomRefUpdate> {
+    fn update_history(&self) -> &Vec<MoleculeUpdate> {
         &self.update_history
     }
 }

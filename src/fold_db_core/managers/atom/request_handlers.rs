@@ -3,10 +3,10 @@
 use super::AtomManager;
 use crate::atom::{Atom, AtomStatus};
 use crate::fold_db_core::infrastructure::message_bus::{
-    atom_events::{AtomCreated, AtomUpdated, AtomRefCreated, AtomRefUpdated},
+    atom_events::{AtomCreated, AtomUpdated, MoleculeCreated, MoleculeUpdated},
     request_events::{
         AtomCreateRequest, AtomCreateResponse, AtomUpdateRequest, AtomUpdateResponse,
-        AtomRefCreateRequest, AtomRefCreateResponse, AtomRefUpdateRequest, AtomRefUpdateResponse,
+        MoleculeCreateRequest, MoleculeCreateResponse, MoleculeUpdateRequest, MoleculeUpdateResponse,
         FieldValueSetRequest,
     },
 };
@@ -136,89 +136,89 @@ impl AtomManager {
         Ok(())
     }
 
-    /// Handle AtomRefCreateRequest by creating AtomRef and publishing response
-    pub(super) fn handle_atomref_create_request(&self, request: AtomRefCreateRequest) -> Result<(), Box<dyn std::error::Error>> {
-        info!("🔗 Processing AtomRefCreateRequest for type: {}", request.aref_type);
+    /// Handle MoleculeCreateRequest by creating Molecule and publishing response
+    pub(super) fn handle_molecule_create_request(&self, request: MoleculeCreateRequest) -> Result<(), Box<dyn std::error::Error>> {
+        info!("🔗 Processing MoleculeCreateRequest for type: {}", request.molecule_type);
         
         let mut stats = self.stats.lock().unwrap();
         stats.requests_processed += 1;
         stats.last_activity = Some(Instant::now());
         drop(stats);
 
-        let result: Result<(), Box<dyn std::error::Error>> = match request.aref_type.as_str() {
+        let result: Result<(), Box<dyn std::error::Error>> = match request.molecule_type.as_str() {
             "Single" => {
-                let aref = self.db_ops.update_atom_ref(
-                    &request.aref_uuid,
+                let molecule = self.db_ops.update_atom_ref(
+                    &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_atoms.lock().unwrap().insert(request.aref_uuid.clone(), aref);
+                self.ref_atoms.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
                 Ok(())
             }
             "Range" => {
                 let range = self.db_ops.update_atom_ref_range(
-                    &request.aref_uuid,
+                    &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     "default".to_string(), // Default key
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_ranges.lock().unwrap().insert(request.aref_uuid.clone(), range);
+                self.ref_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
                 Ok(())
             }
-            _ => Err(format!("Unknown AtomRef type: {}", request.aref_type).into())
+            _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into())
         };
 
         let response = match result {
             Ok(_) => {
-                // Publish AtomRefCreated event
-                let atomref_created = AtomRefCreated::new(
-                    &request.aref_uuid,
-                    &request.aref_type,
-                    format!("{}:{}", request.aref_type.to_lowercase(), request.aref_uuid),
+                // Publish MoleculeCreated event
+                let molecule_created = MoleculeCreated::new(
+                    &request.molecule_uuid,
+                    &request.molecule_type,
+                    format!("{}:{}", request.molecule_type.to_lowercase(), request.molecule_uuid),
                 );
-                if let Err(e) = self.message_bus.publish(atomref_created) {
-                    warn!("Failed to publish AtomRefCreated event: {}", e);
+                if let Err(e) = self.message_bus.publish(molecule_created) {
+                    warn!("Failed to publish MoleculeCreated event: {}", e);
                 }
                 
                 let mut stats = self.stats.lock().unwrap();
                 stats.atom_refs_created += 1;
                 drop(stats);
                 
-                AtomRefCreateResponse::new(request.correlation_id, true, None)
+                MoleculeCreateResponse::new(request.correlation_id, true, None)
             }
             Err(e) => {
                 let mut stats = self.stats.lock().unwrap();
                 stats.requests_failed += 1;
                 drop(stats);
                 
-                AtomRefCreateResponse::new(request.correlation_id, false, Some(e.to_string()))
+                MoleculeCreateResponse::new(request.correlation_id, false, Some(e.to_string()))
             }
         };
 
         // Publish response - Don't fail the operation if response publishing fails
         if let Err(e) = self.message_bus.publish(response) {
-            warn!("⚠️ Failed to publish AtomRefCreateResponse: {}. Operation completed successfully.", e);
+            warn!("⚠️ Failed to publish MoleculeCreateResponse: {}. Operation completed successfully.", e);
         }
         Ok(())
     }
 
-    /// Handle AtomRefUpdateRequest by updating AtomRef and publishing response
-    pub(super) fn handle_atomref_update_request(&self, request: AtomRefUpdateRequest) -> Result<(), Box<dyn std::error::Error>> {
-        info!("🔄 Processing AtomRefUpdateRequest for: {}", request.aref_uuid);
+    /// Handle MoleculeUpdateRequest by updating Molecule and publishing response
+    pub(super) fn handle_molecule_update_request(&self, request: MoleculeUpdateRequest) -> Result<(), Box<dyn std::error::Error>> {
+        info!("🔄 Processing MoleculeUpdateRequest for: {}", request.molecule_uuid);
         
         let mut stats = self.stats.lock().unwrap();
         stats.requests_processed += 1;
         stats.last_activity = Some(Instant::now());
         drop(stats);
 
-        let result: Result<(), Box<dyn std::error::Error>> = match request.aref_type.as_str() {
+        let result: Result<(), Box<dyn std::error::Error>> = match request.molecule_type.as_str() {
             "Single" => {
-                let aref = self.db_ops.update_atom_ref(
-                    &request.aref_uuid,
+                let molecule = self.db_ops.update_atom_ref(
+                    &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_atoms.lock().unwrap().insert(request.aref_uuid.clone(), aref);
+                self.ref_atoms.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
                 Ok(())
             }
             "Range" => {
@@ -228,52 +228,52 @@ impl AtomManager {
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
                 let range = self.db_ops.update_atom_ref_range(
-                    &request.aref_uuid,
+                    &request.molecule_uuid,
                     request.atom_uuid.clone(),
                     key.to_string(),
                     request.source_pub_key.clone(),
                 )?;
-                self.ref_ranges.lock().unwrap().insert(request.aref_uuid.clone(), range);
+                self.ref_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
                 Ok(())
             }
-            _ => Err(format!("Unknown AtomRef type: {}", request.aref_type).into())
+            _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into())
         };
 
         let response = match result {
             Ok(_) => {
-                // Publish AtomRefUpdated event
-                let atomref_updated = AtomRefUpdated::new(
-                    &request.aref_uuid,
-                    format!("{}:{}", request.aref_type.to_lowercase(), request.aref_uuid),
+                // Publish MoleculeUpdated event
+                let molecule_updated = MoleculeUpdated::new(
+                    &request.molecule_uuid,
+                    format!("{}:{}", request.molecule_type.to_lowercase(), request.molecule_uuid),
                     "update",
                 );
-                if let Err(e) = self.message_bus.publish(atomref_updated) {
-                    warn!("Failed to publish AtomRefUpdated event: {}", e);
+                if let Err(e) = self.message_bus.publish(molecule_updated) {
+                    warn!("Failed to publish MoleculeUpdated event: {}", e);
                 }
                 
                 let mut stats = self.stats.lock().unwrap();
                 stats.atom_refs_updated += 1;
                 drop(stats);
                 
-                AtomRefUpdateResponse::new(request.correlation_id, true, None)
+                MoleculeUpdateResponse::new(request.correlation_id, true, None)
             }
             Err(e) => {
                 let mut stats = self.stats.lock().unwrap();
                 stats.requests_failed += 1;
                 drop(stats);
                 
-                AtomRefUpdateResponse::new(request.correlation_id, false, Some(e.to_string()))
+                MoleculeUpdateResponse::new(request.correlation_id, false, Some(e.to_string()))
             }
         };
 
         // Publish response - Don't fail the operation if response publishing fails
         if let Err(e) = self.message_bus.publish(response) {
-            warn!("⚠️ Failed to publish AtomRefUpdateResponse: {}. Operation completed successfully.", e);
+            warn!("⚠️ Failed to publish MoleculeUpdateResponse: {}. Operation completed successfully.", e);
         }
         Ok(())
     }
 
-    /// Handle FieldValueSetRequest by creating atom and appropriate AtomRef - CRITICAL MUTATION BUG FIX
+    /// Handle FieldValueSetRequest by creating atom and appropriate Molecule - CRITICAL MUTATION BUG FIX
     pub(super) fn handle_fieldvalueset_request(&self, request: FieldValueSetRequest) -> Result<(), Box<dyn std::error::Error>> {
         // Delegate to field processing module
         super::field_processing::handle_fieldvalueset_request(self, request)

@@ -98,7 +98,7 @@ impl RangeArchitectureTestFixture {
         test_data: Vec<(String, serde_json::Value)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Initialize AtomRefRange
-        range_field.ensure_atom_ref_range("test_user".to_string());
+        range_field.ensure_molecule_range("test_user".to_string());
         
         for (key, content) in test_data {
             // Create atom
@@ -109,7 +109,7 @@ impl RangeArchitectureTestFixture {
             self.db_ops.store_item(&format!("atom:{}", atom_uuid), &atom)?;
             
             // Add to range
-            if let Some(atom_ref_range) = range_field.atom_ref_range_mut() {
+            if let Some(atom_ref_range) = range_field.molecule_range_mut() {
                 atom_ref_range.set_atom_uuid(key, atom_uuid);
             }
         }
@@ -156,7 +156,7 @@ impl RangeArchitectureTestFixture {
             return Err(format!("Range mutation failed: {:?}", response.error).into());
         }
         
-        Ok(response.aref_uuid.unwrap_or_else(|| "no_uuid".to_string()))
+        Ok(response.molecule_uuid.unwrap_or_else(|| "no_uuid".to_string()))
     }
 }
 

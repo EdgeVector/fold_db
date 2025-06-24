@@ -1,20 +1,20 @@
 #[cfg(test)]
 mod tests {
-    use super::super::{Atom, AtomRef, AtomRefBehavior, AtomRefRange};
+    use super::super::{Atom, Molecule, MoleculeBehavior, MoleculeRange};
     use chrono::Utc;
     use serde_json::json;
 
     #[test]
-    fn test_atom_ref_creation_and_update() {
+    fn test_molecule_creation_and_update() {
         let atom = Atom::new(
             "test_schema".to_string(),
             "test_key".to_string(),
             json!({"test": true}),
         );
 
-        // Test single atom ref
-        let atom_ref = AtomRef::new(atom.uuid().to_string(), "test_key".to_string());
-        assert_eq!(atom_ref.get_atom_uuid(), &atom.uuid().to_string());
+        // Test single molecule
+        let molecule = Molecule::new(atom.uuid().to_string(), "test_key".to_string());
+        assert_eq!(molecule.get_atom_uuid(), &atom.uuid().to_string());
 
         let new_atom = Atom::new(
             "test_schema".to_string(),
@@ -22,16 +22,16 @@ mod tests {
             json!({"test": false}),
         );
 
-        let mut updated_ref = atom_ref.clone();
+        let mut updated_ref = molecule.clone();
         updated_ref.set_atom_uuid(new_atom.uuid().to_string());
 
         assert_eq!(updated_ref.get_atom_uuid(), &new_atom.uuid().to_string());
-        assert!(updated_ref.updated_at() >= atom_ref.updated_at());
+        assert!(updated_ref.updated_at() >= molecule.updated_at());
     }
 
 
     #[test]
-    fn test_atom_ref_range() {
+    fn test_molecule_range() {
         let atoms: Vec<_> = (0..3)
             .map(|i| {
                 Atom::new(
@@ -42,7 +42,7 @@ mod tests {
             })
             .collect();
 
-        let mut range = AtomRefRange::new("test_key".to_string());
+        let mut range = MoleculeRange::new("test_key".to_string());
         range.set_atom_uuid("a".to_string(), atoms[0].uuid().to_string());
         range.set_atom_uuid("b".to_string(), atoms[1].uuid().to_string());
         range.set_atom_uuid("c".to_string(), atoms[2].uuid().to_string());
@@ -64,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn test_atom_ref_range_single_atom_per_key() {
+    fn test_molecule_range_single_atom_per_key() {
         let atoms: Vec<_> = (0..3)
             .map(|i| {
                 Atom::new(
@@ -75,7 +75,7 @@ mod tests {
             })
             .collect();
 
-        let mut range = AtomRefRange::new("test_key".to_string());
+        let mut range = MoleculeRange::new("test_key".to_string());
 
         // Add atoms to different keys - each key can only store one atom UUID
         range.set_atom_uuid("user_123".to_string(), atoms[0].uuid().to_string());

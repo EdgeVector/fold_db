@@ -18,7 +18,7 @@ use datafold::schema::{field_factory::FieldFactory};
 use datafold::permissions::types::policy::{PermissionsPolicy, TrustDistance};
 use datafold::fees::{SchemaPaymentConfig, FieldPaymentConfig};
 use datafold::fees::types::config::TrustDistanceScaling;
-use datafold::atom::{Atom, AtomRef, AtomRefBehavior};
+use datafold::atom::{Atom, Molecule, MoleculeBehavior};
 use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -57,7 +57,7 @@ fn test_single_field_complete_operations() {
         .expect("Failed to store atom");
     
     // Create and store AtomRef
-    let atom_ref = AtomRef::new(atom_uuid.clone(), "test_user".to_string());
+    let atom_ref = Molecule::new(atom_uuid.clone(), "test_user".to_string());
     let ref_uuid = atom_ref.uuid().to_string(); // Get the AtomRef's own UUID
     fixture.db_ops.store_item(&format!("ref:{}", ref_uuid), &atom_ref)
         .expect("Failed to store AtomRef");
@@ -68,7 +68,7 @@ fn test_single_field_complete_operations() {
     println!("✅ Single field linked to AtomRef successfully");
     
     // Test 4: Verify data retrieval
-    let stored_ref = fixture.db_ops.get_item::<AtomRef>(&format!("ref:{}", ref_uuid))
+    let stored_ref = fixture.db_ops.get_item::<Molecule>(&format!("ref:{}", ref_uuid))
         .expect("Failed to retrieve AtomRef")
         .expect("AtomRef should exist");
     
@@ -99,8 +99,8 @@ fn test_range_field_complete_operations() {
     
     // Test 2: Initialize AtomRefRange
     let source_pub_key = "test_user_123".to_string();
-    range_field.ensure_atom_ref_range(source_pub_key.clone());
-    assert!(range_field.atom_ref_range().is_some());
+    range_field.ensure_molecule_range(source_pub_key.clone());
+    assert!(range_field.molecule_range().is_some());
     println!("✅ Range field AtomRefRange initialized");
     
     // Test 3: Add multiple range entries
@@ -122,8 +122,8 @@ fn test_range_field_complete_operations() {
             .expect("Failed to store atom");
         
         // Add to range
-        if let Some(atom_ref_range) = range_field.atom_ref_range_mut() {
-            atom_ref_range.set_atom_uuid(key.to_string(), atom_uuid.clone());
+        if let Some(molecule_range) = range_field.molecule_range_mut() {
+            molecule_range.set_atom_uuid(key.to_string(), atom_uuid.clone());
         }
     }
     
@@ -383,7 +383,7 @@ fn test_field_factory_comprehensive_functionality() {
     
     let basic_range = FieldFactory::create_range_field();
     assert!(basic_range.ref_atom_uuid().is_none());
-    assert!(basic_range.atom_ref_range().is_none());
+    assert!(basic_range.molecule_range().is_none());
     
     println!("✅ Basic field creation works");
     

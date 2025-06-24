@@ -127,8 +127,8 @@ impl AsyncMessageBus {
         let mut registry = self.registry.lock().await;
         // Subscribe to all event types
         let event_types = [
-            "FieldValueSet", "AtomCreated", "AtomUpdated", "AtomRefCreated",
-            "AtomRefUpdated", "SchemaLoaded", "TransformExecuted", "SchemaChanged",
+            "FieldValueSet", "AtomCreated", "AtomUpdated", "MoleculeCreated",
+            "MoleculeUpdated", "SchemaLoaded", "TransformExecuted", "SchemaChanged",
             "TransformTriggered", "QueryExecuted", "MutationExecuted"
         ];
         

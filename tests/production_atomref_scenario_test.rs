@@ -11,7 +11,7 @@ use datafold::fold_db_core::infrastructure::message_bus::{
 };
 use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::db_operations::DbOperations;
-use datafold::atom::AtomRef;
+use datafold::atom::Molecule;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,12 +57,12 @@ fn test_production_atomref_scenario() {
         .expect("Should receive initial response");
     
     assert!(response1.success, "Initial request should succeed");
-    let aref_uuid = response1.aref_uuid.as_ref().expect("Should return AtomRef UUID");
-    println!("✅ Initial AtomRef created: {}", aref_uuid);
+    let aref_uuid = response1.molecule_uuid.as_ref().expect("Should return Molecule UUID");
+    println!("✅ Initial Molecule created: {}", aref_uuid);
     
     // STEP 2: Directly inspect the database to see current state
     println!("🔍 STEP 2: Inspecting database state after initial creation");
-    let stored_aref = db_ops.get_item::<AtomRef>(&format!("ref:{}", aref_uuid))
+    let stored_aref = db_ops.get_item::<Molecule>(&format!("ref:{}", aref_uuid))
         .expect("Should be able to query AtomRef")
         .expect("AtomRef should exist");
     
@@ -86,15 +86,15 @@ fn test_production_atomref_scenario() {
         .expect("Should receive update response");
     
     assert!(response2.success, "Update request should succeed");
-    let aref_uuid_2 = response2.aref_uuid.as_ref().expect("Should return AtomRef UUID");
+    let aref_uuid_2 = response2.molecule_uuid.as_ref().expect("Should return Molecule UUID");
     
     // Verify same AtomRef UUID is used
-    assert_eq!(aref_uuid, aref_uuid_2, "Should reuse same AtomRef UUID");
-    println!("✅ Update used same AtomRef: {}", aref_uuid_2);
+    assert_eq!(aref_uuid, aref_uuid_2, "Should reuse same Molecule UUID");
+    println!("✅ Update used same Molecule: {}", aref_uuid_2);
     
     // STEP 4: CRITICAL VALIDATION - Check if AtomRef points to new atom
     println!("🔍 STEP 4: CRITICAL VALIDATION - Checking AtomRef update");
-    let updated_aref = db_ops.get_item::<AtomRef>(&format!("ref:{}", aref_uuid))
+    let updated_aref = db_ops.get_item::<Molecule>(&format!("ref:{}", aref_uuid))
         .expect("Should be able to query updated AtomRef")
         .expect("Updated AtomRef should exist");
     
@@ -186,18 +186,18 @@ fn test_concurrent_atomref_updates() {
     }
     
     // All responses should have the same AtomRef UUID (same field)
-    let first_aref = responses[0].aref_uuid.as_ref().unwrap();
+    let first_aref = responses[0].molecule_uuid.as_ref().unwrap();
     for (i, response) in responses.iter().enumerate() {
-        let aref_uuid = response.aref_uuid.as_ref().unwrap();
-        assert_eq!(first_aref, aref_uuid, 
-            "All concurrent updates should use same AtomRef UUID (response {})", i);
+        let aref_uuid = response.molecule_uuid.as_ref().unwrap();
+        assert_eq!(first_aref, aref_uuid,
+            "All concurrent updates should use same Molecule UUID (response {})", i);
     }
     
     println!("✅ CONCURRENT UPDATE TEST PASSED");
-    println!("   All {} concurrent updates used same AtomRef: {}", responses.len(), first_aref);
+    println!("   All {} concurrent updates used same Molecule: {}", responses.len(), first_aref);
     
     // Final validation: Check final state of AtomRef
-    let final_aref = db_ops.get_item::<AtomRef>(&format!("ref:{}", first_aref))
+    let final_aref = db_ops.get_item::<Molecule>(&format!("ref:{}", first_aref))
         .expect("Should be able to query final AtomRef")
         .expect("Final AtomRef should exist");
     

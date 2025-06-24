@@ -30,7 +30,7 @@ pub use shared::*;
 use infrastructure::message_bus::{
     request_events::{
         FieldValueSetResponse, FieldUpdateResponse, SchemaLoadResponse, SchemaApprovalResponse,
-        AtomCreateResponse, AtomRefCreateResponse, AtomRefUpdateRequest, SystemInitializationRequest,
+        AtomCreateResponse, MoleculeCreateResponse, MoleculeUpdateRequest, SystemInitializationRequest,
     },
     query_events::MutationExecuted,
 };
@@ -38,7 +38,7 @@ use crate::fold_db_core::transform_manager::types::TransformRunner;
 use infrastructure::init::{init_orchestrator, init_transform_manager};
 
 // External dependencies
-use crate::atom::AtomRefBehavior;
+use crate::atom::MoleculeBehavior;
 use crate::db_operations::DbOperations;
 use crate::permissions::PermissionWrapper;
 use crate::schema::core::SchemaState;
@@ -65,7 +65,7 @@ pub enum OperationResponse {
     SchemaLoadResponse(SchemaLoadResponse),
     SchemaApprovalResponse(SchemaApprovalResponse),
     AtomCreateResponse(AtomCreateResponse),
-    AtomRefCreateResponse(AtomRefCreateResponse),
+    MoleculeCreateResponse(MoleculeCreateResponse),
     Error(String),
     Timeout,
 }
@@ -182,20 +182,20 @@ impl FoldDB {
                             let aref_uuid = atom_ref.uuid().to_string();
                             let atom_uuid = atom_ref.get_atom_uuid().clone();
 
-                            // Send AtomRefUpdateRequest via message bus
+                            // Send MoleculeUpdateRequest via message bus
                             let correlation_id = Uuid::new_v4().to_string();
-                            let update_request = AtomRefUpdateRequest {
+                            let update_request = MoleculeUpdateRequest {
                                 correlation_id: correlation_id.clone(),
-                                aref_uuid: aref_uuid.clone(),
+                                molecule_uuid: aref_uuid.clone(),
                                 atom_uuid,
                                 source_pub_key: "system".to_string(),
-                                aref_type: "Single".to_string(), // Default type for schema initialization
+                                molecule_type: "Single".to_string(), // Default type for schema initialization
                                 additional_data: None,
                             };
 
                             if let Err(e) = message_bus.publish(update_request) {
                                 info!(
-                                    "Failed to publish AtomRefUpdateRequest for schema '{}': {}",
+                                    "Failed to publish MoleculeUpdateRequest for schema '{}': {}",
                                     schema_name, e
                                 );
                             }

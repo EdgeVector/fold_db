@@ -53,53 +53,54 @@ impl EventType for AtomUpdateResponse {
     fn type_id() -> &'static str { "AtomUpdateResponse" }
 }
 
+// Molecule request/response types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefCreateRequest {
+pub struct MoleculeCreateRequest {
     pub correlation_id: String,
-    pub aref_uuid: String,
+    pub molecule_uuid: String,
     pub atom_uuid: String,
     pub source_pub_key: String,
-    pub aref_type: String,
+    pub molecule_type: String,
 }
 
-impl EventType for AtomRefCreateRequest {
-    fn type_id() -> &'static str { "AtomRefCreateRequest" }
+impl EventType for MoleculeCreateRequest {
+    fn type_id() -> &'static str { "MoleculeCreateRequest" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefCreateResponse {
+pub struct MoleculeCreateResponse {
     pub correlation_id: String,
     pub success: bool,
     pub error: Option<String>,
 }
 
-impl EventType for AtomRefCreateResponse {
-    fn type_id() -> &'static str { "AtomRefCreateResponse" }
+impl EventType for MoleculeCreateResponse {
+    fn type_id() -> &'static str { "MoleculeCreateResponse" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefUpdateRequest {
+pub struct MoleculeUpdateRequest {
     pub correlation_id: String,
-    pub aref_uuid: String,
+    pub molecule_uuid: String,
     pub atom_uuid: String,
     pub source_pub_key: String,
-    pub aref_type: String,
+    pub molecule_type: String,
     pub additional_data: Option<Value>,
 }
 
-impl EventType for AtomRefUpdateRequest {
-    fn type_id() -> &'static str { "AtomRefUpdateRequest" }
+impl EventType for MoleculeUpdateRequest {
+    fn type_id() -> &'static str { "MoleculeUpdateRequest" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefUpdateResponse {
+pub struct MoleculeUpdateResponse {
     pub correlation_id: String,
     pub success: bool,
     pub error: Option<String>,
 }
 
-impl EventType for AtomRefUpdateResponse {
-    fn type_id() -> &'static str { "AtomRefUpdateResponse" }
+impl EventType for MoleculeUpdateResponse {
+    fn type_id() -> &'static str { "MoleculeUpdateResponse" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -119,7 +120,7 @@ impl EventType for FieldValueSetRequest {
 pub struct FieldValueSetResponse {
     pub correlation_id: String,
     pub success: bool,
-    pub aref_uuid: Option<String>,
+    pub molecule_uuid: Option<String>,
     pub error: Option<String>,
 }
 
@@ -144,7 +145,7 @@ impl EventType for FieldUpdateRequest {
 pub struct FieldUpdateResponse {
     pub correlation_id: String,
     pub success: bool,
-    pub aref_uuid: Option<String>,
+    pub molecule_uuid: Option<String>,
     pub error: Option<String>,
 }
 
@@ -198,7 +199,7 @@ impl EventType for SchemaApprovalResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AtomHistoryRequest {
     pub correlation_id: String,
-    pub aref_uuid: String,
+    pub molecule_uuid: String,
 }
 
 impl EventType for AtomHistoryRequest {
@@ -220,7 +221,7 @@ impl EventType for AtomHistoryResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AtomGetRequest {
     pub correlation_id: String,
-    pub aref_uuid: String,
+    pub molecule_uuid: String,
 }
 
 impl EventType for AtomGetRequest {
@@ -263,26 +264,27 @@ impl EventType for FieldValueQueryResponse {
     fn type_id() -> &'static str { "FieldValueQueryResponse" }
 }
 
+// Molecule query types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefQueryRequest {
+pub struct MoleculeQueryRequest {
     pub correlation_id: String,
-    pub aref_uuid: String,
+    pub molecule_uuid: String,
 }
 
-impl EventType for AtomRefQueryRequest {
-    fn type_id() -> &'static str { "AtomRefQueryRequest" }
+impl EventType for MoleculeQueryRequest {
+    fn type_id() -> &'static str { "MoleculeQueryRequest" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefQueryResponse {
+pub struct MoleculeQueryResponse {
     pub correlation_id: String,
     pub success: bool,
     pub exists: bool,
     pub error: Option<String>,
 }
 
-impl EventType for AtomRefQueryResponse {
-    fn type_id() -> &'static str { "AtomRefQueryResponse" }
+impl EventType for MoleculeQueryResponse {
+    fn type_id() -> &'static str { "MoleculeQueryResponse" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -327,26 +329,27 @@ impl EventType for SchemaDiscoveryResponse {
     fn type_id() -> &'static str { "SchemaDiscoveryResponse" }
 }
 
+// Molecule get types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefGetRequest {
+pub struct MoleculeGetRequest {
     pub correlation_id: String,
-    pub aref_uuid: String,
+    pub molecule_uuid: String,
 }
 
-impl EventType for AtomRefGetRequest {
-    fn type_id() -> &'static str { "AtomRefGetRequest" }
+impl EventType for MoleculeGetRequest {
+    fn type_id() -> &'static str { "MoleculeGetRequest" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefGetResponse {
+pub struct MoleculeGetResponse {
     pub correlation_id: String,
     pub success: bool,
-    pub aref_data: Option<Value>,
+    pub molecule_data: Option<Value>,
     pub error: Option<String>,
 }
 
-impl EventType for AtomRefGetResponse {
-    fn type_id() -> &'static str { "AtomRefGetResponse" }
+impl EventType for MoleculeGetResponse {
+    fn type_id() -> &'static str { "MoleculeGetResponse" }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

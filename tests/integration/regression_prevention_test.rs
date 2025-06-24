@@ -21,7 +21,7 @@ use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::db_operations::DbOperations;
 use datafold::schema::{Schema, types::field::FieldVariant, field_factory::FieldFactory};
 use datafold::schema::types::field::Field;
-use datafold::atom::{Atom, AtomRef};
+use datafold::atom::{Atom, Molecule};
 use serde_json::json;
 use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
 use std::time::{Duration, Instant};
@@ -128,7 +128,7 @@ impl RegressionPreventionTestFixture {
         Ok(MutationResult {
             correlation_id,
             success: response.success,
-            aref_uuid: response.aref_uuid,
+            molecule_uuid: response.molecule_uuid,
             error: response.error,
             duration,
             value,
@@ -155,7 +155,7 @@ impl RegressionPreventionTestFixture {
             return Err(format!("Initial mutation failed: {:?}", initial_result.error).into());
         }
         
-        let initial_aref_uuid = initial_result.aref_uuid
+        let initial_aref_uuid = initial_result.molecule_uuid
             .ok_or("Initial mutation should return AtomRef UUID")?;
         
         // Step 2: Validate initial AtomRef
@@ -179,7 +179,7 @@ impl RegressionPreventionTestFixture {
             return Err(format!("Update mutation failed: {:?}", update_result.error).into());
         }
         
-        let update_aref_uuid = update_result.aref_uuid
+        let update_aref_uuid = update_result.molecule_uuid
             .ok_or("Update mutation should return AtomRef UUID")?;
         
         // Step 4: Validate AtomRef reuse
@@ -216,8 +216,8 @@ impl RegressionPreventionTestFixture {
         })
     }
     
-    fn validate_atomref_exists(&self, aref_uuid: &str) -> Result<AtomRef, Box<dyn std::error::Error>> {
-        self.db_ops.get_item::<AtomRef>(&format!("ref:{}", aref_uuid))?
+    fn validate_atomref_exists(&self, aref_uuid: &str) -> Result<Molecule, Box<dyn std::error::Error>> {
+        self.db_ops.get_item::<Molecule>(&format!("ref:{}", aref_uuid))?
             .ok_or_else(|| format!("AtomRef {} not found", aref_uuid).into())
     }
     
@@ -232,7 +232,7 @@ impl RegressionPreventionTestFixture {
 struct MutationResult {
     correlation_id: String,
     success: bool,
-    aref_uuid: Option<String>,
+    molecule_uuid: Option<String>,
     error: Option<String>,
     duration: Duration,
     value: serde_json::Value,
@@ -280,7 +280,7 @@ fn test_atomref_resolution_bug_prevention() {
     
     assert!(mutation_result.success, "Mutation should succeed despite static AtomRef");
     
-    let dynamic_aref_uuid = mutation_result.aref_uuid
+    let dynamic_aref_uuid = mutation_result.molecule_uuid
         .expect("Mutation should return dynamic AtomRef UUID");
     
     // CRITICAL: Verify dynamic AtomRef was created and is different from static ref
@@ -326,7 +326,7 @@ fn test_atomref_resolution_bug_prevention() {
     ).expect("Failed to execute second mutation");
     
     assert!(second_mutation.success);
-    let second_aref_uuid = second_mutation.aref_uuid.expect("Second mutation should return AtomRef UUID");
+    let second_aref_uuid = second_mutation.molecule_uuid.expect("Second mutation should return AtomRef UUID");
     
     // Should reuse the same dynamic AtomRef
     assert_eq!(dynamic_aref_uuid, second_aref_uuid,
@@ -346,7 +346,7 @@ fn test_atomref_resolution_bug_prevention() {
     ).expect("Failed to execute normal field mutation");
     
     assert!(normal_mutation.success);
-    let normal_aref_uuid = normal_mutation.aref_uuid.expect("Normal mutation should return AtomRef UUID");
+    let normal_aref_uuid = normal_mutation.molecule_uuid.expect("Normal mutation should return AtomRef UUID");
     
     // Normal field should get its own AtomRef
     assert_ne!(normal_aref_uuid, dynamic_aref_uuid,
@@ -1077,8 +1077,8 @@ fn test_data_consistency_safeguards() {
     assert!(primary_result.success && secondary_result.success);
     
     // Verify both fields have independent AtomRefs
-    let primary_aref_uuid = primary_result.aref_uuid.expect("Primary should have AtomRef");
-    let secondary_aref_uuid = secondary_result.aref_uuid.expect("Secondary should have AtomRef");
+    let primary_aref_uuid = primary_result.molecule_uuid.expect("Primary should have AtomRef");
+    let secondary_aref_uuid = secondary_result.molecule_uuid.expect("Secondary should have AtomRef");
     
     assert_ne!(primary_aref_uuid, secondary_aref_uuid,
         "Different fields should have different AtomRefs");
@@ -1142,7 +1142,7 @@ fn test_data_consistency_safeguards() {
                 if message_bus.publish(request).is_ok() {
                     match response_consumer.recv_timeout(Duration::from_millis(200)) {
                         Ok(response) => {
-                            results.lock().unwrap().push((correlation_id, response.success, response.aref_uuid));
+                            results.lock().unwrap().push((correlation_id, response.success, response.molecule_uuid));
                         }
                         Err(_) => {
                             results.lock().unwrap().push((correlation_id, false, None));

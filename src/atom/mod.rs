@@ -3,16 +3,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-mod atom_ref;
-mod atom_ref_behavior;
-mod atom_ref_range;
-mod atom_ref_tests;
-mod atom_ref_types;
+mod molecule;
+mod molecule_behavior;
+mod molecule_range;
+mod molecule_tests;
+mod molecule_types;
 
-pub use atom_ref::AtomRef;
-pub use atom_ref_behavior::AtomRefBehavior;
-pub use atom_ref_range::AtomRefRange;
-pub use atom_ref_types::{AtomRefStatus, AtomRefUpdate};
+pub use molecule::Molecule;
+pub use molecule_behavior::MoleculeBehavior;
+pub use molecule_range::MoleculeRange;
+pub use molecule_types::{MoleculeStatus, MoleculeUpdate};
 
 /// An immutable data container that represents a single version of content in the database.
 ///
@@ -123,7 +123,7 @@ impl Atom {
     /// Returns the unique identifier of this Atom.
     ///
     /// This UUID uniquely identifies this specific version of the data
-    /// and is used by AtomRefs to point to the current version.
+    /// and is used by Molecules to point to the current version.
     #[must_use]
     pub fn uuid(&self) -> &str {
         &self.uuid
@@ -209,9 +209,9 @@ mod tests {
     }
 
     #[test]
-    fn test_atom_ref_creation_and_update() {
-        use crate::atom::AtomRef;
-        use crate::atom::AtomRefBehavior;
+    fn test_molecule_creation_and_update() {
+        use crate::atom::Molecule;
+        use crate::atom::MoleculeBehavior;
 
         let atom = Atom::new(
             "test_schema".to_string(),
@@ -219,9 +219,9 @@ mod tests {
             json!({"test": true}),
         );
 
-        // Test single atom ref
-        let atom_ref = AtomRef::new(atom.uuid().to_string(), "test_key".to_string());
-        assert_eq!(atom_ref.get_atom_uuid(), &atom.uuid().to_string());
+        // Test single molecule
+        let molecule = Molecule::new(atom.uuid().to_string(), "test_key".to_string());
+        assert_eq!(molecule.get_atom_uuid(), &atom.uuid().to_string());
 
         let new_atom = Atom::new(
             "test_schema".to_string(),
@@ -230,11 +230,11 @@ mod tests {
         )
         .with_prev_version(atom.uuid().to_string());
 
-        let mut updated_ref = atom_ref.clone();
+        let mut updated_ref = molecule.clone();
         updated_ref.set_atom_uuid(new_atom.uuid().to_string());
 
         assert_eq!(updated_ref.get_atom_uuid(), &new_atom.uuid().to_string());
-        assert!(updated_ref.updated_at() >= atom_ref.updated_at());
+        assert!(updated_ref.updated_at() >= molecule.updated_at());
     }
 
 }

@@ -2,8 +2,8 @@
 
 use super::AtomManager;
 use crate::fold_db_core::infrastructure::message_bus::request_events::{
-    AtomCreateRequest, AtomUpdateRequest, AtomRefCreateRequest,
-    AtomRefUpdateRequest, FieldValueSetRequest,
+    AtomCreateRequest, AtomUpdateRequest, MoleculeCreateRequest,
+    MoleculeUpdateRequest, FieldValueSetRequest,
 };
 use log::{info, warn, error};
 use std::sync::mpsc;
@@ -25,20 +25,20 @@ impl AtomManager {
         let atom_update_thread = self.start_atom_update_processing();
         threads.push(atom_update_thread);
         
-        // Thread 3: AtomRefCreateRequest processing
-        let atomref_create_thread = self.start_atomref_create_processing();
-        threads.push(atomref_create_thread);
+        // Thread 3: MoleculeCreateRequest processing
+        let molecule_create_thread = self.start_molecule_create_processing();
+        threads.push(molecule_create_thread);
         
-        // Thread 4: AtomRefUpdateRequest processing
-        let atomref_update_thread = self.start_atomref_update_processing();
-        threads.push(atomref_update_thread);
+        // Thread 4: MoleculeUpdateRequest processing
+        let molecule_update_thread = self.start_molecule_update_processing();
+        threads.push(molecule_update_thread);
         
         // Thread 5: FieldValueSetRequest processing - CRITICAL MUTATION BUG FIX
         let fieldvalueset_thread = self.start_fieldvalueset_processing();
         threads.push(fieldvalueset_thread);
         
         // DIAGNOSTIC LOG: All handlers now implemented
-        info!("🔍 DIAGNOSTIC: AtomManager event threads - AtomCreateRequest: ✅, AtomUpdateRequest: ✅, AtomRefCreateRequest: ✅, AtomRefUpdateRequest: ✅, FieldValueSetRequest: ✅ FIXED");
+        info!("🔍 DIAGNOSTIC: AtomManager event threads - AtomCreateRequest: ✅, AtomUpdateRequest: ✅, MoleculeCreateRequest: ✅, MoleculeUpdateRequest: ✅, FieldValueSetRequest: ✅ FIXED");
         
         info!("✅ AtomManager started {} event processing threads", threads.len());
     }
@@ -97,26 +97,26 @@ impl AtomManager {
         })
     }
 
-    /// Process AtomRefCreateRequest events
-    fn start_atomref_create_processing(&self) -> JoinHandle<()> {
-        let mut consumer = self.message_bus.subscribe::<AtomRefCreateRequest>();
+    /// Process MoleculeCreateRequest events
+    fn start_molecule_create_processing(&self) -> JoinHandle<()> {
+        let mut consumer = self.message_bus.subscribe::<MoleculeCreateRequest>();
         let manager = self.clone();
         
         thread::spawn(move || {
-            info!("🔗 AtomRefCreateRequest processor started");
+            info!("🔗 MoleculeCreateRequest processor started");
             
             loop {
                 match consumer.recv_timeout(Duration::from_millis(100)) {
                     Ok(request) => {
-                        if let Err(e) = manager.handle_atomref_create_request(request) {
-                            error!("❌ Error processing AtomRefCreateRequest: {}", e);
+                        if let Err(e) = manager.handle_molecule_create_request(request) {
+                            error!("❌ Error processing MoleculeCreateRequest: {}", e);
                         }
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Continue waiting
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        warn!("⚠️ AtomRefCreateRequest channel disconnected");
+                        warn!("⚠️ MoleculeCreateRequest channel disconnected");
                         break;
                     }
                 }
@@ -124,26 +124,26 @@ impl AtomManager {
         })
     }
 
-    /// Process AtomRefUpdateRequest events
-    fn start_atomref_update_processing(&self) -> JoinHandle<()> {
-        let mut consumer = self.message_bus.subscribe::<AtomRefUpdateRequest>();
+    /// Process MoleculeUpdateRequest events
+    fn start_molecule_update_processing(&self) -> JoinHandle<()> {
+        let mut consumer = self.message_bus.subscribe::<MoleculeUpdateRequest>();
         let manager = self.clone();
         
         thread::spawn(move || {
-            info!("🔄 AtomRefUpdateRequest processor started");
+            info!("🔄 MoleculeUpdateRequest processor started");
             
             loop {
                 match consumer.recv_timeout(Duration::from_millis(100)) {
                     Ok(request) => {
-                        if let Err(e) = manager.handle_atomref_update_request(request) {
-                            error!("❌ Error processing AtomRefUpdateRequest: {}", e);
+                        if let Err(e) = manager.handle_molecule_update_request(request) {
+                            error!("❌ Error processing MoleculeUpdateRequest: {}", e);
                         }
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Continue waiting
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        warn!("⚠️ AtomRefUpdateRequest channel disconnected");
+                        warn!("⚠️ MoleculeUpdateRequest channel disconnected");
                         break;
                     }
                 }

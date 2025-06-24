@@ -12,7 +12,7 @@ mod request_handlers;
 mod field_processing;
 mod helpers;
 
-use crate::atom::{Atom, AtomRef, AtomRefRange};
+use crate::atom::{Atom, Molecule, MoleculeRange};
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use std::collections::HashMap;
@@ -26,8 +26,10 @@ pub use crate::fold_db_core::shared::EventDrivenAtomStats;
 pub struct AtomManager {
     pub(crate) db_ops: Arc<DbOperations>,
     pub(crate) atoms: Arc<Mutex<HashMap<String, Atom>>>,
-    pub(crate) ref_atoms: Arc<Mutex<HashMap<String, AtomRef>>>,
-    pub(crate) ref_ranges: Arc<Mutex<HashMap<String, AtomRefRange>>>,
+    pub(crate) ref_atoms: Arc<Mutex<HashMap<String, Molecule>>>,
+    pub(crate) ref_ranges: Arc<Mutex<HashMap<String, MoleculeRange>>>,
+    pub(crate) molecules: Arc<Mutex<HashMap<String, Molecule>>>,
+    pub(crate) molecule_ranges: Arc<Mutex<HashMap<String, MoleculeRange>>>,
     pub(crate) message_bus: Arc<MessageBus>,
     pub(crate) stats: Arc<Mutex<EventDrivenAtomStats>>,
     pub(crate) event_threads: Arc<Mutex<Vec<JoinHandle<()>>>>,
@@ -38,6 +40,8 @@ impl AtomManager {
         let mut atoms = HashMap::new();
         let mut ref_atoms = HashMap::new();
         let mut ref_ranges = HashMap::new();
+        let mut molecules = HashMap::new();
+        let mut molecule_ranges = HashMap::new();
 
         // Load existing data from database
         for result in db_ops.db().iter().flatten() {
@@ -49,10 +53,14 @@ impl AtomManager {
                     atoms.insert(stripped.to_string(), atom);
                 }
             } else if let Some(stripped) = key_str.strip_prefix("ref:") {
-                if let Ok(atom_ref) = serde_json::from_slice::<AtomRef>(bytes) {
+                if let Ok(atom_ref) = serde_json::from_slice::<Molecule>(bytes) {
                     ref_atoms.insert(stripped.to_string(), atom_ref);
-                } else if let Ok(range) = serde_json::from_slice::<AtomRefRange>(bytes) {
+                } else if let Ok(range) = serde_json::from_slice::<MoleculeRange>(bytes) {
                     ref_ranges.insert(stripped.to_string(), range);
+                } else if let Ok(molecule) = serde_json::from_slice::<Molecule>(bytes) {
+                    molecules.insert(stripped.to_string(), molecule);
+                } else if let Ok(mol_range) = serde_json::from_slice::<MoleculeRange>(bytes) {
+                    molecule_ranges.insert(stripped.to_string(), mol_range);
                 }
             }
         }
@@ -62,6 +70,8 @@ impl AtomManager {
             atoms: Arc::new(Mutex::new(atoms)),
             ref_atoms: Arc::new(Mutex::new(ref_atoms)),
             ref_ranges: Arc::new(Mutex::new(ref_ranges)),
+            molecules: Arc::new(Mutex::new(molecules)),
+            molecule_ranges: Arc::new(Mutex::new(molecule_ranges)),
             message_bus: Arc::clone(&message_bus),
             stats: Arc::new(Mutex::new(EventDrivenAtomStats::new())),
             event_threads: Arc::new(Mutex::new(Vec::new())),
@@ -82,23 +92,23 @@ impl AtomManager {
         helpers::create_atom(&self.db_ops, schema_name, source_pub_key, content)
     }
 
-    pub fn update_atom_ref(
+    pub fn update_molecule(
         &self,
-        aref_uuid: &str,
+        molecule_uuid: &str,
         atom_uuid: String,
         source_pub_key: String,
-    ) -> Result<AtomRef, Box<dyn std::error::Error>> {
-        helpers::update_atom_ref(&self.db_ops, aref_uuid, atom_uuid, source_pub_key)
+    ) -> Result<Molecule, Box<dyn std::error::Error>> {
+        helpers::update_molecule(&self.db_ops, molecule_uuid, atom_uuid, source_pub_key)
     }
 
-    pub fn update_atom_ref_range(
+    pub fn update_molecule_range(
         &self,
-        aref_uuid: &str,
+        molecule_uuid: &str,
         atom_uuid: String,
         key: String,
         source_pub_key: String,
-    ) -> Result<AtomRefRange, Box<dyn std::error::Error>> {
-        helpers::update_atom_ref_range(&self.db_ops, aref_uuid, atom_uuid, key, source_pub_key)
+    ) -> Result<MoleculeRange, Box<dyn std::error::Error>> {
+        helpers::update_molecule_range(&self.db_ops, molecule_uuid, atom_uuid, key, source_pub_key)
     }
 
     pub fn get_atom_history(
@@ -121,6 +131,8 @@ impl Clone for AtomManager {
             atoms: Arc::clone(&self.atoms),
             ref_atoms: Arc::clone(&self.ref_atoms),
             ref_ranges: Arc::clone(&self.ref_ranges),
+            molecules: Arc::clone(&self.molecules),
+            molecule_ranges: Arc::clone(&self.molecule_ranges),
             message_bus: Arc::clone(&self.message_bus),
             stats: Arc::clone(&self.stats),
             event_threads: Arc::clone(&self.event_threads),

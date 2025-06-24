@@ -239,7 +239,7 @@ impl EndToEndWorkflowFixture {
             return Err(format!("Mutation failed: {:?}", response.error).into());
         }
         
-        Ok(response.aref_uuid.unwrap_or_else(|| "no_uuid".to_string()))
+        Ok(response.molecule_uuid.unwrap_or_else(|| "no_uuid".to_string()))
     }
     
     /// Execute range field mutation via message bus (for range schemas)
@@ -282,7 +282,7 @@ impl EndToEndWorkflowFixture {
             return Err(format!("Range mutation failed: {:?}", response.error).into());
         }
         
-        Ok(response.aref_uuid.unwrap_or_else(|| "no_uuid".to_string()))
+        Ok(response.molecule_uuid.unwrap_or_else(|| "no_uuid".to_string()))
     }
     
     /// Simple range field mutation for single-value tests
@@ -319,7 +319,7 @@ impl EndToEndWorkflowFixture {
             return Err(format!("Simple range mutation failed: {:?}", response.error).into());
         }
         
-        Ok(response.aref_uuid.unwrap_or_else(|| "no_uuid".to_string()))
+        Ok(response.molecule_uuid.unwrap_or_else(|| "no_uuid".to_string()))
     }
     
     /// Query field value using the transform utils

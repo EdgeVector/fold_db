@@ -1,6 +1,6 @@
 //! Helper functions and utilities for AtomManager
 
-use crate::atom::{Atom, AtomRef, AtomRefRange, AtomStatus};
+use crate::atom::{Atom, AtomStatus, Molecule, MoleculeRange};
 use crate::db_operations::DbOperations;
 use serde_json::Value;
 use std::sync::Arc;
@@ -21,26 +21,26 @@ pub fn create_atom(
     ).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
-/// Update an atom reference
-pub fn update_atom_ref(
+/// Update a molecule reference
+pub fn update_molecule(
     db_ops: &Arc<DbOperations>,
-    aref_uuid: &str,
+    molecule_uuid: &str,
     atom_uuid: String,
     source_pub_key: String,
-) -> Result<AtomRef, Box<dyn std::error::Error>> {
-    db_ops.update_atom_ref(aref_uuid, atom_uuid, source_pub_key)
+) -> Result<Molecule, Box<dyn std::error::Error>> {
+    db_ops.update_molecule(molecule_uuid, atom_uuid, source_pub_key)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
-/// Update an atom reference range
-pub fn update_atom_ref_range(
+/// Update a molecule range
+pub fn update_molecule_range(
     db_ops: &Arc<DbOperations>,
-    aref_uuid: &str,
+    molecule_uuid: &str,
     atom_uuid: String,
     key: String,
     source_pub_key: String,
-) -> Result<AtomRefRange, Box<dyn std::error::Error>> {
-    db_ops.update_atom_ref_range(aref_uuid, atom_uuid, key, source_pub_key)
+) -> Result<MoleculeRange, Box<dyn std::error::Error>> {
+    db_ops.update_molecule_range(molecule_uuid, atom_uuid, key, source_pub_key)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
@@ -54,9 +54,9 @@ pub fn get_atom_history(
     
     match db_ops.db().get(&key)? {
         Some(bytes) => {
-            // Try to deserialize as AtomRef first
-            if let Ok(atom_ref) = serde_json::from_slice::<AtomRef>(&bytes) {
-                let atom_uuid = atom_ref.get_atom_uuid();
+            // Try to deserialize as Molecule first
+            if let Ok(molecule) = serde_json::from_slice::<Molecule>(&bytes) {
+                let atom_uuid = molecule.get_atom_uuid();
                 
                 // Get the current atom
                 let atom_key = format!("atom:{}", atom_uuid);
@@ -67,15 +67,14 @@ pub fn get_atom_history(
                     }
                     None => Ok(vec![])
                 }
+            }
+            // Try as MoleculeRange
+            else if let Ok(_range) = serde_json::from_slice::<MoleculeRange>(&bytes) {
+                // For ranges, we would need to iterate through all atoms in the range
+                // For now, return empty vector
+                Ok(vec![])
             } else {
-                // Try as AtomRefRange
-                if let Ok(_range) = serde_json::from_slice::<AtomRefRange>(&bytes) {
-                    // For ranges, we would need to iterate through all atoms in the range
-                    // For now, return empty vector
-                    Ok(vec![])
-                } else {
-                    Err("Failed to deserialize atom reference".into())
-                }
+                Err("Failed to deserialize atom reference or molecule".into())
             }
         }
         None => Ok(vec![])

@@ -14,7 +14,7 @@ use crate::schema::types::field::{
 };
 use crate::permissions::types::policy::PermissionsPolicy;
 use crate::fees::types::config::FieldPaymentConfig;
-use crate::atom::{Atom, AtomRef, AtomRefBehavior};
+use crate::atom::{Atom, Molecule, MoleculeBehavior};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -88,7 +88,7 @@ impl FieldFactory {
                 FieldPaymentConfig::default(),
                 HashMap::new(),
             ),
-            atom_ref_range: None,
+            molecule_range: None,
         }
     }
 
@@ -103,9 +103,9 @@ impl FieldFactory {
         FieldVariant::Range(Self::create_range_field())
     }
 
-    /// Create a SingleField with an AtomRef already linked
-    /// Consolidates the pattern of creating field + atom + atomref + linking
-    pub fn create_single_field_with_atom_ref(
+    /// Create a SingleField with a Molecule already linked
+    /// Consolidates the pattern of creating field + atom + molecule + linking
+    pub fn create_single_field_with_molecule(
         schema_name: &str,
         user_key: &str,
         content: JsonValue,
@@ -116,10 +116,10 @@ impl FieldFactory {
         let atom_uuid = atom.uuid().to_string();
         db_ops.store_item(&format!("atom:{}", atom_uuid), &atom)?;
 
-        // Create atom ref - Note: AtomRef::new takes (atom_uuid, source_pub_key)
-        let atom_ref = AtomRef::new(atom_uuid, user_key.to_string());
-        let ref_uuid = atom_ref.uuid().to_string();
-        db_ops.store_item(&format!("ref:{}", ref_uuid), &atom_ref)?;
+        // Create molecule - Note: Molecule::new takes (atom_uuid, source_pub_key)
+        let molecule = Molecule::new(atom_uuid, user_key.to_string());
+        let ref_uuid = molecule.uuid().to_string();
+        db_ops.store_item(&format!("ref:{}", ref_uuid), &molecule)?;
 
         // Create field with ref linked
         let mut field = Self::create_single_field();
@@ -136,7 +136,7 @@ impl FieldFactory {
         value: JsonValue,
         db_ops: &crate::db_operations::DbOperations,
     ) -> Result<(String, FieldVariant), Box<dyn std::error::Error>> {
-        let field = Self::create_single_field_with_atom_ref(
+        let field = Self::create_single_field_with_molecule(
             schema_name,
             "test_user",
             value,
@@ -200,7 +200,7 @@ impl FieldBuilder {
     pub fn build_range(self) -> RangeField {
         RangeField {
             inner: FieldCommon::new(self.permissions, self.payment_config, self.metadata),
-            atom_ref_range: None,
+            molecule_range: None,
         }
     }
 }

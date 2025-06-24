@@ -9,7 +9,7 @@ use crate::fold_db_core::infrastructure::message_bus::{
 use log::{info, warn, error};
 use std::time::Instant;
 
-/// Handle FieldValueSetRequest by creating atom and appropriate AtomRef - CRITICAL MUTATION BUG FIX
+/// Handle FieldValueSetRequest by creating atom and appropriate Molecule - CRITICAL MUTATION BUG FIX
 pub(super) fn handle_fieldvalueset_request(manager: &AtomManager, request: FieldValueSetRequest) -> Result<(), Box<dyn std::error::Error>> {
     info!("📝 Processing FieldValueSetRequest for field: {}.{}", request.schema_name, request.field_name);
     info!("🔍 DIAGNOSTIC: FieldValueSetRequest details - correlation_id: {}, value: {}", request.correlation_id, request.value);
@@ -24,7 +24,7 @@ pub(super) fn handle_fieldvalueset_request(manager: &AtomManager, request: Field
             let atom_uuid = atom.uuid().to_string();
             store_atom_in_cache(manager, atom.clone());
             
-            // Step 2: Create appropriate AtomRef based on field type
+            // Step 2: Create appropriate Molecule based on field type
             let aref_result = create_atomref_for_field(manager, &request, &atom_uuid);
             
             match aref_result {
@@ -91,21 +91,21 @@ fn store_atom_in_cache(manager: &AtomManager, atom: Atom) {
     info!("🔍 DIAGNOSTIC: Stored atom in memory cache");
 }
 
-/// Create appropriate AtomRef for the field based on its type
+/// Create appropriate Molecule for the field based on its type
 fn create_atomref_for_field(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
     let field_type = determine_field_type(manager, &request.schema_name, &request.field_name);
     info!("🔍 DIAGNOSTIC: Step 2 - Determined field type: {}", field_type);
     
     match field_type.as_str() {
-        "Range" => create_range_atomref(manager, request, atom_uuid),
-        _ => create_single_atomref(manager, request, atom_uuid),
+        "Range" => create_range_molecule(manager, request, atom_uuid),
+        _ => create_single_molecule(manager, request, atom_uuid),
     }
 }
 
-/// Create AtomRefRange for Range fields
-fn create_range_atomref(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
+/// Create MoleculeRange for Range fields
+fn create_range_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
     let aref_uuid = format!("{}_{}_range", request.schema_name, request.field_name);
-    info!("🔍 DIAGNOSTIC: Creating AtomRefRange with UUID: {} -> atom: {}", aref_uuid, atom_uuid);
+    info!("🔍 DIAGNOSTIC: Creating MoleculeRange with UUID: {} -> atom: {}", aref_uuid, atom_uuid);
     
     let range_key = extract_range_key_from_value(&request.value);
     info!("🔍 DIAGNOSTIC: Extracted range key: '{}' from value: {}", range_key, request.value);
@@ -120,34 +120,34 @@ fn create_range_atomref(manager: &AtomManager, request: &FieldValueSetRequest, a
     match range_result {
         Ok(range) => {
             manager.ref_ranges.lock().unwrap().insert(aref_uuid.clone(), range);
-            info!("🔍 DIAGNOSTIC: Successfully created and stored AtomRefRange: {}", aref_uuid);
+            info!("🔍 DIAGNOSTIC: Successfully created and stored MoleculeRange: {}", aref_uuid);
             
-            // Verify the AtomRefRange was properly stored in database
-            match manager.db_ops.get_item::<crate::atom::AtomRefRange>(&format!("ref:{}", aref_uuid)) {
+            // Verify the MoleculeRange was properly stored in database
+            match manager.db_ops.get_item::<crate::atom::MoleculeRange>(&format!("ref:{}", aref_uuid)) {
                 Ok(Some(_)) => {
-                    info!("✅ VERIFICATION: AtomRefRange {} confirmed in database", aref_uuid);
+                    info!("✅ VERIFICATION: MoleculeRange {} confirmed in database", aref_uuid);
                 }
                 Ok(None) => {
-                    error!("❌ VERIFICATION FAILED: AtomRefRange {} not found in database after storage", aref_uuid);
+                    error!("❌ VERIFICATION FAILED: MoleculeRange {} not found in database after storage", aref_uuid);
                 }
                 Err(e) => {
-                    error!("❌ VERIFICATION ERROR: Failed to verify AtomRefRange {}: {}", aref_uuid, e);
+                    error!("❌ VERIFICATION ERROR: Failed to verify MoleculeRange {}: {}", aref_uuid, e);
                 }
             }
             
             Ok(aref_uuid)
         }
         Err(e) => {
-            error!("❌ DIAGNOSTIC: Failed to create AtomRefRange: {}", e);
+            error!("❌ DIAGNOSTIC: Failed to create MoleculeRange: {}", e);
             Err(Box::new(e))
         }
     }
 }
 
-/// Create AtomRef for Single fields (default)
-fn create_single_atomref(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
+/// Create Molecule for Single fields (default)
+fn create_single_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
     let aref_uuid = format!("{}_{}_single", request.schema_name, request.field_name);
-    info!("🔍 DIAGNOSTIC: Creating AtomRef (Single) with UUID: {} -> atom: {}", aref_uuid, atom_uuid);
+    info!("🔍 DIAGNOSTIC: Creating Molecule (Single) with UUID: {} -> atom: {}", aref_uuid, atom_uuid);
     
     let single_result = manager.db_ops.update_atom_ref(
         &aref_uuid,
@@ -157,27 +157,27 @@ fn create_single_atomref(manager: &AtomManager, request: &FieldValueSetRequest, 
     
     match single_result {
         Ok(aref) => {
-            info!("🔍 DIAGNOSTIC: AtomRef created successfully, final atom_uuid: {}", aref.get_atom_uuid());
+            info!("🔍 DIAGNOSTIC: Molecule created successfully, final atom_uuid: {}", aref.get_atom_uuid());
             manager.ref_atoms.lock().unwrap().insert(aref_uuid.clone(), aref);
-            info!("🔍 DIAGNOSTIC: Successfully created and stored AtomRef: {}", aref_uuid);
-            
-            // Verify the AtomRef was properly stored in database
-            match manager.db_ops.get_item::<crate::atom::AtomRef>(&format!("ref:{}", aref_uuid)) {
+            info!("🔍 DIAGNOSTIC: Successfully created and stored Molecule: {}", aref_uuid);
+
+            // Verify the Molecule was properly stored in database
+            match manager.db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", aref_uuid)) {
                 Ok(Some(_)) => {
-                    info!("✅ VERIFICATION: AtomRef {} confirmed in database", aref_uuid);
+                    info!("✅ VERIFICATION: Molecule {} confirmed in database", aref_uuid);
                 }
                 Ok(None) => {
-                    error!("❌ VERIFICATION FAILED: AtomRef {} not found in database after storage", aref_uuid);
+                    error!("❌ VERIFICATION FAILED: Molecule {} not found in database after storage", aref_uuid);
                 }
                 Err(e) => {
-                    error!("❌ VERIFICATION ERROR: Failed to verify AtomRef {}: {}", aref_uuid, e);
+                    error!("❌ VERIFICATION ERROR: Failed to verify Molecule {}: {}", aref_uuid, e);
                 }
             }
             
             Ok(aref_uuid)
         }
         Err(e) => {
-            error!("❌ DIAGNOSTIC: Failed to create AtomRef: {}", e);
+            error!("❌ DIAGNOSTIC: Failed to create Molecule: {}", e);
             Err(Box::new(e))
         }
     }
@@ -212,7 +212,7 @@ fn handle_successful_field_value_processing(manager: &AtomManager, request: &Fie
     drop(stats);
     
     info!("✅ Successfully processed FieldValueSetRequest - atom: {}, aref: {}", atom_uuid, aref_uuid);
-    info!("🔍 DIAGNOSTIC: Final mapping - AtomRef {} -> Atom {}", aref_uuid, atom_uuid);
+    info!("🔍 DIAGNOSTIC: Final mapping - Molecule {} -> Atom {}", aref_uuid, atom_uuid);
     
     // Publish FieldValueSet event to trigger transform chain
     publish_field_value_set_event(manager, request);
@@ -246,14 +246,14 @@ fn publish_field_value_set_event(manager: &AtomManager, request: &FieldValueSetR
     }
 }
 
-/// Create error response for AtomRef creation failure
+/// Create error response for Molecule creation failure
 fn create_atomref_error_response(correlation_id: &str, error: Box<dyn std::error::Error>) -> FieldValueSetResponse {
-    error!("❌ Failed to create AtomRef for FieldValueSetRequest: {}", error);
+    error!("❌ Failed to create Molecule for FieldValueSetRequest: {}", error);
     FieldValueSetResponse::new(
         correlation_id.to_string(),
         false,
         None,
-        Some(format!("Failed to create AtomRef: {}", error)),
+        Some(format!("Failed to create Molecule: {}", error)),
     )
 }
 

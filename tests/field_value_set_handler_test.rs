@@ -56,11 +56,11 @@ fn test_field_value_set_request_handler() {
     // Verify the response
     assert_eq!(response.correlation_id, "test_correlation_123");
     assert!(response.success, "FieldValueSetRequest should succeed");
-    assert!(response.aref_uuid.is_some(), "Should return an AtomRef UUID");
+    assert!(response.molecule_uuid.is_some(), "Should return an AtomRef UUID");
     assert!(response.error.is_none(), "Should not have an error");
     
     // The AtomRef UUID should follow our naming convention
-    let aref_uuid = response.aref_uuid.unwrap();
+    let aref_uuid = response.molecule_uuid.unwrap();
     assert!(
         aref_uuid.contains("user_schema_username"), 
         "AtomRef UUID should contain schema and field name: {}", 
@@ -119,11 +119,11 @@ fn test_field_value_set_request_range_field() {
     // Verify the response
     assert_eq!(response.correlation_id, "test_range_456");
     assert!(response.success, "FieldValueSetRequest should succeed");
-    assert!(response.aref_uuid.is_some(), "Should return an AtomRef UUID");
+    assert!(response.molecule_uuid.is_some(), "Should return an AtomRef UUID");
     assert!(response.error.is_none(), "Should not have an error");
     
     // The AtomRef UUID should indicate it's a range field
-    let aref_uuid = response.aref_uuid.unwrap();
+    let aref_uuid = response.molecule_uuid.unwrap();
     assert!(
         aref_uuid.contains("range"), 
         "Range field should create AtomRefRange: {}", 

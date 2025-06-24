@@ -98,14 +98,14 @@ fn mutate_field_value(
             return Err(format!("Mutation failed: {:?}", response.error).into());
         }
         
-        let aref_uuid = response.aref_uuid
+        let aref_uuid = response.molecule_uuid
             .ok_or("Mutation should return AtomRef UUID")?;
         
         println!("✅ Mutation succeeded - AtomRef UUID: {}", aref_uuid);
         
         // DIAGNOSTIC: Verify AtomRef was created in database
         let aref_key = format!("ref:{}", aref_uuid);
-        match fixture.db_ops.get_item::<datafold::atom::AtomRef>(&aref_key) {
+        match fixture.db_ops.get_item::<datafold::atom::Molecule>(&aref_key) {
             Ok(Some(aref)) => {
                 let atom_uuid = aref.get_atom_uuid();
                 println!("🔍 DIAGNOSTIC: AtomRef {} points to atom {}", aref_uuid, atom_uuid);
@@ -355,7 +355,7 @@ fn test_concurrent_mutations_and_queries() {
             let response = response_consumer.recv_timeout(Duration::from_millis(1000))
                 .expect("Failed to receive response");
             
-            (i, response.success, response.aref_uuid, value)
+            (i, response.success, response.molecule_uuid, value)
         })
     }).collect();
     
@@ -448,7 +448,7 @@ fn test_diagnostic_atomref_bug_prevention() {
     
     // Verify dynamic AtomRef points to the correct atom
     let aref_key = format!("ref:{}", dynamic_aref_uuid);
-    let dynamic_aref = fixture.db_ops.get_item::<datafold::atom::AtomRef>(&aref_key)
+    let dynamic_aref = fixture.db_ops.get_item::<datafold::atom::Molecule>(&aref_key)
         .expect("Failed to load dynamic AtomRef")
         .expect("Dynamic AtomRef should exist");
     

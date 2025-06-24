@@ -54,7 +54,7 @@ fn test_atomref_update_complete_flow() {
         .expect("Should receive first FieldValueSetResponse");
     
     assert!(response1.success, "First FieldValueSetRequest should succeed");
-    let aref_uuid = response1.aref_uuid.as_ref().expect("Should return AtomRef UUID");
+    let aref_uuid = response1.molecule_uuid.as_ref().expect("Should return AtomRef UUID");
     
     println!("✅ STEP 1 COMPLETE: AtomRef UUID: {}", aref_uuid);
     
@@ -79,7 +79,7 @@ fn test_atomref_update_complete_flow() {
         .expect("Should receive second FieldValueSetResponse");
     
     assert!(response2.success, "Second FieldValueSetRequest should succeed");
-    let aref_uuid_2 = response2.aref_uuid.as_ref().expect("Should return AtomRef UUID");
+    let aref_uuid_2 = response2.molecule_uuid.as_ref().expect("Should return AtomRef UUID");
     
     println!("✅ STEP 2 COMPLETE: AtomRef UUID: {}", aref_uuid_2);
     
@@ -109,7 +109,7 @@ fn test_atomref_update_complete_flow() {
         .expect("Should receive third FieldValueSetResponse");
     
     assert!(response3.success, "Third FieldValueSetRequest should succeed");
-    let aref_uuid_3 = response3.aref_uuid.as_ref().expect("Should return AtomRef UUID");
+    let aref_uuid_3 = response3.molecule_uuid.as_ref().expect("Should return AtomRef UUID");
     
     println!("✅ STEP 3 COMPLETE: AtomRef UUID: {}", aref_uuid_3);
     
@@ -180,8 +180,8 @@ fn test_atomref_update_different_fields() {
     assert!(response_username.success);
     assert!(response_email.success);
     
-    let username_aref = response_username.aref_uuid.unwrap();
-    let email_aref = response_email.aref_uuid.unwrap();
+    let username_aref = response_username.molecule_uuid.unwrap();
+    let email_aref = response_email.molecule_uuid.unwrap();
     
     println!("✅ Different fields get different AtomRef UUIDs:");
     println!("   username AtomRef: {}", username_aref);

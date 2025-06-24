@@ -6,7 +6,7 @@
 
 use super::message_bus::{
     MessageBus, Consumer,
-    atom_events::{FieldValueSet, AtomCreated, AtomRefCreated, AtomRefUpdated, AtomUpdated},
+    atom_events::{FieldValueSet, AtomCreated, MoleculeCreated, MoleculeUpdated, AtomUpdated},
     schema_events::{TransformExecuted, TransformTriggered, SchemaLoaded, SchemaChanged},
     query_events::{QueryExecuted, MutationExecuted},
 };
@@ -260,8 +260,8 @@ pub struct EventMonitor {
     _field_value_thread: thread::JoinHandle<()>,
     _atom_created_thread: thread::JoinHandle<()>,
     _atom_updated_thread: thread::JoinHandle<()>,
-    _atom_ref_created_thread: thread::JoinHandle<()>,
-    _atom_ref_updated_thread: thread::JoinHandle<()>,
+    _molecule_created_thread: thread::JoinHandle<()>,
+    _molecule_updated_thread: thread::JoinHandle<()>,
     _schema_loaded_thread: thread::JoinHandle<()>,
     _schema_changed_thread: thread::JoinHandle<()>,
     _transform_triggered_thread: thread::JoinHandle<()>,
@@ -287,8 +287,8 @@ impl EventMonitor {
         let mut field_value_consumer = message_bus.subscribe::<FieldValueSet>();
         let mut atom_created_consumer = message_bus.subscribe::<AtomCreated>();
         let mut atom_updated_consumer = message_bus.subscribe::<AtomUpdated>();
-        let mut atom_ref_created_consumer = message_bus.subscribe::<AtomRefCreated>();
-        let mut atom_ref_updated_consumer = message_bus.subscribe::<AtomRefUpdated>();
+        let mut molecule_created_consumer = message_bus.subscribe::<MoleculeCreated>();
+        let mut molecule_updated_consumer = message_bus.subscribe::<MoleculeUpdated>();
         let mut schema_loaded_consumer = message_bus.subscribe::<SchemaLoaded>();
         let mut schema_changed_consumer = message_bus.subscribe::<SchemaChanged>();
         let mut transform_triggered_consumer = message_bus.subscribe::<TransformTriggered>();
@@ -313,13 +313,13 @@ impl EventMonitor {
         });
 
         let stats_clone = statistics.clone();
-        let atom_ref_created_thread = thread::spawn(move || {
-            Self::monitor_atom_ref_created_events(&mut atom_ref_created_consumer, stats_clone);
+        let molecule_created_thread = thread::spawn(move || {
+            Self::monitor_molecule_created_events(&mut molecule_created_consumer, stats_clone);
         });
 
         let stats_clone = statistics.clone();
-        let atom_ref_updated_thread = thread::spawn(move || {
-            Self::monitor_atom_ref_updated_events(&mut atom_ref_updated_consumer, stats_clone);
+        let molecule_updated_thread = thread::spawn(move || {
+            Self::monitor_molecule_updated_events(&mut molecule_updated_consumer, stats_clone);
         });
 
         let stats_clone = statistics.clone();
@@ -357,8 +357,8 @@ impl EventMonitor {
             _field_value_thread: field_value_thread,
             _atom_created_thread: atom_created_thread,
             _atom_updated_thread: atom_updated_thread,
-            _atom_ref_created_thread: atom_ref_created_thread,
-            _atom_ref_updated_thread: atom_ref_updated_thread,
+            _molecule_created_thread: molecule_created_thread,
+            _molecule_updated_thread: molecule_updated_thread,
             _schema_loaded_thread: schema_loaded_thread,
             _schema_changed_thread: schema_changed_thread,
             _transform_triggered_thread: transform_triggered_thread,
@@ -386,8 +386,8 @@ impl EventMonitor {
         info!("  📝 Field Value Sets: {}", stats.field_value_sets);
         info!("  🆕 Atom Creations: {}", stats.atom_creations);
         info!("  🔄 Atom Updates: {}", stats.atom_updates);
-        info!("  🎯 AtomRef Creations: {}", stats.atom_ref_creations);
-        info!("  ⚡ AtomRef Updates: {}", stats.atom_ref_updates);
+        info!("  🎯 Molecule Creations: {}", stats.atom_ref_creations);
+        info!("  ⚡ Molecule Updates: {}", stats.atom_ref_updates);
         info!("  📋 Schema Loads: {}", stats.schema_loads);
         info!("  🔧 Schema Changes: {}", stats.schema_changes);
         info!("  🚀 Transform Triggers: {}", stats.transform_triggers);
@@ -479,16 +479,16 @@ impl EventMonitor {
         }
     }
 
-    fn monitor_atom_ref_created_events(
-        consumer: &mut Consumer<AtomRefCreated>,
+    fn monitor_molecule_created_events(
+        consumer: &mut Consumer<MoleculeCreated>,
         statistics: Arc<Mutex<EventStatistics>>,
     ) {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
                 Ok(event) => {
                     info!(
-                        "🔍 EventMonitor: AtomRefCreated - aref_uuid: {}, type: {}, field_path: {}",
-                        event.aref_uuid, event.aref_type, event.field_path
+                        "🔍 EventMonitor: MoleculeCreated - molecule_uuid: {}, type: {}, field_path: {}",
+                        event.molecule_uuid, event.molecule_type, event.field_path
                     );
                     statistics.lock().unwrap().increment_atom_ref_creations();
                 }
@@ -497,16 +497,16 @@ impl EventMonitor {
         }
     }
 
-    fn monitor_atom_ref_updated_events(
-        consumer: &mut Consumer<AtomRefUpdated>,
+    fn monitor_molecule_updated_events(
+        consumer: &mut Consumer<MoleculeUpdated>,
         statistics: Arc<Mutex<EventStatistics>>,
     ) {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
                 Ok(event) => {
                     info!(
-                        "🔍 EventMonitor: AtomRefUpdated - aref_uuid: {}, operation: {}, field_path: {}",
-                        event.aref_uuid, event.operation, event.field_path
+                        "🔍 EventMonitor: MoleculeUpdated - molecule_uuid: {}, operation: {}, field_path: {}",
+                        event.molecule_uuid, event.operation, event.field_path
                     );
                     statistics.lock().unwrap().increment_atom_ref_updates();
                 }
@@ -662,7 +662,7 @@ mod tests {
         // Publish various events
         bus.publish(FieldValueSet::new("test.field", json!("value"), "test")).unwrap();
         bus.publish(AtomCreated::new("atom-123", json!({"test": "data"}))).unwrap();
-        bus.publish(AtomRefCreated::new("aref-456", "Collection", "schema.field")).unwrap();
+        bus.publish(MoleculeCreated::new("molecule-456", "Collection", "schema.field")).unwrap();
         bus.publish(SchemaLoaded::new("TestSchema", "success")).unwrap();
 
         // Allow time for event processing

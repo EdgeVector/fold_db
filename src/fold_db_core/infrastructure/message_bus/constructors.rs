@@ -39,22 +39,22 @@ impl AtomUpdated {
     }
 }
 
-impl AtomRefCreated {
-    /// Create a new AtomRefCreated event
-    pub fn new(aref_uuid: impl Into<String>, aref_type: impl Into<String>, field_path: impl Into<String>) -> Self {
+impl MoleculeCreated {
+    /// Create a new MoleculeCreated event
+    pub fn new(molecule_uuid: impl Into<String>, molecule_type: impl Into<String>, field_path: impl Into<String>) -> Self {
         Self {
-            aref_uuid: aref_uuid.into(),
-            aref_type: aref_type.into(),
+            molecule_uuid: molecule_uuid.into(),
+            molecule_type: molecule_type.into(),
             field_path: field_path.into(),
         }
     }
 }
 
-impl AtomRefUpdated {
-    /// Create a new AtomRefUpdated event
-    pub fn new(aref_uuid: impl Into<String>, field_path: impl Into<String>, operation: impl Into<String>) -> Self {
+impl MoleculeUpdated {
+    /// Create a new MoleculeUpdated event
+    pub fn new(molecule_uuid: impl Into<String>, field_path: impl Into<String>, operation: impl Into<String>) -> Self {
         Self {
-            aref_uuid: aref_uuid.into(),
+            molecule_uuid: molecule_uuid.into(),
             field_path: field_path.into(),
             operation: operation.into(),
         }
@@ -203,27 +203,27 @@ impl AtomUpdateResponse {
     }
 }
 
-impl AtomRefCreateRequest {
-    /// Create a new AtomRefCreateRequest
+impl MoleculeCreateRequest {
+    /// Create a new MoleculeCreateRequest
     pub fn new(
         correlation_id: String,
-        aref_uuid: String,
+        molecule_uuid: String,
         atom_uuid: String,
         source_pub_key: String,
-        aref_type: String,
+        molecule_type: String,
     ) -> Self {
         Self {
             correlation_id,
-            aref_uuid,
+            molecule_uuid,
             atom_uuid,
             source_pub_key,
-            aref_type,
+            molecule_type,
         }
     }
 }
 
-impl AtomRefCreateResponse {
-    /// Create a new AtomRefCreateResponse
+impl MoleculeCreateResponse {
+    /// Create a new MoleculeCreateResponse
     pub fn new(correlation_id: String, success: bool, error: Option<String>) -> Self {
         Self {
             correlation_id,
@@ -233,29 +233,29 @@ impl AtomRefCreateResponse {
     }
 }
 
-impl AtomRefUpdateRequest {
-    /// Create a new AtomRefUpdateRequest
+impl MoleculeUpdateRequest {
+    /// Create a new MoleculeUpdateRequest
     pub fn new(
         correlation_id: String,
-        aref_uuid: String,
+        molecule_uuid: String,
         atom_uuid: String,
         source_pub_key: String,
-        aref_type: String,
+        molecule_type: String,
         additional_data: Option<Value>,
     ) -> Self {
         Self {
             correlation_id,
-            aref_uuid,
+            molecule_uuid,
             atom_uuid,
             source_pub_key,
-            aref_type,
+            molecule_type,
             additional_data,
         }
     }
 }
 
-impl AtomRefUpdateResponse {
-    /// Create a new AtomRefUpdateResponse
+impl MoleculeUpdateResponse {
+    /// Create a new MoleculeUpdateResponse
     pub fn new(correlation_id: String, success: bool, error: Option<String>) -> Self {
         Self {
             correlation_id,
@@ -289,13 +289,13 @@ impl FieldValueSetResponse {
     pub fn new(
         correlation_id: String,
         success: bool,
-        aref_uuid: Option<String>,
+        molecule_uuid: Option<String>,
         error: Option<String>,
     ) -> Self {
         Self {
             correlation_id,
             success,
-            aref_uuid,
+            molecule_uuid,
             error,
         }
     }
@@ -325,13 +325,13 @@ impl FieldUpdateResponse {
     pub fn new(
         correlation_id: String,
         success: bool,
-        aref_uuid: Option<String>,
+        molecule_uuid: Option<String>,
         error: Option<String>,
     ) -> Self {
         Self {
             correlation_id,
             success,
-            aref_uuid,
+            molecule_uuid,
             error,
         }
     }
@@ -387,10 +387,10 @@ impl SchemaApprovalResponse {
 
 impl AtomHistoryRequest {
     /// Create a new AtomHistoryRequest
-    pub fn new(correlation_id: String, aref_uuid: String) -> Self {
+    pub fn new(correlation_id: String, molecule_uuid: String) -> Self {
         Self {
             correlation_id,
-            aref_uuid,
+            molecule_uuid,
         }
     }
 }
@@ -414,10 +414,10 @@ impl AtomHistoryResponse {
 
 impl AtomGetRequest {
     /// Create a new AtomGetRequest
-    pub fn new(correlation_id: String, aref_uuid: String) -> Self {
+    pub fn new(correlation_id: String, molecule_uuid: String) -> Self {
         Self {
             correlation_id,
-            aref_uuid,
+            molecule_uuid,
         }
     }
 }
@@ -473,18 +473,18 @@ impl FieldValueQueryResponse {
     }
 }
 
-impl AtomRefQueryRequest {
-    /// Create a new AtomRefQueryRequest
-    pub fn new(correlation_id: String, aref_uuid: String) -> Self {
+impl MoleculeQueryRequest {
+    /// Create a new MoleculeQueryRequest
+    pub fn new(correlation_id: String, molecule_uuid: String) -> Self {
         Self {
             correlation_id,
-            aref_uuid,
+            molecule_uuid,
         }
     }
 }
 
-impl AtomRefQueryResponse {
-    /// Create a new AtomRefQueryResponse
+impl MoleculeQueryResponse {
+    /// Create a new MoleculeQueryResponse
     pub fn new(
         correlation_id: String,
         success: bool,
@@ -552,28 +552,28 @@ impl SchemaDiscoveryResponse {
     }
 }
 
-impl AtomRefGetRequest {
-    /// Create a new AtomRefGetRequest
-    pub fn new(correlation_id: String, aref_uuid: String) -> Self {
+impl MoleculeGetRequest {
+    /// Create a new MoleculeGetRequest
+    pub fn new(correlation_id: String, molecule_uuid: String) -> Self {
         Self {
             correlation_id,
-            aref_uuid,
+            molecule_uuid,
         }
     }
 }
 
-impl AtomRefGetResponse {
-    /// Create a new AtomRefGetResponse
+impl MoleculeGetResponse {
+    /// Create a new MoleculeGetResponse
     pub fn new(
         correlation_id: String,
         success: bool,
-        aref_data: Option<Value>,
+        molecule_data: Option<Value>,
         error: Option<String>,
     ) -> Self {
         Self {
             correlation_id,
             success,
-            aref_data,
+            molecule_data,
             error,
         }
     }

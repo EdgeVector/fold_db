@@ -143,7 +143,7 @@ impl TransformUtils {
                 let range_aref_uuid = format!("{}_{}_range", schema.name, field_name);
                 info!("🔍 Looking for AtomRefRange: {}", range_aref_uuid);
                 
-                match db_ops.get_item::<crate::atom::AtomRefRange>(&format!("ref:{}", range_aref_uuid)) {
+                match db_ops.get_item::<crate::atom::MoleculeRange>(&format!("ref:{}", range_aref_uuid)) {
                     Ok(Some(range_aref)) => {
                         info!("✅ Found AtomRefRange with {} entries", range_aref.atom_uuids.len());
                         
@@ -195,37 +195,37 @@ impl TransformUtils {
                 }
             }
             FieldVariant::Single(_) => {
-                info!("🔄 Detected single field, using AtomRef resolution");
+                info!("🔄 Detected single field, using Molecule resolution");
             }
         }
         
-        // CRITICAL BUG DIAGNOSIS: This reads STATIC schema reference, not dynamic AtomRef!
+        // CRITICAL BUG DIAGNOSIS: This reads STATIC schema reference, not dynamic Molecule!
         let ref_atom_uuid = Self::extract_ref_atom_uuid(field, field_name)?;
         error!("🚨 CRITICAL BUG: Reading STATIC schema ref_atom_uuid: {}", ref_atom_uuid);
-        error!("🚨 This should be reading from DYNAMIC AtomRef system instead!");
-        
-        // DIAGNOSTIC: Check what the dynamic AtomRef system has
+        error!("🚨 This should be reading from DYNAMIC Molecule system instead!");
+
+        // DIAGNOSTIC: Check what the dynamic Molecule system has
         let dynamic_aref_uuid = format!("{}_{}_single", schema.name, field_name);
-        error!("🔍 DIAGNOSTIC: Checking dynamic AtomRef UUID: {}", dynamic_aref_uuid);
+        error!("🔍 DIAGNOSTIC: Checking dynamic Molecule UUID: {}", dynamic_aref_uuid);
         
-        match db_ops.get_item::<crate::atom::AtomRef>(&format!("ref:{}", dynamic_aref_uuid)) {
+        match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", dynamic_aref_uuid)) {
             Ok(Some(dynamic_aref)) => {
                 let dynamic_atom_uuid = dynamic_aref.get_atom_uuid();
-                error!("🔍 DIAGNOSTIC: Dynamic AtomRef points to atom: {}", dynamic_atom_uuid);
-                error!("🚨 MISMATCH DETECTED: Static schema: {} vs Dynamic AtomRef: {}", ref_atom_uuid, dynamic_atom_uuid);
-                
-                // Use the CORRECT dynamic AtomRef instead of broken static schema reference
-                info!("🔧 APPLYING FIX: Using dynamic AtomRef instead of static schema reference");
+                error!("🔍 DIAGNOSTIC: Dynamic Molecule points to atom: {}", dynamic_atom_uuid);
+                error!("🚨 MISMATCH DETECTED: Static schema: {} vs Dynamic Molecule: {}", ref_atom_uuid, dynamic_atom_uuid);
+
+                // Use the CORRECT dynamic Molecule instead of broken static schema reference
+                info!("🔧 APPLYING FIX: Using dynamic Molecule instead of static schema reference");
                 let atom = Self::load_atom(db_ops, dynamic_atom_uuid)?;
                 let content = atom.content().clone();
-                info!("✅ Fixed query using dynamic AtomRef - content: {}", content);
+                info!("✅ Fixed query using dynamic Molecule - content: {}", content);
                 return Ok(content);
             }
             Ok(None) => {
-                error!("🔍 DIAGNOSTIC: Dynamic AtomRef not found, falling back to static schema reference");
+                error!("🔍 DIAGNOSTIC: Dynamic Molecule not found, falling back to static schema reference");
             }
             Err(e) => {
-                error!("🔍 DIAGNOSTIC: Error checking dynamic AtomRef: {}", e);
+                error!("🔍 DIAGNOSTIC: Error checking dynamic Molecule: {}", e);
             }
         }
         
@@ -233,7 +233,7 @@ impl TransformUtils {
         
         let atom_ref = Self::load_atom_ref(db_ops, &ref_atom_uuid)?;
         let atom_uuid = atom_ref.get_atom_uuid();
-        info!("🔗 AtomRef points to atom: {}", atom_uuid);
+        info!("🔗 Molecule points to atom: {}", atom_uuid);
         
         let atom = Self::load_atom(db_ops, atom_uuid)?;
         
@@ -255,22 +255,22 @@ impl TransformUtils {
         Ok(ref_atom_uuid)
     }
     
-    /// Load AtomRef from database with consistent error handling
+    /// Load Molecule from database with consistent error handling
     fn load_atom_ref(
         db_ops: &Arc<crate::db_operations::DbOperations>,
         ref_atom_uuid: &str,
-    ) -> Result<crate::atom::AtomRef, SchemaError> {
-        info!("🔍 Loading AtomRef from database...");
+    ) -> Result<crate::atom::Molecule, SchemaError> {
+        info!("🔍 Loading Molecule from database...");
         
-        match db_ops.get_item::<crate::atom::AtomRef>(&format!("ref:{}", ref_atom_uuid)) {
+        match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", ref_atom_uuid)) {
             Ok(Some(atom_ref)) => Ok(atom_ref),
             Ok(None) => {
-                error!("❌ AtomRef '{}' not found", ref_atom_uuid);
-                Err(SchemaError::InvalidField(format!("AtomRef '{}' not found", ref_atom_uuid)))
+                error!("❌ Molecule '{}' not found", ref_atom_uuid);
+                Err(SchemaError::InvalidField(format!("Molecule '{}' not found", ref_atom_uuid)))
             }
             Err(e) => {
-                error!("❌ Failed to load AtomRef {}: {}", ref_atom_uuid, e);
-                Err(SchemaError::InvalidField(format!("Failed to load AtomRef: {}", e)))
+                error!("❌ Failed to load Molecule {}: {}", ref_atom_uuid, e);
+                Err(SchemaError::InvalidField(format!("Failed to load Molecule: {}", e)))
             }
         }
     }
@@ -310,7 +310,7 @@ impl TransformUtils {
 
     /// Standard logging for atom ref operations
     pub fn log_atom_ref_operation(ref_uuid: &str, atom_uuid: &str, operation: &str) {
-        info!("🔗 AtomRef {} - ref:{} -> atom:{}", operation, ref_uuid, atom_uuid);
+        info!("🔗 Molecule {} - ref:{} -> atom:{}", operation, ref_uuid, atom_uuid);
     }
 
     /// Standard logging for field mappings state

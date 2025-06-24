@@ -40,29 +40,30 @@ impl EventType for AtomUpdated {
     }
 }
 
+// Molecule events
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefCreated {
-    pub aref_uuid: String,
-    pub aref_type: String,
+pub struct MoleculeCreated {
+    pub molecule_uuid: String,
+    pub molecule_type: String,
     pub field_path: String,
 }
 
-impl EventType for AtomRefCreated {
+impl EventType for MoleculeCreated {
     fn type_id() -> &'static str {
-        "AtomRefCreated"
+        "MoleculeCreated"
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomRefUpdated {
-    pub aref_uuid: String,
+pub struct MoleculeUpdated {
+    pub molecule_uuid: String,
     pub field_path: String,
     pub operation: String,
 }
 
-impl EventType for AtomRefUpdated {
+impl EventType for MoleculeUpdated {
     fn type_id() -> &'static str {
-        "AtomRefUpdated"
+        "MoleculeUpdated"
     }
 }
 

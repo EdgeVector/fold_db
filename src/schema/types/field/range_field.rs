@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::atom::AtomRefRange;
+use crate::atom::MoleculeRange;
 use crate::fees::types::config::FieldPaymentConfig;
 use crate::impl_field;
 use crate::permissions::types::policy::PermissionsPolicy;
@@ -13,7 +13,7 @@ use crate::schema::types::field::range_filter::{matches_pattern, RangeFilter, Ra
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RangeField {
     pub inner: FieldCommon,
-    pub atom_ref_range: Option<AtomRefRange>,
+    pub molecule_range: Option<MoleculeRange>,
 }
 
 impl RangeField {
@@ -25,11 +25,11 @@ impl RangeField {
     ) -> Self {
         Self {
             inner: FieldCommon::new(permission_policy, payment_config, field_mappers),
-            atom_ref_range: None,
+            molecule_range: None,
         }
     }
 
-    /// Creates a new RangeField with an AtomRefRange
+    /// Creates a new RangeField with a MoleculeRange
     #[must_use]
     pub fn new_with_range(
         permission_policy: PermissionsPolicy,
@@ -39,31 +39,31 @@ impl RangeField {
     ) -> Self {
         Self {
             inner: FieldCommon::new(permission_policy, payment_config, field_mappers),
-            atom_ref_range: Some(AtomRefRange::new(source_pub_key)),
+            molecule_range: Some(MoleculeRange::new(source_pub_key)),
         }
     }
 
-    /// Returns a reference to the AtomRefRange if it exists
-    pub fn atom_ref_range(&self) -> Option<&AtomRefRange> {
-        self.atom_ref_range.as_ref()
+    /// Returns a reference to the MoleculeRange if it exists
+    pub fn molecule_range(&self) -> Option<&MoleculeRange> {
+        self.molecule_range.as_ref()
     }
 
-    /// Returns a mutable reference to the AtomRefRange if it exists
-    pub fn atom_ref_range_mut(&mut self) -> Option<&mut AtomRefRange> {
-        self.atom_ref_range.as_mut()
+    /// Returns a mutable reference to the MoleculeRange if it exists
+    pub fn molecule_range_mut(&mut self) -> Option<&mut MoleculeRange> {
+        self.molecule_range.as_mut()
     }
 
-    /// Sets the AtomRefRange for this field
-    pub fn set_atom_ref_range(&mut self, atom_ref_range: AtomRefRange) {
-        self.atom_ref_range = Some(atom_ref_range);
+    /// Sets the MoleculeRange for this field
+    pub fn set_molecule_range(&mut self, molecule_range: MoleculeRange) {
+        self.molecule_range = Some(molecule_range);
     }
 
-    /// Initializes the AtomRefRange if it doesn't exist
-    pub fn ensure_atom_ref_range(&mut self, source_pub_key: String) -> &mut AtomRefRange {
-        if self.atom_ref_range.is_none() {
-            self.atom_ref_range = Some(AtomRefRange::new(source_pub_key));
+    /// Initializes the MoleculeRange if it doesn't exist
+    pub fn ensure_molecule_range(&mut self, source_pub_key: String) -> &mut MoleculeRange {
+        if self.molecule_range.is_none() {
+            self.molecule_range = Some(MoleculeRange::new(source_pub_key));
         }
-        self.atom_ref_range.as_mut().unwrap()
+        self.molecule_range.as_mut().unwrap()
     }
 
     /// Applies a range filter to the field's data
@@ -73,7 +73,7 @@ impl RangeField {
             total_count: 0,
         };
 
-        let Some(atom_ref_range) = &self.atom_ref_range else {
+        let Some(molecule_range) = &self.molecule_range else {
             return empty_result;
         };
 
@@ -81,26 +81,26 @@ impl RangeField {
 
         match filter {
             RangeFilter::Key(key) => {
-                if let Some(atom_uuid) = atom_ref_range.get_atom_uuid(key) {
+                if let Some(atom_uuid) = molecule_range.get_atom_uuid(key) {
                     matches.insert(key.clone(), atom_uuid.clone());
                 }
             }
             RangeFilter::KeyPrefix(prefix) => {
-                for (key, atom_uuid) in &atom_ref_range.atom_uuids {
+                for (key, atom_uuid) in &molecule_range.atom_uuids {
                     if key.starts_with(prefix) {
                         matches.insert(key.clone(), atom_uuid.clone());
                     }
                 }
             }
             RangeFilter::KeyRange { start, end } => {
-                for (key, atom_uuid) in &atom_ref_range.atom_uuids {
+                for (key, atom_uuid) in &molecule_range.atom_uuids {
                     if key >= start && key < end {
                         matches.insert(key.clone(), atom_uuid.clone());
                     }
                 }
             }
             RangeFilter::Value(target_value) => {
-                for (key, atom_uuid) in &atom_ref_range.atom_uuids {
+                for (key, atom_uuid) in &molecule_range.atom_uuids {
                     // Check if the value matches the target
                     if atom_uuid == target_value {
                         matches.insert(key.clone(), atom_uuid.clone());
@@ -109,13 +109,13 @@ impl RangeField {
             }
             RangeFilter::Keys(keys) => {
                 for key in keys {
-                    if let Some(value) = atom_ref_range.get_atom_uuid(key) {
+                    if let Some(value) = molecule_range.get_atom_uuid(key) {
                         matches.insert(key.clone(), value.clone());
                     }
                 }
             }
             RangeFilter::KeyPattern(pattern) => {
-                for (key, atom_uuid) in &atom_ref_range.atom_uuids {
+                for (key, atom_uuid) in &molecule_range.atom_uuids {
                     if matches_pattern(key, pattern) {
                         matches.insert(key.clone(), atom_uuid.clone());
                     }
@@ -138,7 +138,7 @@ impl RangeField {
 
     /// Gets all keys in the range (useful for pagination or listing)
     pub fn get_all_keys(&self) -> Vec<String> {
-        self.atom_ref_range
+        self.molecule_range
             .as_ref()
             .map(|range| range.atom_uuids.keys().cloned().collect())
             .unwrap_or_default()
@@ -146,7 +146,7 @@ impl RangeField {
 
     /// Gets a subset of keys within a range (useful for pagination)
     pub fn get_keys_in_range(&self, start: &str, end: &str) -> Vec<String> {
-        self.atom_ref_range
+        self.molecule_range
             .as_ref()
             .map(|range| {
                 let start_string = start.to_string();
@@ -163,7 +163,7 @@ impl RangeField {
 
     /// Gets the total count of items in the range
     pub fn count(&self) -> usize {
-        self.atom_ref_range
+        self.molecule_range
             .as_ref()
             .map(|range| range.atom_uuids.len())
             .unwrap_or(0)

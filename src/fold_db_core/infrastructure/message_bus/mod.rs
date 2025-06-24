@@ -214,8 +214,8 @@ mod integration_tests {
         assert_eq!(atom_events::FieldValueSet::type_id(), "FieldValueSet");
         assert_eq!(atom_events::AtomCreated::type_id(), "AtomCreated");
         assert_eq!(atom_events::AtomUpdated::type_id(), "AtomUpdated");
-        assert_eq!(atom_events::AtomRefCreated::type_id(), "AtomRefCreated");
-        assert_eq!(atom_events::AtomRefUpdated::type_id(), "AtomRefUpdated");
+        assert_eq!(atom_events::MoleculeCreated::type_id(), "MoleculeCreated");
+        assert_eq!(atom_events::MoleculeUpdated::type_id(), "MoleculeUpdated");
         assert_eq!(schema_events::SchemaLoaded::type_id(), "SchemaLoaded");
         assert_eq!(schema_events::TransformExecuted::type_id(), "TransformExecuted");
         assert_eq!(schema_events::SchemaChanged::type_id(), "SchemaChanged");
