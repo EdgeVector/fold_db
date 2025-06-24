@@ -30,7 +30,7 @@ export interface KeyRegistrationRequest {
 
 export interface SignedMessage {
   payload: string; // Base64-encoded JSON payload
-  signature: string; // Hex-encoded signature
+  signature: string; // Base64-encoded signature
   public_key_id: string;
   timestamp: number; // UNIX timestamp in seconds
   nonce?: string;

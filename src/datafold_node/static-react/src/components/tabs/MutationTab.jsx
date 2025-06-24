@@ -3,6 +3,7 @@ import SchemaSelector from './mutation/SchemaSelector'
 import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
 import { MutationClient } from '../../api/mutationClient'
+import { signPayload } from '../../utils/authenticationWrapper'
 import {
   isRangeSchema,
   formatEnhancedRangeSchemaMutation,
@@ -56,7 +57,9 @@ function MutationTab({ schemas, onResult }) {
     }
 
     try {
-      const response = await MutationClient.executeMutation(mutation)
+      // Sign the mutation before sending to the API
+      const signedMutation = await signPayload(mutation)
+      const response = await MutationClient.executeMutation(signedMutation)
       
       if (!response.success) {
         throw new Error(response.error || 'Mutation failed')

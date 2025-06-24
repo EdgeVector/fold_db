@@ -57,8 +57,8 @@ export async function createSignedMessage(
   // 6. Sign the message
   const signatureBytes = await sign(messageToSign, privateKey);
 
-  // 7. Hex-encode the signature (backend expects hex, not base64)
-  const signature = bytesToHex(signatureBytes);
+  // 7. Base64-encode the signature (backend expects base64)
+  const signature = bytesToBase64(signatureBytes);
 
   // 8. Base64-encode the payload string
   const payloadBase64 = bytesToBase64(payloadBytes);
