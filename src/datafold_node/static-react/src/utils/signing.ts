@@ -1,4 +1,4 @@
-import { sign, bytesToBase64 } from './ed25519';
+import { sign, bytesToBase64, bytesToHex } from './ed25519';
 import type { SignedMessage } from '../types/cryptography';
 
 /**
@@ -57,8 +57,8 @@ export async function createSignedMessage(
   // 6. Sign the message
   const signatureBytes = await sign(messageToSign, privateKey);
 
-  // 7. Base64-encode the signature
-  const signature = bytesToBase64(signatureBytes);
+  // 7. Hex-encode the signature (backend expects hex, not base64)
+  const signature = bytesToHex(signatureBytes);
 
   // 8. Base64-encode the payload string
   const payloadBase64 = bytesToBase64(payloadBytes);
