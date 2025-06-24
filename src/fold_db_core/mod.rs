@@ -49,7 +49,6 @@ use crate::logging::features::{log_feature, LogFeature};
 use serde_json::Value;
 use std::time::Instant;
 use crate::schema::types::{Mutation, Query};
-use uuid::Uuid;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -107,6 +106,21 @@ impl FoldDB {
             .set_schema_permissions(node_id, schemas)
             .map_err(|e| sled::Error::Unsupported(e.to_string()))
     }
+
+    /// Properly close and flush the database to release all file locks
+    pub fn close(&self) -> Result<(), sled::Error> {
+        log_feature!(LogFeature::Database, info, "Closing FoldDB and flushing all data to disk");
+        
+        // Flush the main database
+        if let Err(e) = self.db_ops.db().flush() {
+            log_feature!(LogFeature::Database, error, "Failed to flush main database: {}", e);
+            return Err(e);
+        }
+        
+        log_feature!(LogFeature::Database, info, "FoldDB closed successfully");
+        Ok(())
+    }
+
     /// Creates a new FoldDB instance with the specified storage path.
     pub fn new(path: &str) -> sled::Result<Self> {
         let db = match sled::open(path) {
@@ -128,7 +142,7 @@ impl FoldDB {
         let message_bus = infrastructure::factory::InfrastructureFactory::create_message_bus();
 
         // Initialize components via event-driven system initialization
-        let correlation_id = Uuid::new_v4().to_string();
+        let correlation_id = uuid::Uuid::new_v4().to_string();
         let init_request = SystemInitializationRequest {
             correlation_id: correlation_id.clone(),
             db_path: path.to_string(),
@@ -183,7 +197,7 @@ impl FoldDB {
                             let atom_uuid = molecule.get_atom_uuid().clone();
 
                             // Send MoleculeUpdateRequest via message bus
-                            let correlation_id = Uuid::new_v4().to_string();
+                            let correlation_id = uuid::Uuid::new_v4().to_string();
                             let update_request = MoleculeUpdateRequest {
                                 correlation_id: correlation_id.clone(),
                                 molecule_uuid: molecule_uuid.clone(),

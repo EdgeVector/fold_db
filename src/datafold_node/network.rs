@@ -266,6 +266,15 @@ impl DataFoldNode {
             .to_string();
 
         log_feature!(LogFeature::Network, info, "Closing existing database");
+        
+        // Properly close the database to release file locks
+        if let Ok(db_guard) = self.db.lock() {
+            if let Err(e) = db_guard.close() {
+                log_feature!(LogFeature::Network, warn, "Failed to close database properly: {}", e);
+            }
+        }
+        
+        // Replace with a temporary database and drop the old one
         let old_db = std::mem::replace(
             &mut self.db,
             Arc::new(Mutex::new(FoldDB::new(&format!("{}_temp", storage_path))?)),
@@ -273,7 +282,18 @@ impl DataFoldNode {
 
         drop(old_db);
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        // Wait longer for file system to release locks
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+        // Force remove the database directory to ensure clean slate
+        if let Err(e) = std::fs::remove_dir_all(&storage_path) {
+            log_feature!(LogFeature::Network, warn, "Failed to remove database directory {}: {}", storage_path, e);
+        }
+        
+        // Create directory if it doesn't exist
+        if let Err(e) = std::fs::create_dir_all(std::path::Path::new(&storage_path).parent().unwrap_or(std::path::Path::new("."))) {
+            log_feature!(LogFeature::Network, warn, "Failed to create parent directory: {}", e);
+        }
 
         log_feature!(LogFeature::Network, info, "Reinitializing database");
         let new_db = Arc::new(Mutex::new(FoldDB::new(&storage_path)?));
@@ -307,6 +327,15 @@ impl DataFoldNode {
             .to_string();
 
         log_feature!(LogFeature::Network, info, "Closing existing database");
+        
+        // Properly close the database to release file locks
+        if let Ok(db_guard) = self.db.lock() {
+            if let Err(e) = db_guard.close() {
+                log_feature!(LogFeature::Network, warn, "Failed to close database properly: {}", e);
+            }
+        }
+        
+        // Replace with a temporary database and drop the old one
         let old_db = std::mem::replace(
             &mut self.db,
             Arc::new(Mutex::new(FoldDB::new(&format!("{}_temp", storage_path))?)),
@@ -314,7 +343,18 @@ impl DataFoldNode {
 
         drop(old_db);
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        // Wait longer for file system to release locks
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+        // Force remove the database directory to ensure clean slate
+        if let Err(e) = std::fs::remove_dir_all(&storage_path) {
+            log_feature!(LogFeature::Network, warn, "Failed to remove database directory {}: {}", storage_path, e);
+        }
+        
+        // Create directory if it doesn't exist
+        if let Err(e) = std::fs::create_dir_all(std::path::Path::new(&storage_path).parent().unwrap_or(std::path::Path::new("."))) {
+            log_feature!(LogFeature::Network, warn, "Failed to create parent directory: {}", e);
+        }
 
         log_feature!(LogFeature::Network, info, "Reinitializing database");
         let new_db = Arc::new(Mutex::new(FoldDB::new(&storage_path)?));
