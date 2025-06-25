@@ -332,6 +332,39 @@ impl TransformUtils {
     ) {
         info!("🔍 DEBUG {}: {} collection state: {:?}", operation, collection_name, collection);
     }
+
+    /// Read a persisted mapping or return a default value
+    pub fn read_mapping<T>(
+        db_ops: &Arc<crate::db_operations::DbOperations>,
+        key: &str,
+        name: &str,
+    ) -> Result<T, SchemaError>
+    where
+        T: serde::de::DeserializeOwned + Default,
+    {
+        if let Some(data) = db_ops.get_transform_mapping(key)? {
+            Self::deserialize_mapping(&data, name)
+        } else {
+            Ok(T::default())
+        }
+    }
+
+    /// Insert a value into a set mapping
+    pub fn insert_mapping_set(
+        map: &mut HashMap<String, HashSet<String>>,
+        key: &str,
+        value: &str,
+    ) {
+        map.entry(key.to_string())
+            .or_default()
+            .insert(value.to_string());
+    }
+
+    /// Wrap an error with context and log it
+    pub fn handle_error<E: std::fmt::Display>(context: &str, err: E) -> SchemaError {
+        error!("❌ {}: {}", context, err);
+        SchemaError::InvalidData(format!("{}: {}", context, err))
+    }
 }
 
 // Type aliases for backward compatibility and reduced import burden
