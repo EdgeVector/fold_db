@@ -28,7 +28,7 @@ function SchemaSelector({ schemas, selectedSchema, mutationType, onSchemaChange,
             <option value="">Select a schema...</option>
             {approvedSchemas.map((schema) => (
               <option key={schema.name} value={schema.name}>
-                {schema.name} (approved)
+                {schema.name} 
               </option>
             ))}
           </select>
