@@ -3,12 +3,14 @@ import { render } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
 import authReducer from '../../store/authSlice'
+import schemaReducer from '../../store/schemaSlice'
 
 // Create a test store with optional initial state
 export const createTestStore = (initialState = {}) => {
   return configureStore({
     reducer: {
       auth: authReducer,
+      schemas: schemaReducer,
     },
     preloadedState: initialState,
     middleware: (getDefaultMiddleware) =>
@@ -50,6 +52,22 @@ export const createAuthenticatedState = () => ({
     isLoading: false,
     error: null,
   },
+  schemas: {
+    schemas: {},
+    loading: {
+      fetch: false,
+      operations: {}
+    },
+    errors: {
+      fetch: null,
+      operations: {}
+    },
+    lastFetched: null,
+    cache: {
+      isValid: false,
+      timestamp: null
+    }
+  },
 })
 
 export const createUnauthenticatedState = () => ({
@@ -62,6 +80,22 @@ export const createUnauthenticatedState = () => ({
     isLoading: false,
     error: null,
   },
+  schemas: {
+    schemas: {},
+    loading: {
+      fetch: false,
+      operations: {}
+    },
+    errors: {
+      fetch: null,
+      operations: {}
+    },
+    lastFetched: null,
+    cache: {
+      isValid: false,
+      timestamp: null
+    }
+  },
 })
 
 // Helper to create a test store that doesn't dispatch thunks on mount
@@ -69,6 +103,7 @@ export const createTestStoreWithoutThunks = (initialState = {}) => {
   return configureStore({
     reducer: {
       auth: authReducer,
+      schemas: schemaReducer,
     },
     preloadedState: initialState,
     middleware: (getDefaultMiddleware) =>

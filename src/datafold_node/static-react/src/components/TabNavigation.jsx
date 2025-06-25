@@ -28,6 +28,7 @@ import {
 } from '../constants/ui.js';
 
 import { COMPONENT_STYLES } from '../constants/styling.js';
+import { useAppSelector } from '../store/hooks.ts';
 
 /**
  * @typedef {Object} TabConfig
@@ -42,7 +43,6 @@ import { COMPONENT_STYLES } from '../constants/styling.js';
  * @typedef {Object} TabNavigationProps
  * @property {TabConfig[]} [tabs=DEFAULT_TABS] - Array of tab configurations to display
  * @property {string} activeTab - Currently active tab ID for highlighting
- * @property {boolean} isAuthenticated - Current user authentication status
  * @property {Function} onTabChange - Callback fired when user selects a tab (tabId: string) => void
  * @property {string} [className] - Additional CSS classes for customization
  */
@@ -134,10 +134,11 @@ import { COMPONENT_STYLES } from '../constants/styling.js';
 function TabNavigation({
   tabs = DEFAULT_TABS,
   activeTab,
-  isAuthenticated,
   onTabChange,
   className = ''
 }) {
+  const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
+
   const handleTabClick = (tabId, requiresAuth) => {
     // Prevent navigation to auth-required tabs when not authenticated
     if (requiresAuth && !isAuthenticated) {
@@ -165,10 +166,10 @@ function TabNavigation({
 
   const getAuthIndicator = (tab) => {
     if (!tab.requiresAuth) {
-      return isAuthenticated ? AUTH_INDICATORS.unlocked : null;
+      return isAuthenticated ? AUTH_INDICATORS.authenticated : null;
     }
     
-    return isAuthenticated ? null : AUTH_INDICATORS.locked;
+    return isAuthenticated ? null : AUTH_INDICATORS.unauthenticated;
   };
 
   return (
@@ -205,8 +206,8 @@ function TabNavigation({
                 <span 
                   className="ml-1 text-xs" 
                   aria-label={
-                    authIndicator === AUTH_INDICATORS.locked 
-                      ? 'authentication required' 
+                    authIndicator === AUTH_INDICATORS.unauthenticated
+                      ? 'authentication required'
                       : 'authenticated'
                   }
                 >

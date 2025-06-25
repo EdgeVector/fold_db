@@ -1,36 +1,45 @@
 /**
- * @fileoverview Testing Utilities for React Application
+ * @fileoverview Consolidated Testing Utilities
+ * TASK-010: Test Suite Fixes and Validation for PBI-REACT-SIMPLIFY-001
  * 
- * Provides comprehensive testing utilities for the React application including
- * Redux store setup, component rendering helpers, API mocking utilities,
- * and custom matchers for improved test development experience.
+ * Unified testing utilities that eliminate duplication between testStore.jsx
+ * and testingUtilities.jsx files. Provides comprehensive testing support
+ * for Redux store setup, component rendering, API mocking, and validation.
  * 
- * TASK-006: Testing Enhancement - Created testing utilities
- * 
- * @module testingUtilities
- * @since 2.0.0
+ * @module testUtilities
+ * @since 2.1.0
  */
 
-import { render } from '@testing-library/react';
+import React from 'react';
+import { render, renderHook } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
-import { schemaSlice } from '../../store/schemaSlice';
-import { authSlice } from '../../store/authSlice';
+import schemaReducer from '../../store/schemaSlice';
+import authReducer from '../../store/authSlice';
 import {
-  TEST_TIMEOUT_MS,
-  MOCK_DELAY_MS,
+  TEST_TIMEOUT_DEFAULT_MS,
+  MOCK_API_DELAY_MS,
   COVERAGE_THRESHOLD_PERCENT,
-  SCHEMA_STATES
-} from '../../constants/schemas';
+  TEST_VALIDATION_BATCH_SIZE,
+  INTEGRATION_TEST_RETRY_COUNT
+} from '../config/constants';
+
+// Schema states for testing
+export const SCHEMA_STATES = {
+  APPROVED: 'approved',
+  AVAILABLE: 'available', 
+  BLOCKED: 'blocked',
+  LOADING: 'loading',
+  ERROR: 'error'
+};
 
 /**
- * Creates a test store with the same configuration as the production store
- * but with optional initial state for testing scenarios
- * 
- * @param {Object} initialState - Initial state for the store
- * @returns {Object} Configured Redux store for testing
+ * Creates a test store with optional initial state
+ * Combines the best features from both previous implementations
+ * @param {Object} preloadedState - Initial state for the store
+ * @returns {Object} Configured test store
  */
-export const createTestStore = (initialState = {}) => {
+export function createTestStore(preloadedState = {}) {
   const defaultState = {
     auth: {
       isAuthenticated: false,
@@ -41,7 +50,7 @@ export const createTestStore = (initialState = {}) => {
       error: null
     },
     schemas: {
-      schemas: {},
+      schemas: {},  // Match actual store structure - object indexed by schema ID
       loading: {
         fetch: false,
         operations: {}
@@ -53,7 +62,7 @@ export const createTestStore = (initialState = {}) => {
       lastFetched: null,
       cache: {
         ttl: 300000,
-        version: '2.0.0',
+        version: '2.1.0',
         lastUpdated: null
       },
       activeSchema: null
@@ -62,52 +71,122 @@ export const createTestStore = (initialState = {}) => {
 
   return configureStore({
     reducer: {
-      auth: authSlice.reducer,
-      schemas: schemaSlice.reducer
+      auth: authReducer,
+      schemas: schemaReducer
     },
     preloadedState: {
       ...defaultState,
-      ...initialState
+      ...preloadedState
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({
         serializableCheck: {
-          ignoredActions: ['persist/PERSIST']
-        }
+          // Ignore these action types
+          ignoredActions: [
+            'auth/validatePrivateKey/fulfilled',
+            'auth/setPrivateKey',
+            'schemas/fetchSchemas/fulfilled',
+            'schemas/approveSchema/fulfilled',
+            'schemas/blockSchema/fulfilled',
+            'schemas/unloadSchema/fulfilled',
+            'schemas/loadSchema/fulfilled',
+            'persist/PERSIST'
+          ],
+          // Ignore these field paths in all actions
+          ignoredActionsPaths: ['payload.privateKey', 'payload.schemas.definition'],
+          // Ignore these paths in the state
+          ignoredPaths: ['auth.privateKey', 'schemas.schemas.*.definition'],
+        },
+        immutableCheck: false
       })
   });
-};
+}
 
 /**
- * Enhanced render function that provides Redux store and other providers
- * 
- * @param {React.ReactElement} ui - Component to render
+ * Unified render function with Redux provider
+ * @param {React.Component} ui - Component to render
  * @param {Object} options - Render options
- * @param {Object} options.initialState - Initial Redux state
+ * @param {Object} options.preloadedState - Initial Redux state
  * @param {Object} options.store - Custom store instance
- * @param {Object} options.renderOptions - Additional render options
- * @returns {Object} Render result with store and utilities
+ * @param {Object} renderOptions - Additional render options
+ * @returns {Object} Render result with store
  */
-export const renderWithProviders = (ui, options = {}) => {
-  const {
-    initialState = {},
-    store = createTestStore(initialState),
-    ...renderOptions
-  } = options;
-
-  const Wrapper = ({ children }) => (
-    <Provider store={store}>{children}</Provider>
-  );
+export function renderWithRedux(ui, {
+  preloadedState = {},
+  store = createTestStore(preloadedState),
+  ...renderOptions
+} = {}) {
+  function Wrapper({ children }) {
+    return <Provider store={store}>{children}</Provider>;
+  }
 
   return {
-    store,
-    ...render(ui, { wrapper: Wrapper, ...renderOptions })
+    ...render(ui, { wrapper: Wrapper, ...renderOptions }),
+    store
   };
-};
+}
+
+/**
+ * Render hook with Redux provider
+ * @param {Function} hook - Hook to render
+ * @param {Object} options - Render options
+ * @param {Object} options.preloadedState - Initial Redux state
+ * @param {Object} options.store - Custom store instance
+ * @param {Object} renderOptions - Additional render options
+ * @returns {Object} Render result with store
+ */
+export function renderHookWithRedux(hook, {
+  preloadedState = {},
+  store = createTestStore(preloadedState),
+  ...renderOptions
+} = {}) {
+  function Wrapper({ children }) {
+    return <Provider store={store}>{children}</Provider>;
+  }
+
+  return {
+    ...renderHook(hook, { wrapper: Wrapper, ...renderOptions }),
+    store
+  };
+}
+
+/**
+ * Create initial test state for schemas
+ * @param {Object} overrides - State overrides
+ * @returns {Object} Initial schemas state
+ */
+export function createTestSchemaState(overrides = {}) {
+  const defaultState = {
+    schemas: {
+      schemas: {},  // Match actual store structure
+      loading: {
+        fetch: false,
+        operations: {}
+      },
+      errors: {
+        fetch: null,
+        operations: {}
+      },
+      lastFetched: null,
+      cache: {
+        ttl: 300000,
+        version: '2.1.0',
+        lastUpdated: null
+      },
+      activeSchema: null
+    }
+  };
+  
+  // Deep merge the overrides
+  if (overrides.schemas) {
+    defaultState.schemas.schemas = { ...defaultState.schemas.schemas, ...overrides.schemas };
+  }
+  
+  return defaultState;
+}
 
 /**
  * Creates mock schema data for testing
- * 
  * @param {Object} overrides - Properties to override in mock schema
  * @returns {Object} Mock schema object
  */
@@ -125,7 +204,6 @@ export const createMockSchema = (overrides = {}) => ({
 
 /**
  * Creates mock range schema data for testing
- * 
  * @param {Object} overrides - Properties to override in mock range schema
  * @returns {Object} Mock range schema object
  */
@@ -152,7 +230,6 @@ export const createMockRangeSchema = (overrides = {}) => ({
 
 /**
  * Creates a list of mock schemas with different states for testing
- * 
  * @param {number} count - Number of schemas to create
  * @param {Object} baseProps - Base properties for all schemas
  * @returns {Array} Array of mock schema objects
@@ -173,7 +250,6 @@ export const createMockSchemaList = (count = 3, baseProps = {}) => {
 
 /**
  * Creates mock authentication state for testing
- * 
  * @param {Object} overrides - Properties to override in auth state
  * @returns {Object} Mock auth state object
  */
@@ -189,7 +265,6 @@ export const createMockAuthState = (overrides = {}) => ({
 
 /**
  * Utility to wait for async operations with timeout
- * 
  * @param {Function} condition - Function that returns true when condition is met
  * @param {number} timeout - Maximum time to wait in milliseconds
  * @param {number} interval - Polling interval in milliseconds
@@ -197,8 +272,8 @@ export const createMockAuthState = (overrides = {}) => ({
  */
 export const waitForCondition = async (
   condition,
-  timeout = TEST_TIMEOUT_MS,
-  interval = MOCK_DELAY_MS
+  timeout = TEST_TIMEOUT_DEFAULT_MS,
+  interval = MOCK_API_DELAY_MS
 ) => {
   const startTime = Date.now();
   
@@ -214,17 +289,15 @@ export const waitForCondition = async (
 
 /**
  * Mock delay utility for simulating async operations
- * 
  * @param {number} ms - Delay in milliseconds
  * @returns {Promise} Promise that resolves after delay
  */
-export const mockDelay = (ms = MOCK_DELAY_MS) => {
+export const mockDelay = (ms = MOCK_API_DELAY_MS) => {
   return new Promise(resolve => setTimeout(resolve, ms));
 };
 
 /**
  * Creates a mock error object for testing error handling
- * 
  * @param {string} message - Error message
  * @param {number} status - HTTP status code
  * @param {Object} details - Additional error details
@@ -240,7 +313,6 @@ export const createMockError = (message = 'Test error', status = 500, details = 
 
 /**
  * Validates test coverage against threshold
- * 
  * @param {Object} coverage - Coverage report object
  * @returns {boolean} True if coverage meets threshold
  */
@@ -255,12 +327,11 @@ export const validateCoverage = (coverage) => {
 
 /**
  * Creates a batch of test operations for integration testing
- * 
  * @param {Array} operations - Array of operation functions
  * @param {number} batchSize - Size of each batch
  * @returns {Array} Array of batched operations
  */
-export const createTestBatch = (operations, batchSize = 5) => {
+export const createTestBatch = (operations, batchSize = TEST_VALIDATION_BATCH_SIZE) => {
   const batches = [];
   
   for (let i = 0; i < operations.length; i += batchSize) {
@@ -304,7 +375,6 @@ export const mockSessionStorage = (() => {
 
 /**
  * Custom matcher for testing schema objects
- * 
  * @param {Object} received - Received schema object
  * @param {Object} expected - Expected schema properties
  * @returns {Object} Matcher result
@@ -414,14 +484,41 @@ export const cleanupTestEnvironment = () => {
   mockSessionStorage.clear();
   
   // Clear any timers
-  vi?.clearAllTimers?.();
-  jest?.clearAllTimers?.();
+  if (typeof vi !== 'undefined' && vi.clearAllTimers) {
+    vi.clearAllTimers();
+  }
+  if (typeof jest !== 'undefined' && jest.clearAllTimers) {
+    jest.clearAllTimers();
+  }
+};
+
+/**
+ * Mock API responses for testing
+ */
+export const mockApiResponses = {
+  schemas: {
+    available: [
+      { id: 'schema1', name: 'Test Schema 1', approved: false },
+      { id: 'schema2', name: 'Test Schema 2', approved: false }
+    ],
+    approved: [
+      { id: 'schema3', name: 'Approved Schema', approved: true }
+    ]
+  },
+  fields: {
+    schema1: [
+      { name: 'field1', type: 'string' },
+      { name: 'field2', type: 'number' }
+    ]
+  }
 };
 
 // Export all utilities as default
 export default {
   createTestStore,
-  renderWithProviders,
+  renderWithRedux,
+  renderHookWithRedux,
+  createTestSchemaState,
   createMockSchema,
   createMockRangeSchema,
   createMockSchemaList,
@@ -435,5 +532,7 @@ export default {
   mockSessionStorage,
   toBeValidSchema,
   setupTestEnvironment,
-  cleanupTestEnvironment
+  cleanupTestEnvironment,
+  mockApiResponses,
+  SCHEMA_STATES
 };

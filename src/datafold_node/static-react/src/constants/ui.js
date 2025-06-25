@@ -18,7 +18,7 @@ export const DEFAULT_TABS = [
   { id: 'mutation', label: 'Mutation', requiresAuth: true, icon: '✏️' },
   { id: 'ingestion', label: 'Ingestion', requiresAuth: true, icon: '📥' },
   { id: 'transforms', label: 'Transforms', requiresAuth: true, icon: '🔄' },
-  { id: 'keys', label: 'Key Management', requiresAuth: true, icon: '🔑' }
+  { id: 'keys', label: 'Key Management', requiresAuth: false, icon: '🔑' }
 ];
 
 // Button Text Constants
@@ -58,16 +58,6 @@ export const MUTATION_TYPES = [
   { value: 'Update', label: 'Update' },
   { value: 'Delete', label: 'Delete' }
 ];
-
-// Component Style Constants
-export const COMPONENT_STYLES = {
-  BUTTON: {
-    BASE: 'px-4 py-2 rounded-md font-medium transition-colors duration-200',
-    PRIMARY: 'bg-blue-600 hover:bg-blue-700 text-white',
-    SECONDARY: 'bg-gray-200 hover:bg-gray-300 text-gray-900',
-    DANGER: 'bg-red-600 hover:bg-red-700 text-white'
-  }
-};
 
 // Schema Badge Colors
 export const SCHEMA_BADGE_COLORS = {

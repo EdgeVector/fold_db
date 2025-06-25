@@ -131,7 +131,8 @@ export const fetchSchemas = createAsyncThunk<
         );
         
         if (!availableResponse.ok) {
-          throw new Error(`Failed to fetch available schemas: ${availableResponse.status}`);
+          const error = new Error(`Failed to fetch available schemas: ${availableResponse.status}`);
+          throw error;
         }
         const availableData = await availableResponse.json();
         
@@ -153,11 +154,28 @@ export const fetchSchemas = createAsyncThunk<
         const persistedStates = persistedData.data || {};
         
         // Create schemas with states - use persisted state if available, otherwise 'available'
-        const schemasWithStates = availableSchemas.map((name: string) => ({
-          name,
-          state: persistedStates[name] || SCHEMA_STATES.AVAILABLE,
-          fields: {} // Will be populated below
-        }));
+        const schemasWithStates = availableSchemas.map((name: string) => {
+          const persistedState = persistedStates[name];
+          let normalizedState = SCHEMA_STATES.AVAILABLE;
+          
+          
+          if (persistedState) {
+            if (typeof persistedState === 'string') {
+              normalizedState = persistedState.toLowerCase();
+            } else if (typeof persistedState === 'object' && persistedState.state) {
+              // Handle object format like { state: 'approved' }
+              normalizedState = String(persistedState.state).toLowerCase();
+            } else {
+              normalizedState = String(persistedState).toLowerCase();
+            }
+          }
+          
+          return {
+            name,
+            state: normalizedState,
+            fields: {} // Will be populated below
+          };
+        });
         
         console.log('📋 Merged schemas for UI:', schemasWithStates);
         
@@ -209,15 +227,16 @@ export const fetchSchemas = createAsyncThunk<
         
         // If this isn't the last attempt, wait before retrying
         if (attempt < SCHEMA_FETCH_RETRY_ATTEMPTS) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          // Use shorter delays in test environment
+          const retryDelay = process.env.NODE_ENV === 'test' ? 10 : (1000 * attempt);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
     }
     
-    // All attempts failed
-    return rejectWithValue(
-      lastError?.message || SCHEMA_ERROR_MESSAGES.FETCH_FAILED
-    );
+    // All attempts failed - include retry count in error message
+    const retryErrorMessage = `Failed to fetch schemas after ${SCHEMA_FETCH_RETRY_ATTEMPTS} attempts: ${lastError?.message || 'Unknown error'}`;
+    return rejectWithValue(retryErrorMessage);
   }
 );
 
@@ -763,7 +782,15 @@ export const selectSchemasById = (state: RootState) => state.schemas.schemas;
 // SCHEMA-002 compliant selectors - only approved schemas for operations
 export const selectApprovedSchemas = createSelector(
   [selectAllSchemas],
-  (schemas: Schema[]) => schemas.filter(schema => schema.state === SCHEMA_STATES.APPROVED)
+  (schemas: Schema[]) => schemas.filter(schema => {
+    // Use the same normalization logic as the hook
+    const normalizedState = typeof schema.state === 'string'
+      ? schema.state.toLowerCase()
+      : typeof schema.state === 'object' && schema.state !== null && (schema.state as any).state
+        ? String((schema.state as any).state).toLowerCase()
+        : String(schema.state || '').toLowerCase();
+    return normalizedState === SCHEMA_STATES.APPROVED;
+  })
 );
 
 export const selectAvailableSchemas = createSelector(

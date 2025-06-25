@@ -123,7 +123,11 @@ function TextField({
         {/* Debouncing indicator */}
         {debounced && isDebouncing && (
           <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-            <div className={getLoadingSpinnerClasses({ size: 'md', color: 'primary' })}></div>
+            <div
+              className={getLoadingSpinnerClasses({ size: 'md', color: 'primary' })}
+              role="status"
+              aria-label="Processing input"
+            ></div>
           </div>
         )}
       </div>

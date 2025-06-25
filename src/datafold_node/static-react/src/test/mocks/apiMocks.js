@@ -11,19 +11,19 @@
  * @since 2.0.0
  */
 
-import { rest } from 'msw';
+import { http } from 'msw';
 import { setupServer } from 'msw/node';
 import {
   createMockSchema,
   createMockRangeSchema,
   createMockError,
-  mockDelay
-} from '../utils/testingUtilities';
+  mockDelay,
+  SCHEMA_STATES
+} from '../utils/testUtilities.jsx';
 import {
-  SCHEMA_STATES,
-  MOCK_DELAY_MS,
-  TEST_TIMEOUT_MS
-} from '../../constants/schemas';
+  MOCK_API_DELAY_MS,
+  TEST_TIMEOUT_DEFAULT_MS
+} from '../config/constants';
 
 // ============================================================================
 // MOCK DATA
@@ -141,8 +141,8 @@ export const mockQueryResults = {
  */
 export const defaultHandlers = [
   // Schema endpoints
-  rest.get('/api/schemas/available', async (req, res, ctx) => {
-    await mockDelay(MOCK_DELAY_MS);
+  http.get('/api/schemas/available', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
     return res(
       ctx.status(200),
       ctx.json({
@@ -152,8 +152,8 @@ export const defaultHandlers = [
     );
   }),
 
-  rest.get('/api/schemas', async (req, res, ctx) => {
-    await mockDelay(MOCK_DELAY_MS);
+  http.get('/api/schemas', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
     return res(
       ctx.status(200),
       ctx.json({
@@ -163,9 +163,9 @@ export const defaultHandlers = [
     );
   }),
 
-  rest.get('/api/schema/:schemaName', async (req, res, ctx) => {
+  http.get('/api/schema/:schemaName', async (req, res, ctx) => {
     const { schemaName } = req.params;
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     const schema = mockSchemas[schemaName];
     if (!schema) {
@@ -189,9 +189,9 @@ export const defaultHandlers = [
   }),
 
   // Schema operations
-  rest.post('/api/schema/:schemaName/approve', async (req, res, ctx) => {
+  http.post('/api/schema/:schemaName/approve', async (req, res, ctx) => {
     const { schemaName } = req.params;
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     const schema = mockSchemas[schemaName];
     if (!schema) {
@@ -225,9 +225,9 @@ export const defaultHandlers = [
     );
   }),
 
-  rest.post('/api/schema/:schemaName/block', async (req, res, ctx) => {
+  http.post('/api/schema/:schemaName/block', async (req, res, ctx) => {
     const { schemaName } = req.params;
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     const schema = mockSchemas[schemaName];
     if (!schema) {
@@ -251,9 +251,9 @@ export const defaultHandlers = [
     );
   }),
 
-  rest.post('/api/schema/:schemaName/load', async (req, res, ctx) => {
+  http.post('/api/schema/:schemaName/load', async (req, res, ctx) => {
     const { schemaName } = req.params;
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     const schema = mockSchemas[schemaName];
     if (!schema) {
@@ -277,9 +277,9 @@ export const defaultHandlers = [
     );
   }),
 
-  rest.post('/api/schema/:schemaName/unload', async (req, res, ctx) => {
+  http.post('/api/schema/:schemaName/unload', async (req, res, ctx) => {
     const { schemaName } = req.params;
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     const schema = mockSchemas[schemaName];
     if (!schema) {
@@ -314,9 +314,9 @@ export const defaultHandlers = [
   }),
 
   // Mutation endpoints
-  rest.post('/api/mutation', async (req, res, ctx) => {
+  http.post('/api/mutation', async (req, res, ctx) => {
     const body = await req.json();
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     // Validate mutation structure
     if (!body.schema || !body.mutation_type || !body.data) {
@@ -351,9 +351,9 @@ export const defaultHandlers = [
   }),
 
   // Query endpoints
-  rest.post('/api/query', async (req, res, ctx) => {
+  http.post('/api/query', async (req, res, ctx) => {
     const body = await req.json();
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     // Validate query structure
     if (!body.schema || !body.fields) {
@@ -389,8 +389,8 @@ export const defaultHandlers = [
   }),
 
   // Security endpoints
-  rest.get('/api/security/system-public-key', async (req, res, ctx) => {
-    await mockDelay(MOCK_DELAY_MS);
+  http.get('/api/security/system-public-key', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
     return res(
       ctx.status(200),
       ctx.json({
@@ -400,9 +400,9 @@ export const defaultHandlers = [
     );
   }),
 
-  rest.post('/api/security/register-key', async (req, res, ctx) => {
+  http.post('/api/security/register-key', async (req, res, ctx) => {
     const body = await req.json();
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     if (!body.publicKey || !body.signature) {
       return res(
@@ -426,9 +426,9 @@ export const defaultHandlers = [
     );
   }),
 
-  rest.post('/api/security/verify', async (req, res, ctx) => {
+  http.post('/api/security/verify', async (req, res, ctx) => {
     const body = await req.json();
-    await mockDelay(MOCK_DELAY_MS);
+    await mockDelay(MOCK_API_DELAY_MS);
     
     if (!body.message || !body.signature) {
       return res(
@@ -459,13 +459,13 @@ export const defaultHandlers = [
  */
 export const errorHandlers = {
   networkError: [
-    rest.get('/api/schemas/available', (req, res, ctx) => {
+    http.get('/api/schemas/available', (req, res, ctx) => {
       return res.networkError('Failed to connect');
     })
   ],
 
   serverError: [
-    rest.get('/api/schemas/available', (req, res, ctx) => {
+    http.get('/api/schemas/available', (req, res, ctx) => {
       return res(
         ctx.status(500),
         ctx.json({
@@ -477,13 +477,13 @@ export const errorHandlers = {
   ],
 
   timeout: [
-    rest.get('/api/schemas/available', (req, res, ctx) => {
+    http.get('/api/schemas/available', (req, res, ctx) => {
       return res(ctx.delay(TEST_TIMEOUT_MS + 1000));
     })
   ],
 
   unauthorized: [
-    rest.post('/api/mutation', (req, res, ctx) => {
+    http.post('/api/mutation', (req, res, ctx) => {
       return res(
         ctx.status(401),
         ctx.json({
@@ -495,7 +495,7 @@ export const errorHandlers = {
   ],
 
   schemaNotApproved: [
-    rest.post('/api/mutation', (req, res, ctx) => {
+    http.post('/api/mutation', (req, res, ctx) => {
       return res(
         ctx.status(403),
         ctx.json({
@@ -648,7 +648,7 @@ export const withMockHandlers = async (handlers, testFn) => {
  */
 export const createSlowHandlers = (delay = 2000) => {
   return defaultHandlers.map(handler => {
-    return rest[handler.info.method.toLowerCase()](handler.info.path, async (req, res, ctx) => {
+    return http[handler.info.method.toLowerCase()](handler.info.path, async (req, res, ctx) => {
       await mockDelay(delay);
       return handler.resolver(req, res, ctx);
     });

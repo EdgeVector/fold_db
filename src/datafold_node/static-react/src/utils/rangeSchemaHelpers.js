@@ -279,7 +279,13 @@ export function getRangeSchemaInfo(schema) {
  */
 export function normalizeSchemaState(state) {
   if (typeof state === 'string') return state.toLowerCase();
-  if (typeof state === 'object' && state !== null) return String(state).toLowerCase();
+  if (typeof state === 'object' && state !== null) {
+    // Handle object format like { state: 'approved' }
+    if (state.state) {
+      return String(state.state).toLowerCase();
+    }
+    return String(state).toLowerCase();
+  }
   return String(state || '').toLowerCase();
 }
 

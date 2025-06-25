@@ -254,7 +254,7 @@ export const COMPONENT_STYLES = {
   // Tab styling
   tab: {
     base: 'px-4 py-2 text-sm font-medium transition-all duration-200',
-    active: 'text-primary border-b-2 border-primary',
+    active: 'text-blue-600 border-b-2 border-blue-600',
     inactive: 'text-gray-500 hover:text-gray-700 hover:border-gray-300',
     disabled: 'text-gray-300 cursor-not-allowed'
   },
@@ -262,7 +262,7 @@ export const COMPONENT_STYLES = {
   // Button styling
   button: {
     base: 'inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2',
-    primary: 'bg-primary hover:bg-primary/90 text-white focus:ring-primary',
+    primary: 'bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-600',
     secondary: 'bg-gray-100 hover:bg-gray-200 text-gray-700 focus:ring-gray-500',
     success: 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500',
     danger: 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500',
@@ -273,7 +273,7 @@ export const COMPONENT_STYLES = {
   // Input styling
   input: {
     base: 'block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 transition-colors duration-200',
-    normal: 'focus:ring-primary focus:border-primary',
+    normal: 'focus:ring-blue-600 focus:border-blue-600',
     error: 'border-red-300 focus:ring-red-500 focus:border-red-500',
     success: 'border-green-300 focus:ring-green-500 focus:border-green-500',
     disabled: 'bg-gray-100 text-gray-500 cursor-not-allowed'
@@ -281,7 +281,7 @@ export const COMPONENT_STYLES = {
   
   // Select styling
   select: {
-    base: 'block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md transition-colors duration-200',
+    base: 'block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-600 focus:border-blue-600 rounded-md transition-colors duration-200',
     disabled: 'bg-gray-100 text-gray-500 cursor-not-allowed'
   },
   
@@ -289,7 +289,7 @@ export const COMPONENT_STYLES = {
   card: {
     base: 'bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200',
     hover: 'hover:shadow-md',
-    selected: 'ring-2 ring-primary border-primary'
+    selected: 'ring-2 ring-blue-600 border-blue-600'
   },
   
   // Modal styling

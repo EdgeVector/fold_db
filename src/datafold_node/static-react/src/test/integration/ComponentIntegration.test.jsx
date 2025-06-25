@@ -13,6 +13,8 @@ import SelectField from '../../components/form/SelectField'
 import TextField from '../../components/form/TextField'
 import SchemaStatusBadge from '../../components/schema/SchemaStatusBadge'
 import SchemaActions from '../../components/schema/SchemaActions'
+import { renderWithRedux } from '../utils/testHelpers'
+import { createAuthenticatedState, createUnauthenticatedState } from '../utils/testHelpers'
 
 // Mock store for testing
 const createMockStore = () => configureStore({
@@ -25,24 +27,23 @@ describe('Component Integration Tests', () => {
   describe('TabNavigation with Authentication', () => {
     it('integrates properly with authentication state changes', () => {
       const onTabChange = jest.fn()
-      const { rerender } = render(
+      const { unmount } = renderWithRedux(
         <TabNavigation
           activeTab="keys"
-          isAuthenticated={false}
           onTabChange={onTabChange}
-        />
+        />, { initialState: createUnauthenticatedState() }
       )
 
       // Should show locked tabs when not authenticated
-      expect(screen.getByRole('button', { name: /schemas tab.*authentication required/i })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /schemas tab/i })).toBeDisabled()
 
-      // Re-render with authentication
-      rerender(
+      // Unmount and re-mount with authenticated state
+      unmount()
+      renderWithRedux(
         <TabNavigation
           activeTab="keys"
-          isAuthenticated={true}
           onTabChange={onTabChange}
-        />
+        />, { initialState: createAuthenticatedState() }
       )
 
       // Should now enable previously locked tabs
@@ -191,12 +192,11 @@ describe('Component Integration Tests', () => {
         { value: 'products', label: 'Product Catalog' }
       ]
 
-      render(
+      renderWithRedux(
         <div>
           {/* Tab Navigation */}
           <TabNavigation
             activeTab="mutation"
-            isAuthenticated={true}
             onTabChange={onTabChange}
           />
           
@@ -216,7 +216,8 @@ describe('Component Integration Tests', () => {
             onChange={onRangeKeyChange}
             required={true}
           />
-        </div>
+        </div>,
+        { initialState: createAuthenticatedState() }
       )
 
       // Navigate to mutation tab
@@ -255,7 +256,7 @@ describe('Component Integration Tests', () => {
             value=""
             onChange={jest.fn()}
             options={[]}
-            emptyMessage="No schemas available"
+            config={{ emptyMessage: "No schemas available" }}
           />
         </div>
       )

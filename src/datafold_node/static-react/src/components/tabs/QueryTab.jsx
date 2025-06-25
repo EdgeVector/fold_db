@@ -11,11 +11,12 @@ import {
   VALIDATION_MESSAGES
 } from '../../constants'
 import { useAppSelector } from '../../store/hooks'
-import { selectAllSchemas } from '../../store/schemaSlice'
+import { selectAllSchemas, selectFetchLoading } from '../../store/schemaSlice'
 
 function QueryTab({ onResult }) {
   // Redux state - TASK-003: Use Redux instead of props
   const schemas = useAppSelector(selectAllSchemas)
+  const schemasLoading = useAppSelector(selectFetchLoading)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [queryFields, setQueryFields] = useState([])
   const [rangeFilters, setRangeFilters] = useState({})

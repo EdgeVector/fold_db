@@ -29,7 +29,7 @@ export const initializeSystemKey = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await getSystemPublicKey();
-      
+      console.log('initializeSystemKey thunk response:', response);
       if (response.success && (response as any).key && (response as any).key.public_key) {
         return {
           systemPublicKey: (response as any).key.public_key,

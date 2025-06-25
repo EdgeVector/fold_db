@@ -238,7 +238,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                                 <div className="flex">
                                     <input
                                         type="text"
-                                        value={systemPublicKey}
+                                        value={systemPublicKey && systemPublicKey !== 'null' ? systemPublicKey : ''}
                                         readOnly
                                         className="flex-1 px-2 py-1 border border-blue-300 rounded-l-md bg-blue-50 text-xs font-mono"
                                     />

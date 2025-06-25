@@ -5,10 +5,12 @@
  * Provides pre-configured Redux store instances for testing
  */
 
+import React from 'react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
-import { render } from '@testing-library/react';
-import schemaSlice from '../../store/slices/schemaSlice';
+import { render, renderHook } from '@testing-library/react';
+import schemaReducer from '../../store/schemaSlice';
+import authReducer from '../../store/authSlice';
 
 /**
  * Create a test store with optional initial state
@@ -18,12 +20,28 @@ import schemaSlice from '../../store/slices/schemaSlice';
 export function createTestStore(preloadedState = {}) {
   return configureStore({
     reducer: {
-      schemas: schemaSlice
+      auth: authReducer,
+      schemas: schemaReducer
     },
     preloadedState,
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({
-        serializableCheck: false,
+        serializableCheck: {
+          // Ignore these action types
+          ignoredActions: [
+            'auth/validatePrivateKey/fulfilled',
+            'auth/setPrivateKey',
+            'schemas/fetchSchemas/fulfilled',
+            'schemas/approveSchema/fulfilled',
+            'schemas/blockSchema/fulfilled',
+            'schemas/unloadSchema/fulfilled',
+            'schemas/loadSchema/fulfilled'
+          ],
+          // Ignore these field paths in all actions
+          ignoredActionsPaths: ['payload.privateKey', 'payload.schemas.definition'],
+          // Ignore these paths in the state
+          ignoredPaths: ['auth.privateKey', 'schemas.schemas.*.definition'],
+        },
         immutableCheck: false
       })
   });
@@ -54,38 +72,56 @@ export function renderWithRedux(ui, {
 }
 
 /**
+ * Render hook with Redux provider
+ * @param {Function} hook - Hook to render
+ * @param {Object} options - Render options
+ * @param {Object} options.preloadedState - Initial Redux state
+ * @param {Object} options.store - Custom store instance
+ * @param {Object} renderOptions - Additional render options
+ * @returns {Object} Render result with store
+ */
+export function renderHookWithRedux(hook, {
+  preloadedState = {},
+  store = createTestStore(preloadedState),
+  ...renderOptions
+} = {}) {
+  function Wrapper({ children }) {
+    return <Provider store={store}>{children}</Provider>;
+  }
+
+  return {
+    ...renderHook(hook, { wrapper: Wrapper, ...renderOptions }),
+    store
+  };
+}
+
+/**
  * Create initial test state for schemas
  * @param {Object} overrides - State overrides
  * @returns {Object} Initial schemas state
  */
 export function createTestSchemaState(overrides = {}) {
-  return {
+  const defaultState = {
     schemas: {
-      available: [],
-      approved: [],
-      blocked: [],
-      fields: {},
+      schemas: {},  // Match actual store structure - object indexed by schema ID
       loading: {
-        schemas: false,
-        fields: false,
-        approve: false,
-        block: false,
-        unload: false
+        fetch: false,
+        operations: {}
       },
       errors: {
         fetch: null,
-        approve: null,
-        block: null,
-        unload: null,
-        fields: null
+        operations: {}
       },
-      cache: {
-        lastFetch: null,
-        isValid: false
-      },
-      ...overrides
+      lastFetched: null
     }
   };
+  
+  // Deep merge the overrides
+  if (overrides.schemas) {
+    defaultState.schemas.schemas = { ...defaultState.schemas.schemas, ...overrides.schemas };
+  }
+  
+  return defaultState;
 }
 
 /**
@@ -112,6 +148,7 @@ export const mockApiResponses = {
 export default {
   createTestStore,
   renderWithRedux,
+  renderHookWithRedux,
   createTestSchemaState,
   mockApiResponses
 };

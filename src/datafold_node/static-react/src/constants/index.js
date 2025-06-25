@@ -28,7 +28,7 @@ export {
   BROWSER_CONFIG,
   SECURITY_CONFIG,
   getCurrentEnvironmentConfig
-} from './config';
+} from './config.js';
 
 // ============================================================================
 // VALIDATION EXPORTS
@@ -41,7 +41,7 @@ export {
   SUCCESS_MESSAGES,
   VALIDATION_CONFIG,
   VALIDATION_FUNCTIONS
-} from './validation';
+} from './validation.js';
 
 // ============================================================================
 // STYLING EXPORTS
@@ -124,6 +124,14 @@ export {
   RANGE_SCHEMA_CONFIG,
   FIELD_TYPES
 } from './schemas';
+
+// Import constants internally to use in Constants object
+import { SCHEMA_STATES as _SCHEMA_STATES, FIELD_TYPES as _FIELD_TYPES, RANGE_SCHEMA_CONFIG as _RANGE_SCHEMA_CONFIG } from './schemas';
+import { APP_CONFIG as _APP_CONFIG } from './config.js';
+import { VALIDATION_RULES as _VALIDATION_RULES, VALIDATION_PATTERNS as _VALIDATION_PATTERNS, VALIDATION_MESSAGES as _VALIDATION_MESSAGES } from './validation.js';
+import { COLORS as _COLORS } from './styling.js';
+import { DEFAULT_TABS as _DEFAULT_TABS, BUTTON_TEXT as _BUTTON_TEXT, FORM_LABELS as _FORM_LABELS, UI_STATES as _UI_STATES } from './ui.js';
+import { ERROR_CODES as _ERROR_CODES } from './errors.js';
 
 // ============================================================================
 // UI EXPORTS (from existing files)
@@ -223,7 +231,10 @@ export {
 // Most commonly used constants for easy access
 export const DEFAULT_TAB = 'keys'; // Direct constant to avoid undefined issues
 
-export const { APPROVED, AVAILABLE, BLOCKED } = SCHEMA_STATES;
+// Export destructured SCHEMA_STATES safely - ensure SCHEMA_STATES is imported first
+export const APPROVED = _SCHEMA_STATES.APPROVED;
+export const AVAILABLE = _SCHEMA_STATES.AVAILABLE;
+export const BLOCKED = _SCHEMA_STATES.BLOCKED;
 
 // Export key color values safely
 export const PRIMARY_COLOR = '#3b82f6';
@@ -244,20 +255,20 @@ export const STATUS_ERROR = '#ef4444';
 export const Constants = {
   // Configuration namespace
   Config: {
-    APP_CONFIG: APP_CONFIG || { DEFAULT_TAB: 'keys' },
+    APP_CONFIG: _APP_CONFIG || { DEFAULT_TAB: 'keys' },
     DEFAULT_TAB: DEFAULT_TAB
   },
   
   // Validation namespace - using imported constants
   Validation: {
-    VALIDATION_RULES: VALIDATION_RULES || {},
-    VALIDATION_PATTERNS: VALIDATION_PATTERNS || {},
-    VALIDATION_MESSAGES: VALIDATION_MESSAGES || {}
+    VALIDATION_RULES: _VALIDATION_RULES || {},
+    VALIDATION_PATTERNS: _VALIDATION_PATTERNS || {},
+    VALIDATION_MESSAGES: _VALIDATION_MESSAGES || {}
   },
   
   // Styling namespace - using imported constants
   Styles: {
-    COLORS: COLORS || {},
+    COLORS: _COLORS || {},
     PRIMARY_COLOR: PRIMARY_COLOR,
     STATUS_SUCCESS: STATUS_SUCCESS,
     STATUS_ERROR: STATUS_ERROR
@@ -265,17 +276,22 @@ export const Constants = {
   
   // Schema namespace (SCHEMA-002 compliance)
   Schema: {
-    STATES: SCHEMA_STATES,
-    FIELD_TYPES: FIELD_TYPES || {},
-    RANGE_SCHEMA_CONFIG: RANGE_SCHEMA_CONFIG || {}
+    STATES: _SCHEMA_STATES,
+    FIELD_TYPES: _FIELD_TYPES || {},
+    RANGE_SCHEMA_CONFIG: _RANGE_SCHEMA_CONFIG || {}
   },
   
   // UI namespace - using imported constants
   UI: {
-    DEFAULT_TABS: DEFAULT_TABS || [],
-    BUTTON_TEXT: BUTTON_TEXT || {},
-    FORM_LABELS: FORM_LABELS || {},
-    UI_STATES: UI_STATES || {}
+    DEFAULT_TABS: _DEFAULT_TABS || [],
+    BUTTON_TEXT: _BUTTON_TEXT || {},
+    FORM_LABELS: _FORM_LABELS || {},
+    UI_STATES: _UI_STATES || {}
+  },
+  
+  // Error namespace - using imported constants
+  Errors: {
+    ERROR_CODES: _ERROR_CODES || {}
   }
 };
 

@@ -23,7 +23,7 @@ import {
   selectFetchError,
   selectCacheInfo
 } from '../store/schemaSlice';
-import { SCHEMA_STATES } from '../constants/schemas.js';
+import { SCHEMA_STATES } from '../constants/redux.js';
 import { normalizeSchemaState } from '../utils/rangeSchemaHelpers.js';
 
 /**
@@ -153,6 +153,7 @@ export function useApprovedSchemas() {
     const schema = getSchemaByName(name);
     if (!schema) return false;
     
+    // Use the consolidated normalization function for consistency
     const normalizedState = normalizeSchemaState(schema.state);
     return normalizedState === SCHEMA_STATES.APPROVED;
   }, [getSchemaByName]);

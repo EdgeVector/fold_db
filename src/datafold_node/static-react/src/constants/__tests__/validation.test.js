@@ -200,9 +200,9 @@ describe('Validation Rules Consistency', () => {
 });
 
 describe('Constants Structure Validation', () => {
-  test('should export all required constant categories', () => {
+  test('should export all required constant categories', async () => {
     // Test direct imports to ensure everything is properly exported
-    const constants = require('../index');
+    const constants = await import('../index');
     
     expect(constants.APP_CONFIG).toBeDefined();
     expect(constants.VALIDATION_RULES).toBeDefined();

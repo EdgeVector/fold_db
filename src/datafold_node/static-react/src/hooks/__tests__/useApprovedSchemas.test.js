@@ -1,10 +1,15 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useApprovedSchemas } from '../useApprovedSchemas.js';
-import { SCHEMA_STATES, SCHEMA_CACHE_DURATION_MS, SCHEMA_FETCH_RETRY_COUNT } from '../../constants/schemas.js';
-import { renderWithRedux, createTestSchemaState } from '../../test/utils/testStore';
+import {
+  renderWithRedux,
+  renderHookWithRedux,
+  createTestSchemaState,
+  SCHEMA_STATES
+} from '../../test/utils/testUtilities.jsx';
+import { INTEGRATION_TEST_RETRY_COUNT } from '../../test/config/constants';
 
-// Mock console to avoid noise in tests
+// Mock console to avoid noise in tests (setup already handles this but being explicit)
 global.console = {
   ...console,
   log: vi.fn(),
@@ -69,7 +74,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[1])
       .mockResolvedValueOnce(mockSchemaDetailResponses[2]);
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
     // Initially loading
     expect(result.current.isLoading).toBe(true);
@@ -102,7 +107,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[1])
       .mockResolvedValueOnce(mockSchemaDetailResponses[2]);
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -122,7 +127,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[1])
       .mockResolvedValueOnce(mockSchemaDetailResponses[2]);
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -142,7 +147,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[1])
       .mockResolvedValueOnce(mockSchemaDetailResponses[2]);
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -168,7 +173,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockAvailableSchemasResponse)
       .mockResolvedValueOnce(mockPersistedSchemasResponse);
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
     // Wait for retries to complete
     await waitFor(() => {
@@ -188,7 +193,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[1])
       .mockResolvedValueOnce(mockSchemaDetailResponses[2]);
 
-    const { result, rerender } = renderHook(() => useApprovedSchemas());
+    const { result, rerender } = renderHookWithRedux(() => useApprovedSchemas());
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -213,7 +218,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[1])
       .mockResolvedValueOnce(mockSchemaDetailResponses[2]);
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -259,7 +264,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[0])
       .mockResolvedValueOnce(mockSchemaDetailResponses[0]);
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -272,15 +277,29 @@ describe('useApprovedSchemas Hook', () => {
   });
 
   it('should handle API endpoint failures gracefully', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500
-    });
+    // Provide mock responses for all 3 retry attempts
+    fetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500
+      });
 
-    const { result } = renderHook(() => useApprovedSchemas());
+    const { result } = renderHookWithRedux(() => useApprovedSchemas());
 
+    // Wait for loading state to complete with extended timeout for retry logic
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
+    }, {
+      timeout: 5000, // Allow time for 3 retry attempts with test delays
+      interval: 50   // Check more frequently for state changes
     });
 
     expect(result.current.error).toContain('Failed to fetch available schemas: 500');
@@ -295,7 +314,7 @@ describe('useApprovedSchemas Hook', () => {
       .mockResolvedValueOnce(mockSchemaDetailResponses[1])
       .mockResolvedValueOnce(mockSchemaDetailResponses[2]);
 
-    renderHook(() => useApprovedSchemas());
+    renderHookWithRedux(() => useApprovedSchemas());
 
     await waitFor(() => {
       expect(console.log).toHaveBeenCalledWith('📁 Available schemas:', expect.any(Array));

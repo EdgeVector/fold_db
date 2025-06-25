@@ -1,7 +1,9 @@
+import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useApprovedSchemas, useRangeSchema, useFormValidation } from '../../hooks/index.js';
 import { SCHEMA_STATES } from '../../constants/schemas.js';
+import { renderHookWithRedux } from '../utils/testStore.jsx';
 
 describe('Hooks Integration Tests', () => {
   beforeEach(() => {
@@ -57,7 +59,7 @@ describe('Hooks Integration Tests', () => {
   it('should integrate useApprovedSchemas with useRangeSchema for complete schema operations', async () => {
     mockApprovedSchemasResponse();
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: rangeResult } = renderHook(() => useRangeSchema());
 
     // Wait for schemas to load
@@ -90,7 +92,7 @@ describe('Hooks Integration Tests', () => {
   it('should integrate useApprovedSchemas with useFormValidation for schema validation', async () => {
     mockApprovedSchemasResponse();
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: validationResult } = renderHook(() => useFormValidation());
 
     // Wait for schemas to load
@@ -126,7 +128,7 @@ describe('Hooks Integration Tests', () => {
   it('should integrate all three hooks for complete range schema mutation workflow', async () => {
     mockApprovedSchemasResponse();
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: rangeResult } = renderHook(() => useRangeSchema());
     const { result: validationResult } = renderHook(() => useFormValidation());
 
@@ -228,7 +230,7 @@ describe('Hooks Integration Tests', () => {
         })
       });
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: validationResult } = renderHook(() => useFormValidation());
 
     await waitFor(() => {
@@ -262,7 +264,7 @@ describe('Hooks Integration Tests', () => {
     // Mock fetch failure
     fetch.mockRejectedValue(new Error('Network error'));
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: validationResult } = renderHook(() => useFormValidation());
 
     await waitFor(() => {
@@ -285,7 +287,7 @@ describe('Hooks Integration Tests', () => {
   it('should handle range schema query formatting with approval validation', async () => {
     mockApprovedSchemasResponse();
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: rangeResult } = renderHook(() => useRangeSchema());
 
     await waitFor(() => {
@@ -313,7 +315,7 @@ describe('Hooks Integration Tests', () => {
   it('should provide comprehensive schema information through integrated hooks', async () => {
     mockApprovedSchemasResponse();
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: rangeResult } = renderHook(() => useRangeSchema());
 
     await waitFor(() => {
@@ -348,7 +350,7 @@ describe('Hooks Integration Tests', () => {
   it('should support complex validation scenarios with multiple hooks', async () => {
     mockApprovedSchemasResponse();
 
-    const { result: schemasResult } = renderHook(() => useApprovedSchemas());
+    const { result: schemasResult } = renderHookWithRedux(() => useApprovedSchemas());
     const { result: rangeResult } = renderHook(() => useRangeSchema());
     const { result: validationResult } = renderHook(() => useFormValidation());
 

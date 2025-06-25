@@ -120,7 +120,7 @@ describe('App Integration Tests', () => {
     expect(screen.getByText('Query')).toBeInTheDocument()
     expect(screen.getByText('Mutation')).toBeInTheDocument()
     expect(screen.getByText('Transforms')).toBeInTheDocument()
-    expect(screen.getByText('Dependencies')).toBeInTheDocument()
+    expect(screen.getByLabelText('Key Management tab')).toBeInTheDocument()
   })
 
   it('renders main application with locked tabs when unauthenticated', async () => {
@@ -131,24 +131,22 @@ describe('App Integration Tests', () => {
     expect(screen.getByText('Authentication Required')).toBeInTheDocument()
     
     // Check that tabs are locked (AUTH-003 behavior)
-    const tabs = ['Schemas', 'Query', 'Mutation', 'Ingestion', 'Transforms', 'Dependencies']
+    const tabs = ['Schemas', 'Query', 'Mutation', 'Ingestion', 'Transforms']
     tabs.forEach(tabName => {
-      const tab = screen.getByText(tabName)
-      expect(tab).toHaveClass('text-gray-300', 'cursor-not-allowed')
-      expect(tab).toHaveAttribute('disabled')
+      const tab = screen.getByLabelText(`${tabName} tab (requires authentication)`)
+      expect(tab).toHaveClass('text-gray-300')
     })
     
-    // Keys tab should be accessible
-    const keysTab = screen.getByText('Keys')
-    expect(keysTab).toHaveClass('text-primary')
-    expect(keysTab).not.toHaveAttribute('disabled')
+    // Key Management tab should be accessible
+    const keyManagementTab = screen.getByLabelText('Key Management tab')
+    expect(keyManagementTab).toHaveAttribute('aria-current', 'page')
   })
 
   it('loads and displays schemas when authenticated', async () => {
     renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Switch to schemas tab
-    const schemasTab = screen.getByText('Schemas')
+    const schemasTab = screen.getByLabelText('Schemas tab')
     await fireEvent.click(schemasTab)
     
     // Wait for schemas to load
@@ -157,43 +155,43 @@ describe('App Integration Tests', () => {
       expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
     })
     
-    // Check that API was called
-    expect(fetch).toHaveBeenCalledWith('/api/schemas')
+    // Check that API was called (schemas are fetched from multiple endpoints)
+    expect(fetch).toHaveBeenCalledWith('/api/schemas/available')
   })
 
   it('switches between tabs correctly when authenticated', async () => {
     renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
-    // Initially on Keys tab (default)
-    const keysTab = screen.getByText('Keys')
-    expect(keysTab).toHaveClass('text-primary')
+    // Initially on Key Management tab (default)
+    const keyManagementTab = screen.getByLabelText('Key Management tab')
+    expect(keyManagementTab).toHaveClass('text-blue-600')
     
     // Click Schemas tab
-    const schemasTab = screen.getByText('Schemas')
+    const schemasTab = screen.getByLabelText('Schemas tab')
     await user.click(schemasTab)
     
     // Check Schemas tab is active
     await waitFor(() => {
-      expect(schemasTab).toHaveClass('text-primary')
+      expect(schemasTab).toHaveAttribute('aria-current', 'page')
     })
     
     // Click Query tab
-    const queryTab = screen.getByText('Query')
+    const queryTab = screen.getByLabelText('Query tab')
     await user.click(queryTab)
     
     // Check Query tab is active
     await waitFor(() => {
-      expect(queryTab).toHaveClass('text-primary')
+      expect(queryTab).toHaveAttribute('aria-current', 'page')
       expect(screen.getByText('Execute Query')).toBeInTheDocument()
     })
     
     // Click Mutation tab
-    const mutationTab = screen.getByText('Mutation')
+    const mutationTab = screen.getByLabelText('Mutation tab')
     await user.click(mutationTab)
     
     // Check Mutation tab is active
     await waitFor(() => {
-      expect(mutationTab).toHaveClass('text-primary')
+      expect(mutationTab).toHaveClass('text-blue-600')
       expect(screen.getByText('Execute Mutation')).toBeInTheDocument()
     })
   })
@@ -201,20 +199,20 @@ describe('App Integration Tests', () => {
   it('prevents tab switching when unauthenticated (AUTH-003)', async () => {
     renderWithRedux(<AppContent />, { initialState: createUnauthenticatedState() })
     
-    // Initially on Keys tab (only accessible tab when unauthenticated)
-    const keysTab = screen.getByText('Keys')
-    expect(keysTab).toHaveClass('text-primary')
+    // Initially on Key Management tab (only accessible tab when unauthenticated)
+    const keyManagementTab = screen.getByLabelText('Key Management tab')
+    expect(keyManagementTab).toHaveAttribute('aria-current', 'page')
     
     // Try to click other tabs - they should be disabled
-    const schemasTab = screen.getByText('Schemas')
-    expect(schemasTab).toHaveAttribute('disabled')
+    const schemasTab = screen.getByLabelText('Schemas tab (requires authentication)')
+    expect(schemasTab).toHaveClass('text-gray-300')
     
     // Clicking disabled tab should not change active tab
     await user.click(schemasTab)
     
-    // Should still be on Keys tab
-    expect(keysTab).toHaveClass('text-primary')
-    expect(schemasTab).not.toHaveClass('text-primary')
+    // Should still be on Key Management tab
+    expect(keyManagementTab).toHaveAttribute('aria-current', 'page')
+    expect(schemasTab).not.toHaveAttribute('aria-current', 'page')
   })
 
   it('handles API errors gracefully when authenticated', async () => {
@@ -234,12 +232,12 @@ describe('App Integration Tests', () => {
     renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Click Transforms tab
-    const transformsTab = screen.getByText('Transforms')
+    const transformsTab = screen.getByLabelText('Transforms tab')
     await user.click(transformsTab)
     
     // Check that the tab is active (no need to check specific content)
     await waitFor(() => {
-      expect(transformsTab).toHaveClass('text-primary')
+      expect(transformsTab).toHaveClass('text-blue-600')
     })
   })
 

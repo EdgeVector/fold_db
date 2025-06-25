@@ -4,7 +4,7 @@
  * Part of TASK-002: Component Extraction and Modularization
  */
 
-import { COMPONENT_STYLES } from '../../constants/ui.js';
+import { COMPONENT_STYLES } from '../../constants/styling.js';
 
 /**
  * @typedef {Object} FieldWrapperProps
