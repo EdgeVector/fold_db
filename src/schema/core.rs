@@ -1,4 +1,4 @@
-use super::validator::SchemaValidator;
+use super::{schema_lock_error, validator::SchemaValidator};
 use crate::atom::{Molecule, MoleculeRange};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{
@@ -223,7 +223,7 @@ impl SchemaCore {
 
         {
             let mut all = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             all.insert(name.clone(), (schema, schema_state));
         }
@@ -254,7 +254,7 @@ impl SchemaCore {
         // Check if schema exists and validate current state
         let (schema, current_state) = {
             let available = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             available.get(schema_name).cloned()
                 .ok_or_else(|| SchemaError::NotFound(format!("Schema '{}' not found", schema_name)))?
@@ -286,10 +286,10 @@ impl SchemaCore {
         // Update both in-memory stores and persist immediately
         {
             let mut schemas = self.schemas.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             let mut available = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
 
             // Add to active schemas
@@ -369,7 +369,7 @@ impl SchemaCore {
         
         let available_schemas = {
             let available = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             available.clone()
         };
@@ -441,7 +441,7 @@ impl SchemaCore {
         // Check if schema is already in schemas HashMap
         {
             let schemas = self.schemas.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             if schemas.contains_key(schema_name) {
                 info!("Schema '{}' already in schemas HashMap", schema_name);
@@ -452,7 +452,7 @@ impl SchemaCore {
         // Get the schema from available HashMap and verify it's approved
         let schema_to_move = {
             let available = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             
             if let Some((schema, state)) = available.get(schema_name) {
@@ -473,7 +473,7 @@ impl SchemaCore {
         // Move the schema to schemas HashMap
         if let Some(schema) = schema_to_move {
             let mut schemas = self.schemas.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             
             schemas.insert(schema_name.to_string(), schema);
@@ -490,7 +490,7 @@ impl SchemaCore {
         // Check current state and validate transition
         let current_state = {
             let available = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             available.get(schema_name)
                 .map(|(_, state)| *state)
@@ -519,7 +519,7 @@ impl SchemaCore {
         // Remove from active schemas but keep in available
         {
             let mut schemas = self.schemas.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             schemas.remove(schema_name);
         }
@@ -542,7 +542,7 @@ impl SchemaCore {
         let available = self
             .available
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
 
         let schemas: Vec<String> = available
             .iter()
@@ -605,7 +605,7 @@ impl SchemaCore {
         let name = schema.name.clone();
         let state_to_use = {
             let mut available = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
 
             // Check if schema already exists and preserve its state
@@ -617,7 +617,7 @@ impl SchemaCore {
             // If the existing state was Approved, also add to the active schemas
             if state_to_use == SchemaState::Approved {
                 let mut schemas = self.schemas.lock().map_err(|_| {
-                    SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                    schema_lock_error()
                 })?;
                 schemas.insert(name.clone(), available.get(&name).unwrap().0.clone());
             }
@@ -764,7 +764,7 @@ impl SchemaCore {
         let schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
         Ok(schemas.get(schema_name).cloned())
     }
 
@@ -808,7 +808,7 @@ impl SchemaCore {
         let mut schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
 
         if let Some(schema) = schemas.get_mut(schema_name) {
             if let Some(field) = schema.fields.get_mut(field_name) {
@@ -861,7 +861,7 @@ impl SchemaCore {
         let schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
         Ok(schemas.keys().cloned().collect())
     }
 
@@ -870,7 +870,7 @@ impl SchemaCore {
         let available = self
             .available
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
         Ok(available.keys().cloned().collect())
     }
 
@@ -889,7 +889,7 @@ impl SchemaCore {
         let mut available = self
             .available
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
         if let Some((_, st)) = available.get_mut(schema_name) {
             *st = state;
         } else {
@@ -912,7 +912,7 @@ impl SchemaCore {
         let schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
         Ok(schemas.contains_key(schema_name))
     }
 
@@ -922,7 +922,7 @@ impl SchemaCore {
         let mut schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
         schemas.remove(schema_name);
         drop(schemas);
         self.set_schema_state(schema_name, SchemaState::Available)?;
@@ -936,7 +936,7 @@ impl SchemaCore {
         let mut schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
         schemas.remove(schema_name);
         drop(schemas);
         self.set_schema_state(schema_name, SchemaState::Available)?;
@@ -952,7 +952,7 @@ impl SchemaCore {
         let schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
 
         // First collect all the source field molecule_uuids we need
         let mut field_mappings = Vec::new();
@@ -975,7 +975,7 @@ impl SchemaCore {
         let mut schemas = self
             .schemas
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
 
         let schema = schemas
             .get_mut(schema_name)
@@ -1043,7 +1043,7 @@ impl SchemaCore {
         let mut available = self
             .available
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema lock".to_string()))?;
+            .map_err(|_| schema_lock_error())?;
 
         if let Some((_, state)) = available.get(schema_name) {
             let state = *state;

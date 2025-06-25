@@ -1,4 +1,4 @@
-use super::{SchemaCore, SchemaState};
+use super::{schema_lock_error, SchemaCore, SchemaState};
 use crate::schema::core::{SchemaLoadingReport, SchemaSource};
 use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
 use log::info;
@@ -106,7 +106,7 @@ impl SchemaCore {
 
         let current_schemas = {
             let available = self.available.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+                schema_lock_error()
             })?;
             available
                 .keys()
@@ -140,11 +140,10 @@ impl SchemaCore {
                         .copied()
                         .unwrap_or(SchemaState::Available);
                     {
-                        let mut available = self.available.lock().map_err(|_| {
-                            SchemaError::InvalidData(
-                                "Failed to acquire schema lock".to_string(),
-                            )
-                        })?;
+                        let mut available = self
+                            .available
+                            .lock()
+                            .map_err(|_| schema_lock_error())?;
                         available.insert(schema_name.clone(), (schema, state));
                     }
 
