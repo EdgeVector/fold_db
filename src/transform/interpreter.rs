@@ -578,4 +578,22 @@ mod tests {
             _ => panic!("Expected number"),
         }
     }
+
+    #[test]
+    fn test_builtin_function_registration() {
+        let functions = builtin_functions();
+        let expected = [
+            "min",
+            "max",
+            "clamp",
+            "concat",
+            "to_string",
+            "to_number",
+            "to_boolean",
+        ];
+
+        for name in expected.iter() {
+            assert!(functions.contains_key(*name), "builtin {} not found", name);
+        }
+    }
 }
