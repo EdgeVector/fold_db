@@ -1,6 +1,7 @@
 //! Web streaming output handler (maintains backward compatibility)
 
 use crate::logging::config::WebConfig;
+use crate::logging::util::parse_log_level;
 use crate::logging::LoggingError;
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -39,7 +40,7 @@ impl WebOutput {
         let layer = fmt::Layer::default()
             .with_writer(writer)
             .with_ansi(false) // No ANSI colors for web
-            .with_filter(self.parse_level_filter()?);
+            .with_filter(parse_log_level(&self.config.level)?);
 
         Ok(layer)
     }
@@ -59,17 +60,6 @@ impl WebOutput {
         self.sender.subscribe()
     }
 
-    /// Parse the log level filter from configuration
-    fn parse_level_filter(&self) -> Result<tracing::Level, LoggingError> {
-        match self.config.level.as_str() {
-            "TRACE" => Ok(tracing::Level::TRACE),
-            "DEBUG" => Ok(tracing::Level::DEBUG),
-            "INFO" => Ok(tracing::Level::INFO),
-            "WARN" => Ok(tracing::Level::WARN),
-            "ERROR" => Ok(tracing::Level::ERROR),
-            _ => Err(LoggingError::Config(format!("Invalid log level: {}", self.config.level))),
-        }
-    }
 }
 
 /// Custom writer that sends logs to both buffer and broadcast channel
