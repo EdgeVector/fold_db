@@ -252,62 +252,62 @@ export const TYPOGRAPHY = {
  */
 export const COMPONENT_STYLES = {
   // Tab styling
-  TAB: {
-    BASE: 'px-4 py-2 text-sm font-medium transition-all duration-200',
-    ACTIVE: 'text-primary border-b-2 border-primary',
-    INACTIVE: 'text-gray-500 hover:text-gray-700 hover:border-gray-300',
-    DISABLED: 'text-gray-300 cursor-not-allowed'
+  tab: {
+    base: 'px-4 py-2 text-sm font-medium transition-all duration-200',
+    active: 'text-primary border-b-2 border-primary',
+    inactive: 'text-gray-500 hover:text-gray-700 hover:border-gray-300',
+    disabled: 'text-gray-300 cursor-not-allowed'
   },
   
   // Button styling
-  BUTTON: {
-    BASE: 'inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2',
-    PRIMARY: 'bg-primary hover:bg-primary/90 text-white focus:ring-primary',
-    SECONDARY: 'bg-gray-100 hover:bg-gray-200 text-gray-700 focus:ring-gray-500',
-    SUCCESS: 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500',
-    DANGER: 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500',
-    WARNING: 'bg-yellow-600 hover:bg-yellow-700 text-white focus:ring-yellow-500',
-    DISABLED: 'bg-gray-300 cursor-not-allowed text-gray-500'
+  button: {
+    base: 'inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2',
+    primary: 'bg-primary hover:bg-primary/90 text-white focus:ring-primary',
+    secondary: 'bg-gray-100 hover:bg-gray-200 text-gray-700 focus:ring-gray-500',
+    success: 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500',
+    danger: 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500',
+    warning: 'bg-yellow-600 hover:bg-yellow-700 text-white focus:ring-yellow-500',
+    disabled: 'bg-gray-300 cursor-not-allowed text-gray-500'
   },
   
   // Input styling
-  INPUT: {
-    BASE: 'block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 transition-colors duration-200',
-    NORMAL: 'focus:ring-primary focus:border-primary',
-    ERROR: 'border-red-300 focus:ring-red-500 focus:border-red-500',
-    SUCCESS: 'border-green-300 focus:ring-green-500 focus:border-green-500',
-    DISABLED: 'bg-gray-100 text-gray-500 cursor-not-allowed'
+  input: {
+    base: 'block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 transition-colors duration-200',
+    normal: 'focus:ring-primary focus:border-primary',
+    error: 'border-red-300 focus:ring-red-500 focus:border-red-500',
+    success: 'border-green-300 focus:ring-green-500 focus:border-green-500',
+    disabled: 'bg-gray-100 text-gray-500 cursor-not-allowed'
   },
   
   // Select styling
-  SELECT: {
-    BASE: 'block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md transition-colors duration-200',
-    DISABLED: 'bg-gray-100 text-gray-500 cursor-not-allowed'
+  select: {
+    base: 'block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md transition-colors duration-200',
+    disabled: 'bg-gray-100 text-gray-500 cursor-not-allowed'
   },
   
   // Card styling
-  CARD: {
-    BASE: 'bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200',
-    HOVER: 'hover:shadow-md',
-    SELECTED: 'ring-2 ring-primary border-primary'
+  card: {
+    base: 'bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200',
+    hover: 'hover:shadow-md',
+    selected: 'ring-2 ring-primary border-primary'
   },
   
   // Modal styling
-  MODAL: {
-    OVERLAY: 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50',
-    CONTENT: 'bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6',
-    HEADER: 'flex items-center justify-between pb-4 border-b',
-    BODY: 'py-4',
-    FOOTER: 'pt-4 border-t flex justify-end space-x-2'
+  modal: {
+    overlay: 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50',
+    content: 'bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6',
+    header: 'flex items-center justify-between pb-4 border-b',
+    body: 'py-4',
+    footer: 'pt-4 border-t flex justify-end space-x-2'
   },
   
   // Alert styling
-  ALERT: {
-    BASE: 'p-4 rounded-lg border',
-    SUCCESS: 'bg-green-50 border-green-200 text-green-800',
-    ERROR: 'bg-red-50 border-red-200 text-red-800',
-    WARNING: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-    INFO: 'bg-blue-50 border-blue-200 text-blue-800'
+  alert: {
+    base: 'p-4 rounded-lg border',
+    success: 'bg-green-50 border-green-200 text-green-800',
+    error: 'bg-red-50 border-red-200 text-red-800',
+    warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+    info: 'bg-blue-50 border-blue-200 text-blue-800'
   }
 };
 

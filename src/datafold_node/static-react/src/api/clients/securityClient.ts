@@ -165,7 +165,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
             error: `Invalid key length: ${length} bytes (expected 32 for Ed25519)`
           };
         }
-      } catch (base64Error) {
+      } catch (_base64Error) {
         return {
           isValid: false,
           error: 'Invalid base64 encoding'

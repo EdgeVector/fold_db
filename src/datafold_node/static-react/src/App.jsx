@@ -28,8 +28,8 @@ export function AppContent() {
   
   // Use the new useApprovedSchemas hook (TASK-001)
   const {
-    approvedSchemas,
-    allSchemas,
+    approvedSchemas: _approvedSchemas,
+    allSchemas: _allSchemas,
     isLoading: schemasLoading,
     error: schemasError,
     refetch: refetchSchemas

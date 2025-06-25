@@ -1,6 +1,7 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import SchemaTab from '../../../components/tabs/SchemaTab'
+import { renderWithRedux, createTestSchemaState } from '../../utils/testStore'
 
 describe('SchemaTab Component', () => {
   const mockProps = {
@@ -30,7 +31,9 @@ describe('SchemaTab Component', () => {
         })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     await waitFor(() => {
       expect(screen.getByText('Available Schemas')).toBeInTheDocument()
@@ -50,7 +53,9 @@ describe('SchemaTab Component', () => {
         json: async () => ({ data: {} })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith('/api/samples/schemas')
@@ -75,7 +80,9 @@ describe('SchemaTab Component', () => {
         })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     await waitFor(() => {
       expect(screen.getByText('Available Schemas (2)')).toBeInTheDocument()
@@ -93,7 +100,9 @@ describe('SchemaTab Component', () => {
         json: async () => ({ data: {} })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     await waitFor(() => {
       expect(screen.getByText('Available Schemas (0)')).toBeInTheDocument()
@@ -115,7 +124,9 @@ describe('SchemaTab Component', () => {
         })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     await waitFor(() => {
       expect(screen.getByText('ApprovedSchema')).toBeInTheDocument()
@@ -139,7 +150,9 @@ describe('SchemaTab Component', () => {
         })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     // Expand the available schemas section
     await waitFor(() => {
@@ -169,7 +182,9 @@ describe('SchemaTab Component', () => {
         })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     await waitFor(() => {
       expect(screen.getByText('Unload')).toBeInTheDocument()
@@ -199,7 +214,9 @@ describe('SchemaTab Component', () => {
         json: async () => ({ data: {} })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     // Expand available schemas
     await waitFor(() => {
@@ -241,7 +258,9 @@ describe('SchemaTab Component', () => {
         json: async () => ({ data: {} })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
     
     // Click unload button
     await waitFor(() => {
@@ -278,7 +297,9 @@ describe('SchemaTab Component', () => {
         })
       })
 
-    render(<SchemaTab {...mockProps} />)
+    renderWithRedux(<SchemaTab {...mockProps} />, {
+      preloadedState: createTestSchemaState()
+    })
 
     // Expand the approved schema to trigger field fetch
     await waitFor(() => {

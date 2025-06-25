@@ -1,4 +1,4 @@
-import { sign, bytesToBase64, bytesToHex } from './ed25519';
+import { sign, bytesToBase64, bytesToHex as _bytesToHex } from './ed25519';
 import type { SignedMessage } from '../types/cryptography';
 
 /**

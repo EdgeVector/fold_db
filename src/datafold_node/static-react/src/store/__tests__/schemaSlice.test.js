@@ -383,7 +383,9 @@ describe('schemaSlice', () => {
     it('should handle malformed API responses', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: async () => ({ invalid: 'response' })
+        json: async () => {
+          throw new Error('Invalid JSON response');
+        }
       });
 
       await store.dispatch(fetchSchemas());

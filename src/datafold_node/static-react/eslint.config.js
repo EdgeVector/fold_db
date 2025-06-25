@@ -162,6 +162,115 @@ export default [
       ]
     },
   },
+  // Test files configuration
+  {
+    files: ['**/*.{test,spec}.{js,jsx,ts,tsx}', '**/test/**/*.{js,jsx,ts,tsx}', '**/tests/**/*.{js,jsx,ts,tsx}'],
+    languageOptions: {
+      globals: {
+        // Vitest globals
+        describe: 'readonly',
+        it: 'readonly',
+        test: 'readonly',
+        expect: 'readonly',
+        beforeAll: 'readonly',
+        beforeEach: 'readonly',
+        afterAll: 'readonly',
+        afterEach: 'readonly',
+        vi: 'readonly',
+        vitest: 'readonly',
+        // Jest compatibility globals
+        jest: 'readonly',
+        // Browser globals
+        window: 'readonly',
+        document: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        navigator: 'readonly',
+        EventSource: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        clearTimeout: 'readonly',
+        Element: 'readonly',
+        performance: 'readonly',
+        // React testing globals
+        React: 'readonly',
+        useState: 'readonly',
+        useEffect: 'readonly',
+        useContext: 'readonly',
+        useCallback: 'readonly',
+        useMemo: 'readonly',
+        useRef: 'readonly',
+        useReducer: 'readonly',
+        // Custom hooks for testing
+        useApprovedSchemas: 'readonly',
+        useRangeSchema: 'readonly',
+        useFormValidation: 'readonly',
+        // Test utilities
+        approveSchema: 'readonly',
+      },
+    },
+    rules: {
+      'no-restricted-globals': 'off', // Allow fetch in test files
+      'no-restricted-syntax': 'off', // Allow hardcoded endpoints in test files
+    },
+  },
+  // Main application files - add missing globals
+  {
+    files: ['**/*.{js,jsx}', '!**/*.{test,spec}.{js,jsx}', '!**/test/**/*.{js,jsx}', '!**/tests/**/*.{js,jsx}'],
+    languageOptions: {
+      globals: {
+        // Browser globals
+        window: 'readonly',
+        document: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        navigator: 'readonly',
+        EventSource: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        clearTimeout: 'readonly',
+        Element: 'readonly',
+        performance: 'readonly',
+        // Node.js globals
+        global: 'readonly',
+        require: 'readonly',
+        __dirname: 'readonly',
+        module: 'readonly',
+        exports: 'readonly',
+        process: 'readonly'
+      },
+    },
+  },
+  // Main application files - TypeScript - add missing globals
+  {
+    files: ['**/*.{ts,tsx}', '!**/*.{test,spec}.{ts,tsx}', '!**/test/**/*.{ts,tsx}', '!**/tests/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        // Browser globals
+        window: 'readonly',
+        document: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        navigator: 'readonly',
+        EventSource: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        clearTimeout: 'readonly',
+        Element: 'readonly',
+        performance: 'readonly',
+        // Node.js globals
+        global: 'readonly',
+        require: 'readonly',
+        __dirname: 'readonly',
+        module: 'readonly',
+        exports: 'readonly',
+        process: 'readonly'
+      },
+    },
+  },
   // Override for API endpoints definition file and validation tests
   {
     files: ['**/api/endpoints.ts', '**/api/endpoints.js', '**/validation/**/*.test.js', '**/validation/**/*.test.ts'],

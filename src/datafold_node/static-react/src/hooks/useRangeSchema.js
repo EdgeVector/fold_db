@@ -1,233 +1,182 @@
 /**
- * Custom hook for range schema operations
- * Centralizes range schema detection and handling logic
+ * @fileoverview Custom hook for range schema operations and utilities
+ *
+ * This hook provides comprehensive utilities for working with range schemas,
+ * including detection, validation, formatting, and query/mutation handling.
+ * Range schemas are a special type of schema that use a range_key for efficient
+ * time-series and ordered data storage.
+ *
+ * **Range Schema Structure:**
+ * - Contains a `range_key` field that acts as the primary ordering field
+ * - All fields have `field_type: "Range"`
+ * - Non-range_key fields are stored as JSON objects for backend processing
+ * - Supports efficient range queries and targeted mutations
+ *
+ * TASK-002: Extracted from inline logic for reusability
+ * TASK-006: Enhanced with comprehensive JSDoc documentation
+ *
+ * @module useRangeSchema
+ * @since 2.0.0
+ * @see {@link https://github.com/datafold/datafold/src/datafold_node/samples/RANGE_FIELD_EXAMPLES.md} Range schema examples
  */
 
 import { useCallback } from 'react';
-import { 
-  RANGE_SCHEMA_CONFIG,
-  VALIDATION_MESSAGES,
-  FORM_VALIDATION_DEBOUNCE_MS
-} from '../constants/schemas.js';
+import { FORM_VALIDATION_DEBOUNCE_MS } from '../constants/schemas.js';
+import {
+  isRangeSchema,
+  getRangeKey,
+  getNonRangeKeyFields,
+  getRangeFields,
+  getNonRangeFields,
+  validateRangeKey,
+  formatRangeMutation,
+  formatRangeQuery,
+  getRangeSchemaInfo
+} from '../utils/rangeSchemaHelpers.js';
 
 /**
- * Hook for range schema operations and utilities
- * 
- * @returns {Object} Hook result object
- * @returns {Function} isRange - Check if schema is a range schema
- * @returns {Function} min - Get minimum range value (placeholder for future use)
- * @returns {Function} max - Get maximum range value (placeholder for future use)  
- * @returns {Function} step - Get range step value (placeholder for future use)
- * @returns {Object} rangeProps - Collection of range-related functions
+ * @typedef {Object} Schema
+ * @property {string} name - Schema name
+ * @property {Object} fields - Field definitions
+ * @property {Object} [schema_type] - Schema type information
+ * @property {string} [range_key] - Legacy range key field name
+ */
+
+/**
+ * @typedef {Object} RangeSchemaInfo
+ * @property {boolean} isRangeSchema - Whether this is a range schema
+ * @property {string|null} rangeKey - Name of the range key field
+ * @property {Array<[string, Object]>} rangeFields - Array of [fieldName, fieldDef] for range fields
+ * @property {Object} nonRangeKeyFields - Object containing non-range-key fields
+ * @property {number} totalFields - Total number of fields in schema
+ */
+
+/**
+ * @typedef {Object} RangeProps
+ * @property {Function} isRange - Check if schema is a range schema
+ * @property {Function} getRangeKey - Get range key field name
+ * @property {Function} getNonRangeKeyFields - Get non-range-key fields
+ * @property {Function} validateRangeKey - Validate range key value
+ * @property {Function} formatRangeMutation - Format mutation for range schema
+ * @property {Function} formatRangeQuery - Format query for range schema
+ * @property {Function} getRangeSchemaInfo - Get comprehensive range schema info
+ * @property {Function} getRangeFields - Get all range fields
+ * @property {Function} getNonRangeFields - Get all non-range fields
+ * @property {number} debounceMs - Debounce delay for form validation
+ */
+
+/**
+ * @typedef {Object} UseRangeSchemaResult
+ * @property {Function} isRange - Check if schema is a range schema
+ * @property {Function} min - Get minimum range value (placeholder for future use)
+ * @property {Function} max - Get maximum range value (placeholder for future use)
+ * @property {Function} step - Get range step value (placeholder for future use)
+ * @property {RangeProps} rangeProps - Collection of range-related functions
+ */
+
+/**
+ * Custom hook for range schema operations and utilities
+ *
+ * This hook provides a comprehensive suite of utilities for working with range schemas,
+ * which are specialized schemas designed for time-series and ordered data. Range schemas
+ * have unique characteristics that require special handling for mutations and queries.
+ *
+ * **Key Features:**
+ * - Range schema detection and validation
+ * - Range key extraction and validation
+ * - Mutation formatting for backend compatibility
+ * - Query formatting with range filters
+ * - Field separation (range vs non-range)
+ * - Form validation with debouncing
+ *
+ * **Range Schema Characteristics:**
+ * - Contains a designated range_key field for ordering
+ * - All fields have field_type: "Range"
+ * - Non-range_key fields are wrapped in objects for backend processing
+ * - Supports efficient range-based queries
+ *
+ * **Usage Examples:**
+ * ```jsx
+ * // Basic range detection
+ * const { isRange } = useRangeSchema();
+ * if (isRange(schema)) {
+ *   // Handle as range schema
+ * }
+ *
+ * // Range mutation formatting
+ * const { rangeProps } = useRangeSchema();
+ * const mutation = rangeProps.formatRangeMutation(
+ *   schema,
+ *   'Create',
+ *   'user123',
+ *   { score: 85 }
+ * );
+ *
+ * // Range key validation
+ * const error = rangeProps.validateRangeKey(rangeKeyValue, true);
+ * if (error) {
+ *   // Handle validation error
+ * }
+ * ```
+ *
+ * @function useRangeSchema
+ * @returns {UseRangeSchemaResult} Hook result object with range utilities
+ *
+ * @example
+ * ```jsx
+ * function RangeMutationForm({ schema }) {
+ *   const { isRange, rangeProps } = useRangeSchema();
+ *   const [rangeKey, setRangeKey] = useState('');
+ *   const [formData, setFormData] = useState({});
+ *
+ *   if (!isRange(schema)) {
+ *     return <div>Not a range schema</div>;
+ *   }
+ *
+ *   const handleSubmit = () => {
+ *     const error = rangeProps.validateRangeKey(rangeKey, true);
+ *     if (error) {
+ *       alert(error);
+ *       return;
+ *     }
+ *
+ *     const mutation = rangeProps.formatRangeMutation(
+ *       schema, 'Create', rangeKey, formData
+ *     );
+ *     // Submit mutation
+ *   };
+ *
+ *   return (
+ *     <form onSubmit={handleSubmit}>
+ *       <input
+ *         value={rangeKey}
+ *         onChange={(e) => setRangeKey(e.target.value)}
+ *         placeholder={`Enter ${rangeProps.getRangeKey(schema)}`}
+ *       />
+ *       // ... other form fields
+ *     </form>
+ *   );
+ * }
+ * ```
+ *
+ * @since 2.0.0
  */
 export function useRangeSchema() {
-  /**
-   * Detects if a schema is a range schema
-   * Range schemas have:
-   * 1. A range_key field defined in the schema
-   * 2. All fields have field_type: "Range"
-   */
-  const isRange = useCallback((schema) => {
-    // Enhanced range schema detection with better validation
-    if (!schema || typeof schema !== 'object') {
-      return false;
-    }
-    
-    // Check for range_key in the new schema_type structure or old format
-    const hasRangeKey = schema.schema_type?.Range?.range_key || schema.range_key;
-    if (!hasRangeKey || typeof hasRangeKey !== 'string') {
-      return false;
-    }
-    
-    if (!schema.fields || typeof schema.fields !== 'object') {
-      return false;
-    }
-    
-    // Check if all fields have field_type: "Range"
-    const fieldEntries = Object.entries(schema.fields);
-    if (fieldEntries.length === 0) {
-      return false;
-    }
-    
-    // More robust field type checking
-    const allFieldsAreRange = fieldEntries.every(([fieldName, field]) => {
-      if (!field || typeof field !== 'object') {
-        console.warn(`Field ${fieldName} is not a valid field object in schema ${schema.name}`);
-        return false;
-      }
-      
-      if (field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE) {
-        console.warn(`Field ${fieldName} has field_type "${field.field_type}", expected "${RANGE_SCHEMA_CONFIG.FIELD_TYPE}" in schema ${schema.name}`);
-        return false;
-      }
-      
-      return true;
-    });
-    
-    return allFieldsAreRange;
-  }, []);
+  // All range schema functionality now uses consolidated utilities
+  // This eliminates the massive duplication between this hook and rangeSchemaUtils.js
 
-  /**
-   * Gets the range key field name for a range schema
-   */
-  const getRangeKey = useCallback((schema) => {
-    // Check new schema_type structure first, then fall back to old format
-    return schema?.schema_type?.Range?.range_key || schema?.range_key || null;
-  }, []);
-
-  /**
-   * Gets all non-range-key fields for a range schema
-   */
-  const getNonRangeKeyFields = useCallback((schema) => {
-    if (!isRange(schema)) {
-      return {};
-    }
-    
-    const rangeKey = getRangeKey(schema);
-    const fields = { ...schema.fields };
-    
-    // Remove the range key field from the list
-    if (rangeKey && fields[rangeKey]) {
-      delete fields[rangeKey];
-    }
-    
-    return fields;
-  }, [isRange, getRangeKey]);
-
-  /**
-   * Validates range_key for range schema mutations with debouncing consideration
-   */
-  const validateRangeKey = useCallback((rangeKeyValue, isRequired = true) => {
-    // First check for whitespace-only strings specifically
-    if (rangeKeyValue && typeof rangeKeyValue === 'string' && rangeKeyValue.length > 0 && rangeKeyValue.trim().length === 0) {
-      return VALIDATION_MESSAGES.RANGE_KEY_EMPTY;
-    }
-    
-    // Then check for required but missing/empty
-    if (isRequired && (!rangeKeyValue || !rangeKeyValue.trim())) {
-      return VALIDATION_MESSAGES.RANGE_KEY_REQUIRED;
-    }
-    
-    return null;
-  }, []);
-
-  /**
-   * Enhanced range schema mutation formatter with better validation
-   * Range schemas require non-range_key fields to be JSON objects
-   */
-  const formatRangeMutation = useCallback((schema, mutationType, rangeKeyValue, fieldData) => {
-    const mutation = {
-      type: 'mutation',
-      schema: schema.name,
-      mutation_type: mutationType.toLowerCase()
-    };
-    
-    // Get the actual range key field name from the schema
-    const rangeKeyFieldName = getRangeKey(schema);
-    
-    if (mutationType === 'Delete') {
-      mutation.data = {};
-      // For delete operations, use the actual range key field name
-      if (rangeKeyValue && rangeKeyValue.trim() && rangeKeyFieldName) {
-        mutation.data[rangeKeyFieldName] = rangeKeyValue.trim();
-      }
-    } else {
-      const data = {};
-      
-      // Add range key using the actual field name from schema (as primitive value)
-      if (rangeKeyValue && rangeKeyValue.trim() && rangeKeyFieldName) {
-        data[rangeKeyFieldName] = rangeKeyValue.trim();
-      }
-      
-      // Format non-range_key fields as JSON objects for range schemas
-      // The backend expects non-range_key fields to be objects so it can inject the range_key
-      Object.entries(fieldData).forEach(([fieldName, fieldValue]) => {
-        if (fieldName !== rangeKeyFieldName) {
-          // Convert simple values to JSON objects with a 'value' key
-          if (typeof fieldValue === 'string' || typeof fieldValue === 'number' || typeof fieldValue === 'boolean') {
-            data[fieldName] = { [RANGE_SCHEMA_CONFIG.MUTATION_WRAPPER_KEY]: fieldValue };
-          } else if (typeof fieldValue === 'object' && fieldValue !== null) {
-            // If already an object, use as-is
-            data[fieldName] = fieldValue;
-          } else {
-            // For other types, wrap in an object
-            data[fieldName] = { [RANGE_SCHEMA_CONFIG.MUTATION_WRAPPER_KEY]: fieldValue };
-          }
-        }
-      });
-      
-      mutation.data = data;
-    }
-    
-    return mutation;
-  }, [getRangeKey]);
-
-  /**
-   * Formats a range schema query with proper range_filter
-   */
-  const formatRangeQuery = useCallback((schema, fields, rangeFilterValue) => {
-    const query = {
-      type: 'query',
-      schema: schema.name,
-      fields: fields
-    };
-    
-    if (rangeFilterValue && rangeFilterValue.trim()) {
-      query.range_filter = { Key: rangeFilterValue.trim() };
-    }
-    
-    return query;
-  }, []);
-
-  /**
-   * Gets range schema display information
-   */
-  const getRangeSchemaInfo = useCallback((schema) => {
-    if (!isRange(schema)) {
-      return null;
-    }
-    
-    return {
-      isRangeSchema: true,
-      rangeKey: getRangeKey(schema),
-      rangeFields: Object.entries(schema.fields || {}).filter(([_, field]) => field.field_type === RANGE_SCHEMA_CONFIG.FIELD_TYPE),
-      nonRangeKeyFields: getNonRangeKeyFields(schema),
-      totalFields: Object.keys(schema.fields || {}).length
-    };
-  }, [isRange, getRangeKey, getNonRangeKeyFields]);
-
-  /**
-   * Gets range fields from a schema
-   */
-  const getRangeFields = useCallback((schema) => {
-    if (!schema || !schema.fields) return [];
-    
-    return Object.entries(schema.fields)
-      .filter(([_, field]) => field.field_type === RANGE_SCHEMA_CONFIG.FIELD_TYPE)
-      .map(([fieldName]) => fieldName);
-  }, []);
-
-  /**
-   * Gets non-range fields from a schema
-   */
-  const getNonRangeFields = useCallback((schema) => {
-    if (!schema || !schema.fields) return {};
-    
-    return Object.fromEntries(
-      Object.entries(schema.fields).filter(
-        ([_, field]) => field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE
-      )
-    );
-  }, []);
-
+  // Use the consolidated utilities directly
+  const isRange = useCallback(isRangeSchema, []);
+  
   // Placeholder functions for future range constraints
   const min = useCallback(() => null, []);
   const max = useCallback(() => null, []);
   const step = useCallback(() => null, []);
 
   // Collection of all range-related properties and functions
+  // Now using consolidated utilities instead of duplicated implementations
   const rangeProps = {
-    isRange,
+    isRange: isRangeSchema,
     getRangeKey,
     getNonRangeKeyFields,
     validateRangeKey,

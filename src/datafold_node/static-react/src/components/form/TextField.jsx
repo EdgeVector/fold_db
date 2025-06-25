@@ -2,11 +2,19 @@
  * TextField Component
  * Reusable text input field with validation and debouncing
  * Part of TASK-002: Component Extraction and Modularization
+ * TASK-008: Updated to use consolidated form utilities
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import FieldWrapper from './FieldWrapper.jsx';
-import { COMPONENT_STYLES, FORM_FIELD_DEBOUNCE_MS } from '../../constants/ui.js';
+import { FORM_FIELD_DEBOUNCE_MS } from '../../constants/ui.js';
+import {
+  generateFieldId,
+  hasFieldError,
+  generateInputStyles,
+  generateAriaAttributes,
+  getLoadingSpinnerClasses
+} from '../../utils/formHelpers.js';
 
 /**
  * @typedef {Object} TextFieldProps
@@ -80,15 +88,14 @@ function TextField({
     }
   };
 
-  const fieldId = `field-${name}`;
-  const hasError = Boolean(error);
-
-  // Determine input styling based on state
-  const inputStyles = `${COMPONENT_STYLES.input.base} ${
-    hasError 
-      ? COMPONENT_STYLES.input.error 
-      : COMPONENT_STYLES.input.success
-  } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`;
+  const fieldId = generateFieldId(name);
+  const hasError = hasFieldError(error);
+  const inputStyles = generateInputStyles({ hasError, disabled });
+  const ariaAttributes = generateAriaAttributes({
+    fieldId,
+    hasError,
+    hasHelp: Boolean(helpText)
+  });
 
   return (
     <FieldWrapper
@@ -110,20 +117,13 @@ function TextField({
           required={required}
           disabled={disabled}
           className={inputStyles}
-          aria-invalid={hasError}
-          aria-describedby={
-            hasError 
-              ? `${fieldId}-error` 
-              : helpText 
-                ? `${fieldId}-help` 
-                : undefined
-          }
+          {...ariaAttributes}
         />
         
         {/* Debouncing indicator */}
         {debounced && isDebouncing && (
           <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-            <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+            <div className={getLoadingSpinnerClasses({ size: 'md', color: 'primary' })}></div>
           </div>
         )}
       </div>

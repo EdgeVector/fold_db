@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom'
 import { vi, beforeEach } from 'vitest'
 
+// Make vi available globally as jest for compatibility
+global.jest = vi
+
 // Mock fetch globally for tests
 global.fetch = vi.fn()
 

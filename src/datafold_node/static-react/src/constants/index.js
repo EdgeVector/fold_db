@@ -58,6 +58,20 @@ export {
 } from './styling';
 
 // ============================================================================
+// TESTING EXPORTS
+// ============================================================================
+
+export {
+  TEST_TIMEOUT_DEFAULT_MS,
+  COVERAGE_THRESHOLD_PERCENT,
+  INTEGRATION_TEST_RETRY_COUNT,
+  MOCK_API_DELAY_MS,
+  TEST_VALIDATION_BATCH_SIZE,
+  TEST_CONFIG,
+  TEST_ENVIRONMENT
+} from './testing';
+
+// ============================================================================
 // ERROR EXPORTS
 // ============================================================================
 
@@ -115,19 +129,53 @@ export {
   FORM_FIELD_DEBOUNCE_MS,
   DEFAULT_TABS,
   SCHEMA_BADGE_COLORS,
-  COMPONENT_Z_INDEX,
   FORM_LABELS,
   BUTTON_TEXT,
   MUTATION_TYPES,
-  FIELD_TYPE_CONFIG,
-  PERMISSION_COLORS,
   UI_STATES,
-  RANGE_SCHEMA_CONFIG as UI_RANGE_SCHEMA_CONFIG,
-  COMPONENT_STYLES as UI_COMPONENT_STYLES,
   AUTH_INDICATORS,
-  HELP_TEXT,
-  BREAKPOINTS as UI_BREAKPOINTS
+  HELP_TEXT
 } from './ui';
+
+// ============================================================================
+// CLEANUP EXPORTS
+// ============================================================================
+
+export {
+  CLEANUP_BATCH_SIZE,
+  DEPENDENCY_SCAN_TIMEOUT_MS,
+  LEGACY_FILE_AGE_DAYS,
+  UNUSED_IMPORT_THRESHOLD,
+  CLEANUP_VALIDATION_TIMEOUT_MS,
+  CODE_SIMILARITY_THRESHOLD_PERCENT,
+  DUPLICATE_DETECTION_BATCH_SIZE,
+  CONSOLIDATION_VALIDATION_TIMEOUT_MS,
+  PATTERN_ANALYSIS_DEPTH,
+  DUPLICATE_LINE_THRESHOLD
+} from './cleanup';
+
+// ============================================================================
+// OPTIMIZATION EXPORTS
+// ============================================================================
+
+export {
+  COMPLEXITY_SCORE_THRESHOLD,
+  PROP_INTERFACE_MAX_PROPS,
+  COMPONENT_MAX_LINES,
+  ABSTRACTION_JUSTIFICATION_THRESHOLD,
+  OPTIMIZATION_VALIDATION_TIMEOUT_MS,
+  COMPLEXITY_WEIGHT_CYCLOMATIC,
+  COMPLEXITY_WEIGHT_CONDITIONAL_RENDER,
+  COMPLEXITY_WEIGHT_NESTED_DEPTH,
+  COMPLEXITY_WEIGHT_PROP_COUNT,
+  MAX_FUNCTION_LINES,
+  MAX_JSX_NESTING_DEPTH,
+  MAX_USEEFFECT_DEPENDENCIES,
+  MAX_CONDITIONAL_BRANCHES,
+  BUNDLE_SIZE_WARNING_THRESHOLD_KB,
+  RENDER_PERFORMANCE_WARNING_MS,
+  MEMORY_LEAK_DETECTION_THRESHOLD
+} from './optimization';
 
 // ============================================================================
 // REDUX EXPORTS (from existing files)
@@ -168,28 +216,20 @@ export {
 // ============================================================================
 
 // Most commonly used constants for easy access
-export const {
-  DEFAULT_TAB
-} = APP_CONFIG;
+// Note: Direct property access instead of destructuring to avoid undefined errors
+export const DEFAULT_TAB = APP_CONFIG?.DEFAULT_TAB || 'keys';
 
-export const {
-  APPROVED,
-  AVAILABLE,
-  BLOCKED
-} = SCHEMA_STATES;
+export const { APPROVED, AVAILABLE, BLOCKED } = SCHEMA_STATES;
 
-export const {
-  PRIMARY,
-  STATUS,
-  SCHEMA_STATES: SCHEMA_STATE_COLORS
-} = COLORS;
+export const PRIMARY = COLORS?.PRIMARY;
+export const STATUS = COLORS?.STATUS;
+export const SCHEMA_STATE_COLORS = COLORS?.SCHEMA_STATES;
 
-export const {
-  BASE,
-  PRIMARY: PRIMARY_BUTTON,
-  SECONDARY,
-  DANGER
-} = COMPONENT_STYLES.BUTTON;
+// Component styles - using safe property access
+export const BASE = COMPONENT_STYLES?.BUTTON?.BASE;
+export const PRIMARY_BUTTON = COMPONENT_STYLES?.BUTTON?.PRIMARY;
+export const SECONDARY = COMPONENT_STYLES?.BUTTON?.SECONDARY;
+export const DANGER = COMPONENT_STYLES?.BUTTON?.DANGER;
 
 // ============================================================================
 // NAMESPACED EXPORTS
@@ -202,9 +242,9 @@ export const Constants = {
   // Configuration namespace
   Config: {
     APP_CONFIG,
-    ENVIRONMENT_CONFIG,
-    BROWSER_CONFIG,
-    SECURITY_CONFIG
+    ENVIRONMENT_CONFIG: ENVIRONMENT_CONFIG || {},
+    BROWSER_CONFIG: BROWSER_CONFIG || {},
+    SECURITY_CONFIG: SECURITY_CONFIG || {}
   },
   
   // Validation namespace
@@ -212,52 +252,53 @@ export const Constants = {
     VALIDATION_RULES,
     VALIDATION_PATTERNS,
     VALIDATION_MESSAGES,
-    VALIDATION_FUNCTIONS
+    VALIDATION_FUNCTIONS: VALIDATION_FUNCTIONS || {}
   },
   
   // Styling namespace
   Styles: {
     COLORS,
-    LAYOUT,
-    TYPOGRAPHY,
-    COMPONENT_STYLES,
-    ANIMATIONS,
-    BREAKPOINTS,
-    Z_INDEX
+    LAYOUT: LAYOUT || {},
+    TYPOGRAPHY: TYPOGRAPHY || {},
+    COMPONENT_STYLES: COMPONENT_STYLES || {},
+    ANIMATIONS: ANIMATIONS || {},
+    BREAKPOINTS: BREAKPOINTS || {},
+    Z_INDEX: Z_INDEX || {}
   },
   
   // Error handling namespace
   Errors: {
-    ERROR_CODES,
-    ERROR_MESSAGES,
-    ERROR_CATEGORIES,
-    ERROR_UTILS
+    ERROR_CODES: ERROR_CODES || {},
+    ERROR_MESSAGES: ERROR_MESSAGES || {},
+    ERROR_CATEGORIES: ERROR_CATEGORIES || {},
+    ERROR_UTILS: ERROR_UTILS || {}
   },
   
   // Schema namespace (SCHEMA-002 compliance)
   Schema: {
     STATES: SCHEMA_STATES,
     VALIDATION_MESSAGES: VALIDATION_MESSAGES,
-    FIELD_TYPES,
-    RANGE_SCHEMA_CONFIG
+    FIELD_TYPES: FIELD_TYPES || {},
+    RANGE_SCHEMA_CONFIG: RANGE_SCHEMA_CONFIG || {}
   },
   
   // UI namespace
   UI: {
-    DEFAULT_TABS,
-    BUTTON_TEXT,
-    FORM_LABELS,
-    UI_STATES,
-    MUTATION_TYPES
+    DEFAULT_TABS: DEFAULT_TABS || {},
+    BUTTON_TEXT: BUTTON_TEXT || {},
+    FORM_LABELS: FORM_LABELS || {},
+    UI_STATES: UI_STATES || {},
+    MUTATION_TYPES: MUTATION_TYPES || {},
+    SCHEMA_BADGE_COLORS: SCHEMA_BADGE_COLORS || {}
   },
   
   // API namespace
   API: {
-    HTTP_STATUS_CODES,
-    CONTENT_TYPES,
-    REQUEST_HEADERS,
-    CACHE_CONFIG,
-    RETRY_CONFIG
+    HTTP_STATUS_CODES: HTTP_STATUS_CODES || {},
+    CONTENT_TYPES: CONTENT_TYPES || {},
+    REQUEST_HEADERS: REQUEST_HEADERS || {},
+    CACHE_CONFIG: CACHE_CONFIG || {},
+    RETRY_CONFIG: RETRY_CONFIG || {}
   }
 };
 

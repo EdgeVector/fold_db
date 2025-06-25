@@ -9,6 +9,13 @@ export const SCHEMA_CACHE_DURATION_MS = 300000; // 5 minutes
 export const FORM_VALIDATION_DEBOUNCE_MS = 500;
 export const RANGE_SCHEMA_FIELD_PREFIX = 'range_';
 
+// Testing constants (TASK-006 requirements)
+export const TEST_TIMEOUT_MS = 10000;
+export const MOCK_DELAY_MS = 100;
+export const COVERAGE_THRESHOLD_PERCENT = 80;
+export const INTEGRATION_TEST_BATCH_SIZE = 5;
+export const DOCUMENTATION_VERSION = '2.0.0';
+
 // Schema state constants
 export const SCHEMA_STATES = {
   AVAILABLE: 'available',
@@ -41,7 +48,7 @@ export const RANGE_SCHEMA_CONFIG = {
 // Form field types for validation
 export const FIELD_TYPES = {
   STRING: 'string',
-  NUMBER: 'number', 
+  NUMBER: 'number',
   BOOLEAN: 'boolean',
   RANGE: 'Range'
 };

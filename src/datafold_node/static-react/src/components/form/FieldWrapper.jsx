@@ -32,7 +32,7 @@ function FieldWrapper({
   children,
   className = ''
 }) {
-  const fieldId = name || `field-${Math.random().toString(36).substr(2, 9)}`;
+  const fieldId = name ? `field-${name}` : `field-${Math.random().toString(36).substr(2, 9)}`;
   const hasError = Boolean(error);
 
   return (

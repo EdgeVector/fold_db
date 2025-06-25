@@ -1,7 +1,16 @@
 /**
- * Custom hook for managing approved schemas with SCHEMA-002 compliance
+ * @fileoverview Custom hook for managing approved schemas with SCHEMA-002 compliance
+ *
+ * This hook provides a centralized interface for accessing and managing approved schemas,
+ * enforcing SCHEMA-002 compliance by only allowing mutations and queries on approved schemas.
+ * It integrates with Redux state management for consistent state across the application.
+ *
  * TASK-003: Updated to use Redux state management instead of local state
- * Centralizes schema fetching logic and enforces access control
+ * TASK-006: Enhanced with comprehensive JSDoc documentation
+ *
+ * @module useApprovedSchemas
+ * @since 2.0.0
+ * @see {@link https://github.com/datafold/datafold/docs/project_logic.md#schema-002} SCHEMA-002 compliance documentation
  */
 
 import { useEffect, useCallback } from 'react';
@@ -14,21 +23,97 @@ import {
   selectFetchError,
   selectCacheInfo
 } from '../store/schemaSlice';
-import {
-  SCHEMA_STATES
-} from '../constants/schemas.js';
+import { SCHEMA_STATES } from '../constants/schemas.js';
+import { normalizeSchemaState } from '../utils/rangeSchemaHelpers.js';
 
 /**
- * Hook for managing approved schemas with caching and retry logic
- * TASK-003: Now uses Redux state management for centralized schema state
+ * @typedef {Object} Schema
+ * @property {string} name - Unique schema identifier
+ * @property {string} state - Schema state (available|approved|blocked)
+ * @property {Object} fields - Schema field definitions
+ * @property {Object} [schema_type] - Schema type information for range schemas
+ * @property {Object} [rangeInfo] - Range schema specific information
+ */
+
+/**
+ * @typedef {Object} UseApprovedSchemasResult
+ * @property {Schema[]} approvedSchemas - Array of schemas with state 'approved'
+ * @property {boolean} isLoading - Loading state indicator for schema fetching
+ * @property {string|null} error - Error message if schema fetching fails
+ * @property {Function} refetch - Function to manually refetch schemas from API
+ * @property {Function} getSchemaByName - Get specific schema by name from all schemas
+ * @property {Function} isSchemaApproved - Check if a schema is approved for operations
+ * @property {Schema[]} allSchemas - All available schemas regardless of state
+ */
+
+/**
+ * Custom hook for managing approved schemas with SCHEMA-002 compliance
  *
- * @returns {Object} Hook result object
- * @returns {Array} approvedSchemas - Array of schemas with state 'approved'
- * @returns {boolean} isLoading - Loading state indicator
- * @returns {string|null} error - Error message if any
- * @returns {Function} refetch - Function to manually refetch schemas
- * @returns {Function} getSchemaByName - Get specific schema by name
- * @returns {Function} isSchemaApproved - Check if schema is approved
+ * This hook provides a centralized interface for accessing approved schemas while
+ * enforcing SCHEMA-002 compliance rules. It uses Redux for state management and
+ * provides caching, retry logic, and automatic updates.
+ *
+ * **Key Features:**
+ * - SCHEMA-002 compliance enforcement
+ * - Redux-based state management
+ * - Automatic caching with TTL
+ * - Retry logic for failed requests
+ * - Real-time state updates
+ * - Type-safe schema access
+ *
+ * **Usage Examples:**
+ * ```jsx
+ * // Basic usage
+ * const { approvedSchemas, isLoading, error } = useApprovedSchemas();
+ *
+ * // Check if specific schema is approved
+ * const { isSchemaApproved } = useApprovedSchemas();
+ * if (isSchemaApproved('user_profiles')) {
+ *   // Safe to perform mutations/queries
+ * }
+ *
+ * // Manual refresh
+ * const { refetch } = useApprovedSchemas();
+ * await refetch();
+ * ```
+ *
+ * **SCHEMA-002 Compliance:**
+ * This hook enforces SCHEMA-002 rules by:
+ * - Only returning schemas in 'approved' state for operations
+ * - Providing validation functions for schema state checking
+ * - Integrating with Redux store that manages schema state transitions
+ *
+ * @function useApprovedSchemas
+ * @returns {UseApprovedSchemasResult} Hook result object with approved schemas and utility functions
+ *
+ * @example
+ * ```jsx
+ * function MyComponent() {
+ *   const {
+ *     approvedSchemas,
+ *     isLoading,
+ *     error,
+ *     isSchemaApproved,
+ *     refetch
+ *   } = useApprovedSchemas();
+ *
+ *   if (isLoading) return <div>Loading schemas...</div>;
+ *   if (error) return <div>Error: {error}</div>;
+ *
+ *   return (
+ *     <div>
+ *       <h2>Approved Schemas ({approvedSchemas.length})</h2>
+ *       {approvedSchemas.map(schema => (
+ *         <div key={schema.name}>
+ *           {schema.name} - {isSchemaApproved(schema.name) ? 'Ready' : 'Not Ready'}
+ *         </div>
+ *       ))}
+ *     </div>
+ *   );
+ * }
+ * ```
+ *
+ * @since 2.0.0
  */
 export function useApprovedSchemas() {
   // Redux state and dispatch
@@ -39,16 +124,8 @@ export function useApprovedSchemas() {
   const error = useAppSelector(selectFetchError);
   const cacheInfo = useAppSelector(selectCacheInfo);
 
-  /**
-   * Normalizes schema state to lowercase string
-   * @param {*} state - Schema state in various formats
-   * @returns {string} Normalized state string
-   */
-  const normalizeState = useCallback((state) => {
-    if (typeof state === 'string') return state.toLowerCase();
-    if (typeof state === 'object' && state !== null) return String(state).toLowerCase();
-    return String(state || '').toLowerCase();
-  }, []);
+  // Using consolidated schema state normalization from rangeSchemaHelpers.js
+  // This eliminates duplication of state normalization logic
 
   /**
    * Manual refetch function that bypasses cache
@@ -76,9 +153,9 @@ export function useApprovedSchemas() {
     const schema = getSchemaByName(name);
     if (!schema) return false;
     
-    const normalizedState = normalizeState(schema.state);
+    const normalizedState = normalizeSchemaState(schema.state);
     return normalizedState === SCHEMA_STATES.APPROVED;
-  }, [getSchemaByName, normalizeState]);
+  }, [getSchemaByName]);
 
   // Initial fetch on mount if cache is invalid
   useEffect(() => {

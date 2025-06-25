@@ -2,11 +2,17 @@
  * NumberField Component
  * Reusable numeric input field with validation and formatting
  * Part of TASK-002: Component Extraction and Modularization
+ * TASK-008: Updated to use consolidated form utilities
  */
 
 import { useState, useEffect } from 'react';
 import FieldWrapper from './FieldWrapper.jsx';
-import { COMPONENT_STYLES } from '../../constants/ui.js';
+import {
+  generateFieldId,
+  hasFieldError,
+  generateInputStyles,
+  generateAriaAttributes
+} from '../../utils/formHelpers.js';
 
 /**
  * @typedef {Object} NumberFieldProps
@@ -109,16 +115,15 @@ function NumberField({
     setValidationError(validationErr);
   };
 
-  const fieldId = `field-${name}`;
+  const fieldId = generateFieldId(name);
   const finalError = error || validationError;
-  const hasError = Boolean(finalError);
-
-  // Determine input styling based on state
-  const inputStyles = `${COMPONENT_STYLES.input.base} ${
-    hasError 
-      ? COMPONENT_STYLES.input.error 
-      : COMPONENT_STYLES.input.success
-  } ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`;
+  const hasError = hasFieldError(finalError);
+  const inputStyles = generateInputStyles({ hasError, disabled });
+  const ariaAttributes = generateAriaAttributes({
+    fieldId,
+    hasError,
+    hasHelp: Boolean(helpText)
+  });
 
   return (
     <FieldWrapper
@@ -144,14 +149,7 @@ function NumberField({
           max={max}
           step={allowFloat ? 'any' : step}
           className={inputStyles}
-          aria-invalid={hasError}
-          aria-describedby={
-            hasError 
-              ? `${fieldId}-error` 
-              : helpText 
-                ? `${fieldId}-help` 
-                : undefined
-          }
+          {...ariaAttributes}
         />
         
         {/* Min/Max indicators */}

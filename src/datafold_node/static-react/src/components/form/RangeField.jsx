@@ -2,12 +2,24 @@
  * RangeField Component
  * Reusable range input field for key ranges and filters
  * Part of TASK-002: Component Extraction and Modularization
+ * TASK-009: Simplified using extracted utilities and hooks
  */
 
-import { useState } from 'react';
 import FieldWrapper from './FieldWrapper.jsx';
 import TextField from './TextField.jsx';
-import { COMPONENT_STYLES, HELP_TEXT } from '../../constants/ui.js';
+import { useRangeMode } from '../../hooks/useRangeMode.js';
+import {
+  generateRangeHelpText,
+  getRangeModeConfig,
+  getModeButtonStyles,
+  getModeLabels,
+  getVisibleFields,
+  validateRangeConfig,
+  getRangeFieldContainerStyles,
+  getRangeKeyDisplayStyles,
+  getModeSelectorStyles,
+  getInputGridStyles
+} from '../../utils/rangeFieldHelpers.js';
 
 /**
  * @typedef {Object} RangeValue
@@ -18,23 +30,28 @@ import { COMPONENT_STYLES, HELP_TEXT } from '../../constants/ui.js';
  */
 
 /**
+ * @typedef {Object} RangeFieldConfig
+ * @property {string} [rangeKeyName] - Name of the range key for display
+ * @property {'range'|'key'|'prefix'|'all'} [mode] - Range input mode
+ * @property {boolean} [required] - Whether field is required
+ * @property {boolean} [disabled] - Whether field is disabled
+ */
+
+/**
  * @typedef {Object} RangeFieldProps
  * @property {string} name - Field name for form handling
  * @property {string} label - Field label text
  * @property {RangeValue} value - Current range value
  * @property {function} onChange - Callback when value changes (value) => void
- * @property {boolean} [required] - Whether field is required
- * @property {boolean} [disabled] - Whether field is disabled
  * @property {string} [error] - Error message to display
  * @property {string} [helpText] - Help text to display
- * @property {string} [rangeKeyName] - Name of the range key for display
- * @property {'range'|'key'|'prefix'|'all'} [mode] - Range input mode
+ * @property {RangeFieldConfig} [config] - Configuration options
  * @property {string} [className] - Additional CSS classes
  */
 
 /**
- * Reusable range input field component for filtering and key selection
- * 
+ * Simplified range input field component
+ *
  * @param {RangeFieldProps} props
  * @returns {JSX.Element}
  */
@@ -43,65 +60,28 @@ function RangeField({
   label,
   value = {},
   onChange,
-  required = false,
-  disabled = false,
   error,
   helpText,
-  rangeKeyName = 'key',
-  mode = 'all',
+  config = {},
   className = ''
 }) {
-  const [activeMode, setActiveMode] = useState(
-    value.start || value.end ? 'range' :
-    value.key ? 'key' :
-    value.keyPrefix ? 'prefix' :
-    'range'
-  );
-
-  const handleModeChange = (newMode) => {
-    setActiveMode(newMode);
-    // Clear all values when changing modes
-    onChange({});
-  };
-
-  const handleRangeChange = (field, newValue) => {
-    const updatedValue = { ...value };
-    
-    // Clear other mode values when setting this mode
-    if (field === 'start' || field === 'end') {
-      delete updatedValue.key;
-      delete updatedValue.keyPrefix;
-    } else if (field === 'key') {
-      delete updatedValue.start;
-      delete updatedValue.end;
-      delete updatedValue.keyPrefix;
-    } else if (field === 'keyPrefix') {
-      delete updatedValue.start;
-      delete updatedValue.end;
-      delete updatedValue.key;
-    }
-    
-    updatedValue[field] = newValue;
-    onChange(updatedValue);
-  };
-
-  const fieldId = `field-${name}`;
-  const hasError = Boolean(error);
-
-  // Build help text with range key name
-  const buildHelpText = () => {
-    if (helpText) return helpText;
-    
-    const help = { ...HELP_TEXT.rangeKeyFilter };
-    return (
-      <div className="space-y-1">
-        <p><strong>Key Range:</strong> {help.keyRange}</p>
-        <p><strong>Exact Key:</strong> {help.exactKey.replace('key', rangeKeyName)}</p>
-        <p><strong>Key Prefix:</strong> {help.keyPrefix.replace('keys', `${rangeKeyName} values`)}</p>
-        <p className="text-yellow-700"><strong>Note:</strong> {help.emptyNote}</p>
-      </div>
-    );
-  };
+  // Validate and process configuration
+  const validatedConfig = validateRangeConfig(config);
+  const { mode, rangeKeyName, required, disabled } = validatedConfig;
+  
+  // Get mode configuration
+  const modeConfig = getRangeModeConfig(mode);
+  
+  // Use range mode hook for state management
+  const rangeMode = useRangeMode(value, onChange, modeConfig.availableModes);
+  const { state, actions } = rangeMode;
+  
+  // Get mode labels and visibility
+  const modeLabels = getModeLabels();
+  const visibleFields = getVisibleFields(mode, state.activeMode);
+  
+  // Generate help text
+  const generatedHelpText = generateRangeHelpText(mode, rangeKeyName, helpText);
 
   return (
     <FieldWrapper
@@ -109,65 +89,43 @@ function RangeField({
       name={name}
       required={required}
       error={error}
-      helpText={mode === 'all' ? buildHelpText() : helpText}
+      helpText={generatedHelpText}
       className={className}
     >
-      <div className="bg-yellow-50 rounded-lg p-4 space-y-4">
+      <div className={getRangeFieldContainerStyles()}>
         {/* Range Key Display */}
         <div className="mb-3">
-          <span className="text-sm font-medium text-gray-800">
+          <span className={getRangeKeyDisplayStyles()}>
             Range Key: {rangeKeyName}
           </span>
         </div>
 
-        {/* Mode Selection (only if mode is 'all') */}
-        {mode === 'all' && (
-          <div className="flex space-x-4 mb-4">
-            <button
-              type="button"
-              onClick={() => handleModeChange('range')}
-              className={`px-3 py-1 text-xs rounded-md ${
-                activeMode === 'range'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Key Range
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeChange('key')}
-              className={`px-3 py-1 text-xs rounded-md ${
-                activeMode === 'key'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Exact Key
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeChange('prefix')}
-              className={`px-3 py-1 text-xs rounded-md ${
-                activeMode === 'prefix'
-                  ? 'bg-primary text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Key Prefix
-            </button>
+        {/* Mode Selection */}
+        {modeConfig.showModeSelector && (
+          <div className={getModeSelectorStyles()}>
+            {modeConfig.availableModes.map((modeKey) => (
+              <button
+                key={modeKey}
+                type="button"
+                onClick={() => actions.changeMode(modeKey)}
+                className={getModeButtonStyles(state.activeMode === modeKey)}
+              >
+                {modeLabels[modeKey]}
+              </button>
+            ))}
           </div>
         )}
 
-        {/* Input Fields Based on Mode */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {(mode === 'all' ? activeMode === 'range' : mode === 'range') && (
+        {/* Input Fields */}
+        <div className={getInputGridStyles()}>
+          {/* Range Fields */}
+          {visibleFields.showRange && (
             <>
               <TextField
                 name={`${name}-start`}
                 label="Start Key"
-                value={value.start || ''}
-                onChange={(newValue) => handleRangeChange('start', newValue)}
+                value={state.value.start || ''}
+                onChange={(newValue) => actions.updateValue('start', newValue)}
                 placeholder="Start key"
                 disabled={disabled}
                 className="col-span-1"
@@ -175,8 +133,8 @@ function RangeField({
               <TextField
                 name={`${name}-end`}
                 label="End Key"
-                value={value.end || ''}
-                onChange={(newValue) => handleRangeChange('end', newValue)}
+                value={state.value.end || ''}
+                onChange={(newValue) => actions.updateValue('end', newValue)}
                 placeholder="End key"
                 disabled={disabled}
                 className="col-span-1"
@@ -184,24 +142,26 @@ function RangeField({
             </>
           )}
 
-          {(mode === 'all' ? activeMode === 'key' : mode === 'key') && (
+          {/* Exact Key Field */}
+          {visibleFields.showKey && (
             <TextField
               name={`${name}-key`}
               label="Exact Key"
-              value={value.key || ''}
-              onChange={(newValue) => handleRangeChange('key', newValue)}
+              value={state.value.key || ''}
+              onChange={(newValue) => actions.updateValue('key', newValue)}
               placeholder={`Exact ${rangeKeyName} to match`}
               disabled={disabled}
               className="col-span-1"
             />
           )}
 
-          {(mode === 'all' ? activeMode === 'prefix' : mode === 'prefix') && (
+          {/* Prefix Field */}
+          {visibleFields.showPrefix && (
             <TextField
               name={`${name}-prefix`}
               label="Key Prefix"
-              value={value.keyPrefix || ''}
-              onChange={(newValue) => handleRangeChange('keyPrefix', newValue)}
+              value={state.value.keyPrefix || ''}
+              onChange={(newValue) => actions.updateValue('keyPrefix', newValue)}
               placeholder={`${rangeKeyName} prefix (e.g., 'user:')`}
               disabled={disabled}
               className="col-span-1"

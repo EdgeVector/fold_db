@@ -3,7 +3,7 @@ import SchemaSelector from './mutation/SchemaSelector'
 import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
-import { MutationClient } from '../../api/mutationClient'
+import { MutationClient } from '../../api'
 import { signPayload } from '../../utils/authenticationWrapper'
 import { useFormValidation } from '../../hooks/index.js'
 import {

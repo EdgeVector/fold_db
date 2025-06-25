@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useApprovedSchemas } from '../useApprovedSchemas.js';
 import { SCHEMA_STATES, SCHEMA_CACHE_DURATION_MS, SCHEMA_FETCH_RETRY_COUNT } from '../../constants/schemas.js';
+import { renderWithRedux, createTestSchemaState } from '../../test/utils/testStore';
 
 // Mock console to avoid noise in tests
 global.console = {

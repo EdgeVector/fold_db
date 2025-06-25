@@ -1,40 +1,60 @@
 /**
- * Custom hook for form validation with debouncing
- * Centralizes form validation patterns used across components
+ * @fileoverview Custom hook for comprehensive form validation with debouncing
+ *
+ * This hook provides a complete form validation solution with support for
+ * debounced validation, schema-aware validation, custom validators, and
+ * integration with the application's schema system.
+ *
+ * TASK-002: Extracted from inline validation logic for reusability
+ * TASK-006: Enhanced with comprehensive JSDoc documentation
+ * TASK-009: Simplified using extracted focused hooks and utilities
+ *
+ * @module useFormValidation
+ * @since 2.0.0
+ * @see {@link https://github.com/datafold/datafold/docs/project_logic.md#schema-002} SCHEMA-002 compliance
  */
 
-import { useState, useCallback, useRef } from 'react';
-import { 
-  FORM_VALIDATION_DEBOUNCE_MS,
-  VALIDATION_MESSAGES,
-  FIELD_TYPES,
-  SCHEMA_STATES
-} from '../constants/schemas.js';
+import { useState, useCallback } from 'react';
+import { FIELD_TYPES } from '../constants/schemas.js';
+import { useFieldValidation } from './useFieldValidation.js';
+import { useValidationDebounce } from './useValidationDebounce.js';
 
 /**
- * Validation rule structure
- * @typedef {Object} ValidationRule
- * @property {string} type - Type of validation ('required', 'type', 'custom', 'schema_approved')
- * @property {*} value - Value for the validation rule
- * @property {string} message - Custom error message
- * @property {Function} validator - Custom validator function
+ * @typedef {Object} ValidationConfig
+ * @property {string[]} [requiredFields] - Array of field names that are required
+ * @property {Object<string, ValidationRule[]>} [customRules] - Custom validation rules per field
  */
 
 /**
- * Hook for form validation with debouncing and schema-aware validation
- * 
- * @returns {Object} Hook result object
- * @returns {Function} validate - Validate single field with rules
- * @returns {Function} validateForm - Validate entire form against schema
- * @returns {Function} isFormValid - Check if form has no errors
- * @returns {Function} getFieldError - Get error for specific field
- * @returns {Object} errors - Current validation errors
- * @returns {Function} clearErrors - Clear all validation errors
- * @returns {Function} setFieldError - Set error for specific field
+ * @typedef {Object} UseFormValidationResult
+ * @property {Function} validate - Validate single field with specified rules
+ * @property {Function} validateForm - Validate entire form against schema definition
+ * @property {Function} isFormValid - Check if current form state has no validation errors
+ * @property {Function} getFieldError - Get validation error message for specific field
+ * @property {Object<string, string>} errors - Current validation errors mapped by field name
+ * @property {Function} clearErrors - Clear all validation errors from state
+ * @property {Function} setFieldError - Set validation error for specific field
+ * @property {Object} createValidationRules - Factory functions for creating common validation rules
+ */
+
+/**
+ * Simplified form validation hook using focused validation utilities
+ *
+ * This hook now leverages smaller, focused hooks for individual concerns:
+ * - useFieldValidation: Single field validation logic
+ * - useValidationDebounce: Debouncing functionality
+ *
+ * This reduces complexity while maintaining the same external API.
+ *
+ * @function useFormValidation
+ * @returns {UseFormValidationResult} Hook result object with validation functions and state
  */
 export function useFormValidation() {
   const [errors, setErrors] = useState({});
-  const debounceTimers = useRef({});
+  
+  // Use focused validation hooks
+  const fieldValidation = useFieldValidation();
+  const debouncing = useValidationDebounce();
 
   /**
    * Validates a field value against specific validation rules
@@ -46,152 +66,29 @@ export function useFormValidation() {
    */
   const validate = useCallback((fieldName, value, rules = [], debounce = false) => {
     const runValidation = () => {
-      for (const rule of rules) {
-        const error = validateRule(value, rule);
-        if (error) {
-          setErrors(prev => ({ ...prev, [fieldName]: error }));
-          return error;
-        }
+      const error = fieldValidation.validateField(value, rules);
+      
+      if (error) {
+        setErrors(prev => ({ ...prev, [fieldName]: error }));
+        return error;
+      } else {
+        // Clear error if validation passes
+        setErrors(prev => {
+          const newErrors = { ...prev };
+          delete newErrors[fieldName];
+          return newErrors;
+        });
+        return null;
       }
-      
-      // Clear error if validation passes
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[fieldName];
-        return newErrors;
-      });
-      
-      return null;
     };
 
     if (debounce) {
-      // Clear existing timer
-      if (debounceTimers.current[fieldName]) {
-        clearTimeout(debounceTimers.current[fieldName]);
-      }
-      
-      // Set new timer
-      debounceTimers.current[fieldName] = setTimeout(() => {
-        runValidation();
-        delete debounceTimers.current[fieldName];
-      }, FORM_VALIDATION_DEBOUNCE_MS);
-      
+      debouncing.debounceValidation(runValidation, fieldName);
       return null; // Return null for debounced validation
     } else {
-      return runValidation();
+      return debouncing.executeImmediate(runValidation);
     }
-  }, []);
-
-  /**
-   * Validates a single rule against a value
-   * @param {*} value - Value to validate
-   * @param {ValidationRule} rule - Validation rule
-   * @returns {string|null} Error message or null if valid
-   */
-  const validateRule = useCallback((value, rule) => {
-    switch (rule.type) {
-      case 'required':
-        if (rule.value && isValueEmpty(value)) {
-          return rule.message || VALIDATION_MESSAGES.FIELD_REQUIRED;
-        }
-        break;
-        
-      case 'type':
-        const typeError = validateType(value, rule.value);
-        if (typeError) {
-          return rule.message || typeError;
-        }
-        break;
-        
-      case 'custom':
-        if (rule.validator && typeof rule.validator === 'function') {
-          const customError = rule.validator(value);
-          if (customError) {
-            return rule.message || customError;
-          }
-        }
-        break;
-        
-      case 'schema_approved':
-        if (rule.value && !isSchemaApproved(value, rule.schemas)) {
-          return rule.message || VALIDATION_MESSAGES.SCHEMA_NOT_APPROVED;
-        }
-        break;
-        
-      default:
-        console.warn(`Unknown validation rule type: ${rule.type}`);
-    }
-    
-    return null;
-  }, []);
-
-  /**
-   * Checks if a value is considered empty
-   * @param {*} value - Value to check
-   * @returns {boolean} True if value is empty
-   */
-  const isValueEmpty = useCallback((value) => {
-    if (value === null || value === undefined) return true;
-    if (typeof value === 'string') return value.trim().length === 0;
-    if (Array.isArray(value)) return value.length === 0;
-    if (typeof value === 'object') return Object.keys(value).length === 0;
-    return false;
-  }, []);
-
-  /**
-   * Validates value type
-   * @param {*} value - Value to validate
-   * @param {string} expectedType - Expected type
-   * @returns {string|null} Error message or null if valid
-   */
-  const validateType = useCallback((value, expectedType) => {
-    if (isValueEmpty(value)) return null; // Skip type validation for empty values
-    
-    switch (expectedType) {
-      case FIELD_TYPES.STRING:
-        if (typeof value !== 'string') {
-          return `Expected string, got ${typeof value}`;
-        }
-        break;
-        
-      case FIELD_TYPES.NUMBER:
-        if (typeof value !== 'number' && !(!isNaN(Number(value)) && value !== '')) {
-          return `Expected number, got ${typeof value}`;
-        }
-        break;
-        
-      case FIELD_TYPES.BOOLEAN:
-        if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
-          return `Expected boolean, got ${typeof value}`;
-        }
-        break;
-        
-      default:
-        // For custom types, skip validation
-        break;
-    }
-    
-    return null;
-  }, []);
-
-  /**
-   * Checks if a schema is approved
-   * @param {string} schemaName - Name of the schema
-   * @param {Array} schemas - Array of available schemas
-   * @returns {boolean} True if schema is approved
-   */
-  const isSchemaApproved = useCallback((schemaName, schemas = []) => {
-    const schema = schemas.find(s => s.name === schemaName);
-    if (!schema) return false;
-    
-    const normalizeState = (state) => {
-      if (typeof state === 'string') return state.toLowerCase();
-      if (typeof state === 'object' && state !== null) return String(state).toLowerCase();
-      return String(state || '').toLowerCase();
-    };
-    
-    return normalizeState(schema.state) === SCHEMA_STATES.APPROVED;
-  }, []);
+  }, [fieldValidation, debouncing]);
 
   /**
    * Validates entire form data against a schema
@@ -214,7 +111,7 @@ export function useFormValidation() {
       
       // Add required validation if field is required
       if (validationConfig.requiredFields && validationConfig.requiredFields.includes(fieldName)) {
-        rules.push({ type: 'required', value: true });
+        rules.push(fieldValidation.createRule.required());
       }
       
       // Add type validation based on field definition
@@ -227,7 +124,7 @@ export function useFormValidation() {
         
         const expectedType = typeMapping[fieldDef.field_type];
         if (expectedType) {
-          rules.push({ type: 'type', value: expectedType });
+          rules.push(fieldValidation.createRule.type(expectedType));
         }
       }
       
@@ -237,9 +134,11 @@ export function useFormValidation() {
       }
       
       // Run validation for this field
-      const error = validateRule(value, rules[0]); // Validate first rule that fails
-      if (error) {
-        formErrors[fieldName] = error;
+      if (rules.length > 0) {
+        const error = fieldValidation.validateField(value, rules);
+        if (error) {
+          formErrors[fieldName] = error;
+        }
       }
     });
     
@@ -247,7 +146,7 @@ export function useFormValidation() {
     setErrors(formErrors);
     
     return formErrors;
-  }, [validateRule]);
+  }, [fieldValidation]);
 
   /**
    * Checks if form is valid (no errors)
@@ -272,13 +171,8 @@ export function useFormValidation() {
    */
   const clearErrors = useCallback(() => {
     setErrors({});
-    
-    // Clear any pending debounce timers
-    Object.values(debounceTimers.current).forEach(timer => {
-      clearTimeout(timer);
-    });
-    debounceTimers.current = {};
-  }, []);
+    debouncing.cancelDebounce();
+  }, [debouncing]);
 
   /**
    * Sets error for a specific field
@@ -289,16 +183,6 @@ export function useFormValidation() {
     setErrors(prev => ({ ...prev, [fieldName]: errorMessage }));
   }, []);
 
-  /**
-   * Creates common validation rules for different field types
-   */
-  const createValidationRules = useCallback({
-    required: (message) => ({ type: 'required', value: true, message }),
-    type: (fieldType, message) => ({ type: 'type', value: fieldType, message }),
-    custom: (validator, message) => ({ type: 'custom', validator, message }),
-    schemaApproved: (schemas, message) => ({ type: 'schema_approved', value: true, schemas, message })
-  }, []);
-
   return {
     validate,
     validateForm,
@@ -307,7 +191,7 @@ export function useFormValidation() {
     errors,
     clearErrors,
     setFieldError,
-    createValidationRules
+    createValidationRules: fieldValidation.createRule
   };
 }
 

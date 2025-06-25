@@ -5,11 +5,11 @@
  */
 
 import { useState } from 'react';
-import { 
-  BUTTON_TEXT, 
-  COMPONENT_STYLES,
-  UI_STATES 
+import {
+  BUTTON_TEXT,
+  UI_STATES
 } from '../../constants/ui.js';
+import { COMPONENT_STYLES } from '../../constants/styling.js';
 
 /**
  * @typedef {Object} Schema

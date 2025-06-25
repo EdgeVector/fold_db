@@ -11,20 +11,20 @@ export type { ApiResponse };
 // API Error Class Interface
 export interface ApiErrorInterface extends Error {
   status: number;
-  response?: any;
+  response?: Response | Record<string, unknown>;
   isNetworkError: boolean;
   isTimeoutError: boolean;
   isRetryable: boolean;
   requestId?: string;
   timestamp: number;
   code?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   toUserMessage(): string;
-  toJSON(): any;
+  toJSON(): Record<string, unknown>;
 }
 
 // Enhanced API Response with metadata
-export interface EnhancedApiResponse<T = any> extends ApiResponse<T> {
+export interface EnhancedApiResponse<T = unknown> extends ApiResponse<T> {
   status: number;
   headers?: Record<string, string>;
   meta?: {
@@ -68,7 +68,7 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 export type RequestInterceptor = (config: RequestConfig) => RequestConfig | Promise<RequestConfig>;
 
 // Response Interceptor Function
-export type ResponseInterceptor<T = any> = (response: EnhancedApiResponse<T>) => EnhancedApiResponse<T> | Promise<EnhancedApiResponse<T>>;
+export type ResponseInterceptor<T = unknown> = (response: EnhancedApiResponse<T>) => EnhancedApiResponse<T> | Promise<EnhancedApiResponse<T>>;
 
 // Error Interceptor Function
 export type ErrorInterceptor = (error: ApiErrorInterface) => ApiErrorInterface | Promise<ApiErrorInterface>;
@@ -78,7 +78,7 @@ export interface RequestConfig {
   url: string;
   method: HttpMethod;
   headers: Record<string, string>;
-  body?: any;
+  body?: string | ArrayBuffer | Blob | FormData | URLSearchParams | ReadableStream<Uint8Array> | null;
   timeout: number;
   retries: number;
   validateSchema: boolean;
@@ -92,7 +92,7 @@ export interface RequestConfig {
 }
 
 // Cache Entry Interface
-export interface CacheEntry<T = any> {
+export interface CacheEntry<T = unknown> {
   data: T;
   timestamp: number;
   ttl: number;
@@ -134,12 +134,12 @@ export interface BatchRequest {
   id: string;
   method: HttpMethod;
   url: string;
-  body?: any;
+  body?: string | ArrayBuffer | Blob | FormData | URLSearchParams | ReadableStream<Uint8Array> | null;
   options?: RequestOptions;
 }
 
 // Batch Response Interface
-export interface BatchResponse<T = any> {
+export interface BatchResponse<T = unknown> {
   id: string;
   success: boolean;
   data?: T;
@@ -152,8 +152,8 @@ export interface ApiErrorDetails {
   message: string;
   status: number;
   code?: string;
-  details?: Record<string, any>;
-  response?: any;
+  details?: Record<string, unknown>;
+  response?: Response | Record<string, unknown>;
   isNetworkError: boolean;
   isTimeoutError: boolean;
   isRetryable: boolean;
@@ -173,10 +173,10 @@ export interface SchemaStateValidation {
 // Client Instance Interface
 export interface ApiClientInstance {
   get<T>(endpoint: string, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
-  post<T>(endpoint: string, data?: any, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
-  put<T>(endpoint: string, data?: any, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
+  post<T>(endpoint: string, data?: string | ArrayBuffer | Blob | FormData | URLSearchParams | ReadableStream<Uint8Array> | null, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
+  put<T>(endpoint: string, data?: string | ArrayBuffer | Blob | FormData | URLSearchParams | ReadableStream<Uint8Array> | null, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
   delete<T>(endpoint: string, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
-  patch<T>(endpoint: string, data?: any, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
+  patch<T>(endpoint: string, data?: string | ArrayBuffer | Blob | FormData | URLSearchParams | ReadableStream<Uint8Array> | null, options?: RequestOptions): Promise<EnhancedApiResponse<T>>;
   batch<T>(requests: BatchRequest[]): Promise<BatchResponse<T>[]>;
   
   // Interceptor management
@@ -193,25 +193,75 @@ export interface ApiClientInstance {
   clearMetrics(): void;
 }
 
+// Schema data types for better type safety
+export interface SchemaData {
+  name: string;
+  state: 'available' | 'approved' | 'blocked';
+  fields?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SchemaStatusData {
+  schemas: SchemaData[];
+  totalCount: number;
+  approvedCount: number;
+  availableCount: number;
+  blockedCount: number;
+}
+
+export interface SignedMessage {
+  message: string;
+  signature: string;
+  publicKey: string;
+  timestamp: number;
+}
+
+export interface MutationData {
+  schema: string;
+  operation: string;
+  data: Record<string, unknown>;
+}
+
+export interface QueryData {
+  schema: string;
+  query: Record<string, unknown>;
+}
+
+export interface VerificationData {
+  isValid: boolean;
+  publicKeyId?: string;
+  error?: string;
+}
+
+export interface KeyRegistrationData {
+  publicKey: string;
+  keyId?: string;
+}
+
+export interface SystemKeyData {
+  publicKey: string;
+  keyId: string;
+}
+
 // Domain-specific client interfaces for type safety
 export interface SchemaApiClient {
-  getSchemas(): Promise<EnhancedApiResponse<any[]>>;
-  getSchema(name: string): Promise<EnhancedApiResponse<any>>;
-  getSchemasByState(state: string): Promise<EnhancedApiResponse<any>>;
-  getAllSchemasWithState(): Promise<EnhancedApiResponse<any>>;
-  getSchemaStatus(): Promise<EnhancedApiResponse<any>>;
+  getSchemas(): Promise<EnhancedApiResponse<SchemaData[]>>;
+  getSchema(name: string): Promise<EnhancedApiResponse<SchemaData>>;
+  getSchemasByState(state: string): Promise<EnhancedApiResponse<SchemaData[]>>;
+  getAllSchemasWithState(): Promise<EnhancedApiResponse<SchemaStatusData>>;
+  getSchemaStatus(): Promise<EnhancedApiResponse<SchemaStatusData>>;
   approveSchema(name: string): Promise<EnhancedApiResponse<void>>;
   blockSchema(name: string): Promise<EnhancedApiResponse<void>>;
 }
 
 export interface MutationApiClient {
-  executeMutation(signedMessage: any): Promise<EnhancedApiResponse<any>>;
-  executeQuery(signedMessage: any): Promise<EnhancedApiResponse<any>>;
-  validateMutation(mutation: any): Promise<EnhancedApiResponse<any>>;
+  executeMutation(signedMessage: SignedMessage): Promise<EnhancedApiResponse<Record<string, unknown>>>;
+  executeQuery(signedMessage: SignedMessage): Promise<EnhancedApiResponse<Record<string, unknown>>>;
+  validateMutation(mutation: MutationData): Promise<EnhancedApiResponse<{ isValid: boolean; error?: string }>>;
 }
 
 export interface SecurityApiClient {
-  verifyMessage(signedMessage: any): Promise<EnhancedApiResponse<any>>;
-  registerPublicKey(request: any): Promise<EnhancedApiResponse<any>>;
-  getSystemPublicKey(): Promise<EnhancedApiResponse<any>>;
+  verifyMessage(signedMessage: SignedMessage): Promise<EnhancedApiResponse<VerificationData>>;
+  registerPublicKey(request: KeyRegistrationData): Promise<EnhancedApiResponse<{ publicKeyId: string }>>;
+  getSystemPublicKey(): Promise<EnhancedApiResponse<SystemKeyData>>;
 }

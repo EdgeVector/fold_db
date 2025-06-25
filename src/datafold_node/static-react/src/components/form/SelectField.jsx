@@ -2,11 +2,20 @@
  * SelectField Component
  * Reusable select/dropdown field with loading states and accessibility
  * Part of TASK-002: Component Extraction and Modularization
+ * TASK-009: Simplified using extracted utilities and hooks
  */
 
-import { useState } from 'react';
 import FieldWrapper from './FieldWrapper.jsx';
-import { COMPONENT_STYLES, UI_STATES } from '../../constants/ui.js';
+import { UI_STATES } from '../../constants/ui.js';
+import { COMPONENT_STYLES } from '../../constants/styling.js';
+import { useSearchableSelect } from '../../hooks/useSearchableSelect.js';
+import {
+  processSelectConfig,
+  getSelectStyles,
+  generateFieldId,
+  createAriaAttributes,
+  groupOptions
+} from '../../utils/selectFieldHelpers.js';
 
 /**
  * @typedef {Object} SelectOption
@@ -17,26 +26,31 @@ import { COMPONENT_STYLES, UI_STATES } from '../../constants/ui.js';
  */
 
 /**
+ * @typedef {Object} SelectFieldConfig
+ * @property {boolean} [searchable] - Enable search functionality
+ * @property {string} [placeholder] - Placeholder text
+ * @property {string} [emptyMessage] - Message when no options available
+ * @property {boolean} [required] - Whether field is required
+ * @property {boolean} [disabled] - Whether field is disabled
+ * @property {boolean} [loading] - Whether options are loading
+ */
+
+/**
  * @typedef {Object} SelectFieldProps
  * @property {string} name - Field name for form handling
  * @property {string} label - Field label text
  * @property {string} value - Current selected value
  * @property {SelectOption[]} options - Array of select options
  * @property {function} onChange - Callback when selection changes (value) => void
- * @property {boolean} [required] - Whether field is required
- * @property {boolean} [disabled] - Whether field is disabled
- * @property {boolean} [loading] - Whether options are loading
  * @property {string} [error] - Error message to display
- * @property {string} [placeholder] - Placeholder text for empty state
  * @property {string} [helpText] - Help text to display
- * @property {boolean} [searchable] - Whether to enable search functionality
- * @property {string} [emptyMessage] - Message when no options available
+ * @property {SelectFieldConfig} [config] - Configuration options
  * @property {string} [className] - Additional CSS classes
  */
 
 /**
- * Reusable select field component with loading states and grouping support
- * 
+ * Simplified select field component with reduced complexity
+ *
  * @param {SelectFieldProps} props
  * @returns {JSX.Element}
  */
@@ -46,71 +60,32 @@ function SelectField({
   value,
   options = [],
   onChange,
-  required = false,
-  disabled = false,
-  loading = false,
   error,
-  placeholder = 'Select an option...',
   helpText,
-  searchable = false,
-  emptyMessage = 'No options available',
+  config = {},
   className = ''
 }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
+  // Process configuration with defaults
+  const processedConfig = processSelectConfig(config);
+  const { searchable, placeholder, emptyMessage, required, disabled, loading } = processedConfig;
 
-  const fieldId = `field-${name}`;
+  // Generate consistent field ID and determine state
+  const fieldId = generateFieldId(name);
   const hasError = Boolean(error);
   const hasOptions = options.length > 0;
 
-  // Filter options based on search term
-  const filteredOptions = searchable && searchTerm
-    ? options.filter(option => 
-        option.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        option.value.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    : options;
+  // Use searchable select hook if searchable is enabled
+  const searchableSelect = useSearchableSelect(options, onChange, true);
 
-  // Group options if they have group property
-  const groupedOptions = filteredOptions.reduce((groups, option) => {
-    const group = option.group || 'default';
-    if (!groups[group]) {
-      groups[group] = [];
-    }
-    groups[group].push(option);
-    return groups;
-  }, {});
-
-  const handleChange = (e) => {
-    const newValue = e.target.value;
-    onChange(newValue);
-    if (searchable) {
-      setIsOpen(false);
-    }
+  // Handle standard select change
+  const handleStandardChange = (e) => {
+    onChange(e.target.value);
   };
 
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
-  };
-
-  // Determine select styling based on state
-  const selectStyles = `${COMPONENT_STYLES.select.base} ${
-    hasError 
-      ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
-      : ''
-  } ${disabled || loading ? COMPONENT_STYLES.select.disabled : ''}`;
-
-  // Show loading state
+  // Render loading state
   if (loading) {
     return (
-      <FieldWrapper
-        label={label}
-        name={name}
-        required={required}
-        error={error}
-        helpText={helpText}
-        className={className}
-      >
+      <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
         <div className={`${COMPONENT_STYLES.select.disabled} flex items-center`}>
           <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full mr-2"></div>
           {UI_STATES.loading}
@@ -119,47 +94,33 @@ function SelectField({
     );
   }
 
-  // Show empty state
+  // Render empty state
   if (!hasOptions) {
     return (
-      <FieldWrapper
-        label={label}
-        name={name}
-        required={required}
-        error={error}
-        helpText={helpText}
-        className={className}
-      >
-        <div className={COMPONENT_STYLES.select.disabled}>
-          {emptyMessage}
-        </div>
+      <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
+        <div className={COMPONENT_STYLES.select.disabled}>{emptyMessage}</div>
       </FieldWrapper>
     );
   }
 
-  return (
-    <FieldWrapper
-      label={label}
-      name={name}
-      required={required}
-      error={error}
-      helpText={helpText}
-      className={className}
-    >
-      {searchable ? (
-        // Custom searchable select implementation
+  // Render searchable select
+  if (searchable) {
+    const { state, handleSearchChange, handleOptionSelect } = searchableSelect;
+    
+    return (
+      <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
         <div className="relative">
           <input
             type="text"
             placeholder={`Search ${label.toLowerCase()}...`}
-            value={searchTerm}
+            value={state.searchTerm}
             onChange={handleSearchChange}
-            onFocus={() => setIsOpen(true)}
+            onFocus={() => searchableSelect.actions.openDropdown()}
             className={`${COMPONENT_STYLES.input.base} ${hasError ? COMPONENT_STYLES.input.error : ''}`}
           />
-          {isOpen && filteredOptions.length > 0 && (
+          {state.isOpen && state.filteredOptions.length > 0 && (
             <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
-              {Object.entries(groupedOptions).map(([groupName, groupOptions]) => (
+              {Object.entries(state.groupedOptions).map(([groupName, groupOptions]) => (
                 <div key={groupName}>
                   {groupName !== 'default' && (
                     <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b">
@@ -170,11 +131,7 @@ function SelectField({
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => {
-                        onChange(option.value);
-                        setIsOpen(false);
-                        setSearchTerm('');
-                      }}
+                      onClick={() => handleOptionSelect(option)}
                       disabled={option.disabled}
                       className={`w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none ${
                         option.disabled ? 'text-gray-400 cursor-not-allowed' : 'text-gray-900'
@@ -188,56 +145,48 @@ function SelectField({
             </div>
           )}
         </div>
-      ) : (
-        // Standard select element
-        <select
-          id={fieldId}
-          name={name}
-          value={value}
-          onChange={handleChange}
-          required={required}
-          disabled={disabled}
-          className={selectStyles}
-          aria-invalid={hasError}
-          aria-describedby={
-            hasError 
-              ? `${fieldId}-error` 
-              : helpText 
-                ? `${fieldId}-help` 
-                : undefined
-          }
-        >
-          <option value="" disabled={required}>
-            {placeholder}
-          </option>
-          
-          {Object.entries(groupedOptions).map(([groupName, groupOptions]) => 
-            groupName !== 'default' ? (
-              <optgroup key={groupName} label={groupName}>
-                {groupOptions.map((option) => (
-                  <option 
-                    key={option.value} 
-                    value={option.value}
-                    disabled={option.disabled}
-                  >
-                    {option.label}
-                  </option>
-                ))}
-              </optgroup>
-            ) : (
-              groupOptions.map((option) => (
-                <option 
-                  key={option.value} 
-                  value={option.value}
-                  disabled={option.disabled}
-                >
+      </FieldWrapper>
+    );
+  }
+
+  // Render standard select
+  const groupedOptions = groupOptions(options);
+  const selectStyles = getSelectStyles(COMPONENT_STYLES, hasError, disabled, loading);
+  const ariaAttributes = createAriaAttributes(fieldId, hasError, helpText);
+
+  return (
+    <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
+      <select
+        id={fieldId}
+        name={name}
+        value={value}
+        onChange={handleStandardChange}
+        required={required}
+        disabled={disabled}
+        className={selectStyles}
+        {...ariaAttributes}
+      >
+        <option value="" disabled={required}>
+          {placeholder}
+        </option>
+        {Object.entries(groupedOptions).map(([groupName, groupOptions]) =>
+          groupName !== 'default' ? (
+            <optgroup key={groupName} label={groupName}>
+              {groupOptions.map((option) => (
+                <option key={option.value} value={option.value} disabled={option.disabled}>
                   {option.label}
                 </option>
-              ))
-            )
-          )}
-        </select>
-      )}
+              ))}
+            </optgroup>
+          ) : (
+            groupOptions.map((option) => (
+              <option key={option.value} value={option.value} disabled={option.disabled}>
+                {option.label}
+              </option>
+            ))
+          )
+        )}
+      </select>
     </FieldWrapper>
   );
 }

@@ -1,0 +1,675 @@
+/**
+ * @fileoverview API Mocking Utilities for Testing
+ * 
+ * Provides comprehensive API mocking utilities using MSW (Mock Service Worker)
+ * for testing the unified API client system. Includes handlers for all major
+ * API endpoints with realistic response patterns and error scenarios.
+ * 
+ * TASK-006: Testing Enhancement - Created API mocking utilities
+ * 
+ * @module apiMocks
+ * @since 2.0.0
+ */
+
+import { rest } from 'msw';
+import { setupServer } from 'msw/node';
+import {
+  createMockSchema,
+  createMockRangeSchema,
+  createMockError,
+  mockDelay
+} from '../utils/testingUtilities';
+import {
+  SCHEMA_STATES,
+  MOCK_DELAY_MS,
+  TEST_TIMEOUT_MS
+} from '../../constants/schemas';
+
+// ============================================================================
+// MOCK DATA
+// ============================================================================
+
+/**
+ * Mock schemas for testing
+ */
+export const mockSchemas = {
+  user_profiles: createMockSchema({
+    name: 'user_profiles',
+    state: SCHEMA_STATES.APPROVED,
+    fields: {
+      id: { field_type: 'String' },
+      name: { field_type: 'String' },
+      email: { field_type: 'String' },
+      age: { field_type: 'Number' }
+    }
+  }),
+  time_series: createMockRangeSchema({
+    name: 'time_series',
+    state: SCHEMA_STATES.APPROVED
+  }),
+  events: createMockSchema({
+    name: 'events',
+    state: SCHEMA_STATES.AVAILABLE,
+    fields: {
+      event_id: { field_type: 'String' },
+      event_type: { field_type: 'String' },
+      timestamp: { field_type: 'String' }
+    }
+  }),
+  blocked_schema: createMockSchema({
+    name: 'blocked_schema',
+    state: SCHEMA_STATES.BLOCKED,
+    fields: {
+      id: { field_type: 'String' },
+      data: { field_type: 'String' }
+    }
+  })
+};
+
+/**
+ * Mock persisted schema states
+ */
+export const mockPersistedStates = {
+  user_profiles: SCHEMA_STATES.APPROVED,
+  time_series: SCHEMA_STATES.APPROVED,
+  events: SCHEMA_STATES.AVAILABLE,
+  blocked_schema: SCHEMA_STATES.BLOCKED
+};
+
+/**
+ * Mock available schema names
+ */
+export const mockAvailableSchemas = Object.keys(mockSchemas);
+
+/**
+ * Mock authentication data
+ */
+export const mockAuthData = {
+  systemPublicKey: 'mock_system_public_key_123',
+  isValid: true,
+  keyId: 'system_key_001'
+};
+
+/**
+ * Mock mutation results
+ */
+export const mockMutationResults = {
+  create: {
+    success: true,
+    data: { id: 'created_item_123', status: 'created' }
+  },
+  update: {
+    success: true,
+    data: { id: 'updated_item_456', status: 'updated' }
+  },
+  delete: {
+    success: true,
+    data: { id: 'deleted_item_789', status: 'deleted' }
+  }
+};
+
+/**
+ * Mock query results
+ */
+export const mockQueryResults = {
+  basic: {
+    success: true,
+    data: [
+      { id: '1', name: 'John Doe', email: 'john@example.com' },
+      { id: '2', name: 'Jane Smith', email: 'jane@example.com' }
+    ]
+  },
+  range: {
+    success: true,
+    data: [
+      { timestamp: '2025-01-01T00:00:00Z', value: 100 },
+      { timestamp: '2025-01-01T01:00:00Z', value: 105 }
+    ]
+  },
+  empty: {
+    success: true,
+    data: []
+  }
+};
+
+// ============================================================================
+// MSW HANDLERS
+// ============================================================================
+
+/**
+ * Default MSW request handlers for API endpoints
+ */
+export const defaultHandlers = [
+  // Schema endpoints
+  rest.get('/api/schemas/available', async (req, res, ctx) => {
+    await mockDelay(MOCK_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: mockAvailableSchemas
+      })
+    );
+  }),
+
+  rest.get('/api/schemas', async (req, res, ctx) => {
+    await mockDelay(MOCK_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: mockPersistedStates
+      })
+    );
+  }),
+
+  rest.get('/api/schema/:schemaName', async (req, res, ctx) => {
+    const { schemaName } = req.params;
+    await mockDelay(MOCK_DELAY_MS);
+    
+    const schema = mockSchemas[schemaName];
+    if (!schema) {
+      return res(
+        ctx.status(404),
+        ctx.json({
+          success: false,
+          error: { message: `Schema ${schemaName} not found` }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: schema,
+        ...schema
+      })
+    );
+  }),
+
+  // Schema operations
+  rest.post('/api/schema/:schemaName/approve', async (req, res, ctx) => {
+    const { schemaName } = req.params;
+    await mockDelay(MOCK_DELAY_MS);
+    
+    const schema = mockSchemas[schemaName];
+    if (!schema) {
+      return res(
+        ctx.status(404),
+        ctx.json({
+          success: false,
+          error: { message: `Schema ${schemaName} not found` }
+        })
+      );
+    }
+
+    if (schema.state !== SCHEMA_STATES.AVAILABLE) {
+      return res(
+        ctx.status(400),
+        ctx.json({
+          success: false,
+          error: { message: `Schema ${schemaName} cannot be approved from state ${schema.state}` }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          schema: { ...schema, state: SCHEMA_STATES.APPROVED }
+        }
+      })
+    );
+  }),
+
+  rest.post('/api/schema/:schemaName/block', async (req, res, ctx) => {
+    const { schemaName } = req.params;
+    await mockDelay(MOCK_DELAY_MS);
+    
+    const schema = mockSchemas[schemaName];
+    if (!schema) {
+      return res(
+        ctx.status(404),
+        ctx.json({
+          success: false,
+          error: { message: `Schema ${schemaName} not found` }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          schema: { ...schema, state: SCHEMA_STATES.BLOCKED }
+        }
+      })
+    );
+  }),
+
+  rest.post('/api/schema/:schemaName/load', async (req, res, ctx) => {
+    const { schemaName } = req.params;
+    await mockDelay(MOCK_DELAY_MS);
+    
+    const schema = mockSchemas[schemaName];
+    if (!schema) {
+      return res(
+        ctx.status(404),
+        ctx.json({
+          success: false,
+          error: { message: `Schema ${schemaName} not found` }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          schema: { ...schema, state: SCHEMA_STATES.APPROVED }
+        }
+      })
+    );
+  }),
+
+  rest.post('/api/schema/:schemaName/unload', async (req, res, ctx) => {
+    const { schemaName } = req.params;
+    await mockDelay(MOCK_DELAY_MS);
+    
+    const schema = mockSchemas[schemaName];
+    if (!schema) {
+      return res(
+        ctx.status(404),
+        ctx.json({
+          success: false,
+          error: { message: `Schema ${schemaName} not found` }
+        })
+      );
+    }
+
+    if (schema.state === SCHEMA_STATES.APPROVED) {
+      return res(
+        ctx.status(400),
+        ctx.json({
+          success: false,
+          error: { message: `Cannot unload approved schema ${schemaName}` }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          schema: { ...schema, state: SCHEMA_STATES.AVAILABLE }
+        }
+      })
+    );
+  }),
+
+  // Mutation endpoints
+  rest.post('/api/mutation', async (req, res, ctx) => {
+    const body = await req.json();
+    await mockDelay(MOCK_DELAY_MS);
+    
+    // Validate mutation structure
+    if (!body.schema || !body.mutation_type || !body.data) {
+      return res(
+        ctx.status(400),
+        ctx.json({
+          success: false,
+          error: { message: 'Invalid mutation structure' }
+        })
+      );
+    }
+
+    // Check if schema is approved
+    const schema = mockSchemas[body.schema];
+    if (!schema || schema.state !== SCHEMA_STATES.APPROVED) {
+      return res(
+        ctx.status(403),
+        ctx.json({
+          success: false,
+          error: { message: 'Only approved schemas can be used for mutations' }
+        })
+      );
+    }
+
+    const mutationType = body.mutation_type.toLowerCase();
+    const result = mockMutationResults[mutationType] || mockMutationResults.create;
+    
+    return res(
+      ctx.status(200),
+      ctx.json(result)
+    );
+  }),
+
+  // Query endpoints
+  rest.post('/api/query', async (req, res, ctx) => {
+    const body = await req.json();
+    await mockDelay(MOCK_DELAY_MS);
+    
+    // Validate query structure
+    if (!body.schema || !body.fields) {
+      return res(
+        ctx.status(400),
+        ctx.json({
+          success: false,
+          error: { message: 'Invalid query structure' }
+        })
+      );
+    }
+
+    // Check if schema is approved
+    const schema = mockSchemas[body.schema];
+    if (!schema || schema.state !== SCHEMA_STATES.APPROVED) {
+      return res(
+        ctx.status(403),
+        ctx.json({
+          success: false,
+          error: { message: 'Only approved schemas can be used for queries' }
+        })
+      );
+    }
+
+    // Return different results based on schema type
+    const isRangeSchema = schema.schema_type?.Range;
+    const result = isRangeSchema ? mockQueryResults.range : mockQueryResults.basic;
+    
+    return res(
+      ctx.status(200),
+      ctx.json(result)
+    );
+  }),
+
+  // Security endpoints
+  rest.get('/api/security/system-public-key', async (req, res, ctx) => {
+    await mockDelay(MOCK_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: mockAuthData
+      })
+    );
+  }),
+
+  rest.post('/api/security/register-key', async (req, res, ctx) => {
+    const body = await req.json();
+    await mockDelay(MOCK_DELAY_MS);
+    
+    if (!body.publicKey || !body.signature) {
+      return res(
+        ctx.status(400),
+        ctx.json({
+          success: false,
+          error: { message: 'Missing required fields' }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          keyId: `user_key_${Date.now()}`,
+          status: 'registered'
+        }
+      })
+    );
+  }),
+
+  rest.post('/api/security/verify', async (req, res, ctx) => {
+    const body = await req.json();
+    await mockDelay(MOCK_DELAY_MS);
+    
+    if (!body.message || !body.signature) {
+      return res(
+        ctx.status(400),
+        ctx.json({
+          success: false,
+          error: { message: 'Missing message or signature' }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: { valid: true }
+      })
+    );
+  })
+];
+
+// ============================================================================
+// ERROR SCENARIOS
+// ============================================================================
+
+/**
+ * Handlers for testing error scenarios
+ */
+export const errorHandlers = {
+  networkError: [
+    rest.get('/api/schemas/available', (req, res, ctx) => {
+      return res.networkError('Failed to connect');
+    })
+  ],
+
+  serverError: [
+    rest.get('/api/schemas/available', (req, res, ctx) => {
+      return res(
+        ctx.status(500),
+        ctx.json({
+          success: false,
+          error: { message: 'Internal server error' }
+        })
+      );
+    })
+  ],
+
+  timeout: [
+    rest.get('/api/schemas/available', (req, res, ctx) => {
+      return res(ctx.delay(TEST_TIMEOUT_MS + 1000));
+    })
+  ],
+
+  unauthorized: [
+    rest.post('/api/mutation', (req, res, ctx) => {
+      return res(
+        ctx.status(401),
+        ctx.json({
+          success: false,
+          error: { message: 'Unauthorized' }
+        })
+      );
+    })
+  ],
+
+  schemaNotApproved: [
+    rest.post('/api/mutation', (req, res, ctx) => {
+      return res(
+        ctx.status(403),
+        ctx.json({
+          success: false,
+          error: { message: 'Schema not approved for mutations' }
+        })
+      );
+    })
+  ]
+};
+
+// ============================================================================
+// TEST SERVER SETUP
+// ============================================================================
+
+/**
+ * Creates a configured MSW server for testing
+ * 
+ * @param {Array} customHandlers - Additional or override handlers
+ * @returns {Object} MSW server instance
+ */
+export const createMockServer = (customHandlers = []) => {
+  const handlers = [...defaultHandlers, ...customHandlers];
+  return setupServer(...handlers);
+};
+
+/**
+ * Default mock server instance
+ */
+export const mockServer = createMockServer();
+
+// ============================================================================
+// MOCK API CLIENT
+// ============================================================================
+
+/**
+ * Creates a mock API client for testing without network calls
+ * 
+ * @param {Object} overrides - Override specific methods
+ * @returns {Object} Mock API client
+ */
+export const createMockApiClient = (overrides = {}) => {
+  const defaultClient = {
+    get: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    post: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    put: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    delete: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    patch: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    batch: vi.fn().mockResolvedValue([]),
+    getMetrics: vi.fn().mockReturnValue({
+      averageResponseTime: 100,
+      cacheHitRate: 0.8,
+      totalRequests: 50
+    }),
+    getCacheStats: vi.fn().mockReturnValue({
+      size: 10,
+      hitRate: 0.8
+    }),
+    clearCache: vi.fn(),
+    ...overrides
+  };
+
+  return defaultClient;
+};
+
+/**
+ * Creates mock specialized API clients
+ * 
+ * @param {Object} baseClient - Base API client to use
+ * @returns {Object} Mock specialized clients
+ */
+export const createMockSpecializedClients = (baseClient) => {
+  return {
+    schema: {
+      getSchemas: vi.fn().mockResolvedValue(Object.values(mockSchemas)),
+      getApprovedSchemas: vi.fn().mockResolvedValue(
+        Object.values(mockSchemas).filter(s => s.state === SCHEMA_STATES.APPROVED)
+      ),
+      getSchema: vi.fn().mockImplementation((name) => 
+        Promise.resolve(mockSchemas[name] || null)
+      ),
+      approveSchema: vi.fn().mockResolvedValue({
+        success: true,
+        data: { schema: { state: SCHEMA_STATES.APPROVED } }
+      }),
+      blockSchema: vi.fn().mockResolvedValue({
+        success: true,
+        data: { schema: { state: SCHEMA_STATES.BLOCKED } }
+      })
+    },
+
+    mutation: {
+      executeMutation: vi.fn().mockResolvedValue(mockMutationResults.create),
+      validateMutation: vi.fn().mockReturnValue(null),
+      validateSchemaForMutation: vi.fn().mockReturnValue(true)
+    },
+
+    query: {
+      executeQuery: vi.fn().mockResolvedValue(mockQueryResults.basic)
+    },
+
+    security: {
+      getSystemPublicKey: vi.fn().mockResolvedValue(mockAuthData),
+      registerPublicKey: vi.fn().mockResolvedValue({
+        success: true,
+        data: { keyId: 'user_key_123' }
+      }),
+      verifyMessage: vi.fn().mockResolvedValue({
+        success: true,
+        data: { valid: true }
+      })
+    }
+  };
+};
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Sets up MSW server for tests
+ * Call this in test setup
+ */
+export const setupMockServer = () => {
+  beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }));
+  afterEach(() => mockServer.resetHandlers());
+  afterAll(() => mockServer.close());
+};
+
+/**
+ * Temporarily override handlers for specific tests
+ * 
+ * @param {Array} handlers - Temporary handlers
+ * @param {Function} testFn - Test function to run with handlers
+ */
+export const withMockHandlers = async (handlers, testFn) => {
+  mockServer.use(...handlers);
+  try {
+    await testFn();
+  } finally {
+    mockServer.resetHandlers();
+  }
+};
+
+/**
+ * Simulate slow network conditions
+ * 
+ * @param {number} delay - Delay in milliseconds
+ * @returns {Array} Handlers with delay
+ */
+export const createSlowHandlers = (delay = 2000) => {
+  return defaultHandlers.map(handler => {
+    return rest[handler.info.method.toLowerCase()](handler.info.path, async (req, res, ctx) => {
+      await mockDelay(delay);
+      return handler.resolver(req, res, ctx);
+    });
+  });
+};
+
+// Export everything
+export default {
+  mockSchemas,
+  mockPersistedStates,
+  mockAvailableSchemas,
+  mockAuthData,
+  mockMutationResults,
+  mockQueryResults,
+  defaultHandlers,
+  errorHandlers,
+  createMockServer,
+  mockServer,
+  createMockApiClient,
+  createMockSpecializedClients,
+  setupMockServer,
+  withMockHandlers,
+  createSlowHandlers
+};
