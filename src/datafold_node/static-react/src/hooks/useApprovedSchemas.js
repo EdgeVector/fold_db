@@ -1,20 +1,27 @@
 /**
  * Custom hook for managing approved schemas with SCHEMA-002 compliance
+ * TASK-003: Updated to use Redux state management instead of local state
  * Centralizes schema fetching logic and enforces access control
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  SCHEMA_FETCH_RETRY_COUNT,
-  SCHEMA_CACHE_DURATION_MS,
-  SCHEMA_STATES,
-  SCHEMA_API_ENDPOINTS,
-  VALIDATION_MESSAGES
+import { useEffect, useCallback } from 'react';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import {
+  fetchSchemas,
+  selectApprovedSchemas,
+  selectAllSchemas,
+  selectFetchLoading,
+  selectFetchError,
+  selectCacheInfo
+} from '../store/schemaSlice';
+import {
+  SCHEMA_STATES
 } from '../constants/schemas.js';
 
 /**
  * Hook for managing approved schemas with caching and retry logic
- * 
+ * TASK-003: Now uses Redux state management for centralized schema state
+ *
  * @returns {Object} Hook result object
  * @returns {Array} approvedSchemas - Array of schemas with state 'approved'
  * @returns {boolean} isLoading - Loading state indicator
@@ -24,11 +31,13 @@ import {
  * @returns {Function} isSchemaApproved - Check if schema is approved
  */
 export function useApprovedSchemas() {
-  const [schemas, setSchemas] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const cacheRef = useRef({ data: null, timestamp: null });
-  const retryCountRef = useRef(0);
+  // Redux state and dispatch
+  const dispatch = useAppDispatch();
+  const approvedSchemas = useAppSelector(selectApprovedSchemas);
+  const allSchemas = useAppSelector(selectAllSchemas);
+  const isLoading = useAppSelector(selectFetchLoading);
+  const error = useAppSelector(selectFetchError);
+  const cacheInfo = useAppSelector(selectCacheInfo);
 
   /**
    * Normalizes schema state to lowercase string
@@ -42,127 +51,12 @@ export function useApprovedSchemas() {
   }, []);
 
   /**
-   * Checks if cached data is still valid
-   * @returns {boolean} True if cache is valid
-   */
-  const isCacheValid = useCallback(() => {
-    if (!cacheRef.current.data || !cacheRef.current.timestamp) {
-      return false;
-    }
-    
-    const now = Date.now();
-    const cacheAge = now - cacheRef.current.timestamp;
-    return cacheAge < SCHEMA_CACHE_DURATION_MS;
-  }, []);
-
-  /**
-   * Fetches schemas with retry logic and caching
-   */
-  const fetchSchemas = useCallback(async () => {
-    // Return cached data if valid
-    if (isCacheValid()) {
-      setSchemas(cacheRef.current.data);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Fetch available schemas from filesystem
-      const availableResponse = await fetch(SCHEMA_API_ENDPOINTS.AVAILABLE);
-      if (!availableResponse.ok) {
-        throw new Error(`Failed to fetch available schemas: ${availableResponse.status}`);
-      }
-      const availableData = await availableResponse.json();
-      
-      // Fetch persisted schema states from database
-      const persistedResponse = await fetch(SCHEMA_API_ENDPOINTS.PERSISTED);
-      if (!persistedResponse.ok) {
-        throw new Error(`Failed to fetch persisted schemas: ${persistedResponse.status}`);
-      }
-      const persistedData = await persistedResponse.json();
-      
-      console.log('📁 Available schemas:', availableData.data || []);
-      console.log('🗄️ Persisted schemas:', persistedData.data || {});
-      
-      const availableSchemas = availableData.data || [];
-      const persistedStates = persistedData.data || {};
-      
-      // Create schemas with states - use persisted state if available, otherwise 'available'
-      const schemasWithStates = availableSchemas.map(name => ({
-        name,
-        state: persistedStates[name] || SCHEMA_STATES.AVAILABLE,
-        fields: {} // Will be populated below
-      }));
-      
-      console.log('📋 Merged schemas for UI:', schemasWithStates);
-      
-      // Fetch detailed schema information for all schemas
-      const schemasWithDetails = await Promise.all(
-        schemasWithStates.map(async (schema) => {
-          try {
-            const schemaResponse = await fetch(`${SCHEMA_API_ENDPOINTS.SCHEMA_DETAIL}/${schema.name}`);
-            if (schemaResponse.ok) {
-              const schemaData = await schemaResponse.json();
-              return {
-                ...schema,
-                ...schemaData, // Include the full schema data including schema_type
-                fields: schemaData.fields || {}
-              };
-            } else {
-              console.log(`⚠️ Schema ${schema.name} not loaded in memory (${schemaResponse.status}), keeping basic info`);
-            }
-          } catch (err) {
-            console.log(`⚠️ Failed to fetch details for schema ${schema.name}:`, err.message);
-          }
-          return schema; // Return original if fetch fails
-        })
-      );
-      
-      console.log('✅ Final schemas for UI:', schemasWithDetails);
-      
-      // Cache the result
-      cacheRef.current = {
-        data: schemasWithDetails,
-        timestamp: Date.now()
-      };
-      
-      setSchemas(schemasWithDetails);
-      retryCountRef.current = 0; // Reset retry count on success
-    } catch (fetchError) {
-      console.error('Failed to fetch schemas:', fetchError);
-      
-      // Retry logic
-      if (retryCountRef.current < SCHEMA_FETCH_RETRY_COUNT) {
-        retryCountRef.current += 1;
-        console.log(`Retrying schema fetch (attempt ${retryCountRef.current}/${SCHEMA_FETCH_RETRY_COUNT})`);
-        
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, retryCountRef.current - 1) * 1000;
-        setTimeout(() => {
-          fetchSchemas();
-        }, delay);
-        return;
-      }
-      
-      setError(`Failed to fetch schemas after ${SCHEMA_FETCH_RETRY_COUNT} attempts: ${fetchError.message}`);
-      retryCountRef.current = 0; // Reset for next manual retry
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isCacheValid]);
-
-  /**
    * Manual refetch function that bypasses cache
    */
   const refetch = useCallback(async () => {
-    // Clear cache to force fresh fetch
-    cacheRef.current = { data: null, timestamp: null };
-    retryCountRef.current = 0;
-    await fetchSchemas();
-  }, [fetchSchemas]);
+    // Force refresh by dispatching with forceRefresh: true
+    dispatch(fetchSchemas({ forceRefresh: true }));
+  }, [dispatch]);
 
   /**
    * Get specific schema by name
@@ -170,8 +64,8 @@ export function useApprovedSchemas() {
    * @returns {Object|null} Schema object or null if not found
    */
   const getSchemaByName = useCallback((name) => {
-    return schemas.find(schema => schema.name === name) || null;
-  }, [schemas]);
+    return allSchemas.find(schema => schema.name === name) || null;
+  }, [allSchemas]);
 
   /**
    * Check if a schema is approved (SCHEMA-002 compliance)
@@ -186,16 +80,12 @@ export function useApprovedSchemas() {
     return normalizedState === SCHEMA_STATES.APPROVED;
   }, [getSchemaByName, normalizeState]);
 
-  // Initial fetch on mount
+  // Initial fetch on mount if cache is invalid
   useEffect(() => {
-    fetchSchemas();
-  }, [fetchSchemas]);
-
-  // Filter to only approved schemas (SCHEMA-002 compliance)
-  const approvedSchemas = schemas.filter(schema => {
-    const normalizedState = normalizeState(schema.state);
-    return normalizedState === SCHEMA_STATES.APPROVED;
-  });
+    if (!cacheInfo.isValid) {
+      dispatch(fetchSchemas());
+    }
+  }, [dispatch, cacheInfo.isValid]);
 
   return {
     approvedSchemas,
@@ -205,7 +95,7 @@ export function useApprovedSchemas() {
     getSchemaByName,
     isSchemaApproved,
     // Additional utility for components that need all schemas for display
-    allSchemas: schemas
+    allSchemas
   };
 }
 

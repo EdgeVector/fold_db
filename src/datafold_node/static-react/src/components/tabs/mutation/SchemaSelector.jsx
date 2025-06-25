@@ -1,61 +1,37 @@
 
-import { SCHEMA_STATES } from '../../../constants/schemas.js'
+import SelectField from '../../form/SelectField'
+import { FORM_LABELS, MUTATION_TYPES } from '../../../constants/ui.js'
+import { useAppSelector } from '../../../store/hooks'
+import { selectApprovedSchemas } from '../../../store/schemaSlice'
 
-function SchemaSelector({ schemas, selectedSchema, mutationType, onSchemaChange, onTypeChange }) {
-  // Filter schemas to only include approved ones (SCHEMA-002)
-  // Note: Parent components should ideally pass only approved schemas using useApprovedSchemas hook
-  const approvedSchemas = schemas.filter(schema => {
-    // Handle different state formats - normalize to lowercase
-    const state = typeof schema.state === 'string'
-      ? schema.state.toLowerCase()
-      : String(schema.state || '').toLowerCase()
-    return state === SCHEMA_STATES.APPROVED
-  })
+function SchemaSelector({ selectedSchema, mutationType, onSchemaChange, onTypeChange }) {
+  // Redux state - TASK-003: Use Redux approved schemas for SCHEMA-002 compliance
+  const approvedSchemas = useAppSelector(selectApprovedSchemas)
 
   return (
     <div className="grid grid-cols-2 gap-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Schema
-        </label>
-        {approvedSchemas.length === 0 ? (
-          <div className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-100 border border-gray-300 rounded-md text-gray-500">
-            No approved schemas available for mutations
-          </div>
-        ) : (
-          <select
-            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md"
-            value={selectedSchema}
-            onChange={(e) => onSchemaChange(e.target.value)}
-          >
-            <option value="">Select a schema...</option>
-            {approvedSchemas.map((schema) => (
-              <option key={schema.name} value={schema.name}>
-                {schema.name} 
-              </option>
-            ))}
-          </select>
-        )}
-        <p className="mt-1 text-xs text-gray-500">
-          Only approved schemas can be mutated (SCHEMA-002)
-        </p>
-      </div>
+      <SelectField
+        name="schema"
+        label={FORM_LABELS.schema}
+        value={selectedSchema}
+        onChange={onSchemaChange}
+        options={approvedSchemas.map(schema => ({
+          value: schema.name,
+          label: schema.name
+        }))}
+        placeholder="Select a schema..."
+        emptyMessage="No approved schemas available for mutations"
+        helpText={FORM_LABELS.schemaHelp}
+      />
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Operation Type
-        </label>
-        <select
-          className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md"
-          value={mutationType}
-          onChange={(e) => onTypeChange(e.target.value)}
-        >
-          <option value="Create">Create - Add new data</option>
-          <option value="Update">Update - Modify existing data</option>
-          <option value="Delete">Delete - Remove existing data</option>
-        </select>
-        <p className="mt-1 text-xs text-gray-500">Choose the type of mutation to perform</p>
-      </div>
+      <SelectField
+        name="operationType"
+        label={FORM_LABELS.operationType}
+        value={mutationType}
+        onChange={onTypeChange}
+        options={MUTATION_TYPES}
+        helpText={FORM_LABELS.operationHelp}
+      />
     </div>
   )
 }

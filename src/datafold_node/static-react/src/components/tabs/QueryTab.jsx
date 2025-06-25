@@ -1,8 +1,21 @@
 import { useState } from 'react'
 import { useRangeSchema, useFormValidation } from '../../hooks/index.js'
+import SelectField from '../form/SelectField'
+import RangeField from '../form/RangeField'
 import { API_ENDPOINTS } from '../../api/endpoints'
+import {
+  BUTTON_TEXT,
+  FORM_LABELS,
+  UI_STATES,
+  SCHEMA_STATES,
+  VALIDATION_MESSAGES
+} from '../../constants'
+import { useAppSelector } from '../../store/hooks'
+import { selectAllSchemas } from '../../store/schemaSlice'
 
-function QueryTab({ schemas, onResult }) {
+function QueryTab({ onResult }) {
+  // Redux state - TASK-003: Use Redux instead of props
+  const schemas = useAppSelector(selectAllSchemas)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [queryFields, setQueryFields] = useState([])
   const [rangeFilters, setRangeFilters] = useState({})
@@ -196,38 +209,29 @@ function QueryTab({ schemas, onResult }) {
     const state = typeof schema.state === 'string'
       ? schema.state.toLowerCase()
       : String(schema.state || '').toLowerCase()
-    return state === 'approved'
+    return state === SCHEMA_STATES.APPROVED
   })
 
   return (
     <div className="p-6">
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Schema
-          </label>
-          {approvedSchemas.length === 0 ? (
-            <div className="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-100 border border-gray-300 rounded-md text-gray-500">
-              No approved schemas available for querying
-            </div>
-          ) : (
-            <select
-              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary rounded-md"
-              value={selectedSchema}
-              onChange={handleSchemaChange}
-            >
-              <option value="">Select a schema...</option>
-              {approvedSchemas.map(schema => (
-                <option key={schema.name} value={schema.name}>
-                  {schema.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <p className="mt-1 text-xs text-gray-500">
-            Only approved schemas can be queried (SCHEMA-002)
-          </p>
-        </div>
+        <SelectField
+          name="schema"
+          label={FORM_LABELS.schema}
+          value={selectedSchema}
+          onChange={(value) => {
+            const event = { target: { value } };
+            handleSchemaChange(event);
+          }}
+          options={approvedSchemas.map(schema => ({
+            value: schema.name,
+            label: schema.name
+          }))}
+          placeholder="Select a schema..."
+          emptyMessage={FORM_LABELS.schemaEmpty}
+          helpText={FORM_LABELS.schemaHelp}
+          loading={schemasLoading}
+        />
 
         {selectedSchema && (
           <div>
@@ -261,70 +265,14 @@ function QueryTab({ schemas, onResult }) {
 
         {/* Range Schema Filter - only show for range schemas */}
         {isCurrentSchemaRangeSchema && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Range Key Filter
-            </label>
-            <div className="bg-yellow-50 rounded-md p-4 space-y-4">
-              <div className="mb-3">
-                <span className="text-sm font-medium text-gray-800">
-                  Range Key: {rangeKey}
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Key Range Filter */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-medium text-gray-600">Key Range</label>
-                  <input
-                    type="text"
-                    placeholder="Start key"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                    value={rangeSchemaFilter.start || ''}
-                    onChange={(e) => setRangeSchemaFilter(prev => ({ ...prev, start: e.target.value, key: '', keyPrefix: '' }))}
-                  />
-                  <input
-                    type="text"
-                    placeholder="End key"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                    value={rangeSchemaFilter.end || ''}
-                    onChange={(e) => setRangeSchemaFilter(prev => ({ ...prev, end: e.target.value, key: '', keyPrefix: '' }))}
-                  />
-                </div>
-
-                {/* Single Key Filter */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-medium text-gray-600">Exact Key</label>
-                  <input
-                    type="text"
-                    placeholder="Exact key to match"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                    value={rangeSchemaFilter.key || ''}
-                    onChange={(e) => setRangeSchemaFilter({ key: e.target.value })}
-                  />
-                </div>
-
-                {/* Key Prefix Filter */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-medium text-gray-600">Key Prefix (Begins With)</label>
-                  <input
-                    type="text"
-                    placeholder={`Key prefix (e.g., 'user:')`}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                    value={rangeSchemaFilter.keyPrefix || ''}
-                    onChange={(e) => setRangeSchemaFilter({ keyPrefix: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-3 text-xs text-gray-500">
-                <p><strong>Key Range:</strong> Matches keys between start and end (inclusive start, exclusive end)</p>
-                <p><strong>Exact Key:</strong> Matches a specific {rangeKey} exactly</p>
-                <p><strong>Key Prefix:</strong> Matches all {rangeKey} values starting with the prefix</p>
-                <p className="mt-2 text-yellow-700"><strong>Note:</strong> Leave all fields empty to query all data from this range schema.</p>
-              </div>
-            </div>
-          </div>
+          <RangeField
+            name="rangeSchemaFilter"
+            label={FORM_LABELS.rangeKeyFilter}
+            value={rangeSchemaFilter}
+            onChange={setRangeSchemaFilter}
+            rangeKeyName={rangeKey}
+            mode="all"
+          />
         )}
 
         {/* Regular Range Field Filters - only show for non-range schemas */}
@@ -410,7 +358,7 @@ function QueryTab({ schemas, onResult }) {
             `}
             disabled={!selectedSchema || queryFields.length === 0}
           >
-            Execute Query
+            {BUTTON_TEXT.executeQuery}
           </button>
         </div>
       </form>

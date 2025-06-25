@@ -1,0 +1,79 @@
+/**
+ * FieldWrapper Component
+ * Provides consistent layout for form fields with labels, help text, and error messages
+ * Part of TASK-002: Component Extraction and Modularization
+ */
+
+import { COMPONENT_STYLES } from '../../constants/ui.js';
+
+/**
+ * @typedef {Object} FieldWrapperProps
+ * @property {string} label - Field label text
+ * @property {string} [name] - Field name for accessibility
+ * @property {boolean} [required] - Whether field is required
+ * @property {string} [error] - Error message to display
+ * @property {string} [helpText] - Help text to display below field
+ * @property {React.ReactNode} children - Form field element(s)
+ * @property {string} [className] - Additional CSS classes
+ */
+
+/**
+ * Wrapper component for form fields providing consistent layout and styling
+ * 
+ * @param {FieldWrapperProps} props
+ * @returns {JSX.Element}
+ */
+function FieldWrapper({
+  label,
+  name,
+  required = false,
+  error,
+  helpText,
+  children,
+  className = ''
+}) {
+  const fieldId = name || `field-${Math.random().toString(36).substr(2, 9)}`;
+  const hasError = Boolean(error);
+
+  return (
+    <div className={`space-y-2 ${className}`}>
+      {/* Label */}
+      <label 
+        htmlFor={fieldId}
+        className="block text-sm font-medium text-gray-700"
+      >
+        {label}
+        {required && (
+          <span className="ml-1 text-red-500" aria-label="required">
+            *
+          </span>
+        )}
+      </label>
+
+      {/* Form Field */}
+      <div className="relative">
+        {children}
+      </div>
+
+      {/* Error Message */}
+      {hasError && (
+        <p 
+          className="text-sm text-red-600"
+          role="alert"
+          aria-live="polite"
+        >
+          {error}
+        </p>
+      )}
+
+      {/* Help Text */}
+      {helpText && !hasError && (
+        <p className="text-xs text-gray-500">
+          {helpText}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default FieldWrapper;

@@ -2,8 +2,24 @@ import { useState, useEffect } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
 import { API_ENDPOINTS } from '../../api/endpoints'
+import { useAppSelector, useAppDispatch } from '../../store/hooks'
+import {
+  selectAllSchemas,
+  selectFetchLoading,
+  selectFetchError,
+  approveSchema,
+  blockSchema,
+  unloadSchema,
+  loadSchema,
+  fetchSchemas
+} from '../../store/schemaSlice'
 
-function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
+function SchemaTab({ onResult, onSchemaUpdated }) {
+  // Redux state and dispatch - TASK-003: Use Redux instead of props
+  const dispatch = useAppDispatch()
+  const schemas = useAppSelector(selectAllSchemas)
+  const isLoadingSchemas = useAppSelector(selectFetchLoading)
+  const schemasError = useAppSelector(selectFetchError)
   const [expandedSchemas, setExpandedSchemas] = useState({})
   const [, setSampleSchemas] = useState([])
   const [selectedSample, setSelectedSample] = useState('')
@@ -40,8 +56,8 @@ function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
       if (onSchemaUpdated) {
         onSchemaUpdated()
       }
-      // Refresh the schema list
-      fetchAllSchemas()
+      // Refresh the schema list using Redux
+      dispatch(fetchSchemas({ forceRefresh: true }))
     } catch (err) {
       console.error('Failed to load schema:', err)
       if (onResult) {

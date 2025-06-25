@@ -1,7 +1,11 @@
 import { useMemo } from 'react'
 import { getDependencyGraph } from '../../utils/dependencyUtils'
+import { useAppSelector } from '../../store/hooks'
+import { selectAllSchemas } from '../../store/schemaSlice'
 
-function SchemaDependenciesTab({ schemas }) {
+function SchemaDependenciesTab() {
+  // Redux state - TASK-003: Use Redux instead of props
+  const schemas = useAppSelector(selectAllSchemas)
   const { nodes, edges } = useMemo(() => getDependencyGraph(schemas), [schemas])
 
   const nodeWidth = 120

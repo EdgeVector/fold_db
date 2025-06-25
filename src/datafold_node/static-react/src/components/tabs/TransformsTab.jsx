@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useAppSelector } from '../../store/hooks'
+import { selectAllSchemas } from '../../store/schemaSlice'
 
-const TransformsTab = ({ schemas, _onResult }) => {
+const TransformsTab = ({ _onResult }) => {
+  // Redux state - TASK-003: Use Redux instead of props
+  const schemas = useAppSelector(selectAllSchemas)
   const [transforms, setTransforms] = useState([])
   const [apiTransforms, setApiTransforms] = useState({})
   const [loading, setLoading] = useState({})

@@ -2,8 +2,16 @@ import { useState } from 'react'
 import SchemaSelector from './mutation/SchemaSelector'
 import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
+import TextField from '../form/TextField'
 import { MutationClient } from '../../api/mutationClient'
 import { signPayload } from '../../utils/authenticationWrapper'
+import { useFormValidation } from '../../hooks/index.js'
+import {
+  BUTTON_TEXT,
+  FORM_LABELS,
+  RANGE_SCHEMA_CONFIG,
+  VALIDATION_MESSAGES
+} from '../../constants'
 import {
   isRangeSchema,
   formatEnhancedRangeSchemaMutation,
@@ -11,13 +19,20 @@ import {
   getRangeKey,
   getNonRangeKeyFields
 } from '../../utils/rangeSchemaUtils'
+import { useAppSelector } from '../../store/hooks'
+import { selectApprovedSchemas } from '../../store/schemaSlice'
 
-function MutationTab({ schemas, onResult }) {
+function MutationTab({ onResult }) {
+  // Redux state - TASK-003: Use approved schemas for SCHEMA-002 compliance
+  const schemas = useAppSelector(selectApprovedSchemas)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [mutationData, setMutationData] = useState({})
   const [mutationType, setMutationType] = useState('Create')
   const [result, setResult] = useState(null)
   const [rangeKeyValue, setRangeKeyValue] = useState('')
+
+  // Use form validation hook (TASK-001)
+  const { validate, errors, clearErrors } = useFormValidation()
 
   const handleSchemaChange = (schemaName) => {
     setSelectedSchema(schemaName)
@@ -104,7 +119,6 @@ function MutationTab({ schemas, onResult }) {
     <div className="p-6">
       <form onSubmit={handleSubmit} className="space-y-6">
         <SchemaSelector
-          schemas={schemas}
           selectedSchema={selectedSchema}
           mutationType={mutationType}
           onSchemaChange={handleSchemaChange}
@@ -112,26 +126,23 @@ function MutationTab({ schemas, onResult }) {
         />
 
         {selectedSchema && isCurrentSchemaRangeSchema && (
-          <div className="bg-yellow-50 rounded-lg p-4">
+          <div className={`${RANGE_SCHEMA_CONFIG.backgroundColor} rounded-lg p-4`}>
             <h3 className="text-lg font-medium text-gray-900 mb-4">Range Schema Configuration</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                {rangeKey} (Range Key)
-                {mutationType !== 'Delete' && <span className="ml-2 text-xs text-red-500">Required</span>}
-                {mutationType === 'Delete' && <span className="ml-2 text-xs text-blue-500">Optional for targeting</span>}
-              </label>
-              <input
-                type="text"
-                className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${mutationType !== 'Delete' && !rangeKeyValue.trim() ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-primary focus:border-primary'}`}
-                value={rangeKeyValue}
-                onChange={handleRangeKeyChange}
-                placeholder={`Enter ${rangeKey} value`}
-                required={mutationType !== 'Delete'}
-              />
-              {errors.rangeKey && (
-                <p className="mt-1 text-sm text-red-600">{errors.rangeKey}</p>
-              )}
-            </div>
+            <TextField
+              name="rangeKey"
+              label={`${rangeKey} (${RANGE_SCHEMA_CONFIG.label})`}
+              value={rangeKeyValue}
+              onChange={setRangeKeyValue}
+              placeholder={`Enter ${rangeKey} value`}
+              required={mutationType !== 'Delete'}
+              error={errors.rangeKey}
+              helpText={
+                mutationType !== 'Delete'
+                  ? FORM_LABELS.rangeKeyRequired
+                  : FORM_LABELS.rangeKeyOptional
+              }
+              debounced={true}
+            />
           </div>
         )}
 
@@ -151,7 +162,7 @@ function MutationTab({ schemas, onResult }) {
             className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${!selectedSchema || (mutationType !== 'Delete' && Object.keys(mutationData).length === 0) || (isCurrentSchemaRangeSchema && mutationType !== 'Delete' && !rangeKeyValue.trim()) ? 'bg-gray-300 cursor-not-allowed' : 'bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary'}`}
             disabled={!selectedSchema || (mutationType !== 'Delete' && Object.keys(mutationData).length === 0) || (isCurrentSchemaRangeSchema && mutationType !== 'Delete' && !rangeKeyValue.trim())}
           >
-            Execute Mutation
+            {BUTTON_TEXT.executeMutation}
           </button>
         </div>
       </form>

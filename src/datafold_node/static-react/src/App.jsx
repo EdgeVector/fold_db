@@ -5,6 +5,7 @@ import Header from './components/Header'
 import Footer from './components/Footer'
 import StatusSection from './components/StatusSection'
 import ResultsSection from './components/ResultsSection'
+import TabNavigation from './components/TabNavigation'
 import SchemaTab from './components/tabs/SchemaTab'
 import QueryTab from './components/tabs/QueryTab'
 import MutationTab from './components/tabs/MutationTab'
@@ -18,9 +19,10 @@ import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useAppSelector, useAppDispatch } from './store/hooks'
 import { initializeSystemKey } from './store/authSlice'
 import { useEffect } from 'react'
+import { DEFAULT_TAB } from './constants'
 
 export function AppContent() {
-  const [activeTab, setActiveTab] = useState('keys') // Default to keys tab
+  const [activeTab, setActiveTab] = useState(DEFAULT_TAB) // Default to keys tab
   const [results, setResults] = useState(null)
   const keyGenerationResult = useKeyGeneration()
   
@@ -46,7 +48,7 @@ export function AppContent() {
 
   const handleTabChange = (tab) => {
     // If not authenticated, only allow Keys tab
-    if (!isAuthenticated && tab !== 'keys') {
+    if (!isAuthenticated && tab !== DEFAULT_TAB) {
       return
     }
     setActiveTab(tab)
@@ -67,18 +69,16 @@ export function AppContent() {
       case 'schemas':
         return (
           <SchemaTab
-            schemas={allSchemas}
             onResult={handleOperationResult}
             onSchemaUpdated={handleSchemaUpdated}
           />
         )
       case 'query':
-        return <QueryTab schemas={allSchemas} onResult={handleOperationResult} />
+        return <QueryTab onResult={handleOperationResult} />
       case 'mutation':
         return (
           <div className="tab-content">
             <MutationTab
-              schemas={allSchemas}
               onResult={handleOperationResult}
             />
           </div>
@@ -86,9 +86,9 @@ export function AppContent() {
       case 'ingestion':
         return <IngestionTab onResult={handleOperationResult} />
       case 'transforms':
-        return <TransformsTab schemas={allSchemas} onResult={handleOperationResult} />
+        return <TransformsTab onResult={handleOperationResult} />
       case 'dependencies':
-        return <SchemaDependenciesTab schemas={allSchemas} />
+        return <SchemaDependenciesTab />
       case 'keys':
         return (
           <KeyManagementTab
@@ -172,103 +172,12 @@ export function AppContent() {
               </div>
             )}
 
-            <div className="flex border-b border-gray-200">
-              <button
-              className={`px-4 py-2 text-sm font-medium ${
-                activeTab === 'schemas'
-                  ? 'text-primary border-b-2 border-primary'
-                  : isAuthenticated
-                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    : 'text-gray-300 cursor-not-allowed'
-              }`}
-              onClick={() => handleTabChange('schemas')}
-              disabled={!isAuthenticated}
-            >
-              Schemas
-              {!isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium ${
-                activeTab === 'query'
-                  ? 'text-primary border-b-2 border-primary'
-                  : isAuthenticated
-                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    : 'text-gray-300 cursor-not-allowed'
-              }`}
-              onClick={() => handleTabChange('query')}
-              disabled={!isAuthenticated}
-            >
-              Query
-              {!isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium ${
-                activeTab === 'mutation'
-                  ? 'text-primary border-b-2 border-primary'
-                  : isAuthenticated
-                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    : 'text-gray-300 cursor-not-allowed'
-              }`}
-              onClick={() => handleTabChange('mutation')}
-              disabled={!isAuthenticated}
-            >
-              Mutation
-              {!isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium ${
-                activeTab === 'ingestion'
-                  ? 'text-primary border-b-2 border-primary'
-                  : isAuthenticated
-                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    : 'text-gray-300 cursor-not-allowed'
-              }`}
-              onClick={() => handleTabChange('ingestion')}
-              disabled={!isAuthenticated}
-            >
-              Ingestion
-              {!isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium ${
-                activeTab === 'transforms'
-                  ? 'text-primary border-b-2 border-primary'
-                  : isAuthenticated
-                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    : 'text-gray-300 cursor-not-allowed'
-              }`}
-              onClick={() => handleTabChange('transforms')}
-              disabled={!isAuthenticated}
-            >
-              Transforms
-              {!isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium ${
-                activeTab === 'dependencies'
-                  ? 'text-primary border-b-2 border-primary'
-                  : isAuthenticated
-                    ? 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    : 'text-gray-300 cursor-not-allowed'
-              }`}
-              onClick={() => handleTabChange('dependencies')}
-              disabled={!isAuthenticated}
-            >
-              Dependencies
-              {!isAuthenticated && <span className="ml-1 text-xs">🔒</span>}
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium ${
-                activeTab === 'keys'
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => handleTabChange('keys')}
-            >
-              Keys
-              {isAuthenticated && <span className="ml-1 text-xs">✓</span>}
-            </button>
-            </div>
+            {/* Tab Navigation Component (TASK-002) */}
+            <TabNavigation
+              activeTab={activeTab}
+              isAuthenticated={isAuthenticated}
+              onTabChange={handleTabChange}
+            />
 
             <div className="mt-4">
               {renderActiveTab()}
