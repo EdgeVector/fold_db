@@ -9,6 +9,9 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.js'],
     css: true,
     testTimeout: 15000, // Increase timeout to 15 seconds
+    define: {
+      global: 'globalThis',
+    },
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: [

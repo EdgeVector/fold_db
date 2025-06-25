@@ -8,6 +8,7 @@ import {
   SCHEMA_STATES
 } from '../../test/utils/testUtilities.jsx';
 import { INTEGRATION_TEST_RETRY_COUNT } from '../../test/config/constants';
+import { SCHEMA_FETCH_RETRY_COUNT } from '../../constants/schemas.js';
 
 // Mock console to avoid noise in tests (setup already handles this but being explicit)
 global.console = {
@@ -245,12 +246,39 @@ describe('useApprovedSchemas Hook', () => {
   it('should handle different state formats correctly', async () => {
     const mixedStateResponse = {
       ok: true,
-      json: async () => ({ 
-        data: { 
+      json: async () => ({
+        data: {
           'Schema1': 'APPROVED', // uppercase
           'Schema2': { state: 'approved' }, // object format
           'Schema3': 'Available' // mixed case
-        } 
+        }
+      })
+    };
+
+    const mockSchema1Detail = {
+      ok: true,
+      json: async () => ({
+        name: 'Schema1',
+        fields: { field1: { field_type: 'String' } },
+        schema_type: { Standard: {} }
+      })
+    };
+
+    const mockSchema2Detail = {
+      ok: true,
+      json: async () => ({
+        name: 'Schema2',
+        fields: { field1: { field_type: 'String' } },
+        schema_type: { Standard: {} }
+      })
+    };
+
+    const mockSchema3Detail = {
+      ok: true,
+      json: async () => ({
+        name: 'Schema3',
+        fields: { field1: { field_type: 'String' } },
+        schema_type: { Standard: {} }
       })
     };
 
@@ -260,9 +288,9 @@ describe('useApprovedSchemas Hook', () => {
         json: async () => ({ data: ['Schema1', 'Schema2', 'Schema3'] })
       })
       .mockResolvedValueOnce(mixedStateResponse)
-      .mockResolvedValueOnce(mockSchemaDetailResponses[0])
-      .mockResolvedValueOnce(mockSchemaDetailResponses[0])
-      .mockResolvedValueOnce(mockSchemaDetailResponses[0]);
+      .mockResolvedValueOnce(mockSchema1Detail)
+      .mockResolvedValueOnce(mockSchema2Detail)
+      .mockResolvedValueOnce(mockSchema3Detail);
 
     const { result } = renderHookWithRedux(() => useApprovedSchemas());
 

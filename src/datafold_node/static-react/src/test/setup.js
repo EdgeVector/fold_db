@@ -6,6 +6,12 @@ import { TEST_TIMEOUT_DEFAULT_MS } from './config/constants.js'
 // Make vi available globally as jest for compatibility
 global.jest = vi
 
+// Setup WebCrypto API for tests
+import { webcrypto } from 'node:crypto'
+Object.defineProperty(globalThis, 'crypto', {
+  value: webcrypto,
+})
+
 // Setup test environment with mocks and matchers
 setupTestEnvironment()
 
