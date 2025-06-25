@@ -8,6 +8,35 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
 
+/// Prompt header shared across requests
+const PROMPT_HEADER: &str = r#"Tell me which of these schemas to use for this sample json data. If none are available, then create a new one. Return the value in this format:
+{
+  \"existing_schemas\": [<list_of_schema_names>],
+  \"new_schemas\": <single_schema_definition>,
+  \"mutation_mappers\": {json_field_path: schema_field_path}
+}
+
+Where:
+- existing_schemas is an array of schema names that match the input data
+- new_schemas is a single schema definition if no existing schemas match
+- mutation_mappers maps JSON paths (like \"path.field[0]\") to schema paths (like \"schema.field[\\\"key\\\"]\")
+"#;
+
+/// Instructions appended to every prompt
+const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and either:
+1. If existing schemas can handle this data, return their names in existing_schemas and provide mutation_mappers
+2. If no existing schemas match, create a new schema definition in new_schemas and provide mutation_mappers
+
+The response must be valid JSON."#;
+
+fn pretty_json(value: &Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_else(|_| "Invalid JSON".to_string())
+}
+
+fn pretty_json_or_empty(value: &Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string())
+}
+
 /// OpenRouter API service
 pub struct OpenRouterService {
     client: Client,
@@ -93,14 +122,13 @@ impl OpenRouterService {
             LogFeature::Ingestion,
             info,
             "Sample JSON data: {}",
-            serde_json::to_string_pretty(sample_json)
-                .unwrap_or_else(|_| "Invalid JSON".to_string())
+            pretty_json(sample_json)
         );
         log_feature!(
             LogFeature::Ingestion,
             info,
             "Available schemas: {}",
-            serde_json::to_string_pretty(available_schemas).unwrap_or_else(|_| "{}".to_string())
+            pretty_json_or_empty(available_schemas)
         );
 
         let prompt = self.create_prompt(sample_json, available_schemas);
@@ -140,32 +168,11 @@ impl OpenRouterService {
     /// Create the prompt for the AI
     fn create_prompt(&self, sample_json: &Value, available_schemas: &Value) -> String {
         format!(
-            r#"Tell me which of these schemas to use for this sample json data. If none are available, then create a new one. Return the value in this format:
-{{
-  "existing_schemas": [<list_of_schema_names>], 
-  "new_schemas": <single_schema_definition>, 
-  "mutation_mappers": {{json_field_path: schema_field_path}}
-}}
-
-Where:
-- existing_schemas is an array of schema names that match the input data
-- new_schemas is a single schema definition if no existing schemas match
-- mutation_mappers maps JSON paths (like "path.field[0]") to schema paths (like "schema.field[\"key\"]")
-
-Sample JSON Data:
-{}
-
-Available Schemas:
-{}
-
-Please analyze the sample data and either:
-1. If existing schemas can handle this data, return their names in existing_schemas and provide mutation_mappers
-2. If no existing schemas match, create a new schema definition in new_schemas and provide mutation_mappers
-
-The response must be valid JSON."#,
-            serde_json::to_string_pretty(sample_json)
-                .unwrap_or_else(|_| "Invalid JSON".to_string()),
-            serde_json::to_string_pretty(available_schemas).unwrap_or_else(|_| "{}".to_string())
+            "{header}\n\nSample JSON Data:\n{sample}\n\nAvailable Schemas:\n{schemas}\n\n{actions}",
+            header = PROMPT_HEADER,
+            sample = pretty_json(sample_json),
+            schemas = pretty_json_or_empty(available_schemas),
+            actions = PROMPT_ACTIONS
         )
     }
 
@@ -299,7 +306,7 @@ The response must be valid JSON."#,
             LogFeature::Ingestion,
             info,
             "Parsed JSON value: {}",
-            serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| "Invalid JSON".to_string())
+            pretty_json(&parsed)
         );
 
         // Validate and convert to AISchemaResponse
@@ -314,8 +321,7 @@ The response must be valid JSON."#,
             result
                 .new_schemas
                 .as_ref()
-                .map(|s| serde_json::to_string_pretty(s)
-                    .unwrap_or_else(|_| "Invalid JSON".to_string()))
+                .map(pretty_json)
                 .unwrap_or_else(|| "None".to_string())
         );
         log_feature!(LogFeature::Ingestion, info, "Mutation mappers: {:?}", result.mutation_mappers);
@@ -445,6 +451,28 @@ That should work."#;
         let response = result.unwrap();
         assert_eq!(response.existing_schemas.len(), 2);
         assert_eq!(response.mutation_mappers.len(), 2);
+    }
+
+    #[test]
+    fn test_create_prompt_includes_sample_and_schemas() {
+        let service = create_test_service();
+        let sample = serde_json::json!({"a": 1});
+        let schemas = serde_json::json!({"test": {"field": "string"}});
+
+        let prompt = service.create_prompt(&sample, &schemas);
+        assert!(prompt.contains("Sample JSON Data:"));
+        assert!(prompt.contains("\"a\": 1"));
+        assert!(prompt.contains("Available Schemas:"));
+        assert!(prompt.contains("\"test\""));
+        assert!(prompt.contains(PROMPT_HEADER));
+        assert!(prompt.contains(PROMPT_ACTIONS));
+    }
+
+    #[test]
+    fn test_pretty_json_helpers() {
+        let value = serde_json::json!({"x": 1});
+        assert!(pretty_json(&value).contains("\"x\": 1"));
+        assert!(pretty_json_or_empty(&value).contains("\"x\": 1"));
     }
 
     fn create_test_service() -> OpenRouterService {
