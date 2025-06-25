@@ -1003,10 +1003,9 @@ fn test_database_scalability() {
         
         let atom_uuid = format!("scale_atom_{:08}", random_id);
         
-        match fixture.db_ops.get_item::<Atom>(&format!("atom:{}", atom_uuid)) {
-            Ok(Some(_atom)) => successful_queries += 1,
-            _ => {} // Failed query
-        }
+        if let Ok(Some(_atom)) = fixture.db_ops.get_item::<Atom>(&format!("atom:{}", atom_uuid)) {
+            successful_queries += 1;
+        } // Failed query is ignored
     }
     
     let query_duration = query_start.elapsed();
