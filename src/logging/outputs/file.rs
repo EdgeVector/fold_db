@@ -1,6 +1,7 @@
 //! File output handler with rotation support
 
 use crate::logging::config::FileConfig;
+use crate::logging::util::parse_log_level;
 use crate::logging::LoggingError;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
@@ -59,7 +60,7 @@ impl FileOutput {
     pub fn create_layer(&self) -> Result<impl Layer<Registry> + Send + Sync, LoggingError> {
         let mut layer = fmt::Layer::default()
             .with_ansi(false) // No colors in file output
-            .with_filter(self.parse_level_filter()?);
+            .with_filter(parse_log_level(&self.config.level)?);
 
         if !self.config.include_timestamp {
             layer = layer.without_time();
@@ -76,18 +77,6 @@ impl FileOutput {
         }
 
         Ok(layer)
-    }
-
-    /// Parse the log level filter from configuration
-    fn parse_level_filter(&self) -> Result<tracing::Level, LoggingError> {
-        match self.config.level.as_str() {
-            "TRACE" => Ok(tracing::Level::TRACE),
-            "DEBUG" => Ok(tracing::Level::DEBUG),
-            "INFO" => Ok(tracing::Level::INFO),
-            "WARN" => Ok(tracing::Level::WARN),
-            "ERROR" => Ok(tracing::Level::ERROR),
-            _ => Err(LoggingError::Config(format!("Invalid log level: {}", self.config.level))),
-        }
     }
 
     /// Parse file size string to bytes
