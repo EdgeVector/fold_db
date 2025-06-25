@@ -169,104 +169,22 @@ impl Mutation {
     ) -> Result<Self, crate::schema::types::SchemaError> {
         use serde_json::Value;
         if let Some(range_key) = schema.range_key() {
-            // MANDATORY: Get the value for the range_key field from the mutation
-            let range_key_value = self.fields_and_values.get(range_key).ok_or_else(|| {
-                crate::schema::types::SchemaError::InvalidData(format!(
-                    "Range schema mutation for '{}' is missing required range_key field '{}'. All range schema mutations must provide a value for the range_key.",
-                    self.schema_name, range_key
-                ))
-            })?;
+            let (range_key_value, range_key_str) =
+                Self::validate_range_key(&self.schema_name, range_key, &self.fields_and_values)?;
 
-            // Validate the range_key value is not null
-            if range_key_value.is_null() {
-                return Err(crate::schema::types::SchemaError::InvalidData(format!(
-                    "Range schema mutation for '{}' has null value for range_key field '{}'. Range key must have a valid value.",
-                    self.schema_name, range_key
-                )));
-            }
-
-            // If range_key value is a string, ensure it's not empty
-            if let Some(str_value) = range_key_value.as_str() {
-                if str_value.trim().is_empty() {
-                    return Err(crate::schema::types::SchemaError::InvalidData(format!(
-                        "Range schema mutation for '{}' has empty string value for range_key field '{}'. Range key must have a non-empty value.",
-                        self.schema_name, range_key
-                    )));
-                }
-            }
-
-            // **CORE FIX: Transform all fields to use range_key VALUE as MoleculeRange keys**
-            //
-            // This transformation ensures that ALL range fields will have consistent
-            // MoleculeRange keys that are the range_key VALUE, not field names.
             let mut new_fields_and_values = self.fields_and_values.clone();
-            
-            // Convert the range_key value to a string that will be used as the MoleculeRange key
-            // This handles all JSON value types (string, number, boolean, etc.)
-            let range_key_str = match range_key_value {
-                Value::String(s) => s.clone(),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => b.to_string(),
-                _ => serde_json::to_string(range_key_value)
-                    .map_err(|e| crate::schema::types::SchemaError::InvalidData(e.to_string()))?
-                    .trim_matches('"')
-                    .to_string(),
-            };
 
-            // Transform EVERY field to ensure consistent MoleculeRange key structure
             for (field_name, value) in new_fields_and_values.iter_mut() {
                 let original_value = value.clone();
                 if field_name == range_key {
-                    // **RANGE KEY FIELD TRANSFORMATION**
-                    // Input:  "user_id": "abc"
-                    // Output: "user_id": {"abc": "abc"}
-                    // Result: field_manager will create MoleculeRange with key="abc" (the VALUE)
-                    //
-                    // This ensures the range_key field itself uses its VALUE as the MoleculeRange key,
-                    // not the field name, which is crucial for consistent data organization.
-                    let mut obj = serde_json::Map::new();
-                    obj.insert(range_key_str.clone(), original_value);
-                    *value = serde_json::Value::Object(obj);
+                    *value = Self::transform_range_key_field(&original_value, &range_key_str);
                 } else {
-                    // **NON-RANGE KEY FIELD TRANSFORMATION WITH CONTENT EXTRACTION**
-                    //
-                    // For non-range-key fields, if the value is an object that contains the range_key,
-                    // we need to extract the NON-range-key content and only store that.
-                    //
-                    // Example:
-                    // Input:  "test_data": {"test_id": "abc", "value": "123"}
-                    // Extract: Remove "test_id" (range_key), keep the rest
-                    // Output: "test_data": {"abc": "123"}
-                    // Result: field_manager will store just "123" under key "abc"
-                    
-                    let field_content = if let Some(obj) = original_value.as_object() {
-                        if obj.contains_key(range_key) {
-                            // Object contains range_key - extract non-range-key content
-                            let mut extracted_content = obj.clone();
-                            extracted_content.remove(range_key); // Remove the range_key field
-                            
-                            // If only one field remains, use its value directly
-                            if extracted_content.len() == 1 {
-                                extracted_content.values().next().unwrap().clone()
-                            } else if extracted_content.is_empty() {
-                                // If no content remains after removing range_key, use the range_key value
-                                range_key_value.clone()
-                            } else {
-                                // Multiple fields remain, keep as object
-                                serde_json::Value::Object(extracted_content)
-                            }
-                        } else {
-                            // Object doesn't contain range_key - use as-is
-                            original_value
-                        }
-                    } else {
-                        // Not an object - use as-is
-                        original_value
-                    };
-                    
-                    let mut obj = serde_json::Map::new();
-                    obj.insert(range_key_str.clone(), field_content);
-                    *value = serde_json::Value::Object(obj);
+                    *value = Self::map_non_range_field(
+                        &original_value,
+                        range_key,
+                        &range_key_str,
+                        range_key_value,
+                    );
                 }
             }
 
@@ -283,6 +201,82 @@ impl Mutation {
                 self.schema_name
             )))
         }
+    }
+
+    fn validate_range_key<'a>(
+        schema_name: &str,
+        range_key: &str,
+        fields_and_values: &'a HashMap<String, Value>,
+    ) -> Result<(&'a Value, String), crate::schema::types::SchemaError> {
+        let range_key_value = fields_and_values.get(range_key).ok_or_else(|| {
+            crate::schema::types::SchemaError::InvalidData(format!(
+                "Range schema mutation for '{}' is missing required range_key field '{}'. All range schema mutations must provide a value for the range_key.",
+                schema_name, range_key
+            ))
+        })?;
+
+        if range_key_value.is_null() {
+            return Err(crate::schema::types::SchemaError::InvalidData(format!(
+                "Range schema mutation for '{}' has null value for range_key field '{}'. Range key must have a valid value.",
+                schema_name, range_key
+            )));
+        }
+
+        if let Some(str_value) = range_key_value.as_str() {
+            if str_value.trim().is_empty() {
+                return Err(crate::schema::types::SchemaError::InvalidData(format!(
+                    "Range schema mutation for '{}' has empty string value for range_key field '{}'. Range key must have a non-empty value.",
+                    schema_name, range_key
+                )));
+            }
+        }
+
+        let range_key_str = match range_key_value {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            _ => serde_json::to_string(range_key_value)
+                .map_err(|e| crate::schema::types::SchemaError::InvalidData(e.to_string()))?
+                .trim_matches('"')
+                .to_string(),
+        };
+
+        Ok((range_key_value, range_key_str))
+    }
+
+    fn transform_range_key_field(original_value: &Value, range_key_str: &str) -> Value {
+        let mut obj = serde_json::Map::new();
+        obj.insert(range_key_str.to_string(), original_value.clone());
+        Value::Object(obj)
+    }
+
+    fn map_non_range_field(
+        original_value: &Value,
+        range_key: &str,
+        range_key_str: &str,
+        range_key_value: &Value,
+    ) -> Value {
+        let field_content = if let Some(obj) = original_value.as_object() {
+            if obj.contains_key(range_key) {
+                let mut extracted_content = obj.clone();
+                extracted_content.remove(range_key);
+                if extracted_content.len() == 1 {
+                    extracted_content.values().next().unwrap().clone()
+                } else if extracted_content.is_empty() {
+                    range_key_value.clone()
+                } else {
+                    serde_json::Value::Object(extracted_content)
+                }
+            } else {
+                original_value.clone()
+            }
+        } else {
+            original_value.clone()
+        };
+
+        let mut obj = serde_json::Map::new();
+        obj.insert(range_key_str.to_string(), field_content);
+        serde_json::Value::Object(obj)
     }
 }
 
@@ -448,5 +442,31 @@ mod tests {
         if let Err(SchemaError::InvalidData(msg)) = result {
             assert!(msg.contains("empty string value for range_key field"));
         }
+    }
+
+    #[test]
+    fn test_validate_range_key_helpers() {
+        let mut map = HashMap::new();
+        map.insert("user_id".to_string(), json!(42));
+        let (val, key_str) = Mutation::validate_range_key("Test", "user_id", &map).unwrap();
+        assert_eq!(val, &json!(42));
+        assert_eq!(key_str, "42");
+
+        let res = Mutation::validate_range_key("Test", "missing", &map);
+        assert!(matches!(res, Err(SchemaError::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_transform_range_key_field_helper() {
+        let val = json!(7);
+        let transformed = Mutation::transform_range_key_field(&val, "abc");
+        assert_eq!(transformed, json!({"abc": 7}));
+    }
+
+    #[test]
+    fn test_map_non_range_field_helper() {
+        let value = json!({"user_id": "abc", "val": 5});
+        let mapped = Mutation::map_non_range_field(&value, "user_id", "abc", &json!("abc"));
+        assert_eq!(mapped, json!({"abc": 5}));
     }
 }
