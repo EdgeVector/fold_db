@@ -41,15 +41,28 @@ export function AppContent() {
 
   const fetchSchemas = async () => {
     try {
-      const response = await fetch('/api/schemas')
-      const data = await response.json()
+      // Fetch available schemas from filesystem
+      const availableResponse = await fetch('/api/schemas/available')
+      const availableData = await availableResponse.json()
       
-      // Convert the state map to an array of schema objects with states
-      const schemasWithStates = Object.entries(data.data || {}).map(([name, state]) => ({
+      // Fetch persisted schema states from database
+      const persistedResponse = await fetch('/api/schemas')
+      const persistedData = await persistedResponse.json()
+      
+      console.log('📁 Available schemas:', availableData.data || [])
+      console.log('🗄️ Persisted schemas:', persistedData.data || {})
+      
+      const availableSchemas = availableData.data || []
+      const persistedStates = persistedData.data || {}
+      
+      // Create schemas with states - use persisted state if available, otherwise 'available'
+      const schemasWithStates = availableSchemas.map(name => ({
         name,
-        state,
-        fields: {} // Will be populated below for approved schemas
+        state: persistedStates[name] || 'available', // Use database state if exists
+        fields: {} // Will be populated below
       }))
+      
+      console.log('📋 Merged schemas for UI:', schemasWithStates)
       
       // Fetch detailed schema information for all schemas
       const schemasWithDetails = await Promise.all(
@@ -64,15 +77,16 @@ export function AppContent() {
                 fields: schemaData.fields || {}
               }
             } else {
-              console.error(`Failed to fetch schema ${schema.name}: ${schemaResponse.status}`)
+              console.log(`⚠️ Schema ${schema.name} not loaded in memory (${schemaResponse.status}), keeping basic info`)
             }
           } catch (err) {
-            console.error(`Failed to fetch details for schema ${schema.name}:`, err)
+            console.log(`⚠️ Failed to fetch details for schema ${schema.name}:`, err.message)
           }
           return schema // Return original if fetch fails
         })
       )
       
+      console.log('✅ Final schemas for UI:', schemasWithDetails)
       setSchemas(schemasWithDetails)
     } catch (error) {
       console.error('Failed to fetch schemas:', error)

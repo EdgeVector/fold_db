@@ -3,17 +3,14 @@ import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
 import { API_ENDPOINTS } from '../../api/endpoints'
 
-function SchemaTab({ onResult, onSchemaUpdated }) {
+function SchemaTab({ schemas, onResult, onSchemaUpdated }) {
   const [expandedSchemas, setExpandedSchemas] = useState({})
   const [, setSampleSchemas] = useState([])
   const [selectedSample, setSelectedSample] = useState('')
   const [, setLoadingSample] = useState(false)
   const [, setSamplesError] = useState(null)
-  const [allSchemas, setAllSchemas] = useState([])
-
   useEffect(() => {
     fetchSampleSchemas()
-    fetchAllSchemas()
   }, [])
 
   const fetchSampleSchemas = async () => {
@@ -27,21 +24,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     }
   }
 
-  const fetchAllSchemas = async () => {
-    try {
-      const resp = await fetch('/api/schemas')
-      const data = await resp.json()
-      // Convert the state map to an array of schema objects with states
-      const schemasWithStates = Object.entries(data.data || {}).map(([name, state]) => ({
-        name,
-        state,
-        fields: {} // Will be populated when expanded
-      }))
-      setAllSchemas(schemasWithStates)
-    } catch (err) {
-      console.error('Failed to fetch all schemas:', err)
-    }
-  }
 
   const _loadSchema = async (schemaName) => {
     try {
@@ -78,18 +60,17 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
     // If expanding and schema doesn't have fields yet, fetch them
     if (!isCurrentlyExpanded) {
-      const schema = allSchemas.find(s => s.name === schemaName)
+      const schema = schemas.find(s => s.name === schemaName)
       if (schema && (!schema.fields || Object.keys(schema.fields).length === 0)) {
         try {
           const resp = await fetch(`/api/schema/${schemaName}`)
           if (resp.ok) {
             const schemaData = await resp.json()
-            // Update the schema with field details
-            setAllSchemas(prev => prev.map(s =>
-              s.name === schemaName
-                ? { ...s, fields: schemaData.fields || {}, fieldsLoaded: true }
-                : s
-            ))
+            // Note: We can't update the schemas prop directly as it comes from parent
+            // The parent App.jsx will handle schema updates via onSchemaUpdated
+            if (onSchemaUpdated) {
+              onSchemaUpdated()
+            }
           }
         } catch (err) {
           console.error(`Failed to fetch schema details for ${schemaName}:`, err)
@@ -255,8 +236,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       if (onSchemaUpdated) {
         onSchemaUpdated()
       }
-      // Refresh the schema list
-      fetchAllSchemas()
+      // Refresh the schema list via parent component
+      if (onSchemaUpdated) {
+        onSchemaUpdated()
+      }
     } catch (err) {
       console.error('Failed to approve schema:', err)
       if (onResult) {
@@ -280,8 +263,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       if (onSchemaUpdated) {
         onSchemaUpdated()
       }
-      // Refresh the schema list
-      fetchAllSchemas()
+      // Refresh the schema list via parent component
+      if (onSchemaUpdated) {
+        onSchemaUpdated()
+      }
     } catch (err) {
       console.error('Failed to block schema:', err)
       if (onResult) {
@@ -305,8 +290,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       if (onSchemaUpdated) {
         onSchemaUpdated()
       }
-      // Refresh the schema list
-      fetchAllSchemas()
+      // Refresh the schema list via parent component
+      if (onSchemaUpdated) {
+        onSchemaUpdated()
+      }
     } catch (err) {
       console.error('Failed to unload schema:', err)
       if (onResult) {
@@ -420,17 +407,17 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     return String(state || '').toLowerCase()
   }
   
-  const availableSchemas = allSchemas.filter(
+  const availableSchemas = schemas.filter(
     (schema) => getStateString(schema.state) === 'available'
   )
 
   // Derive approved schemas from the full schema list so newly fetched field
   // details are reflected when a schema is expanded.
-  const approvedSchemas = allSchemas.filter(
+  const approvedSchemas = schemas.filter(
     (schema) => getStateString(schema.state) === 'approved'
   )
 
-  const blockedSchemas = allSchemas.filter(
+  const blockedSchemas = schemas.filter(
     (schema) => getStateString(schema.state) === 'blocked'
   )
 
