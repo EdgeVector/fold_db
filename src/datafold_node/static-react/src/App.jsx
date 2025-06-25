@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Provider } from 'react-redux'
 import { store } from './store/store'
 import Header from './components/Header'
@@ -14,14 +14,24 @@ import IngestionTab from './components/tabs/IngestionTab'
 import KeyManagementTab from './components/tabs/KeyManagementTab'
 import LogSidebar from './components/LogSidebar'
 import { useKeyGeneration } from './hooks/useKeyGeneration'
+import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useAppSelector, useAppDispatch } from './store/hooks'
 import { initializeSystemKey } from './store/authSlice'
+import { useEffect } from 'react'
 
 export function AppContent() {
   const [activeTab, setActiveTab] = useState('keys') // Default to keys tab
   const [results, setResults] = useState(null)
-  const [schemas, setSchemas] = useState([])
   const keyGenerationResult = useKeyGeneration()
+  
+  // Use the new useApprovedSchemas hook (TASK-001)
+  const {
+    approvedSchemas,
+    allSchemas,
+    isLoading: schemasLoading,
+    error: schemasError,
+    refetch: refetchSchemas
+  } = useApprovedSchemas()
   
   // Redux state and dispatch
   const dispatch = useAppDispatch()
@@ -33,65 +43,6 @@ export function AppContent() {
   useEffect(() => {
     dispatch(initializeSystemKey())
   }, [dispatch])
-
-
-  useEffect(() => {
-    fetchSchemas()
-  }, [])
-
-  const fetchSchemas = async () => {
-    try {
-      // Fetch available schemas from filesystem
-      const availableResponse = await fetch('/api/schemas/available')
-      const availableData = await availableResponse.json()
-      
-      // Fetch persisted schema states from database
-      const persistedResponse = await fetch('/api/schemas')
-      const persistedData = await persistedResponse.json()
-      
-      console.log('📁 Available schemas:', availableData.data || [])
-      console.log('🗄️ Persisted schemas:', persistedData.data || {})
-      
-      const availableSchemas = availableData.data || []
-      const persistedStates = persistedData.data || {}
-      
-      // Create schemas with states - use persisted state if available, otherwise 'available'
-      const schemasWithStates = availableSchemas.map(name => ({
-        name,
-        state: persistedStates[name] || 'available', // Use database state if exists
-        fields: {} // Will be populated below
-      }))
-      
-      console.log('📋 Merged schemas for UI:', schemasWithStates)
-      
-      // Fetch detailed schema information for all schemas
-      const schemasWithDetails = await Promise.all(
-        schemasWithStates.map(async (schema) => {
-          try {
-            const schemaResponse = await fetch(`/api/schema/${schema.name}`)
-            if (schemaResponse.ok) {
-              const schemaData = await schemaResponse.json()
-              return {
-                ...schema,
-                ...schemaData, // Include the full schema data including schema_type
-                fields: schemaData.fields || {}
-              }
-            } else {
-              console.log(`⚠️ Schema ${schema.name} not loaded in memory (${schemaResponse.status}), keeping basic info`)
-            }
-          } catch (err) {
-            console.log(`⚠️ Failed to fetch details for schema ${schema.name}:`, err.message)
-          }
-          return schema // Return original if fetch fails
-        })
-      )
-      
-      console.log('✅ Final schemas for UI:', schemasWithDetails)
-      setSchemas(schemasWithDetails)
-    } catch (error) {
-      console.error('Failed to fetch schemas:', error)
-    }
-  }
 
   const handleTabChange = (tab) => {
     // If not authenticated, only allow Keys tab
@@ -107,7 +58,8 @@ export function AppContent() {
   }
 
   const handleSchemaUpdated = () => {
-    fetchSchemas()
+    // Use the hook's refetch method instead of manual fetchSchemas (TASK-001)
+    refetchSchemas()
   }
 
   const renderActiveTab = () => {
@@ -115,18 +67,18 @@ export function AppContent() {
       case 'schemas':
         return (
           <SchemaTab
-            schemas={schemas}
+            schemas={allSchemas}
             onResult={handleOperationResult}
             onSchemaUpdated={handleSchemaUpdated}
           />
         )
       case 'query':
-        return <QueryTab schemas={schemas} onResult={handleOperationResult} />
+        return <QueryTab schemas={allSchemas} onResult={handleOperationResult} />
       case 'mutation':
         return (
           <div className="tab-content">
             <MutationTab
-              schemas={schemas}
+              schemas={allSchemas}
               onResult={handleOperationResult}
             />
           </div>
@@ -134,9 +86,9 @@ export function AppContent() {
       case 'ingestion':
         return <IngestionTab onResult={handleOperationResult} />
       case 'transforms':
-        return <TransformsTab schemas={schemas} onResult={handleOperationResult} />
+        return <TransformsTab schemas={allSchemas} onResult={handleOperationResult} />
       case 'dependencies':
-        return <SchemaDependenciesTab schemas={schemas} />
+        return <SchemaDependenciesTab schemas={allSchemas} />
       case 'keys':
         return (
           <KeyManagementTab
@@ -157,6 +109,48 @@ export function AppContent() {
           <StatusSection />
 
           <div className="mt-6">
+            {/* Schema Loading/Error States */}
+            {schemasError && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">
+                      Schema Loading Error
+                    </h3>
+                    <div className="mt-2 text-sm text-red-700">
+                      <p>{schemasError}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {schemasLoading && (
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <svg className="animate-spin h-5 w-5 text-blue-400" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-blue-800">
+                      Loading Schemas...
+                    </h3>
+                    <div className="mt-2 text-sm text-blue-700">
+                      <p>Fetching schema information from the server.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Authentication Warning */}
             {!isAuthenticated && (
               <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">

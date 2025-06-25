@@ -29,6 +29,18 @@ function MutationTab({ schemas, onResult }) {
     setMutationData(prev => ({ ...prev, [fieldName]: value }))
   }
 
+  const handleRangeKeyChange = (e) => {
+    const value = e.target.value
+    setRangeKeyValue(value)
+    
+    // Validate range key with debouncing (TASK-001)
+    if (selectedSchemaObj && rangeProps.isRange(selectedSchemaObj)) {
+      validate('rangeKey', value, [
+        { type: 'custom', validator: (val) => rangeProps.validateRangeKey(val, mutationType !== 'Delete') }
+      ], true) // Enable debouncing
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedSchema) return
@@ -112,10 +124,13 @@ function MutationTab({ schemas, onResult }) {
                 type="text"
                 className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${mutationType !== 'Delete' && !rangeKeyValue.trim() ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-primary focus:border-primary'}`}
                 value={rangeKeyValue}
-                onChange={(e) => setRangeKeyValue(e.target.value)}
+                onChange={handleRangeKeyChange}
                 placeholder={`Enter ${rangeKey} value`}
                 required={mutationType !== 'Delete'}
               />
+              {errors.rangeKey && (
+                <p className="mt-1 text-sm text-red-600">{errors.rangeKey}</p>
+              )}
             </div>
           </div>
         )}

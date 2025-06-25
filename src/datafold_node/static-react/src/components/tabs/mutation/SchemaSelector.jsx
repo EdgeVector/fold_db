@@ -1,12 +1,15 @@
 
+import { SCHEMA_STATES } from '../../../constants/schemas.js'
+
 function SchemaSelector({ schemas, selectedSchema, mutationType, onSchemaChange, onTypeChange }) {
   // Filter schemas to only include approved ones (SCHEMA-002)
+  // Note: Parent components should ideally pass only approved schemas using useApprovedSchemas hook
   const approvedSchemas = schemas.filter(schema => {
-    // Handle different state formats
+    // Handle different state formats - normalize to lowercase
     const state = typeof schema.state === 'string'
       ? schema.state.toLowerCase()
       : String(schema.state || '').toLowerCase()
-    return state === 'approved'
+    return state === SCHEMA_STATES.APPROVED
   })
 
   return (

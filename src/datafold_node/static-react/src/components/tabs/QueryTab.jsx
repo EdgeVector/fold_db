@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import {
-  isRangeSchema,
-  getRangeKey
-} from '../../utils/rangeSchemaUtils'
+import { useRangeSchema, useFormValidation } from '../../hooks/index.js'
 import { API_ENDPOINTS } from '../../api/endpoints'
 
 function QueryTab({ schemas, onResult }) {
@@ -11,6 +8,10 @@ function QueryTab({ schemas, onResult }) {
   const [rangeFilters, setRangeFilters] = useState({})
   const [, setRangeKeyValue] = useState('')
   const [rangeSchemaFilter, setRangeSchemaFilter] = useState({})
+
+  // Use custom hooks (TASK-001)
+  const { rangeProps } = useRangeSchema()
+  const { validate, errors, clearErrors } = useFormValidation()
 
   const handleSchemaChange = (e) => {
     const schemaName = e.target.value
@@ -28,6 +29,7 @@ function QueryTab({ schemas, onResult }) {
     setRangeFilters({})
     setRangeKeyValue('')
     setRangeSchemaFilter({})
+    clearErrors() // Clear validation errors when schema changes
   }
 
   const handleFieldToggle = (fieldName) => {
@@ -59,8 +61,8 @@ function QueryTab({ schemas, onResult }) {
     const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
     let query
 
-    // Check if this is a range schema
-    if (isRangeSchema(selectedSchemaObj)) {
+    // Check if this is a range schema using the hook
+    if (rangeProps.isRange(selectedSchemaObj)) {
       // For range schemas, use the enhanced range filtering
       query = {
         type: 'query',
@@ -72,7 +74,7 @@ function QueryTab({ schemas, onResult }) {
       if (rangeSchemaFilter.start && rangeSchemaFilter.end) {
         query.filter = {
           range_filter: {
-            [getRangeKey(selectedSchemaObj)]: {
+            [rangeProps.getRangeKey(selectedSchemaObj)]: {
               KeyRange: {
                 start: rangeSchemaFilter.start,
                 end: rangeSchemaFilter.end
@@ -83,13 +85,13 @@ function QueryTab({ schemas, onResult }) {
       } else if (rangeSchemaFilter.key) {
         query.filter = {
           range_filter: {
-            [getRangeKey(selectedSchemaObj)]: rangeSchemaFilter.key
+            [rangeProps.getRangeKey(selectedSchemaObj)]: rangeSchemaFilter.key
           }
         }
       } else if (rangeSchemaFilter.keyPrefix) {
         query.filter = {
           range_filter: {
-            [getRangeKey(selectedSchemaObj)]: {
+            [rangeProps.getRangeKey(selectedSchemaObj)]: {
               KeyPrefix: rangeSchemaFilter.keyPrefix
             }
           }
@@ -179,14 +181,16 @@ function QueryTab({ schemas, onResult }) {
 
   const selectedSchemaFields = selectedSchemaObj?.fields || {}
 
-  const isCurrentSchemaRangeSchema = selectedSchemaObj ? isRangeSchema(selectedSchemaObj) : false
-  const rangeKey = selectedSchemaObj ? getRangeKey(selectedSchemaObj) : null
+  const isCurrentSchemaRangeSchema = selectedSchemaObj ? rangeProps.isRange(selectedSchemaObj) : false
+  const rangeKey = selectedSchemaObj ? rangeProps.getRangeKey(selectedSchemaObj) : null
 
   const rangeFields = selectedSchema ?
     Object.entries(selectedSchemaFields).filter(([_, field]) => field.field_type === 'Range') :
     []
 
   // Filter schemas to only include approved ones (SCHEMA-002)
+  // Note: This filtering logic should now be handled by the parent component using useApprovedSchemas hook
+  // but we keep this as fallback for backward compatibility
   const approvedSchemas = schemas.filter(schema => {
     // Handle different state formats
     const state = typeof schema.state === 'string'
