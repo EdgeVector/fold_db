@@ -31,6 +31,174 @@ pub struct PaymentManager {
     lightning_client: Arc<Box<dyn LightningClient>>,
 }
 
+/// Helper struct housing the core payment operations.
+///
+/// This keeps `PaymentManager` methods small and focused on
+/// dependency management while the heavy lifting is delegated to
+/// these helpers.
+pub(super) struct PaymentOps<'a> {
+    config: &'a GlobalPaymentConfig,
+    states: &'a Arc<RwLock<HashMap<String, PaymentState>>>,
+    client: Arc<Box<dyn LightningClient>>,
+}
+
+impl<'a> PaymentOps<'a> {
+    fn new(manager: &'a PaymentManager) -> Self {
+        Self {
+            config: &manager.config,
+            states: &manager.invoice_states,
+            client: Arc::clone(&manager.lightning_client),
+        }
+    }
+
+    async fn create_invoice(
+        &self,
+        amount: u64,
+        memo: String,
+        hold_invoice: bool,
+    ) -> Result<LightningPaymentRequest, Error> {
+        self.config.validate_payment(amount)?;
+
+        let timeout = if hold_invoice {
+            self.config.hold_invoice_timeout
+        } else {
+            self.config.payment_timeout
+        };
+
+        let invoice = self
+            .client
+            .create_invoice(amount, memo, timeout, hold_invoice)
+            .await?;
+
+        let state = PaymentState {
+            invoice_id: invoice.payment_hash.clone(),
+            status: PaymentStatus::Pending,
+            created_at: Utc::now(),
+            last_checked: Utc::now(),
+            retry_count: 0,
+        };
+
+        self.states
+            .write()
+            .await
+            .insert(invoice.payment_hash.clone(), state);
+
+        Ok(invoice)
+    }
+
+    async fn verify_payment(&self, payment_hash: &str) -> Result<bool, Error> {
+        let mut states = self.states.write().await;
+        let state = states
+            .get_mut(payment_hash)
+            .ok_or_else(|| Error::InvalidInvoice("Invoice not found".to_string()))?;
+
+        state.last_checked = Utc::now();
+
+        if Utc::now()
+            > state.created_at
+                + chrono::Duration::from_std(self.config.payment_timeout)
+                    .map_err(|e| Error::Internal(e.to_string()))?
+        {
+            state.status = PaymentStatus::Expired;
+            return Ok(false);
+        }
+
+        match self
+            .client
+            .check_payment(&format!("mock_invoice_{payment_hash}"))
+            .await?
+        {
+            PaymentStatus::Settled => {
+                state.status = PaymentStatus::Settled;
+                Ok(true)
+            }
+            PaymentStatus::PartiallyPaid(amount) => {
+                state.status = PaymentStatus::PartiallyPaid(amount);
+                Ok(false)
+            }
+            current_status => {
+                state.status = current_status;
+                Ok(false)
+            }
+        }
+    }
+
+    async fn wait_for_payment(
+        &self,
+        invoice: &LightningPaymentRequest,
+        check_interval: Duration,
+    ) -> Result<bool, Error> {
+        let expiry = invoice.expiry;
+        let mut retries = 0;
+
+        while Utc::now() < expiry && retries < self.config.max_invoice_retries {
+            if self.verify_payment(&invoice.payment_hash).await? {
+                return Ok(true);
+            }
+            tokio::time::sleep(check_interval).await;
+            retries += 1;
+        }
+
+        let states = self.states.read().await;
+        match states.get(&invoice.payment_hash) {
+            Some(state) if matches!(state.status, PaymentStatus::PartiallyPaid(_)) => {
+                Err(Error::PaymentVerification("Partial payment received".to_string()))
+            }
+            _ => Err(Error::PaymentTimeout),
+        }
+    }
+
+    async fn cancel_payment(&self, payment_hash: &str) -> Result<(), Error> {
+        let mut states = self.states.write().await;
+        let state = states
+            .get_mut(payment_hash)
+            .ok_or_else(|| Error::InvalidInvoice("Invoice not found".to_string()))?;
+
+        if state.is_final() {
+            return Err(Error::InvalidInvoice("Payment already finalized".to_string()));
+        }
+
+        self
+            .client
+            .cancel_invoice(&format!("mock_invoice_{payment_hash}"))
+            .await?;
+        state.status = PaymentStatus::Cancelled;
+        Ok(())
+    }
+
+    async fn cleanup_expired_invoices(&self) -> Result<(), Error> {
+        let mut states = self.states.write().await;
+        let now = Utc::now();
+
+        let expired: Vec<_> = states
+            .iter()
+            .filter(|(_, state)| {
+                if let Ok(timeout) = chrono::Duration::from_std(self.config.payment_timeout) {
+                    !state.is_final() && now > state.created_at + timeout
+                } else {
+                    false
+                }
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        for payment_hash in expired {
+            if let Err(e) = self
+                .client
+                .cancel_invoice(&format!("mock_invoice_{payment_hash}"))
+                .await
+            {
+                warn!("Failed to cancel expired invoice {payment_hash}: {e}");
+            }
+            if let Some(state) = states.get_mut(&payment_hash) {
+                state.status = PaymentStatus::Expired;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl PaymentManager {
     /// Creates a new PaymentManager instance.
     ///
@@ -80,35 +248,9 @@ impl PaymentManager {
         memo: String,
         hold_invoice: bool,
     ) -> Result<LightningPaymentRequest, Error> {
-        // Validate amount against system minimum
-        self.config.validate_payment(amount)?;
-
-        let timeout = if hold_invoice {
-            self.config.hold_invoice_timeout
-        } else {
-            self.config.payment_timeout
-        };
-
-        let invoice = self
-            .lightning_client
-            .create_invoice(amount, memo, timeout, hold_invoice)
-            .await?;
-
-        // Track invoice state
-        let state = PaymentState {
-            invoice_id: invoice.payment_hash.clone(),
-            status: PaymentStatus::Pending,
-            created_at: Utc::now(),
-            last_checked: Utc::now(),
-            retry_count: 0,
-        };
-
-        self.invoice_states
-            .write()
+        PaymentOps::new(self)
+            .create_invoice(amount, memo, hold_invoice)
             .await
-            .insert(invoice.payment_hash.clone(), state);
-
-        Ok(invoice)
     }
 
     /// Verifies the current status of a payment.
@@ -135,45 +277,7 @@ impl PaymentManager {
     /// - The payment hash is not found
     /// - The lightning client fails to check the payment status
     pub async fn verify_payment(&self, payment_hash: &str) -> Result<bool, Error> {
-        {
-            let mut states = self.invoice_states.write().await;
-            let state = states
-                .get_mut(payment_hash)
-                .ok_or_else(|| Error::InvalidInvoice("Invoice not found".to_string()))?;
-
-            // Update last checked timestamp
-            state.last_checked = Utc::now();
-
-            // Check if expired
-            if Utc::now()
-                > state.created_at
-                    + chrono::Duration::from_std(self.config.payment_timeout)
-                        .map_err(|e| Error::Internal(e.to_string()))?
-            {
-                state.status = PaymentStatus::Expired;
-                return Ok(false);
-            }
-
-            // Verify with Lightning node
-            match self
-                .lightning_client
-                .check_payment(&format!("mock_invoice_{payment_hash}"))
-                .await?
-            {
-                PaymentStatus::Settled => {
-                    state.status = PaymentStatus::Settled;
-                    Ok(true)
-                }
-                PaymentStatus::PartiallyPaid(amount) => {
-                    state.status = PaymentStatus::PartiallyPaid(amount);
-                    Ok(false)
-                }
-                current_status => {
-                    state.status = current_status;
-                    Ok(false)
-                }
-            }
-        }
+        PaymentOps::new(self).verify_payment(payment_hash).await
     }
 
     /// Waits for a payment to complete with periodic status checks.
@@ -204,25 +308,9 @@ impl PaymentManager {
         invoice: &LightningPaymentRequest,
         check_interval: Duration,
     ) -> Result<bool, Error> {
-        let expiry = invoice.expiry;
-        let mut retries = 0;
-
-        while Utc::now() < expiry && retries < self.config.max_invoice_retries {
-            if self.verify_payment(&invoice.payment_hash).await? {
-                return Ok(true);
-            }
-            tokio::time::sleep(check_interval).await;
-            retries += 1;
-        }
-
-        // Handle payment timeout
-        let states = self.invoice_states.read().await;
-        match states.get(&invoice.payment_hash) {
-            Some(state) if matches!(state.status, PaymentStatus::PartiallyPaid(_)) => Err(
-                Error::PaymentVerification("Partial payment received".to_string()),
-            ),
-            _ => Err(Error::PaymentTimeout),
-        }
+        PaymentOps::new(self)
+            .wait_for_payment(invoice, check_interval)
+            .await
     }
 
     /// Cancels a pending payment.
@@ -247,26 +335,7 @@ impl PaymentManager {
     /// - The payment is already finalized
     /// - The lightning client fails to cancel the invoice
     pub async fn cancel_payment(&self, payment_hash: &str) -> Result<(), Error> {
-        {
-            let mut states = self.invoice_states.write().await;
-            let state = states
-                .get_mut(payment_hash)
-                .ok_or_else(|| Error::InvalidInvoice("Invoice not found".to_string()))?;
-
-            if state.is_final() {
-                return Err(Error::InvalidInvoice(
-                    "Payment already finalized".to_string(),
-                ));
-            }
-
-            // Cancel with Lightning node
-            self.lightning_client
-                .cancel_invoice(&format!("mock_invoice_{payment_hash}"))
-                .await?;
-            state.status = PaymentStatus::Cancelled;
-        }
-
-        Ok(())
+        PaymentOps::new(self).cancel_payment(payment_hash).await
     }
 
     /// Cleans up expired invoices.
@@ -287,37 +356,7 @@ impl PaymentManager {
     /// Returns an Error if:
     /// - The lightning client fails to cancel any expired invoices
     pub async fn cleanup_expired_invoices(&self) -> Result<(), Error> {
-        let mut states = self.invoice_states.write().await;
-        let now = Utc::now();
-
-        // Collect expired invoices
-        let expired: Vec<_> = states
-            .iter()
-            .filter(|(_, state)| {
-                if let Ok(timeout) = chrono::Duration::from_std(self.config.payment_timeout) {
-                    !state.is_final() && now > state.created_at + timeout
-                } else {
-                    false // Skip if duration conversion fails
-                }
-            })
-            .map(|(k, _)| k.clone())
-            .collect();
-
-        // Cancel expired invoices
-        for payment_hash in expired {
-            if let Err(e) = self
-                .lightning_client
-                .cancel_invoice(&format!("mock_invoice_{payment_hash}"))
-                .await
-            {
-                warn!("Failed to cancel expired invoice {payment_hash}: {e}");
-            }
-            if let Some(state) = states.get_mut(&payment_hash) {
-                state.status = PaymentStatus::Expired;
-            }
-        }
-
-        Ok(())
+        PaymentOps::new(self).cleanup_expired_invoices().await
     }
 
     /// Gets the current status of a payment.
@@ -422,6 +461,75 @@ mod tests {
 
         manager.cleanup_expired_invoices().await.unwrap();
 
+        let status = manager
+            .get_payment_status(&invoice.payment_hash)
+            .await
+            .unwrap();
+        assert!(matches!(status, PaymentStatus::Expired));
+    }
+
+    #[tokio::test]
+    async fn test_ops_create_invoice() {
+        let manager = setup_test_manager().await;
+        let ops = PaymentOps::new(&manager);
+        let invoice = ops
+            .create_invoice(100, "Test ops".to_string(), false)
+            .await
+            .unwrap();
+        assert_eq!(invoice.amount, 100);
+    }
+
+    #[tokio::test]
+    async fn test_ops_verify_payment() {
+        let manager = setup_test_manager().await;
+        let ops = PaymentOps::new(&manager);
+        let invoice = ops
+            .create_invoice(100, "verify".to_string(), false)
+            .await
+            .unwrap();
+        assert!(ops.verify_payment(&invoice.payment_hash).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_ops_wait_for_payment() {
+        let manager = setup_test_manager().await;
+        let ops = PaymentOps::new(&manager);
+        let invoice = ops
+            .create_invoice(100, "wait".to_string(), false)
+            .await
+            .unwrap();
+        assert!(
+            ops.wait_for_payment(&invoice, Duration::from_millis(10))
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ops_cancel_payment() {
+        let manager = setup_test_manager().await;
+        let ops = PaymentOps::new(&manager);
+        let invoice = ops
+            .create_invoice(100, "cancel".to_string(), false)
+            .await
+            .unwrap();
+        assert!(ops.cancel_payment(&invoice.payment_hash).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_ops_cleanup_expired() {
+        let manager = setup_test_manager().await;
+        let ops = PaymentOps::new(&manager);
+        let invoice = ops
+            .create_invoice(100, "cleanup".to_string(), false)
+            .await
+            .unwrap();
+        {
+            let mut states = manager.invoice_states.write().await;
+            let state = states.get_mut(&invoice.payment_hash).unwrap();
+            state.created_at = Utc::now() - chrono::Duration::hours(2);
+        }
+        ops.cleanup_expired_invoices().await.unwrap();
         let status = manager
             .get_payment_status(&invoice.payment_hash)
             .await
