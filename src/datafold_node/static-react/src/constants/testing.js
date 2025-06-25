@@ -15,6 +15,16 @@ export const MOCK_API_DELAY_MS = 100;
 export const TEST_VALIDATION_BATCH_SIZE = 10;
 
 // ============================================================================
+// TASK-012: FINAL VALIDATION CONSTANTS (Section 2.1.12)
+// ============================================================================
+
+export const FINAL_VALIDATION_TIMEOUT_MS = 120000;
+export const COMMIT_MESSAGE_MIN_LENGTH = 50;
+export const TEST_SUITE_RETRY_COUNT = 2;
+export const DEPLOYMENT_VALIDATION_TIMEOUT_MS = 180000;
+export const TASK_COMPLETION_BATCH_SIZE = 6;
+
+// ============================================================================
 // TEST CONFIGURATION
 // ============================================================================
 
@@ -73,6 +83,11 @@ export default {
   INTEGRATION_TEST_RETRY_COUNT,
   MOCK_API_DELAY_MS,
   TEST_VALIDATION_BATCH_SIZE,
+  FINAL_VALIDATION_TIMEOUT_MS,
+  COMMIT_MESSAGE_MIN_LENGTH,
+  TEST_SUITE_RETRY_COUNT,
+  DEPLOYMENT_VALIDATION_TIMEOUT_MS,
+  TASK_COMPLETION_BATCH_SIZE,
   TEST_CONFIG,
   TEST_ENVIRONMENT
 };

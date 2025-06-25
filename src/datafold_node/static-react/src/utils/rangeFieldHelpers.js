@@ -22,14 +22,13 @@ export function generateRangeHelpText(mode = 'all', rangeKeyName = 'key', custom
   
   const help = { ...HELP_TEXT.rangeKeyFilter };
   
-  return (
-    <div className="space-y-1">
-      <p><strong>Key Range:</strong> {help.keyRange}</p>
-      <p><strong>Exact Key:</strong> {help.exactKey.replace('key', rangeKeyName)}</p>
-      <p><strong>Key Prefix:</strong> {help.keyPrefix.replace('keys', `${rangeKeyName} values`)}</p>
-      <p className="text-yellow-700"><strong>Note:</strong> {help.emptyNote}</p>
-    </div>
-  );
+  return {
+    type: 'help-text',
+    keyRange: help.keyRange,
+    exactKey: help.exactKey.replace('key', rangeKeyName),
+    keyPrefix: help.keyPrefix.replace('keys', `${rangeKeyName} values`),
+    emptyNote: help.emptyNote
+  };
 }
 
 /**

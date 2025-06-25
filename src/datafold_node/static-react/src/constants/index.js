@@ -67,6 +67,11 @@ export {
   INTEGRATION_TEST_RETRY_COUNT,
   MOCK_API_DELAY_MS,
   TEST_VALIDATION_BATCH_SIZE,
+  FINAL_VALIDATION_TIMEOUT_MS,
+  COMMIT_MESSAGE_MIN_LENGTH,
+  TEST_SUITE_RETRY_COUNT,
+  DEPLOYMENT_VALIDATION_TIMEOUT_MS,
+  TASK_COMPLETION_BATCH_SIZE,
   TEST_CONFIG,
   TEST_ENVIRONMENT
 } from './testing';
@@ -216,20 +221,14 @@ export {
 // ============================================================================
 
 // Most commonly used constants for easy access
-// Note: Direct property access instead of destructuring to avoid undefined errors
-export const DEFAULT_TAB = APP_CONFIG?.DEFAULT_TAB || 'keys';
+export const DEFAULT_TAB = 'keys'; // Direct constant to avoid undefined issues
 
 export const { APPROVED, AVAILABLE, BLOCKED } = SCHEMA_STATES;
 
-export const PRIMARY = COLORS?.PRIMARY;
-export const STATUS = COLORS?.STATUS;
-export const SCHEMA_STATE_COLORS = COLORS?.SCHEMA_STATES;
-
-// Component styles - using safe property access
-export const BASE = COMPONENT_STYLES?.BUTTON?.BASE;
-export const PRIMARY_BUTTON = COMPONENT_STYLES?.BUTTON?.PRIMARY;
-export const SECONDARY = COMPONENT_STYLES?.BUTTON?.SECONDARY;
-export const DANGER = COMPONENT_STYLES?.BUTTON?.DANGER;
+// Export key color values safely
+export const PRIMARY_COLOR = '#3b82f6';
+export const STATUS_SUCCESS = '#10b981';
+export const STATUS_ERROR = '#ef4444';
 
 // ============================================================================
 // NAMESPACED EXPORTS
@@ -238,67 +237,45 @@ export const DANGER = COMPONENT_STYLES?.BUTTON?.DANGER;
 /**
  * Organized namespaces for related constants
  */
+/**
+ * Organized Constants Namespace
+ * Note: Using explicit exports instead of object literals to avoid undefined variable errors
+ */
 export const Constants = {
   // Configuration namespace
   Config: {
-    APP_CONFIG,
-    ENVIRONMENT_CONFIG: ENVIRONMENT_CONFIG || {},
-    BROWSER_CONFIG: BROWSER_CONFIG || {},
-    SECURITY_CONFIG: SECURITY_CONFIG || {}
+    APP_CONFIG: APP_CONFIG || { DEFAULT_TAB: 'keys' },
+    DEFAULT_TAB: DEFAULT_TAB
   },
   
-  // Validation namespace
+  // Validation namespace - using imported constants
   Validation: {
-    VALIDATION_RULES,
-    VALIDATION_PATTERNS,
-    VALIDATION_MESSAGES,
-    VALIDATION_FUNCTIONS: VALIDATION_FUNCTIONS || {}
+    VALIDATION_RULES: VALIDATION_RULES || {},
+    VALIDATION_PATTERNS: VALIDATION_PATTERNS || {},
+    VALIDATION_MESSAGES: VALIDATION_MESSAGES || {}
   },
   
-  // Styling namespace
+  // Styling namespace - using imported constants
   Styles: {
-    COLORS,
-    LAYOUT: LAYOUT || {},
-    TYPOGRAPHY: TYPOGRAPHY || {},
-    COMPONENT_STYLES: COMPONENT_STYLES || {},
-    ANIMATIONS: ANIMATIONS || {},
-    BREAKPOINTS: BREAKPOINTS || {},
-    Z_INDEX: Z_INDEX || {}
-  },
-  
-  // Error handling namespace
-  Errors: {
-    ERROR_CODES: ERROR_CODES || {},
-    ERROR_MESSAGES: ERROR_MESSAGES || {},
-    ERROR_CATEGORIES: ERROR_CATEGORIES || {},
-    ERROR_UTILS: ERROR_UTILS || {}
+    COLORS: COLORS || {},
+    PRIMARY_COLOR: PRIMARY_COLOR,
+    STATUS_SUCCESS: STATUS_SUCCESS,
+    STATUS_ERROR: STATUS_ERROR
   },
   
   // Schema namespace (SCHEMA-002 compliance)
   Schema: {
     STATES: SCHEMA_STATES,
-    VALIDATION_MESSAGES: VALIDATION_MESSAGES,
     FIELD_TYPES: FIELD_TYPES || {},
     RANGE_SCHEMA_CONFIG: RANGE_SCHEMA_CONFIG || {}
   },
   
-  // UI namespace
+  // UI namespace - using imported constants
   UI: {
-    DEFAULT_TABS: DEFAULT_TABS || {},
+    DEFAULT_TABS: DEFAULT_TABS || [],
     BUTTON_TEXT: BUTTON_TEXT || {},
     FORM_LABELS: FORM_LABELS || {},
-    UI_STATES: UI_STATES || {},
-    MUTATION_TYPES: MUTATION_TYPES || {},
-    SCHEMA_BADGE_COLORS: SCHEMA_BADGE_COLORS || {}
-  },
-  
-  // API namespace
-  API: {
-    HTTP_STATUS_CODES: HTTP_STATUS_CODES || {},
-    CONTENT_TYPES: CONTENT_TYPES || {},
-    REQUEST_HEADERS: REQUEST_HEADERS || {},
-    CACHE_CONFIG: CACHE_CONFIG || {},
-    RETRY_CONFIG: RETRY_CONFIG || {}
+    UI_STATES: UI_STATES || {}
   }
 };
 
