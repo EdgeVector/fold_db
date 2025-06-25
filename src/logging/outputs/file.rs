@@ -1,6 +1,7 @@
 //! File output handler with rotation support
 
 use crate::logging::config::FileConfig;
+use crate::logging::utils::parse_file_size;
 use crate::logging::LoggingError;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
@@ -24,6 +25,9 @@ impl FileOutput {
             tokio::fs::create_dir_all(parent).await
                 .map_err(|e| LoggingError::Io(e))?;
         }
+
+        // Validate configured max file size
+        parse_file_size(&config.max_size)?;
 
         // Set up file appender with rotation
         let file_appender = if config.max_files > 1 {
@@ -90,29 +94,4 @@ impl FileOutput {
         }
     }
 
-    /// Parse file size string to bytes
-    fn parse_file_size(size_str: &str) -> Result<u64, LoggingError> {
-        let size_str = size_str.to_uppercase();
-        
-        if let Some(num_str) = size_str.strip_suffix("GB") {
-            let num: u64 = num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))?;
-            Ok(num * 1024 * 1024 * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("MB") {
-            let num: u64 = num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))?;
-            Ok(num * 1024 * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("KB") {
-            let num: u64 = num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))?;
-            Ok(num * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("B") {
-            num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))
-        } else {
-            // Default to bytes if no suffix
-            size_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))
-        }
-    }
 }
