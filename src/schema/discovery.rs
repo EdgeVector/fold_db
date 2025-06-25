@@ -11,29 +11,12 @@ impl SchemaCore {
         let mut discovered_schemas = Vec::new();
 
         info!("Discovering schemas from {}", self.schemas_dir.display());
-        if let Ok(entries) = std::fs::read_dir(&self.schemas_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|e| e == "json").unwrap_or(false) {
-                    if let Ok(contents) = std::fs::read_to_string(&path) {
-                        let mut schema_opt = serde_json::from_str::<Schema>(&contents).ok();
-                        if schema_opt.is_none() {
-                            if let Ok(json_schema) =
-                                serde_json::from_str::<JsonSchemaDefinition>(&contents)
-                            {
-                                if let Ok(schema) = self.interpret_schema(json_schema) {
-                                    schema_opt = Some(schema);
-                                }
-                            }
-                        }
-                        if let Some(mut schema) = schema_opt {
-                            self.fix_transform_outputs(&mut schema);
-                            let schema_name = schema.name.clone();
-                            discovered_schemas.push(schema);
-                            info!("Discovered schema '{}' from file", schema_name);
-                        }
-                    }
-                }
+        for path in Self::iter_schema_files(&self.schemas_dir)? {
+            if let Some(mut schema) = self.parse_schema_file(&path)? {
+                self.fix_transform_outputs(&mut schema);
+                let schema_name = schema.name.clone();
+                discovered_schemas.push(schema);
+                info!("Discovered schema '{}' from file", schema_name);
             }
         }
 
@@ -50,29 +33,12 @@ impl SchemaCore {
             "Discovering available schemas from {}",
             available_schemas_dir.display()
         );
-        if let Ok(entries) = std::fs::read_dir(&available_schemas_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|e| e == "json").unwrap_or(false) {
-                    if let Ok(contents) = std::fs::read_to_string(&path) {
-                        let mut schema_opt = serde_json::from_str::<Schema>(&contents).ok();
-                        if schema_opt.is_none() {
-                            if let Ok(json_schema) =
-                                serde_json::from_str::<JsonSchemaDefinition>(&contents)
-                            {
-                                if let Ok(schema) = self.interpret_schema(json_schema) {
-                                    schema_opt = Some(schema);
-                                }
-                            }
-                        }
-                        if let Some(mut schema) = schema_opt {
-                            self.fix_transform_outputs(&mut schema);
-                            let schema_name = schema.name.clone();
-                            discovered_schemas.push(schema);
-                            info!("Discovered available schema '{}' from file", schema_name);
-                        }
-                    }
-                }
+        for path in Self::iter_schema_files(&available_schemas_dir)? {
+            if let Some(mut schema) = self.parse_schema_file(&path)? {
+                self.fix_transform_outputs(&mut schema);
+                let schema_name = schema.name.clone();
+                discovered_schemas.push(schema);
+                info!("Discovered available schema '{}' from file", schema_name);
             }
         }
 

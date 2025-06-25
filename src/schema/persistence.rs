@@ -2,7 +2,7 @@ use super::{schema_lock_error, SchemaCore, SchemaState};
 use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
 use log::info;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 impl SchemaCore {
     /// Persist all schema load states using DbOperations
@@ -29,6 +29,44 @@ impl SchemaCore {
         self.db_ops.store_schema(&schema.name, schema)
     }
 
+    /// Return all JSON schema files in the given directory
+    pub(crate) fn iter_schema_files(dir: &Path) -> Result<Vec<PathBuf>, SchemaError> {
+        let mut files = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map(|e| e == "json").unwrap_or(false) {
+                    files.push(path);
+                }
+            }
+        }
+        Ok(files)
+    }
+
+    /// Parse a schema from the given JSON file path
+    pub(crate) fn parse_schema_file(&self, path: &Path) -> Result<Option<Schema>, SchemaError> {
+        let contents = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(SchemaError::InvalidData(format!(
+                    "Failed to read {}: {}",
+                    path.display(),
+                    e
+                )))
+            }
+        };
+
+        let mut schema_opt = serde_json::from_str::<Schema>(&contents).ok();
+        if schema_opt.is_none() {
+            if let Ok(json_schema) = serde_json::from_str::<JsonSchemaDefinition>(&contents) {
+                if let Ok(schema) = self.interpret_schema(json_schema) {
+                    schema_opt = Some(schema);
+                }
+            }
+        }
+        Ok(schema_opt)
+    }
+
     /// Loads schemas from the `schemas` directory and restores their states.
     ///
     /// Schemas found in `available_schemas` are only discovered and added to the
@@ -45,13 +83,15 @@ impl SchemaCore {
             self.fix_transform_outputs(&mut schema);
             let name = schema.name.clone();
             let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
-            let mut available = self.available.lock().map_err(|_| {
-                schema_lock_error()
-            })?;
+            let mut available = self
+                .available
+                .lock()
+                .map_err(|_| schema_lock_error())?;
             available.insert(name.clone(), (schema, state));
             info!(
                 "Discovered available schema '{}' from available_schemas/ with state: {:?}",
-                name, state
+                name,
+                state
             );
         }
 
@@ -64,55 +104,36 @@ impl SchemaCore {
     /// Helper method to load schemas from a specific directory
     pub(crate) fn load_schemas_from_directory(
         &self,
-        dir: &PathBuf,
+        dir: &Path,
         states: &HashMap<String, SchemaState>,
     ) -> Result<(), SchemaError> {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|e| e == "json").unwrap_or(false) {
-                    if let Ok(contents) = std::fs::read_to_string(&path) {
-                        let mut schema_opt = serde_json::from_str::<Schema>(&contents).ok();
-                        if schema_opt.is_none() {
-                            if let Ok(json_schema) =
-                                serde_json::from_str::<JsonSchemaDefinition>(&contents)
-                            {
-                                if let Ok(schema) = self.interpret_schema(json_schema) {
-                                    schema_opt = Some(schema);
-                                }
-                            }
-                        }
-                        if let Some(mut schema) = schema_opt {
-                            self.fix_transform_outputs(&mut schema);
-                            let name = schema.name.clone();
-                            let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
-                            {
-            let mut available = self
-                .available
-                .lock()
-                .map_err(|_| schema_lock_error())?;
-                                available.insert(name.clone(), (schema.clone(), state));
-                            }
-            if state == SchemaState::Approved {
-                let mut loaded = self
-                    .schemas
-                    .lock()
-                    .map_err(|_| schema_lock_error())?;
-                                loaded.insert(name.clone(), schema);
-                                drop(loaded); // Release the lock before calling map_fields
-
-                                // Ensure fields have proper ARefs assigned
-                                let _ = self.map_fields(&name);
-                            }
-                            info!(
-                                "Loaded schema '{}' from {} with state: {:?}",
-                                name,
-                                dir.display(),
-                                state
-                            );
-                        }
-                    }
+        for path in Self::iter_schema_files(dir)? {
+            if let Some(mut schema) = self.parse_schema_file(&path)? {
+                self.fix_transform_outputs(&mut schema);
+                let name = schema.name.clone();
+                let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
+                {
+                    let mut available = self
+                        .available
+                        .lock()
+                        .map_err(|_| schema_lock_error())?;
+                    available.insert(name.clone(), (schema.clone(), state));
                 }
+                if state == SchemaState::Approved {
+                    let mut loaded = self
+                        .schemas
+                        .lock()
+                        .map_err(|_| schema_lock_error())?;
+                    loaded.insert(name.clone(), schema);
+                    drop(loaded);
+                    let _ = self.map_fields(&name);
+                }
+                info!(
+                    "Loaded schema '{}' from {} with state: {:?}",
+                    name,
+                    dir.display(),
+                    state
+                );
             }
         }
         Ok(())
