@@ -51,3 +51,8 @@ pub use validator::SchemaValidator;
 pub mod prelude {
     pub use super::SchemaCore;
 }
+
+/// Convenience helper for creating a lock acquisition error
+pub fn schema_lock_error() -> SchemaError {
+    SchemaError::InvalidData("Failed to acquire schema lock".to_string())
+}
