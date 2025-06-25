@@ -1,5 +1,6 @@
 use super::SchemaCore;
 use crate::schema::types::{field::common::Field, Schema, SchemaError};
+use crate::fold_db_core::transform_manager::utils::TransformUtils;
 use log::info;
 use crate::logging::features::{log_feature, LogFeature};
 
@@ -95,22 +96,13 @@ impl SchemaCore {
     /// Store field-to-transform mapping in database for TransformManager to load
     pub(crate) fn store_field_to_transform_mapping(&self, field_key: &str, transform_id: &str) -> Result<(), SchemaError> {
         const FIELD_TO_TRANSFORMS_KEY: &str = "map_field_to_transforms";
-
         let mut field_mappings: std::collections::HashMap<String, std::collections::HashSet<String>> =
-            if let Some(data) = self.db_ops.get_transform_mapping(FIELD_TO_TRANSFORMS_KEY)? {
-                serde_json::from_slice(&data).unwrap_or_default()
-            } else {
-                std::collections::HashMap::new()
-            };
+            TransformUtils::read_mapping(&self.db_ops, FIELD_TO_TRANSFORMS_KEY, "field_to_transforms")?;
 
-        field_mappings
-            .entry(field_key.to_string())
-            .or_default()
-            .insert(transform_id.to_string());
+        TransformUtils::insert_mapping_set(&mut field_mappings, field_key, transform_id);
 
-        let json = serde_json::to_vec(&field_mappings).map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to serialize field mappings: {}", e))
-        })?;
+        let json = serde_json::to_vec(&field_mappings)
+            .map_err(|e| TransformUtils::handle_error("Failed to serialize field mappings", e))?;
         self.db_ops.store_transform_mapping(FIELD_TO_TRANSFORMS_KEY, &json)?;
 
         info!("💾 Updated field mappings in database: {} fields mapped", field_mappings.len());
