@@ -6,6 +6,33 @@ import { TEST_TIMEOUT_DEFAULT_MS } from './config/constants.js'
 // Make vi available globally as jest for compatibility
 global.jest = vi
 
+// Mock the production store to prevent Redux warnings during imports
+vi.mock('../store/store', () => ({
+  store: {
+    getState: vi.fn(() => ({
+      auth: {
+        isAuthenticated: false,
+        privateKey: null,
+        systemKeyId: null,
+        publicKey: null,
+        loading: false,
+        error: null
+      },
+      schemas: {
+        schemas: {},
+        loading: { fetch: false, operations: {} },
+        errors: { fetch: null, operations: {} },
+        lastFetched: null,
+        cache: { ttl: 300000, version: '2.1.0', lastUpdated: null },
+        activeSchema: null
+      }
+    })),
+    dispatch: vi.fn(),
+    subscribe: vi.fn(),
+    replaceReducer: vi.fn()
+  }
+}))
+
 // Setup WebCrypto API for tests
 import { webcrypto } from 'node:crypto'
 Object.defineProperty(globalThis, 'crypto', {

@@ -31,6 +31,7 @@ vi.mock('../../store/authSlice', async () => {
   const actual = await vi.importActual('../../store/authSlice')
   return {
     ...actual,
+    default: actual.default, // Explicitly preserve the reducer
     initializeSystemKey: vi.fn(() => () => Promise.resolve()),
     validatePrivateKey: vi.fn(() => () => Promise.resolve()),
     refreshSystemKey: vi.fn(() => () => Promise.resolve())
@@ -108,7 +109,7 @@ describe('App Integration Tests', () => {
   })
 
   it('renders main application components when authenticated', async () => {
-    renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Check for main UI elements
     expect(screen.getByText('DataFold Node')).toBeInTheDocument()
@@ -124,7 +125,7 @@ describe('App Integration Tests', () => {
   })
 
   it('renders main application with locked tabs when unauthenticated', async () => {
-    renderWithRedux(<AppContent />, { initialState: createUnauthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createUnauthenticatedState() })
     
     // Check for main UI elements
     expect(screen.getByText('DataFold Node')).toBeInTheDocument()
@@ -143,7 +144,7 @@ describe('App Integration Tests', () => {
   })
 
   it('loads and displays schemas when authenticated', async () => {
-    renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Switch to schemas tab
     const schemasTab = screen.getByLabelText('Schemas tab')
@@ -160,7 +161,7 @@ describe('App Integration Tests', () => {
   })
 
   it('switches between tabs correctly when authenticated', async () => {
-    renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Initially on Key Management tab (default)
     const keyManagementTab = screen.getByLabelText('Key Management tab')
@@ -197,7 +198,7 @@ describe('App Integration Tests', () => {
   })
 
   it('prevents tab switching when unauthenticated (AUTH-003)', async () => {
-    renderWithRedux(<AppContent />, { initialState: createUnauthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createUnauthenticatedState() })
     
     // Initially on Key Management tab (only accessible tab when unauthenticated)
     const keyManagementTab = screen.getByLabelText('Key Management tab')
@@ -219,7 +220,7 @@ describe('App Integration Tests', () => {
     // Mock API error
     fetch.mockRejectedValueOnce(new Error('Network error'))
     
-    renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Should still render the UI even with API error
     await waitFor(() => {
@@ -229,7 +230,7 @@ describe('App Integration Tests', () => {
   })
 
   it('displays transform queue status when authenticated', async () => {
-    renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Click Transforms tab
     const transformsTab = screen.getByLabelText('Transforms tab')
@@ -242,14 +243,14 @@ describe('App Integration Tests', () => {
   })
 
   it('shows system status controls', async () => {
-    renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Check for status controls
     expect(screen.getByText('Reset Database')).toBeInTheDocument()
   })
 
   it('displays log sidebar', async () => {
-    renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
+    await renderWithRedux(<AppContent />, { initialState: createAuthenticatedState() })
     
     // Check for log sidebar
     expect(screen.getByText('Logs')).toBeInTheDocument()

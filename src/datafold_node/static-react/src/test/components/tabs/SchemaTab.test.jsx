@@ -25,14 +25,14 @@ describe('SchemaTab Component', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ 
+        json: async () => ({
           data: {
             'TestSchema': 'Available'
           }
         })
       })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: createTestSchemaState()
     })
     
@@ -50,7 +50,7 @@ describe('SchemaTab Component', () => {
         json: async () => ({ data: [] })
       })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: createTestSchemaState()
     })
     
@@ -68,7 +68,7 @@ describe('SchemaTab Component', () => {
       }
     })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
     
@@ -88,7 +88,7 @@ describe('SchemaTab Component', () => {
         json: async () => ({ data: {} })
       })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: createTestSchemaState()
     })
     
@@ -104,7 +104,7 @@ describe('SchemaTab Component', () => {
       }
     })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
     
@@ -122,7 +122,7 @@ describe('SchemaTab Component', () => {
       }
     })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
     
@@ -146,7 +146,7 @@ describe('SchemaTab Component', () => {
       }
     })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
     
@@ -168,7 +168,7 @@ describe('SchemaTab Component', () => {
       }
     })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
     
@@ -202,7 +202,7 @@ describe('SchemaTab Component', () => {
       }
     })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
     
@@ -241,7 +241,7 @@ describe('SchemaTab Component', () => {
       }
     })
 
-    renderWithRedux(<SchemaTab {...mockProps} />, {
+    await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
 

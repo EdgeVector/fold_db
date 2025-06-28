@@ -38,8 +38,8 @@ global.console = {
 describe('schemaSlice', () => {
   let store;
 
-  beforeEach(() => {
-    store = createTestStore();
+  beforeEach(async () => {
+    store = await createTestStore();
     vi.clearAllMocks();
     global.fetch = vi.fn();
   });

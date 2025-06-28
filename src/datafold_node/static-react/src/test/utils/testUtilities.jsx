@@ -14,8 +14,6 @@ import React from 'react';
 import { render, renderHook } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
-import schemaReducer from '../../store/schemaSlice.ts';
-import authReducer from '../../store/authSlice.ts';
 import {
   TEST_TIMEOUT_DEFAULT_MS,
   MOCK_API_DELAY_MS,
@@ -23,6 +21,8 @@ import {
   TEST_VALIDATION_BATCH_SIZE,
   INTEGRATION_TEST_RETRY_COUNT
 } from '../config/constants';
+import authReducer from '../../store/authSlice';
+import schemaReducer from '../../store/schemaSlice';
 
 // Schema states for testing
 export const SCHEMA_STATES = {
@@ -40,6 +40,18 @@ export const SCHEMA_STATES = {
  * @returns {Object} Configured test store
  */
 export function createTestStore(preloadedState = {}) {
+  // Debug: Check if reducers are properly imported
+  if (typeof authReducer !== 'function') {
+    console.error('DEBUG: authReducer is not a function:', typeof authReducer, authReducer);
+    throw new Error('authReducer is not properly imported');
+  }
+  if (typeof schemaReducer !== 'function') {
+    console.error('DEBUG: schemaReducer is not a function:', typeof schemaReducer, schemaReducer);
+    throw new Error('schemaReducer is not properly imported');
+  }
+
+  console.log('DEBUG: Creating test store with reducers:', { authReducer, schemaReducer });
+
   const defaultState = {
     auth: {
       isAuthenticated: false,
@@ -113,9 +125,13 @@ export function createTestStore(preloadedState = {}) {
  */
 export function renderWithRedux(ui, {
   preloadedState = {},
-  store = createTestStore(preloadedState),
+  store = null,
   ...renderOptions
 } = {}) {
+  if (!store) {
+    store = createTestStore(preloadedState);
+  }
+  
   function Wrapper({ children }) {
     return <Provider store={store}>{children}</Provider>;
   }
@@ -137,9 +153,13 @@ export function renderWithRedux(ui, {
  */
 export function renderHookWithRedux(hook, {
   preloadedState = {},
-  store = createTestStore(preloadedState),
+  store = null,
   ...renderOptions
 } = {}) {
+  if (!store) {
+    store = createTestStore(preloadedState);
+  }
+  
   function Wrapper({ children }) {
     return <Provider store={store}>{children}</Provider>;
   }

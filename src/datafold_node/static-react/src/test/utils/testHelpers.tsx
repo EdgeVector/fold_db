@@ -65,37 +65,41 @@ export const createUnauthenticatedState = () => ({
 })
 
 // Enhanced render helper with proper Redux store setup
-export const renderWithRedux = (component: React.ReactElement, options: any = {}) => {
+export const renderWithRedux = async (component: React.ReactElement, options: any = {}) => {
   const {
     initialState = {},
-    store = createTestStore(initialState),
+    store = null,
     ...renderOptions
   } = options
 
+  const testStore = store || await createTestStore(initialState);
+
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <Provider store={store}>{children}</Provider>
+    <Provider store={testStore}>{children}</Provider>
   )
 
   return {
     ...render(component, { wrapper: Wrapper, ...renderOptions }),
-    store,
+    store: testStore,
   }
 }
 
 // Enhanced render helper that prevents thunk dispatch
-export const renderWithReduxNoThunks = (component: React.ReactElement, options: any = {}) => {
+export const renderWithReduxNoThunks = async (component: React.ReactElement, options: any = {}) => {
   const {
     initialState = {},
-    store = createTestStore(initialState),
+    store = null,
     ...renderOptions
   } = options
 
+  const testStore = store || await createTestStore(initialState);
+
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <Provider store={store}>{children}</Provider>
+    <Provider store={testStore}>{children}</Provider>
   )
 
   return {
     ...render(component, { wrapper: Wrapper, ...renderOptions }),
-    store,
+    store: testStore,
   }
 }
