@@ -175,7 +175,6 @@ export function AppContent() {
             {/* Tab Navigation Component (TASK-002) */}
             <TabNavigation
               activeTab={activeTab}
-              isAuthenticated={isAuthenticated}
               onTabChange={handleTabChange}
             />
 

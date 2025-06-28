@@ -3,8 +3,8 @@
  * TASK-003: State Management Consolidation with Redux
  */
 
-import { configureStore } from '@reduxjs/toolkit';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createTestStore } from '../../test/utils/testUtilities.jsx';
 import schemaReducer, {
   fetchSchemas,
   approveSchema,
@@ -39,11 +39,7 @@ describe('schemaSlice', () => {
   let store;
 
   beforeEach(() => {
-    store = configureStore({
-      reducer: {
-        schemas: schemaReducer,
-      },
-    });
+    store = createTestStore();
     vi.clearAllMocks();
     global.fetch = vi.fn();
   });
