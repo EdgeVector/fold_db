@@ -20,7 +20,7 @@ async function get<T>(endpoint: string): Promise<ApiResponse<T>> {
 export async function verifyMessage(
   signedMessage: SignedMessage
 ): Promise<ApiResponse<VerificationResponse>> {
-  return post<VerificationResponse>('/verify-message', signedMessage);
+  return post<VerificationResponse>('/verify', signedMessage);
 }
 
 export async function registerPublicKey(
