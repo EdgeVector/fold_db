@@ -10,6 +10,7 @@ vi.mock('../../store/authSlice', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
+    default: actual.default, // Explicitly preserve the reducer
     validatePrivateKey: () => (dispatch) => {
       dispatch({ type: 'auth/validatePrivateKey/fulfilled', payload: { isAuthenticated: true } });
       return Promise.resolve();
@@ -147,10 +148,10 @@ describe('Redux Authentication State Synchronization', () => {
   let store
   let user
 
-  beforeEach(() => {
+  beforeEach(async () => {
     user = userEvent.setup()
     // Create fresh store for each test using consolidated test store
-    store = createTestStore()
+    store = await createTestStore()
   })
 
   it('AUTH-003 Test: Components re-render immediately when authentication state changes', async () => {

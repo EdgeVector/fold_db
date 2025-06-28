@@ -18,9 +18,9 @@ import { createTestStore } from '../utils/testUtilities.jsx'
 
 describe('Component Integration Tests', () => {
   describe('TabNavigation with Authentication', () => {
-    it('integrates properly with authentication state changes', () => {
+    it('integrates properly with authentication state changes', async () => {
       const onTabChange = jest.fn()
-      const { unmount } = renderWithRedux(
+      const { unmount } = await renderWithRedux(
         <TabNavigation
           activeTab="keys"
           onTabChange={onTabChange}
@@ -32,7 +32,7 @@ describe('Component Integration Tests', () => {
 
       // Unmount and re-mount with authenticated state
       unmount()
-      renderWithRedux(
+      await renderWithRedux(
         <TabNavigation
           activeTab="keys"
           onTabChange={onTabChange}
@@ -185,7 +185,7 @@ describe('Component Integration Tests', () => {
         { value: 'products', label: 'Product Catalog' }
       ]
 
-      renderWithRedux(
+      await renderWithRedux(
         <div>
           {/* Tab Navigation */}
           <TabNavigation

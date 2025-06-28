@@ -331,7 +331,7 @@ describe('Complete User Workflows', () => {
       // Wait a brief moment to ensure MSW handlers are registered
       await mockDelay(100);
 
-      const { store } = renderWithProviders(<MockSchemaManagementApp />, {
+      const { store } = await renderWithProviders(<MockSchemaManagementApp />, {
         initialState: { auth: { isAuthenticated: true } }
       });
 
@@ -419,7 +419,7 @@ describe('Complete User Workflows', () => {
         );
       }
 
-      renderWithProviders(<MutationFormTestWrapper />);
+      await renderWithProviders(<MutationFormTestWrapper />);
 
       // 1. Find the name input
       const nameInput = screen.getByTestId('input-name');
@@ -509,7 +509,9 @@ describe('Complete User Workflows', () => {
       );
 
       // 1. Verify range schema is identified
-      expect(screen.getByTestId('range-schema-indicator')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId('range-schema-indicator')).toBeInTheDocument();
+      });
       expect(screen.getByText(/Range Schema - Key: timestamp/)).toBeInTheDocument();
 
       // 2. Verify range fields are present
@@ -585,8 +587,8 @@ describe('Complete User Workflows', () => {
         />
       );
 
-      // 1. Try to submit with empty required fields
-      const nameInput = screen.getByTestId('input-name');
+      // 1. Try to submit with empty required fields - basicApprovedSchema has 'name' field
+      const nameInput = await waitFor(() => screen.getByTestId('input-name'));
       
       // Trigger validation by focusing and blurring
       await user.click(nameInput);
@@ -652,7 +654,7 @@ describe('Complete User Workflows', () => {
       // Wait a brief moment to ensure MSW handlers are registered
       await mockDelay(100);
 
-      renderWithProviders(<QueryFormView schema={basicApprovedSchema} />);
+      await renderWithProviders(<QueryFormView schema={basicApprovedSchema} />);
 
       // 1. Verify query form is rendered
       expect(screen.getByTestId('query-form')).toBeInTheDocument();
@@ -732,7 +734,7 @@ describe('Complete User Workflows', () => {
       // Wait a brief moment to ensure MSW handlers are registered
       await mockDelay(100);
 
-      renderWithProviders(<QueryFormView schema={timeSeriesRangeSchema} />);
+      await renderWithProviders(<QueryFormView schema={timeSeriesRangeSchema} />);
 
       // 1. Verify range filter is shown
       expect(screen.getByTestId('range-filter')).toBeInTheDocument();
@@ -806,7 +808,7 @@ describe('Complete User Workflows', () => {
       // Wait a brief moment to ensure MSW handlers are registered
       await mockDelay(100);
 
-      renderWithProviders(<MockSchemaManagementApp />, {
+      await renderWithProviders(<MockSchemaManagementApp />, {
         preloadedState: { auth: { isAuthenticated: true } }
       });
 
@@ -866,7 +868,7 @@ describe('Complete User Workflows', () => {
       // Wait a brief moment to ensure MSW handlers are registered
       await mockDelay(100);
 
-      renderWithProviders(<SchemaListView onSchemaSelect={() => {}} />);
+      await renderWithProviders(<SchemaListView onSchemaSelect={() => {}} />);
 
       // Verify error is displayed
       await waitFor(() => {
@@ -893,7 +895,7 @@ describe('Complete User Workflows', () => {
       // Wait a brief moment to ensure MSW handlers are registered
       await mockDelay(100);
 
-      renderWithProviders(<SchemaListView onSchemaSelect={() => {}} />);
+      await renderWithProviders(<SchemaListView onSchemaSelect={() => {}} />);
 
       await waitFor(() => {
         expect(screen.getByTestId('schemas-error')).toBeInTheDocument();
@@ -943,7 +945,7 @@ describe('Complete User Workflows', () => {
       // Wait a brief moment to ensure MSW handlers are registered
       await mockDelay(100);
 
-      renderWithProviders(<SchemaListView onSchemaSelect={() => {}} />);
+      await renderWithProviders(<SchemaListView onSchemaSelect={() => {}} />);
 
       await waitFor(() => {
         expect(screen.getByTestId('schema-list')).toBeInTheDocument();
@@ -1031,7 +1033,7 @@ describe('Accessibility Testing', () => {
     // Wait a brief moment to ensure MSW handlers are registered
     await mockDelay(100);
 
-    renderWithProviders(<MockSchemaManagementApp />);
+    await renderWithProviders(<MockSchemaManagementApp />);
 
     await waitFor(() => {
       expect(screen.getByTestId('schema-list')).toBeInTheDocument();
@@ -1094,7 +1096,7 @@ describe('Accessibility Testing', () => {
     // Wait a brief moment to ensure MSW handlers are registered
     await mockDelay(100);
     
-    renderWithProviders(<MockSchemaManagementApp />);
+    await renderWithProviders(<MockSchemaManagementApp />);
 
     await waitFor(() => {
       expect(screen.getByTestId('schema-list')).toBeInTheDocument();
