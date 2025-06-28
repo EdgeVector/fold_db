@@ -61,7 +61,7 @@ impl TransformManager {
             .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", schema_name)))?;
         
         // 2. Get the field (read-only)
-        let field = schema.fields.get(field_name)
+        let _field = schema.fields.get(field_name)
             .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in schema '{}'", field_name, schema_name)))?;
         
         // 3. Get the field's molecule_uuid (should already exist in schema)
