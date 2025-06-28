@@ -4,6 +4,8 @@ use crate::schema::types::{
     Operation,
 };
 use crate::security::types::SignedMessage;
+use crate::security::VerificationResult;
+use crate::datafold_node::DataFoldNode;
 use actix_web::{web, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -110,42 +112,14 @@ pub async fn execute_mutation(
 ) -> impl Responder {
     let mut node_guard = state.node.lock().await;
 
-    // 1. Verify the signature
-    let verification_result = node_guard.security_manager.verify_message(&signed_message);
-
-    if let Err(e) = verification_result {
-        log_feature!(LogFeature::Mutation, warn, "Signature verification failed: {}", e);
-        return HttpResponse::Unauthorized()
-            .json(json!({"error": format!("Signature verification failed: {}", e)}));
-    }
-
-    let verification_data = verification_result.unwrap();
-    if !verification_data.is_valid {
-        log_feature!(
-            LogFeature::Mutation,
-            warn,
-            "Invalid signature for public key: {}",
-            signed_message.public_key_id
-        );
-        return HttpResponse::Forbidden().json(json!({"error": "Invalid signature"}));
-    }
-
-    // 2. Decode the payload
-    let decoded_payload = match general_purpose::STANDARD.decode(&signed_message.payload) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            log_feature!(LogFeature::Mutation, warn, "Base64 decoding failed: {}", e);
-            return HttpResponse::BadRequest().json(json!({"error": "Invalid base64 payload"}));
-        }
+    let verification_data = match verify_signature(&mut node_guard, &signed_message).await {
+        Ok(data) => data,
+        Err(resp) => return resp,
     };
 
-    let mutation_value: Value = match serde_json::from_slice(&decoded_payload) {
-        Ok(val) => val,
-        Err(e) => {
-            log_feature!(LogFeature::Mutation, warn, "Payload JSON parsing failed: {}", e);
-            return HttpResponse::BadRequest()
-                .json(json!({"error": "Invalid JSON payload format"}));
-        }
+    let mutation_value = match decode_payload(&signed_message).await {
+        Ok(value) => value,
+        Err(resp) => return resp,
     };
 
     log_feature!(
@@ -155,52 +129,9 @@ pub async fn execute_mutation(
         serde_json::to_string(&mutation_value).unwrap_or_else(|_| "Invalid JSON".to_string())
     );
 
-    // Parse the simple web UI operation
-    let web_operation = match serde_json::from_value::<Operation>(mutation_value) {
-        Ok(op) => match op {
-            Operation::Mutation { .. } => op,
-            _ => {
-                return HttpResponse::BadRequest()
-                    .json(json!({"error": "Expected a mutation operation"}))
-            }
-        },
-        Err(e) => {
-            return HttpResponse::BadRequest()
-                .json(json!({"error": format!("Failed to parse mutation: {}", e)}))
-        }
-    };
-
-    // Convert to full internal mutation with default trust_distance=0 and pub_key="web-ui"
-    let internal_mutation = match web_operation {
-        Operation::Mutation {
-            schema,
-            data,
-            mutation_type,
-        } => {
-            // Convert data Value to fields_and_values HashMap
-            let fields_and_values = match data {
-                Value::Object(map) => map.into_iter().collect(),
-                _ => {
-                    return HttpResponse::BadRequest()
-                        .json(json!({"error": "Mutation data must be an object"}))
-                }
-            };
-
-            Mutation {
-                schema_name: schema,
-                fields_and_values,
-                pub_key: verification_data
-                    .public_key_info
-                    .map(|info| info.owner_id)
-                    .unwrap_or_else(|| "unknown".to_string()),
-                trust_distance: 0,
-                mutation_type,
-            }
-        }
-        _ => {
-            return HttpResponse::BadRequest()
-                .json(json!({"error": "Expected a mutation operation"}))
-        }
+    let internal_mutation = match build_internal_mutation(mutation_value, &verification_data).await {
+        Ok(m) => m,
+        Err(resp) => return resp,
     };
 
     match node_guard.mutate(internal_mutation) {
@@ -213,6 +144,102 @@ pub async fn execute_mutation(
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to execute mutation: {}", e)}))
         }
+    }
+}
+
+async fn verify_signature(
+    node: &mut DataFoldNode,
+    signed_message: &SignedMessage,
+) -> Result<VerificationResult, HttpResponse> {
+    let verification_result = node.security_manager.verify_message(signed_message);
+
+    if let Err(e) = verification_result {
+        log_feature!(LogFeature::Mutation, warn, "Signature verification failed: {}", e);
+        return Err(
+            HttpResponse::Unauthorized()
+                .json(json!({"error": format!("Signature verification failed: {}", e)})),
+        );
+    }
+
+    let verification_data = verification_result.unwrap();
+    if !verification_data.is_valid {
+        log_feature!(
+            LogFeature::Mutation,
+            warn,
+            "Invalid signature for public key: {}",
+            signed_message.public_key_id
+        );
+        return Err(HttpResponse::Forbidden().json(json!({"error": "Invalid signature"})));
+    }
+
+    Ok(verification_data)
+}
+
+async fn decode_payload(signed_message: &SignedMessage) -> Result<Value, HttpResponse> {
+    let decoded_payload = match general_purpose::STANDARD.decode(&signed_message.payload) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            log_feature!(LogFeature::Mutation, warn, "Base64 decoding failed: {}", e);
+            return Err(HttpResponse::BadRequest().json(json!({"error": "Invalid base64 payload"})));
+        }
+    };
+
+    let mutation_value: Value = match serde_json::from_slice(&decoded_payload) {
+        Ok(val) => val,
+        Err(e) => {
+            log_feature!(LogFeature::Mutation, warn, "Payload JSON parsing failed: {}", e);
+            return Err(HttpResponse::BadRequest().json(json!({"error": "Invalid JSON payload format"})));
+        }
+    };
+
+    Ok(mutation_value)
+}
+
+async fn build_internal_mutation(
+    mutation_value: Value,
+    verification_data: &VerificationResult,
+) -> Result<Mutation, HttpResponse> {
+    let web_operation = match serde_json::from_value::<Operation>(mutation_value) {
+        Ok(op) => match op {
+            Operation::Mutation { .. } => op,
+            _ => {
+                return Err(HttpResponse::BadRequest().json(json!({"error": "Expected a mutation operation"})));}
+        },
+        Err(e) => {
+            return Err(
+                HttpResponse::BadRequest().json(json!({"error": format!("Failed to parse mutation: {}", e)})),
+            );
+        }
+    };
+
+    match web_operation {
+        Operation::Mutation {
+            schema,
+            data,
+            mutation_type,
+        } => {
+            let fields_and_values = match data {
+                Value::Object(map) => map.into_iter().collect(),
+                _ => {
+                    return Err(
+                        HttpResponse::BadRequest().json(json!({"error": "Mutation data must be an object"})),
+                    );
+                }
+            };
+
+            Ok(Mutation {
+                schema_name: schema,
+                fields_and_values,
+                pub_key: verification_data
+                    .public_key_info
+                    .as_ref()
+                    .map(|info| info.owner_id.clone())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                trust_distance: 0,
+                mutation_type,
+            })
+        }
+        _ => Err(HttpResponse::BadRequest().json(json!({"error": "Expected a mutation operation"}))),
     }
 }
 
