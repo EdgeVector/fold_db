@@ -2,7 +2,6 @@ use super::manager::TransformManager;
 use crate::fold_db_core::transform_manager::utils::*;
 use crate::transform::executor::TransformExecutor;
 use crate::schema::types::{Schema, SchemaError};
-use crate::schema::types::field::common::Field;
 use log::info;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -66,15 +65,14 @@ impl TransformManager {
             .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in schema '{}'", field_name, schema_name)))?;
         
         // 3. Get the field's molecule_uuid (should already exist in schema)
-        let molecule_uuid = field.molecule_uuid()
-            .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}.{}' has no molecule_uuid - schema may be malformed", schema_name, field_name)))?;
+        let molecule_uuid = format!("{}_{}_single", schema_name, field_name);
         
         // 4. Create/update Molecule to point to the new atom (this is a field VALUE update, not schema structure)
         let molecule = crate::atom::Molecule::new(atom_uuid.to_string(), "transform_system".to_string());
         db_ops.store_item(&format!("ref:{}", molecule_uuid), &molecule)?;
         
         info!("✅ Updated field value reference for '{}.{}' to point to atom {}", schema_name, field_name, atom_uuid);
-        LoggingHelper::log_molecule_operation(molecule_uuid, atom_uuid, "creation");
+        LoggingHelper::log_molecule_operation(&molecule_uuid, atom_uuid, "creation");
         
         // SCHEMA-003: Do NOT modify schema structure - only update field value through Molecule
         // The schema remains immutable, we only updated what the field's reference points to

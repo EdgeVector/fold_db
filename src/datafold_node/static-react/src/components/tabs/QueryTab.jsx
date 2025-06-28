@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useRangeSchema, useFormValidation } from '../../hooks/index.js'
 import SelectField from '../form/SelectField'
 import RangeField from '../form/RangeField'
+import { post } from '../../utils/httpClient'
 import { API_ENDPOINTS } from '../../api/endpoints'
+import { API_CONFIG } from '../../constants/api'
 import {
   BUTTON_TEXT,
   FORM_LABELS,
@@ -159,28 +161,19 @@ function QueryTab({ onResult }) {
     }
 
     try {
-      const response = await fetch(API_ENDPOINTS.QUERY, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(query)
-      })
-
-      const data = await response.json()
+      // Use the standardized HTTP client with proper base URL
+      const response = await post(API_CONFIG.BASE_URL, API_ENDPOINTS.QUERY, query)
       
-      // Check if the HTTP response was successful
-      if (!response.ok) {
-        console.error('Query failed with status:', response.status, data)
+      if (!response.success) {
+        console.error('Query failed:', response.error)
         onResult({
-          error: data.error || `Query failed with status ${response.status}`,
-          status: response.status,
-          details: data
+          error: response.error || 'Query execution failed',
+          details: response
         })
         return
       }
       
-      onResult(data)
+      onResult(response)
     } catch (error) {
       console.error('Failed to execute query:', error)
       onResult({

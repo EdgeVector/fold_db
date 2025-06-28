@@ -51,7 +51,7 @@ impl TransformUtils {
         transform_id: &str,
         status: &str,
     ) -> Result<(), SchemaError> {
-        info!("📢 Publishing TransformExecuted {} event for: {}", status, transform_id);
+        info!("� Publishing TransformExecuted {} event for: {}", status, transform_id);
         
         let event = TransformExecuted::new(transform_id, status);
         
@@ -77,7 +77,7 @@ impl TransformUtils {
         match execution_result {
             Ok(value) => {
                 info!("✅ Transform {} execution completed successfully", transform_id);
-                info!("📊 Execution result details: {:?}", value);
+                info!("� Execution result details: {:?}", value);
                 
                 if let Err(e) = Self::publish_transform_executed(message_bus, transform_id, "success") {
                     error!("❌ Event publishing failed after successful execution: {}", e);
@@ -139,7 +139,7 @@ impl TransformUtils {
         // Check if this is a range field first
         match field {
             FieldVariant::Range(_) => {
-                info!("🔄 Detected range field, using MoleculeRange resolution");
+                info!("� Detected range field, using MoleculeRange resolution");
                 let range_molecule_uuid = format!("{}_{}_range", schema.name, field_name);
                 info!("🔍 Looking for MoleculeRange: {}", range_molecule_uuid);
                 
@@ -199,49 +199,55 @@ impl TransformUtils {
             }
         }
         
-        // CRITICAL BUG DIAGNOSIS: This reads STATIC schema reference, not dynamic Molecule!
-        let molecule_uuid = Self::extract_molecule_uuid(field, field_name)?;
-        error!("🚨 CRITICAL BUG: Reading STATIC schema molecule_uuid: {}", molecule_uuid);
-        error!("🚨 This should be reading from DYNAMIC Molecule system instead!");
-
-        // DIAGNOSTIC: Check what the dynamic Molecule system has
+        // BRIDGE FIX: Primary dynamic molecule lookup with static fallback
         let dynamic_molecule_uuid = format!("{}_{}_single", schema.name, field_name);
-        error!("🔍 DIAGNOSTIC: Checking dynamic Molecule UUID: {}", dynamic_molecule_uuid);
+        info!("🔍 BRIDGE FIX: Checking dynamic Molecule UUID first: {}", dynamic_molecule_uuid);
         
+        // Try dynamic molecule system first (primary path)
         match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", dynamic_molecule_uuid)) {
             Ok(Some(dynamic_molecule)) => {
                 let dynamic_atom_uuid = dynamic_molecule.get_atom_uuid();
-                error!("🔍 DIAGNOSTIC: Dynamic Molecule points to atom: {}", dynamic_atom_uuid);
-                error!("🚨 MISMATCH DETECTED: Static schema: {} vs Dynamic Molecule: {}", molecule_uuid, dynamic_atom_uuid);
-
-                // Use the CORRECT dynamic Molecule instead of broken static schema reference
-                info!("🔧 APPLYING FIX: Using dynamic Molecule instead of static schema reference");
+                info!("✅ BRIDGE FIX: Found dynamic molecule pointing to atom: {}", dynamic_atom_uuid);
+                
                 let atom = Self::load_atom(db_ops, dynamic_atom_uuid)?;
                 let content = atom.content().clone();
-                info!("✅ Fixed query using dynamic Molecule - content: {}", content);
+                info!("✅ Query resolved using dynamic molecule system - content: {}", content);
                 return Ok(content);
             }
             Ok(None) => {
-                error!("🔍 DIAGNOSTIC: Dynamic Molecule not found, falling back to static schema reference");
+                info!("🔍 BRIDGE FIX: Dynamic molecule not found, trying static schema fallback");
             }
             Err(e) => {
-                error!("🔍 DIAGNOSTIC: Error checking dynamic Molecule: {}", e);
+                error!("🔍 BRIDGE FIX: Error checking dynamic molecule: {}", e);
             }
         }
         
-        info!("� Field molecule_uuid: {}", molecule_uuid);
         
-        let molecule = Self::load_molecule(db_ops, &molecule_uuid)?;
-        let atom_uuid = molecule.get_atom_uuid();
-        info!("🔗 Molecule points to atom: {}", atom_uuid);
-        
-        let atom = Self::load_atom(db_ops, atom_uuid)?;
-        
-        info!("✅ Atom loaded successfully");
-        let content = atom.content().clone();
-        info!("📦 Atom content: {}", content);
-        
-        Ok(content)
+        match Self::extract_molecule_uuid(field, field_name) {
+            Ok(molecule_uuid) => {
+                info!("🔗 BRIDGE FIX: Using static schema molecule_uuid: {}", molecule_uuid);
+                
+                match Self::load_molecule(db_ops, &molecule_uuid) {
+                    Ok(molecule) => {
+                        let atom_uuid = molecule.get_atom_uuid();
+                        info!("🔗 Static molecule points to atom: {}", atom_uuid);
+                        
+                        let atom = Self::load_atom(db_ops, atom_uuid)?;
+                        let content = atom.content().clone();
+                        info!("✅ Query resolved using static schema fallback - content: {}", content);
+                        Ok(content)
+                    }
+                    Err(e) => {
+                        error!("❌ Failed to load static molecule '{}': {}", molecule_uuid, e);
+                        Err(e)
+                    }
+                }
+            }
+            Err(e) => {
+                error!("❌ BRIDGE FIX: Both dynamic and static molecule lookups failed for field '{}'", field_name);
+                Err(e)
+            }
+        }
     }
     
     /// Extract molecule_uuid from field variant with consistent error handling

@@ -386,14 +386,13 @@ impl TransformRunner for TransformManager {
             }
         };
         
-        // Check if output schema already exists
+        // Schema Conflict Resolution Fix: Work with existing schemas instead of requiring new ones
         let output_parts: Vec<&str> = transform.get_output().split('.').collect();
         if output_parts.len() == 2 {
             let output_schema = output_parts[0];
             match self.db_ops.get_schema(output_schema) {
                 Ok(Some(_)) => {
-                    error!("🚨 DIAGNOSTIC: Output schema '{}' already exists! This will cause 'Schema already exists' error", output_schema);
-                    return Err(SchemaError::InvalidData(format!("Schema '{}' already exists. Schemas are immutable and cannot be updated. Create a new schema with a different name instead.", output_schema)));
+                    info!("✅ SCHEMA FIX: Output schema '{}' exists - will update field values only", output_schema);
                 }
                 Ok(None) => {
                     info!("✅ DIAGNOSTIC: Output schema '{}' does not exist yet, proceeding", output_schema);
