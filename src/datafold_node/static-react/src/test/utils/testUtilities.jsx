@@ -14,8 +14,8 @@ import React from 'react';
 import { render, renderHook } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
-import schemaReducer from '../../store/schemaSlice';
-import authReducer from '../../store/authSlice';
+import schemaReducer from '../../store/schemaSlice.ts';
+import authReducer from '../../store/authSlice.ts';
 import {
   TEST_TIMEOUT_DEFAULT_MS,
   MOCK_API_DELAY_MS,

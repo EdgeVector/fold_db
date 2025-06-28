@@ -9,10 +9,10 @@ import FieldWrapper from './FieldWrapper.jsx';
 import { UI_STATES } from '../../constants/ui.js';
 import { COMPONENT_STYLES } from '../../constants/styling.js';
 import { useSearchableSelect } from '../../hooks/useSearchableSelect.js';
+import { generateFieldId } from '../../utils/formHelpers.js';
 import {
   processSelectConfig,
   getSelectStyles,
-  generateFieldId,
   createAriaAttributes,
   groupOptions
 } from '../../utils/selectFieldHelpers.js';

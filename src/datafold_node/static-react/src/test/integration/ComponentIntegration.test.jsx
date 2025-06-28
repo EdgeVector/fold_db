@@ -7,7 +7,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider } from 'react-redux'
-import { configureStore } from '@reduxjs/toolkit'
 import TabNavigation from '../../components/TabNavigation'
 import SelectField from '../../components/form/SelectField'
 import TextField from '../../components/form/TextField'
@@ -15,13 +14,7 @@ import SchemaStatusBadge from '../../components/schema/SchemaStatusBadge'
 import SchemaActions from '../../components/schema/SchemaActions'
 import { renderWithRedux } from '../utils/testHelpers'
 import { createAuthenticatedState, createUnauthenticatedState } from '../utils/testHelpers'
-
-// Mock store for testing
-const createMockStore = () => configureStore({
-  reducer: {
-    auth: (state = { isAuthenticated: true }) => state
-  }
-})
+import { createTestStore } from '../utils/testUtilities.jsx'
 
 describe('Component Integration Tests', () => {
   describe('TabNavigation with Authentication', () => {

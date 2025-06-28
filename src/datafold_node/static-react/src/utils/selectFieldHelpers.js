@@ -7,6 +7,7 @@
  */
 
 import { isValueEmpty } from './rangeSchemaHelpers.js';
+import { generateFieldId } from './formHelpers.js';
 
 /**
  * Groups options by their group property
@@ -80,14 +81,6 @@ export function getSelectStyles(styles, hasError = false, disabled = false, load
   return classes;
 }
 
-/**
- * Generates field ID for accessibility
- * @param {string} name - Field name
- * @returns {string} Generated field ID
- */
-export function generateFieldId(name) {
-  return `field-${name}`;
-}
 
 /**
  * Creates ARIA attributes for select field accessibility

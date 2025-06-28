@@ -23,12 +23,12 @@ import userEvent from '@testing-library/user-event'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import React from 'react'
 import { Provider } from 'react-redux'
-import { configureStore } from '@reduxjs/toolkit'
-import authReducer, { 
-  initializeSystemKey, 
-  validatePrivateKey, 
+import { createTestStore } from '../utils/testUtilities.jsx'
+import authReducer, {
+  initializeSystemKey,
+  validatePrivateKey,
   refreshSystemKey,
-  clearAuthentication 
+  clearAuthentication
 } from '../../store/authSlice'
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
 import * as securityClient from '../../api/securityClient'
@@ -149,19 +149,8 @@ describe('Redux Authentication State Synchronization', () => {
 
   beforeEach(() => {
     user = userEvent.setup()
-    // Create fresh store for each test
-    store = configureStore({
-      reducer: { auth: authReducer },
-      middleware: (getDefaultMiddleware) =>
-        getDefaultMiddleware({
-          serializableCheck: {
-            ignoredActions: ['auth/validatePrivateKey/fulfilled'],
-            ignoredActionsPaths: ['payload.privateKey'],
-            ignoredPaths: ['auth.privateKey'],
-          },
-        }),
-      devTools: true,
-    })
+    // Create fresh store for each test using consolidated test store
+    store = createTestStore()
   })
 
   it('AUTH-003 Test: Components re-render immediately when authentication state changes', async () => {

@@ -1,45 +1,11 @@
 import React from 'react'
 import { render } from '@testing-library/react'
 import { Provider } from 'react-redux'
-import { configureStore } from '@reduxjs/toolkit'
-import authReducer from '../../store/authSlice'
-import schemaReducer from '../../store/schemaSlice'
+// Import consolidated utilities from testUtilities.jsx
+import { createTestStore } from './testUtilities.jsx'
 
-// Create a test store with optional initial state
-export const createTestStore = (initialState = {}) => {
-  return configureStore({
-    reducer: {
-      auth: authReducer,
-      schemas: schemaReducer,
-    },
-    preloadedState: initialState,
-    middleware: (getDefaultMiddleware) =>
-      getDefaultMiddleware({
-        serializableCheck: {
-          // Ignore these action types for testing
-          ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE'],
-        },
-      }),
-  })
-}
-
-// Helper to render components with Redux Provider
-export const renderWithRedux = (component: React.ReactElement, options: any = {}) => {
-  const {
-    initialState = {},
-    store = createTestStore(initialState),
-    ...renderOptions
-  } = options
-
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <Provider store={store}>{children}</Provider>
-  )
-
-  return {
-    ...render(component, { wrapper: Wrapper, ...renderOptions }),
-    store,
-  }
-}
+// Re-export consolidated utilities
+export { createTestStore }
 
 // Common test states
 export const createAuthenticatedState = () => ({
@@ -98,30 +64,29 @@ export const createUnauthenticatedState = () => ({
   },
 })
 
-// Helper to create a test store that doesn't dispatch thunks on mount
-export const createTestStoreWithoutThunks = (initialState = {}) => {
-  return configureStore({
-    reducer: {
-      auth: authReducer,
-      schemas: schemaReducer,
-    },
-    preloadedState: initialState,
-    middleware: (getDefaultMiddleware) =>
-      getDefaultMiddleware({
-        serializableCheck: {
-          ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE'],
-          ignoredActionsPaths: ['payload.privateKey'],
-          ignoredPaths: ['auth.privateKey'],
-        },
-      }),
-  })
+// Enhanced render helper with proper Redux store setup
+export const renderWithRedux = (component: React.ReactElement, options: any = {}) => {
+  const {
+    initialState = {},
+    store = createTestStore(initialState),
+    ...renderOptions
+  } = options
+
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <Provider store={store}>{children}</Provider>
+  )
+
+  return {
+    ...render(component, { wrapper: Wrapper, ...renderOptions }),
+    store,
+  }
 }
 
 // Enhanced render helper that prevents thunk dispatch
 export const renderWithReduxNoThunks = (component: React.ReactElement, options: any = {}) => {
   const {
     initialState = {},
-    store = createTestStoreWithoutThunks(initialState),
+    store = createTestStore(initialState),
     ...renderOptions
   } = options
 

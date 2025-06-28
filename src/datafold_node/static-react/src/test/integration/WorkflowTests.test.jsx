@@ -807,7 +807,7 @@ describe('Complete User Workflows', () => {
       await mockDelay(100);
 
       renderWithProviders(<MockSchemaManagementApp />, {
-        initialState: { auth: { isAuthenticated: true } }
+        preloadedState: { auth: { isAuthenticated: true } }
       });
 
       // 1. Wait for initial schema load
