@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CheckCircleIcon, TrashIcon } from '@heroicons/react/24/solid'
+import { systemClient } from '../api/clients/systemClient'
 
 function StatusSection() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
@@ -11,24 +12,16 @@ function StatusSection() {
     setResetResult(null)
     
     try {
-      const response = await fetch('/api/system/reset-database', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ confirm: true }),
-      })
+      const response = await systemClient.resetDatabase(true)
       
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        setResetResult({ type: 'success', message: result.message })
+      if (response.success && response.data) {
+        setResetResult({ type: 'success', message: response.data.message })
         // Refresh the page after a short delay to show the new clean state
         setTimeout(() => {
           window.location.reload()
         }, 2000)
       } else {
-        setResetResult({ type: 'error', message: result.message || 'Reset failed' })
+        setResetResult({ type: 'error', message: response.error || 'Reset failed' })
       }
     } catch (error) {
       setResetResult({ type: 'error', message: `Network error: ${error.message}` })
