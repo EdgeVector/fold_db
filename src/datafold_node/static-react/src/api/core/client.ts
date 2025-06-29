@@ -420,6 +420,7 @@ export class ApiClient implements ApiClientInstance {
       }
 
       // Perform the request
+      // eslint-disable-next-line no-restricted-globals -- Core HTTP client layer legitimately uses fetch()
       const response = await fetch(config.url, fetchOptions);
       
       clearTimeout(timeoutId);
@@ -454,9 +455,9 @@ export class ApiClient implements ApiClientInstance {
         const jsonResponse = await response.json();
         data = jsonResponse.data || jsonResponse;
       } else {
-        data = await response.text() as any;
+        data = await response.text() as T;
       }
-    } catch (error) {
+    } catch (_error) {
       throw new ApiError('Failed to parse response', response.status, { requestId });
     }
 
@@ -487,12 +488,12 @@ export class ApiClient implements ApiClientInstance {
 
       if (body) {
         // For requests with body, sign the payload
-        const signedMessage = await signPayload(body);
+        const _signedMessage = await signPayload(body);
         headers[REQUEST_HEADERS.SIGNED_REQUEST] = 'true';
         // The body will be replaced with signed message in serializeBody
       }
       
-    } catch (error) {
+    } catch (_error) {
       throw new ApiError('Authentication failed', HTTP_STATUS_CODES.UNAUTHORIZED, {
         isNetworkError: false
       });

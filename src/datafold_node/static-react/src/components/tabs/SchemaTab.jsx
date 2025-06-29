@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
@@ -16,8 +16,8 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   // Redux state and dispatch - TASK-003: Use Redux instead of props
   const dispatch = useAppDispatch()
   const schemas = useAppSelector(selectAllSchemas)
-  const isLoadingSchemas = useAppSelector(selectFetchLoading)
-  const schemasError = useAppSelector(selectFetchError)
+  const _isLoadingSchemas = useAppSelector(selectFetchLoading)
+  const _schemasError = useAppSelector(selectFetchError)
   const [expandedSchemas, setExpandedSchemas] = useState({})
 
 

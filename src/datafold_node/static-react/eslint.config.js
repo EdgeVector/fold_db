@@ -193,6 +193,12 @@ export default [
         clearTimeout: 'readonly',
         Element: 'readonly',
         performance: 'readonly',
+        // Web API globals for MSW tests
+        Response: 'readonly',
+        Request: 'readonly',
+        Headers: 'readonly',
+        // Test constants
+        TEST_TIMEOUT_MS: 'readonly',
         // React testing globals
         React: 'readonly',
         useState: 'readonly',

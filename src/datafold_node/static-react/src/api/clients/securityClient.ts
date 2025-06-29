@@ -6,6 +6,7 @@
 
 import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
+import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
 import type { EnhancedApiResponse, SecurityApiClient } from '../core/types';
 import type { 
   SignedMessage, 
@@ -69,11 +70,11 @@ export class UnifiedSecurityClient implements SecurityApiClient {
       signedMessage,
       {
         requiresAuth: false, // Verification is public
-        timeout: 8000, // Reasonable timeout for crypto operations
-        retries: 2, // Allow retries for network issues
+        timeout: API_TIMEOUTS.CRYPTO_OPERATIONS, // Reasonable timeout for crypto operations
+        retries: API_RETRIES.STANDARD, // Allow retries for network issues
         cacheable: true, // Cache verification results
-        cacheTtl: 300000, // Cache for 5 minutes
-        cacheKey: `verify:${signedMessage.signature}:${signedMessage.public_key_id}`
+        cacheTtl: API_CACHE_TTL.VERIFICATION_RESULTS, // Cache for 5 minutes
+        cacheKey: `${CACHE_KEYS.VERIFY}:${signedMessage.signature}:${signedMessage.public_key_id}`
       }
     );
   }
@@ -93,8 +94,8 @@ export class UnifiedSecurityClient implements SecurityApiClient {
       request,
       {
         requiresAuth: false, // Registration is public
-        timeout: 10000, // Longer timeout for key registration
-        retries: 1, // Limited retries for registration
+        timeout: API_TIMEOUTS.CONFIG, // Longer timeout for key registration
+        retries: API_RETRIES.LIMITED, // Limited retries for registration
         cacheable: false // Never cache registration operations
       }
     );
@@ -111,11 +112,11 @@ export class UnifiedSecurityClient implements SecurityApiClient {
       API_ENDPOINTS.GET_SYSTEM_PUBLIC_KEY,
       {
         requiresAuth: false, // System public key is public
-        timeout: 5000,
-        retries: 3, // Multiple retries for critical system data
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.CRITICAL, // Multiple retries for critical system data
         cacheable: true, // Cache system public key
-        cacheTtl: 3600000, // Cache for 1 hour (system key doesn't change often)
-        cacheKey: 'system-public-key'
+        cacheTtl: API_CACHE_TTL.SYSTEM_PUBLIC_KEY, // Cache for 1 hour (system key doesn't change often)
+        cacheKey: CACHE_KEYS.SYSTEM_PUBLIC_KEY
       }
     );
   }
@@ -165,7 +166,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
             error: `Invalid key length: ${length} bytes (expected 32 for Ed25519)`
           };
         }
-      } catch (_base64Error) {
+      } catch {
         return {
           isValid: false,
           error: 'Invalid base64 encoding'
@@ -247,11 +248,11 @@ export class UnifiedSecurityClient implements SecurityApiClient {
       '/api/security/status',
       {
         requiresAuth: true,
-        timeout: 5000,
-        retries: 2,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.STANDARD,
         cacheable: true,
-        cacheTtl: 60000, // Cache for 1 minute
-        cacheKey: 'security-status'
+        cacheTtl: API_CACHE_TTL.SECURITY_STATUS, // Cache for 1 minute
+        cacheKey: CACHE_KEYS.SECURITY_STATUS
       }
     );
   }

@@ -14,25 +14,25 @@ import {
  */
 export class ApiError extends Error {
   public readonly status: number;
-  public readonly response?: any;
+  public readonly response?: Response | Record<string, unknown>;
   public readonly isNetworkError: boolean;
   public readonly isTimeoutError: boolean;
   public readonly isRetryable: boolean;
   public readonly requestId?: string;
   public readonly timestamp: number;
   public readonly code?: string;
-  public readonly details?: Record<string, any>;
+  public readonly details?: Record<string, unknown>;
 
   constructor(
     message: string,
     status: number = 0,
     options: {
-      response?: any;
+      response?: Response | Record<string, unknown>;
       isNetworkError?: boolean;
       isTimeoutError?: boolean;
       requestId?: string;
       code?: string;
-      details?: Record<string, any>;
+      details?: Record<string, unknown>;
     } = {}
   ) {
     super(message);
@@ -58,7 +58,7 @@ export class ApiError extends Error {
     if (isNetworkError || isTimeoutError) {
       return true;
     }
-    return RETRY_CONFIG.RETRYABLE_STATUS_CODES.includes(status);
+    return RETRY_CONFIG.RETRYABLE_STATUS_CODES.includes(status as any);
   }
 
   /**
@@ -239,7 +239,7 @@ export class ErrorFactory {
     response: Response, 
     requestId?: string
   ): Promise<ApiError> {
-    let errorData: any = {};
+    let errorData: Record<string, unknown> = {};
     
     try {
       const text = await response.text();
@@ -250,11 +250,13 @@ export class ErrorFactory {
       // Ignore JSON parsing errors
     }
 
-    const message = errorData.error || errorData.message || `HTTP ${response.status}`;
+    const message = (typeof errorData.error === 'string' ? errorData.error :
+                     typeof errorData.message === 'string' ? errorData.message :
+                     `HTTP ${response.status}`);
     
     // Check for specific error types
     if (response.status === HTTP_STATUS_CODES.UNAUTHORIZED) {
-      return new AuthenticationError(message, requestId);
+      return new AuthenticationError(message, requestId || '');
     }
     
     if (response.status === 429) {
@@ -263,14 +265,14 @@ export class ErrorFactory {
     }
     
     if (response.status === HTTP_STATUS_CODES.BAD_REQUEST && errorData.validationErrors) {
-      return new ValidationError(errorData.validationErrors, requestId);
+      return new ValidationError(errorData.validationErrors as Record<string, string[]>, requestId || '');
     }
 
     return new ApiError(message, response.status, {
       response: errorData,
       requestId,
-      code: errorData.code,
-      details: errorData.details
+      code: typeof errorData.code === 'string' ? errorData.code : undefined,
+      details: typeof errorData.details === 'object' && errorData.details !== null ? errorData.details as Record<string, unknown> : undefined
     });
   }
 
@@ -303,35 +305,35 @@ export class ErrorFactory {
 /**
  * Utility functions for error type checking
  */
-export function isApiError(error: any): error is ApiError {
+export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
-export function isNetworkError(error: any): error is NetworkError {
+export function isNetworkError(error: unknown): error is NetworkError {
   return error instanceof NetworkError || (isApiError(error) && error.isNetworkError);
 }
 
-export function isTimeoutError(error: any): error is TimeoutError {
+export function isTimeoutError(error: unknown): error is TimeoutError {
   return error instanceof TimeoutError || (isApiError(error) && error.isTimeoutError);
 }
 
-export function isAuthenticationError(error: any): error is AuthenticationError {
+export function isAuthenticationError(error: unknown): error is AuthenticationError {
   return error instanceof AuthenticationError || 
          (isApiError(error) && error.status === HTTP_STATUS_CODES.UNAUTHORIZED);
 }
 
-export function isSchemaStateError(error: any): error is SchemaStateError {
+export function isSchemaStateError(error: unknown): error is SchemaStateError {
   return error instanceof SchemaStateError;
 }
 
-export function isRetryableError(error: any): boolean {
+export function isRetryableError(error: unknown): boolean {
   return isApiError(error) && error.isRetryable;
 }
 
-export function isValidationError(error: any): error is ValidationError {
+export function isValidationError(error: unknown): error is ValidationError {
   return error instanceof ValidationError;
 }
 
-export function isRateLimitError(error: any): error is RateLimitError {
+export function isRateLimitError(error: unknown): error is RateLimitError {
   return error instanceof RateLimitError;
 }

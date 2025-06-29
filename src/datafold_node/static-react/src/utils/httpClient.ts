@@ -1,173 +1,55 @@
 import type { ApiResponse } from '../types/api';
-import { signPayload } from './authenticationWrapper';
 
 /**
- * Shared HTTP client utilities for consistent API communication
- * Consolidates duplicate GET and POST logic from API clients
+ * @deprecated This module is deprecated as part of API-STD-1 TASK-005.
+ * All consumers have been migrated to use specialized API clients.
+ *
+ * Migration guide:
+ * - Basic GET/POST operations: Use appropriate specialized client (schemaClient, systemClient, etc.)
+ * - Signed operations: Use securityClient or mutationClient
+ * - Message operations: Use mutationClient for query/mutation execution
+ *
+ * This module will be removed in a future release.
  */
 
-export async function get<T>(baseUrl: string, endpoint: string): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
-}
-
-export async function post<T>(baseUrl: string, endpoint: string, body: any): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    // The backend sometimes returns success without a data field
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
+/**
+ * @deprecated Use specialized API clients instead of httpClient utilities.
+ * For basic GET operations, use the appropriate client (schemaClient, systemClient, etc.)
+ */
+export async function get<T>(_baseUrl: string, _endpoint: string): Promise<ApiResponse<T>> {
+  throw new Error(
+    'httpClient.get() is deprecated and removed. Use specialized API clients instead. ' +
+    'See API-STD-1 migration guide for details.'
+  );
 }
 
 /**
- * Performs a signed POST request with authentication
- * Consolidates the signing logic used across API clients
+ * @deprecated Use specialized API clients instead of httpClient utilities.
+ * For basic POST operations, use the appropriate client (schemaClient, systemClient, etc.)
  */
-export async function signedPost<T>(baseUrl: string, endpoint: string, body: any): Promise<ApiResponse<T>> {
-  try {
-    // Sign the payload using the authentication wrapper
-    const signedMessage = await signPayload(body);
-    
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Signed-Request': 'true',
-      },
-      body: JSON.stringify(signedMessage),
-    });
-
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
+export async function post<T>(_baseUrl: string, _endpoint: string, _body: unknown): Promise<ApiResponse<T>> {
+  throw new Error(
+    'httpClient.post() is deprecated and removed. Use specialized API clients instead. ' +
+    'See API-STD-1 migration guide for details.'
+  );
 }
 
 /**
- * Performs a signed message POST request (for mutations/queries)
- * Handles pre-signed messages (SignedMessage objects)
+ * @deprecated Use securityClient or mutationClient for signed operations.
  */
-export async function signedMessagePost<T>(endpoint: string, signedMessage: any): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(signedMessage),
-    });
+export async function signedPost<T>(_baseUrl: string, _endpoint: string, _body: unknown): Promise<ApiResponse<T>> {
+  throw new Error(
+    'httpClient.signedPost() is deprecated and removed. Use securityClient or mutationClient instead. ' +
+    'See API-STD-1 migration guide for details.'
+  );
+}
 
-    if (!response.ok) {
-      try {
-        const errorData = await response.json();
-        return {
-          success: false,
-          error: errorData.error || `HTTP error! status: ${response.status}`,
-        };
-      } catch {
-        return {
-          success: false,
-          error: `HTTP error! status: ${response.status}`,
-        };
-      }
-    }
-    
-    const responseData = await response.json();
-    return {
-      success: true,
-      ...responseData,
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'An unknown network error occurred',
-    };
-  }
+/**
+ * @deprecated Use mutationClient.executeQuery() or mutationClient.executeMutation() for message operations.
+ */
+export async function signedMessagePost<T>(_endpoint: string, _signedMessage: unknown): Promise<ApiResponse<T>> {
+  throw new Error(
+    'httpClient.signedMessagePost() is deprecated and removed. Use mutationClient for query/mutation execution. ' +
+    'See API-STD-1 migration guide for details.'
+  );
 }

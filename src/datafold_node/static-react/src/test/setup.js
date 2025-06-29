@@ -39,6 +39,10 @@ Object.defineProperty(globalThis, 'crypto', {
   value: webcrypto,
 })
 
+// Mock Response for MSW tests
+global.Response = Response
+global.TEST_TIMEOUT_MS = TEST_TIMEOUT_DEFAULT_MS
+
 // Setup test environment with mocks and matchers
 setupTestEnvironment()
 

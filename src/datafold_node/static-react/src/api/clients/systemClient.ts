@@ -6,6 +6,7 @@
 
 import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
+import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
 import type { EnhancedApiResponse } from '../core/types';
 
 // System-specific response types
@@ -72,8 +73,8 @@ export class UnifiedSystemClient {
   async getLogs(): Promise<EnhancedApiResponse<LogsResponse>> {
     return this.client.get<LogsResponse>(API_ENDPOINTS.SYSTEM_LOGS, {
       requiresAuth: false, // Logs are public for monitoring
-      timeout: 8000,
-      retries: 2,
+      timeout: API_TIMEOUTS.STANDARD,
+      retries: API_RETRIES.STANDARD,
       cacheable: false // Always get fresh logs
     });
   }
@@ -98,8 +99,8 @@ export class UnifiedSystemClient {
       request,
       {
         requiresAuth: true, // Destructive operation requires auth
-        timeout: 30000, // Longer timeout for database operations
-        retries: 0, // No retries for destructive operations
+        timeout: API_TIMEOUTS.DESTRUCTIVE_OPERATIONS, // Longer timeout for database operations
+        retries: API_RETRIES.NONE, // No retries for destructive operations
         cacheable: false // Never cache destructive operations
       }
     );
@@ -115,11 +116,11 @@ export class UnifiedSystemClient {
   async getSystemStatus(): Promise<EnhancedApiResponse<SystemStatusResponse>> {
     return this.client.get<SystemStatusResponse>(API_ENDPOINTS.SYSTEM_STATUS, {
       requiresAuth: false, // Status is public for monitoring
-      timeout: 5000,
-      retries: 3, // Multiple retries for critical system data
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.CRITICAL, // Multiple retries for critical system data
       cacheable: true,
-      cacheTtl: 30000, // Cache for 30 seconds
-      cacheKey: 'system-status'
+      cacheTtl: API_CACHE_TTL.SYSTEM_STATUS, // Cache for 30 seconds
+      cacheKey: CACHE_KEYS.SYSTEM_STATUS
     });
   }
 

@@ -134,6 +134,91 @@ network.start().await?;
 let peers = network.discover_peers().await?;
 ```
 
+## 🌐 Frontend Development
+
+DataFold includes a comprehensive React frontend with a unified API client architecture that provides type-safe, standardized access to all backend operations.
+
+### Frontend API Clients
+
+The frontend uses specialized API clients that eliminate boilerplate code and provide consistent error handling, caching, and authentication:
+
+```typescript
+import { schemaClient, securityClient, systemClient } from '../api/clients';
+
+// Schema operations with automatic caching
+const response = await schemaClient.getSchemas();
+if (response.success) {
+  const schemas = response.data; // Fully typed SchemaData[]
+}
+
+// System monitoring with intelligent caching
+const status = await systemClient.getSystemStatus(); // 30-second cache
+
+// Security operations with built-in validation
+const verification = await securityClient.verifyMessage(signedMessage);
+```
+
+### Key Features
+
+- **🔒 Type Safety** - Full TypeScript support with comprehensive interfaces
+- **⚡ Intelligent Caching** - Operation-specific caching (30s for status, 5m for schemas, 1h for keys)
+- **🔄 Automatic Retries** - Configurable retry logic with exponential backoff
+- **🛡️ Error Handling** - Standardized error types with user-friendly messages
+- **🔐 Built-in Authentication** - Automatic auth header management
+- **📊 Request Deduplication** - Prevents duplicate concurrent requests
+- **🎯 Batch Operations** - Efficient multi-request processing
+
+### Available Clients
+
+- **SchemaClient** - Schema management and SCHEMA-002 compliance
+- **SecurityClient** - Authentication, key management, cryptographic operations
+- **SystemClient** - System operations, logging, database management
+- **TransformClient** - Data transformation and queue management
+- **IngestionClient** - AI-powered data ingestion (60s timeout for AI processing)
+- **MutationClient** - Data mutation operations and query execution
+
+### Error Handling
+
+```typescript
+import {
+  isNetworkError,
+  isAuthenticationError,
+  isSchemaStateError
+} from '../api/core/errors';
+
+try {
+  const response = await schemaClient.approveSchema('users');
+} catch (error) {
+  if (isAuthenticationError(error)) {
+    redirectToLogin();
+  } else if (isSchemaStateError(error)) {
+    showMessage(`Schema "${error.schemaName}" is ${error.currentState}`);
+  } else {
+    showMessage(error.toUserMessage());
+  }
+}
+```
+
+### Frontend Development Setup
+
+```bash
+# Start the backend server
+cargo run --bin datafold_http_server -- --port 9001
+
+# In another terminal, start the React frontend
+cd src/datafold_node/static-react
+npm install
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173` with hot-reload.
+
+### Frontend Documentation
+
+- **[Architecture Guide](docs/delivery/API-STD-1/api-client-architecture.md)** - Technical architecture and design patterns
+- **[Developer Guide](docs/delivery/API-STD-1/developer-guide.md)** - Usage examples and best practices
+- **[Migration Reference](docs/delivery/API-STD-1/migration-reference.md)** - Migration from direct fetch() usage
+
 ## 🔌 Extensible Ingestion
 
 DataFold supports ingesting data from various sources with the new adapter-based architecture:

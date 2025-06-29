@@ -32,7 +32,7 @@ function MutationTab({ onResult }) {
   const [rangeKeyValue, setRangeKeyValue] = useState('')
 
   // Use form validation hook (TASK-001)
-  const { validate, errors, clearErrors } = useFormValidation()
+  const { validate, errors } = useFormValidation()
 
   const handleSchemaChange = (schemaName) => {
     setSelectedSchema(schemaName)
@@ -44,14 +44,15 @@ function MutationTab({ onResult }) {
     setMutationData(prev => ({ ...prev, [fieldName]: value }))
   }
 
-  const handleRangeKeyChange = (e) => {
+  const _handleRangeKeyChange = (e) => {
     const value = e.target.value
     setRangeKeyValue(value)
     
     // Validate range key with debouncing (TASK-001)
-    if (selectedSchemaObj && rangeProps.isRange(selectedSchemaObj)) {
+    const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
+    if (selectedSchemaObj && isRangeSchema(selectedSchemaObj)) {
       validate('rangeKey', value, [
-        { type: 'custom', validator: (val) => rangeProps.validateRangeKey(val, mutationType !== 'Delete') }
+        { type: 'custom', validator: (val) => validateRangeKeyForMutation(val, mutationType !== 'Delete') }
       ], true) // Enable debouncing
     }
   }

@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useAppSelector } from '../../store/hooks'
 import { selectAllSchemas } from '../../store/schemaSlice'
+import { transformClient } from '../../api/clients'
 
 const TransformsTab = ({ _onResult }) => {
   // Redux state - TASK-003: Use Redux instead of props
   const schemas = useAppSelector(selectAllSchemas)
   const [transforms, setTransforms] = useState([])
-  const [apiTransforms, setApiTransforms] = useState({})
+  const [_apiTransforms, setApiTransforms] = useState({})
   const [loading, setLoading] = useState({})
   const [error, setError] = useState({})
-  const [debugInfo, setDebugInfo] = useState({})
+  const [_debugInfo, setDebugInfo] = useState({})
   const [queueInfo, setQueueInfo] = useState({
     queue: [],
     length: 0,
@@ -89,9 +90,8 @@ const TransformsTab = ({ _onResult }) => {
     // Fetch transforms from dedicated API
     const fetchApiTransforms = async () => {
       try {
-        const response = await fetch('/api/transforms')
-        const data = await response.json()
-        setApiTransforms(data.data || {})
+        const response = await transformClient.getTransforms()
+        setApiTransforms(response.data?.data || response.data || {})
       } catch (error) {
         console.error('Failed to fetch API transforms:', error)
         setApiTransforms({})
@@ -101,13 +101,8 @@ const TransformsTab = ({ _onResult }) => {
     // Fetch queue information
     const fetchQueueInfo = async () => {
       try {
-        const response = await fetch('/api/transforms/queue')
-        if (response.ok) {
-          const data = await response.json()
-          setQueueInfo(data)
-        } else {
-          console.warn('Failed to fetch queue info, status:', response.status)
-        }
+        const response = await transformClient.getQueue()
+        setQueueInfo(response.data)
       } catch (error) {
         console.error('Failed to fetch transform queue info:', error)
       }
@@ -139,19 +134,15 @@ const TransformsTab = ({ _onResult }) => {
     setError(prev => ({ ...prev, [transformId]: null }))
     
     try {
-      const response = await fetch(`/api/transforms/queue/${transformId}`, {
-        method: 'POST'
-      })
-      const responseData = await response.json()
+      const response = await transformClient.addToQueue(transformId)
       
-      if (!response.ok) {
-        throw new Error(responseData.error || 'Failed to add transform to queue')
+      if (!response.success) {
+        throw new Error(response.data?.message || 'Failed to add transform to queue')
       }
       
       // Refresh queue info immediately
-      const queueResponse = await fetch('/api/transforms/queue')
-      const data = await queueResponse.json()
-      setQueueInfo(data)
+      const queueResponse = await transformClient.refreshQueue()
+      setQueueInfo(queueResponse.data)
     } catch (error) {
       console.error('Failed to add transform to queue:', error)
       setError(prev => ({ ...prev, [transformId]: error.message }))

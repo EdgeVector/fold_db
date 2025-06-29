@@ -6,7 +6,7 @@
 
 import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
-import { SCHEMA_STATES, SCHEMA_OPERATIONS } from '../../constants/api';
+import { SCHEMA_STATES, SCHEMA_OPERATIONS, API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
 import type { EnhancedApiResponse, SchemaApiClient } from '../core/types';
 import type { Schema } from '../../types/schema';
 

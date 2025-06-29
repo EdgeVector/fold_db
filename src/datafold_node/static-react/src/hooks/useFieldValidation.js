@@ -82,12 +82,13 @@ export function useFieldValidation() {
         }
         break;
         
-      case 'type':
+      case 'type': {
         const typeError = validateType(value, rule.value);
         if (typeError) {
           return rule.message || typeError;
         }
         break;
+      }
         
       case 'custom':
         if (rule.validator && typeof rule.validator === 'function') {
@@ -109,7 +110,7 @@ export function useFieldValidation() {
     }
     
     return null;
-  }, []);
+  }, [isSchemaApproved, validateType]);
 
   /**
    * Validates value type
