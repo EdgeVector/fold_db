@@ -1,5 +1,5 @@
 use crate::atom::molecule_behavior::MoleculeBehavior;
-use crate::atom::molecule_types::{MoleculeStatus, MoleculeUpdate};
+use crate::atom::molecule_types::{apply_status_update, MoleculeStatus, MoleculeUpdate};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -72,14 +72,13 @@ impl MoleculeBehavior for MoleculeRange {
     }
 
     fn set_status(&mut self, status: &MoleculeStatus, source_pub_key: String) {
-        let status_clone = status.clone();
-        self.status = status_clone.clone();
-        self.updated_at = Utc::now();
-        self.update_history.push(MoleculeUpdate {
-            timestamp: Utc::now(),
-            status: status_clone,
+        apply_status_update(
+            &mut self.status,
+            &mut self.updated_at,
+            &mut self.update_history,
+            status,
             source_pub_key,
-        });
+        );
     }
 
     fn update_history(&self) -> &Vec<MoleculeUpdate> {

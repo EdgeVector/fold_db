@@ -13,3 +13,22 @@ pub struct MoleculeUpdate {
     pub(crate) status: MoleculeStatus,
     pub(crate) source_pub_key: String,
 }
+
+/// Helper that updates status related fields.
+pub fn apply_status_update(
+    status_field: &mut MoleculeStatus,
+    updated_at_field: &mut DateTime<Utc>,
+    history: &mut Vec<MoleculeUpdate>,
+    status: &MoleculeStatus,
+    source_pub_key: String,
+) {
+    let now = Utc::now();
+    let status_clone = status.clone();
+    *status_field = status_clone.clone();
+    *updated_at_field = now;
+    history.push(MoleculeUpdate {
+        timestamp: now,
+        status: status_clone,
+        source_pub_key,
+    });
+}
