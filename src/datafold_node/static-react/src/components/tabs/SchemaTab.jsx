@@ -1,18 +1,16 @@
 import { useState, useEffect } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
-import { API_ENDPOINTS } from '../../api/endpoints'
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
 import {
   selectAllSchemas,
   selectFetchLoading,
   selectFetchError,
-  approveSchema,
-  blockSchema,
-  unloadSchema,
-  loadSchema,
+  approveSchema as approveSchemaAction,
+  blockSchema as blockSchemaAction,
   fetchSchemas
 } from '../../store/schemaSlice'
+import schemaClient from '../../api/clients/schemaClient'
 
 function SchemaTab({ onResult, onSchemaUpdated }) {
   // Redux state and dispatch - TASK-003: Use Redux instead of props
@@ -21,50 +19,8 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   const isLoadingSchemas = useAppSelector(selectFetchLoading)
   const schemasError = useAppSelector(selectFetchError)
   const [expandedSchemas, setExpandedSchemas] = useState({})
-  const [, setSampleSchemas] = useState([])
-  const [selectedSample, setSelectedSample] = useState('')
-  const [, setLoadingSample] = useState(false)
-  const [, setSamplesError] = useState(null)
-  useEffect(() => {
-    fetchSampleSchemas()
-  }, [])
-
-  const fetchSampleSchemas = async () => {
-    try {
-      const resp = await fetch('/api/samples/schemas')
-      const data = await resp.json()
-      setSampleSchemas(data.data || [])
-    } catch (err) {
-      console.error('Failed to fetch sample schemas:', err)
-      setSamplesError('Failed to load sample schemas')
-    }
-  }
 
 
-  const _loadSchema = async (schemaName) => {
-    try {
-      const resp = await fetch(`/api/schema/${schemaName}/load`, { method: 'POST' })
-      const data = await resp.json()
-      
-      if (!resp.ok) {
-        throw new Error(data.error || `Failed to load schema: ${resp.status}`)
-      }
-      
-      if (onResult) {
-        onResult(data)
-      }
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
-      }
-      // Refresh the schema list using Redux
-      dispatch(fetchSchemas({ forceRefresh: true }))
-    } catch (err) {
-      console.error('Failed to load schema:', err)
-      if (onResult) {
-        onResult({ error: `Failed to load schema: ${err.message}` })
-      }
-    }
-  }
 
   const toggleSchema = async (schemaName) => {
     const isCurrentlyExpanded = expandedSchemas[schemaName]
@@ -79,11 +35,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       const schema = schemas.find(s => s.name === schemaName)
       if (schema && (!schema.fields || Object.keys(schema.fields).length === 0)) {
         try {
-          const resp = await fetch(`/api/schema/${schemaName}`)
-          if (resp.ok) {
-            const schemaData = await resp.json()
-            // Note: We can't update the schemas prop directly as it comes from parent
-            // The parent App.jsx will handle schema updates via onSchemaUpdated
+          const response = await schemaClient.getSchema(schemaName)
+          if (response.success) {
+            // Refresh the schema list to get updated details
+            dispatch(fetchSchemas({ forceRefresh: true }))
             if (onSchemaUpdated) {
               onSchemaUpdated()
             }
@@ -95,62 +50,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     }
   }
 
-  const _removeSchema = async (schemaName) => {
-    try {
-      const resp = await fetch(`/api/schema/${schemaName}`, { method: 'DELETE' })
-      if (!resp.ok) {
-        throw new Error(`Failed to unload schema: ${resp.status}`)
-      }
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
-      }
-    } catch (err) {
-      console.error('Failed to unload schema:', err)
-    }
-  }
 
-  const _loadSampleSchema = async () => {
-    if (!selectedSample) return
-    setLoadingSample(true)
-    setSamplesError(null)
-
-    try {
-      const resp = await fetch(`/api/samples/schema/${selectedSample}`)
-      if (!resp.ok) {
-        throw new Error(`Failed to fetch sample: ${resp.status}`)
-      }
-      const schema = await resp.json()
-      const createResp = await fetch(API_ENDPOINTS.SCHEMA, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(schema)
-      })
-
-      const data = await createResp.json()
-
-      if (!createResp.ok) {
-        throw new Error(data.error || 'Failed to load schema')
-      }
-
-      if (onResult) {
-        onResult(data)
-      }
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
-      }
-      setSelectedSample('')
-    } catch (err) {
-      console.error('Failed to load sample schema:', err)
-      setSamplesError('Failed to load sample schema')
-      if (onResult) {
-        onResult({ error: 'Failed to load sample schema' })
-      }
-    } finally {
-      setLoadingSample(false)
-    }
-  }
 
   const renderField = (field, fieldName, isRangeKey = false) => {
     const formatPermissionPolicy = (policy) => {
@@ -239,22 +139,18 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
   const approveSchema = async (schemaName) => {
     try {
-      const resp = await fetch(`/api/schema/${schemaName}/approve`, { method: 'POST' })
-      const data = await resp.json()
+      // Use Redux action instead of direct API call
+      const result = await dispatch(approveSchemaAction({ schemaName }))
       
-      if (!resp.ok) {
-        throw new Error(data.error || `Failed to approve schema: ${resp.status}`)
-      }
-      
-      if (onResult) {
-        onResult(data)
-      }
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
-      }
-      // Refresh the schema list via parent component
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
+      if (approveSchemaAction.fulfilled.match(result)) {
+        if (onResult) {
+          onResult({ success: true, message: `Schema ${schemaName} approved successfully` })
+        }
+        if (onSchemaUpdated) {
+          onSchemaUpdated()
+        }
+      } else {
+        throw new Error(result.payload || `Failed to approve schema: ${schemaName}`)
       }
     } catch (err) {
       console.error('Failed to approve schema:', err)
@@ -266,22 +162,18 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
   const blockSchema = async (schemaName) => {
     try {
-      const resp = await fetch(`/api/schema/${schemaName}/block`, { method: 'POST' })
-      const data = await resp.json()
+      // Use Redux action instead of direct API call
+      const result = await dispatch(blockSchemaAction({ schemaName }))
       
-      if (!resp.ok) {
-        throw new Error(data.error || `Failed to block schema: ${resp.status}`)
-      }
-      
-      if (onResult) {
-        onResult(data)
-      }
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
-      }
-      // Refresh the schema list via parent component
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
+      if (blockSchemaAction.fulfilled.match(result)) {
+        if (onResult) {
+          onResult({ success: true, message: `Schema ${schemaName} blocked successfully` })
+        }
+        if (onSchemaUpdated) {
+          onSchemaUpdated()
+        }
+      } else {
+        throw new Error(result.payload || `Failed to block schema: ${schemaName}`)
       }
     } catch (err) {
       console.error('Failed to block schema:', err)
@@ -291,32 +183,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     }
   }
 
-  const unloadSchema = async (schemaName) => {
-    try {
-      const resp = await fetch(`/api/schema/${schemaName}`, { method: 'DELETE' })
-      const data = await resp.json()
-      
-      if (!resp.ok) {
-        throw new Error(data.error || `Failed to unload schema: ${resp.status}`)
-      }
-      
-      if (onResult) {
-        onResult(data)
-      }
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
-      }
-      // Refresh the schema list via parent component
-      if (onSchemaUpdated) {
-        onSchemaUpdated()
-      }
-    } catch (err) {
-      console.error('Failed to unload schema:', err)
-      if (onResult) {
-        onResult({ error: `Failed to unload schema: ${err.message}` })
-      }
-    }
-  }
 
   const renderSchema = (schema) => {
     const isExpanded = expandedSchemas[schema.name]

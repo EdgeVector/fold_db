@@ -8,7 +8,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.js'],
     css: true,
-    testTimeout: 15000, // Increase timeout to 15 seconds
+    testTimeout: 1000, // 1 second timeout - fast but allows for legitimate delays
     define: {
       global: 'globalThis',
     },
