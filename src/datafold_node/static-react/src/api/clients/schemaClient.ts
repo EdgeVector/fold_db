@@ -30,7 +30,7 @@ export interface SchemaStatusResponse {
 /**
  * Unified Schema API Client Implementation
  */
-export class UnifiedSchemaClient implements SchemaApiClient {
+export class UnifiedSchemaClient {
   private readonly client: ApiClient;
 
   constructor(client?: ApiClient) {
@@ -210,10 +210,38 @@ export class UnifiedSchemaClient implements SchemaApiClient {
   }
 
   /**
+   * Load a schema into memory
+   * PROTECTED - Requires authentication
+   */
+  async loadSchema(name: string): Promise<EnhancedApiResponse<void>> {
+    return this.client.post<void>(
+      API_ENDPOINTS.SCHEMA_LOAD(name),
+      {}, // Empty body, schema name is in URL
+      {
+        requiresAuth: true,
+        timeout: 10000, // Longer timeout for load operations
+        retries: 1 // Limited retries for state-changing operations
+      }
+    );
+  }
+
+  /**
+   * Unload a schema from memory (remove/delete)
+   * PROTECTED - Requires authentication
+   */
+  async unloadSchema(name: string): Promise<EnhancedApiResponse<void>> {
+    return this.client.delete<void>(API_ENDPOINTS.SCHEMA_UNLOAD(name), {
+      requiresAuth: true,
+      timeout: 10000, // Longer timeout for unload operations
+      retries: 1 // Limited retries for state-changing operations
+    });
+  }
+
+  /**
    * Validate if a schema can be used for mutations/queries (SCHEMA-002 compliance)
    */
   async validateSchemaForOperation(
-    schemaName: string, 
+    schemaName: string,
     operation: 'mutation' | 'query'
   ): Promise<{ isValid: boolean; error?: string; schema?: Schema }> {
     try {
@@ -288,6 +316,8 @@ export const approveSchema = schemaClient.approveSchema.bind(schemaClient);
 export const blockSchema = schemaClient.blockSchema.bind(schemaClient);
 
 // New exports
+export const loadSchema = schemaClient.loadSchema.bind(schemaClient);
+export const unloadSchema = schemaClient.unloadSchema.bind(schemaClient);
 export const getApprovedSchemas = schemaClient.getApprovedSchemas.bind(schemaClient);
 export const validateSchemaForOperation = schemaClient.validateSchemaForOperation.bind(schemaClient);
 

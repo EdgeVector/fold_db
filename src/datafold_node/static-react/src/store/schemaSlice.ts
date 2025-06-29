@@ -32,6 +32,7 @@ import {
   SCHEMA_OPERATION_REQUIREMENTS,
   READABLE_SCHEMA_STATES
 } from '../constants/redux';
+import { schemaClient } from '../api/clients/schemaClient';
 
 // ============================================================================
 // INITIAL STATE
@@ -124,28 +125,22 @@ export const fetchSchemas = createAsyncThunk<
     
     for (let attempt = 1; attempt <= SCHEMA_FETCH_RETRY_ATTEMPTS; attempt++) {
       try {
-        // Fetch available schemas from filesystem
-        const availableResponse = await withTimeout(
-          fetch('/api/schemas/available'),
-          SCHEMA_OPERATION_TIMEOUT_MS
-        );
+        // Fetch available schemas from filesystem using SchemaClient
+        const availableResponse = await schemaClient.getSchemas();
         
-        if (!availableResponse.ok) {
-          const error = new Error(`Failed to fetch available schemas: ${availableResponse.status}`);
+        if (!availableResponse.success) {
+          const error = new Error(`Failed to fetch available schemas: ${availableResponse.error || 'Unknown error'}`);
           throw error;
         }
-        const availableData = await availableResponse.json();
+        const availableData = { data: availableResponse.data?.map(s => s.name) || [] };
         
-        // Fetch persisted schema states from database
-        const persistedResponse = await withTimeout(
-          fetch('/api/schemas'),
-          SCHEMA_OPERATION_TIMEOUT_MS
-        );
+        // Fetch persisted schema states from database using SchemaClient
+        const persistedResponse = await schemaClient.getAllSchemasWithState();
         
-        if (!persistedResponse.ok) {
-          throw new Error(`Failed to fetch persisted schemas: ${persistedResponse.status}`);
+        if (!persistedResponse.success) {
+          throw new Error(`Failed to fetch persisted schemas: ${persistedResponse.error || 'Unknown error'}`);
         }
-        const persistedData = await persistedResponse.json();
+        const persistedData = persistedResponse;
         
         console.log('📁 Available schemas:', availableData.data || []);
         console.log('🗄️ Persisted schemas:', persistedData.data || {});
@@ -179,32 +174,29 @@ export const fetchSchemas = createAsyncThunk<
         
         console.log('📋 Merged schemas for UI:', schemasWithStates);
         
-        // Fetch detailed schema information for all schemas
+        // Fetch detailed schema information for all schemas using SchemaClient
         const schemasWithDetails = await Promise.all(
           schemasWithStates.map(async (schema: any) => {
             try {
-              const schemaResponse = await withTimeout(
-                fetch(`/api/schema/${schema.name}`),
-                SCHEMA_OPERATION_TIMEOUT_MS
-              );
+              const schemaResponse = await schemaClient.getSchema(schema.name);
               
-              if (schemaResponse.ok) {
-                const schemaData = await schemaResponse.json();
+              if (schemaResponse.success && schemaResponse.data) {
+                const schemaData = schemaResponse.data;
                 return {
                   ...schema,
                   ...schemaData, // Include the full schema data including schema_type
                   fields: schemaData.fields || {},
-                  // Add range info if this is a range schema
+                  // Add range info if this is a range schema (using any to access schema_type)
                   rangeInfo: {
-                    isRangeSchema: schemaData.schema_type === 'Range',
-                    rangeField: schemaData.schema_type === 'Range' ? {
+                    isRangeSchema: (schemaData as any).schema_type === 'Range',
+                    rangeField: (schemaData as any).schema_type === 'Range' ? {
                       name: 'range_key',
                       type: 'Range'
                     } : undefined
                   }
                 };
               } else {
-                console.log(`⚠️ Schema ${schema.name} not loaded in memory (${schemaResponse.status}), keeping basic info`);
+                console.log(`⚠️ Schema ${schema.name} not loaded in memory, keeping basic info`);
               }
             } catch (err) {
               console.log(`⚠️ Failed to fetch details for schema ${schema.name}:`, err instanceof Error ? err.message : 'Unknown error');
@@ -272,31 +264,17 @@ export const approveSchema = createAsyncThunk<
     }
     
     try {
-      const timeout = options.timeout || SCHEMA_OPERATION_TIMEOUT_MS;
-      const response = await withTimeout(
-        fetch(`/api/schema/${schemaName}/approve`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(options.metadata || {})
-        }),
-        timeout
-      );
+      const response = await schemaClient.approveSchema(schemaName);
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data: SchemaApiResponse = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error?.message || SCHEMA_ERROR_MESSAGES.APPROVE_FAILED);
+      if (!response.success) {
+        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.APPROVE_FAILED);
       }
       
       return {
         schemaName,
         newState: SCHEMA_STATES.APPROVED as SchemaStateType,
         timestamp: Date.now(),
-        updatedSchema: data.data?.schema
+        updatedSchema: undefined
       };
       
     } catch (error) {
@@ -341,31 +319,17 @@ export const blockSchema = createAsyncThunk<
     }
     
     try {
-      const timeout = options.timeout || SCHEMA_OPERATION_TIMEOUT_MS;
-      const response = await withTimeout(
-        fetch(`/api/schema/${schemaName}/block`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(options.metadata || {})
-        }),
-        timeout
-      );
+      const response = await schemaClient.blockSchema(schemaName);
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data: SchemaApiResponse = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error?.message || SCHEMA_ERROR_MESSAGES.BLOCK_FAILED);
+      if (!response.success) {
+        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.BLOCK_FAILED);
       }
       
       return {
         schemaName,
         newState: SCHEMA_STATES.BLOCKED as SchemaStateType,
         timestamp: Date.now(),
-        updatedSchema: data.data?.schema
+        updatedSchema: undefined
       };
       
     } catch (error) {
@@ -410,31 +374,17 @@ export const unloadSchema = createAsyncThunk<
     }
     
     try {
-      const timeout = options.timeout || SCHEMA_OPERATION_TIMEOUT_MS;
-      const response = await withTimeout(
-        fetch(`/api/schema/${schemaName}/unload`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(options.metadata || {})
-        }),
-        timeout
-      );
+      const response = await schemaClient.unloadSchema(schemaName);
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data: SchemaApiResponse = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error?.message || SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED);
+      if (!response.success) {
+        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED);
       }
       
       return {
         schemaName,
         newState: SCHEMA_STATES.AVAILABLE as SchemaStateType,
         timestamp: Date.now(),
-        updatedSchema: data.data?.schema
+        updatedSchema: undefined
       };
       
     } catch (error) {
@@ -469,31 +419,17 @@ export const loadSchema = createAsyncThunk<
     }
     
     try {
-      const timeout = options.timeout || SCHEMA_OPERATION_TIMEOUT_MS;
-      const response = await withTimeout(
-        fetch(`/api/schema/${schemaName}/load`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(options.metadata || {})
-        }),
-        timeout
-      );
+      const response = await schemaClient.loadSchema(schemaName);
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data: SchemaApiResponse = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error?.message || SCHEMA_ERROR_MESSAGES.LOAD_FAILED);
+      if (!response.success) {
+        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.LOAD_FAILED);
       }
       
       return {
         schemaName,
         newState: SCHEMA_STATES.APPROVED as SchemaStateType,
         timestamp: Date.now(),
-        updatedSchema: data.data?.schema
+        updatedSchema: undefined
       };
       
     } catch (error) {

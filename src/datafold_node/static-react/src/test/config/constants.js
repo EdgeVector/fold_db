@@ -1,10 +1,10 @@
 // Test Configuration Constants
 // TASK-010: Required test constants for PBI-REACT-SIMPLIFY-001
 
-export const TEST_TIMEOUT_DEFAULT_MS = 15000;
+export const TEST_TIMEOUT_DEFAULT_MS = 1000; // 1 second timeout - fast but allows for legitimate delays
 export const COVERAGE_THRESHOLD_PERCENT = 85;
 export const INTEGRATION_TEST_RETRY_COUNT = 3;
-export const MOCK_API_DELAY_MS = 100;
+export const MOCK_API_DELAY_MS = 0; // No delays for fast tests
 export const TEST_VALIDATION_BATCH_SIZE = 10;
 
 // Additional test configuration

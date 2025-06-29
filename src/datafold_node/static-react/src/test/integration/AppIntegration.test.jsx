@@ -26,6 +26,38 @@ vi.mock('../../api/securityClient', () => ({
   }))
 }))
 
+// Mock schema client for new API architecture
+vi.mock('../../api/clients/schemaClient', () => ({
+  schemaClient: {
+    getSchemas: vi.fn(() => Promise.resolve({
+      success: true,
+      data: { data: ['Schema1', 'Schema2'] }
+    })),
+    getAllSchemasWithState: vi.fn(() => Promise.resolve({
+      success: true,
+      data: { approved: ['Schema1'], available: ['Schema2'], blocked: [] }
+    })),
+    getSchema: vi.fn(() => Promise.resolve({
+      success: true,
+      data: { name: 'TestSchema', fields: [] }
+    }))
+  },
+  createSchemaClient: vi.fn(() => ({
+    getSchemas: vi.fn(() => Promise.resolve({
+      success: true,
+      data: { data: ['Schema1', 'Schema2'] }
+    })),
+    getAllSchemasWithState: vi.fn(() => Promise.resolve({
+      success: true,
+      data: { approved: ['Schema1'], available: ['Schema2'], blocked: [] }
+    })),
+    getSchema: vi.fn(() => Promise.resolve({
+      success: true,
+      data: { name: 'TestSchema', fields: [] }
+    }))
+  }))
+}))
+
 // Mock Redux thunks to prevent state override
 vi.mock('../../store/authSlice', async () => {
   const actual = await vi.importActual('../../store/authSlice')
@@ -156,8 +188,10 @@ describe('App Integration Tests', () => {
       expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
     })
     
-    // Check that API was called (schemas are fetched from multiple endpoints)
-    expect(fetch).toHaveBeenCalledWith('/api/schemas/available')
+    // Check that schemas are loaded via Redux (no direct fetch calls in new architecture)
+    // The SchemaTab now uses Redux thunks with schemaClient instead of direct fetch
+    expect(screen.getByText('Available Schemas')).toBeInTheDocument()
+    expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
   })
 
   it('switches between tabs correctly when authenticated', async () => {
