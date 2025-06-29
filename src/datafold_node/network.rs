@@ -12,6 +12,7 @@ use crate::security::{EncryptionManager, SecurityManager};
 use super::DataFoldNode;
 use super::config::NodeInfo;
 use super::node::NetworkStatus;
+use std::future::Future;
 
 impl DataFoldNode {
     /// Initialize the network layer
@@ -53,111 +54,99 @@ impl DataFoldNode {
         Ok(())
     }
 
+    /// Helper to run an operation with the network core
+    async fn with_network<'a, F, Fut, T>(&'a self, f: F) -> FoldDbResult<T>
+    where
+        F: FnOnce(tokio::sync::MutexGuard<'a, NetworkCore>) -> Fut,
+        Fut: Future<Output = FoldDbResult<T>> + 'a,
+    {
+        let network = self.network.as_ref().ok_or_else(|| {
+            FoldDbError::Network(NetworkErrorKind::Protocol(
+                "Network not initialized".to_string(),
+            ))
+        })?;
+
+        let guard = network.lock().await;
+        f(guard).await
+    }
+
     /// Start the network service using the node configuration address
     pub async fn start_network(&self) -> FoldDbResult<()> {
-        if let Some(network) = &self.network {
-            let mut network = network.lock().await;
-            let address = &self.config.network_listen_address;
+        let address = self.config.network_listen_address.clone();
+        self.with_network(|mut network| async move {
             network
-                .run(address)
+                .run(&address)
                 .await
                 .map_err(|e| FoldDbError::Network(e.into()))?;
-
             Ok(())
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
-            )))
-        }
+        })
+        .await
     }
 
     /// Start the network service with a specific listen address
     pub async fn start_network_with_address(&self, listen_address: &str) -> FoldDbResult<()> {
-        if let Some(network) = &self.network {
-            let mut network = network.lock().await;
+        let address = listen_address.to_string();
+        self.with_network(|mut network| async move {
             network
-                .run(listen_address)
+                .run(&address)
                 .await
                 .map_err(|e| FoldDbError::Network(e.into()))?;
-
             Ok(())
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
-            )))
-        }
+        })
+        .await
     }
 
     /// Stop the network service
     pub async fn stop_network(&self) -> FoldDbResult<()> {
-        if let Some(network) = &self.network {
-            let mut network_guard = network.lock().await;
+        self.with_network(|mut network_guard| async move {
             log_feature!(LogFeature::Network, info, "Stopping network service");
             network_guard.stop();
             Ok(())
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
-            )))
-        }
+        })
+        .await
     }
 
     /// Get a mutable reference to the network core
-    pub async fn get_network_mut(&self) -> FoldDbResult<tokio::sync::MutexGuard<'_, NetworkCore>> {
-        if let Some(network) = &self.network {
-            Ok(network.lock().await)
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
-            )))
-        }
+    pub async fn get_network_mut(
+        &self,
+    ) -> FoldDbResult<tokio::sync::MutexGuard<'_, NetworkCore>> {
+        self.with_network(|guard| async move { Ok(guard) }).await
     }
 
     /// Discover nodes on the local network using mDNS
     pub async fn discover_nodes(&self) -> FoldDbResult<Vec<PeerId>> {
-        if let Some(network) = &self.network {
-            let network_guard = network.lock().await;
-
-            log_feature!(LogFeature::Network, info, "Triggering mDNS discovery...");
-
-            let known_peers: Vec<PeerId> = network_guard.known_peers().iter().cloned().collect();
-
-            Ok(known_peers)
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
-            )))
-        }
+        self
+            .with_network(|network_guard| async move {
+                log_feature!(LogFeature::Network, info, "Triggering mDNS discovery...");
+                let known_peers: Vec<PeerId> = network_guard.known_peers().iter().cloned().collect();
+                Ok(known_peers)
+            })
+            .await
     }
 
     /// Get the list of known nodes
     pub async fn get_known_nodes(&self) -> FoldDbResult<HashMap<String, NodeInfo>> {
-        if let Some(network) = &self.network {
-            let network_guard = network.lock().await;
+        self
+            .with_network(|network_guard| async move {
+                let mut result = HashMap::new();
+                for peer_id in network_guard.known_peers() {
+                    let peer_id_str = peer_id.to_string();
 
-            let mut result = HashMap::new();
-            for peer_id in network_guard.known_peers() {
-                let peer_id_str = peer_id.to_string();
-
-                if let Some(info) = self.trusted_nodes.get(&peer_id_str) {
-                    result.insert(peer_id_str, info.clone());
-                } else {
-                    result.insert(
-                        peer_id_str.clone(),
-                        NodeInfo {
-                            id: peer_id_str,
-                            trust_distance: self.config.default_trust_distance,
-                        },
-                    );
+                    if let Some(info) = self.trusted_nodes.get(&peer_id_str) {
+                        result.insert(peer_id_str, info.clone());
+                    } else {
+                        result.insert(
+                            peer_id_str.clone(),
+                            NodeInfo {
+                                id: peer_id_str,
+                                trust_distance: self.config.default_trust_distance,
+                            },
+                        );
+                    }
                 }
-            }
-
-            Ok(result)
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
-            )))
-        }
+                Ok(result)
+            })
+            .await
     }
 
     /// Check which schemas are available on a remote peer
@@ -166,64 +155,56 @@ impl DataFoldNode {
         peer_id_str: &str,
         schema_names: Vec<String>,
     ) -> FoldDbResult<Vec<String>> {
-        if let Some(network) = &self.network {
-            let peer_id = peer_id_str.parse::<PeerId>().map_err(|e| {
-                FoldDbError::Network(NetworkErrorKind::Connection(format!(
-                    "Invalid peer ID: {}",
-                    e
-                )))
-            })?;
-
-            let mut network = network.lock().await;
-            let result = network
-                .check_schemas(peer_id, schema_names)
-                .await
-                .map_err(|e| FoldDbError::Network(e.into()))?;
-
-            Ok(result)
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
+        let peer_id = peer_id_str.parse::<PeerId>().map_err(|e| {
+            FoldDbError::Network(NetworkErrorKind::Connection(format!(
+                "Invalid peer ID: {}",
+                e
             )))
-        }
+        })?;
+
+        self
+            .with_network(|mut network| async move {
+                let result = network
+                    .check_schemas(peer_id, schema_names)
+                    .await
+                    .map_err(|e| FoldDbError::Network(e.into()))?;
+                Ok(result)
+            })
+            .await
     }
 
     /// Forward a request to another node
     pub async fn forward_request(&self, peer_id: PeerId, request: Value) -> FoldDbResult<Value> {
-        if let Some(network) = &self.network {
-            let mut network = network.lock().await;
+        self
+            .with_network(|mut network| async move {
+                let node_id = network
+                    .get_node_id_for_peer(&peer_id)
+                    .unwrap_or_else(|| peer_id.to_string());
 
-            let node_id = network
-                .get_node_id_for_peer(&peer_id)
-                .unwrap_or_else(|| peer_id.to_string());
+                log_feature!(
+                    LogFeature::Network,
+                    info,
+                    "Forwarding request to node {} (peer {})",
+                    node_id,
+                    peer_id
+                );
 
-            log_feature!(
-                LogFeature::Network,
-                info,
-                "Forwarding request to node {} (peer {})",
-                node_id,
-                peer_id
-            );
+                let response = network
+                    .forward_request(peer_id, request)
+                    .await
+                    .map_err(|e| FoldDbError::Network(e.into()))?;
 
-            let response = network
-                .forward_request(peer_id, request)
-                .await
-                .map_err(|e| FoldDbError::Network(e.into()))?;
+                log_feature!(
+                    LogFeature::Network,
+                    info,
+                    "Received response from node {} (peer {})",
+                    node_id,
+                    peer_id
+                );
 
-            log_feature!(
-                LogFeature::Network,
-                info,
-                "Received response from node {} (peer {})",
-                node_id,
-                peer_id
-            );
-
-            Ok(response)
-        } else {
-            Err(FoldDbError::Network(NetworkErrorKind::Protocol(
-                "Network not initialized".to_string(),
-            )))
-        }
+                Ok(response)
+            })
+            .await
     }
 
     /// Simple method to connect to another node

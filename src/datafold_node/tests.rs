@@ -67,3 +67,12 @@ async fn test_tcp_protocol_roundtrip() {
 
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn test_network_error_when_uninitialized() {
+    let config = create_test_config();
+    let node = DataFoldNode::new(config).unwrap();
+
+    assert!(node.start_network().await.is_err());
+    assert!(node.get_network_mut().await.is_err());
+}
