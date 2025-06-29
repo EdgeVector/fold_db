@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ingestionClient } from '../../api/clients'
 
 function IngestionTab({ onResult }) {
   const [jsonData, setJsonData] = useState('')
@@ -21,10 +22,9 @@ function IngestionTab({ onResult }) {
 
   const fetchIngestionStatus = async () => {
     try {
-      const response = await fetch('/api/ingestion/status')
-      if (response.ok) {
-        const status = await response.json()
-        setIngestionStatus(status)
+      const response = await ingestionClient.getStatus()
+      if (response.success) {
+        setIngestionStatus(response.data)
       }
     } catch (error) {
       console.error('Failed to fetch ingestion status:', error)
@@ -33,11 +33,10 @@ function IngestionTab({ onResult }) {
 
   const loadOpenRouterConfig = async () => {
     try {
-      const response = await fetch('/api/ingestion/openrouter-config')
-      if (response.ok) {
-        const config = await response.json()
-        setOpenrouterApiKey(config.api_key || '')
-        setOpenrouterModel(config.model || 'anthropic/claude-3.5-sonnet')
+      const response = await ingestionClient.getConfig()
+      if (response.success) {
+        setOpenrouterApiKey(response.data.api_key || '')
+        setOpenrouterModel(response.data.model || 'anthropic/claude-3.5-sonnet')
       }
     } catch (error) {
       console.error('Failed to load OpenRouter config:', error)
@@ -46,27 +45,22 @@ function IngestionTab({ onResult }) {
 
   const saveOpenRouterConfig = async () => {
     try {
-      const response = await fetch('/api/ingestion/openrouter-config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          api_key: openrouterApiKey,
-          model: openrouterModel
-        }),
-      })
+      const config = {
+        api_key: openrouterApiKey,
+        model: openrouterModel
+      }
 
-      if (response.ok) {
-        setConfigSaveStatus({ success: true, message: 'Configuration saved successfully' })
+      const response = await ingestionClient.saveConfig(config)
+      
+      if (response.success) {
+        setConfigSaveStatus({ success: true, message: response.data.message || 'Configuration saved successfully' })
         // Refresh ingestion status to show updated config
         fetchIngestionStatus()
       } else {
-        const error = await response.json()
-        setConfigSaveStatus({ success: false, message: error.error || 'Failed to save configuration' })
+        setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
       }
-    } catch {
-      setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
+    } catch (error) {
+      setConfigSaveStatus({ success: false, message: error.message || 'Failed to save configuration' })
     }
 
     // Clear status after 3 seconds
@@ -81,20 +75,20 @@ function IngestionTab({ onResult }) {
 
     try {
       const parsedData = JSON.parse(jsonData)
-      const response = await fetch('/api/ingestion/validate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(parsedData),
-      })
-
-      const result = await response.json()
-      setValidationResult(result)
+      const response = await ingestionClient.validateData(parsedData)
+      
+      if (response.success) {
+        setValidationResult(response.data)
+      } else {
+        setValidationResult({
+          valid: false,
+          error: 'Validation failed'
+        })
+      }
     } catch (error) {
-      setValidationResult({ 
-        valid: false, 
-        error: error.message || 'Invalid JSON format' 
+      setValidationResult({
+        valid: false,
+        error: error.message || 'Invalid JSON format'
       })
     }
   }
@@ -112,27 +106,23 @@ function IngestionTab({ onResult }) {
     try {
       const parsedData = JSON.parse(jsonData)
       
-      const requestBody = {
-        data: parsedData,
-        auto_execute: autoExecute,
-        trust_distance: trustDistance,
-        pub_key: pubKey
+      const options = {
+        autoExecute,
+        trustDistance,
+        pubKey
       }
 
-      const response = await fetch('/api/ingestion/process', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      })
-
-      const result = await response.json()
-      onResult(result)
+      const response = await ingestionClient.processIngestion(parsedData, options)
       
-      if (result.success) {
+      if (response.success) {
+        onResult(response.data)
         setJsonData('') // Clear the form on success
         setValidationResult(null)
+      } else {
+        onResult({
+          success: false,
+          error: 'Failed to process ingestion'
+        })
       }
     } catch (error) {
       onResult({

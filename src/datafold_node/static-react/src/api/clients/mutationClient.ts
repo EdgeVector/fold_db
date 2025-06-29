@@ -13,18 +13,18 @@ import type { SignedMessage } from '../../types/cryptography';
 // Mutation-specific response types
 export interface MutationResponse {
   success: boolean;
-  result?: any;
+  result?: unknown;
   transactionId?: string;
   timestamp?: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface QueryResponse {
   success: boolean;
-  data?: any[];
+  data?: unknown[];
   totalCount?: number;
   hasMore?: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ValidationResult {

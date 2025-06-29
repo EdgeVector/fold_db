@@ -1,15 +1,288 @@
 # API Reference
 
-Fold DB provides three main interfaces for interacting with the system: CLI, HTTP REST API, and TCP protocol. This document provides comprehensive reference for all available operations.
+Fold DB provides multiple interfaces for interacting with the system: Frontend API Clients, CLI, HTTP REST API, and TCP protocol. This document provides comprehensive reference for all available operations.
 
 ## Table of Contents
 
-1. [CLI Interface](#cli-interface)
-2. [HTTP REST API](#http-rest-api)
-3. [TCP Protocol](#tcp-protocol)
-4. [Request/Response Formats](#requestresponse-formats)
-5. [Authentication](#authentication)
-6. [Error Handling](#error-handling)
+1. [Frontend API Clients](#frontend-api-clients) ⭐ **Recommended for React Applications**
+2. [CLI Interface](#cli-interface)
+3. [HTTP REST API](#http-rest-api)
+4. [TCP Protocol](#tcp-protocol)
+5. [Request/Response Formats](#requestresponse-formats)
+6. [Authentication](#authentication)
+7. [Error Handling](#error-handling)
+
+## Frontend API Clients
+
+**🎯 This is the recommended approach for React applications.** The unified API client architecture provides type-safe, standardized access to all Datafold operations with built-in caching, error handling, and authentication.
+
+### Quick Start
+
+```typescript
+import { schemaClient, securityClient, systemClient } from '../api/clients';
+
+// Get all schemas with automatic caching and error handling
+const response = await schemaClient.getSchemas();
+if (response.success) {
+  const schemas = response.data; // Fully typed
+}
+```
+
+### Available Clients
+
+#### Schema Client
+**Purpose:** Schema management and SCHEMA-002 compliance
+**File:** [`src/api/clients/schemaClient.ts`](src/datafold_node/static-react/src/api/clients/schemaClient.ts)
+
+```typescript
+import { schemaClient } from '../api/clients';
+
+// Schema operations
+await schemaClient.getSchemas();                    // List all schemas
+await schemaClient.getSchema('users');              // Get specific schema
+await schemaClient.getSchemasByState('approved');   // Filter by state
+await schemaClient.getSchemaStatus();               // Get status overview
+
+// State management (SCHEMA-002 compliance)
+await schemaClient.approveSchema('users');          // Approve schema
+await schemaClient.blockSchema('temp_data');        // Block schema
+await schemaClient.loadSchema('users');             // Load into memory
+await schemaClient.unloadSchema('temp_data');       // Unload from memory
+
+// Validation
+await schemaClient.validateSchemaForOperation('users', 'mutation');
+```
+
+#### Security Client
+**Purpose:** Authentication, key management, and cryptographic operations
+**File:** [`src/api/clients/securityClient.ts`](src/datafold_node/static-react/src/api/clients/securityClient.ts)
+
+```typescript
+import { securityClient } from '../api/clients';
+
+// Message verification (cached for performance)
+const verification = await securityClient.verifyMessage(signedMessage);
+
+// Key management
+await securityClient.registerPublicKey(keyRequest);
+await securityClient.getSystemPublicKey();          // Cached for 1 hour
+await securityClient.getSecurityStatus();
+
+// Validation helpers
+securityClient.validatePublicKeyFormat(publicKey);
+securityClient.validateSignedMessage(signedMessage);
+```
+
+#### System Client
+**Purpose:** System operations, logging, and database management
+**File:** [`src/api/clients/systemClient.ts`](src/datafold_node/static-react/src/api/clients/systemClient.ts)
+
+```typescript
+import { systemClient } from '../api/clients';
+
+// System monitoring
+await systemClient.getSystemStatus();               // Health status (30s cache)
+await systemClient.getLogs();                       // System logs
+
+// Database operations (destructive - use with caution)
+await systemClient.resetDatabase(true);             // Requires confirmation
+
+// Real-time logging
+systemClient.createLogStream(logEntry => {
+  console.log('New log:', logEntry);
+});
+```
+
+#### Transform Client
+**Purpose:** Data transformation and queue management
+**File:** [`src/api/clients/transformClient.ts`](src/datafold_node/static-react/src/api/clients/transformClient.ts)
+
+```typescript
+import { transformClient } from '../api/clients';
+
+// Transform operations
+await transformClient.getTransforms();              // List all transforms
+await transformClient.getTransform('transform-123'); // Get specific transform
+await transformClient.getQueue();                   // Queue status
+
+// Queue management
+await transformClient.addToQueue('transform-123');
+await transformClient.removeFromQueue('transform-123');
+```
+
+#### Ingestion Client
+**Purpose:** AI-powered data ingestion and schema generation
+**File:** [`src/api/clients/ingestionClient.ts`](src/datafold_node/static-react/src/api/clients/ingestionClient.ts)
+
+```typescript
+import { ingestionClient } from '../api/clients';
+
+// Ingestion operations
+await ingestionClient.getStatus();                  // Service status
+await ingestionClient.validateData(jsonData);       // Structure validation
+await ingestionClient.processIngestion(data, {      // AI processing (60s timeout)
+  autoExecute: true,
+  trustDistance: 1,
+  pubKey: 'user-key'
+});
+
+// OpenRouter AI configuration
+await ingestionClient.getConfig();
+await ingestionClient.saveConfig(openRouterConfig);
+```
+
+### Client Features
+
+#### Automatic Caching
+All clients include intelligent caching with operation-specific TTLs:
+- **System Status**: 30 seconds
+- **Schema Data**: 5 minutes
+- **System Public Key**: 1 hour
+- **Verification Results**: 5 minutes
+
+```typescript
+// Cache is automatic, but you can control it
+const response = await schemaClient.getSchemas({
+  cacheTtl: 60000,      // Custom cache duration
+  cacheable: false      // Disable caching for this request
+});
+
+// Cache management
+const stats = schemaClient.getCacheStats();
+schemaClient.clearCache();
+```
+
+#### Error Handling
+Comprehensive error handling with user-friendly messages:
+
+```typescript
+import {
+  isNetworkError,
+  isAuthenticationError,
+  isSchemaStateError
+} from '../api/core/errors';
+
+try {
+  const response = await schemaClient.getSchema('users');
+} catch (error) {
+  if (isAuthenticationError(error)) {
+    redirectToLogin();
+  } else if (isSchemaStateError(error)) {
+    showMessage(`Schema "${error.schemaName}" is ${error.currentState}`);
+  } else if (isNetworkError(error)) {
+    showMessage('Network connection failed');
+  } else {
+    showMessage(error.toUserMessage());
+  }
+}
+```
+
+#### TypeScript Support
+Full type safety with comprehensive interfaces:
+
+```typescript
+import type {
+  SchemaData,
+  SystemStatusResponse,
+  Transform,
+  EnhancedApiResponse
+} from '../api/clients';
+
+const handleSchemas = async (): Promise<SchemaData[]> => {
+  const response: EnhancedApiResponse<SchemaData[]> = await schemaClient.getSchemas();
+  
+  if (response.success) {
+    return response.data; // Fully typed as SchemaData[]
+  }
+  
+  throw new Error('Failed to load schemas');
+};
+```
+
+#### Batch Operations
+Efficient batch processing for multiple operations:
+
+```typescript
+import { createApiClient } from '../api/core/client';
+
+const client = createApiClient();
+const responses = await client.batch([
+  { id: 'schemas', method: 'GET', url: '/schemas' },
+  { id: 'status', method: 'GET', url: '/system/status' },
+  { id: 'transforms', method: 'GET', url: '/transforms' }
+]);
+```
+
+#### Request Deduplication
+Automatic deduplication prevents duplicate concurrent requests:
+
+```typescript
+// Multiple components calling simultaneously - only one HTTP request made
+const [response1, response2] = await Promise.all([
+  schemaClient.getSchemas(),
+  schemaClient.getSchemas()  // Shares response from first request
+]);
+```
+
+### Configuration
+
+All clients use centralized configuration from [`constants/api.ts`](src/datafold_node/static-react/src/constants/api.ts):
+
+```typescript
+// Timeouts (operation-specific)
+API_TIMEOUTS.QUICK         // 5s  - System status, basic gets
+API_TIMEOUTS.STANDARD      // 8s  - Schema reads, transforms
+API_TIMEOUTS.MUTATION      // 15s - Mutations, data changes
+API_TIMEOUTS.AI_PROCESSING // 60s - AI operations
+
+// Retries (operation-specific)
+API_RETRIES.NONE          // 0 - Destructive operations
+API_RETRIES.LIMITED       // 1 - State changes
+API_RETRIES.STANDARD      // 2 - Most operations
+API_RETRIES.CRITICAL      // 3 - System-critical calls
+
+// Cache TTLs (data-specific)
+API_CACHE_TTL.IMMEDIATE   // 30s - Frequently changing data
+API_CACHE_TTL.STANDARD    // 5m  - Stable data
+API_CACHE_TTL.LONG        // 1h  - Rarely changing data
+```
+
+### Migration from Direct fetch()
+
+**Before (Direct fetch):**
+```typescript
+const response = await fetch('/api/schemas', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+if (!response.ok) {
+  throw new Error(`HTTP ${response.status}`);
+}
+
+const data = await response.json();
+```
+
+**After (Unified Client):**
+```typescript
+const response = await schemaClient.getSchemas();
+
+if (response.success) {
+  const schemas = response.data; // Fully typed
+}
+// Error handling, authentication, caching, and retries are automatic
+```
+
+### Documentation Links
+
+- **[Architecture Documentation](docs/delivery/API-STD-1/api-client-architecture.md)**: Detailed technical architecture
+- **[Developer Guide](docs/delivery/API-STD-1/developer-guide.md)**: Usage examples and best practices
+- **[Source Code](src/datafold_node/static-react/src/api/clients/)**: Implementation details
+
+---
 
 ## CLI Interface
 
