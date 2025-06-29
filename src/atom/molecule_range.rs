@@ -48,12 +48,12 @@ impl MoleculeRange {
 
 
     /// Removes the reference at the specified key.
+    #[allow(clippy::manual_inspect)]
     pub fn remove_atom_uuid(&mut self, key: &str) -> Option<String> {
-        let result = self.atom_uuids.remove(key);
-        if result.is_some() {
+        self.atom_uuids.remove(key).map(|uuid| {
             self.updated_at = Utc::now();
-        }
-        result
+            uuid
+        })
     }
 
 }
