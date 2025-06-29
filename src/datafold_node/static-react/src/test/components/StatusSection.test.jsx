@@ -2,7 +2,20 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import StatusSection from '../../components/StatusSection'
 
+// Mock the systemClient
+vi.mock('../../api/clients/systemClient', () => ({
+  systemClient: {
+    resetDatabase: vi.fn()
+  }
+}))
+
+import { systemClient } from '../../api/clients/systemClient'
+
 describe('StatusSection Component', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('renders status message correctly', () => {
     render(<StatusSection />)
     
@@ -74,9 +87,6 @@ describe('StatusSection Component', () => {
     beforeEach(() => {
       // Reset all mocks before each test
       vi.clearAllMocks()
-      
-      // Mock fetch globally
-      global.fetch = vi.fn()
     })
 
     it('renders reset database button', () => {
@@ -111,10 +121,10 @@ describe('StatusSection Component', () => {
       expect(screen.queryByRole('heading', { name: /reset database/i })).not.toBeInTheDocument()
     })
 
-    it('calls reset API when confirmed', async () => {
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ success: true, message: 'Database reset successfully' })
+    it('calls systemClient when reset is confirmed', async () => {
+      systemClient.resetDatabase.mockResolvedValueOnce({
+        success: true,
+        data: { success: true, message: 'Database reset successfully' }
       })
 
       render(<StatusSection />)
@@ -126,20 +136,14 @@ describe('StatusSection Component', () => {
       fireEvent.click(confirmButton)
       
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith('/api/system/reset-database', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ confirm: true }),
-        })
+        expect(systemClient.resetDatabase).toHaveBeenCalledWith(true)
       })
     })
 
     it('shows success message when reset succeeds', async () => {
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ success: true, message: 'Database reset successfully' })
+      systemClient.resetDatabase.mockResolvedValueOnce({
+        success: true,
+        data: { success: true, message: 'Database reset successfully' }
       })
 
       render(<StatusSection />)
@@ -156,9 +160,9 @@ describe('StatusSection Component', () => {
     })
 
     it('shows error message when reset fails', async () => {
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        json: async () => ({ success: false, message: 'Reset failed' })
+      systemClient.resetDatabase.mockResolvedValueOnce({
+        success: false,
+        error: 'Reset failed'
       })
 
       render(<StatusSection />)
@@ -175,7 +179,7 @@ describe('StatusSection Component', () => {
     })
 
     it('handles network errors gracefully', async () => {
-      global.fetch.mockRejectedValueOnce(new Error('Network error'))
+      systemClient.resetDatabase.mockRejectedValueOnce(new Error('Network error'))
 
       render(<StatusSection />)
       
@@ -191,7 +195,7 @@ describe('StatusSection Component', () => {
     })
 
     it('disables reset button while resetting', async () => {
-      global.fetch.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 1000)))
+      systemClient.resetDatabase.mockImplementationOnce(() => new Promise(resolve => setTimeout(resolve, 1000)))
 
       render(<StatusSection />)
       

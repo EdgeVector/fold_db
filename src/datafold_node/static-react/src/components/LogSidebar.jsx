@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { systemClient } from '../api/clients/systemClient'
 
 function LogSidebar() {
   const [logs, setLogs] = useState([])
@@ -11,16 +12,29 @@ function LogSidebar() {
   }
 
   useEffect(() => {
-    fetch('/api/logs')
-      .then(res => res.json())
-      .then(data => setLogs(Array.isArray(data) ? data : []))
+    // Load initial logs using systemClient
+    systemClient.getLogs()
+      .then(response => {
+        if (response.success && response.data) {
+          const logs = response.data.logs || []
+          setLogs(Array.isArray(logs) ? logs : [])
+        } else {
+          setLogs([])
+        }
+      })
       .catch(() => setLogs([]))
 
-    const es = new EventSource('/api/logs/stream')
-    es.onmessage = (e) => {
-      setLogs(prev => [...prev, e.data])
-    }
-    return () => es.close()
+    // Set up log streaming using systemClient
+    const eventSource = systemClient.createLogStream(
+      (message) => {
+        setLogs(prev => [...prev, message])
+      },
+      (error) => {
+        console.warn('Log stream error:', error)
+      }
+    )
+
+    return () => eventSource.close()
   }, [])
 
   useEffect(() => {
