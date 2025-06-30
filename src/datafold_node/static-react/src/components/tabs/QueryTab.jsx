@@ -1,427 +1,172 @@
-import { useState } from 'react'
-// Removed hook dependencies - using Redux state management instead (TASK-003)
-import SelectField from '../form/SelectField'
-import RangeField from '../form/RangeField'
-import { mutationClient } from '../../api/clients/mutationClient'
-import { API_ENDPOINTS } from '../../api/endpoints'
-// Temporarily bypass constants to break circular dependency
-const API_CONFIG = { DEFAULT_TIMEOUT: 8000, DEFAULT_RETRIES: 2 };
-const BUTTON_TEXT = { executeQuery: 'Execute Query', confirm: 'Confirm', cancel: 'Cancel' };
-const FORM_LABELS = { schema: 'Schema', schemaEmpty: 'No schemas available', schemaHelp: 'Select a schema to work with' };
-const UI_STATES = { loading: 'Loading...', error: 'Error', success: 'Success', idle: 'Ready' };
-const SCHEMA_STATES = { AVAILABLE: 'available', APPROVED: 'approved', BLOCKED: 'blocked' };
-const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
-import { useAppSelector } from '../../store/hooks'
-import { selectAllSchemas, selectFetchLoading } from '../../store/schemaSlice'
+/**
+ * QueryTab Component - Refactored for UCR-1-7
+ * Orchestrates child components and Redux state management
+ *
+ * REFACTORED: Now uses extracted components following established patterns:
+ * - useQueryState hook for state management
+ * - QueryForm for form UI
+ * - QueryActions for action controls
+ * - useQueryBuilder for query construction
+ * - QueryPreview for query visualization
+ */
+
+import { useCallback } from 'react';
+import { mutationClient } from '../../api/clients/mutationClient';
+import { API_ENDPOINTS } from '../../api/endpoints';
+import { useQueryState } from '../../hooks/useQueryState';
+import { useQueryBuilder } from '../query/QueryBuilder';
+import QueryForm from '../query/QueryForm';
+import QueryActions from '../query/QueryActions';
+import QueryPreview from '../query/QueryPreview';
+import { useAppSelector } from '../../store/hooks';
 
 function QueryTab({ onResult }) {
-  // Redux state - TASK-003: Use Redux instead of props
-  const schemas = useAppSelector(selectAllSchemas)
-  const schemasLoading = useAppSelector(selectFetchLoading)
-  const [selectedSchema, setSelectedSchema] = useState('')
-  const [queryFields, setQueryFields] = useState([])
-  const [rangeFilters, setRangeFilters] = useState({})
-  const [, setRangeKeyValue] = useState('')
-  const [rangeSchemaFilter, setRangeSchemaFilter] = useState({})
+  // Authentication check - prevent access to query functionality without proper auth
+  const authState = useAppSelector(state => state.auth);
+  const { isAuthenticated } = authState;
 
-  // Redux-based state management (TASK-003) - replaced hook dependencies
-  const clearErrors = () => {} // Keep for potential future use
-  
-  // Simple range schema utilities without circular dependencies
-  const isRangeSchema = (schema) => {
-    return schema?.fields && Object.values(schema.fields).some(field => field.field_type === 'Range')
-  }
-  
-  const getRangeKey = (schema) => {
-    if (!schema?.fields) return null
-    const rangeField = Object.entries(schema.fields).find(([, field]) => field.field_type === 'Range')
-    return rangeField ? rangeField[0] : null
-  }
-
-  const handleSchemaChange = (e) => {
-    const schemaName = e.target.value
-    setSelectedSchema(schemaName)
-    
-    // Default to all fields being checked when a schema is selected
-    if (schemaName) {
-      const selectedSchemaObj = schemas.find(s => s.name === schemaName)
-      const allFieldNames = selectedSchemaObj?.fields ? Object.keys(selectedSchemaObj.fields) : []
-      setQueryFields(allFieldNames)
-    } else {
-      setQueryFields([])
-    }
-    
-    setRangeFilters({})
-    setRangeKeyValue('')
-    setRangeSchemaFilter({})
-    clearErrors() // Clear validation errors when schema changes
+  // Early return with authentication message if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="p-6">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">
+                Authentication Required
+              </h3>
+              <div className="mt-2 text-sm text-yellow-700">
+                <p>Please authenticate using the Keys tab before accessing query functionality.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  const handleFieldToggle = (fieldName) => {
-    setQueryFields(prev => {
-      if (prev.includes(fieldName)) {
-        return prev.filter(f => f !== fieldName)
-      }
-      return [...prev, fieldName]
-    })
-  }
+  // UCR-1-7: Refactored to use extracted components and hooks
+  // Use the extracted query state management hook
+  const {
+    state: queryState,
+    handleSchemaChange,
+    toggleField: handleFieldToggle,
+    handleRangeFilterChange,
+    setRangeSchemaFilter,
+    clearState,
+    approvedSchemas,
+    schemasLoading,
+    selectedSchemaObj,
+    isRangeSchema,
+    rangeKey
+  } = useQueryState();
 
-  const handleRangeFilterChange = (fieldName, filterType, value) => {
-    setRangeFilters(prev => ({
-      ...prev,
-      [fieldName]: {
-        ...prev[fieldName],
-        [filterType]: value
-      }
-    }))
-  }
+  // Use the extracted query builder for query construction
+  const { query, isValid } = useQueryBuilder({
+    queryState,
+    selectedSchemaObj,
+    isRangeSchema,
+    rangeKey
+  });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    
-    if (!selectedSchema || queryFields.length === 0) {
-      return
-    }
-
-    const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
-    let query
-
-    // Check if this is a range schema (Redux-based)
-    if (isRangeSchema(selectedSchemaObj)) {
-      // For range schemas, use the enhanced range filtering
-      query = {
-        type: 'query',
-        schema: selectedSchema,
-        fields: queryFields
-      }
-
-      // Add range filter based on the enhanced filter options
-      if (rangeSchemaFilter.start && rangeSchemaFilter.end) {
-        query.filter = {
-          range_filter: {
-            [getRangeKey(selectedSchemaObj)]: {
-              KeyRange: {
-                start: rangeSchemaFilter.start,
-                end: rangeSchemaFilter.end
-              }
-            }
-          }
-        }
-      } else if (rangeSchemaFilter.key) {
-        query.filter = {
-          range_filter: {
-            [getRangeKey(selectedSchemaObj)]: rangeSchemaFilter.key
-          }
-        }
-      } else if (rangeSchemaFilter.keyPrefix) {
-        query.filter = {
-          range_filter: {
-            [getRangeKey(selectedSchemaObj)]: {
-              KeyPrefix: rangeSchemaFilter.keyPrefix
-            }
-          }
-        }
-      }
-    } else {
-      // For regular schemas, use the existing logic
-      query = {
-        type: 'query',
-        schema: selectedSchema,
-        fields: queryFields
-      }
-
-      // Add range filters if any are specified for regular schemas
-      const selectedSchemaFields = selectedSchemaObj?.fields || {}
-      const rangeFieldsWithFilters = queryFields.filter(fieldName => {
-        const field = selectedSchemaFields[fieldName]
-        return field?.field_type === 'Range' && rangeFilters[fieldName]
-      })
-
-      if (rangeFieldsWithFilters.length > 0) {
-        const fieldName = rangeFieldsWithFilters[0] // For now, support one range filter
-        const filter = rangeFilters[fieldName]
-        
-        if (filter.start && filter.end) {
-          query.filter = {
-            field: fieldName,
-            range_filter: {
-              KeyRange: {
-                start: filter.start,
-                end: filter.end
-              }
-            }
-          }
-        } else if (filter.key) {
-          query.filter = {
-            field: fieldName,
-            range_filter: {
-              Key: filter.key
-            }
-          }
-        } else if (filter.keyPrefix) {
-          query.filter = {
-            field: fieldName,
-            range_filter: {
-              KeyPrefix: filter.keyPrefix
-            }
-          }
-        }
-      }
+  /**
+   * Handle query execution - follows original QueryTab pattern
+   */
+  const handleExecuteQuery = useCallback(async (queryData) => {
+    if (!queryData || !isValid) {
+      onResult({
+        error: 'Invalid query configuration',
+        details: { queryData, isValid }
+      });
+      return;
     }
 
     try {
-      // Build query object in original format for basic /query endpoint
-      const query = {
-        type: 'query',
-        schema: selectedSchema,
-        fields: queryFields
-      }
-
-      // Add range filters if any are specified
-      const selectedSchemaFields = selectedSchemaObj?.fields || {}
-      const rangeFieldsWithFilters = queryFields.filter(fieldName => {
-        const field = selectedSchemaFields[fieldName]
-        return field?.field_type === 'Range' && rangeFilters[fieldName]
-      })
-
-      if (rangeFieldsWithFilters.length > 0) {
-        const fieldName = rangeFieldsWithFilters[0] // For now, support one range filter
-        const filter = rangeFilters[fieldName]
-        
-        if (filter.start && filter.end) {
-          query.filter = {
-            field: fieldName,
-            range_filter: {
-              KeyRange: {
-                start: filter.start,
-                end: filter.end
-              }
-            }
-          }
-        } else if (filter.key) {
-          query.filter = {
-            field: fieldName,
-            range_filter: {
-              Key: filter.key
-            }
-          }
-        } else if (filter.keyPrefix) {
-          query.filter = {
-            field: fieldName,
-            range_filter: {
-              KeyPrefix: filter.keyPrefix
-            }
-          }
-        }
-      }
-
       // Use core API client to post directly to /query endpoint
-      const response = await mutationClient.client.post(API_ENDPOINTS.QUERY, query, {
+      const response = await mutationClient.client.post(API_ENDPOINTS.QUERY, queryData, {
         requiresAuth: true,
         timeout: 10000,
         retries: 2,
         cacheable: true,
         cacheTtl: 60000
-      })
+      });
       
       if (!response.success) {
-        console.error('Query failed:', response.error)
+        console.error('Query failed:', response.error);
         onResult({
           error: response.error || 'Query execution failed',
           details: response
-        })
-        return
+        });
+        return;
       }
       
       // Pass the actual query data from response.data
       onResult({
         success: true,
         data: response.data // The actual query results are directly in response.data
-      })
+      });
     } catch (error) {
-      console.error('Failed to execute query:', error)
+      console.error('Failed to execute query:', error);
       onResult({
         error: `Network error: ${error.message}`,
         details: error
-      })
+      });
     }
-  }
+  }, [onResult, isValid]);
 
-  const selectedSchemaObj = selectedSchema ?
-    schemas.find(s => s.name === selectedSchema) : null
-
-  const selectedSchemaFields = selectedSchemaObj?.fields || {}
-
-  const isCurrentSchemaRangeSchema = selectedSchemaObj ? isRangeSchema(selectedSchemaObj) : false
-  const rangeKey = selectedSchemaObj ? getRangeKey(selectedSchemaObj) : null
-
-  const rangeFields = selectedSchema ?
-    Object.entries(selectedSchemaFields).filter(([_, field]) => field.field_type === 'Range') :
-    []
-
-  // Filter schemas to only include approved ones (SCHEMA-002)
-  // Note: This filtering logic should now be handled by the parent component using useApprovedSchemas hook
-  // but we keep this as fallback for backward compatibility
-  const approvedSchemas = schemas.filter(schema => {
-    // Handle different state formats
-    const state = typeof schema.state === 'string'
-      ? schema.state.toLowerCase()
-      : String(schema.state || '').toLowerCase()
-    return state === SCHEMA_STATES.APPROVED
-  })
+  /**
+   * Handle query validation (optional feature)
+   */
+  const handleValidateQuery = useCallback(async (queryData) => {
+    // Future enhancement: add query validation endpoint
+    console.log('Validating query:', queryData);
+  }, []);
 
   return (
     <div className="p-6">
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <SelectField
-          name="schema"
-          label={FORM_LABELS.schema}
-          value={selectedSchema}
-          onChange={(value) => {
-            const event = { target: { value } };
-            handleSchemaChange(event);
-          }}
-          options={approvedSchemas.map(schema => ({
-            value: schema.name,
-            label: schema.name
-          }))}
-          placeholder="Select a schema..."
-          emptyMessage={FORM_LABELS.schemaEmpty}
-          helpText={FORM_LABELS.schemaHelp}
-          loading={schemasLoading}
-        />
-
-        {selectedSchema && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Select Fields
-            </label>
-            <div className="bg-gray-50 rounded-md p-4">
-              <div className="space-y-3">
-                {Object.entries(selectedSchemaFields).map(([fieldName, field]) => (
-                  <label key={fieldName} className="relative flex items-start">
-                    <div className="flex items-center h-5">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-primary"
-                        checked={queryFields.includes(fieldName)}
-                        onChange={() => handleFieldToggle(fieldName)}
-                      />
-                    </div>
-                    <div className="ml-3 flex items-center">
-                      <span className="text-sm font-medium text-gray-700">{fieldName}</span>
-                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                        {field.field_type}
-                      </span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Range Schema Filter - only show for range schemas */}
-        {isCurrentSchemaRangeSchema && (
-          <RangeField
-            name="rangeSchemaFilter"
-            label={FORM_LABELS.rangeKeyFilter}
-            value={rangeSchemaFilter}
-            onChange={setRangeSchemaFilter}
-            rangeKeyName={rangeKey}
-            mode="all"
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Query Form */}
+        <div className="lg:col-span-2 space-y-6">
+          <QueryForm
+            queryState={queryState}
+            onSchemaChange={handleSchemaChange}
+            onFieldToggle={handleFieldToggle}
+            onRangeFilterChange={handleRangeFilterChange}
+            onRangeSchemaFilterChange={setRangeSchemaFilter}
+            approvedSchemas={approvedSchemas}
+            schemasLoading={schemasLoading}
+            isRangeSchema={isRangeSchema}
+            rangeKey={rangeKey}
           />
-        )}
 
-        {/* Regular Range Field Filters - only show for non-range schemas */}
-        {!isCurrentSchemaRangeSchema && rangeFields.length > 0 && queryFields.some(fieldName =>
-          selectedSchemaFields[fieldName]?.field_type === 'Range'
-        ) && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Range Field Filters
-            </label>
-            <div className="bg-blue-50 rounded-md p-4 space-y-4">
-              {rangeFields
-                .filter(([fieldName]) => queryFields.includes(fieldName))
-                .map(([fieldName]) => (
-                  <div key={fieldName} className="border-b border-blue-200 pb-4 last:border-b-0 last:pb-0">
-                    <h4 className="text-sm font-medium text-gray-800 mb-3">{fieldName}</h4>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* Key Range Filter */}
-                      <div className="space-y-2">
-                        <label className="block text-xs font-medium text-gray-600">Key Range</label>
-                        <input
-                          type="text"
-                          placeholder="Start key"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                          value={rangeFilters[fieldName]?.start || ''}
-                          onChange={(e) => handleRangeFilterChange(fieldName, 'start', e.target.value)}
-                        />
-                        <input
-                          type="text"
-                          placeholder="End key"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                          value={rangeFilters[fieldName]?.end || ''}
-                          onChange={(e) => handleRangeFilterChange(fieldName, 'end', e.target.value)}
-                        />
-                      </div>
-
-                      {/* Single Key Filter */}
-                      <div className="space-y-2">
-                        <label className="block text-xs font-medium text-gray-600">Exact Key</label>
-                        <input
-                          type="text"
-                          placeholder="Exact key to match"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                          value={rangeFilters[fieldName]?.key || ''}
-                          onChange={(e) => handleRangeFilterChange(fieldName, 'key', e.target.value)}
-                        />
-                      </div>
-
-                      {/* Key Prefix Filter */}
-                      <div className="space-y-2">
-                        <label className="block text-xs font-medium text-gray-600">Key Prefix</label>
-                        <input
-                          type="text"
-                          placeholder="Key prefix (e.g., 'user:')"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                          value={rangeFilters[fieldName]?.keyPrefix || ''}
-                          onChange={(e) => handleRangeFilterChange(fieldName, 'keyPrefix', e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-3 text-xs text-gray-500">
-                      <p><strong>Key Range:</strong> Matches keys between start and end (inclusive start, exclusive end)</p>
-                      <p><strong>Exact Key:</strong> Matches a specific key exactly</p>
-                      <p><strong>Key Prefix:</strong> Matches all keys starting with the prefix</p>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className={`
-              inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white
-              ${!selectedSchema || queryFields.length === 0
-                ? 'bg-gray-300 cursor-not-allowed'
-                : 'bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary'
-              }
-            `}
-            disabled={!selectedSchema || queryFields.length === 0}
-          >
-            {BUTTON_TEXT.executeQuery}
-          </button>
+          {/* Query Actions */}
+          <QueryActions
+            onExecute={() => handleExecuteQuery(query)}
+            onValidate={() => handleValidateQuery(query)}
+            onClear={clearState}
+            queryData={query}
+            disabled={!isValid}
+            showValidation={false} // Can be enabled for debugging
+            showClear={true}
+          />
         </div>
-      </form>
+
+        {/* Query Preview Sidebar */}
+        <div className="lg:col-span-1">
+          <QueryPreview
+            query={query}
+            showJson={false} // Can be toggled for debugging
+            title="Query Preview"
+          />
+        </div>
+      </div>
     </div>
-  )
+  );
 }
 
 export default QueryTab
