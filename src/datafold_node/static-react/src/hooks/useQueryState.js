@@ -13,7 +13,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { useAppSelector } from '../store/hooks';
+import { useAppSelector } from '../store/hooks.ts';
 import { selectAllSchemas, selectFetchLoading } from '../store/schemaSlice';
 import { SCHEMA_STATES } from '../constants/redux.js';
 
