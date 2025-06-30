@@ -198,8 +198,8 @@ function QueryTab({ onResult }) {
 
   const selectedSchemaFields = selectedSchemaObj?.fields || {}
 
-  const isCurrentSchemaRangeSchema = selectedSchemaObj ? rangeProps.isRange(selectedSchemaObj) : false
-  const rangeKey = selectedSchemaObj ? rangeProps.getRangeKey(selectedSchemaObj) : null
+  const isCurrentSchemaRangeSchema = selectedSchemaObj ? isRangeSchema(selectedSchemaObj) : false
+  const rangeKey = selectedSchemaObj ? getRangeKey(selectedSchemaObj) : null
 
   const rangeFields = selectedSchema ?
     Object.entries(selectedSchemaFields).filter(([_, field]) => field.field_type === 'Range') :
