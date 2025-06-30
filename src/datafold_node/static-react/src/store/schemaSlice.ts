@@ -132,7 +132,20 @@ export const fetchSchemas = createAsyncThunk<
           const error = new Error(`Failed to fetch available schemas: ${availableResponse.error || 'Unknown error'}`);
           throw error;
         }
-        const availableData = { data: availableResponse.data?.map(s => s.name) || [] };
+        
+        // Ensure availableResponse.data is an array before calling map
+        let availableSchemaNames: string[] = [];
+        if (Array.isArray(availableResponse.data)) {
+          availableSchemaNames = availableResponse.data.map(s => (typeof s === 'string' ? s : s.name || String(s)));
+        } else if (availableResponse.data && typeof availableResponse.data === 'object') {
+          // Handle case where data might be an object instead of array
+          availableSchemaNames = Object.keys(availableResponse.data);
+        } else {
+          console.warn('Available schemas response data is not in expected format:', availableResponse.data);
+          availableSchemaNames = [];
+        }
+        
+        const availableData = { data: availableSchemaNames };
         
         // Fetch persisted schema states from database using SchemaClient
         const persistedResponse = await schemaClient.getAllSchemasWithState();
@@ -140,15 +153,19 @@ export const fetchSchemas = createAsyncThunk<
         if (!persistedResponse.success) {
           throw new Error(`Failed to fetch persisted schemas: ${persistedResponse.error || 'Unknown error'}`);
         }
-        const persistedData = persistedResponse;
         
         console.log('📁 Available schemas:', availableData.data || []);
-        console.log('🗄️ Persisted schemas:', persistedData.data || {});
+        console.log('🗄️ Persisted schemas:', persistedResponse.data || {});
         
         const availableSchemas = availableData.data || [];
-        const persistedStates = persistedData.data || {};
+        // persistedResponse.data is a Record<string, string>, not an array
+        const persistedStates = persistedResponse.data || {};
         
-        // Create schemas with states - use persisted state if available, otherwise 'available'
+        // Ensure availableSchemas is an array and create schemas with states
+        if (!Array.isArray(availableSchemas)) {
+          throw new Error(`Available schemas is not an array: ${typeof availableSchemas}`);
+        }
+        
         const schemasWithStates = availableSchemas.map((name: string) => {
           const persistedState = persistedStates[name];
           let normalizedState = SCHEMA_STATES.AVAILABLE;
@@ -220,7 +237,8 @@ export const fetchSchemas = createAsyncThunk<
         // If this isn't the last attempt, wait before retrying
         if (attempt < SCHEMA_FETCH_RETRY_ATTEMPTS) {
           // Use shorter delays in test environment
-          const retryDelay = process.env.NODE_ENV === 'test' ? 10 : (1000 * attempt);
+          const isTestEnv = typeof window !== 'undefined' && (window as any).__TEST_ENV__ === true;
+          const retryDelay = isTestEnv ? 10 : (1000 * attempt);
           await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }

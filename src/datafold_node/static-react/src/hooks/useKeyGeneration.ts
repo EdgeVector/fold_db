@@ -61,11 +61,22 @@ export function useKeyGeneration(): KeyGenerationState {
         expires_at: null // No expiration by default
       };
 
-      const data: ApiResponse = await registerPublicKeyApi(requestBody);
-      const success = data.success ?? false;
+      const response: ApiResponse = await registerPublicKeyApi(requestBody);
+      console.log('registerPublicKey response:', response);
+      
+      // Check for success in the API client response structure
+      const success = response.success ?? false;
+      
+      // Additional validation: check if backend also reports success
+      if (success && response.data && typeof response.data === 'object' && 'success' in response.data) {
+        const backendSuccess = (response.data as any).success ?? false;
+        console.log('Backend success:', backendSuccess, 'API success:', success);
+        return success && backendSuccess;
+      }
       
       return success;
-    } catch {
+    } catch (error) {
+      console.error('registerPublicKey error:', error);
       return false;
     }
   }, []);

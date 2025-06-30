@@ -23,13 +23,11 @@ export const SCHEMA_STATES = {
   BLOCKED: 'blocked'
 };
 
-import { API_ENDPOINTS } from '../api/endpoints.ts';
-
 // API endpoints - Use centralized endpoints for API-STD-1 compliance
 export const SCHEMA_API_ENDPOINTS = {
   AVAILABLE: '/api/schemas/available',
   PERSISTED: '/api/schemas',
-  SCHEMA_DETAIL: API_ENDPOINTS.SCHEMAS_BASE  // Use centralized endpoint
+  SCHEMA_DETAIL: '/schemas'  // Hardcoded to break circular dependency
 };
 
 // Validation error messages

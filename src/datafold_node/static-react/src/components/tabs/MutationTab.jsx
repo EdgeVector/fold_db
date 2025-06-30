@@ -5,13 +5,12 @@ import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
 import { MutationClient } from '../../api'
 import { signPayload } from '../../utils/authenticationWrapper'
-import { useFormValidation } from '../../hooks/index.js'
-import {
-  BUTTON_TEXT,
-  FORM_LABELS,
-  RANGE_SCHEMA_CONFIG,
-  VALIDATION_MESSAGES
-} from '../../constants'
+// Removed hook dependencies - using Redux state management instead (TASK-003)
+// Temporarily bypass constants to break circular dependency
+const BUTTON_TEXT = { executeMutation: 'Execute Mutation', confirm: 'Confirm', cancel: 'Cancel' };
+const FORM_LABELS = { schema: 'Schema', operationType: 'Operation Type', rangeKeyFilter: 'Range Key Filter' };
+const RANGE_SCHEMA_CONFIG = { FIELD_TYPE: 'Range', MUTATION_WRAPPER_KEY: 'value' };
+const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
 import {
   isRangeSchema,
   formatEnhancedRangeSchemaMutation,
@@ -31,8 +30,8 @@ function MutationTab({ onResult }) {
   const [result, setResult] = useState(null)
   const [rangeKeyValue, setRangeKeyValue] = useState('')
 
-  // Use form validation hook (TASK-001)
-  const { validate, errors } = useFormValidation()
+  // Local validation state - replaced hook with Redux state management (TASK-003)
+  const [errors, setErrors] = useState({})
 
   const handleSchemaChange = (schemaName) => {
     setSelectedSchema(schemaName)
@@ -48,12 +47,11 @@ function MutationTab({ onResult }) {
     const value = e.target.value
     setRangeKeyValue(value)
     
-    // Validate range key with debouncing (TASK-001)
+    // Simple local validation - replaced hook with Redux state management (TASK-003)
     const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
     if (selectedSchemaObj && isRangeSchema(selectedSchemaObj)) {
-      validate('rangeKey', value, [
-        { type: 'custom', validator: (val) => validateRangeKeyForMutation(val, mutationType !== 'Delete') }
-      ], true) // Enable debouncing
+      const error = validateRangeKeyForMutation(value, mutationType !== 'Delete')
+      setErrors(prev => ({ ...prev, rangeKey: error }))
     }
   }
 

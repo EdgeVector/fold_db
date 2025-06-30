@@ -15,7 +15,13 @@
  */
 
 import { useState, useCallback } from 'react';
-import { FIELD_TYPES } from '../constants/schemas.js';
+// Hardcoded to break circular dependency
+const FIELD_TYPES = {
+  STRING: 'string',
+  NUMBER: 'number',
+  BOOLEAN: 'boolean',
+  RANGE: 'Range'
+};
 import { useFieldValidation } from './useFieldValidation.js';
 import { useValidationDebounce } from './useValidationDebounce.js';
 

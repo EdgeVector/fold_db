@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useKeyLifecycle } from '../../hooks/useKeyLifecycle';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import { validatePrivateKey, clearAuthentication, refreshSystemKey } from '../../store/authSlice';
+import { validatePrivateKey, clearAuthentication, updateSystemKey } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
 import * as ed from '@noble/ed25519';
@@ -160,17 +160,29 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
             setRegistrationStatus(status);
             onResult(status); // Also update the main result panel
             
-            // Refresh system public key after successful registration
+            // Update system key state immediately after successful registration
             if (success) {
-                await dispatch(refreshSystemKey()).unwrap();
+                // Update Redux state directly with the key we just registered
+                dispatch(updateSystemKey({
+                    systemPublicKey: publicKeyBase64,
+                    systemKeyId: 'SYSTEM_WIDE_PUBLIC_KEY'
+                }));
+                console.log('Updated system key state directly after registration');
                 
                 // If user has a local private key from generation, auto-authenticate
                 if (keyPair && keyPair.privateKey) {
-                    // Simple delay to ensure React state has updated
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    const privateKeyBase64 = bytesToBase64(keyPair.privateKey);
-                    await dispatch(validatePrivateKey(privateKeyBase64)).unwrap();
+                    try {
+                        // Small delay to ensure React state has updated
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                        
+                        const privateKeyBase64 = bytesToBase64(keyPair.privateKey);
+                        await dispatch(validatePrivateKey(privateKeyBase64)).unwrap();
+                        console.log('Auto-authentication successful after registration');
+                    } catch (authError) {
+                        // Auto-authentication failed, but registration was successful
+                        // Don't override the successful registration status
+                        console.warn('Auto-authentication failed after successful registration:', authError.message);
+                    }
                 }
             }
         } catch (e) {

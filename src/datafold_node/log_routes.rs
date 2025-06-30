@@ -19,7 +19,15 @@ pub struct LogConfigResponse {
 
 /// List current logs (backward compatibility)
 pub async fn list_logs() -> impl Responder {
-    HttpResponse::Ok().json(web_logger::get_logs())
+    let logs = web_logger::get_logs();
+    HttpResponse::Ok().json(serde_json::json!({
+        "logs": logs,
+        "count": logs.len(),
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    }))
 }
 
 /// Stream logs via Server-Sent Events (backward compatibility)

@@ -107,7 +107,7 @@ export {
   API_CONFIG,
   SCHEMA_STATES as API_SCHEMA_STATES,
   SCHEMA_OPERATIONS
-} from './api';
+} from './api.ts';
 
 // ============================================================================
 // SCHEMA EXPORTS (from existing files)
@@ -126,12 +126,15 @@ export {
 } from './schemas';
 
 // Import constants internally to use in Constants object
-import { SCHEMA_STATES as _SCHEMA_STATES, FIELD_TYPES as _FIELD_TYPES, RANGE_SCHEMA_CONFIG as _RANGE_SCHEMA_CONFIG } from './schemas';
+import { FIELD_TYPES as _FIELD_TYPES, RANGE_SCHEMA_CONFIG as _RANGE_SCHEMA_CONFIG } from './schemas';
 import { APP_CONFIG as _APP_CONFIG } from './config.js';
 import { VALIDATION_RULES as _VALIDATION_RULES, VALIDATION_PATTERNS as _VALIDATION_PATTERNS, VALIDATION_MESSAGES as _VALIDATION_MESSAGES } from './validation.js';
 import { COLORS as _COLORS } from './styling.js';
 import { DEFAULT_TABS as _DEFAULT_TABS, BUTTON_TEXT as _BUTTON_TEXT, FORM_LABELS as _FORM_LABELS, UI_STATES as _UI_STATES } from './ui.js';
 import { ERROR_CODES as _ERROR_CODES } from './errors.js';
+
+// Use already exported SCHEMA_STATES to avoid circular dependency
+import { SCHEMA_STATES as _SCHEMA_STATES } from './api.ts';
 
 // ============================================================================
 // UI EXPORTS (from existing files)
