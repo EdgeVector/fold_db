@@ -6,6 +6,7 @@
 export { useApprovedSchemas } from './useApprovedSchemas.js';
 export { useRangeSchema } from './useRangeSchema.js';
 export { useFormValidation } from './useFormValidation.js';
+export { useQueryState } from './useQueryState.js';
 
 // TASK-009: New simplified hooks
 export { useFieldValidation } from './useFieldValidation.js';
@@ -17,6 +18,7 @@ export { useRangeMode } from './useRangeMode.js';
 export { default as useApprovedSchemasDefault } from './useApprovedSchemas.js';
 export { default as useRangeSchemaDefault } from './useRangeSchema.js';
 export { default as useFormValidationDefault } from './useFormValidation.js';
+export { default as useQueryStateDefault } from './useQueryState.js';
 export { default as useFieldValidationDefault } from './useFieldValidation.js';
 export { default as useValidationDebounceDefault } from './useValidationDebounce.js';
 export { default as useSearchableSelectDefault } from './useSearchableSelect.js';

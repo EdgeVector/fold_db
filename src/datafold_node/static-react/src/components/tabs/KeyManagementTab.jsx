@@ -51,20 +51,16 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                 !isAuthenticated) {
                 
                 try {
-                    // Wait a moment to ensure system state is stable
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    // Wait a moment to ensure React state has updated
+                    await new Promise(resolve => setTimeout(resolve, 200));
                     
-                    // Refresh system key first
-                    await dispatch(refreshSystemKey()).unwrap();
-                    
-                    // Wait again after refresh
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // Attempt authentication
+                    // Attempt authentication directly (no need to refresh system key)
                     const privateKeyBase64 = bytesToBase64(keyPair.privateKey);
                     await dispatch(validatePrivateKey(privateKeyBase64)).unwrap();
-                } catch {
+                    console.log('Auto-authentication successful in useEffect');
+                } catch (error) {
                     // Auto-authentication failed silently
+                    console.warn('Auto-authentication failed in useEffect:', error.message);
                 }
             }
         };
