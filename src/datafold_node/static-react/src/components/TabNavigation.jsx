@@ -28,7 +28,7 @@ import {
 } from '../constants/ui.js';
 
 import { COMPONENT_STYLES } from '../constants/styling.js';
-import { useAppSelector } from '../store/hooks.ts';
+import { useAppSelector } from '../store/hooks';
 
 /**
  * @typedef {Object} TabConfig

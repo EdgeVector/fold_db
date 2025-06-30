@@ -69,50 +69,6 @@ export function useFieldValidation() {
   const [lastError, setLastError] = useState(null);
 
   /**
-   * Validates a single rule against a value
-   * @param {*} value - Value to validate
-   * @param {ValidationRule} rule - Validation rule
-   * @returns {string|null} Error message or null if valid
-   */
-  const validateRule = useCallback((value, rule) => {
-    switch (rule.type) {
-      case 'required':
-        if (rule.value && isValueEmpty(value)) {
-          return rule.message || VALIDATION_MESSAGES.FIELD_REQUIRED;
-        }
-        break;
-        
-      case 'type': {
-        const typeError = validateType(value, rule.value);
-        if (typeError) {
-          return rule.message || typeError;
-        }
-        break;
-      }
-        
-      case 'custom':
-        if (rule.validator && typeof rule.validator === 'function') {
-          const customError = rule.validator(value);
-          if (customError) {
-            return rule.message || customError;
-          }
-        }
-        break;
-        
-      case 'schema_approved':
-        if (rule.value && !isSchemaApproved(value, rule.schemas)) {
-          return rule.message || VALIDATION_MESSAGES.SCHEMA_NOT_APPROVED;
-        }
-        break;
-        
-      default:
-        console.warn(`Unknown validation rule type: ${rule.type}`);
-    }
-    
-    return null;
-  }, [isSchemaApproved, validateType]);
-
-  /**
    * Validates value type
    * @param {*} value - Value to validate
    * @param {string} expectedType - Expected type
@@ -160,6 +116,50 @@ export function useFieldValidation() {
     
     return normalizeSchemaState(schema.state) === SCHEMA_STATES.APPROVED;
   }, []);
+
+  /**
+   * Validates a single rule against a value
+   * @param {*} value - Value to validate
+   * @param {ValidationRule} rule - Validation rule
+   * @returns {string|null} Error message or null if valid
+   */
+  const validateRule = useCallback((value, rule) => {
+    switch (rule.type) {
+      case 'required':
+        if (rule.value && isValueEmpty(value)) {
+          return rule.message || VALIDATION_MESSAGES.FIELD_REQUIRED;
+        }
+        break;
+        
+      case 'type': {
+        const typeError = validateType(value, rule.value);
+        if (typeError) {
+          return rule.message || typeError;
+        }
+        break;
+      }
+        
+      case 'custom':
+        if (rule.validator && typeof rule.validator === 'function') {
+          const customError = rule.validator(value);
+          if (customError) {
+            return rule.message || customError;
+          }
+        }
+        break;
+        
+      case 'schema_approved':
+        if (rule.value && !isSchemaApproved(value, rule.schemas)) {
+          return rule.message || VALIDATION_MESSAGES.SCHEMA_NOT_APPROVED;
+        }
+        break;
+        
+      default:
+        console.warn(`Unknown validation rule type: ${rule.type}`);
+    }
+    
+    return null;
+  }, [isSchemaApproved, validateType]);
 
   /**
    * Validates a field value against validation rules

@@ -87,7 +87,11 @@ function QueryActions({
   /**
    * Check if query data is valid for execution
    */
-  const isQueryValid = queryData && queryData.schema && queryData.fields && queryData.fields.length > 0;
+  const isQueryValid = queryData && queryData.schema && (
+    (queryData.queryFields && queryData.queryFields.length > 0) ||
+    (queryData.fields && Array.isArray(queryData.fields) && queryData.fields.length > 0) ||
+    (queryData.fields && typeof queryData.fields === 'object' && Object.keys(queryData.fields).length > 0)
+  );
 
   return (
     <div className={`flex justify-end space-x-3 ${className}`}>
