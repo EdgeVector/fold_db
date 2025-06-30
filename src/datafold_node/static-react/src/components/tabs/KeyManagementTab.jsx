@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useKeyLifecycle } from '../../hooks/useKeyLifecycle';
+import { useKeyGeneration } from '../../hooks/useKeyGeneration';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import { validatePrivateKey, clearAuthentication, updateSystemKey } from '../../store/authSlice';
+import { validatePrivateKey, clearAuthentication, updateSystemKey, refreshSystemKey } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
 import * as ed from '@noble/ed25519';
@@ -25,8 +26,9 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
     const [privateKeyValidation, setPrivateKeyValidation] = useState(null);
     const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false);
 
-    // Destructure the state and functions from the prop
-    const { result, generateKeyPair, clearKeys, registerPublicKey } = keyGenerationResult;
+    // Use key generation from prop (shared state) or hook as fallback
+    const keyGeneration = keyGenerationResult || useKeyGeneration();
+    const { result, generateKeyPair, clearKeys, registerPublicKey } = keyGeneration;
     const { keyPair, publicKeyBase64, error, isGenerating } = result;
     
     // Enhanced lifecycle management with multiple cleanup functions
@@ -121,6 +123,9 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
                         publicKeyBase64: systemPublicKey,
                         error: null
                     }));
+                } else {
+                    // Key validation successful - Redux auth state is already updated
+                    console.log('Private key validation successful');
                 }
             }
         } catch (error) {
