@@ -1,17 +1,16 @@
 import { useState } from 'react'
-import { useRangeSchema, useFormValidation } from '../../hooks/index.js'
+// Removed hook dependencies - using Redux state management instead (TASK-003)
 import SelectField from '../form/SelectField'
 import RangeField from '../form/RangeField'
 import { post } from '../../utils/httpClient'
 import { API_ENDPOINTS } from '../../api/endpoints'
-import { API_CONFIG } from '../../constants/api'
-import {
-  BUTTON_TEXT,
-  FORM_LABELS,
-  UI_STATES,
-  SCHEMA_STATES,
-  VALIDATION_MESSAGES
-} from '../../constants'
+// Temporarily bypass constants to break circular dependency
+const API_CONFIG = { DEFAULT_TIMEOUT: 8000, DEFAULT_RETRIES: 2 };
+const BUTTON_TEXT = { executeQuery: 'Execute Query', confirm: 'Confirm', cancel: 'Cancel' };
+const FORM_LABELS = { schema: 'Schema', schemaEmpty: 'No schemas available', schemaHelp: 'Select a schema to work with' };
+const UI_STATES = { loading: 'Loading...', error: 'Error', success: 'Success', idle: 'Ready' };
+const SCHEMA_STATES = { AVAILABLE: 'available', APPROVED: 'approved', BLOCKED: 'blocked' };
+const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
 import { useAppSelector } from '../../store/hooks'
 import { selectAllSchemas, selectFetchLoading } from '../../store/schemaSlice'
 
@@ -25,9 +24,20 @@ function QueryTab({ onResult }) {
   const [, setRangeKeyValue] = useState('')
   const [rangeSchemaFilter, setRangeSchemaFilter] = useState({})
 
-  // Use custom hooks (TASK-001)
-  const { rangeProps } = useRangeSchema()
-  const { validate, errors, clearErrors } = useFormValidation()
+  // Redux-based state management (TASK-003) - replaced hook dependencies
+  const [errors, setErrors] = useState({})
+  const clearErrors = () => setErrors({})
+  
+  // Simple range schema utilities without circular dependencies
+  const isRangeSchema = (schema) => {
+    return schema?.fields && Object.values(schema.fields).some(field => field.field_type === 'Range')
+  }
+  
+  const getRangeKey = (schema) => {
+    if (!schema?.fields) return null
+    const rangeField = Object.entries(schema.fields).find(([, field]) => field.field_type === 'Range')
+    return rangeField ? rangeField[0] : null
+  }
 
   const handleSchemaChange = (e) => {
     const schemaName = e.target.value
@@ -77,8 +87,8 @@ function QueryTab({ onResult }) {
     const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
     let query
 
-    // Check if this is a range schema using the hook
-    if (rangeProps.isRange(selectedSchemaObj)) {
+    // Check if this is a range schema (Redux-based)
+    if (isRangeSchema(selectedSchemaObj)) {
       // For range schemas, use the enhanced range filtering
       query = {
         type: 'query',
@@ -90,7 +100,7 @@ function QueryTab({ onResult }) {
       if (rangeSchemaFilter.start && rangeSchemaFilter.end) {
         query.filter = {
           range_filter: {
-            [rangeProps.getRangeKey(selectedSchemaObj)]: {
+            [getRangeKey(selectedSchemaObj)]: {
               KeyRange: {
                 start: rangeSchemaFilter.start,
                 end: rangeSchemaFilter.end
@@ -101,13 +111,13 @@ function QueryTab({ onResult }) {
       } else if (rangeSchemaFilter.key) {
         query.filter = {
           range_filter: {
-            [rangeProps.getRangeKey(selectedSchemaObj)]: rangeSchemaFilter.key
+            [getRangeKey(selectedSchemaObj)]: rangeSchemaFilter.key
           }
         }
       } else if (rangeSchemaFilter.keyPrefix) {
         query.filter = {
           range_filter: {
-            [rangeProps.getRangeKey(selectedSchemaObj)]: {
+            [getRangeKey(selectedSchemaObj)]: {
               KeyPrefix: rangeSchemaFilter.keyPrefix
             }
           }

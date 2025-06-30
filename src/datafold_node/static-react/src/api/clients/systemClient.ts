@@ -6,7 +6,7 @@
 
 import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
-import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
+import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS, API_CONFIG } from '../../constants/api';
 import type { EnhancedApiResponse } from '../core/types';
 
 // System-specific response types
@@ -127,8 +127,8 @@ export class UnifiedSystemClient {
   /**
    * Create EventSource for log streaming
    * Helper method for components that need real-time log updates
-   * This doesn't use the unified client as EventSource has different semantics
-   * 
+   * Manually builds URL to match API client's URL construction logic
+   *
    * @param onMessage - Callback for new log messages
    * @param onError - Callback for connection errors
    * @returns EventSource instance (caller must close it)
@@ -137,7 +137,13 @@ export class UnifiedSystemClient {
     onMessage: (message: string) => void,
     onError?: (error: Event) => void
   ): EventSource {
-    const eventSource = new EventSource(API_ENDPOINTS.SYSTEM_LOGS_STREAM);
+    // Build URL manually using same logic as ApiClient.buildUrl()
+    const endpoint = API_ENDPOINTS.SYSTEM_LOGS_STREAM;
+    const streamUrl = endpoint.startsWith('http')
+      ? endpoint
+      : `${API_CONFIG.BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    
+    const eventSource = new EventSource(streamUrl);
     
     eventSource.onmessage = (event) => {
       onMessage(event.data);

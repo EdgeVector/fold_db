@@ -21,7 +21,8 @@
  */
 
 import { useCallback } from 'react';
-import { FORM_VALIDATION_DEBOUNCE_MS } from '../constants/schemas.js';
+// Hardcoded to break circular dependency
+const FORM_VALIDATION_DEBOUNCE_MS = 500;
 import {
   isRangeSchema,
   getRangeKey,

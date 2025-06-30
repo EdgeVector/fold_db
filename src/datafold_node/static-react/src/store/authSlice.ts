@@ -30,10 +30,10 @@ export const initializeSystemKey = createAsyncThunk(
     try {
       const response = await getSystemPublicKey();
       console.log('initializeSystemKey thunk response:', response);
-      if (response.success && (response as any).key && (response as any).key.public_key) {
+      if (response.success && (response as any).data && (response as any).data.key && (response as any).data.key.public_key) {
         return {
-          systemPublicKey: (response as any).key.public_key,
-          systemKeyId: (response as any).key.id || null,
+          systemPublicKey: (response as any).data.key.public_key,
+          systemKeyId: (response as any).data.key.id || null,
         };
       } else {
         return {
@@ -105,10 +105,10 @@ export const refreshSystemKey = createAsyncThunk(
       try {
         const response = await getSystemPublicKey();
         
-        if (response.success && (response as any).key && (response as any).key.public_key) {
+        if (response.success && (response as any).data && (response as any).data.key && (response as any).data.key.public_key) {
           return {
-            systemPublicKey: (response as any).key.public_key,
-            systemKeyId: (response as any).key.id || null,
+            systemPublicKey: (response as any).data.key.public_key,
+            systemKeyId: (response as any).data.key.id || null,
           };
         } else {
           if (attempt < maxRetries) {
@@ -144,6 +144,11 @@ const authSlice = createSlice({
       state.error = action.payload;
     },
     clearError: (state) => {
+      state.error = null;
+    },
+    updateSystemKey: (state, action: PayloadAction<{ systemPublicKey: string; systemKeyId: string }>) => {
+      state.systemPublicKey = action.payload.systemPublicKey;
+      state.systemKeyId = action.payload.systemKeyId;
       state.error = null;
     },
   },
@@ -203,6 +208,6 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearAuthentication, setError, clearError } = authSlice.actions;
+export const { clearAuthentication, setError, clearError, updateSystemKey } = authSlice.actions;
 
 export default authSlice.reducer;

@@ -159,6 +159,8 @@ pub struct KeyRegistrationResponse {
     pub success: bool,
     /// Unique identifier assigned to the public key
     pub public_key_id: Option<String>,
+    /// The registered public key information (included on successful registration)
+    pub key: Option<PublicKeyInfo>,
     /// Error message if registration failed
     pub error: Option<String>,
 }

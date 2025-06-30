@@ -86,11 +86,12 @@ impl SecurityManager {
         }
         
         // Register with the verifier
-        self.verifier.register_system_public_key(key_info)?;
+        self.verifier.register_system_public_key(key_info.clone())?;
         
         Ok(KeyRegistrationResponse {
             success: true,
             public_key_id: Some(SINGLE_PUBLIC_KEY_ID.to_string()),
+            key: Some(key_info),
             error: None,
         })
     }
