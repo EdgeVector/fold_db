@@ -2,7 +2,7 @@ import { useState } from 'react'
 // Removed hook dependencies - using Redux state management instead (TASK-003)
 import SelectField from '../form/SelectField'
 import RangeField from '../form/RangeField'
-import { post } from '../../utils/httpClient'
+import { mutationClient } from '../../api/clients/mutationClient'
 import { API_ENDPOINTS } from '../../api/endpoints'
 // Temporarily bypass constants to break circular dependency
 const API_CONFIG = { DEFAULT_TIMEOUT: 8000, DEFAULT_RETRIES: 2 };
@@ -25,8 +25,7 @@ function QueryTab({ onResult }) {
   const [rangeSchemaFilter, setRangeSchemaFilter] = useState({})
 
   // Redux-based state management (TASK-003) - replaced hook dependencies
-  const [errors, setErrors] = useState({})
-  const clearErrors = () => setErrors({})
+  const clearErrors = () => {} // Keep for potential future use
   
   // Simple range schema utilities without circular dependencies
   const isRangeSchema = (schema) => {
@@ -171,8 +170,59 @@ function QueryTab({ onResult }) {
     }
 
     try {
-      // Use the standardized HTTP client with proper base URL
-      const response = await post(API_CONFIG.BASE_URL, API_ENDPOINTS.QUERY, query)
+      // Build query object in original format for basic /query endpoint
+      const query = {
+        type: 'query',
+        schema: selectedSchema,
+        fields: queryFields
+      }
+
+      // Add range filters if any are specified
+      const selectedSchemaFields = selectedSchemaObj?.fields || {}
+      const rangeFieldsWithFilters = queryFields.filter(fieldName => {
+        const field = selectedSchemaFields[fieldName]
+        return field?.field_type === 'Range' && rangeFilters[fieldName]
+      })
+
+      if (rangeFieldsWithFilters.length > 0) {
+        const fieldName = rangeFieldsWithFilters[0] // For now, support one range filter
+        const filter = rangeFilters[fieldName]
+        
+        if (filter.start && filter.end) {
+          query.filter = {
+            field: fieldName,
+            range_filter: {
+              KeyRange: {
+                start: filter.start,
+                end: filter.end
+              }
+            }
+          }
+        } else if (filter.key) {
+          query.filter = {
+            field: fieldName,
+            range_filter: {
+              Key: filter.key
+            }
+          }
+        } else if (filter.keyPrefix) {
+          query.filter = {
+            field: fieldName,
+            range_filter: {
+              KeyPrefix: filter.keyPrefix
+            }
+          }
+        }
+      }
+
+      // Use core API client to post directly to /query endpoint
+      const response = await mutationClient.client.post(API_ENDPOINTS.QUERY, query, {
+        requiresAuth: true,
+        timeout: 10000,
+        retries: 2,
+        cacheable: true,
+        cacheTtl: 60000
+      })
       
       if (!response.success) {
         console.error('Query failed:', response.error)
@@ -183,7 +233,11 @@ function QueryTab({ onResult }) {
         return
       }
       
-      onResult(response)
+      // Pass the actual query data from response.data
+      onResult({
+        success: true,
+        data: response.data // The actual query results are directly in response.data
+      })
     } catch (error) {
       console.error('Failed to execute query:', error)
       onResult({
