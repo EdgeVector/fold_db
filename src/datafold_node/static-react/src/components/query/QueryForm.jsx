@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { useQueryState } from '../../hooks/useQueryState.js';
 import FieldWrapper from '../form/FieldWrapper';
 import SelectField from '../form/SelectField';
 import RangeField from '../form/RangeField';
@@ -17,6 +18,7 @@ import { SCHEMA_ERROR_MESSAGES } from '../../constants/redux.js';
  * @property {Object} queryState - Current query state from useQueryState hook
  * @property {function} onSchemaChange - Handle schema selection change
  * @property {function} onFieldToggle - Handle field selection toggle
+ * @property {function} onFieldValueChange - Handle field value changes
  * @property {function} onRangeFilterChange - Handle range filter changes
  * @property {function} onRangeSchemaFilterChange - Handle range schema filter changes
  * @property {Object[]} approvedSchemas - Array of approved schemas
@@ -36,6 +38,7 @@ function QueryForm({
   queryState,
   onSchemaChange,
   onFieldToggle,
+  onFieldValueChange,
   onRangeFilterChange,
   onRangeSchemaFilterChange,
   approvedSchemas,
@@ -45,6 +48,7 @@ function QueryForm({
   className = ''
 }) {
   const [validationErrors, setValidationErrors] = useState({});
+  const { clearQuery } = useQueryState();
 
   /**
    * Validate query form data
@@ -79,12 +83,16 @@ function QueryForm({
    */
   const handleSchemaChange = useCallback((value) => {
     onSchemaChange(value);
+    // Clear query state when schema changes
+    if (clearQuery) {
+      clearQuery();
+    }
     // Clear schema validation error
     setValidationErrors(prev => {
       const { schema, ...rest } = prev;
       return rest;
     });
-  }, [onSchemaChange]);
+  }, [onSchemaChange, clearQuery]);
 
   /**
    * Handle field toggle with validation
@@ -129,18 +137,22 @@ function QueryForm({
         />
       </FieldWrapper>
 
-      {/* Field Selection */}
-      {queryState.selectedSchema && (
+      {/* Single Field Type Checkboxes */}
+      {queryState.selectedSchema && Object.entries(selectedSchemaFields).some(([_, field]) =>
+        field.field_type === 'Single' || field.field_type === 'String' || field.field_type === 'Number'
+      ) && (
         <FieldWrapper
-          label="Select Fields"
-          name="fields"
+          label="Single Field Options"
+          name="singleFields"
           required
           error={validationErrors.fields}
-          helpText="Choose which fields to include in the query"
+          helpText="Select single-value fields to include"
         >
           <div className="bg-gray-50 rounded-md p-4">
             <div className="space-y-3">
-              {Object.entries(selectedSchemaFields).map(([fieldName, field]) => (
+              {Object.entries(selectedSchemaFields)
+                .filter(([_, field]) => field.field_type === 'Single' || field.field_type === 'String' || field.field_type === 'Number')
+                .map(([fieldName, field]) => (
                 <label key={fieldName} className="relative flex items-start">
                   <div className="flex items-center h-5">
                     <input
@@ -155,6 +167,9 @@ function QueryForm({
                     <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                       {field.field_type}
                     </span>
+                    {field.required && (
+                      <span className="ml-1 text-red-500 text-xs">*</span>
+                    )}
                   </div>
                 </label>
               ))}
@@ -162,6 +177,7 @@ function QueryForm({
           </div>
         </FieldWrapper>
       )}
+
 
       {/* Range Schema Filter - only show for range schemas */}
       {isRangeSchema && rangeKey && (

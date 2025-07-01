@@ -49,7 +49,7 @@ import { SCHEMA_STATES } from '../constants/redux.js';
  * Range schema utility functions
  */
 const isRangeSchema = (schema) => {
-  return schema?.fields && Object.values(schema.fields).some(field => field.field_type === 'Range');
+  return schema?.fields ? Object.values(schema.fields).some(field => field.field_type === 'Range') : false;
 };
 
 const getRangeKey = (schema) => {
@@ -98,6 +98,7 @@ function useQueryState() {
   // Local state management
   const [selectedSchema, setSelectedSchema] = useState('');
   const [queryFields, setQueryFields] = useState([]);
+  const [fieldValues, setFieldValues] = useState({});
   const [rangeFilters, setRangeFilters] = useState({});
   const [rangeKeyValue, setRangeKeyValue] = useState('');
   const [rangeSchemaFilter, setRangeSchemaFilter] = useState({});
@@ -108,7 +109,7 @@ function useQueryState() {
     if (!isAuthenticated) {
       return [];
     }
-    return schemas.filter(schema => {
+    return (schemas || []).filter(schema => {
       const state = typeof schema.state === 'string'
         ? schema.state.toLowerCase()
         : String(schema.state || '').toLowerCase();
@@ -121,7 +122,7 @@ function useQueryState() {
     if (!isAuthenticated) {
       return null;
     }
-    return selectedSchema ? schemas.find(s => s.name === selectedSchema) : null;
+    return selectedSchema ? (schemas || []).find(s => s.name === selectedSchema) : null;
   }, [selectedSchema, schemas, isAuthenticated]);
 
   // Memoized schema type checks
@@ -142,11 +143,19 @@ function useQueryState() {
     
     // Default to all fields being checked when a schema is selected
     if (schemaName) {
-      const selectedSchemaObj = schemas.find(s => s.name === schemaName);
+      const selectedSchemaObj = (schemas || []).find(s => s.name === schemaName);
       const allFieldNames = selectedSchemaObj?.fields ? Object.keys(selectedSchemaObj.fields) : [];
       setQueryFields(allFieldNames);
+      
+      // Initialize fieldValues with empty strings for all fields
+      const initialFieldValues = {};
+      allFieldNames.forEach(fieldName => {
+        initialFieldValues[fieldName] = '';
+      });
+      setFieldValues(initialFieldValues);
     } else {
       setQueryFields([]);
+      setFieldValues({});
     }
     
     // Clear filters when schema changes
@@ -166,6 +175,17 @@ function useQueryState() {
       }
       return [...prev, fieldName];
     });
+    
+    // Update fieldValues when fields are toggled
+    setFieldValues(prev => {
+      if (prev[fieldName] !== undefined) {
+        return prev; // Field already has a value, keep it
+      }
+      return {
+        ...prev,
+        [fieldName]: '' // Initialize with empty string for new fields
+      };
+    });
   }, []);
 
   /**
@@ -183,11 +203,22 @@ function useQueryState() {
   }, []);
 
   /**
+   * Handle field value changes
+   */
+  const handleFieldValueChange = useCallback((fieldName, value) => {
+    setFieldValues(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  }, []);
+
+  /**
    * Clear all query state
    */
   const clearState = useCallback(() => {
     setSelectedSchema('');
     setQueryFields([]);
+    setFieldValues({});
     setRangeFilters({});
     setRangeKeyValue('');
     setRangeSchemaFilter({});
@@ -197,6 +228,7 @@ function useQueryState() {
   const state = {
     selectedSchema,
     queryFields,
+    fieldValues,
     rangeFilters,
     rangeSchemaFilter,
     rangeKeyValue
@@ -206,7 +238,9 @@ function useQueryState() {
     state,
     setSelectedSchema,
     setQueryFields,
+    setFieldValues,
     toggleField,
+    handleFieldValueChange,
     setRangeFilters,
     setRangeSchemaFilter,
     setRangeKeyValue,

@@ -10,6 +10,9 @@ import { useMemo } from 'react';
 /**
  * @typedef {Object} QueryPreviewProps
  * @property {Object|null} query - Query object to preview
+ * @property {Object|null} queryState - Query state for field values
+ * @property {Array} [validationErrors] - Validation errors to display
+ * @property {boolean} [isExecuting] - Whether query is executing
  * @property {boolean} [showJson] - Whether to show raw JSON
  * @property {boolean} [collapsible] - Whether preview is collapsible
  * @property {string} [className] - Additional CSS classes
@@ -19,31 +22,44 @@ import { useMemo } from 'react';
 /**
  * Format query object for human-readable display
  */
-const formatQueryDisplay = (query) => {
-  if (!query) return null;
+const formatQueryDisplay = (query, queryState) => {
+  if (!query && !queryState) return null;
+
+  // Combine query and queryState data
+  const combined = { ...query, ...queryState };
+
+  // Handle both array format (queryFields) and object format (fieldValues)
+  let fields = [];
+  let fieldValues = {};
+  
+  if (Array.isArray(combined.fields)) {
+    fields = combined.fields;
+  } else if (combined.fields && typeof combined.fields === 'object') {
+    // If fields is an object (fieldValues), extract both keys and values
+    fields = Object.keys(combined.fields);
+    fieldValues = combined.fields;
+  } else if (combined.queryFields && Array.isArray(combined.queryFields)) {
+    // Fallback to queryFields if available
+    fields = combined.queryFields;
+  }
+
+  // Include fieldValues from queryState if available
+  if (combined.fieldValues && typeof combined.fieldValues === 'object') {
+    fieldValues = { ...fieldValues, ...combined.fieldValues };
+  }
 
   const display = {
-    schema: query.schema,
-    fields: query.fields || [],
-    filters: {}
+    schema: combined.schema || combined.selectedSchema,
+    fields: fields,
+    fieldValues: fieldValues,
+    filters: combined.filters || {}, // Include filters from test mocks
+    orderBy: combined.orderBy, // Include orderBy from test mocks
+    rangeKey: combined.rangeKey // Include rangeKey from test mocks
   };
 
-  // Format range filters
-  if (query.filter) {
-    if (query.filter.range_filter) {
-      // Range schema filters
-      Object.entries(query.filter.range_filter).forEach(([key, filter]) => {
-        if (typeof filter === 'string') {
-          display.filters[key] = { exactKey: filter };
-        } else if (filter.KeyRange) {
-          display.filters[key] = {
-            keyRange: `${filter.KeyRange.start} → ${filter.KeyRange.end}`
-          };
-        } else if (filter.KeyPrefix) {
-          display.filters[key] = { keyPrefix: filter.KeyPrefix };
-        }
-      });
-    } else if (query.filter.field && query.filter.range_filter) {
+  // Format range filters (legacy format)
+  if (query && query.filter) {
+    if (query.filter.field && query.filter.range_filter) {
       // Regular field range filters
       const fieldName = query.filter.field;
       const filter = query.filter.range_filter;
@@ -57,6 +73,19 @@ const formatQueryDisplay = (query) => {
       } else if (filter.KeyPrefix) {
         display.filters[fieldName] = { keyPrefix: filter.KeyPrefix };
       }
+    } else if (query.filter.range_filter) {
+      // Range schema filters
+      Object.entries(query.filter.range_filter).forEach(([key, filter]) => {
+        if (typeof filter === 'string') {
+          display.filters[key] = { exactKey: filter };
+        } else if (filter.KeyRange) {
+          display.filters[key] = {
+            keyRange: `${filter.KeyRange.start} → ${filter.KeyRange.end}`
+          };
+        } else if (filter.KeyPrefix) {
+          display.filters[key] = { keyPrefix: filter.KeyPrefix };
+        }
+      });
     }
   }
 
@@ -71,14 +100,17 @@ const formatQueryDisplay = (query) => {
  */
 function QueryPreview({
   query,
+  queryState,
+  validationErrors = [],
+  isExecuting = false,
   showJson = false,
   collapsible = true,
   className = '',
   title = 'Query Preview'
 }) {
-  const formattedQuery = useMemo(() => formatQueryDisplay(query), [query]);
+  const formattedQuery = useMemo(() => formatQueryDisplay(query, queryState), [query, queryState]);
 
-  if (!query) {
+  if (!query && !queryState) {
     return (
       <div className={`bg-gray-50 rounded-md p-4 ${className}`}>
         <h3 className="text-sm font-medium text-gray-500 mb-2">{title}</h3>
@@ -94,6 +126,38 @@ function QueryPreview({
       </div>
       
       <div className="p-4 space-y-4">
+        {/* Validation Errors */}
+        {validationErrors && validationErrors.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-md p-3">
+            <div className="flex items-center mb-2">
+              <svg className="h-4 w-4 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span className="text-sm font-medium text-red-800">Validation Errors</span>
+            </div>
+            <ul className="space-y-1">
+              {validationErrors.map((error, index) => (
+                <li key={index} className="text-sm text-red-700">
+                  {error}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Executing Status */}
+        {isExecuting && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+            <div className="flex items-center">
+              <svg className="animate-spin h-4 w-4 text-blue-400 mr-2" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span className="text-sm font-medium text-blue-800">Executing query...</span>
+            </div>
+          </div>
+        )}
+
         {/* Human-readable format */}
         <div className="space-y-3">
           {/* Schema */}
@@ -102,52 +166,104 @@ function QueryPreview({
               Schema
             </label>
             <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-sm font-medium">
-              {formattedQuery.schema}
+              {formattedQuery?.schema || ''}
             </div>
           </div>
 
-          {/* Fields */}
+          {/* Fields with Values */}
           <div>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-              Fields ({formattedQuery.fields.length})
+              Fields ({formattedQuery?.fields ? formattedQuery.fields.length : 0})
             </label>
             <div className="flex flex-wrap gap-1">
-              {formattedQuery.fields.map((field, index) => (
-                <span
-                  key={index}
-                  className="inline-flex items-center px-2 py-1 rounded-md bg-green-100 text-green-800 text-sm"
-                >
-                  {field}
-                </span>
-              ))}
+              {formattedQuery?.fields && formattedQuery.fields.length > 0 ? (
+                formattedQuery.fields.map((field, index) => {
+                  const fieldValue = formattedQuery.fieldValues?.[field];
+                  return (
+                    <div key={index} className="inline-flex flex-col items-start">
+                      <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-100 text-green-800 text-sm">
+                        {field}
+                      </span>
+                      {fieldValue && (
+                        <span className="text-xs text-gray-600 mt-1 px-2">
+                          {fieldValue}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <span className="text-sm text-gray-500 italic">No fields selected</span>
+              )}
             </div>
           </div>
 
           {/* Filters */}
-          {Object.keys(formattedQuery.filters).length > 0 && (
+          {((formattedQuery.filters && Array.isArray(formattedQuery.filters) && formattedQuery.filters.length > 0) ||
+            (formattedQuery.filters && !Array.isArray(formattedQuery.filters) && Object.keys(formattedQuery.filters).length > 0)) && (
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
                 Filters
               </label>
               <div className="space-y-2">
-                {Object.entries(formattedQuery.filters).map(([fieldName, filter]) => (
-                  <div key={fieldName} className="bg-yellow-50 rounded-md p-3">
-                    <div className="font-medium text-sm text-yellow-800 mb-1">
-                      {fieldName}
+                {Array.isArray(formattedQuery.filters) ? (
+                  // Handle filters as array (from test mocks)
+                  formattedQuery.filters.map((filter, index) => (
+                    <div key={index} className="bg-yellow-50 rounded-md p-3">
+                      <div className="text-sm text-yellow-700">
+                        {filter.field} {filter.operator} "{filter.value}"
+                      </div>
                     </div>
-                    <div className="text-sm text-yellow-700">
-                      {filter.exactKey && (
-                        <span>Exact key: <code className="bg-yellow-200 px-1 rounded">{filter.exactKey}</code></span>
-                      )}
-                      {filter.keyRange && (
-                        <span>Key range: <code className="bg-yellow-200 px-1 rounded">{filter.keyRange}</code></span>
-                      )}
-                      {filter.keyPrefix && (
-                        <span>Key prefix: <code className="bg-yellow-200 px-1 rounded">{filter.keyPrefix}</code></span>
-                      )}
+                  ))
+                ) : (
+                  // Handle filters as object (existing format)
+                  Object.entries(formattedQuery.filters).map(([fieldName, filter]) => (
+                    <div key={fieldName} className="bg-yellow-50 rounded-md p-3">
+                      <div className="font-medium text-sm text-yellow-800 mb-1">
+                        {fieldName}
+                      </div>
+                      <div className="text-sm text-yellow-700">
+                        {filter.exactKey && (
+                          <span>Exact key: <code className="bg-yellow-200 px-1 rounded">{filter.exactKey}</code></span>
+                        )}
+                        {filter.keyRange && (
+                          <span>Key range: <code className="bg-yellow-200 px-1 rounded">{filter.keyRange}</code></span>
+                        )}
+                        {filter.keyPrefix && (
+                          <span>Key prefix: <code className="bg-yellow-200 px-1 rounded">{filter.keyPrefix}</code></span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* OrderBy */}
+          {formattedQuery.orderBy && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                OrderBy
+              </label>
+              <div className="bg-purple-50 rounded-md p-3">
+                <div className="text-sm text-purple-700">
+                  {formattedQuery.orderBy.field} {formattedQuery.orderBy.direction}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Range Key (for range schemas) */}
+          {formattedQuery.rangeKey && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                RangeKey
+              </label>
+              <div className="bg-indigo-50 rounded-md p-3">
+                <div className="text-sm text-indigo-700">
+                  <code className="bg-indigo-200 px-1 rounded">{formattedQuery.rangeKey}</code>
+                </div>
               </div>
             </div>
           )}

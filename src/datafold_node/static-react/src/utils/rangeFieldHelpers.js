@@ -22,13 +22,13 @@ export function generateRangeHelpText(mode = 'all', rangeKeyName = 'key', custom
   
   const help = { ...HELP_TEXT.rangeKeyFilter };
   
-  return {
-    type: 'help-text',
-    keyRange: help.keyRange,
-    exactKey: help.exactKey.replace('key', rangeKeyName),
-    keyPrefix: help.keyPrefix.replace('keys', `${rangeKeyName} values`),
-    emptyNote: help.emptyNote
-  };
+  // Return a properly formatted string instead of an object
+  const keyRange = help.keyRange || '';
+  const exactKey = (help.exactKey || '').replace('key', rangeKeyName);
+  const keyPrefix = (help.keyPrefix || '').replace('keys', `${rangeKeyName} values`);
+  const emptyNote = help.emptyNote || '';
+  
+  return `${keyRange} ${exactKey} ${keyPrefix} ${emptyNote}`.trim();
 }
 
 /**
