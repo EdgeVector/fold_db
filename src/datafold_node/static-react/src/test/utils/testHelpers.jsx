@@ -16,7 +16,7 @@ export const renderWithRedux = (
     store = configureStore({
       reducer: {
         auth: authSlice,
-        schema: schemaSlice,
+        schemas: schemaSlice,
       },
       preloadedState: { ...preloadedState, ...initialState },
     }),
@@ -37,7 +37,7 @@ export const createTestStore = (preloadedState = {}) => {
   return configureStore({
     reducer: {
       auth: authSlice,
-      schema: schemaSlice,
+      schemas: schemaSlice,
     },
     preloadedState,
   });
@@ -57,9 +57,9 @@ export const createAuthenticatedState = () => ({
     loading: false,
     error: null,
   },
-  schema: {
-    schemas: [
-      {
+  schemas: {
+    schemas: {
+      'UserSchema': {
         name: 'UserSchema',
         state: 'approved',
         fields: {
@@ -68,7 +68,7 @@ export const createAuthenticatedState = () => ({
           age: { field_type: 'Number' },
         },
       },
-      {
+      'ProductSchema': {
         name: 'ProductSchema',
         state: 'approved',
         fields: {
@@ -77,7 +77,7 @@ export const createAuthenticatedState = () => ({
           price: { field_type: 'Number' },
         },
       },
-    ],
+    },
     loading: false,
     error: null,
   },
@@ -93,8 +93,8 @@ export const createUnauthenticatedState = () => ({
     loading: false,
     error: null,
   },
-  schema: {
-    schemas: [],
+  schemas: {
+    schemas: {},
     loading: false,
     error: null,
   },

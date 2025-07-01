@@ -272,7 +272,10 @@ describe('formatQueryDisplay utility function', () => {
     expect(result).toEqual({
       schema: 'TestSchema',
       fields: ['field1', 'field2'],
-      filters: {}
+      filters: {},
+      fieldValues: {},
+      orderBy: undefined,
+      rangeKey: undefined
     });
   });
 
@@ -286,7 +289,10 @@ describe('formatQueryDisplay utility function', () => {
     expect(result).toEqual({
       schema: 'TestSchema',
       fields: [],
-      filters: {}
+      filters: {},
+      fieldValues: {},
+      orderBy: undefined,
+      rangeKey: undefined
     });
   });
 
