@@ -14,7 +14,7 @@ import { useCallback } from 'react';
 import { mutationClient } from '../../api/clients/mutationClient';
 import { API_ENDPOINTS } from '../../api/endpoints';
 import { useQueryState } from '../../hooks/useQueryState';
-import { useQueryBuilder } from '../query/QueryBuilder';
+import { useQueryBuilder } from '../../hooks/useQueryBuilder';
 import QueryForm from '../query/QueryForm';
 import QueryActions from '../query/QueryActions';
 import QueryPreview from '../query/QueryPreview';
@@ -56,6 +56,7 @@ function QueryTab({ onResult }) {
     state: queryState,
     handleSchemaChange,
     toggleField: handleFieldToggle,
+    handleFieldValueChange,
     handleRangeFilterChange,
     setRangeSchemaFilter,
     clearState,
@@ -68,10 +69,9 @@ function QueryTab({ onResult }) {
 
   // Use the extracted query builder for query construction
   const { query, isValid } = useQueryBuilder({
+    schema: queryState.selectedSchema,
     queryState,
-    selectedSchemaObj,
-    isRangeSchema,
-    rangeKey
+    schemas: { [queryState.selectedSchema]: selectedSchemaObj }
   });
 
   /**
@@ -127,6 +127,36 @@ function QueryTab({ onResult }) {
     console.log('Validating query:', queryData);
   }, []);
 
+  /**
+   * Handle save query functionality
+   */
+  const handleSaveQuery = useCallback(async (queryData) => {
+    if (!queryData || !isValid) {
+      console.warn('Cannot save invalid query');
+      return;
+    }
+
+    try {
+      // Future enhancement: implement save query API endpoint
+      console.log('Saving query:', queryData);
+      
+      // For now, just store in localStorage as a demo
+      const savedQueries = JSON.parse(localStorage.getItem('savedQueries') || '[]');
+      const newQuery = {
+        id: Date.now(),
+        name: `Query ${savedQueries.length + 1}`,
+        data: queryData,
+        createdAt: new Date().toISOString()
+      };
+      savedQueries.push(newQuery);
+      localStorage.setItem('savedQueries', JSON.stringify(savedQueries));
+      
+      console.log('Query saved successfully');
+    } catch (error) {
+      console.error('Failed to save query:', error);
+    }
+  }, [isValid]);
+
   return (
     <div className="p-6">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -136,6 +166,7 @@ function QueryTab({ onResult }) {
             queryState={queryState}
             onSchemaChange={handleSchemaChange}
             onFieldToggle={handleFieldToggle}
+            onFieldValueChange={handleFieldValueChange}
             onRangeFilterChange={handleRangeFilterChange}
             onRangeSchemaFilterChange={setRangeSchemaFilter}
             approvedSchemas={approvedSchemas}
@@ -148,10 +179,12 @@ function QueryTab({ onResult }) {
           <QueryActions
             onExecute={() => handleExecuteQuery(query)}
             onValidate={() => handleValidateQuery(query)}
+            onSave={() => handleSaveQuery(query)}
             onClear={clearState}
             queryData={query}
             disabled={!isValid}
             showValidation={false} // Can be enabled for debugging
+            showSave={true}
             showClear={true}
           />
         </div>

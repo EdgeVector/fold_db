@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react';
+import { useQueryState } from '../../hooks/useQueryState.js';
 import {
   BUTTON_TEXT,
   UI_STATES
@@ -16,9 +17,11 @@ import { COMPONENT_STYLES } from '../../constants/styling.js';
  * @typedef {Object} QueryActionsProps
  * @property {function} onExecute - Execute query callback (queryData) => Promise<void>
  * @property {function} [onValidate] - Validate query callback (queryData) => Promise<void>
+ * @property {function} [onSave] - Save query callback (queryData) => Promise<void>
  * @property {function} [onClear] - Clear query callback () => void
  * @property {boolean} [disabled] - Whether actions are disabled
  * @property {boolean} [showValidation] - Whether to show validation button
+ * @property {boolean} [showSave] - Whether to show save button
  * @property {boolean} [showClear] - Whether to show clear button
  * @property {string} [className] - Additional CSS classes
  * @property {Object} queryData - Current query data for validation
@@ -32,16 +35,26 @@ import { COMPONENT_STYLES } from '../../constants/styling.js';
  */
 function QueryActions({
   onExecute,
+  onExecuteQuery,
   onValidate,
+  onSave,
+  onSaveQuery,
   onClear,
+  onClearQuery,
   disabled = false,
+  isExecuting = false,
+  isSaving = false,
+  canExecute = false,
+  canSave = false,
   showValidation = false,
+  showSave = true,
   showClear = true,
   className = '',
   queryData
 }) {
   const [loadingAction, setLoadingAction] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  const { clearQuery } = useQueryState();
 
   /**
    * Handle action execution with loading state
@@ -65,7 +78,8 @@ function QueryActions({
    * Handle execute action
    */
   const handleExecute = () => {
-    handleAction('execute', onExecute, queryData);
+    const executeHandler = onExecuteQuery || onExecute;
+    handleAction('execute', executeHandler, queryData);
   };
 
   /**
@@ -76,22 +90,36 @@ function QueryActions({
   };
 
   /**
+   * Handle save action
+   */
+  const handleSave = () => {
+    const saveHandler = onSaveQuery || onSave;
+    handleAction('save', saveHandler, queryData);
+  };
+
+  /**
    * Handle clear action
    */
   const handleClear = () => {
-    if (onClear) {
-      onClear();
+    const clearHandler = onClearQuery || onClear;
+    if (clearHandler) {
+      clearHandler();
+    }
+    if (clearQuery) {
+      clearQuery();
     }
   };
 
   /**
    * Check if query data is valid for execution
    */
-  const isQueryValid = queryData && queryData.schema && (
+  const isQueryValid = canExecute || (queryData && queryData.schema && (
     (queryData.queryFields && queryData.queryFields.length > 0) ||
     (queryData.fields && Array.isArray(queryData.fields) && queryData.fields.length > 0) ||
     (queryData.fields && typeof queryData.fields === 'object' && Object.keys(queryData.fields).length > 0)
-  );
+  ));
+
+  const canSaveQuery = canSave || isQueryValid;
 
   return (
     <div className={`flex justify-end space-x-3 ${className}`}>
@@ -109,7 +137,7 @@ function QueryActions({
             }
           `}
         >
-          {BUTTON_TEXT.clear || 'Clear'}
+          {BUTTON_TEXT.clearQuery || 'Clear Query'}
         </button>
       )}
 
@@ -137,26 +165,52 @@ function QueryActions({
         </button>
       )}
 
+      {/* Save Button */}
+      {showSave && (onSave || onSaveQuery) && (
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={disabled || !canSaveQuery || isSaving}
+          className={`
+            inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium
+            ${disabled || !canSaveQuery || isSaving
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-green-600 text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500'
+            }
+          `}
+        >
+          {(loadingAction === 'save' || isSaving) && (
+            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          )}
+          {BUTTON_TEXT.saveQuery || 'Save Query'}
+        </button>
+      )}
+
       {/* Execute Button */}
       <button
         type="button"
         onClick={handleExecute}
-        disabled={disabled || !isQueryValid}
+        disabled={disabled || !isQueryValid || isExecuting}
         className={`
           inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white
-          ${disabled || !isQueryValid
+          ${disabled || !isQueryValid || isExecuting
             ? 'bg-gray-300 cursor-not-allowed'
             : 'bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary'
           }
         `}
       >
-        {loadingAction === 'execute' && (
+        {(loadingAction === 'execute' || isExecuting) && (
           <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
         )}
-        {BUTTON_TEXT.executeQuery || 'Execute Query'}
+        {(loadingAction === 'execute' || isExecuting)
+          ? 'Executing...'
+          : (BUTTON_TEXT.executeQuery || 'Execute Query')}
       </button>
     </div>
   );

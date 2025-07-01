@@ -6,6 +6,7 @@
 
 import { useMemo, useCallback } from 'react';
 import { useAppSelector } from '../store/hooks';
+import { selectApprovedSchemas } from '../store/schemaSlice';
 
 /**
  * Query builder hook that handles query construction and validation
@@ -22,15 +23,16 @@ import { useAppSelector } from '../store/hooks';
  * @returns {Object} Query builder state and methods
  */
 export function useQueryBuilder({ schema, queryState, schemas }) {
-  const approvedSchemas = useAppSelector(state => state.schema.approved || {});
+  const approvedSchemas = useAppSelector(selectApprovedSchemas);
   
   // Get the selected schema object
   const selectedSchemaObj = useMemo(() => {
     if (schemas && schemas[schema]) {
       return schemas[schema];
     }
-    if (approvedSchemas && approvedSchemas[schema]) {
-      return approvedSchemas[schema];
+    // approvedSchemas is now an array, not an object
+    if (approvedSchemas && Array.isArray(approvedSchemas)) {
+      return approvedSchemas.find(s => s.name === schema) || null;
     }
     return null;
   }, [schema, schemas, approvedSchemas]);
@@ -39,6 +41,7 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
   const validationErrors = useMemo(() => {
     const errors = [];
     
+    // Basic schema validation
     if (!schema) {
       errors.push('Schema selection is required');
       return errors;
@@ -55,58 +58,67 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
 
     const { queryFields = [], fieldValues = {}, rangeFilters = {}, filters = [] } = queryState;
 
-    // Check required fields
-    if (selectedSchemaObj.fields) {
-      Object.entries(selectedSchemaObj.fields).forEach(([fieldName, fieldDef]) => {
-        if (fieldDef.required && queryFields.includes(fieldName)) {
-          const value = fieldValues[fieldName];
-          if (value === undefined || value === null || value === '') {
-            errors.push(`Required field "${fieldName}" is missing`);
-          }
-        }
-      });
-    }
-
-    // Check range schema requirements
-    if (selectedSchemaObj.schema_type === 'Range' && queryFields.length > 0) {
-      const hasRangeKey = rangeFilters && Object.keys(rangeFilters).some(key => rangeFilters[key]?.key);
-      if (!hasRangeKey) {
-        errors.push('Range key missing for range schema');
+    // If no fields are selected, only validate basic schema requirements
+    if (queryFields.length === 0) {
+      // For schemas without fields, this is valid
+      if (!selectedSchemaObj.fields || Object.keys(selectedSchemaObj.fields).length === 0) {
+        return errors;
       }
+      // For range schemas with no fields selected, this is also valid (no range key required)
+      if (selectedSchemaObj.schema_type === 'Range') {
+        return errors;
+      }
+      // Otherwise require at least one field
+      errors.push('At least one field must be selected');
+      return errors;
     }
 
-    // Validate field types
+    // Validate required fields that are selected
     if (selectedSchemaObj.fields) {
       queryFields.forEach(fieldName => {
         const fieldDef = selectedSchemaObj.fields[fieldName];
         const value = fieldValues[fieldName];
         
-        if (fieldDef && value !== undefined && value !== null && value !== '') {
-          if (fieldDef.field_type === 'Integer' || fieldDef.field_type === 'Number') {
-            if (isNaN(Number(value))) {
-              errors.push(`Field "${fieldName}" must be a number`);
+        if (fieldDef) {
+          // Check if required field is missing or empty
+          if (fieldDef.required) {
+            if (!(fieldName in fieldValues)) {
+              errors.push(`Required field "${fieldName}" is missing`);
+            } else if (value === null || value === '') {
+              errors.push(`Required field "${fieldName}" cannot be empty`);
+            }
+          }
+          
+          // Validate field types for non-empty values
+          if (value && value !== '') {
+            if (fieldDef.field_type === 'Integer' || fieldDef.field_type === 'Number') {
+              if (isNaN(Number(value))) {
+                errors.push(`Field "${fieldName}" must be a number`);
+              }
             }
           }
         }
       });
     }
 
-    // Validate filters against schema
-    filters.forEach(filter => {
-      if (selectedSchemaObj.fields && !selectedSchemaObj.fields[filter.field]) {
-        errors.push(`Filter field "${filter.field}" does not exist in schema`);
+    // Validate range schema requirements
+    if (selectedSchemaObj.schema_type === 'Range' && queryFields.length > 0) {
+      const hasRangeKey = rangeFilters && Object.keys(rangeFilters).some(key =>
+        rangeFilters[key]?.key
+      );
+      if (!hasRangeKey) {
+        errors.push('Range key missing for range schema');
       }
-    });
+    }
 
-    // Validate empty field values
-    queryFields.forEach(fieldName => {
-      const fieldDef = selectedSchemaObj.fields?.[fieldName];
-      const value = fieldValues[fieldName];
-      
-      if (fieldDef?.required && (value === '' || value === null || value === undefined)) {
-        errors.push(`Required field "${fieldName}" cannot be empty`);
-      }
-    });
+    // Validate filters against schema (only if filters exist)
+    if (filters && Array.isArray(filters) && filters.length > 0) {
+      filters.forEach(filter => {
+        if (selectedSchemaObj.fields && !selectedSchemaObj.fields[filter.field]) {
+          errors.push(`Filter field "${filter.field}" does not exist in schema`);
+        }
+      });
+    }
 
     return errors;
   }, [schema, selectedSchemaObj, queryState]);
@@ -121,10 +133,18 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
 
     const { queryFields = [], fieldValues = {}, rangeFilters = {}, filters = [], orderBy } = queryState;
     
+    // Build query with selected fields and their values
     const builtQuery = {
+      type: "query", // Required field for server parsing
       schema,
-      fields: fieldValues
+      fields: queryFields, // Array of selected field names as expected by server
+      queryFields // Also include queryFields for compatibility
     };
+
+    // Add field values if there are any (for range keys or other purposes)
+    if (fieldValues && Object.keys(fieldValues).length > 0) {
+      builtQuery.fieldValues = fieldValues;
+    }
 
     // Add range key for range schemas
     if (selectedSchemaObj.schema_type === 'Range' && rangeFilters) {
