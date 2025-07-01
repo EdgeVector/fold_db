@@ -5,16 +5,19 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import QueryActions from '../../../components/query/QueryActions';
+import { renderWithRedux, createAuthenticatedState } from '../../utils/testHelpers';
 
 describe('QueryActions Component', () => {
   let mockProps;
   let user;
+  let initialState;
 
   beforeEach(() => {
     user = userEvent.setup();
+    initialState = createAuthenticatedState();
     mockProps = {
       onExecute: vi.fn(),
       onValidate: vi.fn(),
@@ -37,7 +40,7 @@ describe('QueryActions Component', () => {
 
   describe('rendering', () => {
     it('should render all action buttons when enabled', () => {
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /validate/i })).toBeInTheDocument();
@@ -46,7 +49,7 @@ describe('QueryActions Component', () => {
 
     it('should hide validation button when showValidation is false', () => {
       mockProps.showValidation = false;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.queryByRole('button', { name: /validate/i })).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -55,7 +58,7 @@ describe('QueryActions Component', () => {
 
     it('should hide clear button when showClear is false', () => {
       mockProps.showClear = false;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.queryByRole('button', { name: /clear/i })).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: /validate/i })).toBeInTheDocument();
@@ -64,7 +67,7 @@ describe('QueryActions Component', () => {
 
     it('should apply custom className', () => {
       mockProps.className = 'custom-class';
-      const { container } = render(<QueryActions {...mockProps} />);
+      const { container } = renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(container.firstChild).toHaveClass('custom-class');
     });
@@ -73,7 +76,7 @@ describe('QueryActions Component', () => {
   describe('button states', () => {
     it('should disable all buttons when disabled prop is true', () => {
       mockProps.disabled = true;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const buttons = screen.getAllByRole('button');
       buttons.forEach(button => {
@@ -83,7 +86,7 @@ describe('QueryActions Component', () => {
 
     it('should disable execute and validate buttons when query is invalid', () => {
       mockProps.queryData = null;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeEnabled();
       expect(screen.getByRole('button', { name: /validate/i })).toBeDisabled();
@@ -92,7 +95,7 @@ describe('QueryActions Component', () => {
 
     it('should disable execute and validate buttons when schema is missing', () => {
       mockProps.queryData = { queryFields: ['field1'] };
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /validate/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /execute query/i })).toBeDisabled();
@@ -100,7 +103,7 @@ describe('QueryActions Component', () => {
 
     it('should disable execute and validate buttons when no fields selected', () => {
       mockProps.queryData = { schema: 'TestSchema', queryFields: [] };
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /validate/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /execute query/i })).toBeDisabled();
@@ -113,7 +116,7 @@ describe('QueryActions Component', () => {
         schema: 'TestSchema',
         queryFields: ['field1', 'field2']
       };
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
@@ -123,7 +126,7 @@ describe('QueryActions Component', () => {
         schema: 'TestSchema',
         fields: ['field1', 'field2']
       };
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
@@ -133,7 +136,7 @@ describe('QueryActions Component', () => {
         schema: 'TestSchema',
         fields: { field1: 'value1', field2: 'value2' }
       };
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
@@ -143,7 +146,7 @@ describe('QueryActions Component', () => {
         schema: 'TestSchema',
         fields: {}
       };
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /execute query/i })).toBeDisabled();
     });
@@ -151,7 +154,7 @@ describe('QueryActions Component', () => {
 
   describe('action handling', () => {
     it('should call onExecute with queryData when execute button is clicked', async () => {
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const executeButton = screen.getByRole('button', { name: /execute query/i });
       await user.click(executeButton);
@@ -160,7 +163,7 @@ describe('QueryActions Component', () => {
     });
 
     it('should call onValidate with queryData when validate button is clicked', async () => {
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const validateButton = screen.getByRole('button', { name: /validate/i });
       await user.click(validateButton);
@@ -169,7 +172,7 @@ describe('QueryActions Component', () => {
     });
 
     it('should call onClear when clear button is clicked', async () => {
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const clearButton = screen.getByRole('button', { name: /clear/i });
       await user.click(clearButton);
@@ -179,7 +182,7 @@ describe('QueryActions Component', () => {
 
     it('should not call handlers when buttons are disabled', async () => {
       mockProps.disabled = true;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const executeButton = screen.getByRole('button', { name: /execute query/i });
       const validateButton = screen.getByRole('button', { name: /validate/i });
@@ -203,7 +206,7 @@ describe('QueryActions Component', () => {
       });
       mockProps.onExecute = vi.fn(() => executePromise);
 
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const executeButton = screen.getByRole('button', { name: /execute query/i });
       await user.click(executeButton);
@@ -225,7 +228,7 @@ describe('QueryActions Component', () => {
       });
       mockProps.onValidate = vi.fn(() => validatePromise);
 
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const validateButton = screen.getByRole('button', { name: /validate/i });
       await user.click(validateButton);
@@ -244,7 +247,7 @@ describe('QueryActions Component', () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       mockProps.onExecute = vi.fn(() => Promise.reject(new Error('Execute failed')));
 
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const executeButton = screen.getByRole('button', { name: /execute query/i });
       await user.click(executeButton);
@@ -260,7 +263,7 @@ describe('QueryActions Component', () => {
   describe('optional handlers', () => {
     it('should work when onValidate is not provided', async () => {
       mockProps.onValidate = undefined;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       // Should not show validate button when onValidate is not provided
       expect(screen.queryByRole('button', { name: /validate/i })).not.toBeInTheDocument();
@@ -268,7 +271,7 @@ describe('QueryActions Component', () => {
 
     it('should work when onClear is not provided', async () => {
       mockProps.onClear = undefined;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const clearButton = screen.getByRole('button', { name: /clear/i });
       await user.click(clearButton);
@@ -279,7 +282,7 @@ describe('QueryActions Component', () => {
 
     it('should not execute when onExecute is not provided', async () => {
       mockProps.onExecute = undefined;
-      render(<QueryActions {...mockProps} />);
+      renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       const executeButton = screen.getByRole('button', { name: /execute query/i });
       await user.click(executeButton);
