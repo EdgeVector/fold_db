@@ -2,6 +2,10 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { getSystemPublicKey } from '../api/securityClient';
 import { base64ToBytes } from '../utils/ed25519';
 import * as ed from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha512';
+
+// Set up SHA-512 hash function for ed25519
+ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
 
 export interface KeyAuthenticationState {
   isAuthenticated: boolean;

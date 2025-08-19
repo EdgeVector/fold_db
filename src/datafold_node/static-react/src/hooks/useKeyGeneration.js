@@ -10,6 +10,8 @@
 
 import { useState, useCallback } from 'react';
 import { generateKeyPair } from '../utils/cryptoUtils';
+import { Buffer } from 'buffer';
+import { registerPublicKey as registerPublicKeyApi } from '../api/securityClient';
 
 /**
  * Hook for managing key generation operations
@@ -145,6 +147,45 @@ export function useKeyGeneration() {
     };
   }, [keyPair]);
 
+  /**
+   * Register a public key with the system
+   * @param {string} publicKeyBase64 - Base64 encoded public key
+   * @returns {Promise<boolean>} True if registration was successful
+   */
+  const registerPublicKey = useCallback(async (publicKeyBase64) => {
+    try {
+      const requestBody = {
+        public_key: publicKeyBase64,
+        owner_id: 'web-user', // Default owner ID for web interface
+        permissions: ['read', 'write'], // Default permissions
+        metadata: {
+          generated_by: 'web-interface',
+          generation_time: new Date().toISOString(),
+          key_type: 'ed25519'
+        },
+        expires_at: null // No expiration by default
+      };
+
+      const response = await registerPublicKeyApi(requestBody);
+      console.log('registerPublicKey response:', response);
+      
+      // Check for success in the API client response structure
+      const success = response.success ?? false;
+      
+      // Additional validation: check if backend also reports success
+      if (success && response.data && typeof response.data === 'object' && 'success' in response.data) {
+        const backendSuccess = response.data.success ?? false;
+        console.log('Backend success:', backendSuccess, 'API success:', success);
+        return success && backendSuccess;
+      }
+      
+      return success;
+    } catch (error) {
+      console.error('registerPublicKey error:', error);
+      return false;
+    }
+  }, []);
+
   return {
     // State
     keyPair,
@@ -158,6 +199,7 @@ export function useKeyGeneration() {
     exportKeys,
     validateKeys,
     getKeyInfo,
+    registerPublicKey,
   };
 }
 

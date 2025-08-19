@@ -9,6 +9,11 @@
  */
 
 import { getPublicKey, utils } from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha512';
+import { Buffer } from 'buffer';
+
+// Set up SHA-512 hash function for ed25519
+utils.sha512Sync = (...m) => sha512(utils.concatBytes(...m));
 
 /**
  * Generate a new Ed25519 key pair
