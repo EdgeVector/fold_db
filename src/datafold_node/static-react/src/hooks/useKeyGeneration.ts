@@ -18,33 +18,49 @@ const INITIAL_RESULT: KeyGenerationResult = {
 };
 
 export function useKeyGeneration(): KeyGenerationState {
-  const [result, setResult] = useState<KeyGenerationResult>(INITIAL_RESULT);
+  const [keyPair, setKeyPair] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState(null);
+  const [generationHistory, setGenerationHistory] = useState([]);
 
-  const generateKeyPair = useCallback(async () => {
-    setResult(prev => ({ ...prev, isGenerating: true, error: null }));
-    
+  const generateKeys = useCallback(async () => {
+    setIsGenerating(true);
+    setError(null);
+
     try {
-      const keyPair = await generateEd25519KeyPair();
-      const publicKeyBase64 = bytesToBase64(keyPair.publicKey);
-
-      setResult({
-        keyPair,
+      const newKeyPair = await generateEd25519KeyPair();
+      const publicKeyBase64 = bytesToBase64(newKeyPair.publicKey);
+      
+      const keyPairWithMetadata = {
+        ...newKeyPair,
+        id: `keypair_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        createdAt: new Date().toISOString(),
+        algorithm: 'Ed25519',
         publicKeyBase64,
-        error: null,
-        isGenerating: false,
-      });
-    } catch (error) {
-      setResult({
-        keyPair: null,
-        publicKeyBase64: null,
-        error: error instanceof Error ? error.message : 'Failed to generate keypair',
-        isGenerating: false,
-      });
+      };
+
+      setKeyPair(keyPairWithMetadata);
+      
+      // Add to history
+      setGenerationHistory(prev => [...prev, {
+        id: keyPairWithMetadata.id,
+        createdAt: keyPairWithMetadata.createdAt,
+        algorithm: keyPairWithMetadata.algorithm,
+      }].slice(-10)); // Keep last 10 generations
+
+      return keyPairWithMetadata;
+    } catch (err) {
+      const errorMessage = err.message || 'Key generation failed';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setIsGenerating(false);
     }
   }, []);
 
   const clearKeys = useCallback(() => {
-    setResult(INITIAL_RESULT);
+    setKeyPair(null);
+    setError(null);
   }, []);
 
   const registerPublicKey = useCallback(async (publicKeyBase64: string): Promise<boolean> => {
@@ -82,8 +98,11 @@ export function useKeyGeneration(): KeyGenerationState {
   }, []);
 
   return {
-    result,
-    generateKeyPair,
+    keyPair,
+    isGenerating,
+    error,
+    generationHistory,
+    generateKeys,
     clearKeys,
     registerPublicKey,
   };

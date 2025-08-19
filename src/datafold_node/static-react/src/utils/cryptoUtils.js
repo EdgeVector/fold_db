@@ -8,15 +8,15 @@
  * @since 2.0.0
  */
 
-import { getPrivateKey, getPublicKey } from '@noble/ed25519';
+import { getPublicKey, utils } from '@noble/ed25519';
 
 /**
  * Generate a new Ed25519 key pair
  * @returns {Promise<{privateKey: Uint8Array, publicKey: Uint8Array}>}
  */
 export async function generateKeyPair() {
-  const privateKey = getPrivateKey();
-  const publicKey = await getPublicKey(privateKey);
+  const privateKey = utils.randomPrivateKey();
+  const publicKey = getPublicKey(privateKey);
   
   return {
     privateKey,

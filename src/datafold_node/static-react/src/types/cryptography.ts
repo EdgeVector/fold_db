@@ -13,8 +13,15 @@ export interface KeyGenerationResult {
 }
 
 export interface KeyGenerationState {
-  result: KeyGenerationResult;
-  generateKeyPair: () => Promise<void>;
+  keyPair: KeyPair | null;
+  isGenerating: boolean;
+  error: string | null;
+  generationHistory: Array<{
+    id: string;
+    createdAt: string;
+    algorithm: string;
+  }>;
+  generateKeys: () => Promise<KeyPair>;
   clearKeys: () => void;
   registerPublicKey: (publicKeyBase64: string) => Promise<boolean>;
 }
