@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom'
 import { vi, beforeEach } from 'vitest'
 import { setupTestEnvironment, cleanupTestEnvironment } from './utils/testUtilities.jsx'
+import { setupMockServer } from './mocks/apiMocks.js'
 import { TEST_TIMEOUT_DEFAULT_MS } from './config/constants.js'
 
 // Make vi available globally as jest for compatibility
@@ -45,6 +46,9 @@ global.TEST_TIMEOUT_MS = TEST_TIMEOUT_DEFAULT_MS
 
 // Setup test environment with mocks and matchers
 setupTestEnvironment()
+
+// Setup MSW server for API mocking
+setupMockServer()
 
 // Mock EventSource for LogSidebar component
 global.EventSource = vi.fn(() => ({

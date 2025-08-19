@@ -12,7 +12,8 @@ import {
   createTestStore,
   renderWithRedux,
   renderHookWithRedux,
-  createTestSchemaState
+  createTestSchemaState,
+  createMockAuthState
 } from './testUtilities.jsx';
 
 // Re-export for backward compatibility
@@ -20,7 +21,8 @@ export {
   createTestStore,
   renderWithRedux,
   renderHookWithRedux,
-  createTestSchemaState
+  createTestSchemaState,
+  createMockAuthState
 };
 
 /**

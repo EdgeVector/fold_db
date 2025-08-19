@@ -359,7 +359,7 @@ mod tests {
         let client = reqwest::Client::new();
         let url = format!("http://{}/api/logs", bind_addr);
 
-        let logs: serde_json::Value = client
+        let response: serde_json::Value = client
             .get(&url)
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -369,7 +369,18 @@ mod tests {
             .await
             .expect("invalid json");
 
-        assert!(logs.as_array().map(|v| !v.is_empty()).unwrap_or(false));
+        // Verify the response structure
+        assert!(response.is_object());
+        assert!(response.get("logs").is_some());
+        assert!(response.get("count").is_some());
+        assert!(response.get("timestamp").is_some());
+
+        // Check that logs field is an array (may be empty initially)
+        let logs_array = response.get("logs").unwrap().as_array().unwrap();
+
+        // Verify count field matches array length
+        let count = response.get("count").unwrap().as_u64().unwrap();
+        assert_eq!(count as usize, logs_array.len());
 
         handle.abort();
         let _ = handle.await;

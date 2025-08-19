@@ -11,8 +11,9 @@
  * @since 2.0.0
  */
 
-import { http } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
+import { beforeAll, afterEach, afterAll } from 'vitest';
 import {
   createMockSchema,
   createMockRangeSchema,
@@ -140,7 +141,45 @@ export const mockQueryResults = {
  * Default MSW request handlers for API endpoints
  */
 export const defaultHandlers = [
-  // Schema endpoints
+  // Security endpoints - missing handlers causing unhandled request errors
+  http.post('/api/security/verify', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: { verified: true, message: 'Verification successful' }
+      })
+    );
+  }),
+
+  http.get('/api/security/system-public-key', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          publicKey: 'mock-system-public-key-base64',
+          keyId: 'system-key-1',
+          algorithm: 'Ed25519'
+        }
+      })
+    );
+  }),
+
+  http.post('/api/validate', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: { valid: true, errors: [] }
+      })
+    );
+  }),
+
+  // Schema endpoints - with /api/ prefix for legacy compatibility
   http.get('/api/schemas/available', async (req, res, ctx) => {
     await mockDelay(MOCK_API_DELAY_MS);
     return res(
@@ -159,6 +198,54 @@ export const defaultHandlers = [
       ctx.json({
         success: true,
         data: mockPersistedStates
+      })
+    );
+  }),
+
+  // Schema endpoints - without /api/ prefix for schemaClient
+  http.get('/schemas', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: Object.values(mockSchemas) // Return array of schemas as schemaClient expects
+      })
+    );
+  }),
+
+  // Test compatibility: Add /api/schemas endpoint that tests expect
+  http.get('/api/schemas', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: Object.values(mockSchemas) // Return array of schemas as tests expect
+      })
+    );
+  }),
+
+  http.get('/schema/:schemaName', async (req, res, ctx) => {
+    const { schemaName } = req.params;
+    await mockDelay(MOCK_API_DELAY_MS);
+    
+    const schema = mockSchemas[schemaName];
+    if (!schema) {
+      return res(
+        ctx.status(404),
+        ctx.json({
+          success: false,
+          error: { message: `Schema ${schemaName} not found` }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: schema
       })
     );
   }),
@@ -447,6 +534,88 @@ export const defaultHandlers = [
         data: { valid: true }
       })
     );
+  }),
+
+  // Key Lifecycle Management endpoints
+  http.post('/api/keys', async (req, res, ctx) => {
+    const body = await req.json();
+    await mockDelay(MOCK_API_DELAY_MS);
+    
+    if (!body.publicKey) {
+      return res(
+        ctx.status(400),
+        ctx.json({
+          success: false,
+          error: { message: 'Missing required field: publicKey' }
+        })
+      );
+    }
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          id: `key_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          ...body,
+          status: 'active',
+          createdAt: new Date().toISOString()
+        }
+      })
+    );
+  }),
+
+  http.get('/api/keys', async (req, res, ctx) => {
+    await mockDelay(MOCK_API_DELAY_MS);
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: [
+          {
+            id: 'key_1',
+            publicKey: 'mock_public_key_1',
+            status: 'active',
+            algorithm: 'Ed25519',
+            createdAt: new Date().toISOString()
+          }
+        ]
+      })
+    );
+  }),
+
+  http.patch('/api/keys/:keyId', async (req, res, ctx) => {
+    const body = await req.json();
+    await mockDelay(MOCK_API_DELAY_MS);
+    
+    return res(
+      ctx.status(200),
+      ctx.json({
+        success: true,
+        data: {
+          id: req.params.keyId,
+          ...body,
+          updatedAt: new Date().toISOString()
+        }
+      })
+    );
+  }),
+
+  // Dynamic route for key operations (PATCH /api/keys/:keyId)
+  http.patch('/api/keys/:keyId', async (req, res, ctx) => {
+    const { keyId } = req.params;
+    const body = await req.json();
+    
+    return res(
+      ctx.json({
+        success: true,
+        data: {
+          id: keyId,
+          ...body,
+          updatedAt: new Date().toISOString()
+        }
+      })
+    );
   })
 ];
 
@@ -461,6 +630,21 @@ export const errorHandlers = {
   networkError: [
     http.get('/api/schemas/available', (req, res, ctx) => {
       return res.networkError('Failed to connect');
+    }),
+    http.get('/schemas', (req, res, ctx) => {
+      return res.networkError('Failed to connect');
+    }),
+    http.get('/schema/:schemaName', (req, res, ctx) => {
+      return res.networkError('Failed to connect');
+    }),
+    http.get('/schemas/state/:state', (req, res, ctx) => {
+      return res.networkError('Failed to connect');
+    }),
+    http.get('/api/keys', (req, res, ctx) => {
+      return res.networkError('Failed to connect');
+    }),
+    http.patch('/api/keys/:keyId', (req, res, ctx) => {
+      return res.networkError('Failed to connect');
     })
   ],
 
@@ -471,6 +655,60 @@ export const errorHandlers = {
         ctx.json({
           success: false,
           error: { message: 'Internal server error' }
+        })
+      );
+    }),
+    http.get('/schemas', (req, res, ctx) => {
+      return res(
+        ctx.status(500),
+        ctx.json({
+          success: false,
+          error: { message: 'Internal server error' }
+        })
+      );
+    }),
+    http.get('/schema/:schemaName', (req, res, ctx) => {
+      return res(
+        ctx.status(500),
+        ctx.json({
+          success: false,
+          error: { message: 'Failed to fetch schema' }
+        })
+      );
+    }),
+    http.get('/schemas/state/:state', (req, res, ctx) => {
+      return res(
+        ctx.status(500),
+        ctx.json({
+          success: false,
+          error: { message: 'Failed to fetch schemas by state' }
+        })
+      );
+    }),
+    http.get('/api/keys', (req, res, ctx) => {
+      return res(
+        ctx.status(500),
+        ctx.json({
+          success: false,
+          error: { message: 'Internal server error' }
+        })
+      );
+    }),
+    http.post('/api/keys', (req, res, ctx) => {
+      return res(
+        ctx.status(500),
+        ctx.json({
+          success: false,
+          error: { message: 'Failed to store key' }
+        })
+      );
+    }),
+    http.patch('/api/keys/:keyId', (req, res, ctx) => {
+      return res(
+        ctx.status(500),
+        ctx.json({
+          success: false,
+          error: { message: 'Failed to update key' }
         })
       );
     })
