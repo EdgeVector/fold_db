@@ -1,7 +1,11 @@
 // Ed25519 utility functions - kept minimal for only required functions
 
 import * as ed from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha512';
 import type { KeyPair } from '../types/cryptography';
+
+// Set up SHA-512 hash function for ed25519
+ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
 
 /**
  * Generate a new Ed25519 keypair

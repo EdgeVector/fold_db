@@ -8,7 +8,10 @@ import { validatePrivateKey, clearAuthentication, updateSystemKey, refreshSystem
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
 import * as ed from '@noble/ed25519';
-import { registerPublicKey } from '../../api/securityClient';
+import { sha512 } from '@noble/hashes/sha512';
+
+// Set up SHA-512 hash function for ed25519
+ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
 
 function KeyManagementTab({ onResult, keyGenerationResult }) {
     // Redux state and dispatch
@@ -29,7 +32,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
 
     // Use key generation from prop (shared state) or hook as fallback
     const keyGeneration = keyGenerationResult || useKeyGeneration();
-    const { keyPair, isGenerating, error, generateKeys, clearKeys } = keyGeneration;
+    const { keyPair, isGenerating, error, generateKeys, clearKeys, registerPublicKey } = keyGeneration;
     
     // Extract public key from keyPair if it exists
     const publicKeyBase64 = keyPair?.publicKeyBase64;
