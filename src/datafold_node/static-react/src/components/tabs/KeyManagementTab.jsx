@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useKeyLifecycle } from '../../hooks/useKeyLifecycle';
-import { useKeyGeneration } from '../../hooks/useKeyGeneration';
+import { useKeyGeneration } from '../../hooks/useKeyGeneration.js';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { validatePrivateKey, clearAuthentication, updateSystemKey, refreshSystemKey } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
 import * as ed from '@noble/ed25519';
+import { registerPublicKey } from '../../api/securityClient';
 
 function KeyManagementTab({ onResult, keyGenerationResult }) {
     // Redux state and dispatch
@@ -28,8 +29,10 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
 
     // Use key generation from prop (shared state) or hook as fallback
     const keyGeneration = keyGenerationResult || useKeyGeneration();
-    const { result, generateKeyPair, clearKeys, registerPublicKey } = keyGeneration;
-    const { keyPair, publicKeyBase64, error, isGenerating } = result;
+    const { keyPair, isGenerating, error, generateKeys, clearKeys } = keyGeneration;
+    
+    // Extract public key from keyPair if it exists
+    const publicKeyBase64 = keyPair?.publicKeyBase64;
     
     // Enhanced lifecycle management with multiple cleanup functions
     useKeyLifecycle([clearKeys, () => dispatch(clearAuthentication())]);
@@ -200,7 +203,7 @@ function KeyManagementTab({ onResult, keyGenerationResult }) {
             <h2 className="text-xl font-semibold mb-4">Key Management</h2>
             <div className="flex space-x-2 mb-4">
                 <button
-                    onClick={generateKeyPair}
+                    onClick={generateKeys}
                     disabled={isGenerating}
                     className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
                 >
