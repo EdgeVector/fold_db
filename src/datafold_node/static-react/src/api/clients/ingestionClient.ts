@@ -35,6 +35,15 @@ export interface OpenRouterConfigResponse {
   last_updated?: string;
 }
 
+export interface IngestionConfigResponse {
+  enabled: boolean;
+  model: string;
+  auto_execute_mutations: boolean;
+  default_trust_distance: number;
+  api_key_configured: boolean;
+  configured: boolean;
+}
+
 export interface ValidationRequest {
   [key: string]: unknown; // JSON data to validate - safer than any
 }
@@ -100,14 +109,32 @@ export class UnifiedIngestionClient {
   }
 
   /**
-   * Get OpenRouter AI configuration
+   * Get ingestion configuration (without sensitive data)
+   * PROTECTED - Configuration access requires authentication
+   * 
+   * @returns Promise resolving to general ingestion configuration
+   */
+  async getConfig(): Promise<EnhancedApiResponse<IngestionConfigResponse>> {
+    return this.client.get<IngestionConfigResponse>(
+      API_ENDPOINTS.INGESTION_CONFIG,
+      {
+        requiresAuth: true, // Configuration access requires auth
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.STANDARD,
+        cacheable: false // Config should not be cached for security
+      }
+    );
+  }
+
+  /**
+   * Get OpenRouter AI configuration specifically
    * PROTECTED - Configuration access requires authentication
    * 
    * @returns Promise resolving to OpenRouter configuration
    */
-  async getConfig(): Promise<EnhancedApiResponse<OpenRouterConfigResponse>> {
+  async getOpenRouterConfig(): Promise<EnhancedApiResponse<OpenRouterConfigResponse>> {
     return this.client.get<OpenRouterConfigResponse>(
-      API_ENDPOINTS.INGESTION_CONFIG,
+      API_ENDPOINTS.INGESTION_OPENROUTER_CONFIG,
       {
         requiresAuth: true, // Configuration access requires auth
         timeout: API_TIMEOUTS.QUICK,
@@ -132,7 +159,7 @@ export class UnifiedIngestionClient {
     }
 
     return this.client.post<{ success: boolean; message: string }>(
-      API_ENDPOINTS.INGESTION_CONFIG,
+      API_ENDPOINTS.INGESTION_OPENROUTER_CONFIG,
       config,
       {
         requiresAuth: true, // Config changes require auth
@@ -376,6 +403,7 @@ export function createIngestionClient(client?: ApiClient): UnifiedIngestionClien
 // Named exports for backward compatibility and convenience
 export const getStatus = ingestionClient.getStatus.bind(ingestionClient);
 export const getConfig = ingestionClient.getConfig.bind(ingestionClient);
+export const getOpenRouterConfig = ingestionClient.getOpenRouterConfig.bind(ingestionClient);
 export const saveConfig = ingestionClient.saveConfig.bind(ingestionClient);
 export const validateData = ingestionClient.validateData.bind(ingestionClient);
 export const processIngestion = ingestionClient.processIngestion.bind(ingestionClient);
@@ -385,5 +413,17 @@ export const validateOpenRouterConfig = ingestionClient.validateOpenRouterConfig
 export const validateIngestionRequest = ingestionClient.validateIngestionRequest.bind(ingestionClient);
 export const createOpenRouterConfig = ingestionClient.createOpenRouterConfig.bind(ingestionClient);
 export const createIngestionRequest = ingestionClient.createIngestionRequest.bind(ingestionClient);
+
+// Type exports
+export type {
+  IngestionStatus,
+  OpenRouterConfig,
+  OpenRouterConfigResponse,
+  IngestionConfigResponse,
+  ValidationRequest,
+  ValidationResponse,
+  ProcessIngestionRequest,
+  ProcessIngestionResponse
+};
 
 export default ingestionClient;

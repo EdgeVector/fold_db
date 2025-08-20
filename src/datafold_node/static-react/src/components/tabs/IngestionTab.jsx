@@ -33,7 +33,7 @@ function IngestionTab({ onResult }) {
 
   const loadOpenRouterConfig = async () => {
     try {
-      const response = await ingestionClient.getConfig()
+      const response = await ingestionClient.getOpenRouterConfig()
       if (response.success) {
         setOpenrouterApiKey(response.data.api_key || '')
         setOpenrouterModel(response.data.model || 'anthropic/claude-3.5-sonnet')

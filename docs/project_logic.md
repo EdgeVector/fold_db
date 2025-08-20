@@ -15,6 +15,7 @@ This document contains the most up-to-date and condensed information about the p
 | API-CONFIG-001 | API endpoint URLs and configuration must be centralized to eliminate duplication and ensure consistency. | constants/api, api/endpoints | 2025-06-28 19:02:00 | None |
 | API-CACHE-001 | API clients must implement intelligent caching, request deduplication, and timeout management for performance. | api/core/client, api/core/cache | 2025-06-28 19:02:00 | None |
 | API-SEC-001 | Authentication patterns and security validation must be standardized across all API operations. | api/core/client, utils/authenticationWrapper | 2025-06-28 19:02:00 | None |
+| INGESTION-001 | Large file ingestion must use streaming architecture with configurable batch processing to handle files of any size without memory constraints. | ingestion/core, ingestion/large_file | 2025-01-27 15:30:00 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management
@@ -156,6 +157,30 @@ This document contains the most up-to-date and condensed information about the p
   - Core client integrates with authentication context
   - Security validation performed before request transmission
   - Authentication errors handled consistently across all operations
+
+### INGESTION-001: Large File Ingestion Architecture
+- **Description**: Mandates streaming architecture with batch processing for handling large files efficiently
+- **Rationale**: Enables processing of files of any size without memory constraints while maintaining performance and reliability
+- **Architecture Rules**:
+  - All large file ingestion must use streaming parsers to avoid loading entire files into memory
+  - Data must be processed in configurable batch sizes with memory limits
+  - Progress tracking and checkpointing must be implemented for resume capability
+  - Multiple file formats (JSON, CSV, NDJSON) must be supported
+- **Processing Rules**:
+  - Files must be validated before processing begins
+  - Schema analysis must be performed on initial batches
+  - Batch processing must be configurable (default: 1000 records)
+  - Error handling must allow partial success with detailed reporting
+- **Implementation Notes**:
+  - Use streaming parsers (serde_json::StreamDeserializer, csv::Reader)
+  - Implement batch buffers with configurable memory limits
+  - Create progress tracking with persistent checkpoints
+  - Support pause/resume/cancel operations for long-running jobs
+- **Performance Requirements**:
+  - Memory usage must remain constant regardless of file size
+  - Processing rate should scale with available CPU cores
+  - Database operations must use batch operations for efficiency
+  - Temporary files must be managed securely and cleaned up automatically
 
 ### Migration and Breaking Changes (API-STD-1)
 - **Description**: Documents the comprehensive migration from direct fetch() usage to unified API clients
