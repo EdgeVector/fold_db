@@ -50,6 +50,7 @@ fold_node/data/schema_states/
 *.sled
 
 # Test data directories
+/test_db/
 /test_data/
 /fold_node/test_data/
 /fold_node/src/datafold_node/static-react/data/

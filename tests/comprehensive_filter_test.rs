@@ -2,12 +2,12 @@
 //!
 //! This test comprehensively verifies the filter implementation for both range and single fields,
 //! testing all filter types and edge cases.
+//!
+//! Updated to use mutation completion tracking to eliminate race conditions.
 
 use log::info;
 use serde_json::json;
 use std::sync::Arc;
-use std::time::Duration;
-use std::thread;
 use datafold::{
     db_operations::DbOperations,
     fold_db_core::{
@@ -60,7 +60,7 @@ impl ComprehensiveFilterTestFixture {
         }
     }
 
-    fn create_comprehensive_test_schema(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn create_comprehensive_test_schema(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Create a range schema for testing range field filtering
         let mut range_schema = Schema::new_range(
             "TestRangeSchema".to_string(),
@@ -104,7 +104,7 @@ impl ComprehensiveFilterTestFixture {
         Ok(())
     }
 
-    fn insert_range_test_data(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn insert_range_test_data(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let test_users = vec![
             ("user_001", json!({"name": "Alice Johnson", "role": "admin", "status": "active"})),
             ("user_002", json!({"name": "Bob Smith", "role": "user", "status": "inactive"})),
@@ -124,16 +124,22 @@ impl ComprehensiveFilterTestFixture {
                 pub_key: "test_user".to_string(),
                 trust_distance: 0,
                 mutation_type: MutationType::Create,
+                synchronous: None,
             };
 
-            self.fold_db.write_schema(mutation)?;
-            info!("✅ Inserted range data for user: {}", user_id);
+            // Write mutation and get mutation ID
+            let mutation_id = self.fold_db.write_schema(mutation)?;
+            info!("📝 Written mutation {} for user: {}", mutation_id, user_id);
+            
+            // Wait for mutation completion before proceeding
+            self.fold_db.wait_for_mutation(&mutation_id).await?;
+            info!("✅ Mutation {} completed for user: {}", mutation_id, user_id);
         }
 
         Ok(())
     }
 
-    fn insert_single_test_data(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn insert_single_test_data(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Insert single field data
         let global_config_mutation = Mutation {
             schema_name: "TestSingleSchema".to_string(),
@@ -143,6 +149,7 @@ impl ComprehensiveFilterTestFixture {
             pub_key: "test_user".to_string(),
             trust_distance: 0,
             mutation_type: MutationType::Create,
+            synchronous: None,
         };
 
         let system_settings_mutation = Mutation {
@@ -153,16 +160,26 @@ impl ComprehensiveFilterTestFixture {
             pub_key: "test_user".to_string(),
             trust_distance: 0,
             mutation_type: MutationType::Create,
+            synchronous: None,
         };
 
-        self.fold_db.write_schema(global_config_mutation)?;
-        self.fold_db.write_schema(system_settings_mutation)?;
+        // Write global config mutation and wait for completion
+        let mutation_id_1 = self.fold_db.write_schema(global_config_mutation)?;
+        info!("📝 Written global config mutation: {}", mutation_id_1);
+        self.fold_db.wait_for_mutation(&mutation_id_1).await?;
+        info!("✅ Global config mutation {} completed", mutation_id_1);
+
+        // Write system settings mutation and wait for completion
+        let mutation_id_2 = self.fold_db.write_schema(system_settings_mutation)?;
+        info!("📝 Written system settings mutation: {}", mutation_id_2);
+        self.fold_db.wait_for_mutation(&mutation_id_2).await?;
+        info!("✅ System settings mutation {} completed", mutation_id_2);
 
         info!("✅ Inserted single field data");
         Ok(())
     }
 
-    fn test_range_field_filters(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_range_field_filters(&self) -> Result<(), Box<dyn std::error::Error>> {
         info!("🧪 Testing Range Field Filters");
 
         // Test 1: Exact key match filter
@@ -216,7 +233,7 @@ impl ComprehensiveFilterTestFixture {
         Ok(())
     }
 
-    fn test_single_field_queries(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_single_field_queries(&self) -> Result<(), Box<dyn std::error::Error>> {
         info!("🧪 Testing Single Field Queries");
 
         // Single fields don't use range filters - they return the entire field value
@@ -238,7 +255,7 @@ impl ComprehensiveFilterTestFixture {
         Ok(())
     }
 
-    fn test_filter_edge_cases(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_filter_edge_cases(&self) -> Result<(), Box<dyn std::error::Error>> {
         info!("🧪 Testing Filter Edge Cases");
 
         // Test 1: Non-existent key
@@ -281,37 +298,39 @@ impl ComprehensiveFilterTestFixture {
     }
 }
 
-#[test]
-fn test_comprehensive_filter_functionality() {
+#[tokio::test]
+async fn test_comprehensive_filter_functionality() {
     env_logger::init();
     info!("🧪 COMPREHENSIVE FILTER TEST STARTED");
     info!("   Testing complete filter implementation for both range and single fields");
+    info!("   Using mutation completion tracking to eliminate race conditions");
 
     let mut fixture = ComprehensiveFilterTestFixture::new();
 
     // Setup: Create schemas and insert test data
     info!("📋 Setting up test environment...");
-    fixture.create_comprehensive_test_schema()
+    fixture.create_comprehensive_test_schema().await
         .expect("Failed to create test schemas");
 
-    fixture.insert_range_test_data()
+    fixture.insert_range_test_data().await
         .expect("Failed to insert range test data");
 
-    fixture.insert_single_test_data()
+    fixture.insert_single_test_data().await
         .expect("Failed to insert single test data");
 
-    // Test Range Field Filtering
-    fixture.test_range_field_filters()
+    // Test Range Field Filtering (all mutations are now complete before queries)
+    fixture.test_range_field_filters().await
         .expect("Range field filter tests failed");
 
     // Test Single Field Queries
-    fixture.test_single_field_queries()
+    fixture.test_single_field_queries().await
         .expect("Single field query tests failed");
 
     // Test Edge Cases
-    fixture.test_filter_edge_cases()
+    fixture.test_filter_edge_cases().await
         .expect("Filter edge case tests failed");
 
     info!("✅ COMPREHENSIVE FILTER TEST COMPLETED SUCCESSFULLY");
     info!("   All filter functionality verified for both range and single fields");
+    info!("   Race conditions eliminated through mutation completion tracking");
 }

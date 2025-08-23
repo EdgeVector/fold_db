@@ -52,6 +52,7 @@ impl DataFoldNode {
                     pub_key: String::new(),
                     trust_distance: 0,
                     mutation_type,
+                    synchronous: None,
                 };
                 self.mutate(mutation)?;
                 Ok(Value::Null)
