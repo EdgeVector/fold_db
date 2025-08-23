@@ -18,6 +18,9 @@ pub mod orchestration;
 pub mod shared;
 pub mod transform_manager;
 
+// Core components
+pub mod mutation_completion_handler;
+
 // Re-export key components for backwards compatibility
 pub use managers::AtomManager; // FieldManager removed (was dead code), CollectionManager removed - collections no longer supported
 pub use services::field_retrieval::service::FieldRetrievalService;
@@ -25,6 +28,9 @@ pub use infrastructure::{MessageBus, EventMonitor};
 pub use orchestration::TransformOrchestrator;
 pub use transform_manager::TransformManager;
 pub use shared::*;
+
+// Re-export core components
+pub use mutation_completion_handler::{MutationCompletionHandler, MutationCompletionError, MutationCompletionResult, MutationCompletionDiagnostics, DEFAULT_COMPLETION_TIMEOUT};
 
 // Import infrastructure components that are used internally
 use infrastructure::message_bus::{
@@ -83,6 +89,8 @@ pub struct FoldDB {
     pub(crate) message_bus: Arc<MessageBus>,
     /// Event monitor for system-wide observability
     pub(crate) event_monitor: Arc<infrastructure::event_monitor::EventMonitor>,
+    /// Mutation completion handler for tracking async mutation completion
+    pub(crate) completion_handler: Arc<MutationCompletionHandler>,
 }
 
 impl FoldDB {
@@ -224,10 +232,15 @@ impl FoldDB {
         let event_monitor = Arc::new(infrastructure::event_monitor::EventMonitor::new(&message_bus));
         info!("Started EventMonitor for system-wide event tracking");
 
+        // Create MutationCompletionHandler for tracking async mutation completion
+        let completion_handler = Arc::new(MutationCompletionHandler::new(Arc::clone(&message_bus)));
+        info!("Created MutationCompletionHandler for mutation completion tracking");
+
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
         // - TransformOrchestrator: Automatic transform triggering based on field changes
+        // - MutationCompletionHandler: Tracks async mutation completion
 
         Ok(Self {
             atom_manager,
@@ -239,6 +252,7 @@ impl FoldDB {
             permission_wrapper: PermissionWrapper::new(),
             message_bus,
             event_monitor,
+            completion_handler,
         })
     }
 
@@ -326,6 +340,27 @@ impl FoldDB {
     /// Get the schema manager for testing schema functionality
     pub fn schema_manager(&self) -> Arc<SchemaCore> {
         Arc::clone(&self.schema_manager)
+    }
+
+    /// Provides access to the mutation completion handler for tracking async mutation completion.
+    ///
+    /// This method returns a shared reference to the MutationCompletionHandler, allowing other
+    /// parts of the system to register mutations for completion tracking and wait for their completion.
+    ///
+    /// # Returns
+    ///
+    /// A shared reference to the MutationCompletionHandler wrapped in Arc
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use datafold::fold_db_core::FoldDB;
+    /// # let mut db = FoldDB::new("test_db").unwrap();
+    /// let completion_handler = db.get_completion_handler();
+    /// // Use the completion handler to track mutations
+    /// ```
+    pub fn get_completion_handler(&self) -> Arc<MutationCompletionHandler> {
+        Arc::clone(&self.completion_handler)
     }
 
     /// Query a Range schema and return grouped results by range_key
@@ -443,15 +478,18 @@ impl FoldDB {
     }
 
     /// Write schema operation - main orchestration method for mutations
-    pub fn write_schema(&mut self, mutation: Mutation) -> Result<(), SchemaError> {
+    pub fn write_schema(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
         let start_time = Instant::now();
         let fields_count = mutation.fields_and_values.len();
         let operation_type = format!("{:?}", mutation.mutation_type);
         let schema_name = mutation.schema_name.clone();
         
+        // Generate unique mutation ID
+        let mutation_id = uuid::Uuid::new_v4().to_string();
+        
         log_feature!(LogFeature::Mutation, info,
-            "Starting mutation execution for schema: {}",
-            mutation.schema_name
+            "Starting mutation execution for schema: {} with ID: {}",
+            mutation.schema_name, mutation_id
         );
         log_feature!(LogFeature::Mutation, info, "Mutation type: {:?}", mutation.mutation_type);
         log_feature!(LogFeature::Mutation, info,
@@ -462,6 +500,9 @@ impl FoldDB {
         if mutation.fields_and_values.is_empty() {
             return Err(SchemaError::InvalidData("No fields to write".to_string()));
         }
+
+        // Register mutation with completion handler for tracking
+        log_feature!(LogFeature::Mutation, info, "Generated mutation ID {} for completion tracking", mutation_id);
 
         // 1. Prepare mutation and validate schema
         let (schema, processed_mutation, mutation_hash) = self.prepare_mutation_and_schema(mutation)?;
@@ -483,7 +524,42 @@ impl FoldDB {
             warn!("Failed to publish MutationExecuted event: {}", e);
         }
 
-        result
+        // 4. Signal completion for mutation tracking AFTER database operations are complete
+        // This ensures wait_for_mutation doesn't return until atoms are persisted
+        if processed_mutation.synchronous.unwrap_or(false) {
+            // Synchronous mode: signal completion immediately
+            log_feature!(LogFeature::Mutation, info, "Synchronous mode: signaling completion immediately for mutation ID {}", mutation_id);
+            if let Err(e) = self.completion_handler.signal_completion_sync(&mutation_id) {
+                warn!("Failed to signal synchronous completion for mutation {}: {}", mutation_id, e);
+            }
+        } else {
+            // Asynchronous mode: spawn task to signal completion AFTER database persistence
+            let completion_handler = Arc::clone(&self.completion_handler);
+            let mutation_id_clone = mutation_id.clone();
+            let db_ops = Arc::clone(&self.db_ops);
+
+            tokio::spawn(async move {
+                // Wait a bit to ensure database operations are fully persisted
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                // Flush the database to ensure all writes are persisted
+                if let Err(e) = db_ops.db().flush() {
+                    log_feature!(LogFeature::Mutation, warn, "Failed to flush database before signaling completion: {}", e);
+                } else {
+                    log_feature!(LogFeature::Mutation, info, "Database flushed before signaling mutation completion");
+                }
+
+                // Now signal completion
+                completion_handler.signal_completion(&mutation_id_clone).await;
+                log_feature!(LogFeature::Mutation, info, "✅ Mutation {} completion signaled after database persistence", mutation_id_clone);
+            });
+        }
+
+        // Return the mutation ID regardless of result
+        match result {
+            Ok(()) => Ok(mutation_id),
+            Err(e) => Err(e),
+        }
     }
 
     /// Prepare mutation and schema - extract and validate components
@@ -610,5 +686,136 @@ impl FoldDB {
     pub fn process_transform_queue(&self) {
         // Transform orchestrator processing is handled automatically by events
         // self.transform_orchestrator.process_pending_transforms();
+    }
+
+    /// Waits for a specific mutation to complete processing.
+    ///
+    /// This method allows queries and other operations to wait for specific mutations to finish
+    /// processing before executing, solving the race condition where queries try to access data
+    /// before mutations finish processing. This is the core functionality that eliminates
+    /// "Atom not found" errors.
+    ///
+    /// # Arguments
+    ///
+    /// * `mutation_id` - The unique identifier of the mutation to wait for completion
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the mutation completed successfully within the timeout period,
+    /// or a `SchemaError` if the operation failed.
+    ///
+    /// # Timeout Behavior
+    ///
+    /// Uses the default 5-second timeout as defined in `MutationCompletionHandler`.
+    /// If the mutation does not complete within this timeframe, a timeout error is returned.
+    ///
+    /// # Error Handling
+    ///
+    /// - **Timeout**: Returns `SchemaError::InvalidData("Mutation failed")` when the mutation
+    ///   does not complete within the 5-second timeout
+    /// - **Invalid ID**: Returns `SchemaError::InvalidData` with details when the mutation ID
+    ///   is not found or was never registered
+    /// - **System Error**: Returns appropriate `SchemaError` for lock failures or channel errors
+    ///
+    /// # Usage Examples
+    ///
+    /// ## Basic Usage
+    /// ```no_run
+    /// use datafold::fold_db_core::FoldDB;
+    /// use datafold::schema::types::{Mutation, MutationType};
+    /// use std::collections::HashMap;
+    /// use serde_json::Value;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut db = FoldDB::new("test_db")?;
+    ///
+    /// // Execute a mutation and get the mutation ID
+    /// let fields = HashMap::new();
+    /// let mutation = Mutation::new(
+    ///     "schema_name".to_string(),
+    ///     fields,
+    ///     "pub_key".to_string(),
+    ///     0,
+    ///     MutationType::Update
+    /// );
+    /// let mutation_id = db.write_schema(mutation)?;
+    ///
+    /// // Wait for the mutation to complete before querying
+    /// db.wait_for_mutation(&mutation_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Error Handling Example
+    /// ```no_run
+    /// use datafold::fold_db_core::FoldDB;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let db = FoldDB::new("test_db")?;
+    ///
+    /// match db.wait_for_mutation("invalid-mutation-id").await {
+    ///     Ok(()) => println!("Mutation completed successfully"),
+    ///     Err(e) => println!("Mutation failed or timed out: {}", e),
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Implementation Notes
+    ///
+    /// This method integrates with the `MutationCompletionHandler` to provide efficient
+    /// completion tracking. The mutation must be registered with the completion handler
+    /// (typically done by `write_schema`) before calling this method.
+    ///
+    /// The method is async and non-blocking, allowing other operations to continue while
+    /// waiting for mutation completion.
+    pub async fn wait_for_mutation(&self, mutation_id: &str) -> Result<(), SchemaError> {
+        log_feature!(LogFeature::Mutation, info,
+            "Waiting for completion of mutation: {}", mutation_id);
+        
+        // Use the completion handler to wait for the mutation with default timeout
+        match self.completion_handler.wait_for_completion(mutation_id).await {
+            Ok(()) => {
+                log_feature!(LogFeature::Mutation, info,
+                    "Mutation {} completed successfully", mutation_id);
+                Ok(())
+            }
+            Err(mutation_error) => {
+                // Convert MutationCompletionError to SchemaError with appropriate error messages
+                let schema_error = match mutation_error {
+                    MutationCompletionError::Timeout(id, duration) => {
+                        log_feature!(LogFeature::Mutation, warn,
+                            "Mutation {} timed out after {:?}", id, duration);
+                        SchemaError::InvalidData("Mutation failed".to_string())
+                    }
+                    MutationCompletionError::MutationNotFound(id) => {
+                        log_feature!(LogFeature::Mutation, warn,
+                            "Mutation {} not found in completion tracking system", id);
+                        SchemaError::InvalidData(format!(
+                            "Mutation '{}' not found in tracking system. The mutation may have already completed, never been registered, or the ID is invalid.",
+                            id
+                        ))
+                    }
+                    MutationCompletionError::SignalFailed(id, reason) => {
+                        log_feature!(LogFeature::Mutation, error,
+                            "Failed to receive completion signal for mutation {}: {}", id, reason);
+                        SchemaError::InvalidData(format!(
+                            "Mutation '{}' completion signal failed: {}. This may indicate a system error or that the mutation process was interrupted.",
+                            id, reason
+                        ))
+                    }
+                    MutationCompletionError::LockFailed(reason) => {
+                        log_feature!(LogFeature::Mutation, error,
+                            "Failed to acquire lock for mutation completion tracking: {}", reason);
+                        SchemaError::InvalidData(format!(
+                            "Failed to access mutation tracking system: {}. This may indicate high system load or a concurrency issue.",
+                            reason
+                        ))
+                    }
+                };
+                
+                Err(schema_error)
+            }
+        }
     }
 }

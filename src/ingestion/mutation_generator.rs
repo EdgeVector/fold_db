@@ -84,6 +84,7 @@ impl MutationGenerator {
                 pub_key,
                 trust_distance,
                 mutation_type: MutationType::Create,
+                synchronous: None,
             };
             mutations.push(mutation);
             log_feature!(
