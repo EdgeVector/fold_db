@@ -86,13 +86,14 @@ impl<'de> Deserialize<'de> for MutationType {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mutation {
     pub schema_name: String,
     pub fields_and_values: HashMap<String, Value>,
     pub pub_key: String,
     pub trust_distance: u32,
     pub mutation_type: MutationType,
+    pub synchronous: Option<bool>,
 }
 
 impl Mutation {
@@ -110,6 +111,7 @@ impl Mutation {
             pub_key,
             trust_distance,
             mutation_type,
+            synchronous: None,
         }
     }
 
@@ -194,6 +196,7 @@ impl Mutation {
                 pub_key: self.pub_key.clone(),
                 trust_distance: self.trust_distance,
                 mutation_type: self.mutation_type.clone(),
+                synchronous: self.synchronous,
             })
         } else {
             Err(crate::schema::types::SchemaError::InvalidData(format!(
@@ -319,6 +322,7 @@ mod tests {
             pub_key: "test".to_string(),
             trust_distance: 0,
             mutation_type: MutationType::Create,
+            synchronous: None,
         };
 
         let result = mutation.to_range_schema_mutation(&schema).unwrap();
@@ -356,6 +360,7 @@ mod tests {
             pub_key: "test".to_string(),
             trust_distance: 0,
             mutation_type: MutationType::Create,
+            synchronous: None,
         };
 
         let result = mutation.to_range_schema_mutation(&schema);
@@ -395,6 +400,7 @@ mod tests {
             pub_key: "test".to_string(),
             trust_distance: 0,
             mutation_type: MutationType::Create,
+            synchronous: None,
         };
 
         let result = mutation.to_range_schema_mutation(&schema);
@@ -433,6 +439,7 @@ mod tests {
             pub_key: "test".to_string(),
             trust_distance: 0,
             mutation_type: MutationType::Create,
+            synchronous: None,
         };
 
         let result = mutation.to_range_schema_mutation(&schema);

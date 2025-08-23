@@ -191,6 +191,7 @@ impl StandardInitializers {
             fields_and_values: ConfigFactory::standard_mutation_fields(),
             pub_key: "test_key".to_string(),
             trust_distance: 0,
+            synchronous: None,
         }
     }
 

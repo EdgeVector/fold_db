@@ -237,6 +237,7 @@ async fn build_internal_mutation(
                     .unwrap_or_else(|| "unknown".to_string()),
                 trust_distance: 0,
                 mutation_type,
+                synchronous: None,
             })
         }
         _ => Err(HttpResponse::BadRequest().json(json!({"error": "Expected a mutation operation"}))),
