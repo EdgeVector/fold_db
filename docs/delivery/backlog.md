@@ -12,6 +12,7 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 | UTC-1 | Developer | As a developer, I want comprehensive test coverage so I can make changes confidently without introducing regressions | Proposed | Unit tests added for all components, integration tests for user workflows, custom hook testing completed, Redux testing implemented, 80% code coverage achieved, CI integration configured. [View Details](./UTC-1/prd.md) |
 | RSM-1 | Developer | As a developer, I want to implement Redux state management to resolve authentication state synchronization issues in the complex database dashboard | Proposed | Redux Toolkit implemented with authentication slice, proper state synchronization across all components, AUTH-003 state propagation issue resolved, all tabs and UI components reflect authentication state correctly, comprehensive testing and DevTools integration completed. [View Details](./RSM-1/prd.md) |
 | PKM-1 | Developer | As a developer, I want to implement React UI components for Ed25519 key management with client-side cryptography and existing backend integration | Done | React UI components implemented for key generation, signing, and data storage/retrieval with client-side Ed25519 operations, integrated with existing security routes, zero server-side private key exposure verified, comprehensive testing completed. [View Details](./PKM-1/prd.md) |
+| EDA-1 | Developer | As a developer, I want event-driven mutation completion tracking to eliminate "Atom not found" errors in query operations | Proposed | Event-driven mutation completion handler implemented, mutation completion tracking added to FoldDB, proper async/await patterns for mutation-query sequences, comprehensive tests verify no race condition errors, system remains stable under concurrent load. [View Details](./EDA-1/prd.md) |
 
 ## PBI History
 
@@ -24,6 +25,7 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 | 20250630-103830 | UCR-1 | create_pbi | Created PBI for component complexity reduction and UI maintainability | User |
 | 20250623-093500 | RSM-1 | create_pbi | Created PBI for Redux state management implementation to resolve AUTH-003 authentication state synchronization issues | User |
 | 20250620-164300 | PKM-1 | create_pbi | Created PBI for React UI Ed25519 key management integration | User |
+| 20250823-161340 | EDA-1 | create_pbi | Created PBI for event-driven mutation completion tracking to eliminate Atom not found errors | User |
 
 
 
