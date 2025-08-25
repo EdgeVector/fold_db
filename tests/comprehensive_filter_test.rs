@@ -15,7 +15,7 @@ use datafold::{
         managers::atom::AtomManager,
         infrastructure::message_bus::{
             MessageBus,
-            request_events::{FieldValueSetRequest, FieldValueSetResponse},
+            request_events::FieldValueSetRequest,
         }
     },
     schema::{
@@ -28,16 +28,16 @@ use datafold::{
         },
         field_factory::FieldFactory,
     },
-    atom::Atom,
+
 };
-use tempfile::TempDir;
+
 
 struct ComprehensiveFilterTestFixture {
     fold_db: FoldDB,
-    db_ops: Arc<DbOperations>,
-    message_bus: Arc<MessageBus>,
-    atom_manager: AtomManager,
-    temp_dir: tempfile::TempDir,
+    _db_ops: Arc<DbOperations>,
+    _message_bus: Arc<MessageBus>,
+    _atom_manager: AtomManager,
+    _temp_dir: tempfile::TempDir,
 }
 
 impl ComprehensiveFilterTestFixture {
@@ -53,10 +53,10 @@ impl ComprehensiveFilterTestFixture {
 
         Self {
             fold_db,
-            db_ops,
-            message_bus,
-            atom_manager,
-            temp_dir,
+            _db_ops: db_ops,
+            _message_bus: message_bus,
+            _atom_manager: atom_manager,
+            _temp_dir: temp_dir,
         }
     }
 

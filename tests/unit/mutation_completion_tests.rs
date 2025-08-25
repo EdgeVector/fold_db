@@ -7,10 +7,10 @@
 use datafold::fold_db_core::FoldDB;
 use datafold::schema::types::{Mutation, MutationType, SchemaError};
 use datafold::schema::{Schema, types::field::FieldVariant};
-use datafold::schema::types::field::{SingleField, Field};
+use datafold::schema::types::field::SingleField;
 use datafold::permissions::types::policy::PermissionsPolicy;
 use datafold::fees::types::config::FieldPaymentConfig;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

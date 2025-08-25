@@ -282,6 +282,10 @@ fn determine_field_type(manager: &AtomManager, schema_name: &str, field_name: &s
                     info!("🔍 FIELD TYPE: {} in schema {} is Single", field_name, schema_name);
                     "Single".to_string()
                 }
+                Some(crate::schema::types::field::FieldVariant::HashRange(_)) => {
+                    info!("🔍 FIELD TYPE: {} in schema {} is HashRange", field_name, schema_name);
+                    "HashRange".to_string()
+                }
                 None => {
                     warn!("⚠️ FIELD TYPE: Field {} not found in schema {}, defaulting to Single", field_name, schema_name);
                     "Single".to_string()

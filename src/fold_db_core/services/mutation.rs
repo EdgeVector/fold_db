@@ -62,6 +62,11 @@ impl MutationService {
             FieldVariant::Range(range_field) => {
                 self.update_range_field(schema, field_name, range_field, value, mutation_hash)
             }
+            FieldVariant::HashRange(_hash_range_field) => {
+                Err(SchemaError::InvalidData(
+                    "HashRange field updates not yet implemented".to_string()
+                ))
+            }
         }
     }
 
@@ -211,6 +216,13 @@ impl MutationService {
                 }
                 Ok(())
             }
+            FieldVariant::HashRange(_) => {
+                // Validate hash-range field value format
+                if !value.is_object() {
+                    return Err(SchemaError::InvalidData("HashRange field value must be an object".to_string()));
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -261,6 +273,12 @@ pub fn validate_range_schema_mutation_format(
                 FieldVariant::Single(_) => {
                     return Err(SchemaError::InvalidData(format!(
                         "Range schema '{}' contains Single field '{}', but all fields must be RangeFields",
+                        schema.name, field_name
+                    )));
+                }
+                FieldVariant::HashRange(_) => {
+                    return Err(SchemaError::InvalidData(format!(
+                        "Range schema '{}' contains HashRange field '{}', but all fields must be RangeFields",
                         schema.name, field_name
                     )));
                 }

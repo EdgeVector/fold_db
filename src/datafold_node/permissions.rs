@@ -108,8 +108,8 @@ impl DataFoldNode {
 
         // Check schema state - only approved schemas are accessible
         match db.schema_manager.get_schema_state(schema_name) {
-            Some(crate::schema::core::SchemaState::Approved) => Ok(true),
-            Some(crate::schema::core::SchemaState::Available) => {
+            Some(crate::schema::SchemaState::Approved) => Ok(true),
+            Some(crate::schema::SchemaState::Available) => {
                 log_feature!(
                     LogFeature::Permissions,
                     warn,
@@ -118,7 +118,7 @@ impl DataFoldNode {
                 );
                 Ok(false)
             }
-            Some(crate::schema::core::SchemaState::Blocked) => {
+            Some(crate::schema::SchemaState::Blocked) => {
                 log_feature!(LogFeature::Permissions, warn, "Schema '{}' is blocked - access denied", schema_name);
                 Ok(false)
             }
