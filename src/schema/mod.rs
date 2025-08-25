@@ -43,6 +43,12 @@ pub mod schema_types;
 pub mod schema_field_mapping;
 pub mod schema_interpretation;
 
+// New split modules from core.rs
+pub mod schema_operations;
+pub mod schema_state_management;
+pub mod schema_persistence;
+pub mod schema_validation;
+
 // Public re-exports
 pub use core::*;
 pub use field_factory::*;
@@ -55,6 +61,12 @@ pub use molecule_variants::MoleculeVariant;
 pub use schema_types::{SchemaLoadingReport, SchemaSource, SchemaState};
 pub use schema_field_mapping::map_fields;
 pub use schema_interpretation::{interpret_schema, load_schema_from_json, load_schema_from_file};
+
+// Re-export functionality from split modules
+pub use schema_operations::*;
+pub use schema_state_management::*;
+pub use schema_persistence::*;
+pub use schema_validation::*;
 
 /// Public prelude module containing types needed by tests and external code
 pub mod prelude {
