@@ -153,6 +153,7 @@ impl<'a> SchemaValidator<'a> {
                 let field_type = match field_variant {
                     crate::schema::types::field::FieldVariant::Single(_) => "Single",
                     crate::schema::types::field::FieldVariant::Range(_) => "Range", // Should not reach here
+                    crate::schema::types::field::FieldVariant::HashRange(_) => "HashRange", // Should not reach here
                 };
                 return Err(SchemaError::InvalidField(format!(
                     "RangeSchema '{}' has range_key field '{}' that is a {} field, but range_key must be a Range field",
@@ -180,6 +181,14 @@ impl<'a> SchemaValidator<'a> {
                     return Err(SchemaError::InvalidField(format!(
                         "RangeSchema '{}' contains Single field '{}', but ALL fields must be Range fields. \
                         Consider using a regular Schema (not RangeSchema) if you need Single fields, \
+                        or convert '{}' to a Range field to maintain RangeSchema consistency.",
+                        schema.name, field_name, field_name
+                    )));
+                }
+                crate::schema::types::field::FieldVariant::HashRange(_) => {
+                    return Err(SchemaError::InvalidField(format!(
+                        "RangeSchema '{}' contains HashRange field '{}', but ALL fields must be Range fields. \
+                        Consider using a regular Schema (not RangeSchema) if you need HashRange fields, \
                         or convert '{}' to a Range field to maintain RangeSchema consistency.",
                         schema.name, field_name, field_name
                     )));
@@ -237,11 +246,13 @@ impl<'a> SchemaValidator<'a> {
                     match field_def.field_type {
                         FieldType::Single => "Single",
                         FieldType::Range => "Range", // shouldn't reach here
+                        FieldType::HashRange => "HashRange", // shouldn't reach here
                     },
                     field_name,
                     match field_def.field_type {
                         FieldType::Single => "Single",
                         FieldType::Range => "Range",
+                        FieldType::HashRange => "HashRange",
                     },
                     field_name
                 )));

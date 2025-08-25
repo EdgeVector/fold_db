@@ -1,9 +1,9 @@
 use super::{schema_lock_error, validator::SchemaValidator};
-use crate::atom::{Molecule, MoleculeRange};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{
-    Field, FieldVariant, JsonSchemaDefinition, JsonSchemaField, Schema, SchemaError, SingleField,
+    Field, FieldVariant, Schema, SchemaError,
 };
+use crate::schema::{MoleculeVariant, SchemaState, map_fields, interpret_schema, load_schema_from_json, load_schema_from_file};
 use log::{info, error};
 use crate::logging::features::{log_feature, LogFeature};
 use serde::{Deserialize, Serialize};
@@ -13,45 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-/// Report of schema discovery and loading operations
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SchemaLoadingReport {
-    /// All schemas discovered from any source
-    pub discovered_schemas: Vec<String>,
-    /// Schemas currently loaded (approved state)
-    pub loaded_schemas: Vec<String>,
-    /// Schemas that failed to load with error messages
-    pub failed_schemas: Vec<(String, String)>,
-    /// Current state of all known schemas
-    pub schema_states: HashMap<String, SchemaState>,
-    /// Source where each schema was discovered
-    pub loading_sources: HashMap<String, SchemaSource>,
-    /// Timestamp of last discovery operation
-    pub last_updated: chrono::DateTime<chrono::Utc>,
-}
 
-/// Source of a discovered schema
-#[derive(Debug, Serialize, Deserialize)]
-pub enum SchemaSource {
-    /// Schema from available_schemas/ directory
-    AvailableDirectory,
-    /// Schema from data/schemas/ directory
-    DataDirectory,
-    /// Schema from previously saved state
-    Persistence,
-}
-
-/// State of a schema within the system
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum SchemaState {
-    /// Schema discovered from files but not yet approved by user
-    #[default]
-    Available,
-    /// Schema approved by user, can be queried, mutated, field-mapped and transforms run
-    Approved,
-    /// Schema blocked by user, cannot be queried or mutated but field-mapping and transforms still run
-    Blocked,
-}
 
 /// Core schema management system that combines schema interpretation, validation, and management.
 ///
@@ -946,7 +908,7 @@ impl SchemaCore {
 
     /// Maps fields between schemas based on their defined relationships.
     /// Returns a list of Molecules that need to be persisted in FoldDB.
-    pub fn map_fields(&self, schema_name: &str) -> Result<Vec<Molecule>, SchemaError> {
+    pub fn map_fields(&self, schema_name: &str) -> Result<Vec<MoleculeVariant>, SchemaError> {
         info!("🔧 Starting field mapping for schema '{}'", schema_name);
         
         let schemas = self
@@ -988,50 +950,10 @@ impl SchemaCore {
             }
         }
 
-        let mut molecules = Vec::new();
 
-        // For unmapped fields, create a new molecule_uuid and Molecule
-        // Only create new Molecules for fields that truly don't have them (None or empty)
-        for field in schema.fields.values_mut() {
-            let needs_new_molecule = match field.molecule_uuid() {
-                None => true,
-                Some(uuid) => uuid.is_empty(),
-            };
 
-            if needs_new_molecule {
-                let molecule_uuid = Uuid::new_v4().to_string();
-
-                // Create and store the appropriate atom reference type based on field type
-                let key = format!("ref:{}", molecule_uuid);
-                
-                match field {
-                    FieldVariant::Range(_) => {
-                        // For range fields, create MoleculeRange
-                        let molecule_range = MoleculeRange::new(molecule_uuid.clone());
-                        if let Err(e) = self.db_ops.store_item(&key, &molecule_range) {
-                            info!("Failed to persist MoleculeRange '{}': {}", molecule_uuid, e);
-                        } else {
-                            info!("✅ Persisted MoleculeRange: {}", key);
-                        }
-                        // Create a corresponding Molecule for the return list
-                        molecules.push(Molecule::new(Uuid::new_v4().to_string(), "system".to_string()));
-                    }
-                    FieldVariant::Single(_) => {
-                        // For single fields, create Molecule
-                        let molecule = Molecule::new(Uuid::new_v4().to_string(), "system".to_string());
-                        if let Err(e) = self.db_ops.store_item(&key, &molecule) {
-                            info!("Failed to persist Molecule '{}': {}", molecule_uuid, e);
-                        } else {
-                            info!("✅ Persisted Molecule: {}", key);
-                        }
-                        molecules.push(molecule);
-                    }
-                };
-
-                // Set the molecule_uuid in the field - this will be used as the key to find the Molecule
-                field.set_molecule_uuid(molecule_uuid);
-            }
-        }
+        // Use the field mapping module to create molecules for unmapped fields
+        let molecules = map_fields(&self.db_ops, schema)?;
 
         // Persist the updated schema
         self.persist_schema(schema)?;
@@ -1053,84 +975,23 @@ impl SchemaCore {
         Ok(molecules)
     }
 
-    /// Converts a JSON schema field to a FieldVariant.
-    fn convert_field(json_field: JsonSchemaField) -> FieldVariant {
-        let mut single_field = SingleField::new(
-            json_field.permission_policy.into(),
-            json_field.payment_config.into(),
-            json_field.field_mappers,
-        );
-
-        if let Some(molecule_uuid) = json_field.molecule_uuid {
-            single_field.set_molecule_uuid(molecule_uuid);
-        }
-
-        // Add transform if present
-        if let Some(json_transform) = json_field.transform {
-            single_field.set_transform(json_transform.into());
-        }
-
-        // For now, we'll create all fields as Single fields
-        FieldVariant::Single(single_field)
-    }
-
     /// Interprets a JSON schema definition and converts it to a Schema.
     pub fn interpret_schema(
         &self,
-        json_schema: JsonSchemaDefinition,
+        json_schema: crate::schema::types::JsonSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
-        // First validate the JSON schema
-        SchemaValidator::new(self).validate_json_schema(&json_schema)?;
-
-        // Convert fields
-        let mut fields = HashMap::new();
-        for (field_name, json_field) in json_schema.fields {
-            fields.insert(field_name, Self::convert_field(json_field));
-        }
-
-        // Create the schema
-        Ok(Schema {
-            name: json_schema.name,
-            schema_type: json_schema.schema_type,
-            fields,
-            payment_config: json_schema.payment_config,
-            hash: json_schema.hash,
-        })
+        interpret_schema(&SchemaValidator::new(self), json_schema)
     }
 
     /// Interprets a JSON schema from a string and loads it as Available.
     pub fn load_schema_from_json(&self, json_str: &str) -> Result<(), SchemaError> {
-        info!(
-            "Parsing JSON schema from string, length: {}",
-            json_str.len()
-        );
-        let json_schema: JsonSchemaDefinition = serde_json::from_str(json_str)
-            .map_err(|e| SchemaError::InvalidField(format!("Invalid JSON schema: {e}")))?;
-
-        info!(
-            "JSON schema parsed successfully, name: {}, fields: {:?}",
-            json_schema.name,
-            json_schema.fields.keys().collect::<Vec<_>>()
-        );
-        let schema = self.interpret_schema(json_schema)?;
-        info!(
-            "Schema interpreted successfully, name: {}, fields: {:?}",
-            schema.name,
-            schema.fields.keys().collect::<Vec<_>>()
-        );
+        let schema = load_schema_from_json(&SchemaValidator::new(self), json_str)?;
         self.load_schema_internal(schema)
     }
 
     /// Interprets a JSON schema from a file and loads it as Available.
     pub fn load_schema_from_file(&self, path: &str) -> Result<(), SchemaError> {
-        let json_str = std::fs::read_to_string(path)
-            .map_err(|e| SchemaError::InvalidField(format!("Failed to read schema file: {e}")))?;
-
-        info!(
-            "Loading schema from file: {}, content length: {}",
-            path,
-            json_str.len()
-        );
-        self.load_schema_from_json(&json_str)
+        let schema = load_schema_from_file(&SchemaValidator::new(self), path)?;
+        self.load_schema_internal(schema)
     }
 }

@@ -44,7 +44,7 @@ impl SchemaCore {
                     
                     // Check if target schema exists and is approved
                     match self.db_ops.get_schema_state(target_schema_name) {
-                        Ok(Some(crate::schema::core::SchemaState::Approved | crate::schema::core::SchemaState::Blocked)) => {
+                        Ok(Some(crate::schema::SchemaState::Approved | crate::schema::SchemaState::Blocked)) => {
                             info!("✅ Target schema '{}' is approved, registering transform '{}'", target_schema_name, transform_id);
                         }
                         Ok(Some(state)) => {

@@ -47,7 +47,7 @@ use infrastructure::init::{init_orchestrator, init_transform_manager};
 use crate::atom::MoleculeBehavior;
 use crate::db_operations::DbOperations;
 use crate::permissions::PermissionWrapper;
-use crate::schema::core::SchemaState;
+use crate::schema::SchemaState;
 use crate::schema::SchemaCore;
 use crate::schema::{Schema, SchemaError};
 use log::{info, warn};

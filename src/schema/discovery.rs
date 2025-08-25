@@ -1,5 +1,5 @@
 use super::{schema_lock_error, SchemaCore, SchemaState};
-use crate::schema::core::{SchemaLoadingReport, SchemaSource};
+use crate::schema::{SchemaLoadingReport, SchemaSource};
 use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
 use log::info;
 use std::collections::HashMap;

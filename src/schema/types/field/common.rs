@@ -46,6 +46,7 @@ pub trait Field {
 pub enum FieldType {
     Single,
     Range,
+    HashRange,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

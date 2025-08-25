@@ -5,7 +5,7 @@ use super::DataFoldNode;
 
 impl DataFoldNode {
     /// Get comprehensive schema status for UI
-    pub fn get_schema_status(&self) -> FoldDbResult<schema::core::SchemaLoadingReport> {
+    pub fn get_schema_status(&self) -> FoldDbResult<schema::SchemaLoadingReport> {
         let db = self
             .db
             .lock()
@@ -16,7 +16,7 @@ impl DataFoldNode {
     }
 
     /// Refresh schemas from all sources
-    pub fn refresh_schemas(&self) -> FoldDbResult<schema::core::SchemaLoadingReport> {
+    pub fn refresh_schemas(&self) -> FoldDbResult<schema::SchemaLoadingReport> {
         let db = self
             .db
             .lock()
@@ -40,7 +40,7 @@ impl DataFoldNode {
     /// List all schemas with their states
     pub fn list_schemas_with_state(
         &self,
-    ) -> crate::error::FoldDbResult<std::collections::HashMap<String, schema::core::SchemaState>> {
+    ) -> crate::error::FoldDbResult<std::collections::HashMap<String, schema::SchemaState>> {
         let db = self
             .db
             .lock()
@@ -154,13 +154,13 @@ impl DataFoldNode {
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
         let state = db.schema_manager.get_schema_state(schema_name);
-        Ok(matches!(state, Some(schema::core::SchemaState::Approved)))
+        Ok(matches!(state, Some(schema::SchemaState::Approved)))
     }
 
     /// List schemas by specific state
     pub fn list_schemas_by_state(
         &self,
-        state: schema::core::SchemaState,
+        state: schema::SchemaState,
     ) -> crate::error::FoldDbResult<Vec<String>> {
         let db = self
             .db
@@ -190,7 +190,7 @@ impl DataFoldNode {
     }
 
     /// Get the current state of a schema
-    pub fn get_schema_state(&self, schema_name: &str) -> crate::error::FoldDbResult<schema::core::SchemaState> {
+    pub fn get_schema_state(&self, schema_name: &str) -> crate::error::FoldDbResult<schema::SchemaState> {
         let db = self
             .db
             .lock()
@@ -207,9 +207,12 @@ impl DataFoldNode {
             )));
         }
 
-        Ok(db.schema_manager
-            .get_schema_state(schema_name)
-            .unwrap_or(schema::core::SchemaState::Available))
+        let states = db.schema_manager.load_states();
+
+        Ok(states
+            .get(schema_name)
+            .copied()
+            .unwrap_or(schema::SchemaState::Available))
     }
 
     /// Set schema permissions for a node (for testing)

@@ -197,6 +197,11 @@ impl TransformUtils {
             FieldVariant::Single(_) => {
                 info!("🔄 Detected single field, using Molecule resolution");
             }
+            FieldVariant::HashRange(_) => {
+                info!("🔄 Detected HashRange field, using placeholder resolution");
+                // TODO: Implement HashRange field resolution
+                return Err(SchemaError::InvalidField(format!("HashRange field '{}' resolution not yet implemented", field_name)));
+            }
         }
         
         // BRIDGE FIX: Primary dynamic molecule lookup with static fallback

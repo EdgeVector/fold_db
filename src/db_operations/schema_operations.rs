@@ -1,5 +1,5 @@
 use super::core::DbOperations;
-use crate::schema::core::SchemaState;
+use crate::schema::SchemaState;
 use crate::schema::Schema;
 use crate::schema::SchemaError;
 use crate::schema::types::field::{FieldVariant, common::Field};
@@ -124,6 +124,40 @@ impl DbOperations {
                             "schema_name": schema_name,
                             "initialized": false,
                             "range_data": []
+                        });
+                        
+                        // Create atom with placeholder content
+                        let atom = Atom::new(
+                            schema_name.to_string(),
+                            "system".to_string(),
+                            placeholder_content,
+                        );
+                        let atom_uuid = atom.uuid().to_string();
+                        
+                        // Store the atom
+                        self.store_item(&format!("atom:{}", atom_uuid), &atom)
+                            .map_err(|e| SchemaError::InvalidData(format!("Failed to store placeholder atom: {}", e)))?;
+                        
+                        // Create molecule pointing to the atom
+                        let molecule = Molecule::new(atom_uuid, "system".to_string());
+                        let molecule_uuid = molecule.uuid().to_string();
+                        
+                        // Store the molecule
+                        self.store_item(&format!("ref:{}", molecule_uuid), &molecule)
+                            .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
+
+                        // Link the field to the molecule
+                        field.set_molecule_uuid(molecule_uuid);
+                    }
+                }
+                FieldVariant::HashRange(ref mut field) => {
+                    if field.molecule_uuid().is_none() {
+                        // Create placeholder atom and molecule for hash-range field
+                        let placeholder_content = json!({
+                            "field_name": field_name,
+                            "schema_name": schema_name,
+                            "initialized": false,
+                            "hash_range_data": {}
                         });
                         
                         // Create atom with placeholder content

@@ -35,8 +35,13 @@ pub mod duplicate_detection;
 pub mod field_factory;
 pub mod file_operations;
 pub mod hasher;
+pub mod indexing;
 pub mod types;
 pub mod validator;
+pub mod molecule_variants;
+pub mod schema_types;
+pub mod schema_field_mapping;
+pub mod schema_interpretation;
 
 // Public re-exports
 pub use core::*;
@@ -46,6 +51,10 @@ pub use duplicate_detection::SchemaDuplicateDetector;
 pub use file_operations::SchemaFileOperations;
 pub use hasher::SchemaHasher;
 pub use validator::SchemaValidator;
+pub use molecule_variants::MoleculeVariant;
+pub use schema_types::{SchemaLoadingReport, SchemaSource, SchemaState};
+pub use schema_field_mapping::map_fields;
+pub use schema_interpretation::{interpret_schema, load_schema_from_json, load_schema_from_file};
 
 /// Public prelude module containing types needed by tests and external code
 pub mod prelude {
