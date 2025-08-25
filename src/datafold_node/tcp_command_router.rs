@@ -219,9 +219,9 @@ impl TcpServer {
                     })?;
 
                 let state = match state_str {
-                    "available" => crate::schema::core::SchemaState::Available,
-                    "approved" => crate::schema::core::SchemaState::Approved,
-                    "blocked" => crate::schema::core::SchemaState::Blocked,
+                    "available" => crate::schema::SchemaState::Available,
+                    "approved" => crate::schema::SchemaState::Approved,
+                    "blocked" => crate::schema::SchemaState::Blocked,
                     _ => {
                         return Err(crate::error::FoldDbError::Config(format!(
                             "Invalid state: {}. Use: available, approved, or blocked",
@@ -288,9 +288,9 @@ impl TcpServer {
                 let node_guard = node.lock().await;
                 let state = node_guard.get_schema_state(schema_name)?;
                 let state_str = match state {
-                    crate::schema::core::SchemaState::Available => "available",
-                    crate::schema::core::SchemaState::Approved => "approved",
-                    crate::schema::core::SchemaState::Blocked => "blocked",
+                    crate::schema::SchemaState::Available => "available",
+                    crate::schema::SchemaState::Approved => "approved",
+                    crate::schema::SchemaState::Blocked => "blocked",
                 };
                 Ok(serde_json::json!({
                     "schema": schema_name,

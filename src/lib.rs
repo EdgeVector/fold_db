@@ -54,7 +54,7 @@ pub use fold_db_core::FoldDB;
 pub use network::{NetworkConfig, NetworkCore, NetworkError, NetworkResult, PeerId, SchemaService};
 
 // Re-export schema types needed for CLI
-pub use schema::core::SchemaState;
+pub use schema::SchemaState;
 pub use schema::types::operation::Operation;
 pub use schema::types::operations::MutationType;
 pub use schema::Schema;

@@ -132,6 +132,7 @@ impl FieldRetrievalService {
         let supports = match field_def {
             FieldVariant::Single(_) => false,
             FieldVariant::Range(_) => true,
+            FieldVariant::HashRange(_) => true, // HashRange fields support range queries
         };
 
         Ok(supports)

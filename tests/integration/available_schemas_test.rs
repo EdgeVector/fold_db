@@ -1,6 +1,6 @@
 use datafold::db_operations::DbOperations;
 use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
-use datafold::schema::core::{SchemaCore, SchemaState};
+use datafold::schema::{SchemaCore, SchemaState};
 use std::sync::Arc;
 use tempfile::TempDir;
 

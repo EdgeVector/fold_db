@@ -126,9 +126,9 @@ pub async fn list_schemas_by_state(
     log_feature!(LogFeature::Schema, info, "Received request to list schemas by state: {}", state_str);
 
     let schema_state = match state_str.as_str() {
-        "available" => crate::schema::core::SchemaState::Available,
-        "approved" => crate::schema::core::SchemaState::Approved,
-        "blocked" => crate::schema::core::SchemaState::Blocked,
+        "available" => crate::schema::SchemaState::Available,
+        "approved" => crate::schema::SchemaState::Approved,
+        "blocked" => crate::schema::SchemaState::Blocked,
         _ => {
             return HttpResponse::BadRequest().json(json!({
                 "error": "Invalid state. Use: available, approved, or blocked"
@@ -211,9 +211,9 @@ pub async fn get_schema_state(
     match node_guard.get_schema_state(&schema_name) {
         Ok(schema_state) => {
             let state_str = match schema_state {
-                crate::schema::core::SchemaState::Available => "available",
-                crate::schema::core::SchemaState::Approved => "approved",
-                crate::schema::core::SchemaState::Blocked => "blocked",
+                crate::schema::SchemaState::Available => "available",
+                crate::schema::SchemaState::Approved => "approved",
+                crate::schema::SchemaState::Blocked => "blocked",
             };
             HttpResponse::Ok().json(json!({
                 "schema": schema_name,

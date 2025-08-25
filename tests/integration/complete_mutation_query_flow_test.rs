@@ -402,6 +402,9 @@ fn test_complete_range_only_architecture_validation() {
             FieldVariant::Range(_) => {
                 println!("✅ Field '{}' is Range (Range-only architecture compatible)", field_name);
             }
+            FieldVariant::HashRange(_) => {
+                println!("✅ Field '{}' is HashRange (Range-only architecture compatible)", field_name);
+            }
             // Note: Collection variant should not exist after collection removal
         }
     }
