@@ -69,11 +69,76 @@ pub enum TransformKind {
     Declarative { schema: DeclarativeSchemaDefinition },
 }
 
-/// Placeholder for declarative transform schema definition.
-///
-/// Will be fully implemented in DTS-1-2.
+/// Configuration for hash and range key expressions in HashRange schemas.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KeyConfig {
+    /// Hash field expression for the key
+    pub hash_field: String,
+    /// Range field expression for the key
+    pub range_field: String,
+}
+
+/// Definition for a single field within a declarative schema.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct DeclarativeSchemaDefinition {}
+pub struct FieldDefinition {
+    /// Atom UUID field expression (for reference fields)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atom_uuid: Option<String>,
+    /// Field type (inferred from context)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_type: Option<String>,
+}
+
+/// Declarative schema definition used by declarative transforms.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DeclarativeSchemaDefinition {
+    /// Schema name (same as transform name)
+    pub name: String,
+    /// Schema type ("Single" | "HashRange")
+    pub schema_type: crate::schema::types::schema::SchemaType,
+    /// Key configuration (required when schema_type == "HashRange")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<KeyConfig>,
+    /// Field definitions with their mapping expressions
+    pub fields: HashMap<String, FieldDefinition>,
+}
+
+impl DeclarativeSchemaDefinition {
+    /// Validates the declarative schema definition.
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        if let crate::schema::types::schema::SchemaType::HashRange = self.schema_type {
+            let key = self.key.as_ref().ok_or_else(|| {
+                SchemaError::InvalidField("HashRange schema requires key configuration".to_string())
+            })?;
+
+            if key.hash_field.trim().is_empty() || key.range_field.trim().is_empty() {
+                return Err(SchemaError::InvalidField(
+                    "HashRange key fields cannot be empty".to_string(),
+                ));
+            }
+        }
+
+        for (name, field) in &self.fields {
+            if let Some(atom_uuid) = &field.atom_uuid {
+                if atom_uuid.trim().is_empty() {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Field {name} atom_uuid cannot be empty"
+                    )));
+                }
+            }
+
+            if let Some(field_type) = &field.field_type {
+                if field_type.trim().is_empty() {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Field {name} field_type cannot be empty"
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
 
 /// JSON representation of permission policy
 #[derive(Debug, Clone, Serialize, Deserialize)]
