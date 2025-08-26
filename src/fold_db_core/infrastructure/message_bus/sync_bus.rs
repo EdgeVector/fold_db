@@ -26,7 +26,7 @@ impl<T: EventType> Consumer<T> {
     }
 
     /// Get an iterator over received events
-    pub fn iter(&mut self) -> mpsc::Iter<T> {
+    pub fn iter(&mut self) -> mpsc::Iter<'_, T> {
         self.receiver.iter()
     }
 
