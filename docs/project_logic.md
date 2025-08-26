@@ -16,6 +16,7 @@ This document contains the most up-to-date and condensed information about the p
 | API-CACHE-001 | API clients must implement intelligent caching, request deduplication, and timeout management for performance. | api/core/client, api/core/cache | 2025-06-28 19:02:00 | None |
 | API-SEC-001 | Authentication patterns and security validation must be standardized across all API operations. | api/core/client, utils/authenticationWrapper | 2025-06-28 19:02:00 | None |
 | INGESTION-001 | Large file ingestion must use streaming architecture with configurable batch processing to handle files of any size without memory constraints. | ingestion/core, ingestion/large_file | 2025-01-27 15:30:00 | None |
+| TRANSFORM-001 | Transform system must support both procedural and declarative transform types seamlessly while maintaining backward compatibility. | transform/, schema/types, fold_db_core/transform_manager, fold_db_core/orchestration | 2025-01-27 12:00:00 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management
@@ -181,6 +182,35 @@ This document contains the most up-to-date and condensed information about the p
   - Processing rate should scale with available CPU cores
   - Database operations must use batch operations for efficiency
   - Temporary files must be managed securely and cleaned up automatically
+
+### TRANSFORM-001: Declarative Transforms System Architecture
+- **Description**: Extends the transform system to support both procedural and declarative transform types seamlessly
+- **Rationale**: Enables users to define transforms using declarative JSON schema definitions instead of writing procedural DSL code, while maintaining backward compatibility
+- **Architecture Rules**:
+  - TransformKind enum must support both Procedural and Declarative variants
+  - Declarative transforms must use DeclarativeSchemaDefinition with proper validation
+  - Both transform types must coexist in the same system without conflicts
+  - Existing procedural transforms must continue to work unchanged
+- **Data Structure Rules**:
+  - DeclarativeSchemaDefinition must support "Single" and "HashRange" schema types
+  - HashRange schemas must include KeyConfig with hash_field and range_field expressions
+  - Field definitions must support atom UUID mappings and type inference
+  - All structs must have proper serde serialization/deserialization
+- **Integration Rules**:
+  - New data structures must integrate with existing TransformManager and TransformOrchestrator
+  - Both transform types must use the same queue and execution infrastructure
+  - Field-to-transform mappings must work for both transform types
+  - Validation must provide clear error messages for invalid configurations
+- **Implementation Notes**:
+  - Use serde's tag-based serialization for TransformKind variants
+  - Implement validation traits for declarative transform structures
+  - Maintain backward compatibility through proper field defaults
+  - Add comprehensive testing for both transform types
+- **Performance Requirements**:
+  - No unacceptable performance degradation from new functionality
+  - Validation must run efficiently for large schema definitions
+  - Serialization/deserialization must maintain acceptable performance
+  - Integration with existing components must be seamless
 
 ### Migration and Breaking Changes (API-STD-1)
 - **Description**: Documents the comprehensive migration from direct fetch() usage to unified API clients
