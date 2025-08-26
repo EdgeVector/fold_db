@@ -8,7 +8,9 @@ pub mod transform;
 
 pub use errors::SchemaError;
 pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};
-pub use json_schema::{JsonSchemaDefinition, JsonSchemaField};
+pub use json_schema::{
+    DeclarativeSchemaDefinition, FieldDefinition, JsonSchemaDefinition, JsonSchemaField, KeyConfig,
+};
 pub use operation::Operation;
 pub use operations::{Mutation, MutationType, Query};
 pub use schema::{Schema, SchemaType};

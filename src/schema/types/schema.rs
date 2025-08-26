@@ -10,6 +10,8 @@ pub enum SchemaType {
     Single,
     /// Schema that stores data in a key range
     Range { range_key: String },
+    /// Schema partitioned by both hash and range keys
+    HashRange { hash_key: String, range_key: String },
 }
 
 pub fn default_schema_type() -> SchemaType {
@@ -86,7 +88,9 @@ impl Schema {
     /// Returns the range_key if this schema is a Range schema, otherwise None.
     pub fn range_key(&self) -> Option<&str> {
         match &self.schema_type {
-            SchemaType::Range { range_key } => Some(range_key.as_str()),
+            SchemaType::Range { range_key } | SchemaType::HashRange { range_key, .. } => {
+                Some(range_key.as_str())
+            }
             _ => None,
         }
     }

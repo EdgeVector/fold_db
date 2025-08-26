@@ -10,6 +10,7 @@ This document contains the most up-to-date and condensed information about the p
 | SCHEMA-002 | Only approved schemas can be mutated or queried by the user. | query_routes, mutation_tab, query_tab, schema_manager | 2025-06-23 19:17:00 | None |
 | SCHEMA-003 | Transforms can write field values to any schema regardless of state, but cannot modify schema structure. | transform_manager, transform_queue, schema_manager | 2025-06-23 19:23:00 | None |
 | SCHEMA-004 | Available schemas are discovered from JSON files only and are not loaded automatically. | schema/discovery, schema/persistence | 2025-06-24 21:49:43 | None |
+| SCHEMA-005 | HashRange schemas require key config with hash and range expressions; fields need atom UUID or type | schema/types | 2025-08-26 18:26:05 | None |
 | API-CLIENT-001 | All frontend API operations must use specialized unified API clients instead of direct fetch() calls. | api/clients/*, api/core/*, components/tabs/* | 2025-06-28 19:02:00 | None |
 | API-ERROR-001 | API error handling must be standardized across all clients with consistent error types and user messages. | api/core/errors, api/clients/* | 2025-06-28 19:02:00 | None |
 | API-CONFIG-001 | API endpoint URLs and configuration must be centralized to eliminate duplication and ensure consistency. | constants/api, api/endpoints | 2025-06-28 19:02:00 | None |

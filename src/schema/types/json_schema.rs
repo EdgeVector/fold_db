@@ -186,3 +186,68 @@ impl JsonSchemaDefinition {
         Ok(())
     }
 }
+
+/// Key configuration for HashRange schemas
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyConfig {
+    /// Expression defining the hash key field
+    pub hash_field: String,
+    /// Expression defining the range key field
+    pub range_field: String,
+}
+
+/// Definition of an individual field in a declarative schema
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldDefinition {
+    /// Optional atom UUID mapping for the field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub atom_uuid: Option<String>,
+    /// Optional field type specification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_type: Option<String>,
+}
+
+/// Declarative schema definition for transform generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeclarativeSchemaDefinition {
+    /// Name identifying this declarative schema
+    pub name: String,
+    /// Type of schema this definition represents
+    #[serde(default = "crate::schema::types::schema::default_schema_type")]
+    pub schema_type: crate::schema::types::schema::SchemaType,
+    /// Key configuration required for HashRange schemas
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<KeyConfig>,
+    /// Collection of field definitions
+    pub fields: HashMap<String, FieldDefinition>,
+}
+
+impl DeclarativeSchemaDefinition {
+    /// Validate the declarative schema definition
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        use crate::schema::types::schema::SchemaType;
+
+        if let SchemaType::HashRange { .. } = self.schema_type {
+            let key = self.key.as_ref().ok_or_else(|| {
+                SchemaError::InvalidField("HashRange schemas require key configuration".to_string())
+            })?;
+
+            if key.hash_field.is_empty() || key.range_field.is_empty() {
+                return Err(SchemaError::InvalidField(
+                    "KeyConfig fields cannot be empty".to_string(),
+                ));
+            }
+        }
+
+        for (name, field) in &self.fields {
+            if field.atom_uuid.is_none() && field.field_type.is_none() {
+                return Err(SchemaError::InvalidField(format!(
+                    "Field '{}' must have atom_uuid or field_type",
+                    name
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
