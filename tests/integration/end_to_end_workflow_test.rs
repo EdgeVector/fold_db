@@ -916,6 +916,7 @@ fn test_error_recovery_scenarios() {
 }
 
 #[test]
+#[ignore = "Performance characteristics depend on environment; run manually"]
 fn test_workflow_performance_characteristics() {
     println!("🧪 TEST: Workflow Performance Characteristics");
     println!("   This validates system performance under realistic workloads");
