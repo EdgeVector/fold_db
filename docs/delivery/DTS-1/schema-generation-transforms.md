@@ -667,3 +667,353 @@ The Declarative Transforms System provides a powerful way to automatically gener
 This system enables DataFold to automatically create and maintain indexes, computed fields, and derived data structures based on your declarative schema specifications. Your `blogs_by_word` format automatically becomes a working transform that maintains word-based indexes, your `products_by_category` format becomes a category-based product index, and so on.
 
 **The beauty is in the simplicity**: Define your schema structure declaratively, and it automatically becomes a transform that maintains that structure as your data evolves. No user-written procedural DSL, no complex logic - just clean, intuitive schema definitions that work as transforms, seamlessly integrated with the existing queue and orchestration system.
+
+### **1.4 Example: blogs_by_word Input Resolution**
+
+```rust
+// For the expression "blogpost.map().content.split_by_word().map()"
+let operations = vec![
+    IteratorOperation::SelectSchema("blogpost".to_string()),
+    IteratorOperation::Map,
+    IteratorOperation::SelectField("content".to_string()),
+    IteratorOperation::SplitByWord,
+    IteratorOperation::Map,
+];
+
+// This creates:
+// 1. Select blogpost schema data
+// 2. Map over all blogpost entries
+// 3. Extract content field from each entry
+// 4. Split content by words (creates arrays)
+// 5. Map over the split results (fan-out applied)
+
+// Input: {"blogpost": {"entry1": {"content": "Hello world", "publish_date": "2025-01-27"}}}
+// After SelectSchema: {"entry1": {"content": "Hello world", "publish_date": "2025-01-27"}}
+// After Map: {"entry1": {"content": "Hello world", "publish_date": "2025-01-27"}}
+// After SelectField: {"entry1": "Hello world"}
+// After SplitByWord: {"entry1": ["Hello", "world"]}
+// After Map + Fan-out: [{"entry1": "Hello"}, {"entry1": "world"}]
+```
+
+### 2. **Data Generation Using Iterator Stack**
+
+#### **2.1 Declarative Data Generator with Iterator Stack**
+
+The data generator now leverages the iterator stack for powerful, composable data processing:
+
+```rust
+pub struct DeclarativeDataGenerator {
+    input_resolver: DeclarativeInputResolver,
+    iterator_stack: IteratorStack,
+}
+
+impl DeclarativeDataGenerator {
+    pub fn new() -> Self {
+        Self {
+            input_resolver: DeclarativeInputResolver::new(),
+            iterator_stack: IteratorStack::new(),
+        }
+    }
+    
+    pub fn generate_from_schema(
+        &self,
+        schema: &DeclarativeSchemaDefinition,
+        source_data: HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, ExecutionError> {
+        // Resolve all inputs using iterator stack
+        let resolved_inputs = self.input_resolver.resolve_inputs(schema, &source_data)?;
+        
+        // Generate data based on schema type
+        match schema.schema_type.as_str() {
+            "HashRange" => self.generate_hash_range_data(schema, &resolved_inputs),
+            "Single" => self.generate_single_data(schema, &resolved_inputs),
+            _ => Err(ExecutionError::UnsupportedSchemaType(schema.schema_type.clone())),
+        }
+    }
+    
+    fn generate_hash_range_data(
+        &self,
+        schema: &DeclarativeSchemaDefinition,
+        inputs: &ResolvedInputs,
+    ) -> Result<JsonValue, ExecutionError> {
+        let key_config = schema.key.as_ref()
+            .ok_or(ExecutionError::MissingKeyConfiguration)?;
+        
+        // Get hash and range values
+        let hash_data = inputs.data.get("hash_field")
+            .ok_or(ExecutionError::InputNotFound("hash_field".to_string()))?;
+        let range_data = inputs.data.get("range_field")
+            .ok_or(ExecutionError::InputNotFound("range_field".to_string()))?;
+        
+        // Handle fan-out for hash field (e.g., split words)
+        let hash_values = self.extract_values_for_fan_out(hash_data)?;
+        let range_values = self.extract_values_for_fan_out(range_data)?;
+        
+        // Generate entries for each hash/range combination
+        let mut entries = Vec::new();
+        let max_length = hash_values.len().max(range_values.len());
+        
+        for i in 0..max_length {
+            let hash_value = hash_values.get(i).unwrap_or(&JsonValue::Null);
+            let range_value = range_values.get(i).unwrap_or(&JsonValue::Null);
+            
+            let mut entry = HashMap::new();
+            entry.insert("hash_key".to_string(), hash_value.clone());
+            entry.insert("range_key".to_string(), range_value.clone());
+            
+            // Add reference fields
+            for (field_name, field_def) in &schema.fields {
+                if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                    if let Some(field_data) = inputs.data.get(field_name) {
+                        let field_values = self.extract_values_for_fan_out(field_data)?;
+                        let field_value = field_values.get(i).unwrap_or(&JsonValue::Null);
+                        entry.insert(field_name.clone(), field_value.clone());
+                    }
+                }
+            }
+            
+            entries.push(JsonValue::Object(entry));
+        }
+        
+        Ok(JsonValue::Array(entries))
+    }
+    
+    fn generate_single_data(
+        &self,
+        schema: &DeclarativeSchemaDefinition,
+        inputs: &ResolvedInputs,
+    ) -> Result<JsonValue, ExecutionError> {
+        let mut entry = HashMap::new();
+        
+        // Add all field values
+        for (field_name, field_def) in &schema.fields {
+            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                if let Some(field_data) = inputs.data.get(field_name) {
+                    entry.insert(field_name.clone(), field_data.clone());
+                }
+            }
+        }
+        
+        Ok(JsonValue::Object(entry))
+    }
+    
+    fn extract_values_for_fan_out(&self, data: &JsonValue) -> Result<Vec<JsonValue>, ExecutionError> {
+        match data {
+            JsonValue::Array(arr) => Ok(arr.clone()),
+            JsonValue::String(s) => Ok(vec![JsonValue::String(s.clone())]),
+            JsonValue::Number(n) => Ok(vec![JsonValue::Number(n.clone())]),
+            JsonValue::Bool(b) => Ok(vec![JsonValue::Bool(*b)]),
+            JsonValue::Object(obj) => {
+                // For objects, create a single entry
+                Ok(vec![JsonValue::Object(obj.clone())])
+            }
+            JsonValue::Null => Ok(vec![JsonValue::Null]),
+        }
+    }
+}
+```
+
+### 3. **Complete Execution Flow with Iterator Stack**
+
+#### **3.1 Execution Coordinator Integration**
+
+```rust
+impl ExecutionCoordinator {
+    pub fn execute_declarative_transform(
+        &self,
+        transform_id: &str,
+        schema: &DeclarativeSchemaDefinition,
+        source_data: HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, ExecutionError> {
+        info!("🔄 Executing declarative transform: {}", schema.name);
+        
+        // Generate data using iterator stack-based generator
+        let data_generator = DeclarativeDataGenerator::new();
+        let result = data_generator.generate_from_schema(schema, source_data)?;
+        
+        // Store the result to target schema
+        self.store_declarative_result(transform_id, schema, &result)?;
+        
+        info!("✅ Declarative transform '{}' executed successfully", transform_id);
+        Ok(result)
+    }
+    
+    fn store_declarative_result(
+        &self,
+        transform_id: &str,
+        schema: &DeclarativeSchemaDefinition,
+        result: &JsonValue,
+    ) -> Result<(), ExecutionError> {
+        match schema.schema_type.as_str() {
+            "HashRange" => {
+                if let Some(key_config) = &schema.key {
+                    self.store_hash_range_entries(schema.name.as_str(), result)?;
+                }
+            }
+            "Single" => {
+                self.store_single_entry(schema.name.as_str(), result)?;
+            }
+            _ => return Err(ExecutionError::UnsupportedSchemaType(schema.schema_type.clone())),
+        }
+        
+        Ok(())
+    }
+    
+    fn store_hash_range_entries(
+        &self,
+        schema_name: &str,
+        result: &JsonValue,
+    ) -> Result<(), ExecutionError> {
+        if let JsonValue::Array(entries) = result {
+            for entry in entries {
+                if let JsonValue::Object(entry_obj) = entry {
+                    self.store_hash_range_entry(schema_name, entry_obj)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+```
+
+#### **3.2 Example Execution for blogs_by_word with Iterator Stack**
+
+```rust
+// When blogpost.content changes, the system:
+// 1. Detects change and queues declarative transform
+// 2. Resolves inputs using iterator stack:
+
+let source_data = HashMap::from([
+    ("blogpost".to_string(), JsonValue::Object(HashMap::from([
+        ("entry1".to_string(), JsonValue::Object(HashMap::from([
+            ("content".to_string(), JsonValue::String("Hello world example".to_string())),
+            ("publish_date".to_string(), JsonValue::String("2025-01-27".to_string())),
+            ("$atom_uuid".to_string(), JsonValue::String("uuid-123".to_string())),
+            ("author".to_string(), JsonValue::Object(HashMap::from([
+                ("$atom_uuid".to_string(), JsonValue::String("uuid-456".to_string())),
+            ]))),
+        ]))),
+    ]))),
+]);
+
+// 3. Execute iterator stack operations for hash_field: "blogpost.map().content.split_by_word().map()"
+let hash_operations = vec![
+    IteratorOperation::SelectSchema("blogpost".to_string()),
+    IteratorOperation::Map,
+    IteratorOperation::SelectField("content".to_string()),
+    IteratorOperation::SplitByWord,
+    IteratorOperation::Map,
+];
+
+// Result: ["Hello", "world", "example"] (fan-out applied)
+
+// 4. Execute iterator stack operations for range_field: "blogpost.map().publish_date"
+let range_operations = vec![
+    IteratorOperation::SelectSchema("blogpost".to_string()),
+    IteratorOperation::Map,
+    IteratorOperation::SelectField("publish_date".to_string()),
+];
+
+// Result: "2025-01-27"
+
+// 5. Generate HashRange entries using iterator stack results:
+let entries = vec![
+    JsonValue::Object(HashMap::from([
+        ("hash_key".to_string(), JsonValue::String("Hello".to_string())),
+        ("range_key".to_string(), JsonValue::String("2025-01-27".to_string())),
+        ("blog".to_string(), JsonValue::String("uuid-123".to_string())),
+        ("author".to_string(), JsonValue::String("uuid-456".to_string())),
+    ])),
+    JsonValue::Object(HashMap::from([
+        ("hash_key".to_string(), JsonValue::String("world".to_string())),
+        ("range_key".to_string(), JsonValue::String("2025-01-27".to_string())),
+        ("blog".to_string(), JsonValue::String("uuid-123".to_string())),
+        ("author".to_string(), JsonValue::String("uuid-456".to_string())),
+    ])),
+    JsonValue::Object(HashMap::from([
+        ("hash_key".to_string(), JsonValue::String("example".to_string())),
+        ("range_key".to_string(), JsonValue::String("2025-01-27".to_string())),
+        ("blog".to_string(), JsonValue::String("uuid-123".to_string())),
+        ("author".to_string(), JsonValue::String("uuid-456".to_string())),
+    ])),
+];
+
+// 6. Store to blogs_by_word schema
+store_hash_range_entries("blogs_by_word", &JsonValue::Array(entries))?;
+```
+
+### 4. **Performance Optimizations with Iterator Stack**
+
+#### **4.1 Lazy Evaluation and Streaming**
+
+The iterator stack enables lazy evaluation and streaming for large datasets:
+
+```rust
+impl IteratorStack {
+    pub fn execute_operations_streaming(
+        &self,
+        operations: &[IteratorOperation],
+        source_data: &HashMap<String, JsonValue>,
+    ) -> impl Iterator<Item = Result<JsonValue, ExecutionError>> {
+        // Execute operations one at a time, yielding results as they're computed
+        // This enables processing of large datasets without loading everything into memory
+        
+        let mut current_data = source_data.clone();
+        
+        operations.iter().map(move |operation| {
+            current_data = self.apply_operation(&current_data, operation)?;
+            Ok(JsonValue::Object(current_data.clone()))
+        })
+    }
+}
+```
+
+#### **4.2 Caching Iterator Results**
+
+```rust
+impl DeclarativeDataGenerator {
+    fn get_cached_iterator_result(&self, cache_key: &str) -> Option<JsonValue> {
+        // Check cache for previously computed iterator results
+        self.cache.get(cache_key).cloned()
+    }
+    
+    fn cache_iterator_result(&mut self, cache_key: String, result: JsonValue) {
+        // Cache computed iterator results for reuse
+        self.cache.insert(cache_key, result);
+    }
+}
+```
+
+#### **4.3 Incremental Updates with Iterator Stack**
+
+```rust
+impl IncrementalUpdater {
+    pub fn update_only_changed_fields_with_iterator(
+        &self,
+        schema: &DeclarativeSchemaDefinition,
+        changed_fields: &HashSet<String>,
+        source_data: &HashMap<String, JsonValue>,
+    ) -> Result<(), ExecutionError> {
+        // Only regenerate data for fields that actually changed
+        for field in changed_fields {
+            if self.field_affects_declarative_transform(field, schema) {
+                // Use iterator stack to efficiently process only changed data
+                let field_operations = self.get_field_iterator_operations(field, schema)?;
+                let updated_data = self.iterator_stack.execute_operations(&field_operations, source_data)?;
+                
+                self.regenerate_affected_data_with_iterator(schema, field, &updated_data)?;
+            }
+        }
+        Ok(())
+    }
+}
+```
+
+This implementation leverages the existing **Schema Indexing Iterator Stack and Fan-out Model** to provide a powerful, consistent, and well-tested foundation for declarative transform execution. The iterator stack approach offers several advantages:
+
+1. **Consistency**: Uses the same data processing patterns already established in DataFold
+2. **Power**: Provides composable operations like Map, Filter, Sort, Split, etc.
+3. **Performance**: Enables lazy evaluation, streaming, and efficient data processing
+4. **Extensibility**: Easy to add new iterator operations as needed
+5. **Testing**: Leverages existing iterator stack tests and validation
+6. **Maintainability**: Reuses proven, well-tested infrastructure

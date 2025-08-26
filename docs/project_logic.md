@@ -212,6 +212,46 @@ This document contains the most up-to-date and condensed information about the p
   - Serialization/deserialization must maintain acceptable performance
   - Integration with existing components must be seamless
 
+### TRANSFORM-002: Declarative Transform Specification Alignment
+- **Description**: Declarative transforms must use the exact data structures and integration patterns specified in schema-generation-transforms.md, and must leverage existing iterator stack infrastructure
+- **Rationale**: Ensures consistency between documentation and implementation, guarantees seamless integration with existing transform infrastructure, and leverages proven, tested iterator stack components
+- **Specification Rules**:
+  - Data structures must exactly match schema-generation-transforms.md definitions
+  - Integration points must follow the documented queue and orchestration patterns
+  - Transform registration must use the same registry as procedural transforms
+  - Queue integration must use identical QueueItem structures for both transform types
+  - **Iterator stack integration must use existing infrastructure components**
+- **Required Structures**:
+  - JsonTransform with TransformKind enum (Procedural/Declarative variants)
+  - DeclarativeSchemaDefinition with name, schema_type, key, and fields
+  - KeyConfig with hash_field and range_field for HashRange schemas
+  - FieldDefinition with atom_uuid and field_type for reference fields
+- **Integration Requirements**:
+  - Declarative transforms stored in same transform registry as procedural transforms
+  - Same QueueItem structure used for both transform types
+  - TransformOrchestrator processes both types through same execution flow
+  - Field-to-transform mappings created for automatic triggering
+  - Automatic queuing when source schema data changes
+  - **Iterator Stack Integration Requirements**:
+    - Must use existing `IteratorStack` from `src/schema/indexing/iterator_stack.rs`
+    - Must leverage existing `ChainParser` from `src/schema/indexing/chain_parser.rs`
+    - Must integrate with existing `ExecutionEngine` from `src/schema/indexing/execution_engine.rs`
+    - Must use existing field alignment validation from `src/schema/indexing/field_alignment.rs`
+    - Must leverage existing error types from `src/schema/indexing/errors.rs`
+- **Implementation Notes**:
+  - Schema interpreter must parse declarative transforms from JSON schemas
+  - Transform creation code must handle both procedural and declarative types
+  - Transform processing must route to appropriate execution path
+  - Storage and retrieval must support both transform types
+  - Validation must ensure declarative transforms have required fields
+  - Backward compatibility maintained for all existing procedural transforms
+  - **Iterator Stack Implementation Notes**:
+    - Declarative expressions must be parsed into existing `ParsedChain` format
+    - Iterator stacks must be created using `IteratorStack::from_chain()` method
+    - Execution must use `ExecutionEngine::execute_chains()` method
+    - Field alignment validation must use existing validation logic
+    - Performance optimizations must leverage existing iterator stack optimizations
+
 ### Migration and Breaking Changes (API-STD-1)
 - **Description**: Documents the comprehensive migration from direct fetch() usage to unified API clients
 - **Migration Scope**: 86 individual fetch implementations consolidated into 6 specialized clients
