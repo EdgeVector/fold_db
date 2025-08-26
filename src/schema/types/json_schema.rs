@@ -56,6 +56,25 @@ pub struct JsonTransform {
     pub output: String,
 }
 
+/// Represents the type of transform being applied.
+///
+/// Supports both procedural transforms using DSL logic and
+/// placeholder declarative transforms.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TransformKind {
+    /// Transform defined by DSL logic.
+    Procedural { logic: String },
+    /// Transform defined by declarative schema.
+    Declarative { schema: DeclarativeSchemaDefinition },
+}
+
+/// Placeholder for declarative transform schema definition.
+///
+/// Will be fully implemented in DTS-1-2.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct DeclarativeSchemaDefinition {}
+
 /// JSON representation of permission policy
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonPermissionPolicy {
