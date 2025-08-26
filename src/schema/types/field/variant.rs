@@ -16,7 +16,7 @@ pub enum FieldVariant {
     /// Range of values
     Range(RangeField),
     /// Hash-range field for complex indexing
-    HashRange(HashRangeField),
+    HashRange(Box<HashRangeField>),
 }
 
 impl Field for FieldVariant {
@@ -191,13 +191,13 @@ impl<'de> Deserialize<'de> for FieldVariant {
                     serde::de::Error::missing_field("atom_uuid")
                 })?;
 
-                Self::HashRange(HashRangeField {
+                Self::HashRange(Box::new(HashRangeField {
                     inner: helper.inner,
                     hash_field,
                     range_field,
                     atom_uuid,
                     cached_chains: None,
-                })
+                }))
             }
         })
     }

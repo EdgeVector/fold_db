@@ -13,10 +13,7 @@ use datafold::{
     fold_db_core::{
         FoldDB,
         managers::atom::AtomManager,
-        infrastructure::message_bus::{
-            MessageBus,
-            request_events::FieldValueSetRequest,
-        }
+        infrastructure::message_bus::MessageBus
     },
     schema::{
         types::{
