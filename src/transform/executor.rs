@@ -6,6 +6,8 @@
 use super::ast::Value;
 use super::interpreter::Interpreter;
 use super::parser::TransformParser;
+use crate::schema::indexing::chain_parser::{ChainParser, ParsedChain};
+use crate::schema::indexing::errors::IteratorStackError;
 use crate::schema::types::{SchemaError, Transform};
 use log::{info, error};
 use serde_json::Value as JsonValue;
@@ -372,11 +374,22 @@ impl TransformExecutor {
     ) -> Result<JsonValue, SchemaError> {
         info!("🔎 Resolving atom UUID expression: {}", atom_uuid_expr);
 
+        // Try to parse with ChainParser first for complex expressions
+        match Self::parse_atom_uuid_expression(atom_uuid_expr) {
+            Ok(parsed_chain) => {
+                info!("🔗 Using ChainParser for expression '{}' - depth: {}", atom_uuid_expr, parsed_chain.depth);
+                // For now, fall back to simple resolution (execution will be implemented in DTS-1-7C3)
+                return Self::resolve_parsed_chain_simple(&parsed_chain, input_values, field_name);
+            }
+            Err(parse_error) => {
+                info!("⚠️ ChainParser failed for '{}', falling back to simple resolution: {}", atom_uuid_expr, parse_error);
+                // Fall back to simple path resolution for non-chain expressions
+            }
+        }
+
         // Simple path-based resolution for basic cases
-        // More complex parsing will be implemented in DTS-1-7C series
-        
         if atom_uuid_expr.contains('.') {
-            // Handle dotted path expressions like "user.map().name"
+            // Handle dotted path expressions like "user.profile.name"
             let resolved_value = Self::resolve_dotted_path(atom_uuid_expr, input_values)?;
             info!("✅ Resolved dotted path '{}' to: {}", atom_uuid_expr, resolved_value);
             return Ok(resolved_value);
@@ -473,6 +486,130 @@ impl TransformExecutor {
                 JsonValue::Null
             }
         }
+    }
+
+    /// Converts IteratorStackError to SchemaError for consistent error handling.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The IteratorStackError to convert
+    ///
+    /// # Returns
+    ///
+    /// A SchemaError with appropriate message
+    fn convert_iterator_stack_error(error: IteratorStackError) -> SchemaError {
+        match error {
+            IteratorStackError::InvalidChainSyntax { expression, reason } => {
+                SchemaError::InvalidField(format!("Invalid chain syntax in '{}': {}", expression, reason))
+            }
+            IteratorStackError::MaxDepthExceeded { current_depth, max_depth } => {
+                SchemaError::InvalidField(format!("Iterator depth {} exceeds maximum {}", current_depth, max_depth))
+            }
+            IteratorStackError::FieldAlignmentError { field, reason } => {
+                SchemaError::InvalidField(format!("Field alignment error in '{}': {}", field, reason))
+            }
+            IteratorStackError::ExecutionError { message } => {
+                SchemaError::InvalidField(format!("Execution error: {}", message))
+            }
+            _ => {
+                SchemaError::InvalidField(format!("Iterator stack error: {}", error))
+            }
+        }
+    }
+
+    /// Parses an atom UUID expression using ChainParser.
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - The expression to parse
+    ///
+    /// # Returns
+    ///
+    /// The parsed chain or an error if parsing fails
+    fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, SchemaError> {
+        info!("🔗 Parsing atom UUID expression with ChainParser: {}", expression);
+        
+        let parser = ChainParser::new();
+        let parsed_chain = parser.parse(expression)
+            .map_err(Self::convert_iterator_stack_error)?;
+        
+        info!("✅ Successfully parsed expression '{}' - depth: {}, operations: {}", 
+              expression, parsed_chain.depth, parsed_chain.operations.len());
+        info!("📋 Operations: {:?}", parsed_chain.operations);
+        
+        Ok(parsed_chain)
+    }
+
+    /// Resolves a parsed chain using simple resolution (without full execution).
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chain` - The parsed chain to resolve
+    /// * `input_values` - The input data to resolve from
+    /// * `field_name` - The field name for error context
+    ///
+    /// # Returns
+    ///
+    /// The resolved value or null if not found
+    fn resolve_parsed_chain_simple(
+        parsed_chain: &ParsedChain,
+        input_values: &HashMap<String, JsonValue>,
+        field_name: &str,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🔍 Resolving parsed chain with {} operations for field '{}'", 
+              parsed_chain.operations.len(), field_name);
+
+        // For now, extract a simple path from the operations and resolve it
+        // Full execution will be implemented in DTS-1-7C3
+        let simple_path = Self::extract_simple_path_from_operations(&parsed_chain.operations);
+        
+        if simple_path.is_empty() {
+            info!("⚠️ Empty path extracted from parsed chain for field '{}'", field_name);
+            return Ok(JsonValue::Null);
+        }
+
+        info!("🔗 Extracted simple path '{}' from parsed chain", simple_path);
+        
+        // Use existing dotted path resolution for the extracted path
+        Self::resolve_dotted_path(&simple_path, input_values)
+    }
+
+    /// Extracts a simple dotted path from chain operations for basic resolution.
+    ///
+    /// # Arguments
+    ///
+    /// * `operations` - The chain operations to extract from
+    ///
+    /// # Returns
+    ///
+    /// A simple dotted path string
+    fn extract_simple_path_from_operations(operations: &[crate::schema::indexing::chain_parser::ChainOperation]) -> String {
+        use crate::schema::indexing::chain_parser::ChainOperation;
+        
+        let mut path_parts = Vec::new();
+        
+        for operation in operations {
+            match operation {
+                ChainOperation::FieldAccess(field_name) => {
+                    path_parts.push(field_name.clone());
+                }
+                ChainOperation::SpecialField(special) => {
+                    path_parts.push(special.clone());
+                }
+                ChainOperation::Map | ChainOperation::SplitArray | ChainOperation::SplitByWord => {
+                    // Skip iterator operations for simple resolution
+                    info!("🔄 Skipping iterator operation: {:?}", operation);
+                }
+                ChainOperation::Reducer(reducer_name) => {
+                    // Skip reducer operations for simple resolution  
+                    info!("🔄 Skipping reducer operation: {}", reducer_name);
+                }
+            }
+        }
+        
+        let path = path_parts.join(".");
+        info!("📝 Extracted path '{}' from {} operations", path, operations.len());
+        path
     }
 
     /// Converts input values from JsonValue to interpreter Value.
