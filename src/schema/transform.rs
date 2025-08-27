@@ -31,7 +31,7 @@ impl SchemaCore {
                     schema.name,
                     field_name,
                     transform.get_inputs(),
-                    transform.logic,
+                    transform.get_procedural_logic().unwrap_or("[declarative]"),
                     transform.get_output()
                 );
 

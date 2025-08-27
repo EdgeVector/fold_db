@@ -13,7 +13,7 @@ This document lists all tasks associated with PBI DTS-1.
 | DTS-1-3 | [Update JsonTransform to support both transform types](./DTS-1-3.md) | Done | Modify JsonTransform to use TransformKind and maintain backward compatibility |
 | DTS-1-4 | [Add comprehensive serialization/deserialization tests](./DTS-1-4.md) | Done | Create unit tests to verify both transform types serialize and deserialize correctly |
 | DTS-1-5 | [Implement validation for declarative transform structures](./DTS-1-5.md) | Done | Add validation logic to ensure declarative transforms have required fields and valid configurations |
-| DTS-1-6 | [Schema Interpreter and Core Integration Updates](./DTS-1-6.md) | Proposed | Update schema interpreter and core integration to handle declarative transforms |
+| DTS-1-6 | [Schema Interpreter and Core Integration Updates](./DTS-1-6.md) | Done | Update schema interpreter and core integration to handle declarative transforms |
 | DTS-1-7 | [Transform Processing and Execution Using Iterator Stack](./DTS-1-7.md) | Proposed | **BROKEN DOWN** - See DTS-1-7A through DTS-1-7D below |
 | DTS-1-7A | [Basic Transform Type Routing](./DTS-1-7A.md) | Proposed | Implement basic transform type routing to direct transforms to appropriate execution paths |
 | DTS-1-7B | [Simple Declarative Transform Execution](./DTS-1-7B.md) | Proposed | Execute simple declarative transforms with "Single" schema type and basic field resolution |

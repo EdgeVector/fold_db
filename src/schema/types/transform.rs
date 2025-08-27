@@ -55,13 +55,14 @@ pub struct Transform {
     #[serde(default)]
     pub inputs: Vec<String>,
 
-    /// The transform logic expressed in the DSL
-    pub logic: String,
-
     /// Output field for this transform in `Schema.field` format
     pub output: String,
 
-    /// The parsed expression (not serialized)
+    /// The transform kind (procedural or declarative)
+    #[serde(flatten)]
+    pub kind: crate::schema::types::json_schema::TransformKind,
+
+    /// The parsed expression (not serialized, used for procedural transforms)
     #[serde(skip)]
     pub parsed_expression: Option<crate::transform::ast::Expression>,
 }
@@ -76,10 +77,18 @@ impl<'de> serde::Deserialize<'de> for Transform {
         #[serde(untagged)]
         enum Helper {
             Str(String),
-            Struct {
+            // Legacy struct format with logic field (backward compatibility)
+            LegacyStruct {
                 inputs: Option<Vec<String>>,
                 logic: String,
                 output: String,
+            },
+            // New struct format with kind field
+            NewStruct {
+                inputs: Option<Vec<String>>,
+                output: String,
+                #[serde(flatten)]
+                kind: crate::schema::types::json_schema::TransformKind,
             },
         }
 
@@ -91,14 +100,24 @@ impl<'de> serde::Deserialize<'de> for Transform {
                 })?;
                 Ok(Self::from_declaration(decl))
             }
-            Helper::Struct {
+            Helper::LegacyStruct {
                 inputs,
                 logic,
                 output,
             } => Ok(Self {
                 inputs: inputs.unwrap_or_default(),
-                logic,
                 output,
+                kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
+                parsed_expression: None,
+            }),
+            Helper::NewStruct {
+                inputs,
+                output,
+                kind,
+            } => Ok(Self {
+                inputs: inputs.unwrap_or_default(),
+                output,
+                kind,
                 parsed_expression: None,
             }),
         }
@@ -106,18 +125,18 @@ impl<'de> serde::Deserialize<'de> for Transform {
 }
 
 impl Transform {
-    /// Creates a new `Transform` from raw logic and output field.
+    /// Creates a new procedural `Transform` from raw logic and output field.
     #[must_use]
     pub fn new(logic: String, output: String) -> Self {
         Self {
             inputs: Vec::new(),
-            logic,
             output,
+            kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
             parsed_expression: None,
         }
     }
 
-    /// Creates a new `Transform` with a pre-parsed expression.
+    /// Creates a new procedural `Transform` with a pre-parsed expression.
     #[must_use]
     pub fn new_with_expr(
         logic: String,
@@ -126,9 +145,52 @@ impl Transform {
     ) -> Self {
         Self {
             inputs: Vec::new(),
-            logic,
             output,
+            kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
             parsed_expression: Some(parsed_expression),
+        }
+    }
+
+    /// Creates a new declarative `Transform` from schema definition.
+    #[must_use]
+    pub fn from_declarative_schema(
+        schema: crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        inputs: Vec<String>,
+        output: String,
+    ) -> Self {
+        Self {
+            inputs,
+            output,
+            kind: crate::schema::types::json_schema::TransformKind::Declarative { schema },
+            parsed_expression: None,
+        }
+    }
+
+    /// Returns true if this is a declarative transform.
+    pub fn is_declarative(&self) -> bool {
+        matches!(self.kind, crate::schema::types::json_schema::TransformKind::Declarative { .. })
+    }
+
+    /// Returns true if this is a procedural transform.
+    pub fn is_procedural(&self) -> bool {
+        matches!(self.kind, crate::schema::types::json_schema::TransformKind::Procedural { .. })
+    }
+
+    /// Gets the declarative schema if this is a declarative transform.
+    pub fn get_declarative_schema(&self) -> Option<&crate::schema::types::json_schema::DeclarativeSchemaDefinition> {
+        if let crate::schema::types::json_schema::TransformKind::Declarative { schema } = &self.kind {
+            Some(schema)
+        } else {
+            None
+        }
+    }
+
+    /// Gets the procedural logic if this is a procedural transform.
+    pub fn get_procedural_logic(&self) -> Option<&str> {
+        if let crate::schema::types::json_schema::TransformKind::Procedural { logic } = &self.kind {
+            Some(logic)
+        } else {
+            None
         }
     }
 
@@ -163,28 +225,47 @@ impl Transform {
     pub fn analyze_dependencies(&self) -> HashSet<String> {
         let mut dependencies = HashSet::new();
 
-        // Split by dots to handle schema.field format
-        for part in self.logic.split(|c: char| !c.is_alphanumeric() && c != '.') {
-            if part.is_empty() || part.chars().next().unwrap().is_numeric() {
-                continue;
-            }
-
-            // Skip keywords and operators
-            match part {
-                "let" | "if" | "else" | "return" | "true" | "false" | "null" => continue,
-                _ => {}
-            }
-
-            // If it contains a dot, it's a schema.field reference
-            if part.contains('.') {
-                let parts: Vec<&str> = part.split('.').collect();
-                if parts.len() == 2 {
-                    // Add just the field name, not the schema prefix
-                    dependencies.insert(parts[1].to_string());
+        // For procedural transforms, analyze the logic
+        if let Some(logic) = self.get_procedural_logic() {
+            // Split by dots to handle schema.field format
+            for part in logic.split(|c: char| !c.is_alphanumeric() && c != '.') {
+                if part.is_empty() || part.chars().next().unwrap().is_numeric() {
+                    continue;
                 }
-            } else {
-                // For backward compatibility, add the whole part if it's not a schema.field
-                dependencies.insert(part.to_string());
+
+                // Skip keywords and operators
+                match part {
+                    "let" | "if" | "else" | "return" | "true" | "false" | "null" => continue,
+                    _ => {}
+                }
+
+                // If it contains a dot, it's a schema.field reference
+                if part.contains('.') {
+                    let parts: Vec<&str> = part.split('.').collect();
+                    if parts.len() == 2 {
+                        // Add the full schema.field reference
+                        dependencies.insert(format!("{}.{}", parts[0], parts[1]));
+                    }
+                } else {
+                    // For backward compatibility, add the whole part if it's not a schema.field
+                    dependencies.insert(part.to_string());
+                }
+            }
+        } else if let Some(schema) = self.get_declarative_schema() {
+            // For declarative transforms, analyze field expressions
+            for field_def in schema.fields.values() {
+                if let Some(atom_uuid) = &field_def.atom_uuid {
+                    // Extract potential dependencies from atom_uuid expressions
+                    // This is a simple analysis - could be made more sophisticated
+                    if atom_uuid.contains('.') && !atom_uuid.starts_with('.') {
+                        dependencies.insert(atom_uuid.clone());
+                    }
+                }
+            }
+            
+            // Also add explicitly declared inputs
+            for input in &self.inputs {
+                dependencies.insert(input.clone());
             }
         }
 
@@ -214,8 +295,8 @@ impl Transform {
 
         Self {
             inputs: Vec::new(),
-            logic,
             output,
+            kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
             parsed_expression: None,
         }
     }
@@ -240,7 +321,7 @@ mod tests {
 
         let transform = Transform::from_declaration(declaration);
 
-        assert_eq!(transform.logic, "return (field1 + field2)"); // Removed trailing semicolon
+        assert_eq!(transform.get_procedural_logic().unwrap(), "return (field1 + field2)"); // Removed trailing semicolon
         assert_eq!(transform.output, "test.test_transform"); // Output derived from declaration name
         assert!(transform.parsed_expression.is_none());
     }
