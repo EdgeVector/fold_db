@@ -10,8 +10,8 @@ This document lists all tasks associated with PBI DTS-1.
 | :------ | :--- | :----- | :---------- |
 | DTS-1-1 | [Implement TransformKind enum with Procedural and Declarative variants](./DTS-1-1.md) | Done | Create the TransformKind enum to support both procedural and declarative transform types |
 | DTS-1-2 | [Implement DeclarativeSchemaDefinition and supporting structs](./DTS-1-2.md) | Done | Create the core data structures for declarative transforms including KeyConfig and FieldDefinition |
-| DTS-1-3 | [Update JsonTransform to support both transform types](./DTS-1-3.md) | Proposed | Modify JsonTransform to use TransformKind and maintain backward compatibility |
-| DTS-1-4 | [Add comprehensive serialization/deserialization tests](./DTS-1-4.md) | Proposed | Create unit tests to verify both transform types serialize and deserialize correctly |
+| DTS-1-3 | [Update JsonTransform to support both transform types](./DTS-1-3.md) | Done | Modify JsonTransform to use TransformKind and maintain backward compatibility |
+| DTS-1-4 | [Add comprehensive serialization/deserialization tests](./DTS-1-4.md) | Done | Create unit tests to verify both transform types serialize and deserialize correctly |
 | DTS-1-5 | [Implement validation for declarative transform structures](./DTS-1-5.md) | Proposed | Add validation logic to ensure declarative transforms have required fields and valid configurations |
 | DTS-1-6 | [Schema Interpreter and Core Integration Updates](./DTS-1-6.md) | Proposed | Update schema interpreter and core integration to handle declarative transforms |
 | DTS-1-7 | [Transform Processing and Execution Using Iterator Stack](./DTS-1-7.md) | Proposed | **BROKEN DOWN** - See DTS-1-7A through DTS-1-7D below |
