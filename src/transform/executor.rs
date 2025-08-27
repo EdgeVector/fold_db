@@ -8,6 +8,7 @@ use super::interpreter::Interpreter;
 use super::parser::TransformParser;
 use crate::schema::indexing::chain_parser::{ChainParser, ParsedChain};
 use crate::schema::indexing::errors::IteratorStackError;
+use crate::schema::indexing::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
 use crate::schema::types::{SchemaError, Transform};
 use log::{info, error};
 use serde_json::Value as JsonValue;
@@ -277,6 +278,9 @@ impl TransformExecutor {
         
         // Validate schema structure
         schema.validate()?;
+        
+        // Validate field alignment for declarative transforms
+        Self::validate_field_alignment(schema)?;
         
         let mut result_object = serde_json::Map::new();
         
@@ -610,6 +614,114 @@ impl TransformExecutor {
         let path = path_parts.join(".");
         info!("📝 Extracted path '{}' from {} operations", path, operations.len());
         path
+    }
+
+    /// Validates field alignment for a declarative schema using FieldAlignmentValidator.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - The declarative schema definition
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or field alignment errors
+    fn validate_field_alignment(
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    ) -> Result<(), SchemaError> {
+        info!("🔍 Validating field alignment for schema: {}", schema.name);
+        
+        // Parse all field expressions using ChainParser
+        let mut parsed_chains = Vec::new();
+        let mut parsing_errors = Vec::new();
+        
+        for (field_name, field_def) in &schema.fields {
+            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                info!("🔗 Parsing field '{}' expression: {}", field_name, atom_uuid_expr);
+                
+                match Self::parse_atom_uuid_expression(atom_uuid_expr) {
+                    Ok(parsed_chain) => {
+                        parsed_chains.push(parsed_chain);
+                        info!("✅ Successfully parsed field '{}' for validation", field_name);
+                    }
+                    Err(parse_error) => {
+                        // Collect parsing errors but continue with other fields
+                        parsing_errors.push((field_name.clone(), atom_uuid_expr.clone(), parse_error));
+                        info!("⚠️ Failed to parse field '{}' expression '{}' - will skip validation", 
+                              field_name, atom_uuid_expr);
+                    }
+                }
+            } else {
+                info!("📝 Field '{}' has no atom_uuid expression - skipping alignment validation", field_name);
+            }
+        }
+        
+        // If we have no parseable chains, skip validation
+        if parsed_chains.is_empty() {
+            if parsing_errors.is_empty() {
+                info!("ℹ️ No parseable expressions found for alignment validation - skipping");
+                return Ok(());
+            } else {
+                // All expressions failed to parse - report the first error
+                let (field_name, expression, error) = &parsing_errors[0];
+                return Err(SchemaError::InvalidField(format!(
+                    "Failed to parse field '{}' expression '{}' for alignment validation: {}", 
+                    field_name, expression, error
+                )));
+            }
+        }
+        
+        // Perform field alignment validation
+        let validator = FieldAlignmentValidator::new();
+        let validation_result = validator.validate_alignment(&parsed_chains)
+            .map_err(Self::convert_iterator_stack_error)?;
+        
+        Self::process_alignment_validation_result(&validation_result, schema)
+    }
+
+    /// Processes the field alignment validation result and converts errors.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - The alignment validation result
+    /// * `schema` - The schema being validated (for context)
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or converted validation errors
+    fn process_alignment_validation_result(
+        result: &AlignmentValidationResult,
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    ) -> Result<(), SchemaError> {
+        info!("📊 Field alignment validation result for '{}': valid={}, max_depth={}, errors={}, warnings={}", 
+              schema.name, result.valid, result.max_depth, result.errors.len(), result.warnings.len());
+        
+        // Log field alignment information
+        for (expression, alignment_info) in &result.field_alignments {
+            info!("📋 Field '{}': depth={}, alignment={:?}, branch={}, requires_reducer={}", 
+                  expression, alignment_info.depth, alignment_info.alignment, 
+                  alignment_info.branch, alignment_info.requires_reducer);
+        }
+        
+        // Log warnings (non-fatal)
+        for warning in &result.warnings {
+            info!("⚠️ Alignment warning: {:?} - {}", warning.warning_type, warning.message);
+        }
+        
+        // Process errors (fatal)
+        if !result.valid {
+            let error_messages: Vec<String> = result.errors.iter()
+                .map(|err| format!("{:?}: {}", err.error_type, err.message))
+                .collect();
+            
+            let combined_error = error_messages.join("; ");
+            return Err(SchemaError::InvalidField(format!(
+                "Field alignment validation failed for schema '{}': {}", 
+                schema.name, combined_error
+            )));
+        }
+        
+        info!("✅ Field alignment validation passed for schema '{}'", schema.name);
+        Ok(())
     }
 
     /// Converts input values from JsonValue to interpreter Value.
