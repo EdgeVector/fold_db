@@ -42,11 +42,11 @@ pub struct JsonSchemaField {
 /// fields in the incoming JSON will cause a deserialization error so
 /// that stale attributes such as `reversible` or `signature` do not
 /// silently pass through the system.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JsonTransform {
-    /// The transform logic expressed in the DSL
-    pub logic: String,
+    /// The transform type and configuration
+    #[serde(flatten)]
+    pub kind: TransformKind,
 
     /// Explicit list of input fields in `Schema.field` format
     #[serde(default)]
@@ -54,6 +54,47 @@ pub struct JsonTransform {
 
     /// Output field for this transform in `Schema.field` format
     pub output: String,
+}
+
+// Custom deserialization to maintain backward compatibility with existing procedural transforms
+impl<'de> serde::Deserialize<'de> for JsonTransform {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            // New format with explicit kind
+            NewFormat {
+                #[serde(flatten)]
+                kind: TransformKind,
+                #[serde(default)]
+                inputs: Vec<String>,
+                output: String,
+            },
+            // Legacy format with logic field (backward compatibility)
+            LegacyFormat {
+                logic: String,
+                #[serde(default)]
+                inputs: Vec<String>,
+                output: String,
+            },
+        }
+
+        match Helper::deserialize(deserializer)? {
+            Helper::NewFormat { kind, inputs, output } => Ok(JsonTransform {
+                kind,
+                inputs,
+                output,
+            }),
+            Helper::LegacyFormat { logic, inputs, output } => Ok(JsonTransform {
+                kind: TransformKind::Procedural { logic },
+                inputs,
+                output,
+            }),
+        }
+    }
 }
 
 /// Represents the type of transform being applied.
@@ -184,7 +225,17 @@ impl From<JsonFieldPaymentConfig> for FieldPaymentConfig {
 
 impl From<JsonTransform> for Transform {
     fn from(json: JsonTransform) -> Self {
-        let mut transform = Transform::new(json.logic, json.output);
+        let (logic, output) = match json.kind {
+            TransformKind::Procedural { logic } => (logic, json.output),
+            TransformKind::Declarative { schema } => {
+                // For declarative transforms, we'll use a placeholder logic for now
+                // This will be enhanced in future tasks when declarative execution is implemented
+                let placeholder_logic = format!("// Declarative transform: {}", schema.name);
+                (placeholder_logic, json.output)
+            }
+        };
+        
+        let mut transform = Transform::new(logic, output);
         transform.set_inputs(json.inputs);
         transform
     }
@@ -250,21 +301,35 @@ impl JsonSchemaDefinition {
 
         // Validate transform if present
         if let Some(transform) = &field.transform {
-            // Logic cannot be empty
-            if transform.logic.is_empty() {
-                return Err(SchemaError::InvalidField(format!(
-                    "Field {field_name} transform logic cannot be empty"
-                )));
-            }
+            // Validate transform based on its kind
+            match &transform.kind {
+                TransformKind::Procedural { logic } => {
+                    // Logic cannot be empty for procedural transforms
+                    if logic.is_empty() {
+                        return Err(SchemaError::InvalidField(format!(
+                            "Field {field_name} transform logic cannot be empty"
+                        )));
+                    }
 
-            // Parse transform logic using the DSL parser
-            let parser = TransformParser::new();
-            parser.parse_expression(&transform.logic).map_err(|e| {
-                SchemaError::InvalidField(format!(
-                    "Error parsing transform for field {field_name}: {}",
-                    e
-                ))
-            })?;
+                    // Parse transform logic using the DSL parser
+                    let parser = TransformParser::new();
+                    parser.parse_expression(logic).map_err(|e| {
+                        SchemaError::InvalidField(format!(
+                            "Error parsing transform for field {field_name}: {}",
+                            e
+                        ))
+                    })?;
+                }
+                TransformKind::Declarative { schema } => {
+                    // Validate declarative schema
+                    schema.validate().map_err(|e| {
+                        SchemaError::InvalidField(format!(
+                            "Error validating declarative transform for field {field_name}: {}",
+                            e
+                        ))
+                    })?;
+                }
+            }
         }
 
         Ok(())
