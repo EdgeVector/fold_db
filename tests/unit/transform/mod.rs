@@ -3,3 +3,4 @@ pub mod single_schema_execution_tests;
 pub mod chain_parser_integration_tests;
 pub mod field_alignment_validation_tests;
 pub mod execution_engine_integration_tests;
+pub mod multi_chain_coordination_tests;
