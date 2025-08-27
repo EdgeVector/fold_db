@@ -10,10 +10,19 @@ use crate::schema::indexing::chain_parser::{ChainParser, ParsedChain};
 use crate::schema::indexing::errors::IteratorStackError;
 use crate::schema::indexing::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
 use crate::schema::indexing::execution_engine::{ExecutionEngine, ExecutionResult};
+use std::time::Instant;
 use crate::schema::types::{SchemaError, Transform};
 use log::{info, error};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+
+/// Analysis result for execution quality assessment
+#[derive(Debug)]
+struct ExecutionAnalysis {
+    has_placeholders: bool,
+    quality_score: f64,
+    issues: Vec<String>,
+}
 
 /// Executor for transforms.
 pub struct TransformExecutor;
@@ -245,14 +254,14 @@ impl TransformExecutor {
         info!("📊 Schema fields: {:?}", schema.fields.keys().collect::<Vec<_>>());
         
         // Route to appropriate execution based on schema type
-        match schema.schema_type {
+        match &schema.schema_type {
             crate::schema::types::schema::SchemaType::Single => {
                 info!("🎯 Executing Single schema type");
                 Self::execute_single_schema(schema, input_values)
             }
-            crate::schema::types::schema::SchemaType::Range { .. } => {
-                info!("⚠️ Range schema execution not yet implemented - using placeholder");
-                Self::execute_range_schema_placeholder(schema)
+            crate::schema::types::schema::SchemaType::Range { range_key } => {
+                info!("🎯 Executing Range schema type with range_key: {}", range_key);
+                Self::execute_range_schema(schema, input_values, range_key)
             }
             crate::schema::types::schema::SchemaType::HashRange => {
                 info!("🎯 Executing HashRange schema type");
@@ -298,33 +307,23 @@ impl TransformExecutor {
         Ok(result)
     }
 
-    /// Placeholder for Range schema execution (to be implemented in DTS-1-7D).
-    fn execute_range_schema_placeholder(
-        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
-    ) -> Result<JsonValue, SchemaError> {
-        Ok(serde_json::json!({
-            "schema_type": "Range",
-            "schema_name": schema.name,
-            "status": "placeholder_execution",
-            "message": "Range schema execution will be implemented in DTS-1-7D"
-        }))
-    }
-
-    /// Executes a HashRange schema type declarative transform.
+    /// Executes a Range schema type declarative transform.
     ///
     /// # Arguments
     ///
     /// * `schema` - The declarative schema definition
     /// * `input_values` - The input values for the transform
+    /// * `range_key` - The range key field name from the schema type
     ///
     /// # Returns
     ///
-    /// The result of the HashRange schema execution
-    fn execute_hashrange_schema(
+    /// The result of the Range schema execution
+    fn execute_range_schema(
         schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
         input_values: HashMap<String, JsonValue>,
+        range_key: &str,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🔧 Executing HashRange schema: {}", schema.name);
+        info!("🔧 Executing Range schema: {} with range_key: {}", schema.name, range_key);
         
         // Validate schema structure
         schema.validate()?;
@@ -332,54 +331,81 @@ impl TransformExecutor {
         // Validate field alignment for declarative transforms (reusing existing validation)
         Self::validate_field_alignment(schema)?;
         
-        // Extract key configuration (hash_field and range_field)
-        let key_config = schema.key.as_ref().ok_or_else(|| {
-            SchemaError::InvalidTransform(format!(
-                "HashRange schema '{}' must have key configuration with hash_field and range_field", 
-                schema.name
-            ))
-        })?;
-        
-        info!("📊 HashRange key config - hash_field: {}, range_field: {}", 
-              key_config.hash_field, key_config.range_field);
-        
-        // Execute multi-chain coordination for HashRange
-        Self::execute_multi_chain_coordination(schema, &input_values, key_config)
+        // Execute range-based coordination (similar to HashRange but simpler)
+        Self::execute_range_coordination(schema, &input_values, range_key)
     }
 
-    /// Executes multi-chain coordination for HashRange schemas.
+    /// Executes range-based coordination for Range schemas.
     ///
     /// # Arguments
     ///
     /// * `schema` - The declarative schema definition
     /// * `input_values` - The input values for the transform
-    /// * `key_config` - The key configuration with hash_field and range_field
+    /// * `range_key` - The range key field name from the schema type
     ///
     /// # Returns
     ///
-    /// The result of the multi-chain execution
-    fn execute_multi_chain_coordination(
+    /// The result of the range coordination
+    fn execute_range_coordination(
         schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
         input_values: &HashMap<String, JsonValue>,
-        key_config: &crate::schema::types::json_schema::KeyConfig,
+        range_key: &str,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🔗 Starting multi-chain coordination for HashRange schema");
+        info!("🔗 Starting range coordination for Range schema with range_key: {}", range_key);
         
-        // Parse all field expressions for multi-chain coordination
+        // Parse all field expressions for range coordination
         let mut all_expressions = Vec::new();
         
-        // Add key expressions (hash_field and range_field)
-        all_expressions.push(("_hash_field".to_string(), key_config.hash_field.clone()));
-        all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
+        // Add range key expression (we need to construct it based on the range_key name)
+        // For Range schemas, the range_key points to a field name, and we need its expression
+        if let Some(range_field_def) = schema.fields.get(range_key) {
+            if let Some(range_expr) = &range_field_def.atom_uuid {
+                all_expressions.push(("_range_key".to_string(), range_expr.clone()));
+            } else {
+                return Err(SchemaError::InvalidTransform(format!(
+                    "Range schema '{}' range_key field '{}' must have an atom_uuid expression",
+                    schema.name, range_key
+                )));
+            }
+        } else {
+            return Err(SchemaError::InvalidTransform(format!(
+                "Range schema '{}' range_key '{}' not found in schema fields",
+                schema.name, range_key
+            )));
+        }
         
-        // Add regular field expressions from schema
+        // Add regular field expressions from schema (excluding the range_key field itself)
         for (field_name, field_def) in &schema.fields {
-            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-                all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
+            if field_name != range_key { // Don't double-add the range key
+                if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                    all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
+                }
             }
         }
         
-        info!("📊 Coordinating {} expressions for multi-chain execution", all_expressions.len());
+        info!("📊 Coordinating {} expressions for range execution", all_expressions.len());
+        
+        // Use the same multi-chain coordination logic as HashRange
+        Self::execute_range_multi_chain_coordination(all_expressions, input_values, schema)
+    }
+
+    /// Executes multi-chain coordination for Range schemas (reuses HashRange logic).
+    ///
+    /// # Arguments
+    ///
+    /// * `all_expressions` - All expressions to coordinate
+    /// * `input_values` - The input values for execution
+    /// * `schema` - The schema for context
+    ///
+    /// # Returns
+    ///
+    /// The coordinated execution result
+    fn execute_range_multi_chain_coordination(
+        all_expressions: Vec<(String, String)>,
+        input_values: &HashMap<String, JsonValue>,
+        _schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🚀 Executing Range multi-chain coordination");
         
         // Parse all expressions using ChainParser
         let mut parsed_chains = Vec::new();
@@ -403,11 +429,11 @@ impl TransformExecutor {
         // Check if we have enough parsed chains to proceed
         if parsed_chains.is_empty() {
             return Err(SchemaError::InvalidField(
-                "No expressions could be parsed for multi-chain coordination".to_string()
+                "No expressions could be parsed for Range coordination".to_string()
             ));
         }
         
-        // Validate multi-chain field alignment
+        // Validate field alignment across all chains
         let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
         let validator = FieldAlignmentValidator::new();
         let alignment_result = validator.validate_alignment(&chains_only)
@@ -418,15 +444,466 @@ impl TransformExecutor {
                 .map(|err| format!("{:?}: {}", err.error_type, err.message))
                 .collect();
             return Err(SchemaError::InvalidField(format!(
-                "Multi-chain field alignment validation failed: {}", 
+                "Range field alignment validation failed: {}", 
                 error_messages.join("; ")
             )));
         }
         
-        info!("✅ Multi-chain field alignment validation passed");
+        info!("✅ Range field alignment validation passed");
         
-        // Execute multi-chain coordination with ExecutionEngine
+        // Execute using the same multi-chain engine as HashRange
         Self::execute_multi_chain_with_engine(&parsed_chains, input_values, &alignment_result)
+    }
+
+    /// Executes a HashRange schema type declarative transform.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - The declarative schema definition
+    /// * `input_values` - The input values for the transform
+    ///
+    /// # Returns
+    ///
+    /// The result of the HashRange schema execution
+    fn execute_hashrange_schema(
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        input_values: HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        let start_time = Instant::now();
+        info!("🔧 Executing HashRange schema: {}", schema.name);
+        
+        // Validate schema structure
+        let validation_start = Instant::now();
+        schema.validate()?;
+        let validation_duration = validation_start.elapsed();
+        info!("⏱️ HashRange schema validation took: {:?}", validation_duration);
+        
+        // Validate field alignment for declarative transforms (reusing existing validation)
+        let alignment_start = Instant::now();
+        Self::validate_field_alignment(schema)?;
+        let alignment_duration = alignment_start.elapsed();
+        info!("⏱️ HashRange field alignment validation took: {:?}", alignment_duration);
+        
+        // Extract key configuration (hash_field and range_field)
+        let key_config = schema.key.as_ref().ok_or_else(|| {
+            SchemaError::InvalidTransform(format!(
+                "HashRange schema '{}' must have key configuration with hash_field and range_field", 
+                schema.name
+            ))
+        })?;
+        
+        info!("📊 HashRange key config - hash_field: {}, range_field: {}", 
+              key_config.hash_field, key_config.range_field);
+        
+        // Execute multi-chain coordination for HashRange with performance monitoring
+        let execution_start = Instant::now();
+        let result = Self::execute_multi_chain_coordination_with_monitoring(schema, &input_values, key_config);
+        let execution_duration = execution_start.elapsed();
+        
+        let total_duration = start_time.elapsed();
+        info!("⏱️ HashRange execution completed in {:?} (execution: {:?}, validation: {:?}, alignment: {:?})", 
+              total_duration, execution_duration, validation_duration, alignment_duration);
+        
+        result
+    }
+
+    /// Executes multi-chain coordination with enhanced monitoring and error recovery.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - The declarative schema definition
+    /// * `input_values` - The input values for the transform
+    /// * `key_config` - The key configuration with hash_field and range_field
+    ///
+    /// # Returns
+    ///
+    /// The result of the multi-chain execution with enhanced monitoring
+    fn execute_multi_chain_coordination_with_monitoring(
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        input_values: &HashMap<String, JsonValue>,
+        key_config: &crate::schema::types::json_schema::KeyConfig,
+    ) -> Result<JsonValue, SchemaError> {
+        let start_time = Instant::now();
+        info!("🔗 Starting enhanced multi-chain coordination for HashRange schema");
+        
+        // Parse all field expressions for multi-chain coordination
+        let mut all_expressions = Vec::new();
+        
+        // Add key expressions (hash_field and range_field)
+        all_expressions.push(("_hash_field".to_string(), key_config.hash_field.clone()));
+        all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
+        
+        // Add regular field expressions from schema
+        for (field_name, field_def) in &schema.fields {
+            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
+            }
+        }
+        
+        info!("📊 Coordinating {} expressions for enhanced multi-chain execution", all_expressions.len());
+        
+        // Parse all expressions using ChainParser with retry mechanism
+        let parsing_start = Instant::now();
+        let mut parsed_chains = Vec::new();
+        let mut parsing_errors = Vec::new();
+        
+        for (field_name, expression) in &all_expressions {
+            info!("🔗 Parsing expression for field '{}': {}", field_name, expression);
+            
+            // Enhanced parsing with retry for advanced error recovery
+            match Self::parse_with_retry(expression, field_name) {
+                Ok(parsed_chain) => {
+                    parsed_chains.push((field_name.clone(), parsed_chain));
+                    info!("✅ Successfully parsed expression for field '{}'", field_name);
+                }
+                Err(parse_error) => {
+                    info!("⚠️ Failed to parse expression for field '{}': {}", field_name, parse_error);
+                    parsing_errors.push((field_name.clone(), expression.clone(), parse_error));
+                }
+            }
+        }
+        
+        let parsing_duration = parsing_start.elapsed();
+        info!("⏱️ Enhanced parsing took: {:?} ({} successful, {} failed)", 
+              parsing_duration, parsed_chains.len(), parsing_errors.len());
+        
+        // Check if we have enough parsed chains to proceed
+        if parsed_chains.is_empty() {
+            return Err(SchemaError::InvalidField(
+                "No expressions could be parsed for enhanced multi-chain coordination".to_string()
+            ));
+        }
+        
+        // Validate multi-chain field alignment with enhanced error reporting
+        let validation_start = Instant::now();
+        let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
+        let validator = FieldAlignmentValidator::new();
+        let alignment_result = validator.validate_alignment(&chains_only)
+            .map_err(Self::convert_iterator_stack_error)?;
+        
+        let validation_duration = validation_start.elapsed();
+        info!("⏱️ Enhanced field alignment validation took: {:?}", validation_duration);
+        
+        if !alignment_result.valid {
+            let error_messages: Vec<String> = alignment_result.errors.iter()
+                .map(|err| format!("{:?}: {}", err.error_type, err.message))
+                .collect();
+            error!("🚨 Enhanced multi-chain field alignment validation failed: {}", error_messages.join("; "));
+            return Err(SchemaError::InvalidField(format!(
+                "Enhanced multi-chain field alignment validation failed: {}", 
+                error_messages.join("; ")
+            )));
+        }
+        
+        info!("✅ Enhanced multi-chain field alignment validation passed");
+        
+        // Execute multi-chain coordination with ExecutionEngine and enhanced monitoring
+        let execution_start = Instant::now();
+        let result = Self::execute_multi_chain_with_engine_enhanced(&parsed_chains, input_values, &alignment_result);
+        let execution_duration = execution_start.elapsed();
+        
+        let total_duration = start_time.elapsed();
+        info!("⏱️ Enhanced multi-chain coordination completed in {:?} (parsing: {:?}, validation: {:?}, execution: {:?})", 
+              total_duration, parsing_duration, validation_duration, execution_duration);
+        
+        result
+    }
+
+    /// Enhanced parsing with retry mechanism for better error recovery.
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - The expression to parse
+    /// * `field_name` - The field name for context
+    ///
+    /// # Returns
+    ///
+    /// The parsed chain with retry logic
+    fn parse_with_retry(expression: &str, field_name: &str) -> Result<ParsedChain, SchemaError> {
+        const MAX_RETRIES: u32 = 2;
+        
+        for attempt in 1..=MAX_RETRIES {
+            match Self::parse_atom_uuid_expression(expression) {
+                Ok(parsed_chain) => {
+                    if attempt > 1 {
+                        info!("✅ Parsing succeeded on attempt {} for field '{}'", attempt, field_name);
+                    }
+                    return Ok(parsed_chain);
+                }
+                Err(err) => {
+                    if attempt < MAX_RETRIES {
+                        info!("⚠️ Parsing attempt {} failed for field '{}', retrying: {}", attempt, field_name, err);
+                        // Simple retry - in production this could include more sophisticated retry logic
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    } else {
+                        info!("🚨 All parsing attempts failed for field '{}': {}", field_name, err);
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        
+        unreachable!("Should have returned from loop")
+    }
+
+    /// Enhanced multi-chain execution with performance optimization.
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chains` - The parsed chains with their field names
+    /// * `input_values` - The input values for execution
+    /// * `alignment_result` - The field alignment validation result
+    ///
+    /// # Returns
+    ///
+    /// The enhanced execution result
+    fn execute_multi_chain_with_engine_enhanced(
+        parsed_chains: &[(String, ParsedChain)],
+        input_values: &HashMap<String, JsonValue>,
+        alignment_result: &AlignmentValidationResult,
+    ) -> Result<JsonValue, SchemaError> {
+        let start_time = Instant::now();
+        info!("🚀 Executing enhanced multi-chain coordination with ExecutionEngine");
+        
+        // Convert input_values HashMap to JSON object for ExecutionEngine
+        let conversion_start = Instant::now();
+        let input_data = JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        let conversion_duration = conversion_start.elapsed();
+        info!("⏱️ Input data conversion took: {:?}", conversion_duration);
+        
+        // Create and execute with ExecutionEngine for all chains with enhanced monitoring
+        let engine_start = Instant::now();
+        let mut execution_engine = ExecutionEngine::new();
+        let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
+        
+        let execution_result = execution_engine.execute_fields(
+            &chains_only,
+            alignment_result,
+            input_data,
+        ).map_err(Self::convert_iterator_stack_error)?;
+        
+        let engine_duration = engine_start.elapsed();
+        info!("⏱️ ExecutionEngine execution took: {:?}", engine_duration);
+        
+        info!("📈 Enhanced ExecutionEngine produced {} index entries, {} warnings", 
+              execution_result.index_entries.len(), execution_result.warnings.len());
+        
+        // Log execution statistics for advanced monitoring
+        Self::log_execution_statistics(&execution_result);
+        
+        // Aggregate results from multi-chain execution with enhanced error handling
+        let aggregation_start = Instant::now();
+        let result = Self::aggregate_multi_chain_results_enhanced(parsed_chains, &execution_result, input_values);
+        let aggregation_duration = aggregation_start.elapsed();
+        
+        let total_duration = start_time.elapsed();
+        info!("⏱️ Enhanced execution completed in {:?} (conversion: {:?}, engine: {:?}, aggregation: {:?})", 
+              total_duration, conversion_duration, engine_duration, aggregation_duration);
+        
+        result
+    }
+
+    /// Logs execution statistics for advanced monitoring.
+    ///
+    /// # Arguments
+    ///
+    /// * `execution_result` - The execution result to analyze
+    fn log_execution_statistics(execution_result: &ExecutionResult) {
+        let stats = &execution_result.statistics;
+        
+        info!("📊 Execution Statistics:");
+        info!("   📈 Total entries: {}", stats.total_entries);
+        info!("   ⏱️ Execution time: {}ms", stats.execution_time_ms);
+        info!("   💾 Memory usage: {} bytes", stats.memory_usage_bytes);
+        info!("   🎯 Cache hits: {}, misses: {}", stats.cache_hits, stats.cache_misses);
+        info!("   📐 Items per depth: {:?}", stats.items_per_depth);
+        
+        // Calculate performance metrics
+        if stats.execution_time_ms > 0 {
+            let entries_per_ms = stats.total_entries as f64 / stats.execution_time_ms as f64;
+            info!("   ⚡ Performance: {:.2} entries/ms", entries_per_ms);
+        }
+        
+        if stats.cache_hits + stats.cache_misses > 0 {
+            let cache_hit_ratio = stats.cache_hits as f64 / (stats.cache_hits + stats.cache_misses) as f64 * 100.0;
+            info!("   📝 Cache efficiency: {:.1}%", cache_hit_ratio);
+        }
+        
+        // Log warnings for potential issues
+        if !execution_result.warnings.is_empty() {
+            info!("⚠️ Execution warnings:");
+            for warning in &execution_result.warnings {
+                info!("   🚧 {:?}: {}", warning.warning_type, warning.message);
+            }
+        }
+    }
+
+    /// Enhanced result aggregation with better error handling and optimization.
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chains` - The parsed chains with their field names
+    /// * `execution_result` - The execution result from ExecutionEngine
+    /// * `input_values` - The original input values for fallback
+    ///
+    /// # Returns
+    ///
+    /// The enhanced aggregated result object
+    fn aggregate_multi_chain_results_enhanced(
+        parsed_chains: &[(String, ParsedChain)],
+        execution_result: &ExecutionResult,
+        input_values: &HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        let start_time = Instant::now();
+        info!("🔄 Aggregating results from enhanced multi-chain execution");
+        
+        let mut result_object = serde_json::Map::new();
+        
+        // Enhanced placeholder detection with more sophisticated analysis
+        let placeholder_analysis = Self::analyze_execution_results(execution_result);
+        
+        if placeholder_analysis.has_placeholders || execution_result.index_entries.is_empty() {
+            info!("⚠️ ExecutionEngine produced placeholder/empty results, using enhanced fallback resolution");
+            
+            // Enhanced fallback with better error handling
+            let fallback_start = Instant::now();
+            for (field_name, parsed_chain) in parsed_chains {
+                let field_value = match Self::resolve_with_enhanced_fallback(parsed_chain, input_values, field_name) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        info!("⚠️ Enhanced fallback resolution failed for field '{}': {}", field_name, err);
+                        JsonValue::Null
+                    }
+                };
+                
+                // Special handling for key fields (don't include in final output)
+                if !field_name.starts_with('_') {
+                    result_object.insert(field_name.clone(), field_value);
+                }
+            }
+            let fallback_duration = fallback_start.elapsed();
+            info!("⏱️ Enhanced fallback resolution took: {:?}", fallback_duration);
+        } else {
+            info!("✅ Using ExecutionEngine results for enhanced multi-chain coordination");
+            
+            // Enhanced result processing with optimization
+            let processing_start = Instant::now();
+            for (i, (field_name, _)) in parsed_chains.iter().enumerate() {
+                if let Some(entry) = execution_result.index_entries.get(i) {
+                    let field_value = Self::extract_optimal_field_value(entry);
+                    
+                    // Special handling for key fields (don't include in final output)
+                    if !field_name.starts_with('_') {
+                        result_object.insert(field_name.clone(), field_value);
+                    }
+                } else {
+                    // No entry for this field, use null
+                    if !field_name.starts_with('_') {
+                        result_object.insert(field_name.clone(), JsonValue::Null);
+                    }
+                }
+            }
+            let processing_duration = processing_start.elapsed();
+            info!("⏱️ Enhanced result processing took: {:?}", processing_duration);
+        }
+        
+        let result = JsonValue::Object(result_object);
+        let total_duration = start_time.elapsed();
+        info!("✨ Enhanced multi-chain coordination result completed in {:?}: {}", total_duration, result);
+        Ok(result)
+    }
+
+    /// Analyzes execution results for placeholder detection and quality assessment.
+    fn analyze_execution_results(execution_result: &ExecutionResult) -> ExecutionAnalysis {
+        let mut analysis = ExecutionAnalysis {
+            has_placeholders: false,
+            quality_score: 1.0,
+            issues: Vec::new(),
+        };
+        
+        // Check for placeholder patterns
+        let placeholder_count = execution_result.index_entries.iter().filter(|entry| {
+            let hash_is_placeholder = entry.hash_value.as_str()
+                .map(|s| s.starts_with("value_for_"))
+                .unwrap_or(false);
+            let range_is_placeholder = entry.range_value.as_str()
+                .map(|s| s.starts_with("value_for_"))
+                .unwrap_or(false);
+            hash_is_placeholder || range_is_placeholder
+        }).count();
+        
+        if placeholder_count > 0 {
+            analysis.has_placeholders = true;
+            analysis.quality_score *= 0.5; // Reduce quality score for placeholders
+            analysis.issues.push(format!("Found {} placeholder results", placeholder_count));
+        }
+        
+        // Assess result quality based on statistics
+        let stats = &execution_result.statistics;
+        if stats.execution_time_ms > 1000 { // > 1 second
+            analysis.quality_score *= 0.8;
+            analysis.issues.push("Slow execution time detected".to_string());
+        }
+        
+        if stats.memory_usage_bytes > 10_000_000 { // > 10MB
+            analysis.quality_score *= 0.9;
+            analysis.issues.push("High memory usage detected".to_string());
+        }
+        
+        info!("📊 Execution analysis: quality={:.2}, placeholders={}, issues={:?}", 
+              analysis.quality_score, analysis.has_placeholders, analysis.issues);
+        
+        analysis
+    }
+
+    /// Enhanced fallback resolution with better error handling.
+    fn resolve_with_enhanced_fallback(
+        parsed_chain: &ParsedChain,
+        input_values: &HashMap<String, JsonValue>,
+        field_name: &str,
+    ) -> Result<JsonValue, SchemaError> {
+        // Try the existing fallback method first
+        match Self::resolve_parsed_chain_simple(parsed_chain, input_values, field_name) {
+            Ok(value) => {
+                info!("✅ Enhanced fallback resolved field '{}' successfully", field_name);
+                Ok(value)
+            }
+            Err(err) => {
+                info!("⚠️ Standard fallback failed for field '{}', trying alternative methods: {}", field_name, err);
+                
+                // Alternative fallback: try to extract a simpler path
+                let simple_path = Self::extract_simple_path_from_operations(&parsed_chain.operations);
+                if !simple_path.is_empty() {
+                    match Self::resolve_dotted_path(&simple_path, input_values) {
+                        Ok(value) => {
+                            info!("✅ Alternative fallback resolved field '{}' with simple path", field_name);
+                            Ok(value)
+                        }
+                        Err(alt_err) => {
+                            info!("⚠️ All fallback methods failed for field '{}': {}", field_name, alt_err);
+                            Err(alt_err)
+                        }
+                    }
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+
+    /// Extracts the optimal field value from an index entry.
+    fn extract_optimal_field_value(entry: &crate::schema::indexing::execution_engine::IndexEntry) -> JsonValue {
+        // Prefer hash_value, then range_value, with metadata as fallback
+        if !entry.hash_value.is_null() {
+            entry.hash_value.clone()
+        } else if !entry.range_value.is_null() {
+            entry.range_value.clone()
+        } else if !entry.metadata.is_empty() {
+            // Try to extract a meaningful value from metadata
+            entry.metadata.values().next().cloned().unwrap_or(JsonValue::Null)
+        } else {
+            JsonValue::Null
+        }
     }
 
     /// Executes multiple chains with the ExecutionEngine for coordinated results.
