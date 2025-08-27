@@ -255,8 +255,8 @@ impl TransformExecutor {
                 Self::execute_range_schema_placeholder(schema)
             }
             crate::schema::types::schema::SchemaType::HashRange => {
-                info!("⚠️ HashRange schema execution not yet implemented - using placeholder");
-                Self::execute_hashrange_schema_placeholder(schema)
+                info!("🎯 Executing HashRange schema type");
+                Self::execute_hashrange_schema(schema, input_values)
             }
         }
     }
@@ -310,16 +310,241 @@ impl TransformExecutor {
         }))
     }
 
-    /// Placeholder for HashRange schema execution (to be implemented in DTS-1-7D).
-    fn execute_hashrange_schema_placeholder(
+    /// Executes a HashRange schema type declarative transform.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - The declarative schema definition
+    /// * `input_values` - The input values for the transform
+    ///
+    /// # Returns
+    ///
+    /// The result of the HashRange schema execution
+    fn execute_hashrange_schema(
         schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
-        Ok(serde_json::json!({
-            "schema_type": "HashRange", 
-            "schema_name": schema.name,
-            "status": "placeholder_execution",
-            "message": "HashRange schema execution will be implemented in DTS-1-7D"
-        }))
+        info!("🔧 Executing HashRange schema: {}", schema.name);
+        
+        // Validate schema structure
+        schema.validate()?;
+        
+        // Validate field alignment for declarative transforms (reusing existing validation)
+        Self::validate_field_alignment(schema)?;
+        
+        // Extract key configuration (hash_field and range_field)
+        let key_config = schema.key.as_ref().ok_or_else(|| {
+            SchemaError::InvalidTransform(format!(
+                "HashRange schema '{}' must have key configuration with hash_field and range_field", 
+                schema.name
+            ))
+        })?;
+        
+        info!("📊 HashRange key config - hash_field: {}, range_field: {}", 
+              key_config.hash_field, key_config.range_field);
+        
+        // Execute multi-chain coordination for HashRange
+        Self::execute_multi_chain_coordination(schema, &input_values, key_config)
+    }
+
+    /// Executes multi-chain coordination for HashRange schemas.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - The declarative schema definition
+    /// * `input_values` - The input values for the transform
+    /// * `key_config` - The key configuration with hash_field and range_field
+    ///
+    /// # Returns
+    ///
+    /// The result of the multi-chain execution
+    fn execute_multi_chain_coordination(
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        input_values: &HashMap<String, JsonValue>,
+        key_config: &crate::schema::types::json_schema::KeyConfig,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🔗 Starting multi-chain coordination for HashRange schema");
+        
+        // Parse all field expressions for multi-chain coordination
+        let mut all_expressions = Vec::new();
+        
+        // Add key expressions (hash_field and range_field)
+        all_expressions.push(("_hash_field".to_string(), key_config.hash_field.clone()));
+        all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
+        
+        // Add regular field expressions from schema
+        for (field_name, field_def) in &schema.fields {
+            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
+            }
+        }
+        
+        info!("📊 Coordinating {} expressions for multi-chain execution", all_expressions.len());
+        
+        // Parse all expressions using ChainParser
+        let mut parsed_chains = Vec::new();
+        let mut parsing_errors = Vec::new();
+        
+        for (field_name, expression) in &all_expressions {
+            info!("🔗 Parsing expression for field '{}': {}", field_name, expression);
+            
+            match Self::parse_atom_uuid_expression(expression) {
+                Ok(parsed_chain) => {
+                    parsed_chains.push((field_name.clone(), parsed_chain));
+                    info!("✅ Successfully parsed expression for field '{}'", field_name);
+                }
+                Err(parse_error) => {
+                    info!("⚠️ Failed to parse expression for field '{}': {}", field_name, parse_error);
+                    parsing_errors.push((field_name.clone(), expression.clone(), parse_error));
+                }
+            }
+        }
+        
+        // Check if we have enough parsed chains to proceed
+        if parsed_chains.is_empty() {
+            return Err(SchemaError::InvalidField(
+                "No expressions could be parsed for multi-chain coordination".to_string()
+            ));
+        }
+        
+        // Validate multi-chain field alignment
+        let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
+        let validator = FieldAlignmentValidator::new();
+        let alignment_result = validator.validate_alignment(&chains_only)
+            .map_err(Self::convert_iterator_stack_error)?;
+        
+        if !alignment_result.valid {
+            let error_messages: Vec<String> = alignment_result.errors.iter()
+                .map(|err| format!("{:?}: {}", err.error_type, err.message))
+                .collect();
+            return Err(SchemaError::InvalidField(format!(
+                "Multi-chain field alignment validation failed: {}", 
+                error_messages.join("; ")
+            )));
+        }
+        
+        info!("✅ Multi-chain field alignment validation passed");
+        
+        // Execute multi-chain coordination with ExecutionEngine
+        Self::execute_multi_chain_with_engine(&parsed_chains, input_values, &alignment_result)
+    }
+
+    /// Executes multiple chains with the ExecutionEngine for coordinated results.
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chains` - The parsed chains with their field names
+    /// * `input_values` - The input values for execution
+    /// * `alignment_result` - The field alignment validation result
+    ///
+    /// # Returns
+    ///
+    /// The coordinated execution result
+    fn execute_multi_chain_with_engine(
+        parsed_chains: &[(String, ParsedChain)],
+        input_values: &HashMap<String, JsonValue>,
+        alignment_result: &AlignmentValidationResult,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🚀 Executing multi-chain coordination with ExecutionEngine");
+        
+        // Convert input_values HashMap to JSON object for ExecutionEngine
+        let input_data = JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        
+        // Create and execute with ExecutionEngine for all chains
+        let mut execution_engine = ExecutionEngine::new();
+        let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
+        
+        let execution_result = execution_engine.execute_fields(
+            &chains_only,
+            alignment_result,
+            input_data,
+        ).map_err(Self::convert_iterator_stack_error)?;
+        
+        info!("📈 Multi-chain ExecutionEngine produced {} index entries", execution_result.index_entries.len());
+        
+        // Aggregate results from multi-chain execution
+        Self::aggregate_multi_chain_results(parsed_chains, &execution_result, input_values)
+    }
+
+    /// Aggregates results from multi-chain execution into final output format.
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chains` - The parsed chains with their field names
+    /// * `execution_result` - The execution result from ExecutionEngine
+    /// * `input_values` - The original input values for fallback
+    ///
+    /// # Returns
+    ///
+    /// The aggregated result object
+    fn aggregate_multi_chain_results(
+        parsed_chains: &[(String, ParsedChain)],
+        execution_result: &ExecutionResult,
+        input_values: &HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🔄 Aggregating results from multi-chain execution");
+        
+        let mut result_object = serde_json::Map::new();
+        
+        // Check if ExecutionEngine produced meaningful results
+        let has_placeholder_results = execution_result.index_entries.iter().any(|entry| {
+            let hash_is_placeholder = entry.hash_value.as_str()
+                .map(|s| s.starts_with("value_for_"))
+                .unwrap_or(false);
+            let range_is_placeholder = entry.range_value.as_str()
+                .map(|s| s.starts_with("value_for_"))
+                .unwrap_or(false);
+            hash_is_placeholder || range_is_placeholder
+        });
+        
+        if has_placeholder_results || execution_result.index_entries.is_empty() {
+            info!("⚠️ ExecutionEngine produced placeholder/empty results, using fallback resolution");
+            
+            // Fallback to individual field resolution for each chain
+            for (field_name, parsed_chain) in parsed_chains {
+                let field_value = match Self::resolve_parsed_chain_simple(parsed_chain, input_values, field_name) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        info!("⚠️ Fallback resolution failed for field '{}', using null", field_name);
+                        JsonValue::Null
+                    }
+                };
+                
+                // Special handling for key fields (don't include in final output)
+                if !field_name.starts_with('_') {
+                    result_object.insert(field_name.clone(), field_value);
+                }
+            }
+        } else {
+            info!("✅ Using ExecutionEngine results for multi-chain coordination");
+            
+            // Use ExecutionEngine results - create field mapping from index entries
+            for (i, (field_name, _)) in parsed_chains.iter().enumerate() {
+                if let Some(entry) = execution_result.index_entries.get(i) {
+                    let field_value = if !entry.hash_value.is_null() {
+                        entry.hash_value.clone()
+                    } else if !entry.range_value.is_null() {
+                        entry.range_value.clone()
+                    } else {
+                        JsonValue::Null
+                    };
+                    
+                    // Special handling for key fields (don't include in final output)
+                    if !field_name.starts_with('_') {
+                        result_object.insert(field_name.clone(), field_value);
+                    }
+                } else {
+                    // No entry for this field, use null
+                    if !field_name.starts_with('_') {
+                        result_object.insert(field_name.clone(), JsonValue::Null);
+                    }
+                }
+            }
+        }
+        
+        let result = JsonValue::Object(result_object);
+        info!("✨ Multi-chain coordination result: {}", result);
+        Ok(result)
     }
 
     /// Resolves a field value from input data based on field definition.
