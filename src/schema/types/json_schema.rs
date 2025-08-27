@@ -493,19 +493,16 @@ impl From<JsonFieldPaymentConfig> for FieldPaymentConfig {
 
 impl From<JsonTransform> for Transform {
     fn from(json: JsonTransform) -> Self {
-        let (logic, output) = match json.kind {
-            TransformKind::Procedural { logic } => (logic, json.output),
-            TransformKind::Declarative { schema } => {
-                // For declarative transforms, we'll use a placeholder logic for now
-                // This will be enhanced in future tasks when declarative execution is implemented
-                let placeholder_logic = format!("// Declarative transform: {}", schema.name);
-                (placeholder_logic, json.output)
+        match json.kind {
+            TransformKind::Procedural { logic } => {
+                let mut transform = Transform::new(logic, json.output);
+                transform.set_inputs(json.inputs);
+                transform
             }
-        };
-        
-        let mut transform = Transform::new(logic, output);
-        transform.set_inputs(json.inputs);
-        transform
+            TransformKind::Declarative { schema } => {
+                Transform::from_declarative_schema(schema, json.inputs, json.output)
+            }
+        }
     }
 }
 

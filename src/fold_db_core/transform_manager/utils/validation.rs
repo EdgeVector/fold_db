@@ -31,8 +31,20 @@ impl TransformUtils {
             return Err(SchemaError::InvalidData(error_msg));
         }
 
-        if transform.logic.trim().is_empty() {
-            let error_msg = format!("Transform '{}' must have non-empty logic", transform_id);
+        if let Some(logic) = transform.get_procedural_logic() {
+            if logic.trim().is_empty() {
+                let error_msg = format!("Transform '{}' must have non-empty logic", transform_id);
+                error!("❌ {}", error_msg);
+                return Err(SchemaError::InvalidData(error_msg));
+            }
+        } else if let Some(schema) = transform.get_declarative_schema() {
+            if schema.name.trim().is_empty() {
+                let error_msg = format!("Declarative transform '{}' must have a valid schema name", transform_id);
+                error!("❌ {}", error_msg);
+                return Err(SchemaError::InvalidData(error_msg));
+            }
+        } else {
+            let error_msg = format!("Transform '{}' must be either procedural or declarative", transform_id);
             error!("❌ {}", error_msg);
             return Err(SchemaError::InvalidData(error_msg));
         }

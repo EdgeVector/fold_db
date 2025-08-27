@@ -30,7 +30,11 @@ impl TransformExecutor {
         input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
         info!("🧮 TransformExecutor: Starting computation");
-        info!("🔧 Transform logic: {}", transform.logic);
+        if let Some(logic) = transform.get_procedural_logic() {
+            info!("🔧 Transform logic: {}", logic);
+        } else {
+            info!("🔧 Declarative transform");
+        }
         
         // Log individual input values
         info!("📊 Input values for computation:");
@@ -39,7 +43,11 @@ impl TransformExecutor {
         }
         
         // Log a simplified computation description
-        info!("🧮 Computing with logic: {}", transform.logic);
+        if let Some(logic) = transform.get_procedural_logic() {
+            info!("🧮 Computing with logic: {}", logic);
+        } else {
+            info!("🧮 Computing with declarative transform");
+        }
         
         let result = Self::execute_transform_with_expr(transform, input_values);
         
@@ -117,7 +125,7 @@ impl TransformExecutor {
         // Execute the transform with the collected inputs
         info!(
             "execute_transform_with_provider logic: {} with inputs: {:?}",
-            transform.logic, input_values
+            transform.get_procedural_logic().unwrap_or("[declarative]"), input_values
         );
         let result = Self::execute_transform(transform, input_values);
         if let Ok(ref value) = result {
@@ -144,8 +152,9 @@ impl TransformExecutor {
         let ast = match &transform.parsed_expression {
             Some(expr) => expr.clone(),
             None => {
-                // Parse the transform logic
-                let logic = &transform.logic;
+                // Parse the transform logic (only works for procedural transforms)
+                let logic = transform.get_procedural_logic()
+                    .ok_or_else(|| SchemaError::InvalidTransform("Cannot execute declarative transform with expression executor".to_string()))?;
                 let parser = TransformParser::new();
                 parser.parse_expression(logic).map_err(|e| {
                     SchemaError::InvalidField(format!("Failed to parse transform: {}", e))
@@ -214,18 +223,27 @@ impl TransformExecutor {
     ///
     /// `Ok(())` if the transform is valid, otherwise an error
     pub fn validate_transform(transform: &Transform) -> Result<(), SchemaError> {
-        // Parse the transform logic to check for syntax errors
-        let parser = TransformParser::new();
-        let ast = parser.parse_expression(&transform.logic);
+        // Only validate procedural transforms with logic parsing
+        if let Some(logic) = transform.get_procedural_logic() {
+            // Parse the transform logic to check for syntax errors
+            let parser = TransformParser::new();
+            let ast = parser.parse_expression(logic);
 
-        // For "input +" specifically, we want to fail validation
-        if transform.logic == "input +" {
-            return Err(SchemaError::InvalidField(
-                "Invalid transform syntax: missing right operand".to_string(),
-            ));
+            // For "input +" specifically, we want to fail validation
+            if logic == "input +" {
+                return Err(SchemaError::InvalidField(
+                    "Invalid transform syntax: missing right operand".to_string(),
+                ));
+            }
+
+            ast.map_err(|e| SchemaError::InvalidField(format!("Invalid transform syntax: {}", e)))?;
+
+        } else if let Some(schema) = transform.get_declarative_schema() {
+            // Validate declarative transform schema
+            schema.validate()?;
+        } else {
+            return Err(SchemaError::InvalidTransform("Transform must be either procedural or declarative".to_string()));
         }
-
-        ast.map_err(|e| SchemaError::InvalidField(format!("Invalid transform syntax: {}", e)))?;
 
         Ok(())
     }

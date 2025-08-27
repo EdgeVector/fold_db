@@ -143,7 +143,7 @@ fn test_transform_conversion_to_transform() {
 
     let transform: Transform = json_transform.into();
 
-    assert_eq!(transform.logic, "return x + y");
+    assert_eq!(transform.get_procedural_logic().unwrap(), "return x + y");
     assert_eq!(transform.get_inputs(), &["input.field"]);
     assert_eq!(transform.get_output(), "output.field");
 }
@@ -165,8 +165,9 @@ fn test_declarative_transform_conversion_to_transform() {
 
     let transform: Transform = json_transform.into();
 
-    // Should contain placeholder logic for declarative transforms
-    assert!(transform.logic.contains("Declarative transform: test_declarative"));
+    // Should be a declarative transform
+    assert!(transform.is_declarative());
+    assert_eq!(transform.get_declarative_schema().unwrap().name, "test_declarative");
     assert_eq!(transform.get_inputs(), &["input.field"]);
     assert_eq!(transform.get_output(), "output.field");
 }

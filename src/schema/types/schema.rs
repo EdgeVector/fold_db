@@ -398,6 +398,6 @@ mod tests {
             .get("calculated_field")
             .expect("calculated_field not found");
         assert!(calculated_field.transform().is_some());
-        assert_eq!(calculated_field.transform().unwrap().logic, "return 1");
+        assert_eq!(calculated_field.transform().unwrap().get_procedural_logic().unwrap(), "return 1");
     }
 }
