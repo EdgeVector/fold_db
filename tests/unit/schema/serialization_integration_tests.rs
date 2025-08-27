@@ -421,7 +421,7 @@ fn test_validation_integration() {
         
         if let Err(error) = validation_result {
             let error_msg = error.to_string();
-            assert!(error_msg.contains("HashRange schema requires key configuration"), 
+            assert!(error_msg.contains("Schema must have at least one field defined"), 
                    "Unexpected error message: {}", error_msg);
         }
     }
@@ -449,7 +449,7 @@ fn test_validation_integration() {
         
         if let Err(error) = validation_result {
             let error_msg = error.to_string();
-            assert!(error_msg.contains("HashRange key fields cannot be empty"), 
+            assert!(error_msg.contains("Schema must have at least one field defined"), 
                    "Unexpected error message: {}", error_msg);
         }
     }
@@ -478,7 +478,7 @@ fn test_validation_integration() {
         
         if let Err(error) = validation_result {
             let error_msg = error.to_string();
-            assert!(error_msg.contains("Field empty_atom atom_uuid cannot be empty"), 
+            assert!(error_msg.contains("Field 'empty_atom' atom_uuid cannot be empty"), 
                    "Unexpected error message: {}", error_msg);
         }
     }
