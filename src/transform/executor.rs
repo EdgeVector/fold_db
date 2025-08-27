@@ -9,6 +9,7 @@ use super::parser::TransformParser;
 use crate::schema::indexing::chain_parser::{ChainParser, ParsedChain};
 use crate::schema::indexing::errors::IteratorStackError;
 use crate::schema::indexing::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
+use crate::schema::indexing::execution_engine::{ExecutionEngine, ExecutionResult};
 use crate::schema::types::{SchemaError, Transform};
 use log::{info, error};
 use serde_json::Value as JsonValue;
@@ -563,8 +564,19 @@ impl TransformExecutor {
         info!("🔍 Resolving parsed chain with {} operations for field '{}'", 
               parsed_chain.operations.len(), field_name);
 
-        // For now, extract a simple path from the operations and resolve it
-        // Full execution will be implemented in DTS-1-7C3
+        // Try to use ExecutionEngine for single expression execution
+        match Self::execute_single_expression_with_engine(parsed_chain, input_values) {
+            Ok(result) => {
+                info!("✅ ExecutionEngine resolved field '{}' successfully", field_name);
+                return Ok(result);
+            }
+            Err(engine_error) => {
+                info!("⚠️ ExecutionEngine failed for field '{}', falling back to simple resolution: {}", 
+                      field_name, engine_error);
+            }
+        }
+
+        // Fall back to simple path extraction and dotted path resolution
         let simple_path = Self::extract_simple_path_from_operations(&parsed_chain.operations);
         
         if simple_path.is_empty() {
@@ -722,6 +734,133 @@ impl TransformExecutor {
         
         info!("✅ Field alignment validation passed for schema '{}'", schema.name);
         Ok(())
+    }
+
+    /// Executes a single expression using the ExecutionEngine.
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chain` - The parsed chain to execute
+    /// * `input_values` - The input values for execution
+    ///
+    /// # Returns
+    ///
+    /// The execution result as JsonValue
+    fn execute_single_expression_with_engine(
+        parsed_chain: &ParsedChain,
+        input_values: &HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🚀 Executing single expression with ExecutionEngine: {}", parsed_chain.expression);
+        
+        // Create a temporary field alignment result for single expression
+        let mut field_alignments = HashMap::new();
+        field_alignments.insert(parsed_chain.expression.clone(), crate::schema::indexing::field_alignment::FieldAlignmentInfo {
+            expression: parsed_chain.expression.clone(),
+            depth: parsed_chain.depth,
+            alignment: crate::schema::indexing::chain_parser::FieldAlignment::OneToOne, // Default for simple cases
+            branch: parsed_chain.branch.clone(),
+            requires_reducer: false, // Simple case for now
+            suggested_reducer: None,
+        });
+        
+        let alignment_result = AlignmentValidationResult {
+            valid: true,
+            max_depth: parsed_chain.depth,
+            field_alignments,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        };
+        
+        // Convert input_values HashMap to a JSON object for ExecutionEngine
+        // The ExecutionEngine expects field names to match the input data structure
+        let input_data = JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        
+        info!("📊 Using input data for execution: {}", input_data);
+        
+        // Create and execute with ExecutionEngine
+        let mut execution_engine = ExecutionEngine::new();
+        let execution_result = execution_engine.execute_fields(
+            &[parsed_chain.clone()],
+            &alignment_result,
+            input_data,
+        ).map_err(Self::convert_iterator_stack_error)?;
+        
+        info!("📈 ExecutionEngine produced {} index entries, {} warnings", 
+              execution_result.index_entries.len(), execution_result.warnings.len());
+        
+        // Convert execution result to JsonValue
+        Self::convert_execution_result_to_json(&execution_result)
+    }
+
+    /// Converts an ExecutionResult to a JsonValue for transform output.
+    ///
+    /// # Arguments
+    ///
+    /// * `execution_result` - The execution result to convert
+    ///
+    /// # Returns
+    ///
+    /// The converted JsonValue
+    fn convert_execution_result_to_json(execution_result: &ExecutionResult) -> Result<JsonValue, SchemaError> {
+        info!("🔄 Converting ExecutionResult with {} entries to JsonValue", execution_result.index_entries.len());
+        
+        if execution_result.index_entries.is_empty() {
+            info!("📝 No index entries found, returning null");
+            return Ok(JsonValue::Null);
+        }
+        
+        // Check if this looks like a placeholder result from ExecutionEngine
+        // The ExecutionEngine often returns placeholder values like "value_for_expression"
+        let is_placeholder_result = execution_result.index_entries.iter().any(|entry| {
+            let hash_is_placeholder = entry.hash_value.as_str()
+                .map(|s| s.starts_with("value_for_"))
+                .unwrap_or(false);
+            let range_is_placeholder = entry.range_value.as_str()
+                .map(|s| s.starts_with("value_for_"))
+                .unwrap_or(false);
+            hash_is_placeholder || range_is_placeholder
+        });
+        
+        if is_placeholder_result {
+            info!("⚠️ ExecutionEngine returned placeholder values, should fallback to simple resolution");
+            return Err(SchemaError::InvalidField("ExecutionEngine returned placeholder values".to_string()));
+        }
+        
+        // For single expression execution, prefer hash_value as the primary field result
+        if execution_result.index_entries.len() == 1 {
+            let entry = &execution_result.index_entries[0];
+            info!("📝 Single entry found - hash_value: {}, range_value: {}", entry.hash_value, entry.range_value);
+            
+            // Use hash_value as the primary result, fallback to range_value if hash is null
+            if !entry.hash_value.is_null() {
+                info!("✅ Using hash_value as result: {}", entry.hash_value);
+                return Ok(entry.hash_value.clone());
+            } else if !entry.range_value.is_null() {
+                info!("✅ Using range_value as result: {}", entry.range_value);
+                return Ok(entry.range_value.clone());
+            }
+        }
+        
+        // For multiple entries, collect all hash values (primary) or range values (fallback)
+        let mut values = Vec::new();
+        for entry in &execution_result.index_entries {
+            if !entry.hash_value.is_null() {
+                values.push(entry.hash_value.clone());
+            } else if !entry.range_value.is_null() {
+                values.push(entry.range_value.clone());
+            } else {
+                // Include null values to maintain array structure
+                values.push(JsonValue::Null);
+            }
+        }
+        
+        info!("📊 Extracted {} values from index entries", values.len());
+        
+        if values.len() == 1 {
+            Ok(values[0].clone())
+        } else {
+            Ok(JsonValue::Array(values))
+        }
     }
 
     /// Converts input values from JsonValue to interpreter Value.
