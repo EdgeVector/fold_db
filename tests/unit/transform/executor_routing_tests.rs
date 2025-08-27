@@ -24,7 +24,6 @@ fn test_procedural_transform_routing() {
     match result {
         Ok(_) => {
             // Success - procedural routing worked
-            assert!(true);
         }
         Err(err) => {
             // Should not be a routing error
@@ -60,22 +59,32 @@ fn test_declarative_transform_routing() {
         "output.user_ref".to_string(),
     );
     
-    let input_values = HashMap::new();
+    // Add some input data for field resolution 
+    let mut input_values = HashMap::new();
+    input_values.insert("user".to_string(), serde_json::json!({
+        "name": "Alice",
+        "id": 123
+    }));
     
-    // This should route to declarative execution (placeholder)
+    // This should route to declarative execution
     let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
     
-    // Should succeed and return placeholder result
+    // Should succeed and return actual execution result
     assert!(result.is_ok(), "Declarative transform routing should succeed");
     
     let json_result = result.unwrap();
     
-    // Check that it's the placeholder result
+    // Check that it's a proper execution result (not placeholder)
     assert!(json_result.is_object());
     let obj = json_result.as_object().unwrap();
-    assert_eq!(obj.get("declarative_transform"), Some(&JsonValue::Bool(true)));
-    assert_eq!(obj.get("schema_name"), Some(&JsonValue::String("test_schema".to_string())));
-    assert_eq!(obj.get("status"), Some(&JsonValue::String("placeholder_execution".to_string())));
+    
+    // For Single schema, should have actual field execution results
+    // The field "user_ref" should exist (though may be null due to complex expression)
+    assert!(obj.contains_key("user_ref"), "Should have user_ref field");
+    
+    // Should NOT have placeholder fields (since Single schemas now execute properly)
+    assert_eq!(obj.get("declarative_transform"), None);
+    assert_eq!(obj.get("status"), None);
 }
 
 #[test]
@@ -143,9 +152,8 @@ fn test_declarative_transform_placeholder_content() {
     
     let result = TransformExecutor::execute_transform_with_expr(&transform, input_values).unwrap();
     
-    // Verify placeholder content
+    // Verify placeholder content for HashRange schema
     let obj = result.as_object().unwrap();
-    assert_eq!(obj.get("declarative_transform"), Some(&JsonValue::Bool(true)));
     assert_eq!(obj.get("schema_name"), Some(&JsonValue::String("location_time_schema".to_string())));
     assert_eq!(obj.get("schema_type"), Some(&JsonValue::String("HashRange".to_string())));
     assert_eq!(obj.get("status"), Some(&JsonValue::String("placeholder_execution".to_string())));
@@ -165,7 +173,6 @@ fn test_backward_compatibility_for_procedural_transforms() {
     match result {
         Ok(_) => {
             // Success - backward compatibility maintained
-            assert!(true);
         }
         Err(err) => {
             // Should not be a routing error
@@ -265,6 +272,10 @@ fn test_multiple_routing_calls() {
         assert!(decl_result.is_ok(), "Declarative routing failed on iteration {}", i);
         
         let json_result = decl_result.unwrap();
-        assert!(json_result.get("declarative_transform").unwrap().as_bool().unwrap());
+        assert!(json_result.is_object(), "Declarative execution should return an object on iteration {}", i);
+        
+        // For Single schema, should have actual field execution (not placeholder)
+        let obj = json_result.as_object().unwrap();
+        assert!(obj.contains_key("test"), "Single schema should have executed field 'test' on iteration {}", i);
     }
 }

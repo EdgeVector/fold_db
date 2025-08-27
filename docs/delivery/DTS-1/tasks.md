@@ -16,7 +16,7 @@ This document lists all tasks associated with PBI DTS-1.
 | DTS-1-6 | [Schema Interpreter and Core Integration Updates](./DTS-1-6.md) | Done | Update schema interpreter and core integration to handle declarative transforms |
 | DTS-1-7 | [Transform Processing and Execution Using Iterator Stack](./DTS-1-7.md) | Proposed | **BROKEN DOWN** - See DTS-1-7A through DTS-1-7D below |
 | DTS-1-7A | [Basic Transform Type Routing](./DTS-1-7A.md) | Done | Implement basic transform type routing to direct transforms to appropriate execution paths |
-| DTS-1-7B | [Simple Declarative Transform Execution](./DTS-1-7B.md) | Proposed | Execute simple declarative transforms with "Single" schema type and basic field resolution |
+| DTS-1-7B | [Simple Declarative Transform Execution](./DTS-1-7B.md) | Done | Execute simple declarative transforms with "Single" schema type and basic field resolution |
 | DTS-1-7C | [Basic Iterator Stack Integration](./DTS-1-7C.md) | **BROKEN DOWN** - See DTS-1-7C1 through DTS-1-7C4 below |
 | DTS-1-7C1 | [Basic Chain Parser Integration](./DTS-1-7C1.md) | Proposed | Import and use existing ChainParser for single expression parsing without execution or validation |
 | DTS-1-7C2 | [Field Alignment Validation Integration](./DTS-1-7C2.md) | Proposed | Integrate with existing FieldAlignmentValidator for declarative transform field alignment validation |

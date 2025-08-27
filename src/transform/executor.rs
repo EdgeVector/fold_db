@@ -217,7 +217,7 @@ impl TransformExecutor {
         Ok(json_result)
     }
 
-    /// Executes a declarative transform (placeholder implementation).
+    /// Executes a declarative transform with actual execution logic.
     ///
     /// # Arguments
     ///
@@ -226,12 +226,12 @@ impl TransformExecutor {
     ///
     /// # Returns
     ///
-    /// A placeholder result for declarative transform execution
+    /// The result of the declarative transform execution
     fn execute_declarative_transform(
         transform: &Transform,
-        _input_values: HashMap<String, JsonValue>,
+        input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🏗️ Executing declarative transform (placeholder)");
+        info!("🏗️ Executing declarative transform");
         
         let schema = transform.get_declarative_schema()
             .ok_or_else(|| SchemaError::InvalidTransform("Declarative transform must have schema".to_string()))?;
@@ -240,17 +240,239 @@ impl TransformExecutor {
         info!("🔧 Schema type: {:?}", schema.schema_type);
         info!("📊 Schema fields: {:?}", schema.fields.keys().collect::<Vec<_>>());
         
-        // Placeholder implementation - return a simple JSON object indicating declarative execution
-        let placeholder_result = serde_json::json!({
-            "declarative_transform": true,
-            "schema_name": schema.name,
-            "schema_type": format!("{:?}", schema.schema_type),
-            "status": "placeholder_execution",
-            "message": "Declarative transform execution not yet implemented"
-        });
+        // Route to appropriate execution based on schema type
+        match schema.schema_type {
+            crate::schema::types::schema::SchemaType::Single => {
+                info!("🎯 Executing Single schema type");
+                Self::execute_single_schema(schema, input_values)
+            }
+            crate::schema::types::schema::SchemaType::Range { .. } => {
+                info!("⚠️ Range schema execution not yet implemented - using placeholder");
+                Self::execute_range_schema_placeholder(schema)
+            }
+            crate::schema::types::schema::SchemaType::HashRange => {
+                info!("⚠️ HashRange schema execution not yet implemented - using placeholder");
+                Self::execute_hashrange_schema_placeholder(schema)
+            }
+        }
+    }
+
+    /// Executes a Single schema type declarative transform.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - The declarative schema definition
+    /// * `input_values` - The input values for the transform
+    ///
+    /// # Returns
+    ///
+    /// The result of the single schema execution
+    fn execute_single_schema(
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        input_values: HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🔧 Executing Single schema: {}", schema.name);
         
-        info!("✨ Declarative transform placeholder result: {}", placeholder_result);
-        Ok(placeholder_result)
+        // Validate schema structure
+        schema.validate()?;
+        
+        let mut result_object = serde_json::Map::new();
+        
+        // Process each field in the schema
+        for (field_name, field_def) in &schema.fields {
+            info!("📋 Processing field: {}", field_name);
+            
+            let field_value = Self::resolve_field_value(field_def, &input_values, field_name)?;
+            result_object.insert(field_name.clone(), field_value);
+        }
+        
+        let result = JsonValue::Object(result_object);
+        info!("✨ Single schema execution result: {}", result);
+        Ok(result)
+    }
+
+    /// Placeholder for Range schema execution (to be implemented in DTS-1-7D).
+    fn execute_range_schema_placeholder(
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    ) -> Result<JsonValue, SchemaError> {
+        Ok(serde_json::json!({
+            "schema_type": "Range",
+            "schema_name": schema.name,
+            "status": "placeholder_execution",
+            "message": "Range schema execution will be implemented in DTS-1-7D"
+        }))
+    }
+
+    /// Placeholder for HashRange schema execution (to be implemented in DTS-1-7D).
+    fn execute_hashrange_schema_placeholder(
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    ) -> Result<JsonValue, SchemaError> {
+        Ok(serde_json::json!({
+            "schema_type": "HashRange", 
+            "schema_name": schema.name,
+            "status": "placeholder_execution",
+            "message": "HashRange schema execution will be implemented in DTS-1-7D"
+        }))
+    }
+
+    /// Resolves a field value from input data based on field definition.
+    ///
+    /// # Arguments
+    ///
+    /// * `field_def` - The field definition containing resolution instructions
+    /// * `input_values` - The input data to resolve from
+    /// * `field_name` - The name of the field being resolved (for error messages)
+    ///
+    /// # Returns
+    ///
+    /// The resolved field value or an appropriate default/error
+    fn resolve_field_value(
+        field_def: &crate::schema::types::json_schema::FieldDefinition,
+        input_values: &HashMap<String, JsonValue>,
+        field_name: &str,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🔍 Resolving field '{}': {:?}", field_name, field_def);
+
+        // Handle atom_uuid field resolution
+        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+            info!("🔗 Resolving atom_uuid expression: {}", atom_uuid_expr);
+            return Self::resolve_atom_uuid_expression(atom_uuid_expr, input_values, field_name);
+        }
+
+        // Handle field_type without atom_uuid (constants or computed values)
+        if let Some(field_type) = &field_def.field_type {
+            info!("📝 Field type specified: {}", field_type);
+            
+            // For now, return a default value based on field type
+            let default_value = Self::get_default_value_for_type(field_type);
+            info!("🎯 Using default value for type '{}': {}", field_type, default_value);
+            return Ok(default_value);
+        }
+
+        // If no atom_uuid or field_type, return null
+        info!("⚠️ No resolution instructions for field '{}', returning null", field_name);
+        Ok(JsonValue::Null)
+    }
+
+    /// Resolves an atom UUID expression from input data.
+    ///
+    /// # Arguments
+    ///
+    /// * `atom_uuid_expr` - The atom UUID expression to resolve
+    /// * `input_values` - The input data to resolve from
+    /// * `field_name` - The field name for error context
+    ///
+    /// # Returns
+    ///
+    /// The resolved value from the expression
+    fn resolve_atom_uuid_expression(
+        atom_uuid_expr: &str,
+        input_values: &HashMap<String, JsonValue>,
+        field_name: &str,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🔎 Resolving atom UUID expression: {}", atom_uuid_expr);
+
+        // Simple path-based resolution for basic cases
+        // More complex parsing will be implemented in DTS-1-7C series
+        
+        if atom_uuid_expr.contains('.') {
+            // Handle dotted path expressions like "user.map().name"
+            let resolved_value = Self::resolve_dotted_path(atom_uuid_expr, input_values)?;
+            info!("✅ Resolved dotted path '{}' to: {}", atom_uuid_expr, resolved_value);
+            return Ok(resolved_value);
+        }
+
+        // Handle simple direct field references
+        if let Some(value) = input_values.get(atom_uuid_expr) {
+            info!("✅ Direct field resolution '{}' found: {}", atom_uuid_expr, value);
+            return Ok(value.clone());
+        }
+
+        // Field not found - return null with warning
+        info!("⚠️ Field '{}' with expression '{}' not found in input data", field_name, atom_uuid_expr);
+        Ok(JsonValue::Null)
+    }
+
+    /// Resolves a dotted path expression like "user.profile.name".
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The dotted path to resolve
+    /// * `input_values` - The input data to resolve from
+    ///
+    /// # Returns
+    ///
+    /// The resolved value or null if not found
+    fn resolve_dotted_path(
+        path: &str,
+        input_values: &HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        let parts: Vec<&str> = path.split('.').collect();
+        
+        if parts.is_empty() {
+            return Ok(JsonValue::Null);
+        }
+
+        // Start with the root object
+        let root_key = parts[0];
+        let mut current_value = match input_values.get(root_key) {
+            Some(value) => value.clone(),
+            None => {
+                info!("⚠️ Root key '{}' not found in input data", root_key);
+                return Ok(JsonValue::Null);
+            }
+        };
+
+        // Navigate through the path
+        for part in &parts[1..] {
+            // Skip function calls like "map()" for now - will be implemented in DTS-1-7C
+            if part.contains('(') {
+                info!("🔄 Skipping function call: {}", part);
+                continue;
+            }
+
+            // Navigate into object property
+            match current_value {
+                JsonValue::Object(ref obj) => {
+                    current_value = obj.get(*part).unwrap_or(&JsonValue::Null).clone();
+                }
+                JsonValue::Array(ref arr) if part.parse::<usize>().is_ok() => {
+                    // Handle array indexing
+                    let index = part.parse::<usize>().unwrap();
+                    current_value = arr.get(index).unwrap_or(&JsonValue::Null).clone();
+                }
+                _ => {
+                    info!("⚠️ Cannot navigate '{}' in non-object/array value", part);
+                    return Ok(JsonValue::Null);
+                }
+            }
+        }
+
+        info!("✅ Resolved path '{}' to: {}", path, current_value);
+        Ok(current_value)
+    }
+
+    /// Returns a default value for a given field type.
+    ///
+    /// # Arguments
+    ///
+    /// * `field_type` - The field type string
+    ///
+    /// # Returns
+    ///
+    /// An appropriate default value for the type
+    fn get_default_value_for_type(field_type: &str) -> JsonValue {
+        match field_type.to_lowercase().as_str() {
+            "string" | "str" => JsonValue::String("".to_string()),
+            "number" | "i32" | "i64" | "f32" | "f64" => JsonValue::Number(serde_json::Number::from(0)),
+            "boolean" | "bool" => JsonValue::Bool(false),
+            "array" => JsonValue::Array(vec![]),
+            "object" => JsonValue::Object(serde_json::Map::new()),
+            _ => {
+                info!("🤷 Unknown field type '{}', using null", field_type);
+                JsonValue::Null
+            }
+        }
     }
 
     /// Converts input values from JsonValue to interpreter Value.
