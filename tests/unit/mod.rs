@@ -5,5 +5,6 @@
 
 pub mod mutation_completion_tests;
 pub mod schema;
+pub mod transform;
 pub mod transform_manager_module_tests;
 pub mod transform_utils_helper_tests;

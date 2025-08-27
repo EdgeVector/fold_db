@@ -134,11 +134,11 @@ impl TransformExecutor {
         result
     }
 
-    /// Executes a transform with a pre-parsed expression.
+    /// Executes a transform with routing based on transform type.
     ///
     /// # Arguments
     ///
-    /// * `transform` - The transform to execute with a pre-parsed expression
+    /// * `transform` - The transform to execute
     /// * `input_values` - The input values for the transform
     ///
     /// # Returns
@@ -148,13 +148,42 @@ impl TransformExecutor {
         transform: &Transform,
         input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
+        // Route based on transform type
+        if transform.is_procedural() {
+            info!("🔀 Routing to procedural transform execution");
+            Self::execute_procedural_transform(transform, input_values)
+        } else if transform.is_declarative() {
+            info!("🔀 Routing to declarative transform execution");
+            Self::execute_declarative_transform(transform, input_values)
+        } else {
+            error!("❌ Unknown transform type encountered");
+            Err(SchemaError::InvalidTransform("Unknown transform type".to_string()))
+        }
+    }
+
+    /// Executes a procedural transform using the existing logic.
+    ///
+    /// # Arguments
+    ///
+    /// * `transform` - The procedural transform to execute
+    /// * `input_values` - The input values for the transform
+    ///
+    /// # Returns
+    ///
+    /// The result of the transform execution
+    fn execute_procedural_transform(
+        transform: &Transform,
+        input_values: HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("⚙️ Executing procedural transform");
+        
         // Use the pre-parsed expression if available, otherwise parse the transform logic
         let ast = match &transform.parsed_expression {
             Some(expr) => expr.clone(),
             None => {
-                // Parse the transform logic (only works for procedural transforms)
+                // Parse the transform logic
                 let logic = transform.get_procedural_logic()
-                    .ok_or_else(|| SchemaError::InvalidTransform("Cannot execute declarative transform with expression executor".to_string()))?;
+                    .ok_or_else(|| SchemaError::InvalidTransform("Procedural transform must have logic".to_string()))?;
                 let parser = TransformParser::new();
                 parser.parse_expression(logic).map_err(|e| {
                     SchemaError::InvalidField(format!("Failed to parse transform: {}", e))
@@ -186,6 +215,42 @@ impl TransformExecutor {
         let json_result = Self::convert_result_value(evaluated)?;
         info!("✨ Final JSON result: {}", json_result);
         Ok(json_result)
+    }
+
+    /// Executes a declarative transform (placeholder implementation).
+    ///
+    /// # Arguments
+    ///
+    /// * `transform` - The declarative transform to execute
+    /// * `input_values` - The input values for the transform
+    ///
+    /// # Returns
+    ///
+    /// A placeholder result for declarative transform execution
+    fn execute_declarative_transform(
+        transform: &Transform,
+        _input_values: HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🏗️ Executing declarative transform (placeholder)");
+        
+        let schema = transform.get_declarative_schema()
+            .ok_or_else(|| SchemaError::InvalidTransform("Declarative transform must have schema".to_string()))?;
+        
+        info!("📋 Declarative schema: {}", schema.name);
+        info!("🔧 Schema type: {:?}", schema.schema_type);
+        info!("📊 Schema fields: {:?}", schema.fields.keys().collect::<Vec<_>>());
+        
+        // Placeholder implementation - return a simple JSON object indicating declarative execution
+        let placeholder_result = serde_json::json!({
+            "declarative_transform": true,
+            "schema_name": schema.name,
+            "schema_type": format!("{:?}", schema.schema_type),
+            "status": "placeholder_execution",
+            "message": "Declarative transform execution not yet implemented"
+        });
+        
+        info!("✨ Declarative transform placeholder result: {}", placeholder_result);
+        Ok(placeholder_result)
     }
 
     /// Converts input values from JsonValue to interpreter Value.
