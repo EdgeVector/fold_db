@@ -245,6 +245,11 @@ See [`SOCIAL_MEDIA_INGESTION_PROPOSAL.md`](SOCIAL_MEDIA_INGESTION_PROPOSAL.md) f
 git clone https://github.com/yourusername/datafold.git
 cd datafold
 
+# Install dependencies
+sudo apt install rustup
+rustup default stable        # Installs cargo
+sudo apt install openssl libssl-dev pkg-config
+
 # Build all components
 cargo build --release --workspace
 
