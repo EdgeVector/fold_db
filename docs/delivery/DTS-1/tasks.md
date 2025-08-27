@@ -18,7 +18,7 @@ This document lists all tasks associated with PBI DTS-1.
 | DTS-1-7A | [Basic Transform Type Routing](./DTS-1-7A.md) | Done | Implement basic transform type routing to direct transforms to appropriate execution paths |
 | DTS-1-7B | [Simple Declarative Transform Execution](./DTS-1-7B.md) | Done | Execute simple declarative transforms with "Single" schema type and basic field resolution |
 | DTS-1-7C | [Basic Iterator Stack Integration](./DTS-1-7C.md) | **BROKEN DOWN** - See DTS-1-7C1 through DTS-1-7C4 below |
-| DTS-1-7C1 | [Basic Chain Parser Integration](./DTS-1-7C1.md) | Proposed | Import and use existing ChainParser for single expression parsing without execution or validation |
+| DTS-1-7C1 | [Basic Chain Parser Integration](./DTS-1-7C1.md) | Done | Import and use existing ChainParser for single expression parsing without execution or validation |
 | DTS-1-7C2 | [Field Alignment Validation Integration](./DTS-1-7C2.md) | Proposed | Integrate with existing FieldAlignmentValidator for declarative transform field alignment validation |
 | DTS-1-7C3 | [Execution Engine Basic Integration](./DTS-1-7C3.md) | Proposed | Basic integration with existing ExecutionEngine for single expression execution |
 | DTS-1-7C4 | [Multi-Chain Coordination & HashRange Support](./DTS-1-7C4.md) | Proposed | Coordinate multiple field expressions for HashRange schema execution with proper depth management |
