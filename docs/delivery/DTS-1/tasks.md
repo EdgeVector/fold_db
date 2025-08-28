@@ -24,7 +24,7 @@ This document lists all tasks associated with PBI DTS-1.
 | DTS-1-7C4 | [Multi-Chain Coordination & HashRange Support](./DTS-1-7C4.md) | Done | Coordinate multiple field expressions for HashRange schema execution with proper depth management |
 | DTS-1-7D | [Advanced HashRange Features & Optimization](./DTS-1-7D.md) | Done | Implement advanced HashRange features, performance optimization, and production-ready capabilities |
 | DTS-1-8 | [Validation and Error Handling Using Existing Infrastructure](./DTS-1-8.md) | Done | Implement comprehensive validation using existing iterator stack validation components |
-| DTS-1-9 | [Storage and UI Integration Updates](./DTS-1-9.md) | Proposed | Update transform storage, display, and logging components for both transform types |
+| DTS-1-9 | [Storage and UI Integration Updates](./DTS-1-9.md) | Done | Update transform storage, display, and logging components for both transform types |
 | DTS-1-10 | [Integration Testing with Existing Infrastructure](./DTS-1-10.md) | Proposed | Perform comprehensive integration testing with existing iterator stack infrastructure |
 | DTS-1-11 | [E2E CoS Test](./DTS-1-E2E-CoS-Test.md) | Proposed | End-to-end testing to verify all Conditions of Satisfaction are met for the declarative transform data structures |
 

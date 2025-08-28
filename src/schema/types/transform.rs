@@ -552,6 +552,23 @@ impl Transform {
 
         Ok(())
     }
+
+    /// Get debug information about the transform for logging and debugging
+    pub fn get_debug_info(&self) -> String {
+        let transform_type = match &self.kind {
+            crate::schema::types::json_schema::TransformKind::Procedural { logic } => {
+                format!("Procedural (logic: {})", logic)
+            }
+            crate::schema::types::json_schema::TransformKind::Declarative { schema } => {
+                format!("Declarative (schema: {})", schema.name)
+            }
+        };
+        
+        format!(
+            "Transform{{type: {}, inputs: {:?}, output: {}}}",
+            transform_type, self.inputs, self.output
+        )
+    }
 }
 #[cfg(test)]
 mod tests {

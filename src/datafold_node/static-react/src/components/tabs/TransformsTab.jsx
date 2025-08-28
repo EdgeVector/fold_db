@@ -70,6 +70,7 @@ const TransformsTab = ({ _onResult }) => {
           const match = field.transform.match(/transform\s+(\w+)\s*{\s*logic:\s*{\s*([^}]+);\s*}\s*}/)
           if (match) {
             field.transform = {
+              kind: 'procedural',
               logic: match[2].trim(),
               output: `${schema.name}.${fieldName}`,
               inputs: []
@@ -79,6 +80,11 @@ const TransformsTab = ({ _onResult }) => {
           // Ensure output field is set if missing
           if (!field.transform.output) {
             field.transform.output = `${schema.name}.${fieldName}`
+          }
+          
+          // Ensure kind is set for backward compatibility
+          if (!field.transform.kind) {
+            field.transform.kind = field.transform.logic ? 'procedural' : 'declarative'
           }
         }
       })
@@ -212,12 +218,38 @@ const TransformsTab = ({ _onResult }) => {
                             )}
                           </div>
                         </div>
+                        {/* Display transform type and content */}
                         <div className="text-sm">
-                          <span className="font-medium">Logic:</span>{' '}
-                          <code className="bg-gray-100 px-2 py-1 rounded text-gray-800">
-                            {field.transform.logic}
-                          </code>
+                          <span className="font-medium">Type:</span>{' '}
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            field.transform.kind === 'declarative' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {field.transform.kind === 'declarative' ? 'Declarative' : 'Procedural'}
+                          </span>
                         </div>
+                        
+                        {/* Show logic for procedural transforms */}
+                        {field.transform.logic && (
+                          <div className="text-sm">
+                            <span className="font-medium">Logic:</span>{' '}
+                            <code className="bg-gray-100 px-2 py-1 rounded text-gray-800">
+                              {field.transform.logic}
+                            </code>
+                          </div>
+                        )}
+                        
+                        {/* Show schema info for declarative transforms */}
+                        {field.transform.kind === 'declarative' && field.transform.schema && (
+                          <div className="text-sm">
+                            <span className="font-medium">Schema:</span>{' '}
+                            <code className="bg-gray-100 px-2 py-1 rounded text-gray-800">
+                              {field.transform.schema.schema_name}
+                            </code>
+                          </div>
+                        )}
+                        
                         {field.transform.output && (
                           <div className="text-sm mt-2 bg-blue-50 p-3 rounded-md border-l-4 border-blue-500">
                             <span className="font-medium text-blue-700">Output:</span>{' '}

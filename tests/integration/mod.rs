@@ -22,3 +22,4 @@ pub mod available_schemas_test;
 
 // Validation and error handling integration tests
 pub mod validation_integration_tests;
+pub mod storage_integration_tests;

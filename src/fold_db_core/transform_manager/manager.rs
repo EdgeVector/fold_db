@@ -70,9 +70,14 @@ impl TransformManager {
         for transform_id in transform_ids {
             match db_ops.get_transform(&transform_id) {
                 Ok(Some(transform)) => {
+                    // Log transform type information for better debugging
+                    let transform_type = match &transform.kind {
+                        crate::schema::types::json_schema::TransformKind::Procedural { .. } => "Procedural",
+                        crate::schema::types::json_schema::TransformKind::Declarative { .. } => "Declarative",
+                    };
                     info!(
-                        "📋 Loading transform '{}' with inputs: {:?}, output: {}",
-                        transform_id, transform.get_inputs(), transform.get_output()
+                        "📋 Loading {} transform '{}' with inputs: {:?}, output: {}",
+                        transform_type, transform_id, transform.get_inputs(), transform.get_output()
                     );
                     registered_transforms.insert(transform_id, transform);
                 }

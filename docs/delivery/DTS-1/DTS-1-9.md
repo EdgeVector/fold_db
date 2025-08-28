@@ -11,6 +11,8 @@ Update transform storage, display, and logging components to handle both procedu
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-01-27 16:30:00 | Created | N/A | Proposed | Task file created | AI Agent |
+| 2025-01-27 22:30:00 | Status Update | Proposed | InProgress | Starting storage and UI integration updates | AI Agent |
+| 2025-01-27 23:00:00 | Status Update | InProgress | Done | Storage and UI integration updates completed successfully | AI Agent |
 
 ## Requirements
 
@@ -63,13 +65,24 @@ Update transform storage, display, and logging components to handle both procedu
 
 ## Files Modified
 
-- `src/schema/transform.rs` - Update transform registration and processing
-- `src/fold_db_core/transform_manager/manager.rs` - Update transform manager integration
-- `src/fold_db_core/orchestration/transform_orchestrator.rs` - Update orchestrator integration
-- `src/transform/mod.rs` - Add declarative transform support
-- UI components (if applicable) - Update display logic
-- Logging components - Add transform type information
-- `tests/integration/storage_integration_tests.rs` - Add storage integration tests
+**Implementation Files:**
+- `src/db_operations/transform_operations.rs` - Enhanced database operations with transform type logging for storage and retrieval
+- `src/fold_db_core/transform_manager/manager.rs` - Updated transform manager to include transform type information in loading logs
+- `src/fold_db_core/transform_manager/loading.rs` - Enhanced transform registration logging with transform type information
+- `src/schema/types/transform.rs` - Added `get_debug_info()` method for comprehensive transform debugging information
+- `src/datafold_node/static-react/src/components/tabs/TransformsTab.jsx` - Updated UI to display transform type information and handle both procedural and declarative transforms
+
+**Test Files:**
+- `tests/integration/storage_integration_tests.rs` - Comprehensive storage integration tests (6 tests) covering both transform types, transform manager integration, backward compatibility, debug information, error handling, and performance
+- `tests/integration/mod.rs` - Added storage_integration_tests module
+
+**Key Features Implemented:**
+- Enhanced database operations with transform type logging for better debugging and monitoring
+- Transform manager integration with transform type information in all logging operations
+- UI components updated to clearly display transform type (Procedural vs Declarative) with appropriate styling
+- Comprehensive debug information method for transforms including type, inputs, and output details
+- Full backward compatibility maintained for existing procedural transforms
+- Comprehensive test coverage for storage operations, transform manager integration, and UI display
 
 ## Test Plan
 
