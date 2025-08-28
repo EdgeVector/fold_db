@@ -25,10 +25,10 @@ This document lists all tasks associated with PBI DTS-1.
 | DTS-1-7D | [Advanced HashRange Features & Optimization](./DTS-1-7D.md) | Done | Implement advanced HashRange features, performance optimization, and production-ready capabilities |
 | DTS-1-8 | [Validation and Error Handling Using Existing Infrastructure](./DTS-1-8.md) | Done | Implement comprehensive validation using existing iterator stack validation components |
 | DTS-1-9 | [Storage and UI Integration Updates](./DTS-1-9.md) | Done | Update transform storage, display, and logging components for both transform types |
-| DTS-1-10 | [Integration Testing with Existing Infrastructure](./DTS-1-10.md) | Proposed | Perform comprehensive integration testing with existing iterator stack infrastructure |
+| DTS-1-10 | [Integration Testing with Existing Infrastructure](./DTS-1-10.md) | Done | Perform comprehensive integration testing with existing iterator stack infrastructure |
 | DTS-1-11 | [E2E CoS Test](./DTS-1-E2E-CoS-Test.md) | Proposed | End-to-end testing to verify all Conditions of Satisfaction are met for the declarative transform data structures |
 | DTS-1-12 | [Fix Complex Chain Expression Execution](./DTS-1-12.md) | Done | Fix execution engine issues with complex chain expressions like `blogpost.map().content.split_by_word().map()` |
-| DTS-1-13 | [Fix Multi-Field Input Data Structure Handling](./DTS-1-13.md) | Blocking | Fix execution engine input data structure handling for multi-field scenarios with expressions like `data.value` |
+| DTS-1-13 | [Fix Multi-Field Input Data Structure Handling](./DTS-1-13.md) | Done | Fix execution engine input data structure handling for multi-field scenarios with expressions like `data.value` |
 
 ## Task Dependencies
 
@@ -52,10 +52,10 @@ This document lists all tasks associated with PBI DTS-1.
 ### Validation and Testing (Tasks 8-13)
 - **DTS-1-8**: Validation (depends on DTS-1-7C2, DTS-1-6)
 - **DTS-1-9**: Storage/UI (depends on DTS-1-7D, DTS-1-6)
-- **DTS-1-10**: Integration testing (depends on DTS-1-7D, DTS-1-8, **BLOCKED by DTS-1-13**)
-- **DTS-1-11**: E2E testing (depends on DTS-1-10)
+- **DTS-1-10**: Integration testing (depends on DTS-1-7D, DTS-1-8) - **COMPLETED**
+- **DTS-1-11**: E2E testing (depends on DTS-1-10) - **UNBLOCKED**
 - **DTS-1-12**: Fix complex chain execution (depends on DTS-1-7C4) - **COMPLETED**
-- **DTS-1-13**: Fix multi-field input handling (depends on DTS-1-7C3) - **BLOCKS DTS-1-10**
+- **DTS-1-13**: Fix multi-field input handling (depends on DTS-1-7C3) - **COMPLETED**
 
 ## Implementation Sequence
 
@@ -67,5 +67,5 @@ This document lists all tasks associated with PBI DTS-1.
    - **Phase 3C**: Advanced HashRange features (DTS-1-7D)
 4. **Phase 4: Validation** - Complete DTS-1-8
 5. **Phase 5: Integration** - Complete DTS-1-9
-6. **Phase 6: Bug Fixes** - Complete DTS-1-13 to address remaining blocking execution engine issues (DTS-1-12 completed)
-7. **Phase 7: Testing** - Complete DTS-1-10 and DTS-1-11 (unblocked after remaining bug fixes)
+6. **Phase 6: Bug Fixes** - Complete DTS-1-12 and DTS-1-13 to address blocking execution engine issues (both completed)
+7. **Phase 7: Testing** - Complete DTS-1-10 (completed) and DTS-1-11 (unblocked)
