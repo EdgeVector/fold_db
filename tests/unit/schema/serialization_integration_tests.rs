@@ -100,8 +100,8 @@ fn test_complex_transform_ecosystem_round_trip() {
     ];
     
     for (name, transform) in transforms {
-        let json = serde_json::to_string(&transform).expect(&format!("serialize {} transform", name));
-        let deserialized: JsonTransform = serde_json::from_str(&json).expect(&format!("deserialize {} transform", name));
+        let json = serde_json::to_string(&transform).unwrap_or_else(|_| panic!("serialize {} transform", name));
+        let deserialized: JsonTransform = serde_json::from_str(&json).unwrap_or_else(|_| panic!("deserialize {} transform", name));
         
         // Verify basic structure is preserved
         assert_eq!(deserialized.inputs, transform.inputs, "inputs mismatch for {}", name);
@@ -133,7 +133,7 @@ fn test_complex_transform_ecosystem_round_trip() {
                 // Verify fields are preserved
                 assert_eq!(deser_schema.fields.len(), orig_schema.fields.len(), "field count mismatch for {}", name);
                 for (field_name, orig_field) in &orig_schema.fields {
-                    let deser_field = deser_schema.fields.get(field_name).expect(&format!("missing field {} in {}", field_name, name));
+                    let deser_field = deser_schema.fields.get(field_name).unwrap_or_else(|| panic!("missing field {} in {}", field_name, name));
                     assert_eq!(deser_field.atom_uuid, orig_field.atom_uuid, "atom_uuid mismatch for field {} in {}", field_name, name);
                     assert_eq!(deser_field.field_type, orig_field.field_type, "field_type mismatch for field {} in {}", field_name, name);
                 }

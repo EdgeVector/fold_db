@@ -408,6 +408,208 @@ impl DeclarativeSchemaDefinition {
             field.validate(name)?;
         }
 
+        // Enhanced validation using iterator stack infrastructure
+        self.validate_with_iterator_stack()?;
+
+        Ok(())
+    }
+
+    /// Validates the declarative schema using existing iterator stack infrastructure.
+    /// This provides comprehensive validation using field alignment and chain parsing.
+    fn validate_with_iterator_stack(&self) -> Result<(), SchemaError> {
+        use crate::schema::indexing::chain_parser::ChainParser;
+        use crate::schema::indexing::field_alignment::FieldAlignmentValidator;
+        use crate::schema::indexing::errors::IteratorStackError;
+        use log::info;
+
+        info!("🔍 Performing iterator stack validation for schema: {}", self.name);
+
+        // Parse all field expressions to validate syntax
+        let mut parsed_chains = Vec::new();
+        let mut parsing_errors = Vec::new();
+        
+        for (field_name, field_def) in &self.fields {
+            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+                match parser.parse(atom_uuid_expr) {
+                    Ok(parsed_chain) => {
+                        parsed_chains.push(parsed_chain);
+                    }
+                    Err(parse_error) => {
+                        parsing_errors.push((field_name.clone(), atom_uuid_expr.clone(), parse_error));
+                    }
+                }
+            }
+        }
+
+        // Report any parsing errors
+        if !parsing_errors.is_empty() {
+            let error_details: Vec<String> = parsing_errors.iter()
+                .map(|(field, expr, error)| format!("Field '{}' expression '{}': {}", field, expr, self.convert_iterator_error_to_schema_error(error)))
+                .collect();
+            
+            return Err(SchemaError::InvalidField(format!(
+                "Expression parsing failed: {}", 
+                error_details.join("; ")
+            )));
+        }
+
+        // Validate field alignment if we have parsed chains
+        if !parsed_chains.is_empty() {
+            let validator = FieldAlignmentValidator::new();
+            match validator.validate_alignment(&parsed_chains) {
+                Ok(alignment_result) => {
+                    if !alignment_result.valid {
+                        let error_messages: Vec<String> = alignment_result.errors.iter()
+                            .map(|err| format!("{:?}: {}", err.error_type, err.message))
+                            .collect();
+                        return Err(SchemaError::InvalidField(format!(
+                            "Field alignment validation failed: {}", 
+                            error_messages.join("; ")
+                        )));
+                    }
+
+                    // Log warnings for user guidance
+                    for warning in &alignment_result.warnings {
+                        log::warn!("Schema validation warning: {:?}: {}", warning.warning_type, warning.message);
+                    }
+                }
+                Err(iterator_error) => {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Field alignment validation error: {}", 
+                        self.convert_iterator_error_to_schema_error(&iterator_error)
+                    )));
+                }
+            }
+        }
+
+        // Schema type specific iterator stack validation
+        match &self.schema_type {
+            crate::schema::types::schema::SchemaType::HashRange => {
+                self.validate_hashrange_iterator_requirements()?;
+            }
+            crate::schema::types::schema::SchemaType::Range { range_key } => {
+                self.validate_range_iterator_requirements(range_key)?;
+            }
+            crate::schema::types::schema::SchemaType::Single => {
+                self.validate_single_iterator_requirements()?;
+            }
+        }
+
+        info!("✅ Iterator stack validation completed successfully for schema: {}", self.name);
+        Ok(())
+    }
+
+    /// Converts iterator stack errors to schema errors for consistent error handling
+    fn convert_iterator_error_to_schema_error(&self, error: &crate::schema::indexing::errors::IteratorStackError) -> String {
+        use crate::schema::indexing::errors::IteratorStackError;
+        
+        match error {
+            IteratorStackError::InvalidChainSyntax { expression, reason } => {
+                format!("Invalid expression syntax '{}': {}", expression, reason)
+            }
+            IteratorStackError::IncompatibleFanoutDepths { field1, depth1, field2, depth2 } => {
+                format!("Incompatible depths: field '{}' (depth {}) conflicts with field '{}' (depth {})", 
+                       field1, depth1, field2, depth2)
+            }
+            IteratorStackError::CartesianFanoutError { field1, branch1, field2, branch2 } => {
+                format!("Cartesian product detected: field '{}' (branch '{}') conflicts with field '{}' (branch '{}')", 
+                       field1, branch1, field2, branch2)
+            }
+            IteratorStackError::ReducerRequired { field, current_depth, max_depth } => {
+                format!("Field '{}' at depth {} requires a reducer (max depth: {})", 
+                       field, current_depth, max_depth)
+            }
+            IteratorStackError::InvalidIteratorChain { chain, reason } => {
+                format!("Invalid iterator chain '{}': {}", chain, reason)
+            }
+            IteratorStackError::AmbiguousFanoutDifferentBranches { branches } => {
+                format!("Ambiguous fan-out across branches: {}", branches.join(", "))
+            }
+            IteratorStackError::MaxDepthExceeded { current_depth, max_depth } => {
+                format!("Maximum depth exceeded: {} > {}", current_depth, max_depth)
+            }
+            IteratorStackError::FieldAlignmentError { field, reason } => {
+                format!("Field alignment error for '{}': {}", field, reason)
+            }
+            IteratorStackError::ExecutionError { message } => {
+                format!("Execution error: {}", message)
+            }
+        }
+    }
+
+    /// Validates HashRange schema iterator stack requirements
+    fn validate_hashrange_iterator_requirements(&self) -> Result<(), SchemaError> {
+        let key_config = self.key.as_ref().ok_or_else(|| {
+            SchemaError::InvalidField("HashRange schema requires key configuration".to_string())
+        })?;
+
+        // Validate that hash_field and range_field expressions can be parsed
+        let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+        
+        parser.parse(&key_config.hash_field)
+            .map_err(|e| SchemaError::InvalidField(format!(
+                "HashRange hash_field expression invalid: {}", 
+                self.convert_iterator_error_to_schema_error(&e)
+            )))?;
+            
+        parser.parse(&key_config.range_field)
+            .map_err(|e| SchemaError::InvalidField(format!(
+                "HashRange range_field expression invalid: {}", 
+                self.convert_iterator_error_to_schema_error(&e)
+            )))?;
+
+        Ok(())
+    }
+
+    /// Validates Range schema iterator stack requirements
+    fn validate_range_iterator_requirements(&self, range_key: &str) -> Result<(), SchemaError> {
+        // Ensure the range_key field exists and has a valid expression
+        let range_field = self.fields.get(range_key).ok_or_else(|| {
+            SchemaError::InvalidField(format!(
+                "Range schema range_key '{}' not found in schema fields", 
+                range_key
+            ))
+        })?;
+
+        if let Some(atom_uuid_expr) = &range_field.atom_uuid {
+            let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+            parser.parse(atom_uuid_expr)
+                .map_err(|e| SchemaError::InvalidField(format!(
+                    "Range schema range_key field '{}' expression invalid: {}", 
+                    range_key, self.convert_iterator_error_to_schema_error(&e)
+                )))?;
+        } else {
+            return Err(SchemaError::InvalidField(format!(
+                "Range schema range_key field '{}' must have an atom_uuid expression", 
+                range_key
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Validates Single schema iterator stack requirements
+    fn validate_single_iterator_requirements(&self) -> Result<(), SchemaError> {
+        // For Single schemas, all fields should be at compatible depths
+        // This is already handled by the general field alignment validation
+        // but we can add specific Single schema checks here if needed
+        
+        // Single schemas should prefer simple expressions for optimal performance
+        let mut complex_expressions = Vec::new();
+        for (field_name, field_def) in &self.fields {
+            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                if atom_uuid_expr.contains(".map().") && atom_uuid_expr.matches(".map().").count() > 1 {
+                    complex_expressions.push(field_name.clone());
+                }
+            }
+        }
+
+        if !complex_expressions.is_empty() {
+            log::warn!("Single schema '{}' has complex nested expressions in fields: {}. Consider using HashRange or Range schema for better performance.", 
+                      self.name, complex_expressions.join(", "));
+        }
+
         Ok(())
     }
 

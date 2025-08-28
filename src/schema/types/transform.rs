@@ -300,6 +300,258 @@ impl Transform {
             parsed_expression: None,
         }
     }
+
+    /// Validates the transform using existing infrastructure.
+    /// 
+    /// This performs comprehensive validation including iterator stack validation
+    /// for declarative transforms and DSL syntax validation for procedural transforms.
+    pub fn validate(&self) -> Result<(), crate::schema::types::SchemaError> {
+        use log::info;
+
+        info!("🔍 Validating transform: {:?}", self.kind);
+
+        // Validate transform kind
+        self.kind.validate()?;
+
+        // Validate inputs and output
+        if self.output.trim().is_empty() {
+            return Err(crate::schema::types::SchemaError::InvalidField(
+                "Transform output cannot be empty".to_string()
+            ));
+        }
+
+        // Additional validation based on transform type
+        match &self.kind {
+            crate::schema::types::json_schema::TransformKind::Procedural { logic: _ } => {
+                self.validate_procedural_transform()?;
+            }
+            crate::schema::types::json_schema::TransformKind::Declarative { schema } => {
+                self.validate_declarative_transform(schema)?;
+            }
+        }
+
+        info!("✅ Transform validation completed successfully");
+        Ok(())
+    }
+
+    /// Validates procedural transform specific requirements
+    fn validate_procedural_transform(&self) -> Result<(), crate::schema::types::SchemaError> {
+        // Procedural validation is already handled by TransformKind::validate()
+        // Additional procedural-specific validation could go here
+        Ok(())
+    }
+
+    /// Validates declarative transform using iterator stack infrastructure
+    fn validate_declarative_transform(
+        &self, 
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition
+    ) -> Result<(), crate::schema::types::SchemaError> {
+        use crate::schema::indexing::chain_parser::ChainParser;
+        use crate::schema::indexing::field_alignment::FieldAlignmentValidator;
+        use log::info;
+
+        info!("🔍 Validating declarative transform with iterator stack infrastructure");
+
+        // Validate that inputs are appropriate for declarative transforms
+        // Note: For declarative transforms, inputs represent data sources, not schema fields
+        // This validation focuses on ensuring inputs are reasonable
+        for input in &self.inputs {
+            if input.trim().is_empty() {
+                return Err(crate::schema::types::SchemaError::InvalidField(
+                    "Transform input names cannot be empty".to_string()
+                ));
+            }
+        }
+
+        // Parse and validate all field expressions for alignment
+        let mut parsed_chains = Vec::new();
+        let mut parsing_errors = Vec::new();
+        
+        for (field_name, field_def) in &schema.fields {
+            if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+                let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+                match parser.parse(atom_uuid_expr) {
+                    Ok(parsed_chain) => {
+                        parsed_chains.push(parsed_chain);
+                    }
+                    Err(parse_error) => {
+                        parsing_errors.push((field_name.clone(), atom_uuid_expr.clone(), parse_error));
+                    }
+                }
+            }
+        }
+
+        // Report any parsing errors with detailed feedback
+        if !parsing_errors.is_empty() {
+            let error_details: Vec<String> = parsing_errors.iter()
+                .map(|(field, expr, error)| {
+                    format!("Field '{}' expression '{}': {}", field, expr, 
+                           self.convert_iterator_error_to_readable_message(error))
+                })
+                .collect();
+            
+            return Err(crate::schema::types::SchemaError::InvalidField(format!(
+                "Transform field expression validation failed: {}", 
+                error_details.join("; ")
+            )));
+        }
+
+        // Validate field alignment across all expressions
+        if !parsed_chains.is_empty() {
+            let validator = FieldAlignmentValidator::new();
+            match validator.validate_alignment(&parsed_chains) {
+                Ok(alignment_result) => {
+                    if !alignment_result.valid {
+                        let error_messages: Vec<String> = alignment_result.errors.iter()
+                            .map(|err| format!("{:?}: {}", err.error_type, err.message))
+                            .collect();
+                        return Err(crate::schema::types::SchemaError::InvalidField(format!(
+                            "Transform field alignment validation failed: {}", 
+                            error_messages.join("; ")
+                        )));
+                    }
+
+                    // Provide guidance on warnings
+                    for warning in &alignment_result.warnings {
+                        log::warn!("Transform validation warning: {:?}: {} (Fields: {})", 
+                                  warning.warning_type, warning.message, warning.fields.join(", "));
+                    }
+                }
+                Err(iterator_error) => {
+                    return Err(crate::schema::types::SchemaError::InvalidField(format!(
+                        "Transform field alignment error: {}", 
+                        self.convert_iterator_error_to_readable_message(&iterator_error)
+                    )));
+                }
+            }
+        }
+
+        // Schema type specific validation for transforms
+        match &schema.schema_type {
+            crate::schema::types::schema::SchemaType::HashRange => {
+                self.validate_hashrange_transform_requirements(schema)?;
+            }
+            crate::schema::types::schema::SchemaType::Range { range_key } => {
+                self.validate_range_transform_requirements(schema, range_key)?;
+            }
+            crate::schema::types::schema::SchemaType::Single => {
+                self.validate_single_transform_requirements(schema)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Converts iterator stack errors to user-friendly messages
+    fn convert_iterator_error_to_readable_message(&self, error: &crate::schema::indexing::errors::IteratorStackError) -> String {
+        use crate::schema::indexing::errors::IteratorStackError;
+
+        match error {
+            IteratorStackError::InvalidChainSyntax { expression, reason } => {
+                format!("Expression '{}' has invalid syntax: {}. Check for typos in field names and method calls.", expression, reason)
+            }
+            IteratorStackError::IncompatibleFanoutDepths { field1, depth1, field2, depth2 } => {
+                format!("Fields '{}' (depth {}) and '{}' (depth {}) have incompatible iterator depths. Consider using a reducer function or restructuring the expressions.", 
+                       field1, depth1, field2, depth2)
+            }
+            IteratorStackError::CartesianFanoutError { field1, branch1, field2, branch2 } => {
+                format!("Fields '{}' (branch '{}') and '{}' (branch '{}') create a cartesian product, which may cause performance issues. Consider restructuring to use the same branch.", 
+                       field1, branch1, field2, branch2)
+            }
+            IteratorStackError::ReducerRequired { field, current_depth, max_depth } => {
+                format!("Field '{}' at depth {} requires a reducer function (max allowed depth: {}). Add a reducer like .count(), .first(), or .last() to the expression.", 
+                       field, current_depth, max_depth)
+            }
+            IteratorStackError::InvalidIteratorChain { chain, reason } => {
+                format!("Iterator chain '{}' is invalid: {}. Check the chain structure and method order.", chain, reason)
+            }
+            IteratorStackError::AmbiguousFanoutDifferentBranches { branches } => {
+                format!("Ambiguous fan-out across different branches: {}. Ensure all fields use consistent branching patterns.", branches.join(", "))
+            }
+            IteratorStackError::MaxDepthExceeded { current_depth, max_depth } => {
+                format!("Iterator depth {} exceeds maximum allowed depth {}. Consider using simpler expressions or increasing the depth limit.", current_depth, max_depth)
+            }
+            IteratorStackError::FieldAlignmentError { field, reason } => {
+                format!("Field '{}' has alignment issues: {}. Check the field expression for compatibility with other fields.", field, reason)
+            }
+            IteratorStackError::ExecutionError { message } => {
+                format!("Execution error: {}. This may indicate an issue with the expression logic or data structure.", message)
+            }
+        }
+    }
+
+    /// Validates HashRange transform specific requirements
+    fn validate_hashrange_transform_requirements(
+        &self, 
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition
+    ) -> Result<(), crate::schema::types::SchemaError> {
+        let key_config = schema.key.as_ref().ok_or_else(|| {
+            crate::schema::types::SchemaError::InvalidField(
+                "HashRange transform requires key configuration with hash_field and range_field".to_string()
+            )
+        })?;
+
+        // Ensure the output field name is appropriate for HashRange usage
+        if self.output.trim().is_empty() {
+            return Err(crate::schema::types::SchemaError::InvalidField(
+                "HashRange transform output field cannot be empty".to_string()
+            ));
+        }
+
+        // Validate that hash_field and range_field are different
+        if key_config.hash_field == key_config.range_field {
+            return Err(crate::schema::types::SchemaError::InvalidField(
+                "HashRange hash_field and range_field must be different expressions".to_string()
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates Range transform specific requirements
+    fn validate_range_transform_requirements(
+        &self, 
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        range_key: &str
+    ) -> Result<(), crate::schema::types::SchemaError> {
+        // Ensure the range_key field exists in the schema
+        if !schema.fields.contains_key(range_key) {
+            return Err(crate::schema::types::SchemaError::InvalidField(format!(
+                "Range transform range_key '{}' not found in schema fields", 
+                range_key
+            )));
+        }
+
+        // Ensure the output field name is appropriate for Range usage  
+        if self.output.trim().is_empty() {
+            return Err(crate::schema::types::SchemaError::InvalidField(
+                "Range transform output field cannot be empty".to_string()
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates Single transform specific requirements
+    fn validate_single_transform_requirements(
+        &self, 
+        schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition
+    ) -> Result<(), crate::schema::types::SchemaError> {
+        // Single transforms should have simple field structures
+        let field_count = schema.fields.len();
+        if field_count > 10 {
+            log::warn!("Single transform has {} fields, which may impact performance. Consider breaking into smaller transforms or using HashRange schema.", field_count);
+        }
+
+        // Ensure the output field name is appropriate for Single usage
+        if self.output.trim().is_empty() {
+            return Err(crate::schema::types::SchemaError::InvalidField(
+                "Single transform output field cannot be empty".to_string()
+            ));
+        }
+
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {
