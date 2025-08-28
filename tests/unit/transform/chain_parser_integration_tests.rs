@@ -124,8 +124,18 @@ fn test_complex_chain_expression() {
     
     let json_result = result.unwrap();
     let obj = json_result.as_object().unwrap();
-    // Should resolve to simple "blogpost.content" after skipping iterator operations
-    assert_eq!(obj.get("word_content"), Some(&JsonValue::String("Complex chain parsed content".to_string())));
+    // Should resolve to array of words after split_by_word() operation
+    let word_content = obj.get("word_content").unwrap();
+    assert!(word_content.is_array(), "Result should be an array of words");
+    
+    let word_array = word_content.as_array().unwrap();
+    assert_eq!(word_array.len(), 4, "Should have 4 words");
+    
+    // Check that we get actual words, not placeholder values
+    assert_eq!(word_array[0], JsonValue::String("Complex".to_string()));
+    assert_eq!(word_array[1], JsonValue::String("chain".to_string()));
+    assert_eq!(word_array[2], JsonValue::String("parsed".to_string()));
+    assert_eq!(word_array[3], JsonValue::String("content".to_string()));
 }
 
 #[test]

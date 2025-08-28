@@ -475,12 +475,18 @@ impl ExecutionEngine {
             });
         }
 
-        // Iterate through all combinations at the emission depth
-        self.iterate_to_depth(stack, context.emission_depth, |current_stack, _current_path| {
+        // Iterate through all combinations at the appropriate depth for the chain
+        // For complex chains, we need to iterate to the depth where the chain can be evaluated
+        // The iteration depth should be the maximum depth where we have actual iterators
+        let max_available_depth = stack.len().saturating_sub(1); // Stack has scopes 0 to len-1
+        let iteration_depth = chain.depth.min(context.emission_depth).min(max_available_depth);
+        println!("DEBUG: Using iteration depth: {} (chain.depth: {}, emission_depth: {}, max_available: {})", 
+                 iteration_depth, chain.depth, context.emission_depth, max_available_depth);
+        self.iterate_to_depth(stack, iteration_depth, |current_stack, _current_path| {
             println!("DEBUG: iterate_to_depth callback called for chain: {}", chain.expression);
 
             // Extract the field value at current context
-            let field_value = self.evaluate_field_expression(chain, current_stack)?;
+            let field_value = self.evaluate_field_expression(chain, current_stack, iteration_depth)?;
             println!("DEBUG: evaluate_field_expression returned: {}", field_value);
 
             entries.push(IndexEntry {
@@ -523,7 +529,7 @@ impl ExecutionEngine {
         let mut warnings = Vec::new();
 
         // Evaluate field at its own depth, then broadcast to emission depth
-        let field_value = self.evaluate_field_expression(chain, stack)?;
+        let field_value = self.evaluate_field_expression(chain, stack, chain.depth)?;
 
         // Count how many entries will be generated at emission depth
         let emission_count = self.count_iterations_at_depth(stack, context.emission_depth)?;
@@ -572,7 +578,7 @@ impl ExecutionEngine {
         // Collect all values at the field's depth
         let mut collected_values = Vec::new();
         self.iterate_to_depth(stack, chain.depth, |current_stack, _current_path| {
-            let field_value = self.evaluate_field_expression(chain, current_stack)?;
+            let field_value = self.evaluate_field_expression(chain, current_stack, chain.depth)?;
             collected_values.push(field_value);
             Ok(())
         })?;
@@ -642,8 +648,24 @@ impl ExecutionEngine {
         }
 
         if current_depth == target_depth {
-            // At target depth, call the callback
-            return callback(stack, current_path);
+            // At target depth, iterate through all items and call the callback for each
+            if let Some(context) = stack.context_at_depth(current_depth) {
+                let items = context.iterator_state.items.clone();
+                
+                for (index, item) in items.iter().enumerate() {
+                    // Set current item in context
+                    if let Some(context_mut) = stack.context_at_depth_mut(current_depth) {
+                        context_mut.iterator_state.current_item = Some(item.clone());
+                    }
+
+                    let mut new_path = current_path.clone();
+                    new_path.push(index);
+
+                    // Call the callback for this item
+                    callback(stack, new_path)?;
+                }
+            }
+            return Ok(());
         }
 
         // Get the scope at current depth
@@ -671,13 +693,173 @@ impl ExecutionEngine {
     fn evaluate_field_expression(
         &self,
         chain: &ParsedChain,
-        _stack: &IteratorStack,
+        stack: &IteratorStack,
+        iteration_depth: usize,
     ) -> IteratorStackResult<Value> {
-        // This is a simplified evaluation - in practice, this would parse and execute
-        // the entire chain expression step by step
+        // Get the current item from the iteration depth in the stack context
+        // The iteration depth is where we're actually iterating
+        let current_item = if let Some(context) = stack.context_at_depth(iteration_depth) {
+            if let Some(item) = &context.iterator_state.current_item {
+                println!("DEBUG: evaluate_field_expression - current_item from depth {}: {}", iteration_depth, item);
+                item.clone()
+            } else {
+                println!("DEBUG: evaluate_field_expression - no current_item in context at depth {}", iteration_depth);
+                return Ok(Value::Null);
+            }
+        } else {
+            println!("DEBUG: evaluate_field_expression - no context at depth {}", iteration_depth);
+            return Ok(Value::Null);
+        };
+
+        println!("DEBUG: evaluate_field_expression - chain operations: {:?}", chain.operations);
         
-        // For now, return a mock value based on the expression
-        Ok(Value::String(format!("value_for_{}", chain.expression)))
+        // Filter chain operations based on what has already been applied by the iterator
+        // The iterator has already applied operations up to the current depth
+        let remaining_operations = self.filter_operations_for_depth(&chain.operations, iteration_depth);
+        println!("DEBUG: evaluate_field_expression - remaining operations: {:?}", remaining_operations);
+        
+        // Evaluate the remaining chain operations step by step
+        let mut current_value = current_item;
+        
+        for operation in &remaining_operations {
+            println!("DEBUG: evaluate_field_expression - processing operation: {:?}, current_value: {}", operation, current_value);
+            current_value = self.process_operation(operation, current_value)?;
+        }
+        
+        println!("DEBUG: evaluate_field_expression returned: {}", current_value);
+        Ok(current_value)
+    }
+
+    /// Filters chain operations based on what has already been applied by the iterator
+    fn filter_operations_for_depth(
+        &self,
+        operations: &[crate::schema::indexing::chain_parser::ChainOperation],
+        iteration_depth: usize,
+    ) -> Vec<crate::schema::indexing::chain_parser::ChainOperation> {
+        // For complex chains, we need to skip operations that have already been applied by the iterator
+        // The iterator has already applied operations up to the current depth
+        
+        let mut remaining_operations = Vec::new();
+        let mut depth_count = 0;
+        let mut skip_until_next_map = false;
+        
+        for operation in operations {
+            match operation {
+                crate::schema::indexing::chain_parser::ChainOperation::Map => {
+                    depth_count += 1;
+                    skip_until_next_map = false;
+                    
+                    // Only include Map operations that come after the current iteration depth
+                    if depth_count > iteration_depth {
+                        remaining_operations.push(operation.clone());
+                    }
+                }
+                crate::schema::indexing::chain_parser::ChainOperation::SplitArray => {
+                    // SplitArray operations are applied by the iterator, so skip them
+                    if depth_count <= iteration_depth {
+                        skip_until_next_map = true;
+                    } else {
+                        remaining_operations.push(operation.clone());
+                    }
+                }
+                crate::schema::indexing::chain_parser::ChainOperation::SplitByWord => {
+                    // SplitByWord operations are applied by the iterator, so skip them
+                    if depth_count <= iteration_depth {
+                        skip_until_next_map = true;
+                    } else {
+                        remaining_operations.push(operation.clone());
+                    }
+                }
+                _ => {
+                    // For other operations (FieldAccess, etc.), skip them if they're part of
+                    // operations that have already been applied by the iterator
+                    if !skip_until_next_map && depth_count > iteration_depth {
+                        remaining_operations.push(operation.clone());
+                    }
+                }
+            }
+        }
+        
+        remaining_operations
+    }
+
+    /// Processes a single chain operation on the current value
+    fn process_operation(
+        &self,
+        operation: &crate::schema::indexing::chain_parser::ChainOperation,
+        current_value: Value,
+    ) -> IteratorStackResult<Value> {
+        match operation {
+            crate::schema::indexing::chain_parser::ChainOperation::FieldAccess(field_name) => {
+                println!("DEBUG: process_operation - FieldAccess for '{}'", field_name);
+                if let Value::Object(obj) = &current_value {
+                    if let Some(field_value) = obj.get(field_name) {
+                        println!("DEBUG: process_operation - found field '{}': {}", field_name, field_value);
+                        Ok(field_value.clone())
+                    } else {
+                        println!("DEBUG: process_operation - field '{}' not found in object", field_name);
+                        Ok(Value::Null)
+                    }
+                } else {
+                    println!("DEBUG: process_operation - current_value is not an object: {}", current_value);
+                    Ok(Value::Null)
+                }
+            }
+            crate::schema::indexing::chain_parser::ChainOperation::Map => {
+                println!("DEBUG: process_operation - Map operation, returning current value");
+                Ok(current_value)
+            }
+            crate::schema::indexing::chain_parser::ChainOperation::SplitArray => {
+                println!("DEBUG: process_operation - SplitArray operation");
+                if let Value::Array(arr) = &current_value {
+                    if let Some(first_item) = arr.first() {
+                        println!("DEBUG: process_operation - returning first array item: {}", first_item);
+                        Ok(first_item.clone())
+                    } else {
+                        println!("DEBUG: process_operation - array is empty");
+                        Ok(Value::Null)
+                    }
+                } else {
+                    println!("DEBUG: process_operation - current_value is not an array: {}", current_value);
+                    Ok(current_value)
+                }
+            }
+            crate::schema::indexing::chain_parser::ChainOperation::SplitByWord => {
+                println!("DEBUG: process_operation - SplitByWord operation");
+                if let Value::String(text) = &current_value {
+                    let words: Vec<&str> = text.split_whitespace().collect();
+                    if let Some(first_word) = words.first() {
+                        println!("DEBUG: process_operation - returning first word: {}", first_word);
+                        Ok(Value::String(first_word.to_string()))
+                    } else {
+                        println!("DEBUG: process_operation - no words found in text");
+                        Ok(Value::Null)
+                    }
+                } else {
+                    println!("DEBUG: process_operation - current_value is not a string: {}", current_value);
+                    Ok(current_value)
+                }
+            }
+            crate::schema::indexing::chain_parser::ChainOperation::Reducer(_reducer_name) => {
+                println!("DEBUG: process_operation - Reducer operation (not implemented)");
+                Ok(current_value)
+            }
+            crate::schema::indexing::chain_parser::ChainOperation::SpecialField(field_name) => {
+                println!("DEBUG: process_operation - SpecialField for '{}'", field_name);
+                if let Value::Object(obj) = &current_value {
+                    if let Some(field_value) = obj.get(field_name) {
+                        println!("DEBUG: process_operation - found special field '{}': {}", field_name, field_value);
+                        Ok(field_value.clone())
+                    } else {
+                        println!("DEBUG: process_operation - special field '{}' not found in object", field_name);
+                        Ok(Value::Null)
+                    }
+                } else {
+                    println!("DEBUG: process_operation - current_value is not an object: {}", current_value);
+                    Ok(Value::Null)
+                }
+            }
+        }
     }
 
     /// Generates an atom UUID for the current stack context
