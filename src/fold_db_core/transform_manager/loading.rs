@@ -32,9 +32,14 @@ impl TransformManager {
             
             match self.db_ops.get_transform(&transform_id) {
                 Ok(Some(transform)) => {
+                    // Log transform type information for better debugging
+                    let transform_type = match &transform.kind {
+                        crate::schema::types::json_schema::TransformKind::Procedural { .. } => "Procedural",
+                        crate::schema::types::json_schema::TransformKind::Declarative { .. } => "Declarative",
+                    };
                     info!(
-                        "📋 Loaded new transform '{}' with inputs: {:?}, output: {}",
-                        transform_id, transform.get_inputs(), transform.get_output()
+                        "📋 Loaded new {} transform '{}' with inputs: {:?}, output: {}",
+                        transform_type, transform_id, transform.get_inputs(), transform.get_output()
                     );
                     registered_transforms.insert(transform_id.clone(), transform.clone());
                     
@@ -91,6 +96,12 @@ impl TransformManager {
         // Store transform using direct database operations
         self.db_ops.store_transform(&transform_id, &transform)?;
 
+        // Log transform type information for better debugging (before move)
+        let transform_type = match &transform.kind {
+            crate::schema::types::json_schema::TransformKind::Procedural { .. } => "Procedural",
+            crate::schema::types::json_schema::TransformKind::Declarative { .. } => "Declarative",
+        };
+
         // Update in-memory state
         self.update_in_memory_mappings(
             &transform_id,
@@ -102,8 +113,8 @@ impl TransformManager {
         )?;
 
         info!(
-            "Registered transform {} output {} with {} input references using unified operations",
-            transform_id, output_field, inputs_len
+            "Registered {} transform {} output {} with {} input references using unified operations",
+            transform_type, transform_id, output_field, inputs_len
         );
 
         // Persist mappings using event-driven operations only
