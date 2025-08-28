@@ -637,14 +637,14 @@ mod tests {
             let handler_clone = Arc::clone(&handler);
             let handle = tokio::spawn(async move {
                 let mutation_id = format!("concurrent-mutation-{}", i);
-                handler_clone.register_mutation(mutation_id).await
+                let _result = handler_clone.register_mutation(mutation_id).await;
             });
             handles.push(handle);
         }
         
         // Wait for all registrations to complete
         for handle in handles {
-            let _receiver = handle.await.unwrap();
+            handle.await.unwrap();
         }
         
         assert_eq!(handler.pending_count().await, 10);

@@ -19,3 +19,6 @@ pub mod regression_prevention_test;
 pub mod security_api_tests;
 pub mod api_security_integration_test;
 pub mod available_schemas_test;
+
+// Validation and error handling integration tests
+pub mod validation_integration_tests;

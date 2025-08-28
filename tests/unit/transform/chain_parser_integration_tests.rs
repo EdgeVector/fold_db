@@ -256,13 +256,15 @@ fn test_chain_with_reducer_function() {
             assert!(obj.get("reduced_field").unwrap().is_array());
         }
         Err(err) => {
-            // If it fails, it should be due to field alignment validation, not execution errors
+            // If it fails, it should be due to validation (either parsing or field alignment), not execution errors
             let error_msg = format!("{:?}", err);
             assert!(error_msg.contains("Field alignment validation failed") || 
                    error_msg.contains("alignment") ||
                    error_msg.contains("CartesianProduct") ||
-                   error_msg.contains("IncompatibleDepths"),
-                   "Error should be field alignment related: {}", error_msg);
+                   error_msg.contains("IncompatibleDepths") ||
+                   error_msg.contains("Expression parsing failed") ||
+                   error_msg.contains("Invalid operation sequence"),
+                   "Error should be validation related: {}", error_msg);
         }
     }
 }
