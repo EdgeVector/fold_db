@@ -45,7 +45,19 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        let states = db.schema_manager.load_states();
+        
+        // Get persisted states from database
+        let mut states = db.schema_manager.load_states();
+        
+        // Add available schemas with their current states
+        let available = db.schema_manager.available.lock().map_err(|_| {
+            crate::error::FoldDbError::Config("Cannot lock available schemas mutex".into())
+        })?;
+        
+        for (schema_name, (_, state)) in available.iter() {
+            states.insert(schema_name.clone(), *state);
+        }
+        
         Ok(states)
     }
 
@@ -195,11 +207,8 @@ impl DataFoldNode {
             )));
         }
 
-        let states = db.schema_manager.load_states();
-
-        Ok(states
-            .get(schema_name)
-            .copied()
+        Ok(db.schema_manager
+            .get_schema_state(schema_name)
             .unwrap_or(schema::core::SchemaState::Available))
     }
 

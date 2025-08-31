@@ -55,10 +55,9 @@ tracing-appender = "0.2"
 colored = "2.0"
 toml = "0.8"
 # P2P Networking
-libp2p = { version = "0.53", features = [
+libp2p = { version = "0.55", features = [
     "mdns",
     "noise",
-    "yamux",
     "tcp",
     "request-response",
     "tokio"
