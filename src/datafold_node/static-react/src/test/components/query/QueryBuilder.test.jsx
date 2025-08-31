@@ -205,12 +205,13 @@ describe('QueryBuilder Component', () => {
   });
 
   describe('error handling', () => {
-    it('should handle hook throwing errors gracefully', () => {
+        it('should handle hook throwing errors gracefully', () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       useQueryBuilder.mockImplementation(() => {
         throw new Error('Hook error');
       });
 
+      // The component should throw the error since it doesn't have error handling
       expect(() => {
         render(
           <QueryBuilder {...mockProps}>
@@ -218,7 +219,7 @@ describe('QueryBuilder Component', () => {
           </QueryBuilder>
         );
       }).toThrow('Hook error');
-
+      
       consoleError.mockRestore();
     });
 

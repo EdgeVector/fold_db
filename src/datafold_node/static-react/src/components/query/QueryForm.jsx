@@ -57,17 +57,17 @@ function QueryForm({
     const errors = {};
 
     // Schema validation
-    if (!queryState.selectedSchema) {
+    if (!queryState?.selectedSchema) {
       errors.schema = 'Schema selection is required';
     }
 
     // Fields validation
-    if (queryState.queryFields.length === 0) {
+    if (!queryState?.queryFields || queryState.queryFields.length === 0) {
       errors.fields = 'At least one field must be selected';
     }
 
     // Range validation for range schemas
-    if (isRangeSchema && queryState.rangeSchemaFilter) {
+    if (isRangeSchema && queryState?.rangeSchemaFilter) {
       const filter = queryState.rangeSchemaFilter;
       if (filter.start && filter.end && filter.start >= filter.end) {
         errors.rangeFilter = 'Start key must be less than end key';
@@ -106,7 +106,7 @@ function QueryForm({
     });
   }, [onFieldToggle]);
 
-  const selectedSchemaFields = queryState.selectedSchema && approvedSchemas
+  const selectedSchemaFields = queryState?.selectedSchema && approvedSchemas
     ? approvedSchemas.find(s => s.name === queryState.selectedSchema)?.fields || {}
     : {};
 
@@ -125,7 +125,7 @@ function QueryForm({
       >
         <SelectField
           name="schema"
-          value={queryState.selectedSchema}
+          value={queryState?.selectedSchema || ''}
           onChange={handleSchemaChange}
           options={approvedSchemas.map(schema => ({
             value: schema.name,
@@ -138,7 +138,7 @@ function QueryForm({
       </FieldWrapper>
 
       {/* Single Field Type Checkboxes */}
-      {queryState.selectedSchema && Object.entries(selectedSchemaFields).some(([_, field]) =>
+      {queryState?.selectedSchema && Object.entries(selectedSchemaFields).some(([_, field]) =>
         field.field_type === 'Single' || field.field_type === 'String' || field.field_type === 'Number'
       ) && (
         <FieldWrapper
@@ -158,7 +158,7 @@ function QueryForm({
                     <input
                       type="checkbox"
                       className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-primary"
-                      checked={queryState.queryFields.includes(fieldName)}
+                      checked={queryState?.queryFields?.includes(fieldName) || false}
                       onChange={() => handleFieldToggle(fieldName)}
                     />
                   </div>
@@ -189,7 +189,7 @@ function QueryForm({
         >
           <RangeField
             name="rangeSchemaFilter"
-            value={queryState.rangeSchemaFilter}
+            value={queryState?.rangeSchemaFilter || {}}
             onChange={(value) => {
               onRangeSchemaFilterChange(value);
               // Clear range filter validation error
@@ -205,7 +205,7 @@ function QueryForm({
       )}
 
       {/* Regular Range Field Filters - only show for non-range schemas */}
-      {!isRangeSchema && rangeFields.length > 0 && queryState.queryFields.some(fieldName =>
+      {!isRangeSchema && rangeFields.length > 0 && queryState?.queryFields?.some(fieldName =>
         selectedSchemaFields[fieldName]?.field_type === 'Range'
       ) && (
         <FieldWrapper
@@ -215,7 +215,7 @@ function QueryForm({
         >
           <div className="bg-blue-50 rounded-md p-4 space-y-4">
             {rangeFields
-              .filter(([fieldName]) => queryState.queryFields.includes(fieldName))
+              .filter(([fieldName]) => queryState?.queryFields?.includes(fieldName))
               .map(([fieldName]) => (
                 <div key={fieldName} className="border-b border-blue-200 pb-4 last:border-b-0 last:pb-0">
                   <h4 className="text-sm font-medium text-gray-800 mb-3">{fieldName}</h4>
@@ -228,14 +228,14 @@ function QueryForm({
                         type="text"
                         placeholder="Start key"
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState.rangeFilters[fieldName]?.start || ''}
+                        value={queryState?.rangeFilters?.[fieldName]?.start || ''}
                         onChange={(e) => onRangeFilterChange(fieldName, 'start', e.target.value)}
                       />
                       <input
                         type="text"
                         placeholder="End key"
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState.rangeFilters[fieldName]?.end || ''}
+                        value={queryState?.rangeFilters?.[fieldName]?.end || ''}
                         onChange={(e) => onRangeFilterChange(fieldName, 'end', e.target.value)}
                       />
                     </div>
@@ -247,7 +247,7 @@ function QueryForm({
                         type="text"
                         placeholder="Exact key to match"
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState.rangeFilters[fieldName]?.key || ''}
+                        value={queryState?.rangeFilters?.[fieldName]?.key || ''}
                         onChange={(e) => onRangeFilterChange(fieldName, 'key', e.target.value)}
                       />
                     </div>
@@ -259,7 +259,7 @@ function QueryForm({
                         type="text"
                         placeholder="Key prefix (e.g., 'user:')"
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState.rangeFilters[fieldName]?.keyPrefix || ''}
+                        value={queryState?.rangeFilters?.[fieldName]?.keyPrefix || ''}
                         onChange={(e) => onRangeFilterChange(fieldName, 'keyPrefix', e.target.value)}
                       />
                     </div>
