@@ -76,12 +76,7 @@ describe('SchemaTab Component', () => {
     expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
   })
 
-  it.skip('dispatches fetchSchemas on mount (skipped - refactoring complete)', async () => {
-    // This test is skipped because the SchemaTab component has been successfully refactored
-    // to use schemaClient instead of direct fetch() calls. The functionality is verified
-    // by the other passing tests and the absence of direct fetch() calls in schema files.
-    expect(true).toBe(true)
-  })
+
 
   it('displays available schemas count', async () => {
     const schemaState = createTestSchemaState({

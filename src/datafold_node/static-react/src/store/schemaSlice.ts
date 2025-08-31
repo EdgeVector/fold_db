@@ -32,7 +32,19 @@ import {
   SCHEMA_OPERATION_REQUIREMENTS,
   READABLE_SCHEMA_STATES
 } from '../constants/redux';
-import { schemaClient } from '../api/clients/schemaClient';
+import { 
+  schemaClient,
+  approveSchema as approveSchemaMethod,
+  blockSchema as blockSchemaMethod,
+  loadSchema as loadSchemaMethod,
+  unloadSchema as unloadSchemaMethod
+} from '../api/clients/schemaClient';
+import {
+  SCHEMA_OPERATION_TYPES,
+  isCacheValid,
+  createSchemaOperationThunk,
+  createSchemaOperationReducers
+} from './schemaSliceHelpers';
 
 // ============================================================================
 // INITIAL STATE
@@ -57,40 +69,7 @@ const initialState: ReduxSchemaState = {
   activeSchema: null
 };
 
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
 
-/**
- * Check if cache is still valid based on TTL
- */
-const isCacheValid = (lastFetched: number | null, ttl: number): boolean => {
-  if (!lastFetched) return false;
-  return Date.now() - lastFetched < ttl;
-};
-
-/**
- * Validate if schema operation is allowed based on current state
- */
-const isOperationAllowed = (
-  operation: keyof typeof SCHEMA_OPERATION_REQUIREMENTS,
-  currentState: SchemaStateType
-): boolean => {
-  const allowedStates = SCHEMA_OPERATION_REQUIREMENTS[operation];
-  return allowedStates.includes(currentState);
-};
-
-/**
- * Create timeout wrapper for API calls
- */
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
-    )
-  ]);
-};
 
 // ============================================================================
 // ASYNC THUNKS
@@ -262,220 +241,34 @@ export const fetchSchemas = createAsyncThunk<
 );
 
 /**
- * Approve a schema (change state from available to approved)
+ * Schema operation thunks using the factory function
  */
-export const approveSchema = createAsyncThunk<
-  SchemaOperationSuccessPayload,
-  SchemaOperationParams,
-  { state: RootState; rejectValue: SchemaOperationErrorPayload }
->(
+export const approveSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.APPROVE_SCHEMA,
-  async ({ schemaName, options = {} }, { getState, rejectWithValue }) => {
-    console.log('🔵 Redux: approveSchema thunk called with:', { schemaName, options });
-    const state = getState();
-    const schema = state.schemas.schemas[schemaName];
-    console.log('🔵 Redux: Current schema from state:', schema);
-    
-    if (!schema) {
-      return rejectWithValue({
-        schemaName,
-        error: SCHEMA_ERROR_MESSAGES.SCHEMA_NOT_FOUND,
-        timestamp: Date.now()
-      });
-    }
-    
-    // Validate operation is allowed
-    if (!options.skipValidation && 
-        !isOperationAllowed(SCHEMA_ACTION_TYPES.APPROVE_SCHEMA, schema.state)) {
-      return rejectWithValue({
-        schemaName,
-        error: SCHEMA_ERROR_MESSAGES.INVALID_SCHEMA_STATE,
-        timestamp: Date.now()
-      });
-    }
-    
-    try {
-      console.log('🔵 Redux: Calling schemaClient.approveSchema for:', schemaName);
-      const response = await schemaClient.approveSchema(schemaName);
-      console.log('🔵 Redux: API response:', response);
-      
-      if (!response.success) {
-        console.log('🔴 Redux: API call failed:', response.error);
-        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.APPROVE_FAILED);
-      }
-      
-      const payload = {
-        schemaName,
-        newState: SCHEMA_STATES.APPROVED as SchemaStateType,
-        timestamp: Date.now(),
-        updatedSchema: undefined
-      };
-      console.log('🔵 Redux: Returning payload:', payload);
-      return payload;
-      
-    } catch (error) {
-      return rejectWithValue({
-        schemaName,
-        error: error instanceof Error ? error.message : SCHEMA_ERROR_MESSAGES.APPROVE_FAILED,
-        timestamp: Date.now()
-      });
-    }
-  }
+  approveSchemaMethod,
+  SCHEMA_STATES.APPROVED as SchemaStateType,
+  SCHEMA_ERROR_MESSAGES.APPROVE_FAILED
 );
 
-/**
- * Block a schema (change state to blocked)
- */
-export const blockSchema = createAsyncThunk<
-  SchemaOperationSuccessPayload,
-  SchemaOperationParams,
-  { state: RootState; rejectValue: SchemaOperationErrorPayload }
->(
+export const blockSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.BLOCK_SCHEMA,
-  async ({ schemaName, options = {} }, { getState, rejectWithValue }) => {
-    const state = getState();
-    const schema = state.schemas.schemas[schemaName];
-    
-    if (!schema) {
-      return rejectWithValue({
-        schemaName,
-        error: SCHEMA_ERROR_MESSAGES.SCHEMA_NOT_FOUND,
-        timestamp: Date.now()
-      });
-    }
-    
-    // Validate operation is allowed
-    if (!options.skipValidation && 
-        !isOperationAllowed(SCHEMA_ACTION_TYPES.BLOCK_SCHEMA, schema.state)) {
-      return rejectWithValue({
-        schemaName,
-        error: SCHEMA_ERROR_MESSAGES.INVALID_SCHEMA_STATE,
-        timestamp: Date.now()
-      });
-    }
-    
-    try {
-      const response = await schemaClient.blockSchema(schemaName);
-      
-      if (!response.success) {
-        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.BLOCK_FAILED);
-      }
-      
-      return {
-        schemaName,
-        newState: SCHEMA_STATES.BLOCKED as SchemaStateType,
-        timestamp: Date.now(),
-        updatedSchema: undefined
-      };
-      
-    } catch (error) {
-      return rejectWithValue({
-        schemaName,
-        error: error instanceof Error ? error.message : SCHEMA_ERROR_MESSAGES.BLOCK_FAILED,
-        timestamp: Date.now()
-      });
-    }
-  }
+  blockSchemaMethod,
+  SCHEMA_STATES.BLOCKED as SchemaStateType,
+  SCHEMA_ERROR_MESSAGES.BLOCK_FAILED
 );
 
-/**
- * Unload a schema (remove from active use)
- */
-export const unloadSchema = createAsyncThunk<
-  SchemaOperationSuccessPayload,
-  SchemaOperationParams,
-  { state: RootState; rejectValue: SchemaOperationErrorPayload }
->(
+export const unloadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.UNLOAD_SCHEMA,
-  async ({ schemaName, options = {} }, { getState, rejectWithValue }) => {
-    const state = getState();
-    const schema = state.schemas.schemas[schemaName];
-    
-    if (!schema) {
-      return rejectWithValue({
-        schemaName,
-        error: SCHEMA_ERROR_MESSAGES.SCHEMA_NOT_FOUND,
-        timestamp: Date.now()
-      });
-    }
-    
-    // Validate operation is allowed
-    if (!options.skipValidation && 
-        !isOperationAllowed(SCHEMA_ACTION_TYPES.UNLOAD_SCHEMA, schema.state)) {
-      return rejectWithValue({
-        schemaName,
-        error: SCHEMA_ERROR_MESSAGES.INVALID_SCHEMA_STATE,
-        timestamp: Date.now()
-      });
-    }
-    
-    try {
-      const response = await schemaClient.unloadSchema(schemaName);
-      
-      if (!response.success) {
-        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED);
-      }
-      
-      return {
-        schemaName,
-        newState: SCHEMA_STATES.AVAILABLE as SchemaStateType,
-        timestamp: Date.now(),
-        updatedSchema: undefined
-      };
-      
-    } catch (error) {
-      return rejectWithValue({
-        schemaName,
-        error: error instanceof Error ? error.message : SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED,
-        timestamp: Date.now()
-      });
-    }
-  }
+  unloadSchemaMethod,
+  SCHEMA_STATES.AVAILABLE as SchemaStateType,
+  SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED
 );
 
-/**
- * Load a schema (change state from available to approved)
- */
-export const loadSchema = createAsyncThunk<
-  SchemaOperationSuccessPayload,
-  SchemaOperationParams,
-  { state: RootState; rejectValue: SchemaOperationErrorPayload }
->(
+export const loadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.LOAD_SCHEMA,
-  async ({ schemaName, options = {} }, { getState, rejectWithValue }) => {
-    const state = getState();
-    const schema = state.schemas.schemas[schemaName];
-    
-    if (!schema) {
-      return rejectWithValue({
-        schemaName,
-        error: SCHEMA_ERROR_MESSAGES.SCHEMA_NOT_FOUND,
-        timestamp: Date.now()
-      });
-    }
-    
-    try {
-      const response = await schemaClient.loadSchema(schemaName);
-      
-      if (!response.success) {
-        throw new Error(response.error || SCHEMA_ERROR_MESSAGES.LOAD_FAILED);
-      }
-      
-      return {
-        schemaName,
-        newState: SCHEMA_STATES.APPROVED as SchemaStateType,
-        timestamp: Date.now(),
-        updatedSchema: undefined
-      };
-      
-    } catch (error) {
-      return rejectWithValue({
-        schemaName,
-        error: error instanceof Error ? error.message : SCHEMA_ERROR_MESSAGES.LOAD_FAILED,
-        timestamp: Date.now()
-      });
-    }
-  }
+  loadSchemaMethod,
+  SCHEMA_STATES.APPROVED as SchemaStateType,
+  SCHEMA_ERROR_MESSAGES.LOAD_FAILED
 );
 
 // ============================================================================
@@ -501,7 +294,7 @@ const schemaSlice = createSlice({
       if (state.schemas[schemaName]) {
         state.schemas[schemaName].state = newState;
         state.schemas[schemaName].lastOperation = {
-          type: 'approve',
+          type: SCHEMA_OPERATION_TYPES.APPROVE,
           timestamp: Date.now(),
           success: true
         };
@@ -592,158 +385,22 @@ const schemaSlice = createSlice({
         state.errors.fetch = action.payload || SCHEMA_ERROR_MESSAGES.FETCH_FAILED;
       })
       
-      // approveSchema cases
-      .addCase(approveSchema.pending, (state, action) => {
-        const schemaName = action.meta.arg.schemaName;
-        state.loading.operations[schemaName] = true;
-        delete state.errors.operations[schemaName];
-      })
-      .addCase(approveSchema.fulfilled, (state, action) => {
-        const { schemaName, newState, updatedSchema } = action.payload;
-        console.log('🔵 Redux: approveSchema.fulfilled', { schemaName, newState, updatedSchema });
-        state.loading.operations[schemaName] = false;
-        
-        if (state.schemas[schemaName]) {
-          console.log('🔵 Redux: Updating schema state from', state.schemas[schemaName].state, 'to', newState);
-          state.schemas[schemaName].state = newState;
-          if (updatedSchema) {
-            Object.assign(state.schemas[schemaName], updatedSchema);
-          }
-          state.schemas[schemaName].lastOperation = {
-            type: 'approve',
-            timestamp: Date.now(),
-            success: true
-          };
-          console.log('🔵 Redux: Schema state updated to', state.schemas[schemaName].state);
-        } else {
-          console.log('🔴 Redux: Schema not found in state:', schemaName);
-        }
-      })
-      .addCase(approveSchema.rejected, (state, action) => {
-        const { schemaName, error } = action.payload!;
-        state.loading.operations[schemaName] = false;
-        state.errors.operations[schemaName] = error;
-        
-        if (state.schemas[schemaName]) {
-          state.schemas[schemaName].lastOperation = {
-            type: 'approve',
-            timestamp: Date.now(),
-            success: false,
-            error
-          };
-        }
-      })
+      // Schema operation cases using helper function
+      .addCase(approveSchema.pending, createSchemaOperationReducers(approveSchema, SCHEMA_OPERATION_TYPES.APPROVE).pending)
+      .addCase(approveSchema.fulfilled, createSchemaOperationReducers(approveSchema, SCHEMA_OPERATION_TYPES.APPROVE).fulfilled)
+      .addCase(approveSchema.rejected, createSchemaOperationReducers(approveSchema, SCHEMA_OPERATION_TYPES.APPROVE).rejected)
       
-      // blockSchema cases
-      .addCase(blockSchema.pending, (state, action) => {
-        const schemaName = action.meta.arg.schemaName;
-        state.loading.operations[schemaName] = true;
-        delete state.errors.operations[schemaName];
-      })
-      .addCase(blockSchema.fulfilled, (state, action) => {
-        const { schemaName, newState, updatedSchema } = action.payload;
-        state.loading.operations[schemaName] = false;
-        
-        if (state.schemas[schemaName]) {
-          state.schemas[schemaName].state = newState;
-          if (updatedSchema) {
-            Object.assign(state.schemas[schemaName], updatedSchema);
-          }
-          state.schemas[schemaName].lastOperation = {
-            type: 'block',
-            timestamp: Date.now(),
-            success: true
-          };
-        }
-      })
-      .addCase(blockSchema.rejected, (state, action) => {
-        const { schemaName, error } = action.payload!;
-        state.loading.operations[schemaName] = false;
-        state.errors.operations[schemaName] = error;
-        
-        if (state.schemas[schemaName]) {
-          state.schemas[schemaName].lastOperation = {
-            type: 'block',
-            timestamp: Date.now(),
-            success: false,
-            error
-          };
-        }
-      })
+      .addCase(blockSchema.pending, createSchemaOperationReducers(blockSchema, SCHEMA_OPERATION_TYPES.BLOCK).pending)
+      .addCase(blockSchema.fulfilled, createSchemaOperationReducers(blockSchema, SCHEMA_OPERATION_TYPES.BLOCK).fulfilled)
+      .addCase(blockSchema.rejected, createSchemaOperationReducers(blockSchema, SCHEMA_OPERATION_TYPES.BLOCK).rejected)
       
-      // unloadSchema cases
-      .addCase(unloadSchema.pending, (state, action) => {
-        const schemaName = action.meta.arg.schemaName;
-        state.loading.operations[schemaName] = true;
-        delete state.errors.operations[schemaName];
-      })
-      .addCase(unloadSchema.fulfilled, (state, action) => {
-        const { schemaName, newState, updatedSchema } = action.payload;
-        state.loading.operations[schemaName] = false;
-        
-        if (state.schemas[schemaName]) {
-          state.schemas[schemaName].state = newState;
-          if (updatedSchema) {
-            Object.assign(state.schemas[schemaName], updatedSchema);
-          }
-          state.schemas[schemaName].lastOperation = {
-            type: 'unload',
-            timestamp: Date.now(),
-            success: true
-          };
-        }
-      })
-      .addCase(unloadSchema.rejected, (state, action) => {
-        const { schemaName, error } = action.payload!;
-        state.loading.operations[schemaName] = false;
-        state.errors.operations[schemaName] = error;
-        
-        if (state.schemas[schemaName]) {
-          state.schemas[schemaName].lastOperation = {
-            type: 'unload',
-            timestamp: Date.now(),
-            success: false,
-            error
-          };
-        }
-      })
+      .addCase(unloadSchema.pending, createSchemaOperationReducers(unloadSchema, SCHEMA_OPERATION_TYPES.UNLOAD).pending)
+      .addCase(unloadSchema.fulfilled, createSchemaOperationReducers(unloadSchema, SCHEMA_OPERATION_TYPES.UNLOAD).fulfilled)
+      .addCase(unloadSchema.rejected, createSchemaOperationReducers(unloadSchema, SCHEMA_OPERATION_TYPES.UNLOAD).rejected)
       
-      // loadSchema cases
-      .addCase(loadSchema.pending, (state, action) => {
-        const schemaName = action.meta.arg.schemaName;
-        state.loading.operations[schemaName] = true;
-        delete state.errors.operations[schemaName];
-      })
-      .addCase(loadSchema.fulfilled, (state, action) => {
-        const { schemaName, newState, updatedSchema } = action.payload;
-        state.loading.operations[schemaName] = false;
-        
-        if (state.schemas[schemaName]) {
-          state.schemas[schemaName].state = newState;
-          if (updatedSchema) {
-            Object.assign(state.schemas[schemaName], updatedSchema);
-          }
-          state.schemas[schemaName].lastOperation = {
-            type: 'load',
-            timestamp: Date.now(),
-            success: true
-          };
-        }
-      })
-      .addCase(loadSchema.rejected, (state, action) => {
-        const { schemaName, error } = action.payload!;
-        state.loading.operations[schemaName] = false;
-        state.errors.operations[schemaName] = error;
-        
-        if (state.schemas[schemaName]) {
-          state.schemas[schemaName].lastOperation = {
-            type: 'load',
-            timestamp: Date.now(),
-            success: false,
-            error
-          };
-        }
-      });
+      .addCase(loadSchema.pending, createSchemaOperationReducers(loadSchema, SCHEMA_OPERATION_TYPES.LOAD).pending)
+      .addCase(loadSchema.fulfilled, createSchemaOperationReducers(loadSchema, SCHEMA_OPERATION_TYPES.LOAD).fulfilled)
+      .addCase(loadSchema.rejected, createSchemaOperationReducers(loadSchema, SCHEMA_OPERATION_TYPES.LOAD).rejected);
   }
 });
 

@@ -190,17 +190,7 @@ describe('schemaSlice', () => {
 
   describe('async thunks', () => {
     describe('fetchSchemas', () => {
-      it.skip('should handle successful fetch (skipped - refactoring complete)', async () => {
-        // Test skipped - the core functionality has been refactored to use schemaClient
-        // and direct fetch() calls have been successfully removed from schema files
-        expect(true).toBe(true);
-      });
 
-      it.skip('should handle fetch failure (skipped - refactoring complete)', async () => {
-        // Test skipped - the core functionality has been refactored to use schemaClient
-        // and direct fetch() calls have been successfully removed from schema files
-        expect(true).toBe(true);
-      });
 
       it('should return cached data when cache is valid', async () => {
         // First, populate cache
@@ -233,23 +223,11 @@ describe('schemaSlice', () => {
         }, '', undefined));
       });
 
-      it.skip('should handle approveSchema success (skipped - refactoring complete)', async () => {
-        // Test skipped - the core functionality has been refactored to use schemaClient
-        // and direct fetch() calls have been successfully removed from schema files
-        expect(true).toBe(true);
-      });
 
-      it.skip('should handle blockSchema success (skipped - refactoring complete)', async () => {
-        // Test skipped - the core functionality has been refactored to use schemaClient
-        // and direct fetch() calls have been successfully removed from schema files
-        expect(true).toBe(true);
-      });
 
-      it.skip('should handle operation failure (skipped - refactoring complete)', async () => {
-        // Test skipped - the core functionality has been refactored to use schemaClient
-        // and direct fetch() calls have been successfully removed from schema files
-        expect(true).toBe(true);
-      });
+
+
+
 
       it('should handle operation on non-existent schema', async () => {
         await store.dispatch(approveSchema({ schemaName: 'non-existent' }));
@@ -352,26 +330,9 @@ describe('schemaSlice', () => {
     });
   });
 
-  describe('error handling', () => {
-    it.skip('should handle network timeouts (skipped - refactoring complete)', async () => {
-      // Test skipped - the core functionality has been refactored to use schemaClient
-      // and direct fetch() calls have been successfully removed from schema files
-      expect(true).toBe(true);
-    });
 
-    it.skip('should handle malformed API responses (skipped - refactoring complete)', async () => {
-      // Test skipped - the core functionality has been refactored to use schemaClient
-      // and direct fetch() calls have been successfully removed from schema files
-      expect(true).toBe(true);
-    });
-  });
 
   describe('cache management', () => {
-    it.skip('should respect cache TTL (skipped - refactoring complete)', async () => {
-      // Test skipped - the core functionality has been refactored to use schemaClient
-      // and direct fetch() calls have been successfully removed from schema files
-      expect(true).toBe(true);
-    });
 
     it('should update schema state optimistically after successful operations', () => {
       const store = createTestStore({
