@@ -20,6 +20,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   const _schemasError = useAppSelector(selectFetchError)
   const [expandedSchemas, setExpandedSchemas] = useState({})
 
+  // Debug logging
+  console.log('🟢 SchemaTab: Current schemas from Redux:', schemas.map(s => ({ name: s.name, state: s.state })))
+
 
 
   const toggleSchema = async (schemaName) => {
@@ -138,11 +141,14 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   }
 
   const approveSchema = async (schemaName) => {
+    console.log('🟡 SchemaTab: Starting approveSchema for:', schemaName)
     try {
       // Use Redux action instead of direct API call
       const result = await dispatch(approveSchemaAction({ schemaName }))
+      console.log('🟡 SchemaTab: approveSchema result:', result)
       
       if (approveSchemaAction.fulfilled.match(result)) {
+        console.log('🟡 SchemaTab: approveSchema fulfilled, calling callbacks')
         if (onResult) {
           onResult({ success: true, message: `Schema ${schemaName} approved successfully` })
         }
@@ -150,10 +156,11 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           onSchemaUpdated()
         }
       } else {
+        console.log('🔴 SchemaTab: approveSchema rejected:', result.payload)
         throw new Error(result.payload || `Failed to approve schema: ${schemaName}`)
       }
     } catch (err) {
-      console.error('Failed to approve schema:', err)
+      console.error('🔴 SchemaTab: Failed to approve schema:', err)
       if (onResult) {
         onResult({ error: `Failed to approve schema: ${err.message}` })
       }
@@ -221,6 +228,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 <button
                   className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                   onClick={(e) => {
+                    console.log('🟠 Button clicked: Approve for schema:', schema.name)
                     e.stopPropagation()
                     approveSchema(schema.name)
                   }}

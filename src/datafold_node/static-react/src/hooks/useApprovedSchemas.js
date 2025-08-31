@@ -161,9 +161,10 @@ export function useApprovedSchemas() {
   // Initial fetch on mount if cache is invalid
   useEffect(() => {
     if (!cacheInfo.isValid) {
+      console.log('🟡 useApprovedSchemas: Cache invalid, fetching schemas');
       dispatch(fetchSchemas());
     }
-  }, [dispatch, cacheInfo.isValid]);
+  }, [dispatch]); // Remove cacheInfo.isValid dependency to prevent refetch on cache invalidation
 
   return {
     approvedSchemas,

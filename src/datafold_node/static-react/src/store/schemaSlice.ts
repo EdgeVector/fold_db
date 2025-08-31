@@ -167,9 +167,20 @@ export const fetchSchemas = createAsyncThunk<
         }
         
         const schemasWithStates = availableSchemas.map((name: string) => {
+          // Check if schema already exists in Redux state (preserve optimistic updates)
+          const existingSchema = state.schemas.schemas[name];
+          if (existingSchema) {
+            console.log('🟡 fetchSchemas: Preserving existing Redux state for', name, ':', existingSchema.state);
+            return {
+              name,
+              state: existingSchema.state,
+              fields: existingSchema.fields || {}
+            };
+          }
+          
+          // Only use persisted state if no Redux state exists
           const persistedState = persistedStates[name];
           let normalizedState = SCHEMA_STATES.AVAILABLE;
-          
           
           if (persistedState) {
             if (typeof persistedState === 'string') {
@@ -260,8 +271,10 @@ export const approveSchema = createAsyncThunk<
 >(
   SCHEMA_ACTION_TYPES.APPROVE_SCHEMA,
   async ({ schemaName, options = {} }, { getState, rejectWithValue }) => {
+    console.log('🔵 Redux: approveSchema thunk called with:', { schemaName, options });
     const state = getState();
     const schema = state.schemas.schemas[schemaName];
+    console.log('🔵 Redux: Current schema from state:', schema);
     
     if (!schema) {
       return rejectWithValue({
@@ -282,18 +295,23 @@ export const approveSchema = createAsyncThunk<
     }
     
     try {
+      console.log('🔵 Redux: Calling schemaClient.approveSchema for:', schemaName);
       const response = await schemaClient.approveSchema(schemaName);
+      console.log('🔵 Redux: API response:', response);
       
       if (!response.success) {
+        console.log('🔴 Redux: API call failed:', response.error);
         throw new Error(response.error || SCHEMA_ERROR_MESSAGES.APPROVE_FAILED);
       }
       
-      return {
+      const payload = {
         schemaName,
         newState: SCHEMA_STATES.APPROVED as SchemaStateType,
         timestamp: Date.now(),
         updatedSchema: undefined
       };
+      console.log('🔵 Redux: Returning payload:', payload);
+      return payload;
       
     } catch (error) {
       return rejectWithValue({
@@ -582,9 +600,11 @@ const schemaSlice = createSlice({
       })
       .addCase(approveSchema.fulfilled, (state, action) => {
         const { schemaName, newState, updatedSchema } = action.payload;
+        console.log('🔵 Redux: approveSchema.fulfilled', { schemaName, newState, updatedSchema });
         state.loading.operations[schemaName] = false;
         
         if (state.schemas[schemaName]) {
+          console.log('🔵 Redux: Updating schema state from', state.schemas[schemaName].state, 'to', newState);
           state.schemas[schemaName].state = newState;
           if (updatedSchema) {
             Object.assign(state.schemas[schemaName], updatedSchema);
@@ -594,6 +614,9 @@ const schemaSlice = createSlice({
             timestamp: Date.now(),
             success: true
           };
+          console.log('🔵 Redux: Schema state updated to', state.schemas[schemaName].state);
+        } else {
+          console.log('🔴 Redux: Schema not found in state:', schemaName);
         }
       })
       .addCase(approveSchema.rejected, (state, action) => {

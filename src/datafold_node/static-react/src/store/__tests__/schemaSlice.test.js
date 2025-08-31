@@ -372,5 +372,45 @@ describe('schemaSlice', () => {
       // and direct fetch() calls have been successfully removed from schema files
       expect(true).toBe(true);
     });
+
+    it('should update schema state optimistically after successful operations', () => {
+      const store = createTestStore({
+        schemas: {
+          schemas: {
+            'test-schema': { name: 'test-schema', state: 'available' }
+          },
+          lastFetched: Date.now(),
+          cache: { lastUpdated: Date.now() },
+          loading: {
+            fetch: false,
+            operations: {}
+          },
+          errors: {
+            fetch: null,
+            operations: {}
+          }
+        }
+      });
+
+      // Dispatch the fulfilled action directly to test optimistic update
+      store.dispatch(approveSchema.fulfilled({
+        schemaName: 'test-schema',
+        newState: 'approved',
+        timestamp: Date.now(),
+        updatedSchema: undefined
+      }, 'test-request-id', { schemaName: 'test-schema' }));
+
+      // Get the final state
+      const state = store.getState().schemas;
+
+      // Verify schema state was updated optimistically
+      expect(state.schemas['test-schema'].state).toBe('approved');
+      expect(state.schemas['test-schema'].lastOperation.type).toBe('approve');
+      expect(state.schemas['test-schema'].lastOperation.success).toBe(true);
+      
+      // Verify cache was NOT invalidated (simplified approach)
+      expect(state.lastFetched).not.toBeNull();
+      expect(state.cache.lastUpdated).not.toBeNull();
+    });
   });
 });
