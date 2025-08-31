@@ -56,6 +56,7 @@ fold_node/data/schema_states/
 /fold_node/src/datafold_node/static-react/data_temp/
 /fold_node/tests/test_data/request_forwarding/
 /tests/test_data/
+/data_temp/
 
 # Example generated files
 examples/*/db/

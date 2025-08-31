@@ -9,9 +9,9 @@
  */
 
 import { useState, useCallback } from 'react';
-import { generateKeyPair } from '../utils/cryptoUtils';
+import { generateKeyPair, signPayload, verifySignature } from '../utils/cryptoUtils';
 import { Buffer } from 'buffer';
-import { registerPublicKey as registerPublicKeyApi } from '../api/securityClient';
+import { registerPublicKey as registerPublicKeyApi } from '../api/clients/securityClient';
 
 /**
  * Hook for managing key generation operations
@@ -116,7 +116,7 @@ export function useKeyGeneration() {
     try {
       // Test signing and verification to validate key pair
       const testMessage = 'key_validation_test';
-      const { signPayload, verifySignature } = await import('../utils/cryptoUtils');
+
       
       const signature = await signPayload(testMessage, keyPair.privateKeyBase64);
       const isValid = await verifySignature(signature, testMessage, keyPair.publicKeyBase64);

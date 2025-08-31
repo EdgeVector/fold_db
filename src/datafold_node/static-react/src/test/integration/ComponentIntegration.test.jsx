@@ -11,7 +11,7 @@ import TabNavigation from '../../components/TabNavigation'
 import SelectField from '../../components/form/SelectField'
 import TextField from '../../components/form/TextField'
 import SchemaStatusBadge from '../../components/schema/SchemaStatusBadge'
-import SchemaActions from '../../components/schema/SchemaActions'
+
 import { renderWithRedux } from '../utils/testHelpers'
 import { createAuthenticatedState, createUnauthenticatedState } from '../utils/testHelpers'
 import { createTestStore } from '../utils/testUtilities.jsx'
@@ -101,77 +101,7 @@ describe('Component Integration Tests', () => {
     })
   })
 
-  describe('Schema Components Integration', () => {
-    it('displays schema information with status and actions', () => {
-      const mockSchema = {
-        name: 'UserProfile',
-        state: 'approved',
-        fields: { id: { field_type: 'String' }, name: { field_type: 'String' } }
-      }
 
-      const onApprove = jest.fn()
-      const onBlock = jest.fn()
-      const onUnload = jest.fn()
-
-      render(
-        <div>
-          <SchemaStatusBadge 
-            state="approved" 
-            isRangeSchema={true}
-            showTooltip={true} 
-          />
-          <SchemaActions
-            schema={mockSchema}
-            onApprove={onApprove}
-            onBlock={onBlock}
-            onUnload={onUnload}
-          />
-        </div>
-      )
-
-      // Should show schema status
-      expect(screen.getByText('Approved')).toBeInTheDocument()
-      expect(screen.getByText('Range Key')).toBeInTheDocument()
-
-      // Should show appropriate actions for approved schema
-      expect(screen.getByRole('button', { name: /block schema/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /unload schema/i })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /approve schema/i })).not.toBeInTheDocument()
-    })
-
-    it('handles schema action workflow with confirmation', async () => {
-      const user = userEvent.setup()
-      const mockSchema = {
-        name: 'TestSchema',
-        state: 'approved'
-      }
-      const onBlock = jest.fn()
-
-      render(
-        <SchemaActions
-          schema={mockSchema}
-          onApprove={jest.fn()}
-          onBlock={onBlock}
-          onUnload={jest.fn()}
-          showConfirmation={true}
-        />
-      )
-
-      // Click block button
-      const blockButton = screen.getByRole('button', { name: /block schema/i })
-      await user.click(blockButton)
-
-      // Should show confirmation dialog
-      expect(screen.getByText('Confirm Action')).toBeInTheDocument()
-      expect(screen.getByText(/are you sure you want to block schema/i)).toBeInTheDocument()
-
-      // Confirm the action
-      const confirmButton = screen.getByRole('button', { name: /confirm/i })
-      await user.click(confirmButton)
-
-      expect(onBlock).toHaveBeenCalledWith('TestSchema')
-    })
-  })
 
   describe('Complete Workflow Integration', () => {
     it('simulates a complete schema selection and mutation workflow', async () => {

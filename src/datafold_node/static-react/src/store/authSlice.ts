@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { getSystemPublicKey } from '../api/securityClient';
-import { base64ToBytes } from '../utils/ed25519';
+import { getSystemPublicKey } from '../api/clients/securityClient';
+import { base64ToBytes } from '../utils/cryptoUtils';
 import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 

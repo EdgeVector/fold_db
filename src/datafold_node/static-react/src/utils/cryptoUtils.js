@@ -8,7 +8,7 @@
  * @since 2.0.0
  */
 
-import { getPublicKey, utils } from '@noble/ed25519';
+import { getPublicKey, utils, sign, verify } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 import { Buffer } from 'buffer';
 
@@ -38,8 +38,6 @@ export async function generateKeyPair() {
  * @returns {Promise<string>} Base64 encoded signature
  */
 export async function signPayload(payload, privateKeyBase64) {
-  const { sign } = await import('@noble/ed25519');
-  
   const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
   const privateKey = Buffer.from(privateKeyBase64, 'base64');
   const message = new TextEncoder().encode(payloadString);
@@ -56,8 +54,6 @@ export async function signPayload(payload, privateKeyBase64) {
  * @returns {Promise<boolean>}
  */
 export async function verifySignature(signature, payload, publicKeyBase64) {
-  const { verify } = await import('@noble/ed25519');
-  
   try {
     const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
     const sig = Buffer.from(signature, 'base64');
@@ -102,4 +98,22 @@ export function generateSecureRandom(length = 32) {
   const array = new Uint8Array(length);
   crypto.getRandomValues(array);
   return Buffer.from(array).toString('base64').substring(0, length);
+}
+
+/**
+ * Convert base64 string to bytes
+ * @param {string} base64 - Base64 encoded string
+ * @returns {Uint8Array} Decoded bytes
+ */
+export function base64ToBytes(base64) {
+  return Buffer.from(base64, 'base64');
+}
+
+/**
+ * Convert bytes to base64 string
+ * @param {Uint8Array} bytes - Bytes to encode
+ * @returns {string} Base64 encoded string
+ */
+export function bytesToBase64(bytes) {
+  return Buffer.from(bytes).toString('base64');
 }

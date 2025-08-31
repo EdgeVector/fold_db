@@ -53,24 +53,7 @@ vi.mock('react-redux', async (importOriginal) => {
   }
 })
 
-// Mock data processing hooks
-vi.mock('../../../hooks/useDataIngestion', () => ({
-  useDataIngestion: vi.fn(() => ({
-    processData: vi.fn(() => Promise.resolve({
-      success: true,
-      suggestedSchema: {
-        name: 'auto_generated_schema',
-        fields: {
-          name: { field_type: 'String' },
-          age: { field_type: 'Integer' }
-        }
-      }
-    })),
-    isProcessing: false,
-    processingError: null,
-    progress: 0
-  }))
-}))
+
 
 // Mock localStorage for OpenRouter config
 const mockLocalStorage = {

@@ -153,45 +153,7 @@ export {
   HELP_TEXT
 } from './ui';
 
-// ============================================================================
-// CLEANUP EXPORTS
-// ============================================================================
 
-export {
-  CLEANUP_BATCH_SIZE,
-  DEPENDENCY_SCAN_TIMEOUT_MS,
-  LEGACY_FILE_AGE_DAYS,
-  UNUSED_IMPORT_THRESHOLD,
-  CLEANUP_VALIDATION_TIMEOUT_MS,
-  CODE_SIMILARITY_THRESHOLD_PERCENT,
-  DUPLICATE_DETECTION_BATCH_SIZE,
-  CONSOLIDATION_VALIDATION_TIMEOUT_MS,
-  PATTERN_ANALYSIS_DEPTH,
-  DUPLICATE_LINE_THRESHOLD
-} from './cleanup';
-
-// ============================================================================
-// OPTIMIZATION EXPORTS
-// ============================================================================
-
-export {
-  COMPLEXITY_SCORE_THRESHOLD,
-  PROP_INTERFACE_MAX_PROPS,
-  COMPONENT_MAX_LINES,
-  ABSTRACTION_JUSTIFICATION_THRESHOLD,
-  OPTIMIZATION_VALIDATION_TIMEOUT_MS,
-  COMPLEXITY_WEIGHT_CYCLOMATIC,
-  COMPLEXITY_WEIGHT_CONDITIONAL_RENDER,
-  COMPLEXITY_WEIGHT_NESTED_DEPTH,
-  COMPLEXITY_WEIGHT_PROP_COUNT,
-  MAX_FUNCTION_LINES,
-  MAX_JSX_NESTING_DEPTH,
-  MAX_USEEFFECT_DEPENDENCIES,
-  MAX_CONDITIONAL_BRANCHES,
-  BUNDLE_SIZE_WARNING_THRESHOLD_KB,
-  RENDER_PERFORMANCE_WARNING_MS,
-  MEMORY_LEAK_DETECTION_THRESHOLD
-} from './optimization';
 
 // ============================================================================
 // REDUX EXPORTS (from existing files)

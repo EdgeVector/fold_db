@@ -6,7 +6,7 @@ import { useKeyGeneration } from '../../hooks/useKeyGeneration.js';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { validatePrivateKey, clearAuthentication, updateSystemKey, refreshSystemKey } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
-import { bytesToBase64, base64ToBytes } from '../../utils/ed25519';
+import { bytesToBase64, base64ToBytes } from '../../utils/cryptoUtils';
 import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 

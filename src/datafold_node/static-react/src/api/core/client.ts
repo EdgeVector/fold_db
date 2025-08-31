@@ -45,8 +45,9 @@ import type {
 // Define ErrorInterceptor locally to use concrete ApiError class
 type ErrorInterceptor = (error: ApiError) => ApiError | Promise<ApiError>;
 
-import { signPayload } from '../../utils/authenticationWrapper';
+import { signPayload } from '../../utils/cryptoUtils';
 import { store } from '../../store/store';
+import { Buffer } from 'buffer';
 
 /**
  * In-memory cache implementation
@@ -308,7 +309,7 @@ export class ApiClient implements ApiClientInstance {
       // Apply response interceptors
       let finalResponse = response;
       for (const interceptor of this.responseInterceptors) {
-        finalResponse = await interceptor(finalResponse);
+        finalResponse = await interceptor(finalResponse) as EnhancedApiResponse<T>;
       }
 
       // Record metrics
@@ -488,7 +489,8 @@ export class ApiClient implements ApiClientInstance {
 
       if (body) {
         // For requests with body, sign the payload
-        const _signedMessage = await signPayload(body);
+        const privateKeyBase64 = Buffer.from(authState.privateKey).toString('base64');
+        const _signedMessage = await signPayload(body, privateKeyBase64);
         headers[REQUEST_HEADERS.SIGNED_REQUEST] = 'true';
         // The body will be replaced with signed message in serializeBody
       }
@@ -613,7 +615,7 @@ export class ApiClient implements ApiClientInstance {
   }
 
   addResponseInterceptor<T>(interceptor: ResponseInterceptor<T>): void {
-    this.responseInterceptors.push(interceptor);
+    this.responseInterceptors.push(interceptor as ResponseInterceptor);
   }
 
   addErrorInterceptor(interceptor: ErrorInterceptor): void {

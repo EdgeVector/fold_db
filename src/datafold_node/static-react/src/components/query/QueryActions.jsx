@@ -2,7 +2,7 @@
  * QueryActions Component
  * Provides execute, validate, and clear actions for query management
  * Part of UCR-1-6: Create QueryActions component for execution controls
- * Follows pattern established in SchemaActions.jsx
+ * Follows established action component patterns
  */
 
 import { useState } from 'react';
@@ -28,7 +28,7 @@ import { COMPONENT_STYLES } from '../../constants/styling.js';
  */
 
 /**
- * Query execution actions component following SchemaActions pattern
+ * Query execution actions component following established patterns
  * 
  * @param {QueryActionsProps} props
  * @returns {JSX.Element}
@@ -58,7 +58,7 @@ function QueryActions({
 
   /**
    * Handle action execution with loading state
-   * Follows SchemaActions.jsx handleAction pattern
+   * Follows established handleAction pattern
    */
   const handleAction = async (action, actionFn, data = null) => {
     if (!actionFn || disabled) return;

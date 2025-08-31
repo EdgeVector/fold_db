@@ -4,7 +4,7 @@ import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
 import { MutationClient } from '../../api'
-import { signPayload } from '../../utils/authenticationWrapper'
+import { signPayload } from '../../utils/cryptoUtils'
 // Removed hook dependencies - using Redux state management instead (TASK-003)
 // Temporarily bypass constants to break circular dependency
 const BUTTON_TEXT = { executeMutation: 'Execute Mutation', confirm: 'Confirm', cancel: 'Cancel' };
@@ -20,10 +20,12 @@ import {
 } from '../../utils/rangeSchemaUtils'
 import { useAppSelector } from '../../store/hooks'
 import { selectApprovedSchemas } from '../../store/schemaSlice'
+import { Buffer } from 'buffer'
 
 function MutationTab({ onResult }) {
   // Redux state - TASK-003: Use approved schemas for SCHEMA-002 compliance
   const schemas = useAppSelector(selectApprovedSchemas)
+  const authState = useAppSelector(state => state.auth)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [mutationData, setMutationData] = useState({})
   const [mutationType, setMutationType] = useState('Create')
@@ -84,7 +86,11 @@ function MutationTab({ onResult }) {
 
     try {
       // Sign the mutation before sending to the API
-      const signedMutation = await signPayload(mutation)
+      if (!authState?.privateKey) {
+        throw new Error('Authentication required for mutations')
+      }
+      const privateKeyBase64 = Buffer.from(authState.privateKey).toString('base64')
+      const signedMutation = await signPayload(mutation, privateKeyBase64)
       const response = await MutationClient.executeMutation(signedMutation)
       
       if (!response.success) {
