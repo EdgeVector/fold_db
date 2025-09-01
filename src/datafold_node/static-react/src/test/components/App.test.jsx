@@ -116,11 +116,8 @@ vi.mock('../../components/tabs/MutationTab', () => ({
 }));
 
 vi.mock('../../components/tabs/KeyManagementTab', () => ({
-  default: ({ onResult, keyGenerationResult }) => (
+  default: ({ onResult }) => (
     <div data-testid="key-management-tab">
-      <div data-testid="key-generation-result">
-        {keyGenerationResult ? 'Key generation available' : 'No key generation'}
-      </div>
       <button 
         data-testid="key-action" 
         onClick={() => onResult({ type: 'key', data: 'key result' })}
@@ -156,18 +153,6 @@ vi.mock('../../components/tabs/SchemaDependenciesTab', () => ({
 }));
 
 // Create stable mock functions
-const mockKeyGeneration = {
-  result: {
-    keyPair: null,
-    publicKeyBase64: null,
-    error: null,
-    isGenerating: false
-  },
-  generateKeyPair: vi.fn(),
-  clearKeys: vi.fn(),
-  registerPublicKey: vi.fn()
-};
-
 const mockApprovedSchemas = {
   approvedSchemas: [],
   allSchemas: [],
@@ -177,10 +162,6 @@ const mockApprovedSchemas = {
 };
 
 // Mock hooks
-vi.mock('../../hooks/useKeyGeneration', () => ({
-  useKeyGeneration: () => mockKeyGeneration
-}));
-
 vi.mock('../../hooks/useApprovedSchemas.js', () => ({
   useApprovedSchemas: () => mockApprovedSchemas
 }));
@@ -289,8 +270,8 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.getByText('Authentication Required')).toBeInTheDocument();
-        expect(screen.getByText('Please set up your private key in the Keys tab to access other features.')).toBeInTheDocument();
+        // Should be on keys tab by default when not authenticated
+        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
       });
 
       it('hides authentication warning when authenticated', () => {
@@ -311,7 +292,8 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.queryByText('Authentication Required')).not.toBeInTheDocument();
+        // Should be able to navigate to other tabs when authenticated
+        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
       });
 
       it('restricts tab navigation when not authenticated', async () => {
@@ -335,9 +317,9 @@ describe('App Component', () => {
         // Try to switch to schemas tab
         fireEvent.click(screen.getByTestId('tab-schemas'));
 
-        // Should still be on keys tab
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
-        expect(screen.queryByTestId('schema-tab')).not.toBeInTheDocument();
+        // Should be able to navigate to schemas tab (authentication restriction removed)
+        expect(screen.getByTestId('schema-tab')).toBeInTheDocument();
+        expect(screen.queryByTestId('key-management-tab')).not.toBeInTheDocument();
       });
 
       it('allows tab navigation when authenticated', async () => {
@@ -547,28 +529,7 @@ describe('App Component', () => {
         expect(mockApprovedSchemas.refetch).toHaveBeenCalled();
       });
 
-      it('passes keyGenerationResult to KeyManagementTab', () => {
-        const store = createTestStore({
-          auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
 
-        renderWithRedux(<AppContent />, { store });
-
-        // Should be on keys tab by default
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
-        expect(screen.getByTestId('key-generation-result')).toBeInTheDocument();
-      });
     });
 
     describe('Integration with Child Components', () => {
@@ -771,8 +732,8 @@ describe('App Component', () => {
 
         const { unmount } = renderWithRedux(<AppContent />, { store: unauthenticatedStore });
 
-        // Initially not authenticated
-        expect(screen.getByText('Authentication Required')).toBeInTheDocument();
+        // Initially not authenticated - should be on keys tab
+        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
 
         // Unmount and create new authenticated store
         unmount();
@@ -795,7 +756,8 @@ describe('App Component', () => {
         // Render with authenticated store
         renderWithRedux(<AppContent />, { store: authenticatedStore });
 
-        expect(screen.queryByText('Authentication Required')).not.toBeInTheDocument();
+        // Should still be on keys tab but now authenticated
+        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
       });
     });
   });

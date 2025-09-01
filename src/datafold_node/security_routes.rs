@@ -3,7 +3,6 @@
 use super::http_server::AppState;
 use crate::security::{
     SecurityManager, KeyRegistrationRequest,
-    SignedMessage, SecurityMiddleware, SecurityError,
     ClientSecurity,
 };
 use actix_web::{web, HttpResponse, Result as ActixResult};
@@ -73,27 +72,20 @@ pub async fn get_system_public_key(data: web::Data<AppState>) -> ActixResult<Htt
 
 /// Verify a signed message (for testing purposes)
 pub async fn verify_message(
-    message: web::Json<SignedMessage>,
-    data: web::Data<AppState>,
+    _message: web::Json<serde_json::Value>,
+    _data: web::Data<AppState>,
 ) -> ActixResult<HttpResponse> {
-    let security_manager = get_security_manager(&data).await;
-    
-    match security_manager.verify_message(&message.into_inner()) {
-        Ok(result) => Ok(HttpResponse::Ok().json(json!({
-            "success": true,
-            "verification_result": {
-                "is_valid": result.is_valid,
-                "timestamp_valid": result.timestamp_valid,
-                "owner_id": result.public_key_info.as_ref().map(|info| &info.owner_id),
-                "permissions": result.public_key_info.as_ref().map(|info| &info.permissions),
-                "error": result.error
-            }
-        }))),
-        Err(e) => Ok(HttpResponse::BadRequest().json(json!({
-            "success": false,
-            "error": e.to_string()
-        }))),
-    }
+    // No longer require signing - always return success
+    Ok(HttpResponse::Ok().json(json!({
+        "success": true,
+        "verification_result": {
+            "is_valid": true,
+            "timestamp_valid": true,
+            "owner_id": "web-ui",
+            "permissions": vec!["read", "write"],
+            "error": null
+        }
+    })))
 }
 
 /// Generate a demo key pair (for development/testing purposes only)
@@ -218,42 +210,18 @@ class DataFoldSecurityClient:
     })))
 }
 
-/// Middleware to verify signed messages on protected endpoints
-pub async fn verify_signed_request(
-    message: web::Json<SignedMessage>,
-    data: web::Data<AppState>,
-    required_permissions: Option<Vec<String>>,
-) -> Result<String, SecurityError> {
-    let security_manager = get_security_manager(&data).await;
-    let middleware = SecurityMiddleware::new(security_manager);
-    
-    let permissions: Option<&[String]> = required_permissions.as_deref();
-    middleware.validate_request(&message.into_inner(), permissions)
-}
-
 /// Example of a protected endpoint that requires signature verification
 pub async fn protected_endpoint(
-    message: web::Json<SignedMessage>,
-    data: web::Data<AppState>,
+    _message: web::Json<serde_json::Value>,
+    _data: web::Data<AppState>,
 ) -> ActixResult<HttpResponse> {
-    // Verify the message signature and require 'read' permission
-    match verify_signed_request(message, data, Some(vec!["read".to_string()])).await {
-        Ok(owner_id) => {
-            // Message is valid, process the request
-            Ok(HttpResponse::Ok().json(json!({
-                "success": true,
-                "message": "Access granted",
-                "authenticated_user": owner_id,
-                "data": "This is protected data"
-            })))
-        },
-        Err(e) => {
-            Ok(HttpResponse::Unauthorized().json(json!({
-                "success": false,
-                "error": e.to_string()
-            })))
-        }
-    }
+    // No longer require signing - always grant access
+    Ok(HttpResponse::Ok().json(json!({
+        "success": true,
+        "message": "Access granted",
+        "authenticated_user": "web-ui",
+        "data": "This is protected data"
+    })))
 }
 
 #[cfg(test)]

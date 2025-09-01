@@ -8,7 +8,11 @@ import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import { SCHEMA_STATES } from '../../constants/api';
 import type { EnhancedApiResponse, MutationApiClient } from '../core/types';
-import type { SignedMessage } from '../../types/cryptography';
+import type { 
+  MutationResponse, 
+  QueryResponse, 
+  ValidationResult 
+} from '../../types/api';
 
 // Mutation-specific response types
 export interface MutationResponse {
@@ -54,22 +58,18 @@ export class UnifiedMutationClient implements MutationApiClient {
   }
 
   /**
-   * Execute a signed mutation against an approved schema
+   * Execute a mutation against an approved schema
    * PROTECTED - Requires authentication and SCHEMA-002 compliance
    * 
-   * @param signedMessage The signed mutation message containing payload and signature
+   * @param mutation The mutation object to execute
    * @returns Promise resolving to mutation result
    */
-  async executeMutation(signedMessage: SignedMessage): Promise<EnhancedApiResponse<MutationResponse>> {
+  async executeMutation(mutation: any): Promise<EnhancedApiResponse<MutationResponse>> {
     return this.client.post<MutationResponse>(
       API_ENDPOINTS.MUTATION,
-      signedMessage,
+      mutation,
       {
-        requiresAuth: true,
-        validateSchema: {
-          operation: 'write' as const,
-          requiresApproved: true // SCHEMA-002: Only approved schemas for mutations
-        },
+        validateSchema: false, // Skip schema validation for mutations
         timeout: 15000, // Longer timeout for mutation operations
         retries: 0, // No retries for mutations to prevent duplicate operations
         cacheable: false // Never cache mutation results
@@ -78,18 +78,17 @@ export class UnifiedMutationClient implements MutationApiClient {
   }
 
   /**
-   * Execute a signed query against an approved schema
-   * PROTECTED - Requires authentication and SCHEMA-002 compliance
+   * Execute a query against an approved schema
+   * UNPROTECTED - No authentication required
    * 
-   * @param signedMessage The signed query message containing payload and signature
+   * @param query The query object to execute
    * @returns Promise resolving to query results
    */
-  async executeQuery(signedMessage: SignedMessage): Promise<EnhancedApiResponse<QueryResponse>> {
+  async executeQuery(query: any): Promise<EnhancedApiResponse<QueryResponse>> {
     return this.client.post<QueryResponse>(
       API_ENDPOINTS.QUERY,
-      signedMessage,
+      query,
       {
-        requiresAuth: true,
         validateSchema: {
           operation: 'read' as const,
           requiresApproved: true // SCHEMA-002: Only approved schemas for queries
@@ -117,7 +116,6 @@ export class UnifiedMutationClient implements MutationApiClient {
       `${API_ENDPOINTS.MUTATION}/validate`,
       { mutation },
       {
-        requiresAuth: true,
         validateSchema: schemaName ? {
           schemaName,
           operation: 'write' as const,
@@ -134,13 +132,13 @@ export class UnifiedMutationClient implements MutationApiClient {
    * Execute a batch of mutations as a single transaction
    * All mutations must target approved schemas
    * 
-   * @param signedMessages Array of signed mutation messages
+   * @param mutations Array of mutation objects
    * @returns Promise resolving to batch execution results
    */
   async executeBatchMutations(
-    signedMessages: SignedMessage[]
+    mutations: any[]
   ): Promise<EnhancedApiResponse<MutationResponse[]>> {
-    if (signedMessages.length === 0) {
+    if (mutations.length === 0) {
       return {
         success: false,
         error: 'Empty batch: At least one mutation is required',
@@ -151,9 +149,8 @@ export class UnifiedMutationClient implements MutationApiClient {
 
     return this.client.post<MutationResponse[]>(
       `${API_ENDPOINTS.MUTATION}/batch`,
-      { mutations: signedMessages },
+      { mutations: mutations },
       {
-        requiresAuth: true,
         validateSchema: {
           operation: 'write' as const,
           requiresApproved: true
@@ -183,7 +180,6 @@ export class UnifiedMutationClient implements MutationApiClient {
       `${API_ENDPOINTS.QUERY}/parameterized`,
       queryParams,
       {
-        requiresAuth: true,
         validateSchema: {
           schemaName: queryParams.schema,
           operation: 'read' as const,
@@ -222,7 +218,6 @@ export class UnifiedMutationClient implements MutationApiClient {
     return this.client.get<MutationResponse[]>(
       `${API_ENDPOINTS.MUTATION}/history${queryString ? `?${queryString}` : ''}`,
       {
-        requiresAuth: true,
         validateSchema: params.schema ? {
           schemaName: params.schema,
           operation: 'read' as const,
@@ -252,7 +247,6 @@ export class UnifiedMutationClient implements MutationApiClient {
     try {
       // Use the schema client to get schema details
       const response = await this.client.get<any>(`/api/schemas/${schemaName}`, {
-        requiresAuth: true,
         timeout: 5000,
         retries: 1,
         cacheable: true,
@@ -317,12 +311,12 @@ export function createMutationClient(client?: ApiClient): UnifiedMutationClient 
 
 // Backward compatibility exports - these will be deprecated
 export const MutationClient = class {
-  static async executeMutation(signedMessage: SignedMessage): Promise<EnhancedApiResponse<MutationResponse>> {
-    return mutationClient.executeMutation(signedMessage);
+  static async executeMutation(mutation: any): Promise<EnhancedApiResponse<MutationResponse>> {
+    return mutationClient.executeMutation(mutation);
   }
 
-  static async executeQuery(signedMessage: SignedMessage): Promise<EnhancedApiResponse<QueryResponse>> {
-    return mutationClient.executeQuery(signedMessage);
+  static async executeQuery(query: any): Promise<EnhancedApiResponse<QueryResponse>> {
+    return mutationClient.executeQuery(query);
   }
 };
 

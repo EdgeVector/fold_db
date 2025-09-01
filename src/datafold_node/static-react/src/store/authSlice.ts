@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { getSystemPublicKey } from '../api/clients/securityClient';
+import { getNodePrivateKey, getNodePublicKey } from '../api/clients/systemClient';
 import { base64ToBytes } from '../utils/cryptoUtils';
 import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
@@ -32,22 +32,35 @@ export const initializeSystemKey = createAsyncThunk(
   'auth/initializeSystemKey',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await getSystemPublicKey();
+      // Fetch the private key directly from the node
+      const response = await getNodePrivateKey();
       console.log('initializeSystemKey thunk response:', response);
-      if (response.success && (response as any).data && (response as any).data.key && (response as any).data.key.public_key) {
+      
+      if (response.success && response.data && response.data.private_key) {
+        // Convert base64 private key to bytes
+        const privateKeyBytes = base64ToBytes(response.data.private_key);
+        
+        // Generate public key from private key for verification
+        const derivedPublicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
+        const derivedPublicKeyBase64 = btoa(String.fromCharCode(...derivedPublicKeyBytes));
+        
         return {
-          systemPublicKey: (response as any).data.key.public_key,
-          systemKeyId: (response as any).data.key.id || null,
+          systemPublicKey: derivedPublicKeyBase64,
+          systemKeyId: 'node-private-key',
+          privateKey: privateKeyBytes,
+          isAuthenticated: true
         };
       } else {
         return {
           systemPublicKey: null,
           systemKeyId: null,
+          privateKey: null,
+          isAuthenticated: false
         };
       }
     } catch (err) {
-      console.error('Failed to fetch system public key:', err);
-      return rejectWithValue(err instanceof Error ? err.message : 'Failed to fetch system key');
+      console.error('Failed to fetch node private key:', err);
+      return rejectWithValue(err instanceof Error ? err.message : 'Failed to fetch node private key');
     }
   }
 );
@@ -107,12 +120,21 @@ export const refreshSystemKey = createAsyncThunk(
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const response = await getSystemPublicKey();
+        const response = await getNodePrivateKey();
         
-        if (response.success && (response as any).data && (response as any).data.key && (response as any).data.key.public_key) {
+        if (response.success && response.data && response.data.private_key) {
+          // Convert base64 private key to bytes
+          const privateKeyBytes = base64ToBytes(response.data.private_key);
+          
+          // Generate public key from private key for verification
+          const derivedPublicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
+          const derivedPublicKeyBase64 = btoa(String.fromCharCode(...derivedPublicKeyBytes));
+          
           return {
-            systemPublicKey: (response as any).data.key.public_key,
-            systemKeyId: (response as any).data.key.id || null,
+            systemPublicKey: derivedPublicKeyBase64,
+            systemKeyId: 'node-private-key',
+            privateKey: privateKeyBytes,
+            isAuthenticated: true
           };
         } else {
           if (attempt < maxRetries) {
@@ -122,7 +144,7 @@ export const refreshSystemKey = createAsyncThunk(
         }
       } catch (err) {
         if (attempt === maxRetries) {
-          return rejectWithValue(err instanceof Error ? err.message : 'Failed to fetch system key');
+          return rejectWithValue(err instanceof Error ? err.message : 'Failed to fetch node private key');
         } else {
           const delay = retryDelay * attempt;
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -130,7 +152,34 @@ export const refreshSystemKey = createAsyncThunk(
       }
     }
     
-    return rejectWithValue('Failed to fetch system key after multiple attempts');
+    return rejectWithValue('Failed to fetch node private key after multiple attempts');
+  }
+);
+
+// Async thunk for fetching node private key from backend
+export const fetchNodePrivateKey = createAsyncThunk(
+  'auth/fetchNodePrivateKey',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await getNodePrivateKey();
+      console.log('fetchNodePrivateKey thunk response:', response);
+      
+      if (response.success && response.data && response.data.private_key) {
+        // Convert base64 private key to bytes
+        const privateKeyBytes = base64ToBytes(response.data.private_key);
+        
+        return {
+          privateKey: privateKeyBytes,
+          publicKeyId: 'node-private-key', // Use a consistent identifier
+          isAuthenticated: true
+        };
+      } else {
+        return rejectWithValue('Failed to fetch private key from backend');
+      }
+    } catch (err) {
+      console.error('Failed to fetch node private key:', err);
+      return rejectWithValue(err instanceof Error ? err.message : 'Failed to fetch node private key');
+    }
   }
 );
 
@@ -167,6 +216,8 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.systemPublicKey = action.payload.systemPublicKey;
         state.systemKeyId = action.payload.systemKeyId;
+        state.privateKey = action.payload.privateKey;
+        state.isAuthenticated = action.payload.isAuthenticated;
         state.error = null;
       })
       .addCase(initializeSystemKey.rejected, (state, action) => {
@@ -201,12 +252,33 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.systemPublicKey = action.payload.systemPublicKey;
         state.systemKeyId = action.payload.systemKeyId;
+        state.privateKey = action.payload.privateKey;
+        state.isAuthenticated = action.payload.isAuthenticated;
         state.error = null;
       })
       .addCase(refreshSystemKey.rejected, (state, action) => {
         state.isLoading = false;
         state.systemPublicKey = null;
         state.systemKeyId = null;
+        state.error = action.payload as string;
+      })
+      // fetchNodePrivateKey cases
+      .addCase(fetchNodePrivateKey.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchNodePrivateKey.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isAuthenticated = action.payload.isAuthenticated;
+        state.privateKey = action.payload.privateKey;
+        state.publicKeyId = action.payload.publicKeyId;
+        state.error = null;
+      })
+      .addCase(fetchNodePrivateKey.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isAuthenticated = false;
+        state.privateKey = null;
+        state.publicKeyId = null;
         state.error = action.payload as string;
       });
   },

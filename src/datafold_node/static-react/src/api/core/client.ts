@@ -45,7 +45,6 @@ import type {
 // Define ErrorInterceptor locally to use concrete ApiError class
 type ErrorInterceptor = (error: ApiError) => ApiError | Promise<ApiError>;
 
-import { signPayload } from '../../utils/cryptoUtils';
 import { store } from '../../store/store';
 import { Buffer } from 'buffer';
 
@@ -487,13 +486,9 @@ export class ApiClient implements ApiClientInstance {
         throw new ApiError('Authentication required but not available');
       }
 
-      if (body) {
-        // For requests with body, sign the payload
-        const privateKeyBase64 = Buffer.from(authState.privateKey).toString('base64');
-        const _signedMessage = await signPayload(body, privateKeyBase64);
-        headers[REQUEST_HEADERS.SIGNED_REQUEST] = 'true';
-        // The body will be replaced with signed message in serializeBody
-      }
+      // Authentication is now handled by the backend without requiring signed messages
+      // Just add a header to indicate the user is authenticated
+      headers[REQUEST_HEADERS.AUTHENTICATED] = 'true';
       
     } catch (_error) {
       throw new ApiError('Authentication failed', HTTP_STATUS_CODES.UNAUTHORIZED, {

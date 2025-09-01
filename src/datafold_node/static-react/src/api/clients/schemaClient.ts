@@ -55,11 +55,10 @@ export class UnifiedSchemaClient {
 
   /**
    * Get a specific schema by name
-   * PROTECTED - Requires authentication and SCHEMA-002 compliance
+   * UNPROTECTED - No authentication required
    */
   async getSchema(name: string): Promise<EnhancedApiResponse<Schema>> {
     return this.client.get<Schema>(API_ENDPOINTS.SCHEMA_BY_NAME(name), {
-      requiresAuth: true,
       validateSchema: {
         schemaName: name,
         operation: 'read' as const,
@@ -114,7 +113,7 @@ export class UnifiedSchemaClient {
 
   /**
    * Approve a schema (transition to approved state)
-   * PROTECTED - Requires authentication and admin permissions
+   * UNPROTECTED - No authentication required
    * SCHEMA-002 Compliance: Only available schemas can be approved
    */
   async approveSchema(name: string): Promise<EnhancedApiResponse<void>> {
@@ -122,7 +121,6 @@ export class UnifiedSchemaClient {
       API_ENDPOINTS.SCHEMA_APPROVE(name),
       {}, // Empty body, schema name is in URL
       {
-        requiresAuth: true,
         validateSchema: {
           schemaName: name,
           operation: 'approve' as const,
@@ -136,7 +134,7 @@ export class UnifiedSchemaClient {
 
   /**
    * Block a schema (transition to blocked state)
-   * PROTECTED - Requires authentication and admin permissions
+   * UNPROTECTED - No authentication required
    * SCHEMA-002 Compliance: Only approved schemas can be blocked
    */
   async blockSchema(name: string): Promise<EnhancedApiResponse<void>> {
@@ -144,7 +142,6 @@ export class UnifiedSchemaClient {
       API_ENDPOINTS.SCHEMA_BLOCK(name),
       {}, // Empty body, schema name is in URL
       {
-        requiresAuth: true,
         validateSchema: {
           schemaName: name,
           operation: 'block' as const,
@@ -211,14 +208,13 @@ export class UnifiedSchemaClient {
 
   /**
    * Load a schema into memory
-   * PROTECTED - Requires authentication
+   * UNPROTECTED - No authentication required
    */
   async loadSchema(name: string): Promise<EnhancedApiResponse<void>> {
     return this.client.post<void>(
       API_ENDPOINTS.SCHEMA_LOAD(name),
       {}, // Empty body, schema name is in URL
       {
-        requiresAuth: true,
         timeout: 10000, // Longer timeout for load operations
         retries: 1 // Limited retries for state-changing operations
       }
@@ -227,11 +223,10 @@ export class UnifiedSchemaClient {
 
   /**
    * Unload a schema from memory (remove/delete)
-   * PROTECTED - Requires authentication
+   * UNPROTECTED - No authentication required
    */
   async unloadSchema(name: string): Promise<EnhancedApiResponse<void>> {
     return this.client.delete<void>(API_ENDPOINTS.SCHEMA_UNLOAD(name), {
-      requiresAuth: true,
       timeout: 10000, // Longer timeout for unload operations
       retries: 1 // Limited retries for state-changing operations
     });

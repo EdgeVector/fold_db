@@ -209,13 +209,6 @@ export interface SchemaStatusData {
   blockedCount: number;
 }
 
-export interface SignedMessage {
-  message: string;
-  signature: string;
-  publicKey: string;
-  timestamp: number;
-}
-
 export interface MutationData {
   schema: string;
   operation: string;
@@ -231,11 +224,6 @@ export interface VerificationData {
   isValid: boolean;
   publicKeyId?: string;
   error?: string;
-}
-
-export interface KeyRegistrationData {
-  publicKey: string;
-  keyId?: string;
 }
 
 export interface SystemKeyData {
@@ -255,13 +243,12 @@ export interface SchemaApiClient {
 }
 
 export interface MutationApiClient {
-  executeMutation(signedMessage: SignedMessage): Promise<EnhancedApiResponse<Record<string, unknown>>>;
-  executeQuery(signedMessage: SignedMessage): Promise<EnhancedApiResponse<Record<string, unknown>>>;
+  executeMutation(mutation: any): Promise<EnhancedApiResponse<Record<string, unknown>>>;
+  executeQuery(query: any): Promise<EnhancedApiResponse<Record<string, unknown>>>;
   validateMutation(mutation: MutationData): Promise<EnhancedApiResponse<{ isValid: boolean; error?: string }>>;
 }
 
 export interface SecurityApiClient {
   verifyMessage(signedMessage: SignedMessage): Promise<EnhancedApiResponse<VerificationData>>;
-  registerPublicKey(request: KeyRegistrationData): Promise<EnhancedApiResponse<{ publicKeyId: string }>>;
   getSystemPublicKey(): Promise<EnhancedApiResponse<SystemKeyData>>;
 }

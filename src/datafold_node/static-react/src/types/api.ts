@@ -16,7 +16,3 @@ export interface VerificationResult {
 export interface VerificationResponse {
   verification_result: VerificationResult;
 }
-
-export interface KeyRegistrationResponse {
-  public_key_id?: string;
-}

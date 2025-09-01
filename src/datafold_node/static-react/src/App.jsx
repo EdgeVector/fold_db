@@ -14,17 +14,15 @@ import SchemaDependenciesTab from './components/tabs/SchemaDependenciesTab'
 import IngestionTab from './components/tabs/IngestionTab'
 import KeyManagementTab from './components/tabs/KeyManagementTab'
 import LogSidebar from './components/LogSidebar'
-import { useKeyGeneration } from './hooks/useKeyGeneration.js'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useAppSelector, useAppDispatch } from './store/hooks'
-import { initializeSystemKey } from './store/authSlice'
+import { initializeSystemKey, fetchNodePrivateKey } from './store/authSlice'
 import { useEffect } from 'react'
 import { DEFAULT_TAB } from './constants'
 
 export function AppContent() {
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB) // Default to keys tab
   const [results, setResults] = useState(null)
-  const keyGenerationResult = useKeyGeneration()
   
   // Use the new useApprovedSchemas hook (TASK-001)
   const {
@@ -46,11 +44,12 @@ export function AppContent() {
     dispatch(initializeSystemKey())
   }, [dispatch])
 
+  // Fetch node private key on mount
+  useEffect(() => {
+    dispatch(fetchNodePrivateKey())
+  }, [dispatch])
+
   const handleTabChange = (tab) => {
-    // If not authenticated, only allow Keys tab
-    if (!isAuthenticated && tab !== DEFAULT_TAB) {
-      return
-    }
     setActiveTab(tab)
     setResults(null)
   }
@@ -93,7 +92,6 @@ export function AppContent() {
         return (
           <KeyManagementTab
             onResult={handleOperationResult}
-            keyGenerationResult={keyGenerationResult}
           />
         )
       default:
@@ -145,27 +143,6 @@ export function AppContent() {
                     </h3>
                     <div className="mt-2 text-sm text-blue-700">
                       <p>Fetching schema information from the server.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Authentication Warning */}
-            {!isAuthenticated && (
-              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h3 className="text-sm font-medium text-yellow-800">
-                      Authentication Required
-                    </h3>
-                    <div className="mt-2 text-sm text-yellow-700">
-                      <p>Please set up your private key in the Keys tab to access other features.</p>
                     </div>
                   </div>
                 </div>

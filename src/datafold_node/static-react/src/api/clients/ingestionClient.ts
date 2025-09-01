@@ -110,7 +110,7 @@ export class UnifiedIngestionClient {
 
   /**
    * Get ingestion configuration (without sensitive data)
-   * PROTECTED - Configuration access requires authentication
+   * UNPROTECTED - No authentication required
    * 
    * @returns Promise resolving to general ingestion configuration
    */
@@ -118,7 +118,6 @@ export class UnifiedIngestionClient {
     return this.client.get<IngestionConfigResponse>(
       API_ENDPOINTS.INGESTION_CONFIG,
       {
-        requiresAuth: true, // Configuration access requires auth
         timeout: API_TIMEOUTS.QUICK,
         retries: API_RETRIES.STANDARD,
         cacheable: false // Config should not be cached for security
@@ -128,7 +127,7 @@ export class UnifiedIngestionClient {
 
   /**
    * Get OpenRouter AI configuration specifically
-   * PROTECTED - Configuration access requires authentication
+   * UNPROTECTED - No authentication required
    * 
    * @returns Promise resolving to OpenRouter configuration
    */
@@ -136,7 +135,6 @@ export class UnifiedIngestionClient {
     return this.client.get<OpenRouterConfigResponse>(
       API_ENDPOINTS.INGESTION_OPENROUTER_CONFIG,
       {
-        requiresAuth: true, // Configuration access requires auth
         timeout: API_TIMEOUTS.QUICK,
         retries: API_RETRIES.STANDARD,
         cacheable: false // Config should not be cached for security
@@ -146,7 +144,7 @@ export class UnifiedIngestionClient {
 
   /**
    * Save OpenRouter AI configuration
-   * PROTECTED - Configuration changes require authentication
+   * UNPROTECTED - No authentication required
    * 
    * @param config The OpenRouter configuration to save
    * @returns Promise resolving to save operation result
@@ -162,7 +160,6 @@ export class UnifiedIngestionClient {
       API_ENDPOINTS.INGESTION_OPENROUTER_CONFIG,
       config,
       {
-        requiresAuth: true, // Config changes require auth
         timeout: API_TIMEOUTS.CONFIG, // Longer timeout for config operations
         retries: API_RETRIES.LIMITED, // Limited retries for config changes
         cacheable: false // Never cache config operations
@@ -223,7 +220,6 @@ export class UnifiedIngestionClient {
       API_ENDPOINTS.INGESTION_PROCESS,
       request,
       {
-        requiresAuth: true, // Data processing requires auth
         timeout: API_TIMEOUTS.AI_PROCESSING, // Extended timeout for AI processing (60 seconds)
         retries: API_RETRIES.LIMITED, // Limited retries for processing operations
         cacheable: false // Processing results should not be cached

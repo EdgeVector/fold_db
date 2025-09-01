@@ -98,7 +98,7 @@ export class UnifiedTransformClient {
 
   /**
    * Add a transform to the processing queue
-   * PROTECTED - Requires authentication for queue modifications
+   * UNPROTECTED - No authentication required for transform operations
    * Replaces TransformsTab fetch(`/api/transforms/queue/${transformId}`)
    * 
    * @param transformId - The ID of the transform to add to queue
@@ -113,7 +113,6 @@ export class UnifiedTransformClient {
       API_ENDPOINTS.TRANSFORMS_QUEUE_ADD(transformId),
       undefined, // No body needed for this endpoint
       {
-        requiresAuth: true, // Queue modifications require auth
         timeout: 10000, // Longer timeout for queue operations
         retries: 1, // Limited retries for queue modifications
         cacheable: false // Never cache queue modification operations
@@ -157,7 +156,7 @@ export class UnifiedTransformClient {
 
   /**
    * Remove a transform from the queue
-   * PROTECTED - Requires authentication for queue modifications
+   * UNPROTECTED - No authentication required for transform operations
    * Future enhancement for queue management
    * 
    * @param transformId - The ID of the transform to remove from queue
@@ -171,7 +170,6 @@ export class UnifiedTransformClient {
     return this.client.delete<AddToQueueResponse>(
       API_ENDPOINTS.TRANSFORMS_QUEUE_ADD(transformId),
       {
-        requiresAuth: true, // Queue modifications require auth
         timeout: 8000,
         retries: 1,
         cacheable: false // Never cache queue modification operations

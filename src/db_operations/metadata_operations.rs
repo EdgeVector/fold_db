@@ -54,7 +54,10 @@ impl DbOperations {
 
     /// Deletes permissions for a node
     pub fn delete_schema_permissions(&self, node_id: &str) -> Result<bool, SchemaError> {
-        self.delete_from_tree(&self.permissions_tree, node_id)
+        match self.permissions_tree.remove(node_id.as_bytes()) {
+            Ok(old_value) => Ok(old_value.is_some()),
+            Err(e) => Err(SchemaError::InvalidData(format!("Failed to delete permissions: {}", e))),
+        }
     }
 
     /// Checks if a node has permissions set

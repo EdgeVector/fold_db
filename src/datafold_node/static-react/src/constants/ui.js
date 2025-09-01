@@ -13,11 +13,11 @@ export const FORM_FIELD_DEBOUNCE_MS = 300;
 
 // Tab Definitions
 export const DEFAULT_TABS = [
-  { id: 'schemas', label: 'Schemas', requiresAuth: true, icon: '📊' },
-  { id: 'query', label: 'Query', requiresAuth: true, icon: '🔍' },
-  { id: 'mutation', label: 'Mutation', requiresAuth: true, icon: '✏️' },
-  { id: 'ingestion', label: 'Ingestion', requiresAuth: true, icon: '📥' },
-  { id: 'transforms', label: 'Transforms', requiresAuth: true, icon: '🔄' },
+  { id: 'schemas', label: 'Schemas', requiresAuth: false, icon: '📊' },
+  { id: 'query', label: 'Query', requiresAuth: false, icon: '🔍' },
+  { id: 'mutation', label: 'Mutation', requiresAuth: false, icon: '✏️' },
+  { id: 'ingestion', label: 'Ingestion', requiresAuth: false, icon: '📥' },
+  { id: 'transforms', label: 'Transforms', requiresAuth: false, icon: '🔄' },
   { id: 'keys', label: 'Key Management', requiresAuth: false, icon: '🔑' }
 ];
 

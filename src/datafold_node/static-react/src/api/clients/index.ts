@@ -27,12 +27,9 @@ export {
   UnifiedSecurityClient,
   createSecurityClient,
   verifyMessage,
-  registerPublicKey,
   getSystemPublicKey,
   validatePublicKeyFormat,
-  validateKeyRegistrationRequest,
   validateSignedMessage,
-  createKeyRegistrationRequest,
   getSecurityStatus
 } from './securityClient';
 

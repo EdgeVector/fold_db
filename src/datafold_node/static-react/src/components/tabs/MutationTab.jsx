@@ -4,7 +4,6 @@ import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
 import { MutationClient } from '../../api'
-import { signPayload } from '../../utils/cryptoUtils'
 // Removed hook dependencies - using Redux state management instead (TASK-003)
 // Temporarily bypass constants to break circular dependency
 const BUTTON_TEXT = { executeMutation: 'Execute Mutation', confirm: 'Confirm', cancel: 'Cancel' };
@@ -85,13 +84,8 @@ function MutationTab({ onResult }) {
     }
 
     try {
-      // Sign the mutation before sending to the API
-      if (!authState?.privateKey) {
-        throw new Error('Authentication required for mutations')
-      }
-      const privateKeyBase64 = Buffer.from(authState.privateKey).toString('base64')
-      const signedMutation = await signPayload(mutation, privateKeyBase64)
-      const response = await MutationClient.executeMutation(signedMutation)
+      // Send the mutation directly to the API (no signing required)
+      const response = await MutationClient.executeMutation(mutation)
       
       if (!response.success) {
         throw new Error(response.error || 'Mutation failed')

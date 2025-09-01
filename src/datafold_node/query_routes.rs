@@ -3,15 +3,13 @@ use crate::schema::types::{
     operations::{Mutation, Query},
     Operation,
 };
-use crate::security::types::SignedMessage;
 use crate::security::VerificationResult;
-use crate::datafold_node::DataFoldNode;
 use actix_web::{web, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use base64::{engine::general_purpose, Engine as _};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use std::collections::HashMap;
 
 /// Execute an operation (query or mutation).
 #[derive(Deserialize)]
@@ -107,29 +105,36 @@ pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) 
 
 /// Execute a mutation.
 pub async fn execute_mutation(
-    signed_message: web::Json<SignedMessage>,
+    mutation_data: web::Json<Value>,
     state: web::Data<AppState>,
 ) -> impl Responder {
     let mut node_guard = state.node.lock().await;
-
-    let verification_data = match verify_signature(&mut node_guard, &signed_message).await {
-        Ok(data) => data,
-        Err(resp) => return resp,
-    };
-
-    let mutation_value = match decode_payload(&signed_message).await {
-        Ok(value) => value,
-        Err(resp) => return resp,
-    };
 
     log_feature!(
         LogFeature::Mutation,
         info,
         "Received mutation request: {}",
-        serde_json::to_string(&mutation_value).unwrap_or_else(|_| "Invalid JSON".to_string())
+        serde_json::to_string(&mutation_data).unwrap_or_else(|_| "Invalid JSON".to_string())
     );
 
-    let internal_mutation = match build_internal_mutation(mutation_value, &verification_data).await {
+    // Create a mock verification result for mutations (no signing required)
+    let verification_data = VerificationResult {
+        is_valid: true,
+        public_key_info: Some(crate::security::types::PublicKeyInfo {
+            id: "web-ui".to_string(),
+            public_key: "web-ui-key".to_string(),
+            owner_id: "web-ui".to_string(),
+            created_at: chrono::Utc::now().timestamp(),
+            expires_at: None,
+            is_active: true,
+            permissions: vec!["read".to_string(), "write".to_string()],
+            metadata: HashMap::new(),
+        }),
+        error: None,
+        timestamp_valid: true,
+    };
+
+    let internal_mutation = match build_internal_mutation(mutation_data.into_inner(), &verification_data).await {
         Ok(m) => m,
         Err(resp) => return resp,
     };
@@ -145,54 +150,6 @@ pub async fn execute_mutation(
                 .json(json!({"error": format!("Failed to execute mutation: {}", e)}))
         }
     }
-}
-
-async fn verify_signature(
-    node: &mut DataFoldNode,
-    signed_message: &SignedMessage,
-) -> Result<VerificationResult, HttpResponse> {
-    let verification_result = node.security_manager.verify_message(signed_message);
-
-    if let Err(e) = verification_result {
-        log_feature!(LogFeature::Mutation, warn, "Signature verification failed: {}", e);
-        return Err(
-            HttpResponse::Unauthorized()
-                .json(json!({"error": format!("Signature verification failed: {}", e)})),
-        );
-    }
-
-    let verification_data = verification_result.unwrap();
-    if !verification_data.is_valid {
-        log_feature!(
-            LogFeature::Mutation,
-            warn,
-            "Invalid signature for public key: {}",
-            signed_message.public_key_id
-        );
-        return Err(HttpResponse::Forbidden().json(json!({"error": "Invalid signature"})));
-    }
-
-    Ok(verification_data)
-}
-
-async fn decode_payload(signed_message: &SignedMessage) -> Result<Value, HttpResponse> {
-    let decoded_payload = match general_purpose::STANDARD.decode(&signed_message.payload) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            log_feature!(LogFeature::Mutation, warn, "Base64 decoding failed: {}", e);
-            return Err(HttpResponse::BadRequest().json(json!({"error": "Invalid base64 payload"})));
-        }
-    };
-
-    let mutation_value: Value = match serde_json::from_slice(&decoded_payload) {
-        Ok(val) => val,
-        Err(e) => {
-            log_feature!(LogFeature::Mutation, warn, "Payload JSON parsing failed: {}", e);
-            return Err(HttpResponse::BadRequest().json(json!({"error": "Invalid JSON payload format"})));
-        }
-    };
-
-    Ok(mutation_value)
 }
 
 async fn build_internal_mutation(

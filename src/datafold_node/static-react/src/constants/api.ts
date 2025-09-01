@@ -105,7 +105,8 @@ export const REQUEST_HEADERS = {
   CONTENT_TYPE: 'Content-Type',
   AUTHORIZATION: 'Authorization',
   SIGNED_REQUEST: 'X-Signed-Request',
-  REQUEST_ID: 'X-Request-ID'
+  REQUEST_ID: 'X-Request-ID',
+  AUTHENTICATED: 'X-Authenticated'
 } as const;
 
 // Error Messages

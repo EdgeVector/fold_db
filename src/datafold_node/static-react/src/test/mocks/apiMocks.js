@@ -837,10 +837,6 @@ export const createMockSpecializedClients = (baseClient) => {
 
     security: {
       getSystemPublicKey: vi.fn().mockResolvedValue(mockAuthData),
-      registerPublicKey: vi.fn().mockResolvedValue({
-        success: true,
-        data: { keyId: 'user_key_123' }
-      }),
       verifyMessage: vi.fn().mockResolvedValue({
         success: true,
         data: { valid: true }

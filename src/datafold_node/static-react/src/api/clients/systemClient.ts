@@ -49,6 +49,13 @@ export interface SystemStatusResponse {
   };
 }
 
+export interface NodeKeyResponse {
+  success: boolean;
+  private_key?: string;
+  public_key?: string;
+  message: string;
+}
+
 /**
  * Unified System API Client Implementation
  */
@@ -98,7 +105,6 @@ export class UnifiedSystemClient {
       API_ENDPOINTS.SYSTEM_RESET_DATABASE,
       request,
       {
-        requiresAuth: true, // Destructive operation requires auth
         timeout: API_TIMEOUTS.DESTRUCTIVE_OPERATIONS, // Longer timeout for database operations
         retries: API_RETRIES.NONE, // No retries for destructive operations
         cacheable: false // Never cache destructive operations
@@ -121,6 +127,38 @@ export class UnifiedSystemClient {
       cacheable: true,
       cacheTtl: API_CACHE_TTL.SYSTEM_STATUS, // Cache for 30 seconds
       cacheKey: CACHE_KEYS.SYSTEM_STATUS
+    });
+  }
+
+  /**
+   * Get the node's private key
+   * UNPROTECTED - No authentication required for UI access
+   * 
+   * @returns Promise resolving to private key response
+   */
+  async getNodePrivateKey(): Promise<EnhancedApiResponse<NodeKeyResponse>> {
+    return this.client.get<NodeKeyResponse>(API_ENDPOINTS.SYSTEM_PRIVATE_KEY, {
+      requiresAuth: false, // No authentication required for UI access
+      timeout: API_TIMEOUTS.STANDARD,
+      retries: API_RETRIES.STANDARD,
+      cacheable: false // Never cache private keys
+    });
+  }
+
+  /**
+   * Get the node's public key
+   * UNPROTECTED - Public key can be shared
+   * 
+   * @returns Promise resolving to public key response
+   */
+  async getNodePublicKey(): Promise<EnhancedApiResponse<NodeKeyResponse>> {
+    return this.client.get<NodeKeyResponse>(API_ENDPOINTS.SYSTEM_PUBLIC_KEY, {
+      requiresAuth: false, // Public key is safe to share
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.STANDARD,
+      cacheable: true,
+      cacheTtl: API_CACHE_TTL.SYSTEM_STATUS, // Cache for 30 seconds
+      cacheKey: CACHE_KEYS.SYSTEM_PUBLIC_KEY
     });
   }
 
@@ -215,6 +253,8 @@ export function createSystemClient(client?: ApiClient): UnifiedSystemClient {
 export const getLogs = systemClient.getLogs.bind(systemClient);
 export const resetDatabase = systemClient.resetDatabase.bind(systemClient);
 export const getSystemStatus = systemClient.getSystemStatus.bind(systemClient);
+export const getNodePrivateKey = systemClient.getNodePrivateKey.bind(systemClient);
+export const getNodePublicKey = systemClient.getNodePublicKey.bind(systemClient);
 export const createLogStream = systemClient.createLogStream.bind(systemClient);
 export const validateResetRequest = systemClient.validateResetRequest.bind(systemClient);
 

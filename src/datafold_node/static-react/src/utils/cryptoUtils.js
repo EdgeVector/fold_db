@@ -1,8 +1,8 @@
 /**
  * @fileoverview Crypto Utilities
  * 
- * Provides cryptographic utilities for key generation, signing, and validation.
- * Used by KeyManagement and Mutation components.
+ * Provides cryptographic utilities for signing and validation.
+ * Used by Mutation components.
  * 
  * @module cryptoUtils
  * @since 2.0.0
@@ -14,22 +14,6 @@ import { Buffer } from 'buffer';
 
 // Set up SHA-512 hash function for ed25519
 utils.sha512Sync = (...m) => sha512(utils.concatBytes(...m));
-
-/**
- * Generate a new Ed25519 key pair
- * @returns {Promise<{privateKey: Uint8Array, publicKey: Uint8Array}>}
- */
-export async function generateKeyPair() {
-  const privateKey = utils.randomPrivateKey();
-  const publicKey = getPublicKey(privateKey);
-  
-  return {
-    privateKey,
-    publicKey,
-    privateKeyBase64: Buffer.from(privateKey).toString('base64'),
-    publicKeyBase64: Buffer.from(publicKey).toString('base64')
-  };
-}
 
 /**
  * Sign a payload with a private key

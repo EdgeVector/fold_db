@@ -89,7 +89,6 @@ function QueryTab({ onResult }) {
     try {
       // Use core API client to post directly to /query endpoint
       const response = await mutationClient.client.post(API_ENDPOINTS.QUERY, queryData, {
-        requiresAuth: true,
         timeout: 10000,
         retries: 2,
         cacheable: true,

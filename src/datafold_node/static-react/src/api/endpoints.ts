@@ -2,7 +2,6 @@
 export const API_ENDPOINTS = {
   // Auth & Security
   VERIFY_MESSAGE: '/security/verify-message',
-  REGISTER_PUBLIC_KEY: '/security/system-key',
   GET_SYSTEM_PUBLIC_KEY: '/security/system-key',
   
   // Schemas
@@ -26,6 +25,8 @@ export const API_ENDPOINTS = {
   SYSTEM_LOGS: '/logs',
   SYSTEM_LOGS_STREAM: '/logs/stream',
   SYSTEM_RESET_DATABASE: '/system/reset-database',
+  SYSTEM_PRIVATE_KEY: '/system/private-key',
+  SYSTEM_PUBLIC_KEY: '/system/public-key',
   
   // Transforms
   TRANSFORMS: '/transforms',

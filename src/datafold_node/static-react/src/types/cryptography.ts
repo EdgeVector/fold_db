@@ -5,36 +5,6 @@ export interface KeyPair {
   publicKey: Uint8Array;
 }
 
-export interface KeyGenerationResult {
-  keyPair: KeyPair | null;
-  publicKeyBase64: string | null;
-  error: string | null;
-  isGenerating: boolean;
-}
-
-export interface KeyGenerationState {
-  keyPair: KeyPair | null;
-  isGenerating: boolean;
-  error: string | null;
-  generationHistory: Array<{
-    id: string;
-    createdAt: string;
-    algorithm: string;
-  }>;
-  generateKeys: () => Promise<KeyPair>;
-  clearKeys: () => void;
-  registerPublicKey: (publicKeyBase64: string) => Promise<boolean>;
-}
-
-
-export interface KeyRegistrationRequest {
-  public_key: string;
-  owner_id: string;
-  permissions: string[];
-  metadata: Record<string, any>;
-  expires_at: number | null;
-}
-
 export interface SignedMessage {
   payload: string; // Base64-encoded JSON payload
   signature: string; // Base64-encoded signature

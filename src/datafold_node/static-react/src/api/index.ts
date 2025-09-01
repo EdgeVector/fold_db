@@ -79,12 +79,9 @@ export {
   createSecurityClient,
   securityClient,
   verifyMessage,
-  registerPublicKey,
   getSystemPublicKey,
   validatePublicKeyFormat,
-  validateKeyRegistrationRequest,
   validateSignedMessage,
-  createKeyRegistrationRequest,
   getSecurityStatus
 } from './clients/securityClient';
 
@@ -115,8 +112,8 @@ export { API_ENDPOINTS } from './endpoints';
 // ============================================================================
 
 export type { Schema } from '../types/schema';
-export type { SignedMessage, KeyRegistrationRequest } from '../types/cryptography';
-export type { VerificationResponse, KeyRegistrationResponse } from '../types/api';
+export type { SignedMessage } from '../types/cryptography';
+export type { VerificationResponse } from '../types/api';
 
 // ============================================================================
 // CONVENIENCE EXPORTS

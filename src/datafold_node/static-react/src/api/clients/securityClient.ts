@@ -9,12 +9,10 @@ import { API_ENDPOINTS } from '../endpoints';
 import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
 import type { EnhancedApiResponse, SecurityApiClient } from '../core/types';
 import type { 
-  SignedMessage, 
-  KeyRegistrationRequest 
+  SignedMessage
 } from '../../types/cryptography';
 import type { 
-  VerificationResponse, 
-  KeyRegistrationResponse 
+  VerificationResponse
 } from '../../types/api';
 
 // Security-specific response types
@@ -75,28 +73,6 @@ export class UnifiedSecurityClient implements SecurityApiClient {
         cacheable: true, // Cache verification results
         cacheTtl: API_CACHE_TTL.VERIFICATION_RESULTS, // Cache for 5 minutes
         cacheKey: `${CACHE_KEYS.VERIFY}:${signedMessage.signature}:${signedMessage.public_key_id}`
-      }
-    );
-  }
-
-  /**
-   * Register a new public key with the system
-   * UNPROTECTED - No authentication required (initial registration)
-   * 
-   * @param request The key registration request
-   * @returns Promise resolving to registration result
-   */
-  async registerPublicKey(
-    request: KeyRegistrationRequest
-  ): Promise<EnhancedApiResponse<KeyRegistrationResponse>> {
-    return this.client.post<KeyRegistrationResponse>(
-      API_ENDPOINTS.REGISTER_PUBLIC_KEY,
-      request,
-      {
-        requiresAuth: false, // Registration is public
-        timeout: API_TIMEOUTS.CONFIG, // Longer timeout for key registration
-        retries: API_RETRIES.LIMITED, // Limited retries for registration
-        cacheable: false // Never cache registration operations
       }
     );
   }
@@ -181,63 +157,6 @@ export class UnifiedSecurityClient implements SecurityApiClient {
   }
 
   /**
-   * Validate a key registration request before sending
-   * 
-   * @param request The key registration request to validate
-   * @returns Validation result
-   */
-  validateKeyRegistrationRequest(request: KeyRegistrationRequest): {
-    isValid: boolean;
-    errors: string[];
-    warnings: string[];
-  } {
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    // Validate public key
-    const keyValidation = this.validatePublicKeyFormat(request.public_key);
-    if (!keyValidation.isValid) {
-      errors.push(`Invalid public key: ${keyValidation.error}`);
-    }
-
-    // Validate owner ID
-    if (!request.owner_id || request.owner_id.trim().length === 0) {
-      errors.push('Owner ID is required');
-    } else if (request.owner_id.length > 255) {
-      errors.push('Owner ID must be 255 characters or less');
-    }
-
-    // Validate permissions
-    if (!Array.isArray(request.permissions)) {
-      errors.push('Permissions must be an array');
-    } else if (request.permissions.length === 0) {
-      warnings.push('No permissions specified - key will have limited access');
-    }
-
-    // Validate expiration
-    if (request.expires_at !== null) {
-      if (typeof request.expires_at !== 'number') {
-        errors.push('Expiration must be a Unix timestamp number or null');
-      } else if (request.expires_at <= Date.now() / 1000) {
-        errors.push('Expiration time must be in the future');
-      } else if (request.expires_at > (Date.now() / 1000) + (365 * 24 * 60 * 60)) {
-        warnings.push('Expiration is more than 1 year in the future');
-      }
-    }
-
-    // Validate metadata
-    if (request.metadata && typeof request.metadata !== 'object') {
-      errors.push('Metadata must be an object');
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors,
-      warnings
-    };
-  }
-
-  /**
    * Get security status and configuration
    * PROTECTED - Requires authentication
    * 
@@ -247,7 +166,6 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     return this.client.get<SecurityStatus>(
       '/api/security/status',
       {
-        requiresAuth: true,
         timeout: API_TIMEOUTS.QUICK,
         retries: API_RETRIES.STANDARD,
         cacheable: true,
@@ -320,34 +238,6 @@ export class UnifiedSecurityClient implements SecurityApiClient {
   }
 
   /**
-   * Create a secure key registration request helper
-   * This generates the proper structure for key registration
-   * 
-   * @param publicKey The public key to register (base64)
-   * @param ownerId The owner identifier
-   * @param permissions Array of permission strings
-   * @param options Additional options
-   * @returns Key registration request object
-   */
-  createKeyRegistrationRequest(
-    publicKey: string,
-    ownerId: string,
-    permissions: string[] = ['read'],
-    options: {
-      expiresAt?: number | null;
-      metadata?: Record<string, any>;
-    } = {}
-  ): KeyRegistrationRequest {
-    return {
-      public_key: publicKey.trim(),
-      owner_id: ownerId.trim(),
-      permissions: [...permissions], // Create a copy
-      metadata: options.metadata || {},
-      expires_at: options.expiresAt || null
-    };
-  }
-
-  /**
    * Get API metrics for security operations
    */
   getMetrics() {
@@ -374,14 +264,11 @@ export function createSecurityClient(client?: ApiClient): UnifiedSecurityClient 
 
 // Backward compatibility exports - these will be deprecated
 export const verifyMessage = securityClient.verifyMessage.bind(securityClient);
-export const registerPublicKey = securityClient.registerPublicKey.bind(securityClient);
 export const getSystemPublicKey = securityClient.getSystemPublicKey.bind(securityClient);
 
 // New exports
 export const validatePublicKeyFormat = securityClient.validatePublicKeyFormat.bind(securityClient);
-export const validateKeyRegistrationRequest = securityClient.validateKeyRegistrationRequest.bind(securityClient);
 export const validateSignedMessage = securityClient.validateSignedMessage.bind(securityClient);
-export const createKeyRegistrationRequest = securityClient.createKeyRegistrationRequest.bind(securityClient);
 export const getSecurityStatus = securityClient.getSecurityStatus.bind(securityClient);
 
 export default securityClient;

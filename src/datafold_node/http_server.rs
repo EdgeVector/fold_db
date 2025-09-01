@@ -234,6 +234,14 @@ impl DataFoldHttpServer {
                             web::get().to(system_routes::get_system_status),
                         )
                         .route(
+                            "/system/private-key",
+                            web::get().to(system_routes::get_node_private_key),
+                        )
+                        .route(
+                            "/system/public-key",
+                            web::get().to(system_routes::get_node_public_key),
+                        )
+                        .route(
                             "/system/reset-database",
                             web::post().to(system_routes::reset_database),
                         )

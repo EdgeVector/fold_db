@@ -9,7 +9,7 @@ use crate::datafold_node::config::NodeInfo;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::network::NetworkCore;
-use crate::security::{SecurityManager, EncryptionManager};
+use crate::security::{SecurityManager, EncryptionManager, Ed25519KeyPair};
 
 /// A node in the DataFold distributed database system.
 ///
@@ -69,6 +69,10 @@ pub struct DataFoldNode {
     pub(super) network: Option<Arc<tokio::sync::Mutex<NetworkCore>>>,
     /// Security manager for authentication and encryption
     pub(super) security_manager: Arc<SecurityManager>,
+    /// The node's private key for signing operations
+    pub(super) private_key: String,
+    /// The node's public key for verification
+    pub(super) public_key: String,
 }
 
 /// Basic status information about the network layer
@@ -99,6 +103,14 @@ impl DataFoldNode {
                 .map_err(|e| FoldDbError::Config(format!("Failed to get node_id: {}", e)))?
         };
 
+        // Generate a new keypair for this node
+        let keypair = Ed25519KeyPair::generate()
+            .map_err(|e| FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e)))?;
+        let private_key = keypair.secret_key_base64();
+        let public_key = keypair.public_key_base64();
+        
+        log_feature!(LogFeature::Database, info, "Generated new node keypair");
+
         // Initialize security manager with node configuration
         let mut security_config = config.security_config.clone();
         
@@ -127,6 +139,8 @@ impl DataFoldNode {
             node_id,
             network: None,
             security_manager,
+            private_key,
+            public_key,
         })
     }
 
@@ -165,8 +179,44 @@ pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
         &self.node_id
     }
 
+    /// Gets the node's private key.
+    pub fn get_node_private_key(&self) -> &str {
+        &self.private_key
+    }
+
+    /// Gets the node's public key.
+    pub fn get_node_public_key(&self) -> &str {
+        &self.public_key
+    }
+
     /// Gets a reference to the security manager.
     pub fn get_security_manager(&self) -> &Arc<SecurityManager> {
         &self.security_manager
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use base64::{Engine as _, engine::general_purpose};
+
+    #[test]
+    fn test_node_private_key_generation() {
+        let temp_dir = tempdir().unwrap();
+        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let node = DataFoldNode::new(config).unwrap();
+
+        // Verify that private and public keys were generated
+        let private_key = node.get_node_private_key();
+        let public_key = node.get_node_public_key();
+
+        assert!(!private_key.is_empty());
+        assert!(!public_key.is_empty());
+        assert_ne!(private_key, public_key);
+
+        // Verify that the keys are valid base64
+        assert!(general_purpose::STANDARD.decode(private_key).is_ok());
+        assert!(general_purpose::STANDARD.decode(public_key).is_ok());
     }
 }
