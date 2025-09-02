@@ -1,5 +1,10 @@
 {
   "name": "BlogPost",
+  "schema_type": {
+    "Range": {
+      "range_key": "publish_date"
+    }
+  },
   "fields": {
     "title": {
       "permission_policy": {
@@ -11,7 +16,7 @@
         "trust_distance_scaling": "None",
         "min_payment": null
       },
-      "field_type": "Single",
+      "field_type": "Range",
       "field_mappers": {},
       "transform": null,
       "writable": true
@@ -33,7 +38,7 @@
         "min_payment": 10
       },
 
-      "field_type": "Single",
+      "field_type": "Range",
       "field_mappers": {},
       "transform": null,
       "writable": true
@@ -49,7 +54,7 @@
         "min_payment": null
       },
 
-      "field_type": "Single",
+      "field_type": "Range",
       "field_mappers": {},
       "transform": null,
       "writable": true
@@ -65,7 +70,7 @@
         "min_payment": null
       },
 
-      "field_type": "Single",
+      "field_type": "Range",
       "field_mappers": {},
       "transform": null,
       "writable": true
@@ -81,7 +86,7 @@
         "min_payment": null
       },
 
-      "field_type": "Collection",
+      "field_type": "Range",
       "field_mappers": {},
       "transform": null,
       "writable": true

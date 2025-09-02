@@ -30,7 +30,6 @@ fn test_available_schemas_not_loaded_by_default() {
 
     // Available schemas should be discovered but not loaded
     let available = schema_core.list_available_schemas().unwrap();
-    println!("available count: {}", available.len());
     assert!(!available.is_empty());
 
     let loaded = schema_core.list_loaded_schemas().unwrap();

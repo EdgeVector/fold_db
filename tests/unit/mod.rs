@@ -4,6 +4,7 @@
 //! in isolation and maintains its specific responsibilities.
 
 pub mod mutation_completion_tests;
+pub mod range_filter_tests;
 pub mod schema;
 pub mod transform;
 pub mod transform_manager_module_tests;

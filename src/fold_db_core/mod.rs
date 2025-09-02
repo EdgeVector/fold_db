@@ -407,35 +407,10 @@ impl FoldDB {
         }
         
         // Extract range key filter if this is a range schema with a filter
-        let range_key_filter = if let (Some(range_key), Some(filter)) = (schema.range_key(), &query.filter) {
+        let range_key_filter: Option<Value> = if let (Some(range_key), Some(filter)) = (schema.range_key(), &query.filter) {
             if let Some(range_filter_obj) = filter.get("range_filter") {
                 if let Some(range_filter_map) = range_filter_obj.as_object() {
-                    if let Some(range_key_value) = range_filter_map.get(range_key) {
-                        // Extract the actual filter value - handle different filter types
-                        let extracted_value = if let Some(obj) = range_key_value.as_object() {
-                            // Handle complex filters like {"Key": "1"}, {"KeyPrefix": "abc"}, etc.
-                            if let Some(key_value) = obj.get("Key") {
-                                Some(key_value.as_str().unwrap_or("").to_string())
-                            } else if let Some(prefix_value) = obj.get("KeyPrefix") {
-                                Some(prefix_value.as_str().unwrap_or("").to_string())
-                            } else if let Some(pattern_value) = obj.get("KeyPattern") {
-                                Some(pattern_value.as_str().unwrap_or("").to_string())
-                            } else {
-                                // For other filter types, try to extract any string value
-                                obj.values()
-                                    .find_map(|v| v.as_str())
-                                    .map(|s| s.to_string())
-                            }
-                        } else {
-                            // Simple string filter like "1"
-                            Some(range_key_value.to_string().trim_matches('"').to_string())
-                        };
-                        
-                        info!("🎯 RANGE FILTER EXTRACTED: range_key='{}', filter_value={:?}", range_key, extracted_value);
-                        extracted_value
-                    } else {
-                        None
-                    }
+                    range_filter_map.get(range_key).cloned()
                 } else {
                     None
                 }
@@ -466,7 +441,7 @@ impl FoldDB {
     }
 
     /// Get field value directly from database using unified resolver
-    fn get_field_value_from_db(&self, schema: &Schema, field_name: &str, range_key_filter: Option<String>) -> Result<Value, SchemaError> {
+    fn get_field_value_from_db(&self, schema: &Schema, field_name: &str, range_key_filter: Option<Value>) -> Result<Value, SchemaError> {
         // Use the unified FieldValueResolver to eliminate duplicate code
         crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(&self.db_ops, schema, field_name, range_key_filter)
     }
