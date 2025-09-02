@@ -124,7 +124,7 @@ impl TransformUtils {
         db_ops: &Arc<crate::db_operations::DbOperations>,
         schema: &Schema,
         field_name: &str,
-        range_key: Option<String>,
+        range_key_filter: Option<Value>,
     ) -> Result<JsonValue, SchemaError> {
         info!("🔍 FieldValueResolver: Looking up field '{}' in schema '{}'", field_name, schema.name);
         
@@ -148,11 +148,61 @@ impl TransformUtils {
                         info!("✅ Found MoleculeRange with {} entries", range_molecule.atom_uuids.len());
                         
                         // BUG FIX 1: Filter by specific range key if provided
-                        let entries_to_process: Vec<_> = if let Some(ref target_key) = range_key {
-                            info!("🎯 Filtering for specific range key: '{}'", target_key);
-                            range_molecule.atom_uuids.iter()
-                                .filter(|(key, _)| *key == target_key)
-                                .collect()
+                        let entries_to_process: Vec<_> = if let Some(filter_value) = &range_key_filter {
+                            info!("🎯 Processing range filter: {:?}", filter_value);
+                            
+                            // Parse the filter into a RangeFilter enum
+                            let range_filter = match serde_json::from_value::<crate::schema::types::field::range_filter::RangeFilter>(filter_value.clone()) {
+                                Ok(filter) => filter,
+                                Err(e) => {
+                                    error!("❌ Failed to parse range filter: {}", e);
+                                    return Err(SchemaError::InvalidData(format!("Invalid range filter format: {}", e)));
+                                }
+                            };
+                            
+                            // Apply the filter directly to the molecule range data
+                            let matching_entries: Vec<_> = match &range_filter {
+                                crate::schema::types::field::range_filter::RangeFilter::Key(key) => {
+                                    info!("🎯 Applying Key filter for: {}", key);
+                                    range_molecule.atom_uuids.iter()
+                                        .filter(|(k, _)| k == &key)
+                                        .collect()
+                                }
+                                crate::schema::types::field::range_filter::RangeFilter::KeyPrefix(prefix) => {
+                                    info!("🎯 Applying KeyPrefix filter for: {}", prefix);
+                                    range_molecule.atom_uuids.iter()
+                                        .filter(|(k, _)| k.starts_with(prefix))
+                                        .collect()
+                                }
+                                crate::schema::types::field::range_filter::RangeFilter::KeyRange { start, end } => {
+                                    info!("🎯 Applying KeyRange filter from {} to {}", start, end);
+                                    range_molecule.atom_uuids.iter()
+                                        .filter(|(k, _)| k >= &start && k < &end)
+                                        .collect()
+                                }
+                                crate::schema::types::field::range_filter::RangeFilter::Keys(keys) => {
+                                    info!("🎯 Applying Keys filter for: {:?}", keys);
+                                    let key_set: std::collections::HashSet<_> = keys.iter().collect();
+                                    range_molecule.atom_uuids.iter()
+                                        .filter(|(k, _)| key_set.contains(k))
+                                        .collect()
+                                }
+                                crate::schema::types::field::range_filter::RangeFilter::KeyPattern(pattern) => {
+                                    info!("🎯 Applying KeyPattern filter for: {}", pattern);
+                                    range_molecule.atom_uuids.iter()
+                                        .filter(|(k, _)| crate::schema::types::field::range_filter::matches_pattern(k, pattern))
+                                        .collect()
+                                }
+                                crate::schema::types::field::range_filter::RangeFilter::Value(value) => {
+                                    info!("🎯 Applying Value filter for: {}", value);
+                                    range_molecule.atom_uuids.iter()
+                                        .filter(|(_, v)| v == &value)
+                                        .collect()
+                                }
+                            };
+                            
+                            info!("🎯 Filter matched {} entries", matching_entries.len());
+                            matching_entries
                         } else {
                             info!("📋 Processing all range keys");
                             range_molecule.atom_uuids.iter().collect()

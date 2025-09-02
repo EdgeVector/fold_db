@@ -146,11 +146,36 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
       builtQuery.fieldValues = fieldValues;
     }
 
-    // Add range key for range schemas
-    if (selectedSchemaObj.schema_type === 'Range' && rangeFilters) {
-      const rangeField = Object.keys(rangeFilters).find(key => rangeFilters[key]?.key);
-      if (rangeField && rangeFilters[rangeField]?.key) {
-        builtQuery.rangeKey = rangeFilters[rangeField].key;
+    // Add range schema filter for range schemas (this is the correct one for Range schemas)
+    if (selectedSchemaObj.schema_type?.Range?.range_key && queryState.rangeSchemaFilter) {
+      const rangeSchemaFilter = queryState.rangeSchemaFilter;
+      const rangeKey = selectedSchemaObj.schema_type.Range.range_key;
+      
+      if (rangeKey) {
+        // Determine which filter type to use based on what's filled in
+        let filterType = null;
+        let filterValue = null;
+        
+        if (rangeSchemaFilter.key) {
+          filterType = 'Key';
+          filterValue = rangeSchemaFilter.key;
+        } else if (rangeSchemaFilter.keyPrefix) {
+          filterType = 'KeyPrefix';
+          filterValue = rangeSchemaFilter.keyPrefix;
+        } else if (rangeSchemaFilter.start && rangeSchemaFilter.end) {
+          filterType = 'KeyRange';
+          filterValue = { start: rangeSchemaFilter.start, end: rangeSchemaFilter.end };
+        }
+        
+        if (filterType && filterValue) {
+          builtQuery.filter = {
+            range_filter: {
+              [rangeKey]: {
+                [filterType]: filterValue
+              }
+            }
+          };
+        }
       }
     }
 
