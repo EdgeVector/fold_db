@@ -1,0 +1,14 @@
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "blogpost.map().content.split_by_word().map()",
+    "range_field": "blogpost.map().publish_date"
+  },
+  "fields": {
+    "blog": { "atom_uuid": "blogpost.map().$atom_uuid" },
+    "author": { "atom_uuid": "blogpost.map().author.$atom_uuid" },
+    "title": { "atom_uuid": "blogpost.map().title.$atom_uuid" },
+    "tags": { "atom_uuid": "blogpost.map().tags.$atom_uuid" }
+  }
+}

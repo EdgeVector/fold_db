@@ -9,3 +9,4 @@ pub mod schema;
 pub mod transform;
 pub mod transform_manager_module_tests;
 pub mod transform_utils_helper_tests;
+pub mod declarative_transform_tests;
