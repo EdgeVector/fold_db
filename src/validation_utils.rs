@@ -82,6 +82,77 @@ impl ValidationUtils {
         
         Ok(())
     }
+
+    /// Validates schema name format with restrictive rules
+    pub fn require_valid_schema_name(schema_name: &str) -> Result<(), SchemaError> {
+        // Check for empty string
+        Self::require_non_empty_string(schema_name, "Schema name")?;
+        
+        // Check for whitespace-only strings
+        if schema_name.trim().is_empty() {
+            return Err(SchemaError::InvalidField(
+                "Schema name cannot be whitespace only".to_string()
+            ));
+        }
+        
+        // Check length constraints
+        if schema_name.len() < 3 {
+            return Err(SchemaError::InvalidField(
+                "Schema name must be at least 3 characters long".to_string()
+            ));
+        }
+        
+        if schema_name.len() > 64 {
+            return Err(SchemaError::InvalidField(
+                "Schema name cannot exceed 64 characters".to_string()
+            ));
+        }
+        
+        // Check for reserved words
+        let reserved_words = ["system", "admin", "root", "default", "internal", "temp", "test"];
+        if reserved_words.contains(&schema_name.to_lowercase().as_str()) {
+            return Err(SchemaError::InvalidField(
+                format!("Schema name '{}' is reserved and cannot be used", schema_name)
+            ));
+        }
+        
+        // Check for invalid characters and patterns
+        if schema_name.chars().any(|c| c.is_control() || c == '\n' || c == '\r') {
+            return Err(SchemaError::InvalidField(
+                "Schema name cannot contain control characters".to_string()
+            ));
+        }
+        
+        // Must start with a letter
+        if !schema_name.chars().next().unwrap().is_alphabetic() {
+            return Err(SchemaError::InvalidField(
+                "Schema name must start with a letter".to_string()
+            ));
+        }
+        
+        // Can only contain letters, numbers, and underscores
+        if !schema_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return Err(SchemaError::InvalidField(
+                "Schema name can only contain letters, numbers, and underscores".to_string()
+            ));
+        }
+        
+        // Cannot end with underscore
+        if schema_name.ends_with('_') {
+            return Err(SchemaError::InvalidField(
+                "Schema name cannot end with an underscore".to_string()
+            ));
+        }
+        
+        // Cannot contain consecutive underscores
+        if schema_name.contains("__") {
+            return Err(SchemaError::InvalidField(
+                "Schema name cannot contain consecutive underscores".to_string()
+            ));
+        }
+        
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -118,5 +189,62 @@ mod tests {
         // Invalid cases
         assert!(ValidationUtils::require_positive(0.0, "test").is_err());
         assert!(ValidationUtils::require_positive(-1.0, "test").is_err());
+    }
+
+    #[test]
+    fn test_require_valid_schema_name() {
+        // Valid cases
+        assert!(ValidationUtils::require_valid_schema_name("ValidSchema").is_ok());
+        assert!(ValidationUtils::require_valid_schema_name("valid_schema").is_ok());
+        assert!(ValidationUtils::require_valid_schema_name("schema123").is_ok());
+        assert!(ValidationUtils::require_valid_schema_name("MySchema").is_ok());
+        
+        // Invalid cases - empty
+        assert!(ValidationUtils::require_valid_schema_name("").is_err());
+        
+        // Invalid cases - whitespace only
+        assert!(ValidationUtils::require_valid_schema_name("   ").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("\t\n").is_err());
+        
+        // Invalid cases - too short
+        assert!(ValidationUtils::require_valid_schema_name("ab").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("a").is_err());
+        
+        // Invalid cases - too long
+        let long_name = "a".repeat(65);
+        assert!(ValidationUtils::require_valid_schema_name(&long_name).is_err());
+        
+        // Invalid cases - reserved words
+        assert!(ValidationUtils::require_valid_schema_name("system").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("admin").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("root").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("default").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("internal").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("temp").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("test").is_err());
+        
+        // Invalid cases - control characters
+        assert!(ValidationUtils::require_valid_schema_name("schema\x00").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("schema\n").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("schema\r").is_err());
+        
+        // Invalid cases - doesn't start with letter
+        assert!(ValidationUtils::require_valid_schema_name("123schema").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("_schema").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("-schema").is_err());
+        
+        // Invalid cases - invalid characters
+        assert!(ValidationUtils::require_valid_schema_name("schema-name").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("schema.name").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("schema name").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("schema@name").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("schema#name").is_err());
+        
+        // Invalid cases - ends with underscore
+        assert!(ValidationUtils::require_valid_schema_name("schema_").is_err());
+        
+        // Invalid cases - consecutive underscores
+        assert!(ValidationUtils::require_valid_schema_name("schema__name").is_err());
+        assert!(ValidationUtils::require_valid_schema_name("schema___name").is_err());
     }
 }

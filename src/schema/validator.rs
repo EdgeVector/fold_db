@@ -22,7 +22,7 @@ impl<'a> SchemaValidator<'a> {
 
     /// Validate the given [`Schema`].
     pub fn validate(&self, schema: &Schema) -> Result<(), SchemaError> {
-        ValidationUtils::require_non_empty_string(&schema.name, "Schema name")?;
+        ValidationUtils::require_valid_schema_name(&schema.name)?;
 
         // For RangeSchema, ensure the range_key is a field in the schema
         if let Some(range_key) = schema.range_key() {
@@ -272,11 +272,7 @@ impl<'a> SchemaValidator<'a> {
 
     /// Validate a [`JsonSchemaDefinition`] before interpretation
     pub fn validate_json_schema(&self, schema: &JsonSchemaDefinition) -> Result<(), SchemaError> {
-        if schema.name.is_empty() {
-            return Err(SchemaError::InvalidField(
-                "Schema name cannot be empty".to_string(),
-            ));
-        }
+        ValidationUtils::require_valid_schema_name(&schema.name)?;
 
         // CRITICAL: For JSON RangeSchema definitions, validate range key consistency
         // This ensures that JSON-defined schemas also follow the same constraints as programmatically created ones

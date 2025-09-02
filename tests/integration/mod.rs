@@ -25,3 +25,4 @@ pub mod error_handling_tests;
 
 // Transform integration tests
 pub mod transform_integration_tests;
+pub mod declarative_transform_integration_tests;

@@ -1,5 +1,6 @@
 use log::{info, error};
 use crate::schema::types::{SchemaError, Transform};
+use crate::validation_utils::ValidationUtils;
 
 use super::TransformUtils;
 
@@ -38,11 +39,7 @@ impl TransformUtils {
                 return Err(SchemaError::InvalidData(error_msg));
             }
         } else if let Some(schema) = transform.get_declarative_schema() {
-            if schema.name.trim().is_empty() {
-                let error_msg = format!("Declarative transform '{}' must have a valid schema name", transform_id);
-                error!("❌ {}", error_msg);
-                return Err(SchemaError::InvalidData(error_msg));
-            }
+            ValidationUtils::require_valid_schema_name(&schema.name)?;
         } else {
             let error_msg = format!("Transform '{}' must be either procedural or declarative", transform_id);
             error!("❌ {}", error_msg);

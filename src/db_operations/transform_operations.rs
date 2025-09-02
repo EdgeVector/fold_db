@@ -70,6 +70,8 @@ impl DbOperations {
             "map_transform_outputs",
         ];
 
+        log::info!("🔍 DEBUG: Listing transforms from database...");
+
         for result in self.transforms_tree.iter() {
             let (key, _) = result.map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to iterate transforms: {}", e))
@@ -78,12 +80,15 @@ impl DbOperations {
 
             // Skip metadata keys
             if metadata_keys.contains(&transform_id.as_str()) {
+                log::info!("🔍 DEBUG: Skipping metadata key: {}", transform_id);
                 continue;
             }
 
+            log::info!("🔍 DEBUG: Found transform ID: {}", transform_id);
             transforms.push(transform_id);
         }
 
+        log::info!("🔍 DEBUG: Total transforms found: {}", transforms.len());
         Ok(transforms)
     }
 

@@ -380,8 +380,8 @@ impl DeclarativeSchemaDefinition {
     pub fn validate(&self) -> Result<(), SchemaError> {
         use crate::validation_utils::ValidationUtils;
 
-        // Validate required fields
-        ValidationUtils::require_non_empty_string(&self.name, "Schema name")?;
+        // Validate required fields with restrictive schema name validation
+        ValidationUtils::require_valid_schema_name(&self.name)?;
         
         // Validate fields map is not empty
         if self.fields.is_empty() {
