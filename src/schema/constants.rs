@@ -1,0 +1,21 @@
+//! Constants for schema definitions and transform operations
+
+/// HashRange schema key configuration field names
+pub const HASH_FIELD_NAME: &str = "hash_field";
+pub const RANGE_FIELD_NAME: &str = "range_field";
+
+/// HashRange transform output field names
+pub const HASH_KEY_NAME: &str = "hash_key";
+pub const RANGE_KEY_NAME: &str = "range_key";
+
+/// HashRange schema key configuration JSON field names
+pub const KEY_CONFIG_HASH_FIELD: &str = "hash_field";
+pub const KEY_CONFIG_RANGE_FIELD: &str = "range_field";
+
+/// Special field names used in transforms
+pub const ATOM_UUID_FIELD: &str = "$atom_uuid";
+pub const KEY_FIELD_NAME: &str = "key";
+
+/// Internal field names used in transform execution (prefixed versions)
+pub const INTERNAL_HASH_FIELD: &str = "_hash_field";
+pub const INTERNAL_RANGE_FIELD: &str = "_range_field";

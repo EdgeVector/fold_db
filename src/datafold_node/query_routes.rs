@@ -254,6 +254,15 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     }
 }
 
+pub async fn reload_transforms(state: web::Data<AppState>) -> impl Responder {
+    let node = state.node.lock().await;
+    match node.reload_transforms() {
+        Ok(_) => HttpResponse::Ok().json(json!({ "success": true, "message": "Transforms reloaded successfully" })),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({ "error": format!("Failed to reload transforms: {}", e) })),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     

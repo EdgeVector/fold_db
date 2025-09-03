@@ -663,6 +663,11 @@ impl FoldDB {
         // self.transform_orchestrator.process_pending_transforms();
     }
 
+    /// Reload transforms from the database
+    pub fn reload_transforms(&self) -> Result<(), SchemaError> {
+        self.transform_manager.reload_transforms()
+    }
+
     /// Waits for a specific mutation to complete processing.
     ///
     /// This method allows queries and other operations to wait for specific mutations to finish

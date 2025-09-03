@@ -1,5 +1,6 @@
 {
   "name": "Product",
+  "schema_type": "Single",
   "fields": {
     "name": {
       "permission_policy": {

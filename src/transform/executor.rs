@@ -11,6 +11,7 @@ use crate::schema::indexing::errors::IteratorStackError;
 use crate::schema::indexing::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
 use crate::schema::indexing::execution_engine::{ExecutionEngine, ExecutionResult};
 use std::time::Instant;
+use crate::schema::constants::{HASH_KEY_NAME, RANGE_KEY_NAME, INTERNAL_HASH_FIELD, INTERNAL_RANGE_FIELD};
 use crate::schema::types::{SchemaError, Transform};
 use log::{info, error};
 use serde_json::Value as JsonValue;
@@ -754,13 +755,109 @@ impl TransformExecutor {
         execution_result: &ExecutionResult,
         input_values: &HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
-        let start_time = Instant::now();
+        let _start_time = Instant::now();
         info!("🔄 Aggregating results from enhanced multi-chain execution");
-        
-        let mut result_object = serde_json::Map::new();
         
         // Enhanced placeholder detection with more sophisticated analysis
         let placeholder_analysis = Self::analyze_execution_results(execution_result);
+        
+        // Check if this is a HashRange schema by looking for key fields
+        let has_key_fields = parsed_chains.iter().any(|(field_name, _)| {
+            field_name == "_hash_field" || field_name == "_range_field"
+        });
+        
+        if has_key_fields {
+            info!("🔑 Detected HashRange schema - creating compound key structure");
+            Self::aggregate_hashrange_results(parsed_chains, execution_result, input_values, &placeholder_analysis)
+        } else {
+            info!("📋 Processing regular schema - using standard aggregation");
+            Self::aggregate_regular_results(parsed_chains, execution_result, input_values, &placeholder_analysis)
+        }
+    }
+
+    /// Aggregates results for HashRange schemas with compound key structure.
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chains` - The parsed chains with their field names
+    /// * `execution_result` - The execution result from ExecutionEngine
+    /// * `input_values` - The original input values for fallback
+    /// * `placeholder_analysis` - Analysis of execution results
+    ///
+    /// # Returns
+    ///
+    /// The HashRange aggregated result with compound key structure
+    fn aggregate_hashrange_results(
+        parsed_chains: &[(String, ParsedChain)],
+        _execution_result: &ExecutionResult,
+        input_values: &HashMap<String, JsonValue>,
+        _placeholder_analysis: &ExecutionAnalysis,
+    ) -> Result<JsonValue, SchemaError> {
+        let _start_time = Instant::now();
+        info!("🔑 Aggregating HashRange results with compound key structure");
+        
+        // Extract hash and range values
+        let mut hash_value = JsonValue::Null;
+        let mut range_value = JsonValue::Null;
+        let mut regular_fields = Vec::new();
+        
+        // Separate key fields from regular fields
+        for (field_name, parsed_chain) in parsed_chains.iter() {
+            // For HashRange schemas, use fallback resolution to get the correct field values
+            // The ExecutionEngine is designed for HashRange field indexing, not for transform execution
+            let field_value = match Self::resolve_with_enhanced_fallback(parsed_chain, input_values, field_name) {
+                Ok(value) => value,
+                Err(err) => {
+                    info!("⚠️ Enhanced fallback resolution failed for field '{}': {}", field_name, err);
+                    JsonValue::Null
+                }
+            };
+            
+            match field_name.as_str() {
+                INTERNAL_HASH_FIELD => hash_value = field_value,
+                INTERNAL_RANGE_FIELD => range_value = field_value,
+                _ => regular_fields.push((field_name.clone(), field_value)),
+            }
+        }
+        
+        // Create compound key structure
+        let mut result_object = serde_json::Map::new();
+                        result_object.insert(HASH_KEY_NAME.to_string(), hash_value);
+                        result_object.insert(RANGE_KEY_NAME.to_string(), range_value);
+        
+        // Add regular fields
+        for (field_name, field_value) in regular_fields {
+            result_object.insert(field_name, field_value);
+        }
+        
+        let result = JsonValue::Object(result_object);
+        let total_duration = _start_time.elapsed();
+        info!("✨ HashRange aggregation completed in {:?}: {}", total_duration, result);
+        Ok(result)
+    }
+
+    /// Aggregates results for regular schemas (non-HashRange).
+    ///
+    /// # Arguments
+    ///
+    /// * `parsed_chains` - The parsed chains with their field names
+    /// * `execution_result` - The execution result from ExecutionEngine
+    /// * `input_values` - The original input values for fallback
+    /// * `placeholder_analysis` - Analysis of execution results
+    ///
+    /// # Returns
+    ///
+    /// The regular aggregated result object
+    fn aggregate_regular_results(
+        parsed_chains: &[(String, ParsedChain)],
+        execution_result: &ExecutionResult,
+        input_values: &HashMap<String, JsonValue>,
+        placeholder_analysis: &ExecutionAnalysis,
+    ) -> Result<JsonValue, SchemaError> {
+        let start_time = Instant::now();
+        info!("📋 Aggregating regular schema results");
+        
+        let mut result_object = serde_json::Map::new();
         
         if placeholder_analysis.has_placeholders || execution_result.index_entries.is_empty() {
             info!("⚠️ ExecutionEngine produced placeholder/empty results, using enhanced fallback resolution");
@@ -809,7 +906,7 @@ impl TransformExecutor {
         
         let result = JsonValue::Object(result_object);
         let total_duration = start_time.elapsed();
-        info!("✨ Enhanced multi-chain coordination result completed in {:?}: {}", total_duration, result);
+        info!("✨ Regular aggregation completed in {:?}: {}", total_duration, result);
         Ok(result)
     }
 

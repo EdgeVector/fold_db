@@ -28,6 +28,7 @@
 
 // Internal modules
 pub mod core;
+pub mod constants;
 pub mod discovery;
 pub mod persistence;
 pub mod transform;

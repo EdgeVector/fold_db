@@ -1,3 +1,4 @@
+use crate::schema::constants::{KEY_CONFIG_HASH_FIELD, KEY_CONFIG_RANGE_FIELD, KEY_FIELD_NAME};
 use super::{schema_lock_error, validator::SchemaValidator};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{
@@ -227,6 +228,16 @@ impl SchemaCore {
             }
         }
 
+        // CRITICAL: Check if this is a declarative schema and register its transform
+        if let Ok(Some(approved_schema)) = self.get_schema(schema_name) {
+            if matches!(approved_schema.schema_type, crate::schema::types::schema::SchemaType::HashRange) {
+                info!("🔍 Detected HashRange declarative schema '{}', registering declarative transform", schema_name);
+                if let Err(e) = self.register_declarative_transform_for_schema(&approved_schema) {
+                    log_feature!(LogFeature::Schema, warn, "Failed to register declarative transform for schema '{}': {}", schema_name, e);
+                }
+            }
+        }
+
         // CRITICAL: Re-register transforms that target this newly approved schema
         // When a schema is approved, transforms in OTHER schemas that were previously
         // skipped due to target schema state validation should now be registered
@@ -251,6 +262,216 @@ impl SchemaCore {
 
         info!("Schema '{}' approved successfully", schema_name);
         Ok(())
+    }
+
+    /// Register a declarative transform for a HashRange schema
+    /// This method is called when a HashRange schema is approved to automatically
+    /// register the corresponding declarative transform
+    pub fn register_declarative_transform_for_schema(&self, schema: &Schema) -> Result<(), SchemaError> {
+        use crate::schema::types::{Transform, TransformRegistration};
+        use log::info;
+        
+        info!("🔧 Registering declarative transform for HashRange schema '{}'", schema.name);
+        
+        // Extract input dependencies from the schema fields
+        let mut input_molecules = Vec::new();
+        let mut input_names = Vec::new();
+        
+        // Parse field expressions to extract input schemas
+        for field in schema.fields.values() {
+            if let crate::schema::types::field::FieldVariant::HashRange(hashrange_field) = field {
+                // Extract schema names from hash_field, range_field, and atom_uuid expressions
+                let expressions = vec![
+                    &hashrange_field.hash_field,
+                    &hashrange_field.range_field,
+                    &hashrange_field.atom_uuid,
+                ];
+                
+                for expression in expressions {
+                    // Parse expression like "blogpost.map().content.split_by_word().map()"
+                    if let Some(schema_name) = expression.split('.').next() {
+                        if !input_molecules.contains(&schema_name.to_string()) {
+                            input_molecules.push(schema_name.to_string());
+                            input_names.push(schema_name.to_string());
+                            info!("📋 Added input dependency: {}", schema_name);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // If no input dependencies found, use a default
+        if input_molecules.is_empty() {
+            input_molecules.push("blogpost".to_string());
+            input_names.push("blogpost".to_string());
+            info!("📋 Using default input dependency: blogpost");
+        }
+        
+        // Create trigger fields based on input dependencies
+        let trigger_fields = input_molecules.clone();
+        
+        // Generate transform ID
+        let transform_id = format!("{}.declarative", schema.name);
+        
+        // For HashRange schemas, output to the first field instead of a non-existent 'key' field
+        let output_field = if let Some((first_field_name, _)) = schema.fields.iter().next() {
+            first_field_name.clone()
+        } else {
+            return Err(SchemaError::InvalidData(format!("HashRange schema '{}' has no fields", schema.name)));
+        };
+        
+        // Create a declarative transform from the schema
+        let transform = Transform::from_declarative_schema(
+            self.convert_schema_to_declarative_definition(schema)?,
+            input_molecules.clone(),
+            format!("{}.{}", schema.name, output_field),
+        );
+        
+        // Create the registration
+        let registration = TransformRegistration {
+            transform_id: transform_id.clone(),
+            transform,
+            input_molecules,
+            input_names,
+            trigger_fields,
+            output_molecule: format!("{}.{}", schema.name, output_field),
+            schema_name: schema.name.clone(),
+            field_name: output_field,
+        };
+        
+        // Store the transform in the database
+        if let Err(e) = self.db_ops.store_transform(&transform_id, &registration.transform) {
+            return Err(SchemaError::InvalidData(format!("Failed to store transform {}: {}", transform_id, e)));
+        }
+        
+        // Create field-to-transform mappings
+        for input_field in &registration.input_molecules {
+            if let Err(e) = self.store_field_to_transform_mapping(input_field, &transform_id) {
+                log_feature!(LogFeature::Schema, error,
+                    "Failed to store field mapping '{}' → '{}': {}",
+                    input_field, transform_id, e
+                );
+            } else {
+                info!("✅ Stored field mapping: '{}' → '{}' transform", input_field, transform_id);
+            }
+        }
+        
+        info!("✅ Successfully registered declarative transform '{}' for schema '{}'", transform_id, schema.name);
+        Ok(())
+    }
+    
+    /// Convert a Schema to DeclarativeSchemaDefinition for transform creation
+    pub fn convert_schema_to_declarative_definition(&self, schema: &Schema) -> Result<crate::schema::types::json_schema::DeclarativeSchemaDefinition, SchemaError> {
+        use crate::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition, KeyConfig};
+        use std::collections::HashMap;
+        
+        let mut fields = HashMap::new();
+        
+        info!("🔧 Converting schema '{}' to declarative definition", schema.name);
+        info!("📊 Schema has {} fields", schema.fields.len());
+        info!("🔍 Schema type: {:?}", schema.schema_type);
+        
+        // For HashRange schemas, handle HashRange field variants
+        if matches!(schema.schema_type, crate::schema::types::schema::SchemaType::HashRange) {
+            info!("🔍 Processing HashRange schema with HashRange field variants");
+            
+            // Convert all fields to FieldDefinition (they should all be HashRange variants)
+            for (field_name, field) in &schema.fields {
+                info!("🔍 Processing field '{}' with variant: {:?}", field_name, std::mem::discriminant(field));
+                
+                if let crate::schema::types::field::FieldVariant::HashRange(hashrange_field) = field {
+                    info!("✅ Converting HashRange field '{}' to FieldDefinition", field_name);
+                    fields.insert(field_name.clone(), FieldDefinition {
+                        atom_uuid: Some(hashrange_field.atom_uuid.clone()),
+                        field_type: Some("single".to_string()),
+                    });
+                } else {
+                    info!("⚠️ Skipping non-HashRange field '{}'", field_name);
+                }
+            }
+            
+            info!("📋 Converted {} fields to declarative definition", fields.len());
+            
+            // For HashRange schemas, we need to get the key configuration from the original JSON file
+            // since the schema fields don't contain the hash_field and range_field information
+            let key_config = self.get_hashrange_key_config_from_json(schema.name.as_str())?;
+            
+            let declarative_schema = DeclarativeSchemaDefinition {
+                name: schema.name.clone(),
+                schema_type: schema.schema_type.clone(),
+                key: key_config,
+                fields,
+            };
+            
+            info!("✅ Created declarative schema with {} fields", declarative_schema.fields.len());
+            Ok(declarative_schema)
+        } else {
+            // For non-HashRange schemas, handle Single field variants
+            info!("🔍 Processing non-HashRange schema with Single field variants");
+            
+            // Convert schema fields to DeclarativeSchemaDefinition fields
+            for (field_name, field) in &schema.fields {
+                info!("🔍 Processing field '{}' with variant: {:?}", field_name, std::mem::discriminant(field));
+                
+                if let crate::schema::types::field::FieldVariant::Single(single_field) = field {
+                    info!("✅ Converting Single field '{}' to FieldDefinition", field_name);
+                    fields.insert(field_name.clone(), FieldDefinition {
+                        atom_uuid: single_field.molecule_uuid().cloned(),
+                        field_type: Some("single".to_string()),
+                    });
+                } else {
+                    info!("⚠️ Skipping non-Single field '{}'", field_name);
+                }
+            }
+            
+            info!("📋 Converted {} fields to declarative definition", fields.len());
+            
+            // Non-HashRange schemas don't need key configuration
+            let declarative_schema = DeclarativeSchemaDefinition {
+                name: schema.name.clone(),
+                schema_type: schema.schema_type.clone(),
+                key: None,
+                fields,
+            };
+            
+            info!("✅ Created declarative schema with {} fields", declarative_schema.fields.len());
+            Ok(declarative_schema)
+        }
+    }
+    
+    /// Get HashRange key configuration from the original JSON schema file
+    pub fn get_hashrange_key_config_from_json(&self, schema_name: &str) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
+        use crate::schema::types::json_schema::KeyConfig;
+        use serde_json::Value;
+        
+        let schema_file_path = format!("available_schemas/{}.json", schema_name);
+        info!("🔍 Reading HashRange key config from: {}", schema_file_path);
+        
+        let content = std::fs::read_to_string(&schema_file_path)
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to read schema file {}: {}", schema_file_path, e)))?;
+        
+        let json_value: Value = serde_json::from_str(&content)
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to parse JSON from {}: {}", schema_file_path, e)))?;
+        
+        if let Some(key_obj) = json_value.get(KEY_FIELD_NAME).and_then(|v| v.as_object()) {
+            let hash_field = key_obj.get(KEY_CONFIG_HASH_FIELD)
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| SchemaError::InvalidData("Missing hash_field in key config".to_string()))?;
+            
+            let range_field = key_obj.get(KEY_CONFIG_RANGE_FIELD)
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| SchemaError::InvalidData("Missing range_field in key config".to_string()))?;
+            
+            info!("🔑 Found key config - hash_field: {}, range_field: {}", hash_field, range_field);
+            
+            Ok(Some(KeyConfig {
+                hash_field: hash_field.to_string(),
+                range_field: range_field.to_string(),
+            }))
+        } else {
+            info!("⚠️ No key configuration found in schema file");
+            Ok(None)
+        }
     }
 
     /// Re-register transforms that target a newly approved schema
