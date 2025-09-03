@@ -202,6 +202,16 @@ impl DataFoldNode {
         Ok(())
     }
 
+    /// Reload transforms from the database.
+    pub fn reload_transforms(&self) -> FoldDbResult<()> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+        db.reload_transforms()?;
+        Ok(())
+    }
+
     /// Helper method to log and create permission denied errors
     fn log_permission_denied(
         &self,

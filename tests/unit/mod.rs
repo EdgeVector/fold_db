@@ -6,7 +6,10 @@
 pub mod mutation_completion_tests;
 pub mod range_filter_tests;
 pub mod schema;
+pub mod schema_parsing_test;
 pub mod transform;
 pub mod transform_manager_module_tests;
 pub mod transform_utils_helper_tests;
 pub mod declarative_transform_tests;
+pub mod hashrange_schema_tests;
+pub mod schema_declarative_transform_interpretation_tests;

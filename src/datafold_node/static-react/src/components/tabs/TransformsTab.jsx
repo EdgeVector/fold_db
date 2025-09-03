@@ -7,7 +7,7 @@ const TransformsTab = ({ _onResult }) => {
   // Redux state - TASK-003: Use Redux instead of props
   const schemas = useAppSelector(selectAllSchemas)
   const [transforms, setTransforms] = useState([])
-  const [_apiTransforms, setApiTransforms] = useState({})
+  const [apiTransforms, setApiTransforms] = useState({})
   const [loading, setLoading] = useState({})
   const [error, setError] = useState({})
   const [_debugInfo, setDebugInfo] = useState({})
@@ -51,45 +51,9 @@ const TransformsTab = ({ _onResult }) => {
 
     setDebugInfo(debug)
 
-    // Filter and process schemas with transform fields - include ALL schemas regardless of state
-    const transformSchemas = schemas.filter(schema => {
-      // Include ALL schemas that have transforms, regardless of approval state
-      const hasTransforms = schema.fields && Object.values(schema.fields).some(field =>
-        field.transform !== null && field.transform !== undefined &&
-        (field.transform || typeof field.transform === 'string')
-      )
-      return hasTransforms
-    }).map(schema => {
-      // Deep clone the schema to avoid modifying the original
-      const processedSchema = JSON.parse(JSON.stringify(schema))
-
-      // Process each field's transform
-      Object.entries(processedSchema.fields).forEach(([fieldName, field]) => {
-        if (typeof field.transform === 'string') {
-          // Parse the transform string
-          const match = field.transform.match(/transform\s+(\w+)\s*{\s*logic:\s*{\s*([^}]+);\s*}\s*}/)
-          if (match) {
-            field.transform = {
-              kind: 'procedural',
-              logic: match[2].trim(),
-              output: `${schema.name}.${fieldName}`,
-              inputs: []
-            }
-          }
-        } else if (field.transform && typeof field.transform === 'object') {
-          // Ensure output field is set if missing
-          if (!field.transform.output) {
-            field.transform.output = `${schema.name}.${fieldName}`
-          }
-          
-          // Ensure kind is set for backward compatibility
-          if (!field.transform.kind) {
-            field.transform.kind = field.transform.logic ? 'procedural' : 'declarative'
-          }
-        }
-      })
-      return processedSchema
-    })
+    // Only show transforms that are actually registered (from API), not schema field definitions
+    // This ensures we only show transforms for approved schemas that are ready for execution
+    const transformSchemas = [] // Don't show schema-based transforms anymore
     
     setTransforms(transformSchemas)
 
@@ -135,7 +99,7 @@ const TransformsTab = ({ _onResult }) => {
   }
 
   const handleAddToQueue = async (schemaName, fieldName, _transform) => {
-    const transformId = `${schemaName}.${fieldName}`
+    const transformId = fieldName ? `${schemaName}.${fieldName}` : schemaName
     setLoading(prev => ({ ...prev, [transformId]: true }))
     setError(prev => ({ ...prev, [transformId]: null }))
     
@@ -176,6 +140,49 @@ const TransformsTab = ({ _onResult }) => {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* API Transforms Section */}
+      {Object.keys(apiTransforms).length > 0 && (
+        <div className="bg-green-50 p-4 rounded-lg mb-4">
+          <h3 className="text-md font-medium text-green-800 mb-2">Registered Transforms (API)</h3>
+          <div className="space-y-2">
+            {Object.entries(apiTransforms).map(([transformId, transform]) => (
+              <div key={transformId} className="bg-white p-3 rounded border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium text-gray-800">{transformId}</h4>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">Type:</span>{' '}
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        transform.kind === 'declarative' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {transform.kind === 'declarative' ? 'Declarative' : 'Procedural'}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">Output:</span> {transform.output}
+                    </div>
+                    {transform.inputs && transform.inputs.length > 0 && (
+                      <div className="text-sm text-gray-600">
+                        <span className="font-medium">Inputs:</span> {transform.inputs.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleAddToQueue(transformId, '', transform)}
+                    disabled={loading[transformId]}
+                    className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-blue-300"
+                  >
+                    {loading[transformId] ? 'Adding...' : 'Add to Queue'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -1,5 +1,7 @@
+use crate::schema::constants::{ATOM_UUID_FIELD, KEY_FIELD_NAME};
 use super::{schema_lock_error, SchemaCore, SchemaState};
 use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
+use crate::logging::features::{log_feature, LogFeature};
 use log::info;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -306,6 +308,7 @@ impl SchemaCore {
         declarative_schema: crate::schema::types::json_schema::DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
         use crate::schema::types::{SingleField, FieldVariant, field::common::Field};
+        use crate::schema::field::HashRangeField;
         use crate::fees::payment_config::SchemaPaymentConfig;
         use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
         use crate::fees::types::config::FieldPaymentConfig;
@@ -317,26 +320,63 @@ impl SchemaCore {
         // Convert fields from FieldDefinition to FieldVariant
         let mut fields = std::collections::HashMap::new();
         for (field_name, field_def) in declarative_schema.fields.clone() {
-            // Create a basic single field with default permissions and payment config
-            let mut single_field = SingleField::new(
-                PermissionsPolicy::new(
-                    TrustDistance::Distance(0),
-                    TrustDistance::Distance(1),
-                ),
-                FieldPaymentConfig {
-                    base_multiplier: 1.0,
-                    trust_distance_scaling: TrustDistanceScaling::None,
-                    min_payment: None,
-                },
-                std::collections::HashMap::new(),
-            );
-            
-            // Set molecule UUID if provided
-            if let Some(atom_uuid) = field_def.atom_uuid {
-                single_field.set_molecule_uuid(atom_uuid);
+            match &declarative_schema.schema_type {
+                crate::schema::types::schema::SchemaType::HashRange => {
+                    // For HashRange schemas, create HashRangeField variants
+                    let key_config = declarative_schema.key.as_ref().ok_or_else(|| {
+                        SchemaError::InvalidField("HashRange schema must have key configuration".to_string())
+                    })?;
+                    
+                    let mut hashrange_field = HashRangeField {
+                        inner: crate::schema::types::field::common::FieldCommon::new(
+                            PermissionsPolicy::new(
+                                TrustDistance::Distance(0),
+                                TrustDistance::Distance(1),
+                            ),
+                            FieldPaymentConfig {
+                                base_multiplier: 1.0,
+                                trust_distance_scaling: TrustDistanceScaling::None,
+                                min_payment: None,
+                            },
+                            std::collections::HashMap::new(),
+                        ),
+                        hash_field: key_config.hash_field.clone(),
+                        range_field: key_config.range_field.clone(),
+                        atom_uuid: field_def.atom_uuid.unwrap_or_default(),
+                        cached_chains: None,
+                    };
+                    
+                    // Fields from declarative schemas are derived and should not be writable
+                    hashrange_field.set_writable(false);
+                    
+                    fields.insert(field_name, FieldVariant::HashRange(Box::new(hashrange_field)));
+                }
+                _ => {
+                    // For other schema types, create SingleField variants
+                    let mut single_field = SingleField::new(
+                        PermissionsPolicy::new(
+                            TrustDistance::Distance(0),
+                            TrustDistance::Distance(1),
+                        ),
+                        FieldPaymentConfig {
+                            base_multiplier: 1.0,
+                            trust_distance_scaling: TrustDistanceScaling::None,
+                            min_payment: None,
+                        },
+                        std::collections::HashMap::new(),
+                    );
+                    
+                    // Set molecule UUID if provided
+                    if let Some(atom_uuid) = field_def.atom_uuid {
+                        single_field.set_molecule_uuid(atom_uuid);
+                    }
+                    
+                    // Fields from declarative schemas are derived and should not be writable
+                    single_field.set_writable(false);
+                    
+                    fields.insert(field_name, FieldVariant::Single(single_field));
+                }
             }
-            
-            fields.insert(field_name, FieldVariant::Single(single_field));
         }
         
         // Create the schema with appropriate type
@@ -351,8 +391,24 @@ impl SchemaCore {
             hash: None,
         };
         
-        // Auto-register the declarative transform
-        self.register_declarative_transform(&declarative_schema)?;
+        // Auto-register the declarative transform only if the schema is approved
+        // Check if this schema is already approved before registering the transform
+        let schema_name = &declarative_schema.name;
+        match self.db_ops.get_schema_state(schema_name) {
+            Ok(Some(crate::schema::SchemaState::Approved)) => {
+                info!("✅ Schema '{}' is approved, registering declarative transform", schema_name);
+                self.register_declarative_transform(&declarative_schema)?;
+            }
+            Ok(Some(state)) => {
+                info!("⏸️ Schema '{}' is in {:?} state, skipping declarative transform registration", schema_name, state);
+            }
+            Ok(None) => {
+                info!("⏸️ Schema '{}' not found in database, skipping declarative transform registration", schema_name);
+            }
+            Err(e) => {
+                log_feature!(LogFeature::Schema, warn, "Failed to check schema state for '{}': {}, skipping transform registration", schema_name, e);
+            }
+        }
         
         Ok(schema)
     }
@@ -408,7 +464,7 @@ impl SchemaCore {
             trigger_fields,
             output_molecule: format!("{}.key", declarative_schema.name),
             schema_name: declarative_schema.name.clone(),
-            field_name: "key".to_string(),
+            field_name: KEY_FIELD_NAME.to_string(),
         };
         
         // Store the transform registration in the database for later processing
