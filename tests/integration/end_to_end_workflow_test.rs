@@ -331,7 +331,7 @@ impl EndToEndWorkflowFixture {
         let schema = self.db_ops.get_schema(schema_name)?
             .ok_or(format!("Schema {} not found", schema_name))?;
         
-        TransformUtils::resolve_field_value(&self.db_ops, &schema, field_name, None)
+        TransformUtils::resolve_field_value(&self.db_ops, &schema, field_name, None, None)
             .map_err(|e| e.into())
     }
 }

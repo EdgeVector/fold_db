@@ -125,6 +125,7 @@ impl TransformUtils {
         schema: &Schema,
         field_name: &str,
         range_key_filter: Option<Value>,
+        hash_key_filter: Option<Value>,
     ) -> Result<JsonValue, SchemaError> {
         info!("🔍 FieldValueResolver: Looking up field '{}' in schema '{}'", field_name, schema.name);
         
@@ -248,9 +249,75 @@ impl TransformUtils {
                 info!("🔄 Detected single field, using Molecule resolution");
             }
             FieldVariant::HashRange(_) => {
-                info!("🔄 Detected HashRange field, using placeholder resolution");
-                // TODO: Implement HashRange field resolution
-                return Err(SchemaError::InvalidField(format!("HashRange field '{}' resolution not yet implemented", field_name)));
+                info!("🔑 Detected HashRange field, using HashRange resolution");
+                
+                // For HashRange schemas, we need to query using the hash key filter
+                if let Some(hash_filter) = &hash_key_filter {
+                    info!("🎯 Processing HashRange hash filter: {:?}", hash_filter);
+                    
+                    // Extract the hash key from the filter (e.g., {"Key": "DataFold"} -> "DataFold")
+                    let hash_key = if let Some(key_obj) = hash_filter.as_object() {
+                        if let Some(key_value) = key_obj.get("Key") {
+                            if let Some(key_str) = key_value.as_str() {
+                                key_str.to_string()
+                            } else {
+                                return Err(SchemaError::InvalidData("Hash filter Key must be a string".to_string()));
+                            }
+                        } else {
+                            return Err(SchemaError::InvalidData("Hash filter must contain 'Key' field".to_string()));
+                        }
+                    } else {
+                        return Err(SchemaError::InvalidData("Hash filter must be an object".to_string()));
+                    };
+                    
+                    info!("🔍 HashRange query for hash key: '{}'", hash_key);
+                    
+                    // Query HashRange data using the hash key
+                    // Look for atoms with the pattern: {schema_name}_{hash_key}
+                    let hashrange_atom_uuid = format!("{}_{}", schema.name, hash_key);
+                    println!("🔍 Looking for HashRange atom: {}", hashrange_atom_uuid);
+                    
+                    // Debug: List all atoms in the database to see what's actually stored
+                    info!("🔍 DEBUG: Listing all atoms in database...");
+                    // This is a debug approach - in production we'd want a more efficient way
+                    
+                    // Debug: Try to list what's actually in the database
+                    println!("🔍 DEBUG: Attempting to retrieve atom with key: atom:{}", hashrange_atom_uuid);
+                    
+                    match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", hashrange_atom_uuid)) {
+                        Ok(Some(atom)) => {
+                            println!("✅ Found HashRange atom for key '{}'", hash_key);
+                            let content = atom.content().clone();
+                            println!("🔍 DEBUG: Atom content: {}", content);
+                            
+                            // Extract the specific field value from the compound result
+                            if let Some(content_obj) = content.as_object() {
+                                if let Some(field_value) = content_obj.get(field_name) {
+                                    info!("✅ Extracted field '{}' value: {}", field_name, field_value);
+                                    return Ok(field_value.clone());
+                                } else {
+                                    info!("⚠️ Field '{}' not found in HashRange atom content", field_name);
+                                    info!("🔍 DEBUG: Available fields in content: {:?}", content_obj.keys().collect::<Vec<_>>());
+                                    return Ok(JsonValue::Null);
+                                }
+                            } else {
+                                info!("⚠️ HashRange atom content is not an object: {}", content);
+                                return Ok(JsonValue::Null);
+                            }
+                        }
+                        Ok(None) => {
+                            println!("⚠️ HashRange atom not found for key '{}' (UUID: {})", hash_key, hashrange_atom_uuid);
+                            return Ok(JsonValue::Null);
+                        }
+                        Err(e) => {
+                            error!("❌ Error loading HashRange atom '{}': {}", hashrange_atom_uuid, e);
+                            return Err(SchemaError::InvalidField(format!("Error loading HashRange atom '{}': {}", hashrange_atom_uuid, e)));
+                        }
+                    }
+                } else {
+                    info!("⚠️ HashRange field requires hash_key_filter");
+                    return Ok(JsonValue::Null);
+                }
             }
         }
         

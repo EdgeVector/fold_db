@@ -17,7 +17,12 @@ struct HashRangeTestFixture {
 
 impl HashRangeTestFixture {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let schema_core = SchemaCore::new_for_testing("test_hashrange_fresh")?;
+        // Use a unique database directory for each test to avoid lock contention
+        let unique_id = std::thread::current().id();
+        let db_name = format!("test_hashrange_{}_{:?}",
+            std::process::id(),
+            unique_id);
+        let schema_core = SchemaCore::new_for_testing(&db_name)?;
         Ok(Self { schema_core })
     }
 
@@ -148,8 +153,8 @@ fn test_hashrange_schema_declarative_definition_conversion() {
             assert!(declarative_schema.key.is_some(), "HashRange schema should have key config");
             
             let key = declarative_schema.key.as_ref().unwrap();
-            assert_eq!(key.hash_field, "blogpost.map().content.split_by_word().map()");
-            assert_eq!(key.range_field, "blogpost.map().publish_date");
+            assert_eq!(key.hash_field, "BlogPost.map().content.split_by_word().map()");
+            assert_eq!(key.range_field, "BlogPost.map().publish_date");
             
             // Verify fields were converted (should be 2 fields: blog and author)
             assert_eq!(declarative_schema.fields.len(), 2);
@@ -206,8 +211,8 @@ fn test_hashrange_schema_key_config_reading() {
             println!("✅ Key config found - hash_field: {}, range_field: {}", config.hash_field, config.range_field);
             
             // Verify the key config matches the expected values from BlogPostWordIndex.json
-            assert_eq!(config.hash_field, "blogpost.map().content.split_by_word().map()");
-            assert_eq!(config.range_field, "blogpost.map().publish_date");
+            assert_eq!(config.hash_field, "BlogPost.map().content.split_by_word().map()");
+            assert_eq!(config.range_field, "BlogPost.map().publish_date");
         }
         Ok(None) => {
             panic!("❌ Key config should be found for BlogPostWordIndex");
@@ -241,8 +246,8 @@ fn test_hashrange_schema_with_hashrange_fields_declarative_definition() {
             assert!(declarative_schema.key.is_some(), "HashRange schema should have key config");
             
             let key = declarative_schema.key.as_ref().unwrap();
-            assert_eq!(key.hash_field, "blogpost.map().content.split_by_word().map()");
-            assert_eq!(key.range_field, "blogpost.map().publish_date");
+            assert_eq!(key.hash_field, "BlogPost.map().content.split_by_word().map()");
+            assert_eq!(key.range_field, "BlogPost.map().publish_date");
             
             // Verify fields were converted
             assert_eq!(declarative_schema.fields.len(), 2);

@@ -375,6 +375,21 @@ impl ExecutionEngine {
                         let array = field_value.as_array().unwrap();
                         println!("DEBUG: Returning array with {} items", array.len());
                         Ok(array.clone())
+                    } else if field_value.is_object() {
+                        // If the field value is an object that contains an array, extract the array
+                        if let Some(nested_array) = field_value.get(field_name) {
+                            if nested_array.is_array() {
+                                let array = nested_array.as_array().unwrap();
+                                println!("DEBUG: Found nested array '{}' with {} items", field_name, array.len());
+                                Ok(array.clone())
+                            } else {
+                                println!("DEBUG: Nested field '{}' is not an array, returning single item", field_name);
+                                Ok(vec![nested_array.clone()])
+                            }
+                        } else {
+                            println!("DEBUG: Field '{}' is object but no nested array found, returning single item", field_name);
+                            Ok(vec![field_value.clone()])
+                        }
                     } else {
                         println!("DEBUG: Returning single item as array");
                         Ok(vec![field_value.clone()])

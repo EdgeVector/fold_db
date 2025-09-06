@@ -60,7 +60,7 @@ impl FieldRetrievalService {
         // This ensures consistent field resolution across the application
         match &self.db_ops {
             Some(db_ops) => {
-                crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(db_ops, schema, field, None)
+                crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(db_ops, schema, field, None, None)
             }
             None => {
                 // Fallback to event-driven approach if no db_ops available
