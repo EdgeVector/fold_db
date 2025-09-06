@@ -37,6 +37,68 @@ import {
  */
 
 /**
+ * Detects if a schema is a HashRange schema
+ * HashRange schemas have:
+ * 1. schema_type: "HashRange"
+ * 2. Fields with field_type: "HashRange" that contain hash_field and range_field
+ * 
+ * @param {Schema} schema - Schema object to check
+ * @returns {boolean} True if schema is a HashRange schema
+ */
+export function isHashRangeSchema(schema) {
+  if (!schema || typeof schema !== 'object') {
+    return false;
+  }
+  
+  return schema.schema_type === 'HashRange' && 
+         schema.fields && 
+         typeof schema.fields === 'object' &&
+         Object.values(schema.fields).some(field => 
+           field.field_type === 'HashRange' && 
+           field.hash_field && 
+           field.range_field
+         );
+}
+
+/**
+ * Gets the hash field expression for a HashRange schema
+ * 
+ * @param {Schema} schema - Schema object
+ * @returns {string|null} Hash field expression or null if not found
+ */
+export function getHashField(schema) {
+  if (!isHashRangeSchema(schema)) {
+    return null;
+  }
+  
+  // Find the first field with HashRange type and return its hash_field
+  const hashRangeField = Object.values(schema.fields).find(field => 
+    field.field_type === 'HashRange' && field.hash_field
+  );
+  
+  return hashRangeField ? hashRangeField.hash_field : null;
+}
+
+/**
+ * Gets the range field expression for a HashRange schema
+ * 
+ * @param {Schema} schema - Schema object
+ * @returns {string|null} Range field expression or null if not found
+ */
+export function getRangeField(schema) {
+  if (!isHashRangeSchema(schema)) {
+    return null;
+  }
+  
+  // Find the first field with HashRange type and return its range_field
+  const hashRangeField = Object.values(schema.fields).find(field => 
+    field.field_type === 'HashRange' && field.range_field
+  );
+  
+  return hashRangeField ? hashRangeField.range_field : null;
+}
+
+/**
  * Detects if a schema is a range schema
  * Range schemas have:
  * 1. A range_key field defined in the schema
@@ -246,6 +308,37 @@ export function formatRangeQuery(schema, fields, rangeFilterValue) {
   if (rangeFilterValue && rangeFilterValue.trim()) {
     query.range_filter = { Key: rangeFilterValue.trim() };
   }
+  
+  return query;
+}
+
+/**
+ * Formats a HashRange schema query with hash and range key filters
+ * 
+ * @param {Schema} schema - Schema object
+ * @param {string[]} fields - Fields to query
+ * @param {string} [hashKey] - Hash key value
+ * @param {string} [rangeKey] - Range key value
+ * @returns {Object} Formatted query object
+ */
+export function formatHashRangeQuery(schema, fields, hashKey, rangeKey) {
+  const query = {
+    type: 'query',
+    schema: schema.name,
+    fields: fields
+  };
+  
+  // Add hash filter if hash key is provided
+  if (hashKey && hashKey.trim()) {
+    query.filter = {
+      hash_filter: {
+        Key: hashKey.trim()
+      }
+    };
+  }
+  
+  // Note: Range key filtering for HashRange schemas is not currently supported
+  // by the backend, so rangeKey parameter is ignored
   
   return query;
 }

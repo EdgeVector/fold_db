@@ -11,15 +11,23 @@ use std::collections::HashMap;
 use datafold::schema::types::json_schema::DeclarativeSchemaDefinition;
 
 /// Test fixture for HashRange schema tests
+use tempfile::TempDir;
+
 struct HashRangeTestFixture {
     schema_core: SchemaCore,
+    _temp_dir: TempDir, // Keep temp directory alive
 }
 
 impl HashRangeTestFixture {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        // Use existing test database directory to avoid creating additional .gitignore entries
-        let schema_core = SchemaCore::new_for_testing("test_db")?;
-        Ok(Self { schema_core })
+        // Create unique temporary directory for each test to avoid database lock conflicts
+        let temp_dir = tempfile::tempdir()?;
+        let db_path = temp_dir.path().join("test_db");
+        let schema_core = SchemaCore::new_for_testing(db_path.to_str().unwrap())?;
+        Ok(Self { 
+            schema_core,
+            _temp_dir: temp_dir,
+        })
     }
 
     /// Create a HashRange schema with Single field variants (simulating loaded JSON schema)

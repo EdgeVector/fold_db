@@ -16,6 +16,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useAppSelector } from '../store/hooks.ts';
 import { selectAllSchemas, selectFetchLoading } from '../store/schemaSlice';
 import { SCHEMA_STATES } from '../constants/redux.js';
+import { isHashRangeSchema } from '../utils/rangeSchemaHelpers.js';
 
 /**
  * @typedef {Object} QueryState
@@ -24,6 +25,7 @@ import { SCHEMA_STATES } from '../constants/redux.js';
  * @property {Object} rangeFilters - Range field filters for regular schemas
  * @property {Object} rangeSchemaFilter - Range filters for range schemas
  * @property {string} rangeKeyValue - Current range key value
+ * @property {string} hashKeyValue - Current hash key value for HashRange schemas
  */
 
 /**
@@ -86,12 +88,7 @@ const getRangeKey = (schema) => {
  * }
  */
 function useQueryState() {
-  // Authentication check - prevent accessing schemas without proper auth
-  const authState = useAppSelector(state => state.auth);
-  const { isAuthenticated } = authState;
-
   // Redux state - following SchemaTab.jsx pattern (lines 16-21)
-  // Only access schemas if authenticated to prevent auth errors
   const schemas = useAppSelector(selectAllSchemas);
   const schemasLoading = useAppSelector(selectFetchLoading);
 
@@ -101,33 +98,31 @@ function useQueryState() {
   const [fieldValues, setFieldValues] = useState({});
   const [rangeFilters, setRangeFilters] = useState({});
   const [rangeKeyValue, setRangeKeyValue] = useState('');
+  const [hashKeyValue, setHashKeyValue] = useState('');
   const [rangeSchemaFilter, setRangeSchemaFilter] = useState({});
 
   // Memoized approved schemas - following QueryTab.jsx pattern (lines 265-271)
-  // Return empty array if not authenticated to prevent accessing unauthenticated data
   const approvedSchemas = useMemo(() => {
-    if (!isAuthenticated) {
-      return [];
-    }
     return (schemas || []).filter(schema => {
       const state = typeof schema.state === 'string'
         ? schema.state.toLowerCase()
         : String(schema.state || '').toLowerCase();
       return state === SCHEMA_STATES.APPROVED;
     });
-  }, [schemas, isAuthenticated]);
+  }, [schemas]);
 
-  // Memoized selected schema object - only return if authenticated
+  // Memoized selected schema object
   const selectedSchemaObj = useMemo(() => {
-    if (!isAuthenticated) {
-      return null;
-    }
     return selectedSchema ? (schemas || []).find(s => s.name === selectedSchema) : null;
-  }, [selectedSchema, schemas, isAuthenticated]);
+  }, [selectedSchema, schemas]);
 
   // Memoized schema type checks
   const isCurrentSchemaRangeSchema = useMemo(() => {
     return selectedSchemaObj ? isRangeSchema(selectedSchemaObj) : false;
+  }, [selectedSchemaObj]);
+
+  const isCurrentSchemaHashRangeSchema = useMemo(() => {
+    return selectedSchemaObj ? isHashRangeSchema(selectedSchemaObj) : false;
   }, [selectedSchemaObj]);
 
   const rangeKey = useMemo(() => {
@@ -161,6 +156,7 @@ function useQueryState() {
     // Clear filters when schema changes
     setRangeFilters({});
     setRangeKeyValue('');
+    setHashKeyValue('');
     setRangeSchemaFilter({});
   }, [schemas]);
 
@@ -221,6 +217,7 @@ function useQueryState() {
     setFieldValues({});
     setRangeFilters({});
     setRangeKeyValue('');
+    setHashKeyValue('');
     setRangeSchemaFilter({});
   }, []);
 
@@ -231,7 +228,8 @@ function useQueryState() {
     fieldValues,
     rangeFilters,
     rangeSchemaFilter,
-    rangeKeyValue
+    rangeKeyValue,
+    hashKeyValue
   };
 
   return {
@@ -244,6 +242,7 @@ function useQueryState() {
     setRangeFilters,
     setRangeSchemaFilter,
     setRangeKeyValue,
+    setHashKeyValue,
     clearState,
     handleSchemaChange,
     handleRangeFilterChange,
@@ -251,6 +250,7 @@ function useQueryState() {
     schemasLoading,
     selectedSchemaObj,
     isRangeSchema: isCurrentSchemaRangeSchema,
+    isHashRangeSchema: isCurrentSchemaHashRangeSchema,
     rangeKey
   };
 }

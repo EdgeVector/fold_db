@@ -125,8 +125,8 @@ describe('QueryForm Component', () => {
     it('should render field selection when schema is selected', () => {
       renderWithRedux(<QueryForm {...mockProps} />, { initialState: createAuthenticatedState() });
 
-      expect(screen.getByText('Single Field Options')).toBeInTheDocument();
-      expect(screen.getByText('Select single-value fields to include')).toBeInTheDocument();
+      expect(screen.getByText('Field Selection')).toBeInTheDocument();
+      expect(screen.getByText('Select fields to include in your query')).toBeInTheDocument();
 
       // Should show non-range fields from the selected schema
       expect(screen.getByText('id')).toBeInTheDocument();
@@ -219,7 +219,7 @@ describe('QueryForm Component', () => {
 
       expect(screen.getByText('Range Field Filters')).toBeInTheDocument();
       expect(screen.getByText('Configure filters for range fields')).toBeInTheDocument();
-      expect(screen.getAllByText('range_field')).toHaveLength(1); // Only in checkbox
+      expect(screen.getAllByText('range_field')).toHaveLength(2); // One in field selection, one in range filters
     });
 
     it('should render range filter inputs', () => {
@@ -296,7 +296,7 @@ describe('QueryForm Component', () => {
       mockProps.queryState.queryFields = [];
       renderWithRedux(<QueryForm {...mockProps} />, { initialState: createAuthenticatedState() });
 
-      expect(screen.getByText('Single Field Options')).toBeInTheDocument();
+      expect(screen.getByText('Field Selection')).toBeInTheDocument();
     });
 
     it('should validate range filter values', () => {

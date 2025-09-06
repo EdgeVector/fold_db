@@ -315,8 +315,32 @@ impl TransformUtils {
                         }
                     }
                 } else {
-                    info!("⚠️ HashRange field requires hash_key_filter");
-                    return Ok(JsonValue::Null);
+                    info!("🔍 No hash_key_filter provided - returning list of available words");
+                    
+                    // When no hash_key_filter is provided, return a list of available words
+                    // This is more appropriate for HashRange schemas than aggregating all data
+                    let atom_prefix = format!("atom:{}_", schema.name);
+                    info!("🔍 Scanning for all HashRange atoms with prefix: {}", atom_prefix);
+                    
+                    // Get all atom keys with the schema prefix
+                    let atom_keys = db_ops.list_items_with_prefix(&atom_prefix)?;
+                    info!("🔍 Found {} HashRange atoms for schema '{}'", atom_keys.len(), schema.name);
+                    
+                    let mut available_words = Vec::new();
+                    
+                    // Extract word names from atom UUIDs
+                    for atom_key in atom_keys {
+                        // Remove the "atom:" prefix and schema name to get the word
+                        if let Some(word_part) = atom_key.strip_prefix(&format!("atom:{}_", schema.name)) {
+                            available_words.push(JsonValue::String(word_part.to_string()));
+                        }
+                    }
+                    
+                    info!("✅ Found {} unique words: {:?}", available_words.len(), 
+                          available_words.iter().take(10).collect::<Vec<_>>());
+                    
+                    // Return a simple list of available words
+                    return Ok(JsonValue::Array(available_words));
                 }
             }
         }

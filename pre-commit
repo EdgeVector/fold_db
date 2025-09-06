@@ -19,13 +19,13 @@ if git diff --cached --name-only | grep -q '\.rs$'; then
     echo "Running clippy..."
     cargo clippy -- -D warnings || { echo "Clippy failed!"; exit 1; }
     
-    # Run unit tests
+    # Run unit tests (single-threaded to avoid database lock conflicts)
     echo "Running unit tests..."
-    cargo test --lib || { echo "Unit tests failed!"; exit 1; }
+    cargo test --lib -- --test-threads=1 || { echo "Unit tests failed!"; exit 1; }
     
-    # Run integration tests
+    # Run integration tests (single-threaded to avoid database lock conflicts)
     echo "Running integration tests..."
-    cargo test --tests || { echo "Integration tests failed!"; exit 1; }
+    cargo test --tests -- --test-threads=1 || { echo "Integration tests failed!"; exit 1; }
     
     # Run doc tests
     echo "Running doc tests..."

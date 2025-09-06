@@ -421,36 +421,54 @@ impl SchemaCore {
         use crate::schema::types::{Transform, TransformRegistration};
         use log::info;
         
+        // Extract input dependencies from the schema
+        let mut input_molecules = Vec::new();
+        let mut input_names = Vec::new();
+        
+        // Extract schema names from field expressions
+        for field_def in declarative_schema.fields.values() {
+            if let Some(atom_uuid) = &field_def.atom_uuid {
+                // Extract schema name from atom_uuid expression (e.g., "BlogPost.map().$atom_uuid")
+                if let Some(schema_name) = atom_uuid.split('.').next() {
+                    if !input_molecules.contains(&schema_name.to_string()) {
+                        input_molecules.push(schema_name.to_string());
+                        input_names.push(schema_name.to_string());
+                        info!("📋 Added input dependency from atom_uuid: {}", schema_name);
+                    }
+                }
+            }
+        }
+        
+        // Also check key configuration for schema names
+        if let Some(key_config) = &declarative_schema.key {
+            let key_expressions = vec![&key_config.hash_field, &key_config.range_field];
+            for expression in key_expressions {
+                if let Some(schema_name) = expression.split('.').next() {
+                    if !input_molecules.contains(&schema_name.to_string()) {
+                        input_molecules.push(schema_name.to_string());
+                        input_names.push(schema_name.to_string());
+                        info!("📋 Added input dependency from key config: {}", schema_name);
+                    }
+                }
+            }
+        }
+        
+        // If no input dependencies found, use a default
+        if input_molecules.is_empty() {
+            input_molecules.push("BlogPost".to_string());
+            input_names.push("BlogPost".to_string());
+            info!("📋 Using default input dependency: BlogPost");
+        }
+        
         // Create a transform from the declarative schema
         let transform = Transform::from_declarative_schema(
             declarative_schema.clone(),
-            vec!["blogpost".to_string()], // Input schema name
+            input_molecules.clone(), // Use extracted input dependencies
             format!("{}.key", declarative_schema.name), // Output field
         );
         
         // Generate transform ID
         let transform_id = format!("{}.declarative", declarative_schema.name);
-        
-        // Extract input dependencies from the schema
-        let mut input_molecules = Vec::new();
-        let mut input_names = Vec::new();
-        
-        // Add the main input schema
-        input_molecules.push("blogpost".to_string());
-        input_names.push("blogpost".to_string());
-        
-        // Add any additional dependencies from field expressions
-        for field_def in declarative_schema.fields.values() {
-            if let Some(atom_uuid) = &field_def.atom_uuid {
-                // Extract schema name from atom_uuid expression (e.g., "blogpost.map().$atom_uuid")
-                if let Some(schema_name) = atom_uuid.split('.').next() {
-                    if !input_molecules.contains(&schema_name.to_string()) {
-                        input_molecules.push(schema_name.to_string());
-                        input_names.push(schema_name.to_string());
-                    }
-                }
-            }
-        }
         
         // Create trigger fields based on input dependencies
         // For declarative transforms, we need to trigger on ALL fields of the input schema
