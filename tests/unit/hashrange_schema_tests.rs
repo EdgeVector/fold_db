@@ -17,12 +17,8 @@ struct HashRangeTestFixture {
 
 impl HashRangeTestFixture {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        // Use a unique database directory for each test to avoid lock contention
-        let unique_id = std::thread::current().id();
-        let db_name = format!("test_hashrange_{}_{:?}",
-            std::process::id(),
-            unique_id);
-        let schema_core = SchemaCore::new_for_testing(&db_name)?;
+        // Use existing test database directory to avoid creating additional .gitignore entries
+        let schema_core = SchemaCore::new_for_testing("test_db")?;
         Ok(Self { schema_core })
     }
 
