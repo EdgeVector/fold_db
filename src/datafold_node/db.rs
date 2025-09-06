@@ -62,6 +62,7 @@ impl DataFoldNode {
 
     /// Executes a query against the database.
     pub fn query(&mut self, query: Query) -> FoldDbResult<Vec<Result<Value, SchemaError>>> {
+        println!("🔍 DEBUG: datafold_node::db::query called for schema: {}", query.schema_name);
         // Check if schema exists first
         let schema_exists = {
             let db = self

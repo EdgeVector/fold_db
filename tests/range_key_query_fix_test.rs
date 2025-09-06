@@ -117,7 +117,8 @@ impl RangeKeyFixTestFixture {
             &self.db_ops,
             &stored_schema,
             field_name,
-            Some(serde_json::json!({"Key": range_key}))
+            Some(serde_json::json!({"Key": range_key})),
+            None
         )?;
         
         Ok(field_value)

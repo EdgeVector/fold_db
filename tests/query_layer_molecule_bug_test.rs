@@ -98,7 +98,7 @@ fn test_query_layer_molecule_bug_reproduction() {
     // STEP 4: Test query layer - this should reveal the bug!
     
     // Use the query layer to resolve field value
-    match TransformUtils::resolve_field_value(&Arc::new(db_ops.clone()), &test_schema, "test_field", None) {
+    match TransformUtils::resolve_field_value(&Arc::new(db_ops.clone()), &test_schema, "test_field", None, None) {
         Ok(value) => {
             
             // If our fix worked, the value should match what we set
@@ -145,7 +145,7 @@ fn test_query_layer_molecule_bug_reproduction() {
     assert_ne!(updated_atom_uuid, dynamic_atom_uuid, "Should point to newer atom after second mutation");
     
     // Test query layer again
-    match TransformUtils::resolve_field_value(&Arc::new(db_ops), &test_schema, "test_field", None) {
+    match TransformUtils::resolve_field_value(&Arc::new(db_ops), &test_schema, "test_field", None, None) {
         Ok(value) => {
             
             if let Some(obj) = value.as_object() {

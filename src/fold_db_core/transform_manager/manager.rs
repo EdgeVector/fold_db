@@ -409,11 +409,13 @@ impl TransformRunner for TransformManager {
         }
         
         // Execute the transform using the execution module (call as static method)
+        println!("🔧 About to call execute_single_transform for transform: {}", transform_id);
         let result = TransformManager::execute_single_transform(
             transform_id,
             &transform,
             &self.db_ops
         )?;
+        println!("🔧 execute_single_transform completed with result: {}", result);
         
         info!("✅ DIAGNOSTIC: Transform '{}' executed successfully, result: {}", transform_id, result);
         

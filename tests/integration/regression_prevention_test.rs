@@ -302,12 +302,13 @@ fn test_molecule_resolution_bug_prevention() {
     // Test 2: Query uses dynamic Molecule, not static
     println!("🔍 Test 2: Query Resolution Uses Dynamic Molecule");
     
-    let query_result = TransformUtils::resolve_field_value(
-        &fixture.db_ops,
-        &schema,
-        "problematic_field",
-        None,
-    ).expect("Query should succeed using dynamic Molecule");
+          let query_result = TransformUtils::resolve_field_value(
+         &fixture.db_ops,
+         &schema,
+         "problematic_field",
+         None,
+         None,
+     ).expect("Query should succeed using dynamic Molecule");
     
     assert_eq!(query_result, test_value,
         "Query should return value from dynamic Molecule, not static reference");
@@ -584,12 +585,13 @@ fn test_edge_cases_prevention() {
             .expect("Failed to retrieve stored schema")
             .expect("Schema should exist after storage");
             
-        let query_result = TransformUtils::resolve_field_value(
-            &fixture.db_ops,
-            &stored_schema,
-            "edge_field",
-            None,
-        ).unwrap_or_else(|_| panic!("Failed to query {} value", description));
+                  let query_result = TransformUtils::resolve_field_value(
+             &fixture.db_ops,
+             &stored_schema,
+             "edge_field",
+             None,
+             None,
+         ).unwrap_or_else(|_| panic!("Failed to query {} value", description));
         
         assert_eq!(query_result, value, "Edge case {} should round-trip correctly", description);
         
@@ -637,12 +639,13 @@ fn test_edge_cases_prevention() {
             .expect("Failed to retrieve stored schema")
             .expect("Schema should exist after storage");
             
-        let query_result = TransformUtils::resolve_field_value(
-            &fixture.db_ops,
-            &stored_schema,
-            "edge_field",
-            None,
-        ).unwrap_or_else(|_| panic!("Failed to query large data: {}", description));
+                  let query_result = TransformUtils::resolve_field_value(
+             &fixture.db_ops,
+             &stored_schema,
+             "edge_field",
+             None,
+             None,
+         ).unwrap_or_else(|_| panic!("Failed to query large data: {}", description));
         
         let query_duration = query_start.elapsed();
         
@@ -676,12 +679,13 @@ fn test_edge_cases_prevention() {
         .expect("Failed to retrieve stored schema")
         .expect("Schema should exist after storage");
         
-    let nested_query = TransformUtils::resolve_field_value(
-        &fixture.db_ops,
-        &stored_schema,
-        "edge_field",
-        None,
-    ).expect("Failed to query deeply nested data");
+          let nested_query = TransformUtils::resolve_field_value(
+         &fixture.db_ops,
+         &stored_schema,
+         "edge_field",
+         None,
+         None,
+     ).expect("Failed to query deeply nested data");
     
     assert_eq!(nested_query, nested_data);
     println!("✅ Deeply nested data handled correctly");
@@ -710,12 +714,13 @@ fn test_edge_cases_prevention() {
             .expect("Failed to retrieve stored schema")
             .expect("Schema should exist after storage");
             
-        let query_result = TransformUtils::resolve_field_value(
-            &fixture.db_ops,
-            &stored_schema,
-            "edge_field",
-            None,
-        ).unwrap_or_else(|_| panic!("Failed to query special characters: {}", description));
+                  let query_result = TransformUtils::resolve_field_value(
+             &fixture.db_ops,
+             &stored_schema,
+             "edge_field",
+             None,
+             None,
+         ).unwrap_or_else(|_| panic!("Failed to query special characters: {}", description));
         
         assert_eq!(query_result, value);
         println!("✅ Special characters handled: {}", description);
@@ -1084,19 +1089,21 @@ fn test_data_consistency_safeguards() {
         "Different fields should have different Molecules");
     
     // Verify data consistency across fields (use stored schema with Molecules)
-    let primary_query = TransformUtils::resolve_field_value(
-        &fixture.db_ops,
-        &stored_schema,
-        "consistency_field",
-        None,
-    ).expect("Failed to query primary field");
+          let primary_query = TransformUtils::resolve_field_value(
+         &fixture.db_ops,
+         &stored_schema,
+         "consistency_field",
+         None,
+         None,
+     ).expect("Failed to query primary field");
     
-    let secondary_query = TransformUtils::resolve_field_value(
-        &fixture.db_ops,
-        &stored_schema,
-        "secondary_field",
-        None,
-    ).expect("Failed to query secondary field");
+          let secondary_query = TransformUtils::resolve_field_value(
+         &fixture.db_ops,
+         &stored_schema,
+         "secondary_field",
+         None,
+         None,
+     ).expect("Failed to query secondary field");
     
     assert_eq!(primary_query, primary_data);
     assert_eq!(secondary_query, secondary_data);
@@ -1206,12 +1213,13 @@ fn test_data_consistency_safeguards() {
     }
     
     // Verify final state is consistent and queryable (use stored schema)
-    let final_state = TransformUtils::resolve_field_value(
-        &fixture.db_ops,
-        &stored_schema,
-        "consistency_field",
-        None,
-    ).expect("Should be able to query final state after stress");
+          let final_state = TransformUtils::resolve_field_value(
+         &fixture.db_ops,
+         &stored_schema,
+         "consistency_field",
+         None,
+         None,
+     ).expect("Should be able to query final state after stress");
     
     println!("✅ Data integrity maintained after stress test");
     println!("   Final state: {}", final_state);
@@ -1239,12 +1247,13 @@ fn test_data_consistency_safeguards() {
         
         assert!(validation_result.success, "Field {} should still be functional", field_name);
         
-        let validation_query = TransformUtils::resolve_field_value(
-            &fixture.db_ops,
-            &retrieved_schema,
-            field_name,
-            None,
-        ).unwrap_or_else(|_| panic!("Failed to query field {}", field_name));
+                  let validation_query = TransformUtils::resolve_field_value(
+             &fixture.db_ops,
+             &retrieved_schema,
+             field_name,
+             None,
+             None,
+         ).unwrap_or_else(|_| panic!("Failed to query field {}", field_name));
         
         assert_eq!(validation_query, test_value);
     }

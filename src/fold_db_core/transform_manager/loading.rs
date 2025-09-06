@@ -43,12 +43,28 @@ impl TransformManager {
                     );
                     registered_transforms.insert(transform_id.clone(), transform.clone());
                     
-                    // Register field mappings for the new transform
-                    LoggingHelper::log_transform_registration(&transform_id, transform.get_inputs(), transform.get_output());
-                    for input in transform.get_inputs() {
-                        field_to_transforms.entry(input.clone()).or_insert_with(HashSet::new).insert(transform_id.clone());
-                        transform_to_fields.entry(transform_id.clone()).or_insert_with(HashSet::new).insert(input.to_string());
-                        LoggingHelper::log_field_mapping_creation(input, &transform_id);
+                    // Try to load transform registration to get trigger fields
+                    let trigger_fields = match self.db_ops.get_transform_registration(&transform_id) {
+                        Ok(Some(registration)) => {
+                            info!("🔍 Found transform registration for '{}' with trigger_fields: {:?}", transform_id, registration.trigger_fields);
+                            registration.trigger_fields
+                        }
+                        Ok(None) => {
+                            info!("⚠️ No transform registration found for '{}', using transform inputs", transform_id);
+                            transform.get_inputs().to_vec()
+                        }
+                        Err(e) => {
+                            log_feature!(LogFeature::Transform, warn, "Failed to load transform registration for '{}': {}, using transform inputs", transform_id, e);
+                            transform.get_inputs().to_vec()
+                        }
+                    };
+                    
+                    // Register field mappings for the new transform using trigger fields
+                    LoggingHelper::log_transform_registration(&transform_id, &trigger_fields, transform.get_output());
+                    for field_key in &trigger_fields {
+                        field_to_transforms.entry(field_key.clone()).or_insert_with(HashSet::new).insert(transform_id.clone());
+                        transform_to_fields.entry(transform_id.clone()).or_insert_with(HashSet::new).insert(field_key.clone());
+                        LoggingHelper::log_field_mapping_creation(field_key, &transform_id);
                     }
                 }
                 Ok(None) => {

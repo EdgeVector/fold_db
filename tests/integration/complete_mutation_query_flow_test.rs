@@ -145,7 +145,7 @@ fn query_field_value(
         println!("🔍 Querying {}.{} (expecting: {})", schema.name, field_name, expected_value);
         
         // Use the query system to resolve field value
-    let result = TransformUtils::resolve_field_value(&fixture.db_ops, schema, field_name, None)?;
+    let result = TransformUtils::resolve_field_value(&fixture.db_ops, schema, field_name, None, None)?;
         
         println!("✅ Query returned: {}", result);
         
@@ -374,7 +374,7 @@ fn test_concurrent_mutations_and_queries() {
     }
     
     // Verify final state is consistent
-    let final_result = TransformUtils::resolve_field_value(&fixture.db_ops, &schema, "value1", None)
+    let final_result = TransformUtils::resolve_field_value(&fixture.db_ops, &schema, "value1", None, None)
         .expect("Failed to query final state");
     
     println!("✅ Final field state after concurrent operations: {}", final_result);
@@ -538,10 +538,10 @@ fn test_complete_mutation_query_integration_workflow() {
     // Phase 4: Final Validation
     println!("\n📋 Phase 4: Final Validation");
     
-    let final_value1 = TransformUtils::resolve_field_value(&fixture.db_ops, &schema, "value1", None)
+    let final_value1 = TransformUtils::resolve_field_value(&fixture.db_ops, &schema, "value1", None, None)
         .expect("Failed final validation query for value1");
     
-    let final_value2 = TransformUtils::resolve_field_value(&fixture.db_ops, &schema, "value2", None)
+    let final_value2 = TransformUtils::resolve_field_value(&fixture.db_ops, &schema, "value2", None, None)
         .expect("Failed final validation query for value2");
     
     assert_eq!(final_value1, complex_update, "Final value1 should match complex update");

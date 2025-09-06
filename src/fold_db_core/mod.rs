@@ -376,6 +376,7 @@ impl FoldDB {
         use log::info;
         
         info!("🔍 EVENT-DRIVEN query for schema: {}", query.schema_name);
+        println!("🔍 DEBUG: Query called for schema: {}", query.schema_name);
         
         // Get schema first
         let schema = match self.schema_manager.get_schema(&query.schema_name)? {
@@ -421,16 +422,39 @@ impl FoldDB {
             None
         };
 
+        // Extract hash key filter if this is a HashRange schema with a filter
+        let hash_key_filter: Option<Value> = if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
+            println!("🔍 DEBUG: Schema '{}' is HashRange type", schema.name);
+            if let Some(filter) = &query.filter {
+                println!("🔍 DEBUG: Query has filter: {:?}", filter);
+                if let Some(hash_filter_obj) = filter.get("hash_filter") {
+                    println!("🔑 HashRange schema detected with hash_filter: {:?}", hash_filter_obj);
+                    Some(hash_filter_obj.clone())
+                } else {
+                    println!("🔍 DEBUG: No hash_filter found in query filter");
+                    None
+                }
+            } else {
+                println!("🔍 DEBUG: Query has no filter");
+                None
+            }
+        } else {
+            println!("🔍 DEBUG: Schema '{}' is not HashRange type: {:?}", schema.name, schema.schema_type);
+            None
+        };
+
         // Retrieve actual field values by accessing database directly
         let mut field_values = serde_json::Map::new();
         
         for field_name in &query.fields {
-            match self.get_field_value_from_db(&schema, field_name, range_key_filter.clone()) {
+            println!("🔍 DEBUG: Retrieving field '{}' for schema '{}'", field_name, schema.name);
+            match self.get_field_value_from_db(&schema, field_name, range_key_filter.clone(), hash_key_filter.clone()) {
                 Ok(value) => {
+                    println!("✅ DEBUG: Retrieved field '{}' value: {}", field_name, value);
                     field_values.insert(field_name.clone(), value);
                 }
                 Err(e) => {
-                    info!("Failed to retrieve field '{}': {}", field_name, e);
+                    println!("❌ DEBUG: Failed to retrieve field '{}': {}", field_name, e);
                     field_values.insert(field_name.clone(), serde_json::Value::Null);
                 }
             }
@@ -441,13 +465,14 @@ impl FoldDB {
     }
 
     /// Get field value directly from database using unified resolver
-    fn get_field_value_from_db(&self, schema: &Schema, field_name: &str, range_key_filter: Option<Value>) -> Result<Value, SchemaError> {
+    fn get_field_value_from_db(&self, schema: &Schema, field_name: &str, range_key_filter: Option<Value>, hash_key_filter: Option<Value>) -> Result<Value, SchemaError> {
         // Use the unified FieldValueResolver to eliminate duplicate code
-        crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(&self.db_ops, schema, field_name, range_key_filter)
+        crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(&self.db_ops, schema, field_name, range_key_filter, hash_key_filter)
     }
 
     /// Query a schema (compatibility method)
     pub fn query_schema(&self, query: Query) -> Vec<Result<Value, SchemaError>> {
+        println!("🔍 DEBUG: query_schema called for schema: {}", query.schema_name);
         // Delegate to the main query method and wrap in Vec
         vec![self.query(query)]
     }
@@ -648,12 +673,19 @@ impl FoldDB {
     /// Execute a transform by ID using direct execution
     /// This executes the transform immediately and returns the result
     pub fn run_transform(&self, transform_id: &str) -> Result<Value, SchemaError> {
-        log_feature!(LogFeature::Transform, info, "🔄 run_transform called for {} - using direct execution", transform_id);
+        println!("🔄 run_transform called for {} - using direct execution", transform_id);
         
         // Use direct execution through the transform manager
+        println!("🔄 About to call TransformRunner::execute_transform_now for transform: {}", transform_id);
         match TransformRunner::execute_transform_now(&*self.transform_manager, transform_id) {
-            Ok(result) => Ok(result),
-            Err(e) => Err(SchemaError::InvalidData(e.to_string())),
+            Ok(result) => {
+                println!("🔄 TransformRunner::execute_transform_now completed successfully with result: {}", result);
+                Ok(result)
+            },
+            Err(e) => {
+                println!("🔄 TransformRunner::execute_transform_now failed with error: {}", e);
+                Err(SchemaError::InvalidData(e.to_string()))
+            },
         }
     }
 
