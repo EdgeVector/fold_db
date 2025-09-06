@@ -12,6 +12,7 @@ import SelectField from '../form/SelectField';
 import RangeField from '../form/RangeField';
 import { FORM_LABELS } from '../../constants/ui.js';
 import { SCHEMA_ERROR_MESSAGES } from '../../constants/redux.js';
+import { getHashField, getRangeField } from '../../utils/rangeSchemaHelpers.js';
 
 /**
  * @typedef {Object} QueryFormProps
@@ -21,9 +22,11 @@ import { SCHEMA_ERROR_MESSAGES } from '../../constants/redux.js';
  * @property {function} onFieldValueChange - Handle field value changes
  * @property {function} onRangeFilterChange - Handle range filter changes
  * @property {function} onRangeSchemaFilterChange - Handle range schema filter changes
+ * @property {function} onHashKeyChange - Handle hash key changes for HashRange schemas
  * @property {Object[]} approvedSchemas - Array of approved schemas
  * @property {boolean} schemasLoading - Loading state for schemas
  * @property {boolean} isRangeSchema - Whether selected schema is range schema
+ * @property {boolean} isHashRangeSchema - Whether selected schema is HashRange schema
  * @property {string|null} rangeKey - Range key for selected schema
  * @property {string} [className] - Additional CSS classes
  */
@@ -41,9 +44,11 @@ function QueryForm({
   onFieldValueChange,
   onRangeFilterChange,
   onRangeSchemaFilterChange,
+  onHashKeyChange,
   approvedSchemas,
   schemasLoading,
   isRangeSchema,
+  isHashRangeSchema,
   rangeKey,
   className = ''
 }) {
@@ -137,21 +142,18 @@ function QueryForm({
         />
       </FieldWrapper>
 
-      {/* Single Field Type Checkboxes */}
-      {queryState?.selectedSchema && Object.entries(selectedSchemaFields).some(([_, field]) =>
-        field.field_type === 'Single' || field.field_type === 'String' || field.field_type === 'Number'
-      ) && (
+      {/* Field Selection - Show for all field types including HashRange */}
+      {queryState?.selectedSchema && Object.entries(selectedSchemaFields).length > 0 && (
         <FieldWrapper
-          label="Single Field Options"
-          name="singleFields"
+          label="Field Selection"
+          name="fields"
           required
           error={validationErrors.fields}
-          helpText="Select single-value fields to include"
+          helpText="Select fields to include in your query"
         >
           <div className="bg-gray-50 rounded-md p-4">
             <div className="space-y-3">
               {Object.entries(selectedSchemaFields)
-                .filter(([_, field]) => field.field_type === 'Single' || field.field_type === 'String' || field.field_type === 'Number')
                 .map(([fieldName, field]) => (
                 <label key={fieldName} className="relative flex items-start">
                   <div className="flex items-center h-5">
@@ -165,7 +167,7 @@ function QueryForm({
                   <div className="ml-3 flex items-center">
                     <span className="text-sm font-medium text-gray-700">{fieldName}</span>
                     <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                      {field.field_type}
+                      {field.field_type || 'HashRange'}
                     </span>
                     {field.required && (
                       <span className="ml-1 text-red-500 text-xs">*</span>
@@ -178,6 +180,58 @@ function QueryForm({
         </FieldWrapper>
       )}
 
+
+      {/* HashRange Schema Filter - only show for HashRange schemas */}
+      {isHashRangeSchema && (
+        <FieldWrapper
+          label="HashRange Filter"
+          name="hashRangeFilter"
+          helpText="Filter data by hash and range key values"
+        >
+          <div className="bg-purple-50 rounded-md p-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Hash Key Input */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Hash Key
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter hash key value"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  value={queryState?.hashKeyValue || ''}
+                  onChange={(e) => onHashKeyChange(e.target.value)}
+                />
+                <div className="text-xs text-gray-500">
+                  Hash field: {getHashField(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
+                </div>
+              </div>
+
+              {/* Range Key Input */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Range Key
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter range key value"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  value={queryState?.rangeKeyValue || ''}
+                  onChange={(e) => onRangeSchemaFilterChange({ key: e.target.value })}
+                />
+                <div className="text-xs text-gray-500">
+                  Range field: {getRangeField(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
+                </div>
+              </div>
+            </div>
+            
+            <div className="text-xs text-gray-500">
+              <p><strong>Hash Key:</strong> Used for partitioning data across multiple nodes</p>
+              <p><strong>Range Key:</strong> Used for ordering and range queries within a partition</p>
+            </div>
+          </div>
+        </FieldWrapper>
+      )}
 
       {/* Range Schema Filter - only show for range schemas */}
       {isRangeSchema && rangeKey && (

@@ -567,7 +567,7 @@ fn test_transform_registration_and_retrieval() {
     // Test 3: Verify transform properties
     let transform = stored_transform.unwrap().unwrap();
     assert!(transform.is_declarative());
-    assert_eq!(transform.get_inputs(), vec!["blogpost"]); // Default input from registration
+    assert_eq!(transform.get_inputs(), vec!["input"]); // Derived from field expression "input.map().value"
     assert_eq!(transform.get_output(), "TestTransform.key");
     
     // Test 4: Verify declarative schema in stored transform

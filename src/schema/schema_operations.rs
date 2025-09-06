@@ -302,9 +302,9 @@ impl SchemaCore {
         
         // If no input dependencies found, use a default
         if input_molecules.is_empty() {
-            input_molecules.push("blogpost".to_string());
-            input_names.push("blogpost".to_string());
-            info!("📋 Using default input dependency: blogpost");
+            input_molecules.push("BlogPost".to_string());
+            input_names.push("BlogPost".to_string());
+            info!("📋 Using default input dependency: BlogPost");
         }
         
         // Create trigger fields based on input dependencies

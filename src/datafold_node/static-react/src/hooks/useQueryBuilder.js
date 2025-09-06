@@ -7,6 +7,7 @@
 import { useMemo, useCallback } from 'react';
 import { useAppSelector } from '../store/hooks';
 import { selectApprovedSchemas } from '../store/schemaSlice';
+import { isHashRangeSchema, formatHashRangeQuery } from '../utils/rangeSchemaHelpers.js';
 
 /**
  * Query builder hook that handles query construction and validation
@@ -144,6 +145,27 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
     // Add field values if there are any (for range keys or other purposes)
     if (fieldValues && Object.keys(fieldValues).length > 0) {
       builtQuery.fieldValues = fieldValues;
+    }
+
+    // Handle HashRange schema queries
+    if (isHashRangeSchema(selectedSchemaObj)) {
+      const hashKey = queryState.hashKeyValue;
+      const rangeKey = queryState.rangeSchemaFilter?.key;
+      
+      if (hashKey || rangeKey) {
+        builtQuery.filter = {};
+        
+        if (hashKey && hashKey.trim()) {
+          builtQuery.filter.hash_filter = {
+            Key: hashKey.trim()
+          };
+        }
+        
+        if (rangeKey && rangeKey.trim()) {
+          // For HashRange schemas, range key filtering would go here if needed
+          // Currently the backend only supports hash key filtering
+        }
+      }
     }
 
     // Add range schema filter for range schemas (this is the correct one for Range schemas)
