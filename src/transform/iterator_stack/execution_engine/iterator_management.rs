@@ -6,18 +6,12 @@ use serde_json::Value;
 use log::debug;
 
 /// Manager for iterator stack operations
-pub struct IteratorManager {
-    /// Field evaluator for processing field expressions
-    #[allow(dead_code)]
-    field_evaluator: super::field_evaluation::DefaultFieldEvaluator,
-}
+pub struct IteratorManager;
 
 impl IteratorManager {
     /// Creates a new iterator manager
     pub fn new() -> Self {
-        Self {
-            field_evaluator: super::field_evaluation::DefaultFieldEvaluator,
-        }
+        Self
     }
 
     /// Initializes the iterator stack with input data (optimized single-pass approach)

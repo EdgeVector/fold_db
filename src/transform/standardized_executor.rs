@@ -84,17 +84,12 @@ pub trait MutationExecutor {
 }
 
 /// Standardized transform executor that enforces the three-phase execution pattern
-pub struct StandardizedTransformExecutor {
-    #[allow(dead_code)]
-    mutation_service: Arc<MutationService>,
-}
+pub struct StandardizedTransformExecutor;
 
 impl StandardizedTransformExecutor {
     /// Create a new standardized transform executor
-    pub fn new(message_bus: Arc<MessageBus>) -> Self {
-        Self {
-            mutation_service: Arc::new(MutationService::new(message_bus)),
-        }
+    pub fn new(_message_bus: Arc<MessageBus>) -> Self {
+        Self
     }
 
     /// Execute a transform following the standardized three-phase pattern:
@@ -584,14 +579,11 @@ impl OrchestratedTransformExecutor {
 }
 
 /// Mutation service-backed mutation executor
-pub struct MutationServiceExecutor {
-    #[allow(dead_code)]
-    mutation_service: Arc<MutationService>,
-}
+pub struct MutationServiceExecutor;
 
 impl MutationServiceExecutor {
-    pub fn new(mutation_service: Arc<MutationService>) -> Self {
-        Self { mutation_service }
+    pub fn new(_mutation_service: Arc<MutationService>) -> Self {
+        Self
     }
 }
 
@@ -696,11 +688,9 @@ mod tests {
 
         // Create executor (we'll need to mock the message bus for this test)
         // For now, we'll test the individual phases
-        let executor = StandardizedTransformExecutor {
-            mutation_service: Arc::new(MutationService::new(
-                Arc::new(crate::fold_db_core::infrastructure::message_bus::MessageBus::new())
-            )),
-        };
+        let executor = StandardizedTransformExecutor::new(
+            Arc::new(crate::fold_db_core::infrastructure::message_bus::MessageBus::new())
+        );
 
         // Test Phase 1: Gather inputs
         let (input_values, input_duration) = executor.gather_inputs(&transform, &input_provider).unwrap();

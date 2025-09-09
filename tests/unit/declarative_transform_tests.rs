@@ -3,64 +3,24 @@ use datafold::schema::types::{
     Transform,
 };
 use datafold::schema::SchemaType;
-use datafold::schema::core::SchemaCore;
 use std::collections::HashMap;
-use tempfile::TempDir;
-use sled;
 
-/// Test fixture for declarative transform tests
-struct DeclarativeTransformTestFixture {
-    schema_core: SchemaCore,
-    temp_dir: TempDir,
-}
-
-impl DeclarativeTransformTestFixture {
-    fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let temp_dir = TempDir::new()?;
-        let db = sled::open(temp_dir.path())?;
-        let db_ops = std::sync::Arc::new(datafold::db_operations::DbOperations::new(db)?);
-        let message_bus = std::sync::Arc::new(datafold::fold_db_core::infrastructure::message_bus::MessageBus::new());
-        let schema_core = SchemaCore::new(
-            temp_dir.path().to_str().unwrap(),
-            db_ops.clone(),
-            message_bus,
-        )?;
-        
-        Ok(Self {
-            schema_core,
-            temp_dir,
-        })
-    }
-}
+// Import shared test utilities
+use crate::declarative_transform_test_utils::{
+    DeclarativeTransformTestFixture, TestSchemaBuilder, TestAssertions
+};
 
 /// Test declarative schema parsing
 #[test]
 fn test_declarative_schema_parsing() {
     let fixture = DeclarativeTransformTestFixture::new().expect("Failed to create test fixture");
     
-    // Create a simple declarative schema
-    let declarative_schema = DeclarativeSchemaDefinition {
-        name: "TestWordIndex".to_string(),
-        schema_type: SchemaType::HashRange,
-        fields: HashMap::from([
-            ("word".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("source.map().content.split_by_word().map()".to_string()),
-            }),
-            ("source_ref".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("source.map().$atom_uuid".to_string()),
-            }),
-        ]),
-        key: Some(KeyConfig {
-            hash_field: "source.map().content.split_by_word().map()".to_string(),
-            range_field: "source.map().timestamp".to_string(),
-        }),
-    };
+    // Create a simple declarative schema using shared utility
+    let declarative_schema = TestSchemaBuilder::create_hashrange_schema("TestWordIndex");
     
     // Test schema validation
     let validation_result = declarative_schema.validate();
-    assert!(validation_result.is_ok(), "Schema validation failed: {:?}", validation_result);
+    TestAssertions::assert_schema_validation_success(validation_result, "Schema parsing test");
     
     // Test schema interpretation
     let schema_result = fixture.schema_core.interpret_declarative_schema(declarative_schema);
@@ -79,24 +39,7 @@ fn test_declarative_schema_parsing() {
 /// Test declarative transform creation
 #[test]
 fn test_declarative_transform_creation() {
-    let declarative_schema = DeclarativeSchemaDefinition {
-        name: "BlogPostWordIndex".to_string(),
-        schema_type: SchemaType::HashRange,
-        fields: HashMap::from([
-            ("blog".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("blogpost.map().$atom_uuid".to_string()),
-            }),
-            ("author".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("blogpost.map().author.$atom_uuid".to_string()),
-            }),
-        ]),
-        key: Some(KeyConfig {
-            hash_field: "blogpost.map().content.split_by_word().map()".to_string(),
-            range_field: "blogpost.map().publish_date".to_string(),
-        }),
-    };
+    let declarative_schema = TestSchemaBuilder::create_hashrange_schema("BlogPostWordIndex");
     
     // Create transform from declarative schema
     let transform = Transform::from_declarative_schema(
@@ -105,11 +48,10 @@ fn test_declarative_transform_creation() {
         "BlogPostWordIndex.key".to_string(),
     );
     
-    // Verify transform properties
-    assert!(transform.is_declarative());
-    assert!(!transform.is_procedural());
-    assert_eq!(transform.get_inputs(), vec!["blogpost"]);
-    assert_eq!(transform.get_output(), "BlogPostWordIndex.key");
+    // Verify transform properties using shared assertions
+    TestAssertions::assert_transform_is_declarative(&transform, "Transform creation test");
+    TestAssertions::assert_transform_inputs(&transform, &["blogpost"], "Transform creation test");
+    TestAssertions::assert_transform_output(&transform, "BlogPostWordIndex.key", "Transform creation test");
     
     // Verify declarative schema is accessible
     let retrieved_schema = transform.get_declarative_schema().expect("Should have declarative schema");
@@ -122,17 +64,7 @@ fn test_declarative_transform_creation() {
 fn test_declarative_transform_registration() {
     let fixture = DeclarativeTransformTestFixture::new().expect("Failed to create test fixture");
     
-    let declarative_schema = DeclarativeSchemaDefinition {
-        name: "TestTransform".to_string(),
-        schema_type: SchemaType::Single,
-        fields: HashMap::from([
-            ("processed".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("input.map().value".to_string()),
-            }),
-        ]),
-        key: None,
-    };
+    let declarative_schema = TestSchemaBuilder::create_single_schema("TestTransform");
     
     // Test transform registration
     let registration_result = fixture.schema_core.register_declarative_transform(&declarative_schema);
@@ -150,28 +82,7 @@ fn test_declarative_transform_registration() {
 fn test_complex_declarative_schema() {
     let fixture = DeclarativeTransformTestFixture::new().expect("Failed to create test fixture");
     
-    let declarative_schema = DeclarativeSchemaDefinition {
-        name: "ComplexIndex".to_string(),
-        schema_type: SchemaType::HashRange,
-        fields: HashMap::from([
-            ("main_content".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("post.map().content".to_string()),
-            }),
-            ("author_info".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("post.map().author.name".to_string()),
-            }),
-            ("metadata".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("post.map().metadata.tags".to_string()),
-            }),
-        ]),
-        key: Some(KeyConfig {
-            hash_field: "post.map().content.split_by_word().map()".to_string(),
-            range_field: "post.map().created_at".to_string(),
-        }),
-    };
+    let declarative_schema = TestSchemaBuilder::create_complex_schema("ComplexIndex");
     
     // Test schema interpretation
     let schema_result = fixture.schema_core.interpret_declarative_schema(declarative_schema);
