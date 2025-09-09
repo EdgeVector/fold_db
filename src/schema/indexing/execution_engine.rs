@@ -53,6 +53,8 @@ pub struct IndexEntry {
     pub metadata: HashMap<String, Value>,
     /// Depth at which this entry was emitted
     pub emission_depth: usize,
+    /// The expression that produced this entry
+    pub expression: String,
 }
 
 /// Statistics about execution performance
@@ -142,12 +144,22 @@ impl ExecutionEngine {
         let mut cache_hits = 0;
         let mut cache_misses = 0;
 
-        // Execute each field expression
-        for (i, chain) in chains.iter().enumerate() {
-            println!("DEBUG: Executing chain {}: {} (depth: {})", i, chain.expression, chain.depth);
-            let field_result = self.execute_single_field(chain, &context)?;
-            println!("DEBUG: Chain {} produced {} entries", i, field_result.entries.len());
+        // Group chains by expression to avoid duplicate execution
+        let mut expression_groups: HashMap<String, Vec<&ParsedChain>> = HashMap::new();
+        for chain in chains.iter() {
+            expression_groups.entry(chain.expression.clone()).or_default().push(chain);
+        }
 
+        // Execute each unique expression only once
+        for (expression, chain_group) in expression_groups.iter() {
+            println!("DEBUG: Executing unique expression: {} (used by {} fields)", expression, chain_group.len());
+            
+            // Use the first chain as the representative for execution
+            let representative_chain = chain_group[0];
+            let field_result = self.execute_single_field(representative_chain, &context)?;
+            println!("DEBUG: Expression '{}' produced {} entries", expression, field_result.entries.len());
+
+            // Add the results once (not duplicated for each field)
             index_entries.extend(field_result.entries);
             warnings.extend(field_result.warnings);
 
@@ -246,8 +258,10 @@ impl ExecutionEngine {
     fn initialize_stack(&mut self, stack: &mut IteratorStack, input_data: &Value) -> IteratorStackResult<()> {
         println!("DEBUG: Initializing iterator stack with input data: {}", input_data);
 
-        // Set the root data
-        stack.set_current_value("_root".to_string(), input_data.clone())?;
+        // Set the root data directly in the root context
+        if let Some(root_context) = stack.context_at_depth_mut(0) {
+            root_context.values.insert("_root".to_string(), input_data.clone());
+        }
 
         // Initialize each scope with appropriate data
         let scopes = stack.len();
@@ -265,8 +279,10 @@ impl ExecutionEngine {
                 println!("DEBUG: Extracted {} items for depth {}: {:?}", items.len(), depth, items);
                 scope_items.insert(depth, items);
 
-                // Set temporary context
-                stack.set_current_value(format!("depth_{}", depth), scope_data)?;
+                // Set temporary context directly
+                if let Some(context) = stack.context_at_depth_mut(depth) {
+                    context.values.insert(format!("depth_{}", depth), scope_data);
+                }
             }
         }
 
@@ -343,7 +359,9 @@ impl ExecutionEngine {
                 }
 
                 println!("DEBUG: Final scope data for depth {}: {}", depth, scope_data);
-                stack.set_current_value(format!("depth_{}", depth), scope_data)?;
+                if let Some(context) = stack.context_at_depth_mut(depth) {
+                    context.values.insert(format!("depth_{}", depth), scope_data);
+                }
             }
         }
 
@@ -483,9 +501,51 @@ impl ExecutionEngine {
         println!("DEBUG: Stack can iterate: {}", can_iterate);
 
         if !can_iterate {
-            println!("DEBUG: No iterators can iterate, returning empty result");
+            // If we have no iterators, this might be a simple field expression
+            // Try to evaluate it directly without iteration
+            println!("DEBUG: No iterators can iterate, trying direct evaluation");
+            
+            // For simple field expressions, we need to ensure the input data is available
+            // If the stack has no scopes, create a temporary root scope
+            if stack.is_empty() {
+                // Create a temporary root scope for simple field expressions
+                let root_scope = crate::schema::indexing::iterator_stack::ActiveScope {
+                    depth: 0,
+                    iterator_type: crate::schema::indexing::iterator_stack::IteratorType::Schema { 
+                        field_name: "_root".to_string() 
+                    },
+                    position: 0,
+                    total_items: 1,
+                    branch_path: "_root".to_string(),
+                    parent_depth: None,
+                };
+                stack.push_scope(root_scope).map_err(|err| {
+                    IteratorStackError::ExecutionError {
+                        message: format!("Failed to create root scope: {}", err),
+                    }
+                })?;
+            }
+            
+            // Ensure the input data is available in the root context
+            if let Some(root_context) = stack.context_at_depth_mut(0) {
+                root_context.values.insert("_root".to_string(), context.input_data.clone());
+            }
+            
+            let field_value = self.evaluate_field_expression(chain, stack, 0)?;
+            println!("DEBUG: Direct evaluation returned: {}", field_value);
+            
+            // Create a single entry for simple field expressions
+            let entry = IndexEntry {
+                hash_value: field_value.clone(),
+                range_value: field_value.clone(),
+                atom_uuid: format!("simple_{}", chain.expression),
+                metadata: HashMap::new(),
+                emission_depth: 0,
+                expression: chain.expression.clone(),
+            };
+            
             return Ok(FieldExecutionResult {
-                entries: vec![],
+                entries: vec![entry],
                 warnings,
             });
         }
@@ -510,6 +570,7 @@ impl ExecutionEngine {
                 atom_uuid: self.generate_atom_uuid(current_stack)?,
                 metadata: self.extract_metadata(current_stack)?,
                 emission_depth: context.emission_depth,
+                expression: chain.expression.clone(),
             });
 
             Ok(())
@@ -543,36 +604,158 @@ impl ExecutionEngine {
         let mut entries = Vec::new();
         let mut warnings = Vec::new();
 
-        // Evaluate field at its own depth, then broadcast to emission depth
-        let field_value = self.evaluate_field_expression(chain, stack, chain.depth)?;
+        // Check if we have any iterators that can actually iterate
+        let can_iterate = (0..stack.len()).any(|depth| {
+            if let Some(_scope) = stack.scope_at_depth(depth) {
+                if let Some(context) = stack.context_at_depth(depth) {
+                    !context.iterator_state.items.is_empty() && !context.iterator_state.completed
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        });
 
-        // Count how many entries will be generated at emission depth
-        let emission_count = self.count_iterations_at_depth(stack, context.emission_depth)?;
-
-        // Generate broadcast warning if too many broadcasts
-        if emission_count > 1000 {
-            warnings.push(ExecutionWarning {
-                warning_type: ExecutionWarningType::ExcessiveBroadcasting,
-                message: format!(
-                    "Field '{}' will be broadcast {} times, which may impact performance",
-                    chain.expression, emission_count
-                ),
-                field: Some(chain.expression.clone()),
+        if !can_iterate {
+            // If we have no iterators, this might be a simple field expression
+            // Try to evaluate it directly without iteration
+            println!("DEBUG: Broadcast - No iterators can iterate, trying direct evaluation");
+            
+            // For simple field expressions, we need to ensure the input data is available
+            // If the stack has no scopes, create a temporary root scope
+            if stack.is_empty() {
+                // Create a temporary root scope for simple field expressions
+                let root_scope = crate::schema::indexing::iterator_stack::ActiveScope {
+                    depth: 0,
+                    iterator_type: crate::schema::indexing::iterator_stack::IteratorType::Schema { 
+                        field_name: "_root".to_string() 
+                    },
+                    position: 0,
+                    total_items: 1,
+                    branch_path: "_root".to_string(),
+                    parent_depth: None,
+                };
+                stack.push_scope(root_scope).map_err(|err| {
+                    IteratorStackError::ExecutionError {
+                        message: format!("Failed to create root scope: {}", err),
+                    }
+                })?;
+            }
+            
+            // Ensure the input data is available in the root context
+            if let Some(root_context) = stack.context_at_depth_mut(0) {
+                root_context.values.insert("_root".to_string(), context.input_data.clone());
+            }
+            
+            let field_value = self.evaluate_field_expression(chain, stack, 0)?;
+            println!("DEBUG: Broadcast - Direct evaluation returned: {}", field_value);
+            
+            // Create a single entry for simple field expressions
+            let entry = IndexEntry {
+                hash_value: field_value.clone(),
+                range_value: field_value.clone(),
+                atom_uuid: format!("simple_{}", chain.expression),
+                metadata: HashMap::new(),
+                emission_depth: 0,
+                expression: chain.expression.clone(),
+            };
+            
+            return Ok(FieldExecutionResult {
+                entries: vec![entry],
+                warnings,
             });
         }
 
-        // Create one entry per iteration at emission depth
-        self.iterate_to_depth(stack, context.emission_depth, |current_stack, _current_path| {
-            entries.push(IndexEntry {
-                hash_value: field_value.clone(), // Same value broadcast
-                range_value: Value::Null,
-                atom_uuid: self.generate_atom_uuid(current_stack)?,
-                metadata: self.extract_metadata(current_stack)?,
-                emission_depth: context.emission_depth,
-            });
+        // For broadcast alignment, we need to evaluate the field at the depth where it can be resolved
+        // and then broadcast that value to the emission depth
+        
+        // For broadcast alignment, we need to create entries at the emission depth
+        // The emission depth should be deeper than the field's depth
+        if context.emission_depth > chain.depth {
+            // For broadcast, we need to estimate how many entries to create
+            // based on the deepest available depth in the stack
+            // Find the actual maximum depth of active scopes
+            let mut actual_max_depth = 0;
+            for d in 0..=10 {
+                if stack.context_at_depth(d).is_some() {
+                    actual_max_depth = d;
+                }
+            }
+            let mut emission_count = 1;
 
-            Ok(())
-        })?;
+            // Calculate the total number of items that would be at the emission depth
+            for d in 0..=actual_max_depth {
+                if let Some(context) = stack.context_at_depth(d) {
+                    emission_count *= context.iterator_state.items.len().max(1);
+                }
+            }
+
+            println!("DEBUG: Broadcast emission_count: {}, actual_max_depth: {}, emission_depth: {}", emission_count, actual_max_depth, context.emission_depth);
+            
+            if emission_count == 0 {
+                // No iterations at emission depth, nothing to broadcast
+                println!("DEBUG: Broadcast returning early - emission_count is 0");
+                return Ok(FieldExecutionResult {
+                    entries,
+                    warnings,
+                });
+            }
+            
+            // Generate broadcast warning if too many broadcasts
+            if emission_count > 1000 {
+                warnings.push(ExecutionWarning {
+                    warning_type: ExecutionWarningType::ExcessiveBroadcasting,
+                    message: format!(
+                        "Field '{}' will be broadcast {} times, which may impact performance",
+                        chain.expression, emission_count
+                    ),
+                    field: Some(chain.expression.clone()),
+                });
+            }
+
+            // For broadcast alignment, we need to create entries by iterating through
+            // the deepest available depth and creating one entry per item
+            if let Some(deepest_context) = stack.context_at_depth(actual_max_depth) {
+                let items = deepest_context.iterator_state.items.clone();
+                
+                for _item in items.iter() {
+                    // Set current item in context
+                    if let Some(context_mut) = stack.context_at_depth_mut(actual_max_depth) {
+                        context_mut.iterator_state.current_item = Some(_item.clone());
+                    }
+
+                    // Evaluate the field expression for each item to get the value to broadcast
+                    // For broadcast, evaluate at the depth where the field can be resolved
+                    let evaluation_depth = if chain.depth > actual_max_depth {
+                        actual_max_depth
+                    } else {
+                        chain.depth
+                    };
+                    let field_value = self.evaluate_field_expression(chain, stack, evaluation_depth)?;
+
+                    entries.push(IndexEntry {
+                        hash_value: field_value, // Value broadcast for this item
+                        range_value: Value::Null,
+                        atom_uuid: self.generate_atom_uuid(stack)?,
+                        metadata: self.extract_metadata(stack)?,
+                        emission_depth: context.emission_depth,
+                        expression: chain.expression.clone(),
+                    });
+                }
+            }
+        } else {
+            // If emission depth is not deeper, just create one entry
+            let field_value = self.evaluate_field_expression(chain, stack, chain.depth)?;
+            entries.push(IndexEntry {
+                hash_value: field_value,
+                range_value: Value::Null,
+                atom_uuid: self.generate_atom_uuid(stack)?,
+                metadata: self.extract_metadata(stack)?,
+                emission_depth: context.emission_depth,
+                expression: chain.expression.clone(),
+            });
+        }
 
         Ok(FieldExecutionResult {
             entries,
@@ -621,6 +804,7 @@ impl ExecutionEngine {
                 atom_uuid: self.generate_atom_uuid(current_stack)?,
                 metadata: self.extract_metadata(current_stack)?,
                 emission_depth: context.emission_depth,
+                expression: chain.expression.clone(),
             });
 
             Ok(())
@@ -718,12 +902,13 @@ impl ExecutionEngine {
                 println!("DEBUG: evaluate_field_expression - current_item from depth {}: {}", iteration_depth, item);
                 item.clone()
             } else {
-                println!("DEBUG: evaluate_field_expression - no current_item in context at depth {}", iteration_depth);
-                return Ok(Value::Null);
+                // No current item at this depth - try to get from parent context or use fallback
+                println!("DEBUG: evaluate_field_expression - no current_item in context at depth {}, trying fallback", iteration_depth);
+                return self.get_fallback_context_value(stack, iteration_depth, chain);
             }
         } else {
-            println!("DEBUG: evaluate_field_expression - no context at depth {}", iteration_depth);
-            return Ok(Value::Null);
+            println!("DEBUG: evaluate_field_expression - no context at depth {}, trying fallback", iteration_depth);
+            return self.get_fallback_context_value(stack, iteration_depth, chain);
         };
 
         println!("DEBUG: evaluate_field_expression - chain operations: {:?}", chain.operations);
@@ -743,6 +928,76 @@ impl ExecutionEngine {
         
         println!("DEBUG: evaluate_field_expression returned: {}", current_value);
         Ok(current_value)
+    }
+
+    /// Gets a fallback context value when the primary context is not available
+    fn get_fallback_context_value(
+        &self,
+        stack: &IteratorStack,
+        iteration_depth: usize,
+        chain: &ParsedChain,
+    ) -> IteratorStackResult<Value> {
+        println!("DEBUG: get_fallback_context_value - depth: {}, chain: {:?}", iteration_depth, chain.operations);
+        
+        // Try to get from parent context
+        if iteration_depth > 0 {
+            for parent_depth in (0..iteration_depth).rev() {
+                if let Some(parent_context) = stack.context_at_depth(parent_depth) {
+                    if let Some(parent_item) = &parent_context.iterator_state.current_item {
+                        println!("DEBUG: get_fallback_context_value - found parent item at depth {}: {}", parent_depth, parent_item);
+                        
+                        // Apply the chain operations starting from the parent item
+                        let mut current_value = parent_item.clone();
+                        
+                        // Apply operations that haven't been applied yet by the iterator
+                        let remaining_operations = self.filter_operations_for_depth(&chain.operations, parent_depth);
+                        println!("DEBUG: get_fallback_context_value - applying remaining operations: {:?}", remaining_operations);
+                        
+                        for operation in &remaining_operations {
+                            current_value = self.process_operation(operation, current_value)?;
+                        }
+                        
+                        println!("DEBUG: get_fallback_context_value - returning: {}", current_value);
+                        return Ok(current_value);
+                    }
+                }
+            }
+        }
+        
+        // Try to get from root context
+        if let Some(root_context) = stack.context_at_depth(0) {
+            if let Some(root_item) = &root_context.iterator_state.current_item {
+                println!("DEBUG: get_fallback_context_value - found root item: {}", root_item);
+                
+                // Apply all chain operations from root
+                let mut current_value = root_item.clone();
+                
+                for operation in &chain.operations {
+                    current_value = self.process_operation(operation, current_value)?;
+                }
+                
+                println!("DEBUG: get_fallback_context_value - returning from root: {}", current_value);
+                return Ok(current_value);
+            }
+        }
+        
+        // Last resort: try to get from root data
+        if let Some(root_data) = stack.get_value("_root") {
+            println!("DEBUG: get_fallback_context_value - using root data: {}", root_data);
+            
+            // Apply all chain operations from root data
+            let mut current_value = root_data.clone();
+            
+            for operation in &chain.operations {
+                current_value = self.process_operation(operation, current_value)?;
+            }
+            
+            println!("DEBUG: get_fallback_context_value - returning from root data: {}", current_value);
+            return Ok(current_value);
+        }
+        
+        println!("DEBUG: get_fallback_context_value - no fallback available, returning Null");
+        Ok(Value::Null)
     }
 
     /// Filters chain operations based on what has already been applied by the iterator
@@ -891,22 +1146,6 @@ impl ExecutionEngine {
         Ok(metadata)
     }
 
-    /// Counts the number of iterations at a specific depth
-    fn count_iterations_at_depth(
-        &self,
-        stack: &IteratorStack,
-        depth: usize,
-    ) -> IteratorStackResult<usize> {
-        let mut count = 1;
-        
-        for d in 0..=depth {
-            if let Some(context) = stack.context_at_depth(d) {
-                count *= context.iterator_state.items.len().max(1);
-            }
-        }
-        
-        Ok(count)
-    }
 
     /// Applies a reducer function to a collection of values
     fn apply_reducer(&self, values: &[Value], reducer_name: &str) -> IteratorStackResult<Value> {
@@ -937,8 +1176,16 @@ impl ExecutionEngine {
         entries: &[IndexEntry],
         _context: &ExecutionContext,
     ) -> IteratorStackResult<Vec<IndexEntry>> {
-        // Group entries by emission context and combine them
-        // This is where hash_field and range_field would be combined
+        // Group entries by their emission context (depth, path, etc.)
+        // and combine field values from different expressions
+        
+        if entries.is_empty() {
+            return Ok(vec![]);
+        }
+        
+        // For now, just return the entries as-is
+        // The aggregation logic will handle combining field values
+        // TODO: Implement proper field combination logic
         Ok(entries.to_vec())
     }
 

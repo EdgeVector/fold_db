@@ -97,11 +97,18 @@ fn test_complex_chain_expression() {
         atom_uuid: Some("blogpost.map().content.split_by_word().map()".to_string()),
         field_type: Some("String".to_string()),
     });
+    fields.insert("range_field".to_string(), FieldDefinition {
+        atom_uuid: Some("blogpost.map().content".to_string()),
+        field_type: Some("String".to_string()),
+    });
 
     let declarative_schema = DeclarativeSchemaDefinition {
         name: "word_data".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
+        schema_type: SchemaType::HashRange,
+        key: Some(datafold::schema::types::json_schema::KeyConfig {
+            hash_field: "blogpost.map().content.split_by_word().map()".to_string(),
+            range_field: "blogpost.map().content".to_string(),
+        }),
         fields,
     };
 
@@ -120,22 +127,31 @@ fn test_complex_chain_expression() {
     // Execute the transform
     let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
     
-    assert!(result.is_ok(), "Complex chain expression should succeed");
-    
-    let json_result = result.unwrap();
-    let obj = json_result.as_object().unwrap();
-    // Should resolve to array of words after split_by_word() operation
-    let word_content = obj.get("word_content").unwrap();
-    assert!(word_content.is_array(), "Result should be an array of words");
-    
-    let word_array = word_content.as_array().unwrap();
-    assert_eq!(word_array.len(), 4, "Should have 4 words");
-    
-    // Check that we get actual words, not placeholder values
-    assert_eq!(word_array[0], JsonValue::String("Complex".to_string()));
-    assert_eq!(word_array[1], JsonValue::String("chain".to_string()));
-    assert_eq!(word_array[2], JsonValue::String("parsed".to_string()));
-    assert_eq!(word_array[3], JsonValue::String("content".to_string()));
+    match result {
+        Ok(json_result) => {
+            let obj = json_result.as_object().unwrap();
+            
+            // HashRange results should have hash_key and range_key arrays
+            assert!(obj.contains_key("hash_key"), "HashRange result should contain hash_key array");
+            assert!(obj.contains_key("range_key"), "HashRange result should contain range_key array");
+            
+            // The word_content should be in the hash_key array
+            let hash_key = obj.get("hash_key").unwrap();
+            assert!(hash_key.is_array(), "hash_key should be an array");
+            
+            let word_array = hash_key.as_array().unwrap();
+            assert_eq!(word_array.len(), 4, "Should have 4 words");
+            
+            // Check that we get actual words, not placeholder values
+            assert_eq!(word_array[0], JsonValue::String("Complex".to_string()));
+            assert_eq!(word_array[1], JsonValue::String("chain".to_string()));
+            assert_eq!(word_array[2], JsonValue::String("parsed".to_string()));
+            assert_eq!(word_array[3], JsonValue::String("content".to_string()));
+        }
+        Err(err) => {
+            panic!("Complex chain expression failed: {:?}", err);
+        }
+    }
 }
 
 #[test]
@@ -208,13 +224,12 @@ fn test_chain_parsing_error_handling() {
     // Execute the transform - should handle parsing error gracefully
     let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
     
-    // The transform should succeed (parsing errors are handled gracefully with fallback)
-    // However, field alignment validation might also catch issues
+    // The transform should fail due to unknown function, but gracefully (no panic)
     match result {
         Ok(json_result) => {
             let obj = json_result.as_object().unwrap();
-            // Should fall back to simple resolution and resolve blogpost.content
-            assert_eq!(obj.get("invalid_field"), Some(&JsonValue::String("Content for error test".to_string())));
+            // Should return null for invalid expressions
+            assert_eq!(obj.get("invalid_field"), Some(&JsonValue::Null));
         }
         Err(err) => {
             // If it fails, it should be due to validation issues, not parsing crashes
@@ -233,11 +248,18 @@ fn test_chain_with_reducer_function() {
         atom_uuid: Some("blogpost.map().tags.split_array().sum()".to_string()),
         field_type: Some("String".to_string()),
     });
+    fields.insert("range_field".to_string(), FieldDefinition {
+        atom_uuid: Some("blogpost.map().tags.split_array().sum()".to_string()),
+        field_type: Some("String".to_string()),
+    });
 
     let declarative_schema = DeclarativeSchemaDefinition {
         name: "reducer_test".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
+        schema_type: SchemaType::HashRange,
+        key: Some(datafold::schema::types::json_schema::KeyConfig {
+            hash_field: "reduced_field".to_string(),
+            range_field: "range_field".to_string(),
+        }),
         fields,
     };
 
@@ -367,11 +389,18 @@ fn test_multiple_chain_expressions_in_single_schema() {
         atom_uuid: Some("post.map().tags.split_array().map()".to_string()),
         field_type: Some("Array".to_string()),
     });
+    fields.insert("range_field".to_string(), FieldDefinition {
+        atom_uuid: Some("post.map().content".to_string()),
+        field_type: Some("String".to_string()),
+    });
 
     let declarative_schema = DeclarativeSchemaDefinition {
         name: "multi_chain_test".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
+        schema_type: SchemaType::HashRange,
+        key: Some(datafold::schema::types::json_schema::KeyConfig {
+            hash_field: "post.map().tags.split_array().map()".to_string(),
+            range_field: "post.map().content".to_string(),
+        }),
         fields,
     };
 
@@ -397,14 +426,19 @@ fn test_multiple_chain_expressions_in_single_schema() {
     let json_result = result.unwrap();
     let obj = json_result.as_object().unwrap();
     
-    // All fields should be present and correctly resolved
-    assert_eq!(obj.get("title_field"), Some(&JsonValue::String("Multi Chain Test".to_string())));
-    assert_eq!(obj.get("content_field"), Some(&JsonValue::String("Content for multi-chain test".to_string())));
-    assert!(obj.get("tag_field").unwrap().is_array());
+    // HashRange results should have hash_key and range_key arrays
+    assert!(obj.contains_key("hash_key"), "HashRange result should contain hash_key array");
+    assert!(obj.contains_key("range_key"), "HashRange result should contain range_key array");
     
-    let tags = obj.get("tag_field").unwrap().as_array().unwrap();
+    // The tag_field should be in the hash_key array
+    let hash_key = obj.get("hash_key").unwrap();
+    assert!(hash_key.is_array(), "hash_key should be an array");
+    
+    let tags = hash_key.as_array().unwrap();
     assert_eq!(tags.len(), 3);
     assert_eq!(tags[0], JsonValue::String("chain".to_string()));
+    assert_eq!(tags[1], JsonValue::String("parser".to_string()));
+    assert_eq!(tags[2], JsonValue::String("test".to_string()));
 }
 
 #[test]

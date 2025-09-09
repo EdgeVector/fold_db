@@ -14,11 +14,11 @@ fn test_single_schema_execution_with_simple_fields() {
     // Create a simple Single schema
     let mut fields = HashMap::new();
     fields.insert("user_name".to_string(), FieldDefinition {
-        atom_uuid: Some("user".to_string()),
+        atom_uuid: Some("user_data.map().user".to_string()),
         field_type: Some("String".to_string()),
     });
     fields.insert("user_age".to_string(), FieldDefinition {
-        atom_uuid: Some("age".to_string()),
+        atom_uuid: Some("user_data.map().age".to_string()),
         field_type: Some("Number".to_string()),
     });
 
@@ -37,8 +37,10 @@ fn test_single_schema_execution_with_simple_fields() {
 
     // Create input data
     let mut input_values = HashMap::new();
-    input_values.insert("user".to_string(), JsonValue::String("Alice".to_string()));
-    input_values.insert("age".to_string(), JsonValue::Number(serde_json::Number::from(25)));
+    input_values.insert("user_data".to_string(), serde_json::json!({
+        "user": "Alice",
+        "age": 25
+    }));
 
     // Execute the transform
     let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);

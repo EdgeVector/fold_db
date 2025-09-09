@@ -183,9 +183,26 @@ impl TestFixture {
 
     /// Unified transform creation - consolidates transform creation patterns
     pub fn create_sample_transform() -> Transform {
-        Transform::new(
-            "input1".to_string(),
-            "test.output".to_string(),
+        use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
+        use datafold::schema::types::schema::SchemaType;
+        use std::collections::HashMap;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: "test_schema".to_string(),
+            schema_type: SchemaType::Single,
+            fields: HashMap::from([
+                ("output".to_string(), FieldDefinition {
+                    field_type: Some("String".to_string()),
+                    atom_uuid: Some("input1".to_string()),
+                }),
+            ]),
+            key: None,
+        };
+        
+        Transform::from_declarative_schema(
+            schema,
+            vec!["test.input1".to_string()],
+            "test.output".to_string()
         )
     }
 
@@ -205,9 +222,26 @@ impl TestFixture {
 
     /// Unified named transform creation
     pub fn create_named_transform(transform_id: &str) -> Transform {
-        Transform::new(
-            "input1".to_string(),
-            format!("test.{}", transform_id),
+        use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
+        use datafold::schema::types::schema::SchemaType;
+        use std::collections::HashMap;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: format!("test_schema_{}", transform_id),
+            schema_type: SchemaType::Single,
+            fields: HashMap::from([
+                (transform_id.to_string(), FieldDefinition {
+                    field_type: Some("String".to_string()),
+                    atom_uuid: Some("input1".to_string()),
+                }),
+            ]),
+            key: None,
+        };
+        
+        Transform::from_declarative_schema(
+            schema,
+            vec!["test.input1".to_string()],
+            format!("test.{}", transform_id)
         )
     }
 
@@ -379,9 +413,26 @@ impl DirectEventTestFixture {
     /// Unified test transform creation
     #[allow(dead_code)]
     pub fn create_test_transform() -> Transform {
-        Transform::new(
-            "TransformBase.value1 + TransformBase.value2".to_string(),
-            "TransformSchema.result".to_string(),
+        use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
+        use datafold::schema::types::schema::SchemaType;
+        use std::collections::HashMap;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: "TransformSchema".to_string(),
+            schema_type: SchemaType::Single,
+            fields: HashMap::from([
+                ("result".to_string(), FieldDefinition {
+                    field_type: Some("Number".to_string()),
+                    atom_uuid: Some("TransformBase.value1.map().add(TransformBase.value2)".to_string()),
+                }),
+            ]),
+            key: None,
+        };
+        
+        Transform::from_declarative_schema(
+            schema,
+            vec!["TransformBase.value1".to_string(), "TransformBase.value2".to_string()],
+            "TransformSchema.result".to_string()
         )
     }
     

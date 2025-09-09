@@ -666,16 +666,30 @@ mod tests {
 
     #[test]
     fn test_standardized_execution_sequence() {
-        // Create a simple transform
-        let transform = Transform::new(
-            "TestSchema.field1 + TestSchema.field2".to_string(),
+        // Create a simple declarative transform
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("result".to_string(), crate::schema::types::json_schema::FieldDefinition {
+            field_type: Some("number".to_string()),
+            atom_uuid: Some("input.field1".to_string()),
+        });
+        
+        let schema = crate::schema::types::json_schema::DeclarativeSchemaDefinition {
+            name: "TestSchema".to_string(),
+            schema_type: crate::schema::types::schema::SchemaType::Single,
+            fields,
+            key: None,
+        };
+        
+        let transform = Transform::from_declarative_schema(
+            schema,
+            vec!["field1".to_string(), "field2".to_string()],
             "TestSchema.result".to_string(),
         );
 
         // Create mock input provider
         let mut input_provider = MockInputProvider::new();
-        input_provider.add_input("TestSchema.field1".to_string(), JsonValue::Number(10.into()));
-        input_provider.add_input("TestSchema.field2".to_string(), JsonValue::Number(20.into()));
+        input_provider.add_input("field1".to_string(), JsonValue::Number(10.into()));
+        input_provider.add_input("field2".to_string(), JsonValue::Number(20.into()));
 
         // Create mock mutation executor
         let _mutation_executor = MockMutationExecutor::new();
@@ -731,16 +745,30 @@ mod tests {
 
     #[test]
     fn test_orchestrated_execution_sequence() {
-        // Create a simple transform
-        let transform = Transform::new(
-            "TestSchema.field1 + TestSchema.field2".to_string(),
+        // Create a simple declarative transform
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("result".to_string(), crate::schema::types::json_schema::FieldDefinition {
+            field_type: Some("number".to_string()),
+            atom_uuid: Some("input.field1".to_string()),
+        });
+        
+        let schema = crate::schema::types::json_schema::DeclarativeSchemaDefinition {
+            name: "TestSchema".to_string(),
+            schema_type: crate::schema::types::schema::SchemaType::Single,
+            fields,
+            key: None,
+        };
+        
+        let transform = Transform::from_declarative_schema(
+            schema,
+            vec!["field1".to_string(), "field2".to_string()],
             "TestSchema.result".to_string(),
         );
 
         // Create mock input provider
         let mut input_provider = MockInputProvider::new();
-        input_provider.add_input("TestSchema.field1".to_string(), JsonValue::Number(10.into()));
-        input_provider.add_input("TestSchema.field2".to_string(), JsonValue::Number(20.into()));
+        input_provider.add_input("field1".to_string(), JsonValue::Number(10.into()));
+        input_provider.add_input("field2".to_string(), JsonValue::Number(20.into()));
 
         // Create mock mutation executor
         let _mutation_executor = MockMutationExecutor::new();

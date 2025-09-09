@@ -9,6 +9,12 @@
 //! * `parser` - Parser for the transform DSL
 //! * `interpreter` - Interpreter for executing transforms
 //! * `executor` - High-level executor for applying transforms to field values
+//! * `validation` - Validation utilities for transform execution
+//! * `coordination` - Multi-chain coordination for complex schemas
+//! * `aggregation` - Result aggregation for different schema types
+//! * `hash_range_executor` - HashRange schema executor
+//! * `range_executor` - Range schema executor
+//! * `single_executor` - Single schema executor
 //! * `restricted_access` - Enforces mutation-only data persistence
 //!
 //! ## Architecture
@@ -44,6 +50,15 @@ pub mod restricted_access;
 pub mod safe_access;
 pub mod restricted_access_example;
 pub mod restricted_access_integration_test;
+
+// New modular components
+pub mod validation;
+pub mod coordination;
+pub mod aggregation;
+pub mod hash_range_executor;
+pub mod range_executor;
+pub mod single_executor;
+
 // Public re-exports
 pub use crate::schema::types::Transform;
 pub use ast::{Expression, Operator, TransformDeclaration, UnaryOperator, Value};
