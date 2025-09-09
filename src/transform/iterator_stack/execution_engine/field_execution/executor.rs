@@ -1,87 +1,19 @@
-//! Field execution methods for different alignment types
+//! Core field execution logic
+//!
+//! Contains the main execution algorithms for different alignment types:
+//! OneToOne, Broadcast, and Reduced field execution.
 
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::types::IteratorStack;
-use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
+use crate::transform::iterator_stack::errors::IteratorStackResult;
 use serde_json::Value;
-use std::collections::HashMap;
 use log::debug;
 
-use super::core::{ExecutionContext, IndexEntry, ExecutionWarning, ExecutionWarningType};
-use super::field_evaluation::{DefaultFieldEvaluator, FieldEvaluator};
-
-/// Result of executing a single field expression
-#[derive(Debug, Clone, PartialEq)]
-pub struct FieldExecutionResult {
-    /// Generated index entries
-    pub entries: Vec<IndexEntry>,
-    /// Any warnings generated during execution
-    pub warnings: Vec<ExecutionWarning>,
-}
-
-impl FieldExecutionResult {
-    /// Creates a new empty field execution result
-    pub fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-            warnings: Vec::new(),
-        }
-    }
-}
-
-impl Default for FieldExecutionResult {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Field execution methods
-pub trait FieldExecutor {
-    /// Executes OneToOne alignment
-    fn execute_one_to_one(
-        &mut self,
-        stack: &mut IteratorStack,
-        chain: &ParsedChain,
-        context: &ExecutionContext,
-    ) -> IteratorStackResult<FieldExecutionResult>;
-
-    /// Executes Broadcast alignment
-    fn execute_broadcast(
-        &mut self,
-        stack: &mut IteratorStack,
-        chain: &ParsedChain,
-        context: &ExecutionContext,
-    ) -> IteratorStackResult<FieldExecutionResult>;
-
-    /// Executes Reduced alignment
-    fn execute_reduced(
-        &mut self,
-        stack: &mut IteratorStack,
-        chain: &ParsedChain,
-        context: &ExecutionContext,
-    ) -> IteratorStackResult<FieldExecutionResult>;
-}
-
-/// Default implementation of field execution methods
-pub struct DefaultFieldExecutor {
-    /// Field evaluator for processing field expressions
-    field_evaluator: DefaultFieldEvaluator,
-}
-
-impl DefaultFieldExecutor {
-    /// Creates a new default field executor
-    pub fn new() -> Self {
-        Self {
-            field_evaluator: DefaultFieldEvaluator,
-        }
-    }
-}
-
-impl Default for DefaultFieldExecutor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+use crate::transform::iterator_stack::execution_engine::core::{ExecutionContext, IndexEntry, ExecutionWarning, ExecutionWarningType};
+use crate::transform::iterator_stack::execution_engine::field_evaluation::FieldEvaluator;
+use crate::transform::iterator_stack::execution_engine::field_execution::types::{FieldExecutionResult, FieldExecutor, DefaultFieldExecutor};
+use crate::transform::iterator_stack::execution_engine::field_execution::iteration::IterationHelper;
+use crate::transform::iterator_stack::execution_engine::field_execution::reducers::ReducerHelper;
 
 impl FieldExecutor for DefaultFieldExecutor {
     /// Executes OneToOne alignment - each iteration produces one entry
@@ -150,8 +82,8 @@ impl FieldExecutor for DefaultFieldExecutor {
             let entry = IndexEntry {
                 hash_value: field_value.clone(),
                 range_value: field_value.clone(),
-                atom_uuid: self.generate_atom_uuid(stack)?,
-                metadata: self.extract_metadata(stack)?,
+                atom_uuid: ReducerHelper::generate_atom_uuid(stack)?,
+                metadata: ReducerHelper::extract_metadata(stack)?,
                 expression: chain.expression.clone(),
             };
             entries.push(entry);
@@ -163,7 +95,7 @@ impl FieldExecutor for DefaultFieldExecutor {
             let iteration_depth = chain.depth.min(context.emission_depth).min(max_available_depth);
             debug!("Using iteration depth: {} (chain.depth: {}, emission_depth: {}, max_available: {})", 
                 iteration_depth, chain.depth, context.emission_depth, max_available_depth);
-            self.iterate_to_depth(stack, iteration_depth, |current_stack, _current_path| {
+            IterationHelper::iterate_to_depth(stack, iteration_depth, |current_stack, _current_path| {
                 debug!("iterate_to_depth callback called for chain: {}", chain.expression);
 
                 // Extract the field value at current context
@@ -173,8 +105,8 @@ impl FieldExecutor for DefaultFieldExecutor {
                 entries.push(IndexEntry {
                     hash_value: field_value,
                     range_value: Value::Null, // Will be set later when combining
-                    atom_uuid: self.generate_atom_uuid(current_stack)?,
-                    metadata: self.extract_metadata(current_stack)?,
+                    atom_uuid: ReducerHelper::generate_atom_uuid(current_stack)?,
+                    metadata: ReducerHelper::extract_metadata(current_stack)?,
                     expression: chain.expression.clone(),
                 });
 
@@ -262,8 +194,8 @@ impl FieldExecutor for DefaultFieldExecutor {
             let entry = IndexEntry {
                 hash_value: field_value.clone(),
                 range_value: field_value.clone(),
-                atom_uuid: self.generate_atom_uuid(stack)?,
-                metadata: self.extract_metadata(stack)?,
+                atom_uuid: ReducerHelper::generate_atom_uuid(stack)?,
+                metadata: ReducerHelper::extract_metadata(stack)?,
                 expression: chain.expression.clone(),
             };
             entries.push(entry);
@@ -292,7 +224,7 @@ impl FieldExecutor for DefaultFieldExecutor {
             }
 
             // Iterate to the emission depth and broadcast the field value
-            self.iterate_to_depth(stack, emission_depth, |current_stack, _current_path| {
+            IterationHelper::iterate_to_depth(stack, emission_depth, |current_stack, _current_path| {
                 debug!("Processing iteration, current entries: {}", entries.len());
                 let field_value = self.field_evaluator.evaluate_field_expression(chain, current_stack, emission_depth)?;
                 debug!("Field value: {}", field_value);
@@ -300,8 +232,8 @@ impl FieldExecutor for DefaultFieldExecutor {
                 entries.push(IndexEntry {
                     hash_value: field_value,
                     range_value: Value::Null, // Will be set later when combining
-                    atom_uuid: self.generate_atom_uuid(current_stack)?,
-                    metadata: self.extract_metadata(current_stack)?,
+                    atom_uuid: ReducerHelper::generate_atom_uuid(current_stack)?,
+                    metadata: ReducerHelper::extract_metadata(current_stack)?,
                     expression: chain.expression.clone(),
                 });
 
@@ -357,7 +289,7 @@ impl FieldExecutor for DefaultFieldExecutor {
             let max_available_depth = stack.len().saturating_sub(1);
             let iteration_depth = chain.depth.min(context.emission_depth).min(max_available_depth);
 
-            self.iterate_to_depth(stack, iteration_depth, |current_stack, _current_path| {
+            IterationHelper::iterate_to_depth(stack, iteration_depth, |current_stack, _current_path| {
                 let field_value = self.field_evaluator.evaluate_field_expression(chain, current_stack, iteration_depth)?;
                 values.push(field_value);
                 Ok(())
@@ -370,13 +302,13 @@ impl FieldExecutor for DefaultFieldExecutor {
 
         // Reduce the collected values
         if !values.is_empty() {
-            let reduced_value = self.apply_reducer(&values, "sum")?; // Default to sum reducer
+            let reduced_value = ReducerHelper::apply_reducer(&values, "sum")?; // Default to sum reducer
 
             let entry = IndexEntry {
                 hash_value: reduced_value.clone(),
                 range_value: reduced_value,
-                atom_uuid: self.generate_atom_uuid(stack)?,
-                metadata: self.extract_metadata(stack)?,
+                atom_uuid: ReducerHelper::generate_atom_uuid(stack)?,
+                metadata: ReducerHelper::extract_metadata(stack)?,
                 expression: chain.expression.clone(),
             };
             entries.push(entry);
@@ -388,127 +320,3 @@ impl FieldExecutor for DefaultFieldExecutor {
         })
     }
 }
-
-// Helper methods for field execution
-impl DefaultFieldExecutor {
-    /// Iterates to a specific depth and calls a callback for each combination
-    fn iterate_to_depth<F>(
-        &self,
-        stack: &mut IteratorStack,
-        target_depth: usize,
-        mut callback: F,
-    ) -> IteratorStackResult<()>
-    where
-        F: FnMut(&mut IteratorStack, &[usize]) -> IteratorStackResult<()>,
-    {
-        debug!("iterate_to_depth called with target_depth: {}, stack len: {}", target_depth, stack.len());
-        self.iterate_recursive(stack, target_depth, &mut callback, &mut Vec::new())
-    }
-
-    /// Recursive iteration helper
-    #[allow(clippy::only_used_in_recursion)]
-    fn iterate_recursive<F>(
-        &self,
-        stack: &mut IteratorStack,
-        target_depth: usize,
-        callback: &mut F,
-        current_path: &mut Vec<usize>,
-    ) -> IteratorStackResult<()>
-    where
-        F: FnMut(&mut IteratorStack, &[usize]) -> IteratorStackResult<()>,
-    {
-        debug!("iterate_recursive: current_path.len()={}, target_depth={}", current_path.len(), target_depth);
-        
-        if current_path.len() > target_depth {
-            return Ok(());
-        }
-
-        if current_path.len() == target_depth {
-            // We've reached the target depth, iterate over all items at this depth
-            debug!("Reached target depth, iterating over items");
-            let current_depth = current_path.len();
-            if let Some(context) = stack.context_at_depth(current_depth) {
-                let items = context.iterator_state.items.clone();
-                debug!("Found {} items at target depth", items.len());
-                
-                for (index, _item) in items.iter().enumerate() {
-                    debug!("Processing item {} at target depth", index);
-                    // Set the current item for this depth
-                    if let Some(context) = stack.context_at_depth_mut(current_depth) {
-                        context.iterator_state.current_item = Some(items[index].clone());
-                    }
-                    
-                    current_path.push(index);
-                    
-                    // Call the callback for this item
-                    callback(stack, current_path)?;
-                    
-                    current_path.pop();
-                }
-            }
-            return Ok(());
-        }
-
-        // Get the current depth
-        let current_depth = current_path.len();
-        
-        if let Some(context) = stack.context_at_depth(current_depth) {
-            let items = context.iterator_state.items.clone();
-            debug!("At depth {}, found {} items", current_depth, items.len());
-            
-            for (index, _item) in items.iter().enumerate() {
-                debug!("Processing item {} at depth {}", index, current_depth);
-                // Set the current item for this depth
-                if let Some(context) = stack.context_at_depth_mut(current_depth) {
-                    context.iterator_state.current_item = Some(items[index].clone());
-                }
-                
-                current_path.push(index);
-                
-                // Recursively iterate to the next depth
-                self.iterate_recursive(stack, target_depth, callback, current_path)?;
-                
-                current_path.pop();
-            }
-        }
-        
-        Ok(())
-    }
-
-    /// Generates a unique atom UUID for an entry
-    fn generate_atom_uuid(&self, _stack: &IteratorStack) -> IteratorStackResult<String> {
-        // For now, generate a simple UUID
-        // In a real implementation, this would be more sophisticated
-        Ok(format!("atom_{}", uuid::Uuid::new_v4()))
-    }
-
-    /// Extracts metadata from the current stack state
-    fn extract_metadata(&self, stack: &IteratorStack) -> IteratorStackResult<HashMap<String, Value>> {
-        let mut metadata = HashMap::new();
-        metadata.insert("depth".to_string(), Value::Number(serde_json::Number::from(stack.len())));
-        metadata.insert("timestamp".to_string(), Value::String(chrono::Utc::now().to_rfc3339()));
-        Ok(metadata)
-    }
-
-    /// Applies a reducer function to a list of values
-    fn apply_reducer(&self, values: &[Value], reducer_name: &str) -> IteratorStackResult<Value> {
-        match reducer_name {
-            "sum" => {
-                let mut sum = 0.0;
-                for value in values {
-                    if let Some(num) = value.as_f64() {
-                        sum += num;
-                    }
-                }
-                Ok(Value::Number(serde_json::Number::from_f64(sum).unwrap_or(serde_json::Number::from(0))))
-            }
-            "count" => Ok(Value::Number(serde_json::Number::from(values.len()))),
-            "first" => Ok(values.first().cloned().unwrap_or(Value::Null)),
-            "last" => Ok(values.last().cloned().unwrap_or(Value::Null)),
-            _ => Err(IteratorStackError::ExecutionError {
-                message: format!("Unknown reducer: {}", reducer_name)
-            }),
-        }
-    }
-}
-
