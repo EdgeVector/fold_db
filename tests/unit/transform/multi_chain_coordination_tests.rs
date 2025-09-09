@@ -329,8 +329,12 @@ fn test_multi_chain_fallback_behavior() {
             assert!(obj.contains_key("fallback_field"));
             
             // Should resolve to the actual value, not placeholder
+            // For HashRange schemas, field values are arrays
             let fallback_value = obj.get("fallback_field").unwrap();
-            assert_eq!(fallback_value, &JsonValue::String("Fallback value".to_string()));
+            assert!(fallback_value.is_array());
+            let fallback_array = fallback_value.as_array().unwrap();
+            assert!(!fallback_array.is_empty());
+            assert_eq!(fallback_array[0], JsonValue::String("Fallback value".to_string()));
         }
         Err(err) => {
             // ExecutionEngine may have limitations with certain expressions

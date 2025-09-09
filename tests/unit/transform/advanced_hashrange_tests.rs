@@ -297,8 +297,14 @@ fn test_hashrange_enhanced_fallback_resolution() {
             // Enhanced fallback should resolve the nested path
             let field_value = obj.get("fallback_test_field").unwrap();
             if !field_value.is_null() {
-                // If not null, should be the correct value or a reasonable fallback
-                assert!(!field_value.as_str().unwrap_or("").is_empty());
+                // For HashRange schemas, field values should be arrays
+                assert!(field_value.is_array());
+                let field_array = field_value.as_array().unwrap();
+                assert!(!field_array.is_empty());
+                // Check that the first element is not empty
+                if let Some(first_value) = field_array.first() {
+                    assert!(!first_value.as_str().unwrap_or("").is_empty());
+                }
             }
         }
         Err(err) => {

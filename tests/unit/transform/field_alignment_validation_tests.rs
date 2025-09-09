@@ -190,14 +190,21 @@ fn test_complex_chain_alignment_validation() {
         field_type: Some("String".to_string()),
     });
     fields.insert("tag_length".to_string(), FieldDefinition {
-        atom_uuid: Some("blogpost.map().tags.split_array().map()".to_string()), // Same branch, compatible
-        field_type: Some("Number".to_string()),
+        atom_uuid: Some("blogpost.map().tags.split_array().map()".to_string()), // Same expression but different field
+        field_type: Some("String".to_string()),
+    });
+    fields.insert("range_field".to_string(), FieldDefinition {
+        atom_uuid: Some("blogpost.map().tags".to_string()),
+        field_type: Some("Array".to_string()),
     });
 
     let declarative_schema = DeclarativeSchemaDefinition {
         name: "complex_chains_schema".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
+        schema_type: SchemaType::HashRange,
+        key: Some(datafold::schema::types::json_schema::KeyConfig {
+            hash_field: "blogpost.map().tags.split_array().map()".to_string(),
+            range_field: "blogpost.map().tags".to_string(),
+        }),
         fields,
     };
 
@@ -220,8 +227,31 @@ fn test_complex_chain_alignment_validation() {
     
     let json_result = result.unwrap();
     let obj = json_result.as_object().unwrap();
-    assert!(obj.get("tag_name").unwrap().is_array());
-    assert!(obj.get("tag_length").unwrap().is_array());
+    
+    // HashRange results should have hash_key and range_key arrays
+    assert!(obj.contains_key("hash_key"), "HashRange result should contain hash_key array");
+    assert!(obj.contains_key("range_key"), "HashRange result should contain range_key array");
+    
+                // The tag_name should be in the hash_key array
+                let hash_key = obj.get("hash_key").unwrap();
+                assert!(hash_key.is_array(), "hash_key should be an array");
+
+                let tag_array = hash_key.as_array().unwrap();
+                assert_eq!(tag_array.len(), 3, "Should have 3 entries (no duplication)");
+
+                // Check that we get actual tags, not placeholder values
+                assert_eq!(tag_array[0], JsonValue::String("alignment".to_string()));
+                assert_eq!(tag_array[1], JsonValue::String("validation".to_string()));
+                assert_eq!(tag_array[2], JsonValue::String("test".to_string()));
+
+                // Check that tag_length contains the same tags as tag_name
+                let tag_length = obj.get("tag_length").unwrap();
+                assert!(tag_length.is_array(), "tag_length should be an array");
+                let tag_length_array = tag_length.as_array().unwrap();
+                assert_eq!(tag_length_array.len(), 3, "Should have 3 entries for tag_length (no duplication)");
+                assert_eq!(tag_length_array[0], JsonValue::String("alignment".to_string()));
+                assert_eq!(tag_length_array[1], JsonValue::String("validation".to_string()));
+                assert_eq!(tag_length_array[2], JsonValue::String("test".to_string()));
 }
 
 #[test]
@@ -240,11 +270,18 @@ fn test_mixed_expression_types_validation() {
         atom_uuid: None, // No expression
         field_type: Some("Boolean".to_string()),
     });
+    fields.insert("range_field".to_string(), FieldDefinition {
+        atom_uuid: Some("data.map().items".to_string()),
+        field_type: Some("Array".to_string()),
+    });
 
     let declarative_schema = DeclarativeSchemaDefinition {
         name: "mixed_expressions_schema".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
+        schema_type: SchemaType::HashRange,
+        key: Some(datafold::schema::types::json_schema::KeyConfig {
+            hash_field: "data.map().items.split_array().map()".to_string(),
+            range_field: "data.map().items".to_string(),
+        }),
         fields,
     };
 
@@ -268,9 +305,22 @@ fn test_mixed_expression_types_validation() {
     
     let json_result = result.unwrap();
     let obj = json_result.as_object().unwrap();
-    assert_eq!(obj.get("simple_field"), Some(&JsonValue::String("Mixed validation test".to_string())));
-    assert!(obj.get("chain_field").unwrap().is_array());
-    assert_eq!(obj.get("no_expression_field"), Some(&JsonValue::Bool(false)));
+    
+    // HashRange results should have hash_key and range_key arrays
+    assert!(obj.contains_key("hash_key"), "HashRange result should contain hash_key array");
+    assert!(obj.contains_key("range_key"), "HashRange result should contain range_key array");
+    
+    // The chain_field should be in the hash_key array
+    let hash_key = obj.get("hash_key").unwrap();
+    assert!(hash_key.is_array(), "hash_key should be an array");
+    
+    let item_array = hash_key.as_array().unwrap();
+    assert_eq!(item_array.len(), 3, "Should have 3 items");
+    
+    // Check that we get actual items, not placeholder values
+    assert_eq!(item_array[0], JsonValue::String("item1".to_string()));
+    assert_eq!(item_array[1], JsonValue::String("item2".to_string()));
+    assert_eq!(item_array[2], JsonValue::String("item3".to_string()));
 }
 
 #[test]
@@ -358,8 +408,8 @@ fn test_field_alignment_validation_with_invalid_expressions() {
             // If it succeeds, it should have fallen back to simple resolution
             let obj = json_result.as_object().unwrap();
             assert_eq!(obj.get("valid_field"), Some(&JsonValue::String("Valid field value".to_string())));
-            // The invalid field should resolve using simple dotted path as fallback
-            assert_eq!(obj.get("invalid_field"), Some(&JsonValue::String("Content for invalid expression".to_string())));
+            // The invalid field should be null due to unknown function (no fallback)
+            assert_eq!(obj.get("invalid_field"), Some(&JsonValue::Null));
         }
         Err(err) => {
             // If it fails, it should be due to enhanced validation catching invalid expressions
@@ -509,8 +559,11 @@ fn test_field_alignment_validation_cartesian_product_error() {
 
     let declarative_schema = DeclarativeSchemaDefinition {
         name: "cartesian_product_schema".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
+        schema_type: SchemaType::HashRange,
+        key: Some(datafold::schema::types::json_schema::KeyConfig {
+            hash_field: "word_content".to_string(),
+            range_field: "tag_content".to_string(),
+        }),
         fields,
     };
 

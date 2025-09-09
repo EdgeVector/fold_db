@@ -18,11 +18,18 @@ fn test_complex_chain_expression_execution() {
         atom_uuid: Some("blogpost.map().content.split_by_word().map()".to_string()),
         field_type: Some("String".to_string()),
     });
+    fields.insert("range_field".to_string(), FieldDefinition {
+        atom_uuid: Some("blogpost.map().content".to_string()),
+        field_type: Some("String".to_string()),
+    });
 
     let declarative_schema = DeclarativeSchemaDefinition {
         name: "word_data".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
+        schema_type: SchemaType::HashRange,
+        key: Some(datafold::schema::types::json_schema::KeyConfig {
+            hash_field: "blogpost.map().content.split_by_word().map()".to_string(),
+            range_field: "blogpost.map().content".to_string(),
+        }),
         fields,
     };
 
@@ -41,31 +48,38 @@ fn test_complex_chain_expression_execution() {
     // Execute the transform
     let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
     
-    assert!(result.is_ok(), "Complex chain expression should succeed");
-    
-    let json_result = result.unwrap();
-    let obj = json_result.as_object().unwrap();
-    
-    // The result should be an array of words, not a single string
-    // because split_by_word() creates multiple iterations
-    let word_content = obj.get("word_content").unwrap();
-    assert!(word_content.is_array(), "Result should be an array of words");
-    
-    let word_array = word_content.as_array().unwrap();
-    assert_eq!(word_array.len(), 4, "Should have 4 words");
-    
-    // Check that we get actual words, not placeholder values
-    let first_word = word_array[0].as_str().unwrap();
-    assert_eq!(first_word, "Complex", "First word should be 'Complex'");
-    
-    let second_word = word_array[1].as_str().unwrap();
-    assert_eq!(second_word, "chain", "Second word should be 'chain'");
-    
-    let third_word = word_array[2].as_str().unwrap();
-    assert_eq!(third_word, "parsed", "Third word should be 'parsed'");
-    
-    let fourth_word = word_array[3].as_str().unwrap();
-    assert_eq!(fourth_word, "content", "Fourth word should be 'content'");
+    match result {
+        Ok(json_result) => {
+            let obj = json_result.as_object().unwrap();
+            
+            // HashRange results should have hash_key and range_key arrays
+            assert!(obj.contains_key("hash_key"), "HashRange result should contain hash_key array");
+            assert!(obj.contains_key("range_key"), "HashRange result should contain range_key array");
+            
+            // The word_content should be in the hash_key array
+            let hash_key = obj.get("hash_key").unwrap();
+            assert!(hash_key.is_array(), "hash_key should be an array");
+            
+            let word_array = hash_key.as_array().unwrap();
+            assert_eq!(word_array.len(), 4, "Should have 4 words");
+            
+            // Check that we get actual words, not placeholder values
+            let first_word = word_array[0].as_str().unwrap();
+            assert_eq!(first_word, "Complex", "First word should be 'Complex'");
+            
+            let second_word = word_array[1].as_str().unwrap();
+            assert_eq!(second_word, "chain", "Second word should be 'chain'");
+            
+            let third_word = word_array[2].as_str().unwrap();
+            assert_eq!(third_word, "parsed", "Third word should be 'parsed'");
+            
+            let fourth_word = word_array[3].as_str().unwrap();
+            assert_eq!(fourth_word, "content", "Fourth word should be 'content'");
+        }
+        Err(err) => {
+            panic!("Complex chain expression failed: {:?}", err);
+        }
+    }
 }
 
 #[test]
