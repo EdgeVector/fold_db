@@ -6,6 +6,7 @@
 use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
 use crate::schema::constants::{HASH_KEY_NAME, RANGE_KEY_NAME};
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
+use crate::transform::shared_utilities::resolve_field_value_from_chain;
 use crate::schema::types::SchemaError;
 use log::info;
 use serde_json::Value as JsonValue;
@@ -289,8 +290,8 @@ fn resolve_with_enhanced_fallback(
     input_values: &HashMap<String, JsonValue>,
     field_name: &str,
 ) -> Result<JsonValue, SchemaError> {
-    // Try to resolve using the parsed chain
-    match resolve_parsed_chain_simple(parsed_chain, input_values) {
+    // Use shared utility for field resolution
+    match resolve_field_value_from_chain(parsed_chain, input_values, field_name) {
         Ok(value) => Ok(value),
         Err(err) => {
             info!("⚠️ Chain resolution failed for field '{}', using fallback: {}", field_name, err);
@@ -322,98 +323,3 @@ fn extract_optimal_field_value(entry: &crate::transform::iterator_stack::executi
     serde_json::to_value(&entry.hash_value).unwrap_or(JsonValue::Null)
 }
 
-/// Resolves parsed chain with simple fallback logic.
-///
-/// # Arguments
-///
-/// * `parsed_chain` - The parsed chain to resolve
-/// * `input_values` - The input values for resolution
-///
-/// # Returns
-///
-/// Resolved value or error
-fn resolve_parsed_chain_simple(
-    parsed_chain: &ParsedChain,
-    input_values: &HashMap<String, JsonValue>,
-) -> Result<JsonValue, SchemaError> {
-    // Extract simple path from operations for basic field access
-    let simple_path = extract_simple_path_from_operations(&parsed_chain.operations);
-    
-    if simple_path.is_empty() {
-        return Err(SchemaError::InvalidField("No simple path found in parsed chain".to_string()));
-    }
-    
-    // Try to resolve the simple path
-    resolve_dotted_path(&simple_path, input_values)
-}
-
-/// Extracts simple path from chain operations.
-///
-/// # Arguments
-///
-/// * `operations` - The chain operations
-///
-/// # Returns
-///
-/// The extracted simple path
-fn extract_simple_path_from_operations(operations: &[crate::transform::iterator_stack::chain_parser::ChainOperation]) -> String {
-    let mut path_parts = Vec::new();
-    
-    for operation in operations {
-        match operation {
-            crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field_name) => {
-                path_parts.push(field_name.clone());
-            }
-            _ => {
-                // For complex operations, we can't extract a simple path
-                return String::new();
-            }
-        }
-    }
-    
-    path_parts.join(".")
-}
-
-/// Resolves dotted path in input values.
-///
-/// # Arguments
-///
-/// * `path` - The dotted path to resolve
-/// * `input_values` - The input values to search in
-///
-/// # Returns
-///
-/// Resolved value or error
-fn resolve_dotted_path(path: &str, input_values: &HashMap<String, JsonValue>) -> Result<JsonValue, SchemaError> {
-    let parts: Vec<&str> = path.split('.').collect();
-    
-    if parts.is_empty() {
-        return Err(SchemaError::InvalidField("Empty path provided".to_string()));
-    }
-    
-    // Start with the root value
-    let mut current_value = input_values.get(parts[0])
-        .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found", parts[0])))?
-        .clone();
-    
-    // Navigate through the path
-    for part in parts.iter().skip(1) {
-        if let JsonValue::Object(obj) = current_value {
-            current_value = obj.get(*part)
-                .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in path '{}'", part, path)))?
-                .clone();
-        } else if let JsonValue::Array(arr) = current_value {
-            if let Ok(index) = part.parse::<usize>() {
-                current_value = arr.get(index)
-                    .ok_or_else(|| SchemaError::InvalidField(format!("Index '{}' out of bounds in path '{}'", index, path)))?
-                    .clone();
-            } else {
-                return Err(SchemaError::InvalidField(format!("Invalid array index '{}' in path '{}'", part, path)));
-            }
-        } else {
-            return Err(SchemaError::InvalidField(format!("Cannot access '{}' on non-object/non-array value in path '{}'", part, path)));
-        }
-    }
-    
-    Ok(current_value)
-}

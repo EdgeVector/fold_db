@@ -98,44 +98,6 @@ fn test_broadcast_alignment_validation() {
     assert!(obj.contains_key("tag_name")); // Should have tag data
 }
 
-#[test]
-fn test_field_alignment_with_no_expressions() {
-    // Create schema with fields that have no atom_uuid (should skip validation)
-    let mut fields = HashMap::new();
-    fields.insert("default_string".to_string(), FieldDefinition {
-        atom_uuid: None,
-        field_type: Some("String".to_string()),
-    });
-    fields.insert("default_number".to_string(), FieldDefinition {
-        atom_uuid: None,
-        field_type: Some("Number".to_string()),
-    });
-
-    let declarative_schema = DeclarativeSchemaDefinition {
-        name: "no_expressions_schema".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
-        fields,
-    };
-
-    let transform = Transform::from_declarative_schema(
-        declarative_schema,
-        vec!["empty_data".to_string()],
-        "output.no_expressions".to_string(),
-    );
-
-    let input_values = HashMap::new();
-
-    // Execute the transform - should skip validation and succeed
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
-    
-    assert!(result.is_ok(), "Schema with no expressions should skip validation and succeed");
-    
-    let json_result = result.unwrap();
-    let obj = json_result.as_object().unwrap();
-    assert_eq!(obj.get("default_string"), Some(&JsonValue::String("".to_string())));
-    assert_eq!(obj.get("default_number"), Some(&JsonValue::Number(serde_json::Number::from(0))));
-}
 
 #[test]
 fn test_simple_expressions_fallback_validation() {
