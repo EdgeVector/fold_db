@@ -1,7 +1,7 @@
 //! Field execution methods for different alignment types
 
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
-use crate::transform::iterator_stack::stack::IteratorStack;
+use crate::transform::iterator_stack::types::IteratorStack;
 use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -125,9 +125,9 @@ impl FieldExecutor for DefaultFieldExecutor {
             if stack.is_empty() {
                 // Create a temporary root scope for simple field expressions
                 stack.push_scope(
-                    crate::transform::iterator_stack::stack::ActiveScope {
+                    crate::transform::iterator_stack::ActiveScope {
                         depth: 0,
-                        iterator_type: crate::transform::iterator_stack::stack::IteratorType::Schema { 
+                        iterator_type: crate::transform::iterator_stack::IteratorType::Schema { 
                             field_name: "_root".to_string() 
                         },
                         position: 0,
@@ -237,9 +237,9 @@ impl FieldExecutor for DefaultFieldExecutor {
             if stack.is_empty() {
                 // Create a temporary root scope for simple field expressions
                 stack.push_scope(
-                    crate::transform::iterator_stack::stack::ActiveScope {
+                    crate::transform::iterator_stack::ActiveScope {
                         depth: 0,
-                        iterator_type: crate::transform::iterator_stack::stack::IteratorType::Schema { 
+                        iterator_type: crate::transform::iterator_stack::IteratorType::Schema { 
                             field_name: "_root".to_string() 
                         },
                         position: 0,
