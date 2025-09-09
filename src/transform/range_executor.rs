@@ -3,9 +3,10 @@
 //! This module handles the execution of Range schema types, including
 //! validation, coordination, and multi-chain execution.
 
-use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
+use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
+use crate::transform::shared_utilities::{parse_atom_uuid_expression, convert_iterator_stack_error, resolve_field_value_from_chain};
 use crate::schema::types::SchemaError;
 use log::{info, error};
 use serde_json::Value as JsonValue;
@@ -205,7 +206,7 @@ fn aggregate_multi_chain_results(
         
         // Fallback resolution for empty results
         for (field_name, parsed_chain) in parsed_chains {
-            let field_value = match resolve_field_value(parsed_chain, input_values) {
+            let field_value = match resolve_field_value(parsed_chain, input_values, field_name) {
                 Ok(value) => value,
                 Err(err) => {
                     info!("⚠️ Fallback resolution failed for field '{}': {}", field_name, err);
@@ -250,6 +251,7 @@ fn aggregate_multi_chain_results(
 ///
 /// * `parsed_chain` - The parsed chain to resolve
 /// * `input_values` - The input values for fallback
+/// * `field_name` - The field name for context
 ///
 /// # Returns
 ///
@@ -257,141 +259,8 @@ fn aggregate_multi_chain_results(
 fn resolve_field_value(
     parsed_chain: &ParsedChain,
     input_values: &HashMap<String, JsonValue>,
+    field_name: &str,
 ) -> Result<JsonValue, SchemaError> {
-    // Try to resolve using the parsed chain
-    match resolve_atom_uuid_expression(parsed_chain, input_values) {
-        Ok(value) => Ok(value),
-        Err(err) => {
-            info!("⚠️ Chain resolution failed, using fallback: {}", err);
-            
-            // Fallback: try to extract value from input based on field name
-            // This is a simplified fallback for Range schemas
-            Ok(JsonValue::Null)
-        }
-    }
-}
-
-/// Resolves atom UUID expression with input values.
-///
-/// # Arguments
-///
-/// * `parsed_chain` - The parsed chain to resolve
-/// * `input_values` - The input values for resolution
-///
-/// # Returns
-///
-/// Resolved value or error
-fn resolve_atom_uuid_expression(
-    parsed_chain: &ParsedChain,
-    input_values: &HashMap<String, JsonValue>,
-) -> Result<JsonValue, SchemaError> {
-    // Extract simple path from operations for basic field access
-    let simple_path = extract_simple_path_from_operations(&parsed_chain.operations);
-    
-    if simple_path.is_empty() {
-        return Err(SchemaError::InvalidField("No simple path found in parsed chain".to_string()));
-    }
-    
-    // Try to resolve the simple path
-    resolve_dotted_path(&simple_path, input_values)
-}
-
-/// Resolves dotted path in input values.
-///
-/// # Arguments
-///
-/// * `path` - The dotted path to resolve
-/// * `input_values` - The input values to search in
-///
-/// # Returns
-///
-/// Resolved value or error
-fn resolve_dotted_path(path: &str, input_values: &HashMap<String, JsonValue>) -> Result<JsonValue, SchemaError> {
-    let parts: Vec<&str> = path.split('.').collect();
-    
-    if parts.is_empty() {
-        return Err(SchemaError::InvalidField("Empty path provided".to_string()));
-    }
-    
-    // Start with the root value
-    let mut current_value = input_values.get(parts[0])
-        .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found", parts[0])))?
-        .clone();
-    
-    // Navigate through the path
-    for part in parts.iter().skip(1) {
-        if let JsonValue::Object(obj) = current_value {
-            current_value = obj.get(*part)
-                .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in path '{}'", part, path)))?
-                .clone();
-        } else if let JsonValue::Array(arr) = current_value {
-            if let Ok(index) = part.parse::<usize>() {
-                current_value = arr.get(index)
-                    .ok_or_else(|| SchemaError::InvalidField(format!("Index '{}' out of bounds in path '{}'", index, path)))?
-                    .clone();
-            } else {
-                return Err(SchemaError::InvalidField(format!("Invalid array index '{}' in path '{}'", part, path)));
-            }
-        } else {
-            return Err(SchemaError::InvalidField(format!("Cannot access '{}' on non-object/non-array value in path '{}'", part, path)));
-        }
-    }
-    
-    Ok(current_value)
-}
-
-/// Extracts simple path from chain operations.
-///
-/// # Arguments
-///
-/// * `operations` - The chain operations
-///
-/// # Returns
-///
-/// The extracted simple path
-fn extract_simple_path_from_operations(operations: &[crate::transform::iterator_stack::chain_parser::ChainOperation]) -> String {
-    let mut path_parts = Vec::new();
-    
-    for operation in operations {
-        match operation {
-            crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field_name) => {
-                path_parts.push(field_name.clone());
-            }
-            _ => {
-                // For complex operations, we can't extract a simple path
-                return String::new();
-            }
-        }
-    }
-    
-    path_parts.join(".")
-}
-
-/// Parses atom UUID expressions.
-///
-/// # Arguments
-///
-/// * `expression` - The expression to parse
-///
-/// # Returns
-///
-/// Parsed chain or error
-fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, SchemaError> {
-    let parser = ChainParser::new();
-    parser.parse(expression).map_err(|err| {
-        SchemaError::InvalidField(format!("Failed to parse expression '{}': {}", expression, err))
-    })
-}
-
-/// Converts IteratorStackError to SchemaError.
-///
-/// # Arguments
-///
-/// * `error` - The iterator stack error to convert
-///
-/// # Returns
-///
-/// Converted schema error
-fn convert_iterator_stack_error(error: crate::transform::iterator_stack::errors::IteratorStackError) -> SchemaError {
-    SchemaError::InvalidField(format!("Iterator stack error: {}", error))
+    // Use shared utility for field resolution
+    resolve_field_value_from_chain(parsed_chain, input_values, field_name)
 }

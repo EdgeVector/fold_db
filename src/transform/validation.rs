@@ -3,8 +3,9 @@
 //! This module provides validation functions for schema structure, field alignment,
 //! and other validation concerns in the transform execution framework.
 
-use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
+use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
+use crate::transform::shared_utilities::parse_atom_uuid_expression;
 use crate::schema::types::SchemaError;
 use log::{info, error};
 
@@ -171,20 +172,4 @@ fn process_alignment_validation_result(
     
     info!("✅ Field alignment validation passed");
     Ok(alignment_result.clone())
-}
-
-/// Parses atom UUID expressions for validation.
-///
-/// # Arguments
-///
-/// * `expression` - The expression to parse
-///
-/// # Returns
-///
-/// Parsed chain or error
-fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, SchemaError> {
-    let parser = ChainParser::new();
-    parser.parse(expression).map_err(|err| {
-        SchemaError::InvalidField(format!("Failed to parse expression '{}': {}", expression, err))
-    })
 }

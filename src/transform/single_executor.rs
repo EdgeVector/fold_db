@@ -4,6 +4,7 @@
 //! form of declarative transforms without range semantics or complex indexing.
 
 use crate::schema::types::{SchemaError, json_schema::DeclarativeSchemaDefinition};
+use crate::transform::shared_utilities::{parse_atom_uuid_expression, convert_iterator_stack_error, resolve_field_value_from_chain};
 use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -24,13 +25,11 @@ pub fn execute_single_schema(
 ) -> Result<JsonValue, SchemaError> {
     info!("🚀 Executing Single schema: {}", schema.name);
     
-    // For Single schemas, we need to use the ExecutionEngine for proper field resolution
-    // since field expressions can be complex (e.g., "user_data.map().user")
-    // However, for simple expressions like "input.field", we can handle them directly
-    execute_single_expression_with_fallback(schema, &input_values)
+    // Use ExecutionEngine for consistent execution across all field types
+    execute_with_execution_engine(schema, &input_values)
 }
 
-/// Executes single expression with fallback for simple field access.
+/// Executes Single schema using ExecutionEngine for consistent behavior.
 ///
 /// # Arguments
 ///
@@ -40,110 +39,58 @@ pub fn execute_single_schema(
 /// # Returns
 ///
 /// The execution result
-fn execute_single_expression_with_fallback(
+fn execute_with_execution_engine(
     schema: &DeclarativeSchemaDefinition,
     input_values: &HashMap<String, JsonValue>,
 ) -> Result<JsonValue, SchemaError> {
-    info!("🚀 Executing single expression with fallback for schema: {}", schema.name);
+    info!("🚀 Executing Single schema with ExecutionEngine: {}", schema.name);
     
-    let mut result_object = serde_json::Map::new();
+    // Collect all expressions for execution
+    let mut all_expressions = Vec::new();
     
-    // For Single schemas, process each field with fallback logic
     for (field_name, field_def) in &schema.fields {
-        let field_value = if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-            info!("🔗 Processing field '{}' with expression: {}", field_name, atom_uuid_expr);
-            
-            // Try simple field resolution first
-            let field_value = if let Some(field_path) = atom_uuid_expr.strip_prefix("input.") {
-                input_values.get(field_path).cloned().unwrap_or(JsonValue::Null)
-            } else if !atom_uuid_expr.contains('.') && !atom_uuid_expr.contains('(') && !atom_uuid_expr.contains(')') {
-                // Direct field name (no dots, no function calls) - treat as direct input field
-                input_values.get(atom_uuid_expr).cloned().unwrap_or(JsonValue::Null)
-            } else if atom_uuid_expr.contains('.') && !atom_uuid_expr.contains('(') && !atom_uuid_expr.contains(')') {
-                // Simple field access like "user.profile.name" or "items.0" - handle directly for any depth
-                let parts: Vec<&str> = atom_uuid_expr.split('.').collect();
-                let mut current_value = input_values.get(parts[0]).cloned().unwrap_or(JsonValue::Null);
-                
-                for part in parts.iter().skip(1) {
-                    // Check if this part is an array index (numeric)
-                    if let Ok(index) = part.parse::<usize>() {
-                        if let Some(arr) = current_value.as_array() {
-                            current_value = arr.get(index).cloned().unwrap_or(JsonValue::Null);
-                        } else {
-                            current_value = JsonValue::Null;
-                            break;
-                        }
-                    } else {
-                        // Object field access
-                        if let Some(obj) = current_value.as_object() {
-                            current_value = obj.get(*part).cloned().unwrap_or(JsonValue::Null);
-                        } else {
-                            current_value = JsonValue::Null;
-                            break;
-                        }
-                    }
-                }
-                
-                current_value
-            } else {
-                // For more complex expressions, try ExecutionEngine
-                info!("⚠️ Complex expression '{}' requires ExecutionEngine, attempting execution", atom_uuid_expr);
-                match execute_with_engine_fallback(schema, input_values, field_name, atom_uuid_expr) {
-                    Ok(value) => value,
-                    Err(err) => {
-                        info!("⚠️ ExecutionEngine failed for '{}': {}, returning null", atom_uuid_expr, err);
-                        JsonValue::Null
-                    }
-                }
-            };
-            
-            field_value
-        } else {
-            // Field has no atom_uuid - provide default value based on field type
-            info!("🔗 Processing field '{}' with no expression, providing default value", field_name);
-            match field_def.field_type.as_deref() {
-                Some("String") => JsonValue::String("".to_string()),
-                Some("Number") => JsonValue::Number(serde_json::Number::from(0)),
-                Some("Boolean") => JsonValue::Bool(false),
-                Some("Array") => JsonValue::Array(vec![]),
-                Some("Object") => JsonValue::Object(serde_json::Map::new()),
-                _ => JsonValue::Null,
-            }
-        };
-        
-        result_object.insert(field_name.clone(), field_value);
+        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+            all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
+        }
     }
     
-    let result = JsonValue::Object(result_object);
-    info!("✨ Single expression execution completed: {}", result);
-    Ok(result)
-}
-
-/// Attempts to execute a complex expression using ExecutionEngine as fallback.
-///
-/// # Arguments
-///
-/// * `schema` - The declarative schema definition
-/// * `input_values` - The input values for execution
-/// * `field_name` - The field name being processed
-/// * `atom_uuid_expr` - The expression to execute
-///
-/// # Returns
-///
-/// The execution result or error
-fn execute_with_engine_fallback(
-    _schema: &DeclarativeSchemaDefinition,
-    input_values: &HashMap<String, JsonValue>,
-    field_name: &str,
-    atom_uuid_expr: &str,
-) -> Result<JsonValue, SchemaError> {
-    // Parse the expression using ChainParser
-    let parsed_chain = parse_atom_uuid_expression(atom_uuid_expr)
-        .map_err(|err| SchemaError::InvalidField(format!("Failed to parse expression '{}' for field '{}': {}", atom_uuid_expr, field_name, err)))?;
+    if all_expressions.is_empty() {
+        info!("⚠️ No expressions found for Single schema execution");
+        return Ok(JsonValue::Object(serde_json::Map::new()));
+    }
     
-    // Validate field alignment
+    info!("📊 Executing {} expressions for Single schema", all_expressions.len());
+    
+    // Parse all expressions and modify them to add "input." prefix if needed
+    let mut modified_chains = Vec::new();
+    let mut modified_expressions = Vec::new();
+    
+    for (field_name, expression) in &all_expressions {
+        let modified_expression = if expression.starts_with("input.") {
+            expression.clone()
+        } else {
+            format!("input.{}", expression)
+        };
+        
+        // Parse the modified expression
+        match parse_atom_uuid_expression(&modified_expression) {
+            Ok(modified_chain) => {
+                modified_chains.push((field_name.clone(), modified_chain));
+                modified_expressions.push((field_name.clone(), modified_expression));
+            }
+            Err(err) => {
+                info!("⚠️ Failed to parse modified expression for field '{}': {}, will try fallback", field_name, err);
+                // For parsing failures, we'll handle them in aggregation by trying fallback resolution
+                // Don't fail the entire execution, just skip this field for ExecutionEngine
+            }
+        }
+    }
+    
+    // Validate field alignment using the modified chains
+    let modified_chains_only: Vec<crate::transform::iterator_stack::chain_parser::ParsedChain> = 
+        modified_chains.iter().map(|(_, chain)| chain.clone()).collect();
     let validator = crate::transform::iterator_stack::field_alignment::FieldAlignmentValidator::new();
-    let alignment_result = validator.validate_alignment(&[parsed_chain.clone()])
+    let alignment_result = validator.validate_alignment(&modified_chains_only)
         .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
     
     if !alignment_result.valid {
@@ -156,38 +103,113 @@ fn execute_with_engine_fallback(
         )));
     }
     
-    // Execute with ExecutionEngine
-    let input_data = JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+    // Structure input data with "input" field containing the actual input values
+    let mut root_object = serde_json::Map::new();
+    root_object.insert("input".to_string(), JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
+    let input_data = JsonValue::Object(root_object);
     let mut execution_engine = crate::transform::iterator_stack::execution_engine::ExecutionEngine::new();
     
     let execution_result = execution_engine.execute_fields(
-        &[parsed_chain],
+        &modified_chains.iter().map(|(_, chain)| chain.clone()).collect::<Vec<_>>(),
         &alignment_result,
         input_data,
-    ).map_err(|err| SchemaError::InvalidField(format!("ExecutionEngine failed: {}", err)))?;
+    ).map_err(convert_iterator_stack_error)?;
     
-    // Extract the field value from the first entry
-    if let Some(entry) = execution_result.index_entries.first() {
-        Ok(entry.hash_value.clone())
-    } else {
-        Ok(JsonValue::Null)
-    }
+    // Aggregate results into final output format
+    aggregate_single_results(&modified_chains, &execution_result, input_values, &all_expressions)
 }
 
-/// Parses an atom UUID expression using ChainParser.
+/// Aggregates results from ExecutionEngine into final output format for Single schemas.
 ///
 /// # Arguments
 ///
-/// * `expression` - The expression to parse
+/// * `parsed_chains` - The parsed chains with their field names
+/// * `execution_result` - The execution result from ExecutionEngine
+/// * `input_values` - The original input values for fallback
+/// * `all_expressions` - All expressions including those that failed to parse
 ///
 /// # Returns
 ///
-/// The parsed chain or error
-fn parse_atom_uuid_expression(expression: &str) -> Result<crate::transform::iterator_stack::chain_parser::ParsedChain, SchemaError> {
-    let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-    parser.parse(expression).map_err(|err| {
-        SchemaError::InvalidField(format!("Failed to parse expression '{}': {}", expression, err))
-    })
+/// The aggregated result object
+fn aggregate_single_results(
+    parsed_chains: &[(String, crate::transform::iterator_stack::chain_parser::ParsedChain)],
+    execution_result: &crate::transform::iterator_stack::execution_engine::ExecutionResult,
+    input_values: &HashMap<String, JsonValue>,
+    all_expressions: &[(String, String)],
+) -> Result<JsonValue, SchemaError> {
+    info!("🔄 Aggregating results from Single schema execution");
+    info!("📊 ExecutionEngine produced {} index entries", execution_result.index_entries.len());
+    
+    let mut result_object = serde_json::Map::new();
+    
+    if execution_result.index_entries.is_empty() {
+        info!("⚠️ ExecutionEngine produced empty results, using fallback resolution");
+        
+        // Fallback resolution for empty results
+        for (field_name, expression) in all_expressions {
+            // Check if this field was successfully parsed
+            if let Some((_, parsed_chain)) = parsed_chains.iter().find(|(name, _)| name == field_name) {
+                let field_value = match resolve_field_value_from_chain(parsed_chain, input_values, field_name) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        info!("⚠️ Fallback resolution failed for field '{}': {}", field_name, err);
+                        JsonValue::Null
+                    }
+                };
+                result_object.insert(field_name.clone(), field_value);
+            } else {
+                // Field failed to parse, try direct dotted path resolution
+                let field_value = match crate::transform::shared_utilities::resolve_dotted_path(expression, input_values) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        info!("⚠️ Direct dotted path resolution failed for field '{}': {}", field_name, err);
+                        JsonValue::Null
+                    }
+                };
+                result_object.insert(field_name.clone(), field_value);
+            }
+        }
+    } else {
+        info!("✅ Using ExecutionEngine results for Single schema");
+        
+        // Process results from ExecutionEngine - map by expression, not by index
+        let mut entries_by_expression: HashMap<String, &crate::transform::iterator_stack::execution_engine::IndexEntry> = HashMap::new();
+        for entry in &execution_result.index_entries {
+            entries_by_expression.insert(entry.expression.clone(), entry);
+        }
+        
+        // Process all fields, including those that failed to parse
+        for (field_name, expression) in all_expressions {
+            // Check if this field was successfully parsed and executed
+            if let Some((_, parsed_chain)) = parsed_chains.iter().find(|(name, _)| name == field_name) {
+                if let Some(entry) = entries_by_expression.get(&parsed_chain.expression) {
+                    let field_value = serde_json::to_value(&entry.hash_value).unwrap_or(JsonValue::Null);
+                    result_object.insert(field_name.clone(), field_value);
+                } else {
+                    // No entry for this field, use null
+                    result_object.insert(field_name.clone(), JsonValue::Null);
+                }
+            } else {
+                // Field failed to parse, try direct dotted path resolution
+                info!("🔍 Trying direct dotted path resolution for field '{}' with expression '{}'", field_name, expression);
+                let field_value = match crate::transform::shared_utilities::resolve_dotted_path(expression, input_values) {
+                    Ok(value) => {
+                        info!("✅ Direct dotted path resolution succeeded for field '{}': {}", field_name, value);
+                        value
+                    },
+                    Err(err) => {
+                        info!("⚠️ Direct dotted path resolution failed for field '{}': {}", field_name, err);
+                        JsonValue::Null
+                    }
+                };
+                result_object.insert(field_name.clone(), field_value);
+            }
+        }
+    }
+    
+    let result = JsonValue::Object(result_object);
+    info!("✨ Single schema aggregation completed: {}", result);
+    Ok(result)
 }
 
 #[cfg(test)]

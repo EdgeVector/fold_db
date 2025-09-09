@@ -3,10 +3,10 @@
 //! This module handles the complex coordination logic for executing multiple
 //! transform chains together, particularly for HashRange and Range schemas.
 
-use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
-use crate::transform::iterator_stack::errors::IteratorStackError;
+use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
+use crate::transform::shared_utilities::{convert_iterator_stack_error, parse_with_default_retry};
 use crate::schema::types::SchemaError;
 use log::{info, error};
 use serde_json::Value as JsonValue;
@@ -56,7 +56,7 @@ pub fn execute_multi_chain_coordination_with_monitoring(
     for (field_name, expression) in &all_expressions {
         info!("🔗 Parsing expression for field '{}': {}", field_name, expression);
         
-        match parse_with_retry(expression, field_name) {
+        match parse_with_default_retry(expression, field_name) {
             Ok(parsed_chain) => {
                 parsed_chains.push((field_name.clone(), parsed_chain));
                 info!("✅ Successfully parsed expression for field '{}'", field_name);
@@ -110,37 +110,6 @@ pub fn execute_multi_chain_coordination_with_monitoring(
           total_duration, parsing_duration, validation_duration, execution_duration);
     
     result
-}
-
-/// Enhanced parsing with retry mechanism for better error recovery.
-///
-/// # Arguments
-///
-/// * `expression` - The expression to parse
-/// * `field_name` - The field name for context
-///
-/// # Returns
-///
-/// The parsed chain with retry logic
-fn parse_with_retry(expression: &str, field_name: &str) -> Result<ParsedChain, SchemaError> {
-    const MAX_RETRIES: u32 = 2;
-    
-    for attempt in 1..=MAX_RETRIES {
-        match parse_atom_uuid_expression(expression) {
-            Ok(parsed_chain) => return Ok(parsed_chain),
-            Err(err) => {
-                if attempt == MAX_RETRIES {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Failed to parse expression '{}' for field '{}' after {} attempts: {}", 
-                        expression, field_name, MAX_RETRIES, err
-                    )));
-                }
-                info!("⚠️ Parse attempt {} failed for field '{}', retrying: {}", attempt, field_name, err);
-            }
-        }
-    }
-    
-    unreachable!("Retry loop should have returned or errored")
 }
 
 /// Executes multi-chain coordination with enhanced ExecutionEngine.
@@ -258,31 +227,3 @@ fn analyze_execution_results(execution_result: &ExecutionResult) -> crate::trans
     analysis
 }
 
-/// Parses atom UUID expressions.
-///
-/// # Arguments
-///
-/// * `expression` - The expression to parse
-///
-/// # Returns
-///
-/// Parsed chain or error
-fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, SchemaError> {
-    let parser = ChainParser::new();
-    parser.parse(expression).map_err(|err| {
-        SchemaError::InvalidField(format!("Failed to parse expression '{}': {}", expression, err))
-    })
-}
-
-/// Converts IteratorStackError to SchemaError.
-///
-/// # Arguments
-///
-/// * `error` - The iterator stack error to convert
-///
-/// # Returns
-///
-/// Converted schema error
-fn convert_iterator_stack_error(error: IteratorStackError) -> SchemaError {
-    SchemaError::InvalidField(format!("Iterator stack error: {}", error))
-}
