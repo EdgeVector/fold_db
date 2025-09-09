@@ -14,3 +14,5 @@ pub mod declarative_transform_tests;
 pub mod hashrange_schema_tests;
 pub mod schema_declarative_transform_interpretation_tests;
 pub mod iterator_stack_tests;
+pub mod field_alignment_tests;
+pub mod chain_parser_tests;

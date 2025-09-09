@@ -2,7 +2,15 @@
 
 #[allow(unused_imports)]
 use crate::transform::iterator_stack::{
-    ExecutionEngine, ParsedChain, ChainOperation, FieldAlignmentInfo, AlignmentValidationResult, ExecutionWarningType
+    ExecutionEngine, ExecutionWarningType
+};
+#[allow(unused_imports)]
+use crate::transform::iterator_stack::chain_parser::{
+    ParsedChain, ChainOperation
+};
+#[allow(unused_imports)]
+use crate::transform::iterator_stack::field_alignment::{
+    FieldAlignmentInfo, AlignmentValidationResult
 };
 #[allow(unused_imports)]
 use serde_json::json;
