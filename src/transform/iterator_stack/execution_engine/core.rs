@@ -2,7 +2,7 @@
 
 use crate::transform::iterator_stack::chain_parser::{FieldAlignment, ParsedChain};
 use crate::transform::iterator_stack::field_alignment::{FieldAlignmentInfo, AlignmentValidationResult};
-use crate::transform::iterator_stack::stack::IteratorStack;
+use crate::transform::iterator_stack::types::IteratorStack;
 use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -174,11 +174,11 @@ impl ExecutionEngine {
                     if self.should_create_iterator_scope(field_name, input_data) {
                         debug!("Creating Schema iterator scope for field: {} at depth: {}", field_name, current_depth);
                         
-                        let iterator_type = crate::transform::iterator_stack::stack::IteratorType::Schema {
+                        let iterator_type = crate::transform::iterator_stack::IteratorType::Schema {
                             field_name: field_name.clone(),
                         };
                         
-                        let active_scope = crate::transform::iterator_stack::stack::ActiveScope {
+                        let active_scope = crate::transform::iterator_stack::ActiveScope {
                             depth: current_depth,
                             iterator_type,
                             position: 0,
@@ -197,11 +197,11 @@ impl ExecutionEngine {
                     if !last_field_name.is_empty() && self.should_create_iterator_scope(&last_field_name, input_data) {
                         debug!("Creating Schema iterator scope for field: {} at depth: {}", last_field_name, current_depth);
                         
-                        let iterator_type = crate::transform::iterator_stack::stack::IteratorType::Schema {
+                        let iterator_type = crate::transform::iterator_stack::IteratorType::Schema {
                             field_name: last_field_name.clone(),
                         };
                         
-                        let active_scope = crate::transform::iterator_stack::stack::ActiveScope {
+                        let active_scope = crate::transform::iterator_stack::ActiveScope {
                             depth: current_depth,
                             iterator_type,
                             position: 0,
@@ -220,11 +220,11 @@ impl ExecutionEngine {
                     if !last_field_name.is_empty() {
                         debug!("Creating WordSplit iterator scope for field: {} at depth: {}", last_field_name, current_depth);
                         
-                        let iterator_type = crate::transform::iterator_stack::stack::IteratorType::WordSplit {
+                        let iterator_type = crate::transform::iterator_stack::IteratorType::WordSplit {
                             field_name: last_field_name.clone(),
                         };
                         
-                        let active_scope = crate::transform::iterator_stack::stack::ActiveScope {
+                        let active_scope = crate::transform::iterator_stack::ActiveScope {
                             depth: current_depth,
                             iterator_type,
                             position: 0,
@@ -243,11 +243,11 @@ impl ExecutionEngine {
                     if !last_field_name.is_empty() {
                         debug!("Creating ArraySplit iterator scope for field: {} at depth: {}", last_field_name, current_depth);
                         
-                        let iterator_type = crate::transform::iterator_stack::stack::IteratorType::ArraySplit {
+                        let iterator_type = crate::transform::iterator_stack::IteratorType::ArraySplit {
                             field_name: last_field_name.clone(),
                         };
                         
-                        let active_scope = crate::transform::iterator_stack::stack::ActiveScope {
+                        let active_scope = crate::transform::iterator_stack::ActiveScope {
                             depth: current_depth,
                             iterator_type,
                             position: 0,

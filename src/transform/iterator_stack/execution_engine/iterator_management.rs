@@ -1,6 +1,6 @@
 //! Iterator stack management and item extraction
 
-use crate::transform::iterator_stack::stack::{IteratorStack, IteratorType, IteratorState};
+use crate::transform::iterator_stack::types::{IteratorStack, IteratorType, IteratorState};
 use crate::transform::iterator_stack::errors::IteratorStackResult;
 use serde_json::Value;
 use log::debug;

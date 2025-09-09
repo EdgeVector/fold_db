@@ -14,13 +14,14 @@
 //! * `errors` - Error types for iterator stack operations
 
 pub mod chain_parser;
+pub mod types;
 pub mod stack;
 pub mod field_alignment;
 pub mod execution_engine;
 pub mod errors;
 
 pub use chain_parser::*;
-pub use stack::*;
+pub use types::*;
 pub use field_alignment::*;
 pub use execution_engine::*;
 pub use errors::*;

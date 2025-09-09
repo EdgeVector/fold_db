@@ -1,7 +1,7 @@
 //! Field expression evaluation and operation processing
 
 use crate::transform::iterator_stack::chain_parser::{ParsedChain, ChainOperation};
-use crate::transform::iterator_stack::stack::IteratorStack;
+use crate::transform::iterator_stack::types::IteratorStack;
 use crate::transform::iterator_stack::errors::IteratorStackResult;
 use serde_json::Value;
 use log::debug;
