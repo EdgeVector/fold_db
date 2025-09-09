@@ -268,7 +268,7 @@ fn test_hashrange_schema_with_hashrange_fields_declarative_definition() {
 
 #[test]
 fn test_blogpost_word_index_transform_population() {
-    let fixture = HashRangeTestFixture::new().expect("Failed to create test fixture");
+    let _fixture = HashRangeTestFixture::new().expect("Failed to create test fixture");
     
     println!("🔧 Testing BlogPostWordIndex transform data population");
     

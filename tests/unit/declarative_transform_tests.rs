@@ -1,10 +1,9 @@
 use datafold::schema::types::{
     json_schema::{DeclarativeSchemaDefinition, FieldDefinition, KeyConfig},
-    Transform, TransformRegistration,
+    Transform,
 };
 use datafold::schema::SchemaType;
 use datafold::schema::core::SchemaCore;
-use datafold::schema::SchemaError;
 use std::collections::HashMap;
 use tempfile::TempDir;
 use sled;
@@ -316,7 +315,7 @@ fn test_error_handling_invalid_schemas() {
         key: None,
     };
     
-    let result = fixture.schema_core.interpret_declarative_schema(invalid_schema);
+    let _result = fixture.schema_core.interpret_declarative_schema(invalid_schema);
     // This should either fail or handle gracefully
     // The exact behavior depends on the implementation
 }
@@ -408,7 +407,7 @@ fn test_field_mapping_registration() {
 /// Test declarative transform with invalid field expressions
 #[test]
 fn test_invalid_field_expressions() {
-    let fixture = DeclarativeTransformTestFixture::new().expect("Failed to create test fixture");
+    let _fixture = DeclarativeTransformTestFixture::new().expect("Failed to create test fixture");
     
     // Test invalid syntax in atom_uuid expressions
     let invalid_expressions = vec![

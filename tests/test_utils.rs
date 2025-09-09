@@ -6,6 +6,8 @@
 //! - 7+ duplicate sled::Config patterns
 //! - 7+ duplicate NodeConfig patterns
 //! - Multiple duplicate registration/transform creation patterns
+//!
+//! UPDATED: Now uses root test_db folder for consistent test database location
 
 use datafold::db_operations::DbOperations;
 use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
@@ -17,9 +19,13 @@ use datafold::schema::types::{Transform, TransformRegistration, SchemaError};
 use std::sync::Arc;
 use tempfile::TempDir;
 use uuid::Uuid;
+use std::path::Path;
 
 /// Default wait duration for asynchronous test operations
 pub const TEST_WAIT_MS: u64 = 100;
+
+/// Path to the root test database directory
+pub const TEST_DB_PATH: &str = "test_db";
 
 /// Single unified test fixture eliminating all duplication
 #[allow(dead_code)]
@@ -29,6 +35,15 @@ pub struct TestFixture {
     pub db_ops: Arc<DbOperations>,
     pub atom_manager: datafold::fold_db_core::managers::atom::AtomManager,
     pub _temp_dir: TempDir,
+}
+
+/// Test fixture that uses the root test_db folder for consistent database location
+#[allow(dead_code)]
+pub struct TestDbFixture {
+    pub transform_manager: Arc<TransformManager>,
+    pub message_bus: Arc<MessageBus>,
+    pub db_ops: Arc<DbOperations>,
+    pub atom_manager: datafold::fold_db_core::managers::atom::AtomManager,
 }
 
 /// Extended fixture for full integration testing
@@ -47,6 +62,78 @@ pub struct DirectEventTestFixture {
     pub message_bus: Arc<MessageBus>,
     pub db_ops: Arc<DbOperations>,
     pub _temp_dir: TempDir,
+}
+
+#[allow(dead_code)]
+impl TestDbFixture {
+    /// Create a test fixture using the root test_db folder
+    /// 
+    /// This fixture uses a consistent database location for all tests,
+    /// making it easier to debug and inspect test data.
+    pub fn new() -> Result<Self, SchemaError> {
+        // Ensure the test_db directory exists
+        let test_db_path = Path::new(TEST_DB_PATH);
+        if !test_db_path.exists() {
+            std::fs::create_dir_all(test_db_path).map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to create test_db directory: {}", e))
+            })?;
+        }
+        
+        // Open database using the test_db folder
+        let db = sled::Config::new()
+            .path(test_db_path)
+            .open()
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to open test database: {}", e))
+            })?;
+
+        let db_ops = Arc::new(DbOperations::new(db).map_err(|e| {
+            SchemaError::InvalidData(format!("Failed to create DbOperations: {}", e))
+        })?);
+
+        // Unified MessageBus creation
+        let message_bus = Arc::new(MessageBus::new());
+        
+        let transform_manager = TransformManager::new(
+            Arc::clone(&db_ops),
+            Arc::clone(&message_bus),
+        )?;
+
+        // Create AtomManager to handle FieldValueSetRequest events
+        let atom_manager = AtomManager::new(
+            (*db_ops).clone(),
+            Arc::clone(&message_bus),
+        );
+
+        Ok(Self {
+            transform_manager: Arc::new(transform_manager),
+            message_bus,
+            db_ops,
+            atom_manager,
+        })
+    }
+    
+    /// Clean up the test database by clearing all data
+    /// 
+    /// This is useful for tests that need a clean state.
+    pub fn cleanup(&self) -> Result<(), SchemaError> {
+        // Clear all trees in the database
+        let db = self.db_ops.db();
+        for tree_name in db.tree_names() {
+            if let Ok(tree) = db.open_tree(&tree_name) {
+                tree.clear().map_err(|e| {
+                    SchemaError::InvalidData(format!("Failed to clear tree {}: {}", 
+                        String::from_utf8_lossy(&tree_name), e))
+                })?;
+            }
+        }
+        Ok(())
+    }
+    
+    /// Get the path to the test database
+    pub fn db_path(&self) -> &Path {
+        Path::new(TEST_DB_PATH)
+    }
 }
 
 #[allow(dead_code)]

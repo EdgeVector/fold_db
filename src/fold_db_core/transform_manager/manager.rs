@@ -254,14 +254,16 @@ impl TransformManager {
                     let result = crate::fold_db_core::transform_manager::manager::TransformManager::execute_single_transform(
                         transform_id,
                         &transform,
-                        &self.db_ops
+                        &self.db_ops,
+                        None // TODO: Pass FoldDB reference when available
                     )?;
                     
                     // Store the result
                     crate::fold_db_core::transform_manager::manager::TransformManager::store_transform_result_generic(
                         &self.db_ops,
                         &transform,
-                        &result
+                        &result,
+                        None // TODO: Pass FoldDB reference when available
                     )?;
                     
                     Ok(result)
@@ -413,7 +415,8 @@ impl TransformRunner for TransformManager {
         let result = TransformManager::execute_single_transform(
             transform_id,
             &transform,
-            &self.db_ops
+            &self.db_ops,
+            None // TODO: Pass FoldDB reference when available
         )?;
         println!("🔧 execute_single_transform completed with result: {}", result);
         
@@ -423,7 +426,8 @@ impl TransformRunner for TransformManager {
         Self::store_transform_result_generic(
             &self.db_ops,
             &transform,
-            &result
+            &result,
+            None // TODO: Pass FoldDB reference when available
         )?;
         
         info!("✅ Transform '{}' executed successfully: {}", transform_id, result);

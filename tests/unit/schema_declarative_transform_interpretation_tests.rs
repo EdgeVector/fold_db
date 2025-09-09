@@ -119,7 +119,7 @@ fn test_hashrange_schema_interpretation_and_transform() {
         }))
     ]);
     
-    let executor = TransformExecutor;
+    let _executor = TransformExecutor;
     let execution_result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Note: Execution may fail due to missing chain parsing infrastructure

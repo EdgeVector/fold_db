@@ -305,6 +305,7 @@ impl Transform {
     /// 
     /// This performs comprehensive validation including iterator stack validation
     /// for declarative transforms and DSL syntax validation for procedural transforms.
+    /// It also enforces that transforms cannot directly create atoms or molecules.
     pub fn validate(&self) -> Result<(), crate::schema::types::SchemaError> {
         use log::info;
 
@@ -319,6 +320,9 @@ impl Transform {
                 "Transform output cannot be empty".to_string()
             ));
         }
+
+        // **CRITICAL**: Validate that transform doesn't attempt direct atom/molecule creation
+        self.validate_no_direct_creation()?;
 
         // Additional validation based on transform type
         match &self.kind {
@@ -338,6 +342,36 @@ impl Transform {
     fn validate_procedural_transform(&self) -> Result<(), crate::schema::types::SchemaError> {
         // Procedural validation is already handled by TransformKind::validate()
         // Additional procedural-specific validation could go here
+        Ok(())
+    }
+
+    /// **CRITICAL**: Validates that transform doesn't attempt direct atom/molecule creation.
+    /// 
+    /// This ensures all data persistence goes through the mutation system.
+    fn validate_no_direct_creation(&self) -> Result<(), crate::schema::types::SchemaError> {
+        use crate::transform::restricted_access::TransformAccessValidator;
+        
+        // Get the transform code to validate
+        let transform_code = match &self.kind {
+            crate::schema::types::json_schema::TransformKind::Procedural { logic } => logic.clone(),
+            crate::schema::types::json_schema::TransformKind::Declarative { schema } => {
+                // For declarative transforms, check field expressions
+                let mut code_parts = Vec::new();
+                for field_def in schema.fields.values() {
+                    if let Some(atom_uuid) = &field_def.atom_uuid {
+                        code_parts.push(atom_uuid.clone());
+                    }
+                }
+                code_parts.join(" ")
+            }
+        };
+        
+        // Validate no direct creation patterns
+        TransformAccessValidator::validate_no_direct_creation(&transform_code)?;
+        
+        // Validate proper mutation usage
+        TransformAccessValidator::validate_mutation_usage(&transform_code)?;
+        
         Ok(())
     }
 

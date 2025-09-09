@@ -2,7 +2,7 @@ use super::manager::TransformManager;
 use crate::fold_db_core::transform_manager::utils::*;
 use crate::transform::executor::TransformExecutor;
 use crate::schema::types::{Schema, SchemaError, SchemaType};
-use log::info;
+use log::{info, warn};
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde_json::{Value as JsonValue, json};
@@ -10,7 +10,7 @@ use serde_json::{Value as JsonValue, json};
 impl TransformManager {
 
     /// Execute a single transform with input fetching and computation
-    pub fn execute_single_transform(_transform_id: &str, transform: &crate::schema::types::Transform, db_ops: &Arc<crate::db_operations::DbOperations>) -> Result<JsonValue, SchemaError> {
+    pub fn execute_single_transform(_transform_id: &str, transform: &crate::schema::types::Transform, db_ops: &Arc<crate::db_operations::DbOperations>, _fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<JsonValue, SchemaError> {
         println!("🔧 TransformManager: Executing transform '{}'", _transform_id);
         println!("🔧 TransformManager: Transform inputs: {:?}", transform.get_inputs());
         
@@ -190,8 +190,8 @@ impl TransformManager {
     
     
     
-    /// Generic result storage for any transform
-    pub fn store_transform_result_generic(db_ops: &Arc<crate::db_operations::DbOperations>, transform: &crate::schema::types::Transform, result: &JsonValue) -> Result<(), SchemaError> {
+    /// Generic result storage for any transform using mutations
+    pub fn store_transform_result_generic(db_ops: &Arc<crate::db_operations::DbOperations>, transform: &crate::schema::types::Transform, result: &JsonValue, fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
         if let Some(dot_pos) = transform.get_output().find('.') {
             let schema_name = &transform.get_output()[..dot_pos];
             let field_name = &transform.get_output()[dot_pos + 1..];
@@ -199,24 +199,58 @@ impl TransformManager {
             // Check if this is a HashRange schema and handle it specially
             if let Ok(Some(schema)) = db_ops.get_schema(schema_name) {
                 if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
-                    info!("🔑 Storing HashRange transform result for schema '{}'", schema_name);
-                    return Self::store_hashrange_transform_result(db_ops, schema_name, result);
+                    info!("🔑 Storing HashRange transform result for schema '{}' using mutations", schema_name);
+                    return Self::store_hashrange_transform_result_with_mutations(db_ops, schema_name, result, fold_db);
                 }
             }
             
-            // For non-HashRange schemas, use the original single-field storage
-            let atom = db_ops.create_atom(schema_name, "transform_system".to_string(), None, result.clone(), None)?;
-            Self::update_field_reference(db_ops, schema_name, field_name, atom.uuid())
+            // For non-HashRange schemas, create a mutation instead of direct atom creation
+            if let Some(fold_db) = fold_db {
+                info!("📝 Creating mutation for {}.{} using FoldDB", schema_name, field_name);
+                
+                let mut fields_and_values = std::collections::HashMap::new();
+                fields_and_values.insert(field_name.to_string(), result.clone());
+                
+                let mutation = crate::schema::types::Mutation::new(
+                    schema_name.to_string(),
+                    fields_and_values,
+                    "transform_system".to_string(),
+                    0, // trust_distance
+                    crate::schema::types::MutationType::Update,
+                );
+                
+                // Execute the mutation through FoldDB
+                fold_db.write_schema(mutation)?;
+                info!("✅ Mutation executed successfully for {}.{}", schema_name, field_name);
+                Ok(())
+            } else {
+                // Fallback to direct atom creation if FoldDB is not available
+                warn!("⚠️ FoldDB not available, falling back to direct atom creation for {}.{}", schema_name, field_name);
+                let atom = db_ops.create_atom(schema_name, "transform_system".to_string(), None, result.clone(), None)?;
+                Self::update_field_reference(db_ops, schema_name, field_name, atom.uuid())
+            }
         } else {
             Err(SchemaError::InvalidField(format!("Invalid output field format '{}', expected 'Schema.field'", transform.get_output())))
         }
     }
     
-    /// Special storage for HashRange schema transform results
-    fn store_hashrange_transform_result(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue) -> Result<(), SchemaError> {
-        info!("🔑 Storing HashRange transform result for schema '{}': {}", schema_name, result);
+    /// Special storage for HashRange schema transform results using mutations
+    fn store_hashrange_transform_result_with_mutations(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue, fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
+        info!("🔑 Storing HashRange transform result for schema '{}' using mutations: {}", schema_name, result);
         
-        // For HashRange schemas, we need to create separate atoms for each hash key (word)
+        // Get the schema definition to determine field names dynamically
+        let schema = db_ops.get_schema(schema_name)?
+            .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", schema_name)))?;
+        
+        // Get all field names from the schema (excluding hash_key and range_key which are special)
+        let field_names: Vec<String> = schema.fields.keys()
+            .filter(|field_name| *field_name != "hash_key" && *field_name != "range_key")
+            .cloned()
+            .collect();
+        
+        info!("🔍 Dynamic field names from schema '{}': {:?}", schema_name, field_names);
+        
+        // For HashRange schemas, we need to create mutations for each hash key (word)
         if let Some(result_obj) = result.as_object() {
             // Extract the hash_key array (words) and corresponding data arrays
             let hash_keys = result_obj.get("hash_key")
@@ -227,131 +261,122 @@ impl TransformManager {
                 .and_then(|r| r.as_array())
                 .ok_or_else(|| SchemaError::InvalidData("HashRange result must contain range_key array".to_string()))?;
             
-            // Extract field values - handle both single values and arrays
-            let author_values = result_obj.get("author").map(|a| {
-                if a.is_array() { a.clone() } else { json!([a.clone()]) }
-            }).unwrap_or_default();
-            let blog_values = result_obj.get("blog").map(|b| {
-                if b.is_array() { b.clone() } else { json!([b.clone()]) }
-            }).unwrap_or_default();
-            let title_values = result_obj.get("title").map(|t| {
-                if t.is_array() { t.clone() } else { json!([t.clone()]) }
-            }).unwrap_or_default();
-            let tags_values = result_obj.get("tags").map(|t| {
-                if t.is_array() { t.clone() } else { json!([t.clone()]) }
-            }).unwrap_or_default();
+            // Extract field values dynamically - handle both single values and arrays
+            let mut field_arrays: std::collections::HashMap<String, Vec<JsonValue>> = std::collections::HashMap::new();
             
-            // Convert to arrays for processing
-            let author_array = author_values.as_array().cloned().unwrap_or_default();
-            let blog_array = blog_values.as_array().cloned().unwrap_or_default();
-            let title_array = title_values.as_array().cloned().unwrap_or_default();
-            let tags_array = tags_values.as_array().cloned().unwrap_or_default();
-            
-            println!("🔍 DEBUG: Processing {} hash keys from {} blog posts", hash_keys.len(), blog_array.len());
-            
-            // Process each blog post individually and create/update atoms for each word
-            for (blog_index, blog_post) in blog_array.iter().enumerate() {
-                println!("🔍 DEBUG: Processing blog post {}: {:?}", blog_index, blog_post);
+            for field_name in &field_names {
+                let field_values = result_obj.get(field_name).map(|f| {
+                    if f.is_array() { f.clone() } else { json!([f.clone()]) }
+                }).unwrap_or_default();
                 
-                // Extract blog post metadata
-                let author = author_array.get(blog_index).cloned().unwrap_or(JsonValue::Null);
-                let title = title_array.get(blog_index).cloned().unwrap_or(JsonValue::Null);
-                let tags = tags_array.get(blog_index).cloned().unwrap_or(JsonValue::Null);
-                let range = range_keys.get(blog_index).cloned().unwrap_or(JsonValue::Null);
+                let field_array = field_values.as_array().cloned().unwrap_or_default();
+                field_arrays.insert(field_name.clone(), field_array);
+            }
+            
+            println!("🔍 DEBUG: Processing {} hash keys from {} data entries", hash_keys.len(), field_arrays.values().next().map(|v| v.len()).unwrap_or(0));
+            
+            // Check if we have FoldDB available for mutation execution
+            let has_fold_db = fold_db.is_some();
+            
+            // Collect all mutations first, then execute them
+            let mut all_mutations = Vec::new();
+            
+            // Process each data entry individually and create mutations for each word
+            for (data_index, _data_entry) in field_arrays.values().next().unwrap_or(&Vec::new()).iter().enumerate() {
+                println!("🔍 DEBUG: Processing data entry {}: {:?}", data_index, _data_entry);
                 
-                // Extract content from blog post to find words
-                let content = if let Some(blog_obj) = blog_post.as_object() {
-                    blog_obj.get("content").and_then(|c| c.as_str()).unwrap_or("")
-                } else {
-                    ""
-                };
+                // Extract field values for this data entry
+                let mut field_values: std::collections::HashMap<String, JsonValue> = std::collections::HashMap::new();
+                for field_name in &field_names {
+                    let field_value = field_arrays.get(field_name)
+                        .and_then(|arr| arr.get(data_index))
+                        .cloned()
+                        .unwrap_or(JsonValue::Null);
+                    field_values.insert(field_name.clone(), field_value);
+                }
+                
+                let range = range_keys.get(data_index).cloned().unwrap_or(JsonValue::Null);
+                
+                // Find the content field to extract words from
+                let content_field_name = field_names.iter()
+                    .find(|name| name.to_lowercase().contains("content") || name.to_lowercase().contains("text") || name.to_lowercase().contains("body"))
+                    .cloned()
+                    .unwrap_or_else(|| field_names.first().cloned().unwrap_or_default());
+                
+                let content_value = field_values.get(&content_field_name).cloned().unwrap_or(JsonValue::Null);
+                
+                // Extract content from data entry to find words
+                let content = content_value.as_str().unwrap_or_default().to_string();
                 
                 // Extract words from content (split on whitespace and punctuation)
-                let words: Vec<&str> = content
+                let words: Vec<String> = content
                     .split_whitespace()
-                    .map(|word| word.trim_matches(|c: char| c.is_ascii_punctuation()))
+                    .map(|word| word.trim_matches(|c: char| c.is_ascii_punctuation()).to_string())
                     .filter(|word| !word.is_empty())
                     .collect();
                 
-                println!("🔍 DEBUG: Extracted {} words from blog post {}: {:?}", words.len(), blog_index, &words[..std::cmp::min(10, words.len())]);
+                println!("🔍 DEBUG: Extracted {} words from data entry {}: {:?}", words.len(), data_index, &words[..std::cmp::min(10, words.len())]);
                 
-                // For each word in this blog post, create or update a HashRange atom
+                // For each word in this data entry, create mutations for HashRange atoms
                 for word in words {
                     let atom_uuid = format!("{}_{}", schema_name, word);
                     
-                    // Create the data for this word from this blog post
+                    // Create the data for this word from this data entry
                     let mut word_data = serde_json::Map::new();
                     word_data.insert("hash".to_string(), json!(word));
-                    word_data.insert("author".to_string(), author.clone());
-                    word_data.insert("blog".to_string(), blog_post.clone());
-                    word_data.insert("title".to_string(), title.clone());
-                    word_data.insert("tags".to_string(), tags.clone());
+                    
+                    // Add all field values dynamically
+                    for (field_name, field_value) in &field_values {
+                        word_data.insert(field_name.clone(), field_value.clone());
+                    }
                     word_data.insert("range".to_string(), range.clone());
                     
                     let word_result = json!(word_data);
                     
-                    println!("🔑 Processing word '{}' from blog post {}", word, blog_index);
+                    println!("🔑 Creating mutation for word '{}' from data entry {}", word, data_index);
                     println!("🔍 DEBUG: Word data: {}", word_result);
                     
-                    // Check if atom already exists for this word
-                    let existing_atom = db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid));
+                    // Create a mutation for this word
+                    let mut fields_and_values = std::collections::HashMap::new();
+                    fields_and_values.insert("value".to_string(), word_result);
                     
-                    let final_word_result = match existing_atom {
-                        Ok(Some(existing_atom)) => {
-                            println!("🔄 Found existing atom for '{}', checking for duplicates", word);
-                            let existing_content = existing_atom.content();
-                            
-                            // Check if this blog post is already associated with this word
-                            let current_blog = existing_content.get("blog");
-                            let is_duplicate = match current_blog {
-                                Some(existing_blog) if existing_blog.is_array() => {
-                                    existing_blog.as_array().unwrap().contains(blog_post)
-                                }
-                                Some(existing_blog) => existing_blog == blog_post,
-                                None => false
-                            };
-                            
-                            if is_duplicate {
-                                println!("🔍 DEBUG: Blog post already associated with word '{}', skipping", word);
-                                continue;
-                            }
-                            
-                            println!("🔄 Merging new blog post data for word '{}'", word);
-                            let mut merged_data = existing_content.as_object().unwrap().clone();
-                            
-                            // Merge each field, converting to arrays as needed
-                            for field_name in ["author", "blog", "title", "tags", "range"] {
-                                if let Some(new_value) = word_data.get(field_name) {
-                                    if let Some(existing_value) = merged_data.get(field_name) {
-                                        let mut merged_array = Vec::new();
-                                        
-                                        // Add existing values to array
-                                        if let Some(existing_array) = existing_value.as_array() {
-                                            merged_array.extend(existing_array.iter().cloned());
-                                        } else {
-                                            merged_array.push(existing_value.clone());
-                                        }
-                                        
-                                        // Add new value to array
-                                        merged_array.push(new_value.clone());
-                                        
-                                        merged_data.insert(field_name.to_string(), json!(merged_array));
-                                    } else {
-                                        merged_data.insert(field_name.to_string(), new_value.clone());
-                                    }
-                                }
-                            }
-                            
-                            json!(merged_data)
-                        }
-                        _ => {
-                            println!("🆕 Creating new atom for word '{}'", word);
-                            word_result
-                        }
-                    };
+                    let mutation = crate::schema::types::Mutation::new(
+                        schema_name.to_string(),
+                        fields_and_values,
+                        "transform_system".to_string(),
+                        0, // trust_distance
+                        crate::schema::types::MutationType::Create,
+                    );
                     
-                    // Create atom using the standard method (generates random UUID)
-                    let atom = db_ops.create_atom(schema_name, "transform_system".to_string(), None, final_word_result.clone(), None)?;
+                    all_mutations.push((word, atom_uuid, mutation, field_values.clone(), range.clone()));
+                }
+            }
+            
+            // Execute all mutations
+            if has_fold_db {
+                if let Some(fold_db) = fold_db {
+                    for (word, atom_uuid, mutation, _field_values, _range) in all_mutations {
+                        println!("📝 Executing mutation for word '{}' with UUID: {}", word, atom_uuid);
+                        fold_db.write_schema(mutation)?;
+                        println!("✅ HashRange mutation executed successfully for word '{}' with UUID: {}", word, atom_uuid);
+                    }
+                }
+            } else {
+                // Fallback to direct atom creation if FoldDB is not available
+                warn!("⚠️ FoldDB not available, falling back to direct atom creation");
+                for (word, atom_uuid, _mutation, field_values, range) in all_mutations {
+                    // Recreate the word data for fallback
+                    let mut word_data = serde_json::Map::new();
+                    word_data.insert("hash".to_string(), json!(word));
+                    
+                    for (field_name, field_value) in &field_values {
+                        word_data.insert(field_name.clone(), field_value.clone());
+                    }
+                    word_data.insert("range".to_string(), range.clone());
+                    
+                    let word_result = json!(word_data);
+                    
+                    let atom = db_ops.create_atom(schema_name, "transform_system".to_string(), None, word_result, None)?;
                     
                     // Store the atom with our predictable UUID pattern
                     println!("🔍 DEBUG: Storing atom for word '{}' with key: atom:{}", word, atom_uuid);
