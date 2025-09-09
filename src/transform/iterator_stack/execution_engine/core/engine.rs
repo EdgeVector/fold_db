@@ -34,11 +34,6 @@ impl ExecutionEngine {
         }
     }
 
-    /// Creates a new execution engine with default configuration
-    #[allow(dead_code)]
-    fn default() -> Self {
-        Self::new()
-    }
 
     /// Executes multiple field expressions and returns combined results
     pub fn execute_fields(

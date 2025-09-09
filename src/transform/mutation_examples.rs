@@ -18,17 +18,12 @@ use std::sync::Arc;
 use log::{info, error};
 
 /// Example: Creating and executing a mutation for data storage
-pub struct MutationBasedDataStorage {
-    #[allow(dead_code)]
-    mutation_service: Arc<MutationService>,
-}
+pub struct MutationBasedDataStorage;
 
 impl MutationBasedDataStorage {
     /// Create a new mutation-based data storage instance
-    pub fn new(message_bus: Arc<MessageBus>) -> Self {
-        Self {
-            mutation_service: Arc::new(MutationService::new(message_bus)),
-        }
+    pub fn new(_message_bus: Arc<MessageBus>) -> Self {
+        Self
     }
 
     /// Example: Store user profile data using mutations instead of direct DB access
@@ -259,17 +254,12 @@ impl BatchMutationExecutor {
 }
 
 /// Example: Conditional mutation execution based on data validation
-pub struct ConditionalMutationExecutor {
-    #[allow(dead_code)]
-    mutation_service: Arc<MutationService>,
-}
+pub struct ConditionalMutationExecutor;
 
 impl ConditionalMutationExecutor {
     /// Create a new conditional mutation executor
-    pub fn new(message_bus: Arc<MessageBus>) -> Self {
-        Self {
-            mutation_service: Arc::new(MutationService::new(message_bus)),
-        }
+    pub fn new(_message_bus: Arc<MessageBus>) -> Self {
+        Self
     }
 
     /// Execute mutation only if validation passes

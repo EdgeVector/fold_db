@@ -12,6 +12,7 @@
 
 // Centralized test utilities - eliminates duplicate test code across all tests
 pub mod test_utils;
+pub mod declarative_transform_test_utils;
 
 pub mod integration;
 pub mod unit;

@@ -3,34 +3,12 @@ use datafold::schema::types::{
     Transform, TransformRegistration,
 };
 use datafold::schema::SchemaType;
-use datafold::fold_db_core::transform_manager::manager::TransformManager;
-use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
-use datafold::db_operations::DbOperations;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tempfile::TempDir;
-use sled;
 
-/// Integration test fixture for declarative transform tests
-struct DeclarativeTransformIntegrationFixture {
-    transform_manager: TransformManager,
-    temp_dir: TempDir,
-}
-
-impl DeclarativeTransformIntegrationFixture {
-    fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let temp_dir = TempDir::new()?;
-        let db = sled::open(temp_dir.path())?;
-        let db_ops = Arc::new(DbOperations::new(db)?);
-        let message_bus = Arc::new(MessageBus::new());
-        let transform_manager = TransformManager::new(db_ops, message_bus)?;
-        
-        Ok(Self {
-            transform_manager,
-            temp_dir,
-        })
-    }
-}
+// Import shared test utilities
+use crate::declarative_transform_test_utils::{
+    DeclarativeTransformIntegrationFixture, TestSchemaBuilder, TestTransformBuilder, TestAssertions
+};
 
 /// Test end-to-end declarative transform workflow
 #[test]
@@ -38,26 +16,8 @@ fn test_end_to_end_declarative_transform_workflow() {
     let fixture = DeclarativeTransformIntegrationFixture::new()
         .expect("Failed to create integration test fixture");
     
-    // Step 1: Create a declarative transform
-    let declarative_schema = DeclarativeSchemaDefinition {
-        name: "blog_processing".to_string(),
-        schema_type: SchemaType::Single,
-        fields: HashMap::from([
-            ("processed_content".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("blogpost.map().content".to_string()),
-            }),
-            ("word_count".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("blogpost.map().author".to_string()),
-            }),
-            ("tag_list".to_string(), FieldDefinition {
-                field_type: Some("single".to_string()),
-                atom_uuid: Some("blogpost.map().tags".to_string()),
-            }),
-        ]),
-        key: None,
-    };
+    // Step 1: Create a declarative transform using shared utility
+    let declarative_schema = TestSchemaBuilder::create_single_schema("blog_processing");
     
     let declarative_transform = Transform::from_declarative_schema(
         declarative_schema,
@@ -66,20 +26,16 @@ fn test_end_to_end_declarative_transform_workflow() {
     );
     
     // Step 2: Validate the transform
-    declarative_transform.validate()
-        .expect("Declarative transform validation failed");
+    let validation_result = declarative_transform.validate();
+    TestAssertions::assert_schema_validation_success(validation_result, "End-to-end workflow test");
     
-    // Step 3: Register the transform
-    let registration = TransformRegistration {
-        transform_id: "blog_processor".to_string(),
-        transform: declarative_transform,
-        input_molecules: vec!["blog_processing.blogpost".to_string()],
-        input_names: vec!["blogpost".to_string()],
-        trigger_fields: vec!["blog_processing.blogpost".to_string()],
-        output_molecule: "blog_processing.processed_content".to_string(),
-        schema_name: "blog_processing".to_string(),
-        field_name: "processed_content".to_string(),
-    };
+    // Step 3: Register the transform using shared utility
+    let registration = TestTransformBuilder::create_transform_registration(
+        "blog_processor",
+        TestSchemaBuilder::create_single_schema("blog_processing"),
+        vec!["blog_processing.blogpost".to_string()],
+        "blog_processing.processed_content"
+    );
     
     fixture.transform_manager.register_transform_event_driven(registration)
         .expect("Failed to register declarative transform");
@@ -92,8 +48,7 @@ fn test_end_to_end_declarative_transform_workflow() {
             "Transform should be registered");
     
     let registered_transform = &transforms["blog_processor"];
-    assert!(registered_transform.is_declarative(), 
-            "Registered transform should be declarative");
+    TestAssertions::assert_transform_is_declarative(registered_transform, "End-to-end workflow test");
     
     // Step 5: Verify transform can be retrieved
     let transform_exists = fixture.transform_manager.transform_exists("blog_processor")
