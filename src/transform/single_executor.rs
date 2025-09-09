@@ -142,7 +142,7 @@ fn execute_with_engine_fallback(
         .map_err(|err| SchemaError::InvalidField(format!("Failed to parse expression '{}' for field '{}': {}", atom_uuid_expr, field_name, err)))?;
     
     // Validate field alignment
-    let validator = crate::schema::indexing::field_alignment::FieldAlignmentValidator::new();
+    let validator = crate::transform::iterator_stack::field_alignment::FieldAlignmentValidator::new();
     let alignment_result = validator.validate_alignment(&[parsed_chain.clone()])
         .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
     
@@ -158,7 +158,7 @@ fn execute_with_engine_fallback(
     
     // Execute with ExecutionEngine
     let input_data = JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-    let mut execution_engine = crate::schema::indexing::execution_engine::ExecutionEngine::new();
+    let mut execution_engine = crate::transform::iterator_stack::execution_engine::ExecutionEngine::new();
     
     let execution_result = execution_engine.execute_fields(
         &[parsed_chain],
@@ -183,8 +183,8 @@ fn execute_with_engine_fallback(
 /// # Returns
 ///
 /// The parsed chain or error
-fn parse_atom_uuid_expression(expression: &str) -> Result<crate::schema::indexing::chain_parser::ParsedChain, SchemaError> {
-    let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+fn parse_atom_uuid_expression(expression: &str) -> Result<crate::transform::iterator_stack::chain_parser::ParsedChain, SchemaError> {
+    let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
     parser.parse(expression).map_err(|err| {
         SchemaError::InvalidField(format!("Failed to parse expression '{}': {}", expression, err))
     })

@@ -58,6 +58,7 @@ pub mod aggregation;
 pub mod hash_range_executor;
 pub mod range_executor;
 pub mod single_executor;
+pub mod iterator_stack;
 
 // Public re-exports
 pub use crate::schema::types::Transform;

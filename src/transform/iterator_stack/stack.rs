@@ -3,8 +3,8 @@
 //! Manages iterator depths, scope contexts, and provides proper nesting support
 //! for complex field expressions with multiple iterator levels.
 
-use crate::schema::indexing::chain_parser::{ParsedChain, IteratorScope};
-use crate::schema::indexing::errors::{IteratorStackError, IteratorStackResult};
+use crate::transform::iterator_stack::chain_parser::{ParsedChain, IteratorScope};
+use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -180,21 +180,21 @@ impl IteratorStack {
         // Look for the field that creates the iterator
         for (i, operation) in operations.iter().enumerate() {
             match operation {
-                crate::schema::indexing::chain_parser::ChainOperation::FieldAccess(field_name) => {
+                crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field_name) => {
                     // Check if this is followed by a split operation
                     if i + 1 < operations.len() {
                         match &operations[i + 1] {
-                            crate::schema::indexing::chain_parser::ChainOperation::SplitArray => {
+                            crate::transform::iterator_stack::chain_parser::ChainOperation::SplitArray => {
                                 return Ok(IteratorType::ArraySplit {
                                     field_name: field_name.clone(),
                                 });
                             }
-                            crate::schema::indexing::chain_parser::ChainOperation::SplitByWord => {
+                            crate::transform::iterator_stack::chain_parser::ChainOperation::SplitByWord => {
                                 return Ok(IteratorType::WordSplit {
                                     field_name: field_name.clone(),
                                 });
                             }
-                            crate::schema::indexing::chain_parser::ChainOperation::Map => {
+                            crate::transform::iterator_stack::chain_parser::ChainOperation::Map => {
                                 return Ok(IteratorType::Schema {
                                     field_name: field_name.clone(),
                                 });
@@ -411,7 +411,7 @@ pub struct IteratorStackSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::indexing::chain_parser::{ChainParser, ChainOperation};
+    use crate::transform::iterator_stack::chain_parser::{ChainParser, ChainOperation};
     use std::collections::HashMap;
 
     // Test constants
@@ -1094,7 +1094,7 @@ mod tests {
         let stack = IteratorStack::new();
         
         // Test Schema iterator detection
-        let mut scope = crate::schema::indexing::chain_parser::IteratorScope {
+        let mut scope = crate::transform::iterator_stack::chain_parser::IteratorScope {
             depth: 0,
             branch_path: "blogpost".to_string(),
             operations: vec![

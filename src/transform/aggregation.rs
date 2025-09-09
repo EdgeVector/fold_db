@@ -3,9 +3,9 @@
 //! This module handles the aggregation of execution results from the ExecutionEngine
 //! into the final output format for different schema types.
 
-use crate::schema::indexing::execution_engine::{ExecutionResult, IndexEntry};
+use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
 use crate::schema::constants::{HASH_KEY_NAME, RANGE_KEY_NAME};
-use crate::schema::indexing::chain_parser::ParsedChain;
+use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::schema::types::SchemaError;
 use log::info;
 use serde_json::Value as JsonValue;
@@ -316,7 +316,7 @@ fn resolve_with_enhanced_fallback(
 /// # Returns
 ///
 /// The extracted field value
-fn extract_optimal_field_value(entry: &crate::schema::indexing::execution_engine::IndexEntry) -> JsonValue {
+fn extract_optimal_field_value(entry: &crate::transform::iterator_stack::execution_engine::IndexEntry) -> JsonValue {
     // For now, return the hash_value as the primary value
     // This could be enhanced to choose between hash_value and range_value based on context
     serde_json::to_value(&entry.hash_value).unwrap_or(JsonValue::Null)
@@ -356,12 +356,12 @@ fn resolve_parsed_chain_simple(
 /// # Returns
 ///
 /// The extracted simple path
-fn extract_simple_path_from_operations(operations: &[crate::schema::indexing::chain_parser::ChainOperation]) -> String {
+fn extract_simple_path_from_operations(operations: &[crate::transform::iterator_stack::chain_parser::ChainOperation]) -> String {
     let mut path_parts = Vec::new();
     
     for operation in operations {
         match operation {
-            crate::schema::indexing::chain_parser::ChainOperation::FieldAccess(field_name) => {
+            crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field_name) => {
                 path_parts.push(field_name.clone());
             }
             _ => {

@@ -380,8 +380,8 @@ impl Transform {
         &self, 
         schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition
     ) -> Result<(), crate::schema::types::SchemaError> {
-        use crate::schema::indexing::chain_parser::ChainParser;
-        use crate::schema::indexing::field_alignment::FieldAlignmentValidator;
+        use crate::transform::iterator_stack::chain_parser::ChainParser;
+        use crate::transform::iterator_stack::field_alignment::FieldAlignmentValidator;
         use log::info;
 
         info!("🔍 Validating declarative transform with iterator stack infrastructure");
@@ -403,7 +403,7 @@ impl Transform {
         
         for (field_name, field_def) in &schema.fields {
             if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-                let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+                let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
                 match parser.parse(atom_uuid_expr) {
                     Ok(parsed_chain) => {
                         parsed_chains.push(parsed_chain);
@@ -477,8 +477,8 @@ impl Transform {
     }
 
     /// Converts iterator stack errors to user-friendly messages
-    fn convert_iterator_error_to_readable_message(&self, error: &crate::schema::indexing::errors::IteratorStackError) -> String {
-        use crate::schema::indexing::errors::IteratorStackError;
+    fn convert_iterator_error_to_readable_message(&self, error: &crate::transform::iterator_stack::errors::IteratorStackError) -> String {
+        use crate::transform::iterator_stack::errors::IteratorStackError;
 
         match error {
             IteratorStackError::InvalidChainSyntax { expression, reason } => {

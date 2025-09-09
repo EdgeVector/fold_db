@@ -3,9 +3,9 @@
 //! This module handles the execution of Range schema types, including
 //! validation, coordination, and multi-chain execution.
 
-use crate::schema::indexing::chain_parser::{ChainParser, ParsedChain};
-use crate::schema::indexing::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
-use crate::schema::indexing::execution_engine::{ExecutionEngine, ExecutionResult};
+use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
+use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
+use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
 use crate::schema::types::SchemaError;
 use log::{info, error};
 use serde_json::Value as JsonValue;
@@ -349,12 +349,12 @@ fn resolve_dotted_path(path: &str, input_values: &HashMap<String, JsonValue>) ->
 /// # Returns
 ///
 /// The extracted simple path
-fn extract_simple_path_from_operations(operations: &[crate::schema::indexing::chain_parser::ChainOperation]) -> String {
+fn extract_simple_path_from_operations(operations: &[crate::transform::iterator_stack::chain_parser::ChainOperation]) -> String {
     let mut path_parts = Vec::new();
     
     for operation in operations {
         match operation {
-            crate::schema::indexing::chain_parser::ChainOperation::FieldAccess(field_name) => {
+            crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field_name) => {
                 path_parts.push(field_name.clone());
             }
             _ => {
@@ -392,6 +392,6 @@ fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, SchemaErr
 /// # Returns
 ///
 /// Converted schema error
-fn convert_iterator_stack_error(error: crate::schema::indexing::errors::IteratorStackError) -> SchemaError {
+fn convert_iterator_stack_error(error: crate::transform::iterator_stack::errors::IteratorStackError) -> SchemaError {
     SchemaError::InvalidField(format!("Iterator stack error: {}", error))
 }

@@ -3,8 +3,8 @@
 //! This module provides validation functions for schema structure, field alignment,
 //! and other validation concerns in the transform execution framework.
 
-use crate::schema::indexing::chain_parser::{ChainParser, ParsedChain};
-use crate::schema::indexing::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
+use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
+use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
 use crate::schema::types::SchemaError;
 use log::{info, error};
 
