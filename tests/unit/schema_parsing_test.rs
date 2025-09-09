@@ -1,16 +1,20 @@
-use datafold::schema::types::json_schema::{JsonSchemaDefinition, DeclarativeSchemaDefinition};
-use datafold::schema::schema_interpretation;
+use datafold::schema::types::json_schema::DeclarativeSchemaDefinition;
 use datafold::schema::validator::SchemaValidator;
 use datafold::schema::core::SchemaCore;
-use datafold::schema::types::{Schema, SchemaType};
+use datafold::schema::types::SchemaType;
+use tempfile::TempDir;
 
 #[test]
 fn test_blogpost_word_index_schema_parsing() {
-    println!("🔧 Testing BlogPostWordIndex schema parsing");
+    println!("🔧 Testing BlogPostWordIndex schema parsing with temp database");
     
-    // Create a schema core for testing
-    let schema_core = SchemaCore::new_for_testing("test_blogpost_word_index_parsing").expect("Failed to create schema core");
-    let validator = SchemaValidator::new(&schema_core);
+    // Create a temporary directory for the test database
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let db_path = temp_dir.path().to_str().expect("Failed to get temp path");
+    
+    // Create a schema core for testing using the temp directory
+    let schema_core = SchemaCore::new_for_testing(db_path).expect("Failed to create schema core with temp database");
+    let _validator = SchemaValidator::new(&schema_core);
     
     // Test BlogPostWordIndex schema parsing
     let blogpost_word_index_json = r#"{

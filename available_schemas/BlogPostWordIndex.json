@@ -6,7 +6,7 @@
     "range_field": "BlogPost.map().publish_date"
   },
   "fields": {
-    "blog": { "atom_uuid": "BlogPost.map()" },
+    "content": { "atom_uuid": "BlogPost.map().content" },
     "author": { "atom_uuid": "BlogPost.map().author" },
     "title": { "atom_uuid": "BlogPost.map().title" },
     "tags": { "atom_uuid": "BlogPost.map().tags" }

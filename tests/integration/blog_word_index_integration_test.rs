@@ -8,9 +8,9 @@
 //! 5. Query BlogWordIndex by word to verify results
 
 use datafold::schema::types::{
-    json_schema::{DeclarativeSchemaDefinition, FieldDefinition, KeyConfig},
-    Transform, TransformRegistration, Mutation, MutationType, Query,
-    Schema, SchemaType, FieldVariant, SingleField,
+    json_schema::DeclarativeSchemaDefinition,
+    Mutation, MutationType, Query,
+    Schema,
 };
 use datafold::fold_db_core::FoldDB;
 use serde_json::{json, Value};
@@ -25,11 +25,12 @@ struct BlogWordIndexIntegrationFixture {
 
 impl BlogWordIndexIntegrationFixture {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        // Use a temporary directory instead of the root test_db folder to avoid locks
         let temp_dir = TempDir::new()?;
-        let db_path = temp_dir.path().to_str().unwrap();
+        let db_path = temp_dir.path();
         
-        // Create a real FoldDB instance for testing
-        let fold_db = FoldDB::new(db_path)?;
+        // Create a real FoldDB instance for testing using temp directory
+        let fold_db = FoldDB::new(db_path.to_str().expect("Failed to convert path to string"))?;
         
         Ok(Self {
             fold_db,
@@ -172,7 +173,7 @@ impl BlogWordIndexIntegrationFixture {
         
         let query = Query {
             schema_name: "BlogPostWordIndex".to_string(),
-            fields: vec!["blog".to_string(), "author".to_string(), "title".to_string(), "tags".to_string()],
+            fields: vec!["content".to_string(), "author".to_string(), "title".to_string(), "tags".to_string()],
             pub_key: "test-user".to_string(),
             trust_distance: 0,
             filter: Some(json!({
@@ -414,13 +415,13 @@ impl BlogWordIndexIntegrationFixture {
     }
 }
 
-/// Test the complete BlogWordIndex declarative transform workflow
+/// Test the complete BlogWordIndex declarative transform workflow using temp database
 #[tokio::test]
 async fn test_blog_word_index_declarative_transform_workflow() {
     let mut fixture = BlogWordIndexIntegrationFixture::new()
         .expect("Failed to create integration test fixture");
     
-    println!("🚀 Starting BlogWordIndex declarative transform integration test");
+    println!("🚀 Starting BlogWordIndex declarative transform integration test with temp database");
     
     // Step 1: Load BlogPost schema
     fixture.load_blogpost_schema()
@@ -463,7 +464,7 @@ async fn test_blog_word_index_declarative_transform_workflow() {
         assert!(result.is_object(), "Query result should be an object");
         
         let result_obj = result.as_object().unwrap();
-        assert!(result_obj.contains_key("blog"), "Result should contain 'blog' field");
+        assert!(result_obj.contains_key("content"), "Result should contain 'content' field");
         assert!(result_obj.contains_key("author"), "Result should contain 'author' field");
         assert!(result_obj.contains_key("title"), "Result should contain 'title' field");
         assert!(result_obj.contains_key("tags"), "Result should contain 'tags' field");

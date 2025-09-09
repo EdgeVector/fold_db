@@ -8,7 +8,6 @@ use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDef
 use datafold::schema::types::schema::SchemaType;
 use datafold::transform::Transform;
 use datafold::transform::executor::TransformExecutor;
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
 #[test]
