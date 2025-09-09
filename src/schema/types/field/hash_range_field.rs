@@ -3,7 +3,7 @@
 //! Provides a field type that combines hash and range functionality for
 //! efficient indexing with complex fan-out operations.
 
-use crate::schema::indexing::{
+use crate::transform::iterator_stack::{
     chain_parser::{ChainParser, ParsedChain},
     field_alignment::FieldAlignmentValidator,
     execution_engine::ExecutionEngine,
@@ -125,7 +125,7 @@ impl HashRangeField {
         let alignment_result = validator.validate_alignment(&all_chains)?;
         
         if !alignment_result.valid {
-            return Err(crate::schema::indexing::errors::IteratorStackError::FieldAlignmentError {
+            return Err(crate::transform::iterator_stack::errors::IteratorStackError::FieldAlignmentError {
                 field: "HashRange".to_string(),
                 reason: format!("Field alignment validation failed: {:?}", alignment_result.errors),
             });
@@ -148,7 +148,7 @@ impl HashRangeField {
         let alignment_result = validator.validate_alignment(&all_chains)?;
         
         if !alignment_result.valid {
-            return Err(crate::schema::indexing::errors::IteratorStackError::ExecutionError {
+            return Err(crate::transform::iterator_stack::errors::IteratorStackError::ExecutionError {
                 message: "Cannot execute with invalid field alignment".to_string(),
             });
         }
@@ -336,15 +336,15 @@ pub struct HashRangeStackInfo {
     /// Iterator depth of atom UUID field
     pub atom_uuid_depth: usize,
     /// Alignment type for hash field
-    pub hash_alignment: Option<crate::schema::indexing::chain_parser::FieldAlignment>,
+    pub hash_alignment: Option<crate::transform::iterator_stack::chain_parser::FieldAlignment>,
     /// Alignment type for range field
-    pub range_alignment: Option<crate::schema::indexing::chain_parser::FieldAlignment>,
+    pub range_alignment: Option<crate::transform::iterator_stack::chain_parser::FieldAlignment>,
     /// Alignment type for atom UUID field
-    pub atom_uuid_alignment: Option<crate::schema::indexing::chain_parser::FieldAlignment>,
+    pub atom_uuid_alignment: Option<crate::transform::iterator_stack::chain_parser::FieldAlignment>,
     /// Whether all fields are compatible
     pub compatible: bool,
     /// Validation warnings
-    pub warnings: Vec<crate::schema::indexing::field_alignment::AlignmentWarning>,
+    pub warnings: Vec<crate::transform::iterator_stack::field_alignment::AlignmentWarning>,
 }
 
 /// Performance analysis for a HashRange field
@@ -518,13 +518,13 @@ mod tests {
         let atom_uuid_alignment = stack_info.atom_uuid_alignment.unwrap();
         
         // Hash field should be OneToOne (depth 2, max depth 2)
-        assert_eq!(hash_alignment, crate::schema::indexing::chain_parser::FieldAlignment::OneToOne);
+        assert_eq!(hash_alignment, crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne);
         
         // Range field should be Broadcast (depth 1, max depth 2)
-        assert_eq!(range_alignment, crate::schema::indexing::chain_parser::FieldAlignment::Broadcast);
+        assert_eq!(range_alignment, crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast);
         
         // Atom UUID field should be Broadcast (depth 1, max depth 2)
-        assert_eq!(atom_uuid_alignment, crate::schema::indexing::chain_parser::FieldAlignment::Broadcast);
+        assert_eq!(atom_uuid_alignment, crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast);
         
         // Verify that the field is compatible
         assert!(stack_info.compatible, "Field should be compatible");

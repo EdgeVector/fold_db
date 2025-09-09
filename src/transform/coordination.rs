@@ -3,10 +3,10 @@
 //! This module handles the complex coordination logic for executing multiple
 //! transform chains together, particularly for HashRange and Range schemas.
 
-use crate::schema::indexing::chain_parser::{ChainParser, ParsedChain};
-use crate::schema::indexing::errors::IteratorStackError;
-use crate::schema::indexing::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
-use crate::schema::indexing::execution_engine::{ExecutionEngine, ExecutionResult};
+use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
+use crate::transform::iterator_stack::errors::IteratorStackError;
+use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
+use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
 use crate::schema::types::SchemaError;
 use log::{info, error};
 use serde_json::Value as JsonValue;

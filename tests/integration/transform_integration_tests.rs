@@ -19,7 +19,7 @@ use datafold::schema::types::schema::SchemaType;
 use datafold::fold_db_core::transform_manager::TransformManager;
 use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
 use datafold::transform::TransformExecutor;
-use datafold::schema::indexing::{ChainParser, FieldAlignmentValidator};
+use datafold::transform::iterator_stack::{ChainParser, FieldAlignmentValidator};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;

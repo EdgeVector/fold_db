@@ -3,8 +3,8 @@
 //! Ensures all fields are properly aligned relative to the deepest iterator
 //! using 1:1, broadcast, and reduced alignment rules.
 
-use crate::schema::indexing::chain_parser::{FieldAlignment, FieldAlignmentRequirement, ParsedChain};
-use crate::schema::indexing::errors::{IteratorStackError, IteratorStackResult};
+use crate::transform::iterator_stack::chain_parser::{FieldAlignment, FieldAlignmentRequirement, ParsedChain};
+use crate::transform::iterator_stack::errors::IteratorStackResult;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -202,7 +202,7 @@ impl FieldAlignmentValidator {
         for chain in chains.iter() {
             if chain.depth > 0 {
                 // Extract branch up to the maximum depth for proper comparison
-                let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+                let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
                 match parser.extract_branch_up_to_depth(&chain.operations, max_depth) {
                     Ok(branch_at_max_depth) => {
                         depth_branches
@@ -334,13 +334,13 @@ impl FieldAlignmentValidator {
         
         for operation in operations {
             match operation {
-                crate::schema::indexing::chain_parser::ChainOperation::SplitArray => {
+                crate::transform::iterator_stack::chain_parser::ChainOperation::SplitArray => {
                     return "join(',')".to_string();
                 }
-                crate::schema::indexing::chain_parser::ChainOperation::SplitByWord => {
+                crate::transform::iterator_stack::chain_parser::ChainOperation::SplitByWord => {
                     return "join(' ')".to_string();
                 }
-                crate::schema::indexing::chain_parser::ChainOperation::FieldAccess(field) => {
+                crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field) => {
                     if field.contains("count") || field.contains("size") {
                         return "count()".to_string();
                     }
@@ -534,7 +534,7 @@ pub enum OptimizationType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::indexing::chain_parser::ChainParser;
+    use crate::transform::iterator_stack::chain_parser::ChainParser;
 
     #[test]
     fn test_simple_alignment_validation() {

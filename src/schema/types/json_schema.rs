@@ -417,9 +417,9 @@ impl DeclarativeSchemaDefinition {
     /// Validates the declarative schema using existing iterator stack infrastructure.
     /// This provides comprehensive validation using field alignment and chain parsing.
     fn validate_with_iterator_stack(&self) -> Result<(), SchemaError> {
-        use crate::schema::indexing::chain_parser::ChainParser;
-        use crate::schema::indexing::field_alignment::FieldAlignmentValidator;
-        use crate::schema::indexing::errors::IteratorStackError;
+        use crate::transform::iterator_stack::chain_parser::ChainParser;
+        use crate::transform::iterator_stack::field_alignment::FieldAlignmentValidator;
+        use crate::transform::iterator_stack::errors::IteratorStackError;
         use log::info;
 
         info!("🔍 Performing iterator stack validation for schema: {}", self.name);
@@ -430,7 +430,7 @@ impl DeclarativeSchemaDefinition {
         
         for (field_name, field_def) in &self.fields {
             if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-                let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+                let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
                 match parser.parse(atom_uuid_expr) {
                     Ok(parsed_chain) => {
                         parsed_chains.push(parsed_chain);
@@ -501,8 +501,8 @@ impl DeclarativeSchemaDefinition {
     }
 
     /// Converts iterator stack errors to schema errors for consistent error handling
-    fn convert_iterator_error_to_schema_error(&self, error: &crate::schema::indexing::errors::IteratorStackError) -> String {
-        use crate::schema::indexing::errors::IteratorStackError;
+    fn convert_iterator_error_to_schema_error(&self, error: &crate::transform::iterator_stack::errors::IteratorStackError) -> String {
+        use crate::transform::iterator_stack::errors::IteratorStackError;
         
         match error {
             IteratorStackError::InvalidChainSyntax { expression, reason } => {
@@ -545,7 +545,7 @@ impl DeclarativeSchemaDefinition {
         })?;
 
         // Validate that hash_field and range_field expressions can be parsed
-        let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
         
         parser.parse(&key_config.hash_field)
             .map_err(|e| SchemaError::InvalidField(format!(
@@ -573,7 +573,7 @@ impl DeclarativeSchemaDefinition {
         })?;
 
         if let Some(atom_uuid_expr) = &range_field.atom_uuid {
-            let parser = crate::schema::indexing::chain_parser::ChainParser::new();
+            let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
             parser.parse(atom_uuid_expr)
                 .map_err(|e| SchemaError::InvalidField(format!(
                     "Range schema range_key field '{}' expression invalid: {}", 

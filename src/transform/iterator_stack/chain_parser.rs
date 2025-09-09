@@ -3,7 +3,7 @@
 //! Parses expressions like `blogpost.map().content.split_by_word().map()` and
 //! tracks iterator depths and branch structures.
 
-use crate::schema::indexing::errors::{IteratorStackError, IteratorStackResult, constants};
+use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult, constants};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

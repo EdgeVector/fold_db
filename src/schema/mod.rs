@@ -36,7 +36,6 @@ pub mod duplicate_detection;
 pub mod field_factory;
 pub mod file_operations;
 pub mod hasher;
-pub mod indexing;
 pub mod types;
 pub mod validator;
 pub mod molecule_variants;
