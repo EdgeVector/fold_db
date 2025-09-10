@@ -101,6 +101,15 @@ impl DataFoldNode {
                 .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to set permissions: {}", e)))?;
         }
 
+        // CRITICAL: Reload transforms after schema approval to load any newly registered declarative transforms
+        // This ensures that declarative transforms become immediately visible without manual reload
+        if let Err(e) = db.reload_transforms() {
+            log::warn!("Failed to reload transforms after schema approval for '{}': {}", schema_name, e);
+            // Don't fail the schema approval if transform reload fails - this is a non-critical operation
+        } else {
+            log::info!("✅ Successfully reloaded transforms after schema approval for '{}'", schema_name);
+        }
+
         Ok(())
     }
 

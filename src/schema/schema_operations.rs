@@ -1,4 +1,4 @@
-use crate::schema::constants::{KEY_CONFIG_HASH_FIELD, KEY_CONFIG_RANGE_FIELD, KEY_FIELD_NAME};
+use crate::schema::constants::{KEY_CONFIG_HASH_FIELD, KEY_CONFIG_RANGE_FIELD, KEY_FIELD_NAME, DEFAULT_TRANSFORM_ID_SUFFIX, DEFAULT_OUTPUT_FIELD_NAME};
 use super::{schema_lock_error, validator::SchemaValidator};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{
@@ -280,21 +280,16 @@ impl SchemaCore {
         // Parse field expressions to extract input schemas
         for field in schema.fields.values() {
             if let crate::schema::types::field::FieldVariant::HashRange(hashrange_field) = field {
-                // Extract schema names from hash_field, range_field, and atom_uuid expressions
-                let expressions = vec![
-                    &hashrange_field.hash_field,
-                    &hashrange_field.range_field,
-                    &hashrange_field.atom_uuid,
-                ];
-                
-                for expression in expressions {
-                    // Parse expression like "blogpost.map().content.split_by_word().map()"
-                    if let Some(schema_name) = expression.split('.').next() {
-                        if !input_molecules.contains(&schema_name.to_string()) {
-                            input_molecules.push(schema_name.to_string());
-                            input_names.push(schema_name.to_string());
-                            info!("📋 Added input dependency: {}", schema_name);
-                        }
+                // Extract schema names from atom_uuid expressions (same logic as analyze_dependencies)
+                let atom_uuid = &hashrange_field.atom_uuid;
+                // Extract schema names from expressions like "BlogPost.map().content"
+                // Take the first part before the first dot
+                if let Some(first_dot) = atom_uuid.find('.') {
+                    let schema_name = &atom_uuid[..first_dot];
+                    if !schema_name.is_empty() && !input_molecules.contains(&schema_name.to_string()) {
+                        input_molecules.push(schema_name.to_string());
+                        input_names.push(schema_name.to_string());
+                        info!("📋 Added input dependency: {}", schema_name);
                     }
                 }
             }
@@ -319,14 +314,15 @@ impl SchemaCore {
                 }
             } else {
                 // Fallback: if we can't get the schema, just use the schema name
-                trigger_fields.push(input_schema.clone());
+                trigger_fields.push(input_schema.to_string());
             }
         }
         
-        // Generate transform ID
-        let transform_id = format!("{}.declarative", schema.name);
+        // Generate transform ID using configurable suffix
+        let transform_id = format!("{}.{}", schema.name, DEFAULT_TRANSFORM_ID_SUFFIX);
         
-        // For HashRange schemas, output to the first field instead of a non-existent 'key' field
+        // For HashRange schemas, use the first field as output field
+        // TODO: In the future, this could be made configurable via schema metadata
         let output_field = if let Some((first_field_name, _)) = schema.fields.iter().next() {
             first_field_name.clone()
         } else {

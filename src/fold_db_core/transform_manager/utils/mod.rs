@@ -140,110 +140,122 @@ impl TransformUtils {
         // Check if this is a range field first
         match field {
             FieldVariant::Range(_) => {
-                info!("� Detected range field, using MoleculeRange resolution");
-                let range_molecule_uuid = format!("{}_{}_range", schema.name, field_name);
-                info!("🔍 Looking for MoleculeRange: {}", range_molecule_uuid);
+                info!("🔍 Detected range field, using MoleculeRange resolution");
                 
-                match db_ops.get_item::<crate::atom::MoleculeRange>(&format!("ref:{}", range_molecule_uuid)) {
-                    Ok(Some(range_molecule)) => {
-                        info!("✅ Found MoleculeRange with {} entries", range_molecule.atom_uuids.len());
-                        
-                        // BUG FIX 1: Filter by specific range key if provided
-                        let entries_to_process: Vec<_> = if let Some(filter_value) = &range_key_filter {
-                            info!("🎯 Processing range filter: {:?}", filter_value);
+                // FIXED: Search for all MoleculeRanges that match the pattern {schema}_{field}_range_*
+                let range_prefix = format!("ref:{}_{}_range_", schema.name, field_name);
+                info!("🔍 Looking for MoleculeRanges with prefix: {}", range_prefix);
+                
+                // Get all keys that match the pattern
+                let matching_keys = db_ops.list_items_with_prefix(&range_prefix)
+                    .map_err(|e| SchemaError::InvalidField(format!("Failed to search for MoleculeRanges: {}", e)))?;
+                
+                info!("🔍 Found {} MoleculeRange keys matching pattern", matching_keys.len());
+                
+                if matching_keys.is_empty() {
+                    info!("⚠️ No MoleculeRanges found for field {}.{}", schema.name, field_name);
+                    return Ok(JsonValue::Object(serde_json::Map::new()));
+                }
+                
+                let mut combined_data = serde_json::Map::new();
+                
+                // Process each MoleculeRange
+                for key in matching_keys {
+                    info!("🔍 Processing MoleculeRange key: {}", key);
+                    
+                    match db_ops.get_item::<crate::atom::MoleculeRange>(&key) {
+                        Ok(Some(range_molecule)) => {
+                            info!("✅ Found MoleculeRange with {} entries", range_molecule.atom_uuids.len());
                             
-                            // Parse the filter into a RangeFilter enum
-                            let range_filter = match serde_json::from_value::<crate::schema::types::field::range_filter::RangeFilter>(filter_value.clone()) {
-                                Ok(filter) => filter,
-                                Err(e) => {
-                                    error!("❌ Failed to parse range filter: {}", e);
-                                    return Err(SchemaError::InvalidData(format!("Invalid range filter format: {}", e)));
+                            // Extract range key from the MoleculeRange UUID
+                            // Pattern: ref:{schema}_{field}_range_{range_key}
+                            let range_key = key.strip_prefix(&range_prefix)
+                                .ok_or_else(|| SchemaError::InvalidData(format!("Invalid MoleculeRange key format: {}", key)))?;
+                            
+                            info!("🔍 Extracted range key: '{}' from key: {}", range_key, key);
+                            
+                            // Apply range key filter if provided
+                            let should_process = if let Some(filter_value) = &range_key_filter {
+                                info!("🎯 Processing range filter: {:?}", filter_value);
+                                
+                                // Parse the filter into a RangeFilter enum
+                                let range_filter = match serde_json::from_value::<crate::schema::types::field::range_filter::RangeFilter>(filter_value.clone()) {
+                                    Ok(filter) => filter,
+                                    Err(e) => {
+                                        error!("❌ Failed to parse range filter: {}", e);
+                                        return Err(SchemaError::InvalidData(format!("Invalid range filter format: {}", e)));
+                                    }
+                                };
+                                
+                                // Apply the filter to this specific range key
+                                match &range_filter {
+                                    crate::schema::types::field::range_filter::RangeFilter::Key(key) => {
+                                        info!("🎯 Applying Key filter for: {}", key);
+                                        range_key == key
+                                    }
+                                    crate::schema::types::field::range_filter::RangeFilter::KeyPrefix(prefix) => {
+                                        info!("🎯 Applying KeyPrefix filter for: {}", prefix);
+                                        range_key.starts_with(prefix)
+                                    }
+                                    crate::schema::types::field::range_filter::RangeFilter::KeyRange { start, end } => {
+                                        info!("🎯 Applying KeyRange filter from {} to {}", start, end);
+                                        range_key >= start.as_str() && range_key < end.as_str()
+                                    }
+                                    crate::schema::types::field::range_filter::RangeFilter::Keys(keys) => {
+                                        info!("🎯 Applying Keys filter for: {:?}", keys);
+                                        keys.contains(&range_key.to_string())
+                                    }
+                                    crate::schema::types::field::range_filter::RangeFilter::KeyPattern(pattern) => {
+                                        info!("🎯 Applying KeyPattern filter for: {}", pattern);
+                                        crate::schema::types::field::range_filter::matches_pattern(range_key, pattern)
+                                    }
+                                    crate::schema::types::field::range_filter::RangeFilter::Value(value) => {
+                                        info!("🎯 Applying Value filter for: {}", value);
+                                        // For value filters, we need to check the actual atom content
+                                        // This is more complex and would require loading the atom first
+                                        true // For now, include all entries when using Value filter
+                                    }
                                 }
+                            } else {
+                                info!("📋 Processing all range keys");
+                                true
                             };
                             
-                            // Apply the filter directly to the molecule range data
-                            let matching_entries: Vec<_> = match &range_filter {
-                                crate::schema::types::field::range_filter::RangeFilter::Key(key) => {
-                                    info!("🎯 Applying Key filter for: {}", key);
-                                    range_molecule.atom_uuids.iter()
-                                        .filter(|(k, _)| k == &key)
-                                        .collect()
-                                }
-                                crate::schema::types::field::range_filter::RangeFilter::KeyPrefix(prefix) => {
-                                    info!("🎯 Applying KeyPrefix filter for: {}", prefix);
-                                    range_molecule.atom_uuids.iter()
-                                        .filter(|(k, _)| k.starts_with(prefix))
-                                        .collect()
-                                }
-                                crate::schema::types::field::range_filter::RangeFilter::KeyRange { start, end } => {
-                                    info!("🎯 Applying KeyRange filter from {} to {}", start, end);
-                                    range_molecule.atom_uuids.iter()
-                                        .filter(|(k, _)| k >= &start && k < &end)
-                                        .collect()
-                                }
-                                crate::schema::types::field::range_filter::RangeFilter::Keys(keys) => {
-                                    info!("🎯 Applying Keys filter for: {:?}", keys);
-                                    let key_set: std::collections::HashSet<_> = keys.iter().collect();
-                                    range_molecule.atom_uuids.iter()
-                                        .filter(|(k, _)| key_set.contains(k))
-                                        .collect()
-                                }
-                                crate::schema::types::field::range_filter::RangeFilter::KeyPattern(pattern) => {
-                                    info!("🎯 Applying KeyPattern filter for: {}", pattern);
-                                    range_molecule.atom_uuids.iter()
-                                        .filter(|(k, _)| crate::schema::types::field::range_filter::matches_pattern(k, pattern))
-                                        .collect()
-                                }
-                                crate::schema::types::field::range_filter::RangeFilter::Value(value) => {
-                                    info!("🎯 Applying Value filter for: {}", value);
-                                    range_molecule.atom_uuids.iter()
-                                        .filter(|(_, v)| v == &value)
-                                        .collect()
-                                }
-                            };
-                            
-                            info!("🎯 Filter matched {} entries", matching_entries.len());
-                            matching_entries
-                        } else {
-                            info!("📋 Processing all range keys");
-                            range_molecule.atom_uuids.iter().collect()
-                        };
-                        
-                        let mut combined_data = serde_json::Map::new();
-                        
-                        for (key, atom_uuid) in entries_to_process {
-                            info!("🔗 Processing range key '{}' -> atom: {}", key, atom_uuid);
-                            
-                            match Self::load_atom(db_ops, atom_uuid) {
-                                Ok(atom) => {
-                                    let content = atom.content();
-                                    info!("📦 Range entry '{}' content: {}", key, content);
+                            if should_process {
+                                // Process all atoms in this MoleculeRange
+                                for (atom_key, atom_uuid) in &range_molecule.atom_uuids {
+                                    info!("🔗 Processing range key '{}' -> atom: {}", atom_key, atom_uuid);
                                     
-                                    // BUG FIX 2: Extract simplified value instead of full structure
-                                    let simplified_value = Self::extract_simplified_value(content)?;
-                                    info!("🎯 Simplified value for key '{}': {}", key, simplified_value);
-                                    
-                                    combined_data.insert(key.clone(), simplified_value);
-                                }
-                                Err(e) => {
-                                    error!("❌ Failed to load atom {} for range key '{}': {}", atom_uuid, key, e);
+                                    match Self::load_atom(db_ops, atom_uuid) {
+                                        Ok(atom) => {
+                                            let content = atom.content();
+                                            info!("📦 Range entry '{}' content: {}", atom_key, content);
+                                            
+                                            // Extract simplified value instead of full structure
+                                            let simplified_value = Self::extract_simplified_value(content)?;
+                                            info!("🎯 Simplified value for key '{}': {}", atom_key, simplified_value);
+                                            
+                                            combined_data.insert(atom_key.clone(), simplified_value);
+                                        }
+                                        Err(e) => {
+                                            error!("❌ Failed to load atom {} for range key '{}': {}", atom_uuid, atom_key, e);
+                                        }
+                                    }
                                 }
                             }
                         }
-                        
-                        let result = JsonValue::Object(combined_data);
-                        info!("✅ Range field resolution complete - combined result: {}", result);
-                        return Ok(result);
-                    }
-                    Ok(None) => {
-                        error!("❌ MoleculeRange '{}' not found", range_molecule_uuid);
-                        return Err(SchemaError::InvalidField(format!("MoleculeRange '{}' not found", range_molecule_uuid)));
-                    }
-                    Err(e) => {
-                        error!("❌ Error loading MoleculeRange '{}': {}", range_molecule_uuid, e);
-                        return Err(SchemaError::InvalidField(format!("Error loading MoleculeRange '{}': {}", range_molecule_uuid, e)));
+                        Ok(None) => {
+                            error!("❌ MoleculeRange '{}' not found", key);
+                        }
+                        Err(e) => {
+                            error!("❌ Error loading MoleculeRange '{}': {}", key, e);
+                        }
                     }
                 }
+                
+                let result = JsonValue::Object(combined_data);
+                info!("✅ Range field resolution complete - combined result: {}", result);
+                return Ok(result);
             }
             FieldVariant::Single(_) => {
                 info!("🔄 Detected single field, using Molecule resolution");

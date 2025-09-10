@@ -416,7 +416,7 @@ impl TransformRunner for TransformManager {
             transform_id,
             &transform,
             &self.db_ops,
-            None // TODO: Pass FoldDB reference when available
+            None // FoldDB reference not available in this context
         )?;
         println!("🔧 execute_single_transform completed with result: {}", result);
         
@@ -427,7 +427,7 @@ impl TransformRunner for TransformManager {
             &self.db_ops,
             &transform,
             &result,
-            None // TODO: Pass FoldDB reference when available
+            None // FoldDB reference not available in this context
         )?;
         
         info!("✅ Transform '{}' executed successfully: {}", transform_id, result);

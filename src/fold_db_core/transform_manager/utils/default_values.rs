@@ -4,28 +4,11 @@ use log::{info, warn};
 use super::TransformUtils;
 
 impl TransformUtils {
-    /// Enhanced default value generation with comprehensive field mapping
+    /// Enhanced default value generation with type-based inference
     pub fn get_default_value_for_field(field_name: &str) -> JsonValue {
         info!("📊 Generating default value for field: {}", field_name);
 
-        let default_value = match field_name {
-            "input1" => JsonValue::Number(serde_json::Number::from(42)),
-            "input2" => JsonValue::Number(serde_json::Number::from(24)),
-            "value1" => JsonValue::Number(serde_json::Number::from(5)),
-            "value2" => JsonValue::Number(serde_json::Number::from(10)),
-            "weight" => JsonValue::Number(serde_json::Number::from(70)),
-            "height" => JsonValue::Number(serde_json::Number::from_f64(1.75).unwrap_or(serde_json::Number::from(175))),
-            "age" => JsonValue::Number(serde_json::Number::from(30)),
-            "id" | "user_id" | "patient_id" => JsonValue::String("default_id".to_string()),
-            "name" | "username" | "patient_name" => JsonValue::String("default_name".to_string()),
-            "active" | "enabled" | "is_valid" => JsonValue::Bool(true),
-            "disabled" | "inactive" | "is_deleted" => JsonValue::Bool(false),
-            "score" | "rating" => JsonValue::Number(serde_json::Number::from(0)),
-            "count" | "quantity" => JsonValue::Number(serde_json::Number::from(1)),
-            "price" | "amount" => JsonValue::Number(serde_json::Number::from_f64(0.0).unwrap()),
-            _ => Self::infer_default_by_name_pattern(field_name),
-        };
-
+        let default_value = Self::infer_default_by_name_pattern(field_name);
         info!("📊 Default value for '{}': {}", field_name, default_value);
         default_value
     }
@@ -94,8 +77,12 @@ mod tests {
 
     #[test]
     fn test_default_value_helper() {
-        assert_eq!(TransformUtils::get_default_value_for_field("input1"), JsonValue::Number(serde_json::Number::from(42)));
-        assert_eq!(TransformUtils::get_default_value_for_field("active"), JsonValue::Bool(true));
+        // Test generic pattern-based defaults instead of hardcoded field names
+        assert_eq!(TransformUtils::get_default_value_for_field("count"), JsonValue::Number(serde_json::Number::from(0)));
+        assert_eq!(TransformUtils::get_default_value_for_field("active"), JsonValue::Bool(false));
+        assert_eq!(TransformUtils::get_default_value_for_field("tags"), JsonValue::Array(vec![]));
+        assert_eq!(TransformUtils::get_default_value_for_field("config"), JsonValue::Object(serde_json::Map::new()));
+        assert_eq!(TransformUtils::get_default_value_for_field("unknown_field"), JsonValue::String("default".to_string()));
     }
 
     #[test]

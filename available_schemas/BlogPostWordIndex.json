@@ -6,9 +6,73 @@
     "range_field": "BlogPost.map().publish_date"
   },
   "fields": {
-    "content": { "atom_uuid": "BlogPost.map().content" },
-    "author": { "atom_uuid": "BlogPost.map().author" },
-    "title": { "atom_uuid": "BlogPost.map().title" },
-    "tags": { "atom_uuid": "BlogPost.map().tags" }
+    "content": {
+      "permission_policy": {
+        "read_policy": { "Distance": 0 },
+        "write_policy": { "Distance": 1 }
+      },
+      "payment_config": {
+        "base_multiplier": 1.0,
+        "trust_distance_scaling": "None",
+        "min_payment": null
+      },
+      "field_type": "HashRange",
+      "field_mappers": {},
+      "transform": null,
+      "writable": true,
+      "atom_uuid": "BlogPost.map().content"
+    },
+    "author": {
+      "permission_policy": {
+        "read_policy": { "Distance": 0 },
+        "write_policy": { "Distance": 1 }
+      },
+      "payment_config": {
+        "base_multiplier": 1.0,
+        "trust_distance_scaling": "None",
+        "min_payment": null
+      },
+      "field_type": "HashRange",
+      "field_mappers": {},
+      "transform": null,
+      "writable": true,
+      "atom_uuid": "BlogPost.map().author"
+    },
+    "title": {
+      "permission_policy": {
+        "read_policy": { "Distance": 0 },
+        "write_policy": { "Distance": 1 }
+      },
+      "payment_config": {
+        "base_multiplier": 1.0,
+        "trust_distance_scaling": "None",
+        "min_payment": null
+      },
+      "field_type": "HashRange",
+      "field_mappers": {},
+      "transform": null,
+      "writable": true,
+      "atom_uuid": "BlogPost.map().title"
+    },
+    "tags": {
+      "permission_policy": {
+        "read_policy": { "Distance": 0 },
+        "write_policy": { "Distance": 1 }
+      },
+      "payment_config": {
+        "base_multiplier": 1.0,
+        "trust_distance_scaling": "None",
+        "min_payment": null
+      },
+      "field_type": "HashRange",
+      "field_mappers": {},
+      "transform": null,
+      "writable": true,
+      "atom_uuid": "BlogPost.map().tags"
+    }
+  },
+  "payment_config": {
+    "base_multiplier": 1.0,
+    "min_payment_threshold": 0
   }
 }

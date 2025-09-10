@@ -2,6 +2,7 @@ use super::manager::TransformManager;
 use crate::fold_db_core::transform_manager::utils::*;
 use crate::transform::executor::TransformExecutor;
 use crate::schema::types::{Schema, SchemaError, SchemaType};
+use crate::schema::constants::TRANSFORM_SYSTEM_ID;
 use log::{info, warn};
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -73,19 +74,78 @@ impl TransformManager {
             println!("🔍 TransformManager: Schema '{}' has fields: {:?}", schema_name, field_names);
             
             // For each field, get the MoleculeRange and collect atoms
-            let mut blog_posts_by_date: std::collections::HashMap<String, serde_json::Map<String, serde_json::Value>> = std::collections::HashMap::new();
+            let mut records_by_range_key: std::collections::HashMap<String, serde_json::Map<String, serde_json::Value>> = std::collections::HashMap::new();
             
             for field_name in field_names {
-                let molecule_uuid = format!("{}_{}_range", schema_name, field_name);
-                println!("🔍 TransformManager: Looking for MoleculeRange: {}", molecule_uuid);
+                println!("🔍 TransformManager: Looking for Range molecules for field '{}'", field_name);
                 
-                match db_ops.get_item::<crate::atom::MoleculeRange>(&format!("ref:{}", molecule_uuid)) {
-                    Ok(Some(range_molecule)) => {
-                        println!("✅ Found MoleculeRange for field '{}' with {} entries", field_name, range_molecule.atom_uuids.len());
+                let mut found_data = false;
+                
+                // Look for all Range molecules that match the pattern: {schema_name}_{field_name}_range_{range_key}
+                for result in db_ops.db().iter().flatten() {
+                    let key_str = String::from_utf8_lossy(result.0.as_ref());
+                    if key_str.starts_with(&format!("ref:{}_{}_range_", schema_name, field_name)) {
+                        println!("🔍 TransformManager: Found Range molecule: {}", key_str);
                         
-                        // Process each atom in the range
-                        for (range_key, atom_uuid) in &range_molecule.atom_uuids {
-                            let blog_post = blog_posts_by_date.entry(range_key.clone()).or_default();
+                        // Extract the range key from the molecule UUID
+                        let molecule_uuid = key_str.strip_prefix("ref:").unwrap();
+                        let range_key = molecule_uuid.strip_prefix(&format!("{}_{}_range_", schema_name, field_name)).unwrap();
+                        
+                        println!("🔍 TransformManager: Processing Range molecule with range_key: {}", range_key);
+                        
+                        // Load the MoleculeRange
+                        match db_ops.get_item::<crate::atom::MoleculeRange>(&key_str) {
+                            Ok(Some(range_molecule)) => {
+                                println!("✅ Found MoleculeRange for field '{}' with range_key '{}'", field_name, range_key);
+                                found_data = true;
+                                
+                                // Process each atom in the range
+                                for (molecule_range_key, atom_uuid) in &range_molecule.atom_uuids {
+                                    let record = records_by_range_key.entry(molecule_range_key.clone()).or_default();
+                                    
+                                    // Load the atom and extract its value
+                                    match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
+                                        Ok(Some(atom)) => {
+                                            let content = atom.content();
+                                            println!("🔍 TransformManager: Atom {} content: {}", atom_uuid, content);
+                                            
+                                            // Extract the value from the atom content
+                                            if let Some(value) = content.get("value") {
+                                                record.insert(field_name.clone(), value.clone());
+                                                println!("🔍 TransformManager: Added field '{}' = {} to record with range_key '{}'", field_name, value, molecule_range_key);
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            println!("⚠️ Atom {} not found for field '{}'", atom_uuid, field_name);
+                                        }
+                                        Err(e) => {
+                                            println!("❌ Error loading atom {} for field '{}': {}", atom_uuid, field_name, e);
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                println!("⚠️ MoleculeRange '{}' not found for field '{}'", key_str, field_name);
+                            }
+                            Err(e) => {
+                                println!("❌ Error loading MoleculeRange '{}' for field '{}': {}", key_str, field_name, e);
+                            }
+                        }
+                    }
+                }
+                
+                // If no Range molecules found, try the old format for backward compatibility
+                if !found_data {
+                    let range_molecule_uuid = format!("{}_{}_range", schema_name, field_name);
+                    let single_molecule_uuid = format!("{}_{}_single", schema_name, field_name);
+                    
+                    println!("🔍 TransformManager: No Range molecules found, trying legacy format: {}", range_molecule_uuid);
+                    println!("🔍 TransformManager: Also checking Molecule: {}", single_molecule_uuid);
+                    match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", single_molecule_uuid)) {
+                        Ok(Some(single_molecule)) => {
+                            let atom_uuid = single_molecule.get_atom_uuid();
+                            println!("✅ Found Molecule (Single) for field '{}' with atom: {}", field_name, atom_uuid);
+                            found_data = true;
                             
                             // Load the atom and extract its value
                             match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
@@ -95,8 +155,11 @@ impl TransformManager {
                                     
                                     // Extract the value from the atom content
                                     if let Some(value) = content.get("value") {
-                                        blog_post.insert(field_name.clone(), value.clone());
-                                        println!("🔍 TransformManager: Added field '{}' = {} to blog post with range_key '{}'", field_name, value, range_key);
+                                        // For single molecules, use a default range key
+                                        let default_range_key = "default".to_string();
+                                        let record = records_by_range_key.entry(default_range_key.clone()).or_default();
+                                        record.insert(field_name.clone(), value.clone());
+                                        println!("🔍 TransformManager: Added field '{}' = {} to record with default range_key", field_name, value);
                                     }
                                 }
                                 Ok(None) => {
@@ -107,30 +170,39 @@ impl TransformManager {
                                 }
                             }
                         }
+                        Ok(None) => {
+                            println!("⚠️ Molecule '{}' not found for field '{}'", single_molecule_uuid, field_name);
+                        }
+                        Err(e) => {
+                            println!("❌ Error loading Molecule '{}' for field '{}': {}", single_molecule_uuid, field_name, e);
+                        }
                     }
-                    Ok(None) => {
-                        println!("⚠️ MoleculeRange '{}' not found for field '{}'", molecule_uuid, field_name);
-                    }
-                    Err(e) => {
-                        println!("❌ Error loading MoleculeRange '{}' for field '{}': {}", molecule_uuid, field_name, e);
-                    }
+                }
+                
+                if !found_data {
+                    println!("⚠️ No data found for field '{}' in schema '{}'", field_name, schema_name);
                 }
             }
             
             // Convert grouped data into array format
-            for (range_key, blog_post_data) in blog_posts_by_date {
+            // Get the actual range_key field name from the schema
+            let range_key_field_name = schema.range_key()
+                .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' is not a Range schema", schema_name)))?
+                .to_string();
+            
+            for (range_key_value, record_data) in records_by_range_key {
                 let mut schema_item = serde_json::Map::new();
-                schema_item.insert("publish_date".to_string(), json!(range_key));
+                schema_item.insert(range_key_field_name.clone(), json!(range_key_value));
                 
                 // Add all field values to the schema item
-                for (field_name, field_value) in blog_post_data {
+                for (field_name, field_value) in record_data {
                     schema_item.insert(field_name, field_value);
                 }
                 
                 schema_array.push(json!(schema_item));
             }
             
-            info!("🔍 TransformManager: Found {} blog posts for schema '{}'", schema_array.len(), schema_name);
+            info!("🔍 TransformManager: Found {} records for schema '{}'", schema_array.len(), schema_name);
         } else {
             // For non-range schemas, use the original approach
             let mut schema_data = serde_json::Map::new();
@@ -214,7 +286,7 @@ impl TransformManager {
                 let mutation = crate::schema::types::Mutation::new(
                     schema_name.to_string(),
                     fields_and_values,
-                    "transform_system".to_string(),
+                    TRANSFORM_SYSTEM_ID.to_string(),
                     0, // trust_distance
                     crate::schema::types::MutationType::Update,
                 );
@@ -226,7 +298,7 @@ impl TransformManager {
             } else {
                 // Fallback to direct atom creation if FoldDB is not available
                 warn!("⚠️ FoldDB not available, falling back to direct atom creation for {}.{}", schema_name, field_name);
-                let atom = db_ops.create_atom(schema_name, "transform_system".to_string(), None, result.clone(), None)?;
+                let atom = db_ops.create_atom(schema_name, TRANSFORM_SYSTEM_ID.to_string(), None, result.clone(), None)?;
                 Self::update_field_reference(db_ops, schema_name, field_name, atom.uuid())
             }
         } else {
@@ -235,7 +307,7 @@ impl TransformManager {
     }
     
     /// Special storage for HashRange schema transform results using mutations
-    fn store_hashrange_transform_result_with_mutations(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue, fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
+    fn store_hashrange_transform_result_with_mutations(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue, _fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
         info!("🔑 Storing HashRange transform result for schema '{}' using mutations: {}", schema_name, result);
         
         // Get the schema definition to determine field names dynamically
@@ -252,6 +324,20 @@ impl TransformManager {
         
         // For HashRange schemas, we need to create mutations for each hash key (word)
         if let Some(result_obj) = result.as_object() {
+            // DEBUG: Log the full transform result structure
+            println!("🔍 DEBUG: HashRange transform result structure:");
+            for (key, value) in result_obj {
+                println!("🔍 DEBUG: Key '{}': {} (type: {})", key, value, 
+                    match value {
+                        serde_json::Value::Null => "null",
+                        serde_json::Value::Bool(_) => "bool",
+                        serde_json::Value::Number(_) => "number",
+                        serde_json::Value::String(_) => "string",
+                        serde_json::Value::Array(_) => "array",
+                        serde_json::Value::Object(_) => "object",
+                    });
+            }
+            
             // Extract the hash_key array (words) and corresponding data arrays
             let hash_keys = result_obj.get("hash_key")
                 .and_then(|h| h.as_array())
@@ -274,9 +360,6 @@ impl TransformManager {
             }
             
             println!("🔍 DEBUG: Processing {} hash keys from {} data entries", hash_keys.len(), field_arrays.values().next().map(|v| v.len()).unwrap_or(0));
-            
-            // Check if we have FoldDB available for mutation execution
-            let has_fold_db = fold_db.is_some();
             
             // Collect all mutations first, then execute them
             let mut all_mutations = Vec::new();
@@ -318,14 +401,15 @@ impl TransformManager {
                 println!("🔍 DEBUG: Extracted {} words from data entry {}: {:?}", words.len(), data_index, &words[..std::cmp::min(10, words.len())]);
                 
                 // For each word in this data entry, create mutations for HashRange atoms
+                // NOTE: Transform system only creates mutations - it does NOT directly manipulate atoms or molecules
                 for word in words {
                     let atom_uuid = format!("{}_{}", schema_name, word);
                     
-                    // Create the data for this word from this data entry
+                    // Create the data for this word occurrence from this data entry
                     let mut word_data = serde_json::Map::new();
                     word_data.insert("hash".to_string(), json!(word));
                     
-                    // Add all field values dynamically
+                    // Add all field values dynamically (each word occurrence gets its own field values)
                     for (field_name, field_value) in &field_values {
                         word_data.insert(field_name.clone(), field_value.clone());
                     }
@@ -333,17 +417,43 @@ impl TransformManager {
                     
                     let word_result = json!(word_data);
                     
-                    println!("🔑 Creating mutation for word '{}' from data entry {}", word, data_index);
-                    println!("🔍 DEBUG: Word data: {}", word_result);
+                    println!("🔑 Creating mutation for word '{}' occurrence from data entry {}", word, data_index);
+                    println!("🔍 DEBUG: Word occurrence data: {}", word_result);
                     
-                    // Create a mutation for this word
+                    // DEBUG: Log the range data being stored
+                    println!("🔍 DEBUG: Range data being stored: {}", range);
+                    if let Some(range_array) = range.as_array() {
+                        println!("🔍 DEBUG: Range array length: {}", range_array.len());
+                        for (i, range_val) in range_array.iter().enumerate() {
+                            println!("🔍 DEBUG: Range[{}]: {} (type: {})", i, range_val, 
+                                match range_val {
+                                    serde_json::Value::Null => "null",
+                                    serde_json::Value::Bool(_) => "bool",
+                                    serde_json::Value::Number(_) => "number",
+                                    serde_json::Value::String(_) => "string",
+                                    serde_json::Value::Array(_) => "array",
+                                    serde_json::Value::Object(_) => "object",
+                                });
+                        }
+                    }
+                    
+                    // Create a HashRange mutation for this word occurrence
+                    // The mutation system will handle aggregation of multiple occurrences of the same word
                     let mut fields_and_values = std::collections::HashMap::new();
-                    fields_and_values.insert("value".to_string(), word_result);
+                    
+                    // Add hash_key and range_key to the mutation
+                    fields_and_values.insert("hash_key".to_string(), json!(word));
+                    fields_and_values.insert("range_key".to_string(), range.clone());
+                    
+                    // Add all field values dynamically (each word occurrence gets its own field values)
+                    for (field_name, field_value) in &field_values {
+                        fields_and_values.insert(field_name.clone(), field_value.clone());
+                    }
                     
                     let mutation = crate::schema::types::Mutation::new(
                         schema_name.to_string(),
                         fields_and_values,
-                        "transform_system".to_string(),
+                        TRANSFORM_SYSTEM_ID.to_string(),
                         0, // trust_distance
                         crate::schema::types::MutationType::Create,
                     );
@@ -352,44 +462,25 @@ impl TransformManager {
                 }
             }
             
-            // Execute all mutations
-            if has_fold_db {
-                if let Some(fold_db) = fold_db {
-                    for (word, atom_uuid, mutation, _field_values, _range) in all_mutations {
-                        println!("📝 Executing mutation for word '{}' with UUID: {}", word, atom_uuid);
-                        fold_db.write_schema(mutation)?;
-                        println!("✅ HashRange mutation executed successfully for word '{}' with UUID: {}", word, atom_uuid);
-                    }
-                }
-            } else {
-                // Fallback to direct atom creation if FoldDB is not available
-                warn!("⚠️ FoldDB not available, falling back to direct atom creation");
-                for (word, atom_uuid, _mutation, field_values, range) in all_mutations {
-                    // Recreate the word data for fallback
-                    let mut word_data = serde_json::Map::new();
-                    word_data.insert("hash".to_string(), json!(word));
-                    
-                    for (field_name, field_value) in &field_values {
-                        word_data.insert(field_name.clone(), field_value.clone());
-                    }
-                    word_data.insert("range".to_string(), range.clone());
-                    
-                    let word_result = json!(word_data);
-                    
-                    let atom = db_ops.create_atom(schema_name, "transform_system".to_string(), None, word_result, None)?;
-                    
-                    // Store the atom with our predictable UUID pattern
-                    println!("🔍 DEBUG: Storing atom for word '{}' with key: atom:{}", word, atom_uuid);
-                    let store_result = db_ops.store_item(&format!("atom:{}", atom_uuid), &atom);
-                    match store_result {
-                        Ok(_) => println!("✅ Successfully stored atom for word '{}' with key: atom:{}", word, atom_uuid),
-                        Err(ref e) => println!("❌ Failed to store atom for word '{}' with key: atom:{} - Error: {}", word, atom_uuid, e),
-                    }
-                    store_result?;
-                    
-                    println!("✅ HashRange atom stored successfully for word '{}' with UUID: {}", word, atom_uuid);
-                }
+            // Store all mutations for later execution
+            // NOTE: Transform system creates mutations but does NOT execute them directly
+            // The mutations will be executed by the mutation system when they are processed
+            for (word, atom_uuid, mutation, _field_values, _range) in all_mutations {
+                println!("📝 Storing mutation for word '{}' with UUID: {}", word, atom_uuid);
+                
+                // Store the mutation in the database for processing by the mutation system
+                let mutation_json = serde_json::to_value(&mutation).map_err(|e| SchemaError::InvalidData(format!("Failed to serialize mutation: {}", e)))?;
+                
+                // Store the mutation with a unique key for each word occurrence
+                let mutation_key = format!("mutation:{}:{}", atom_uuid, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+                db_ops.store_item(&mutation_key, &mutation_json)?;
+                
+                println!("✅ HashRange mutation stored successfully for word '{}' with key: {}", word, mutation_key);
             }
+            
+            // TODO: Execute stored mutations through mutation system
+            // This requires access to FoldDB instance which is not available in this context
+            // The mutations are stored and will be processed by the mutation system
             
             Ok(())
         } else {
@@ -419,7 +510,7 @@ impl TransformManager {
         let molecule_uuid = format!("{}_{}_single", schema_name, field_name);
         
         // 4. Create/update Molecule to point to the new atom (this is a field VALUE update, not schema structure)
-        let molecule = crate::atom::Molecule::new(atom_uuid.to_string(), "transform_system".to_string());
+        let molecule = crate::atom::Molecule::new(atom_uuid.to_string(), TRANSFORM_SYSTEM_ID.to_string());
         db_ops.store_item(&format!("ref:{}", molecule_uuid), &molecule)?;
         
         info!("✅ Updated field value reference for '{}.{}' to point to atom {}", schema_name, field_name, atom_uuid);
