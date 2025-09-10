@@ -11,6 +11,8 @@ use std::time::Instant;
 
 /// Handle FieldValueSetRequest by creating atom and appropriate Molecule - CRITICAL MUTATION BUG FIX
 pub(super) fn handle_fieldvalueset_request(manager: &AtomManager, request: FieldValueSetRequest) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔧 DEBUG: Processing FieldValueSetRequest for field: {}.{}", request.schema_name, request.field_name);
+    println!("🔧 DEBUG: FieldValueSetRequest details - correlation_id: {}, value: {}", request.correlation_id, request.value);
     info!("📝 Processing FieldValueSetRequest for field: {}.{}", request.schema_name, request.field_name);
     info!("🔍 DIAGNOSTIC: FieldValueSetRequest details - correlation_id: {}, value: {}", request.correlation_id, request.value);
     
@@ -94,20 +96,23 @@ fn store_atom_in_cache(manager: &AtomManager, atom: Atom) {
 /// Create appropriate Molecule for the field based on its type
 fn create_molecule_for_field(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
     let field_type = determine_field_type(manager, &request.schema_name, &request.field_name);
+    println!("🔧 DEBUG: Creating molecule for field {}.{} with type: {}", request.schema_name, request.field_name, field_type);
     info!("🔍 DIAGNOSTIC: Step 2 - Determined field type: {}", field_type);
     
     match field_type.as_str() {
         "Range" => create_range_molecule(manager, request, atom_uuid),
+        "HashRange" => create_hashrange_molecule(manager, request, atom_uuid),
         _ => create_single_molecule(manager, request, atom_uuid),
     }
 }
 
 /// Create MoleculeRange for Range fields
 fn create_range_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let molecule_uuid = format!("{}_{}_range", request.schema_name, request.field_name);
-    info!("🔍 DIAGNOSTIC: Creating MoleculeRange with UUID: {} -> atom: {}", molecule_uuid, atom_uuid);
-    
     let range_key = extract_range_key_from_value(&request.value);
+    let molecule_uuid = format!("{}_{}_range_{}", request.schema_name, request.field_name, range_key);
+    println!("🔧 DEBUG: Creating Range molecule with UUID: {} -> atom: {} (range_key: {})", molecule_uuid, atom_uuid, range_key);
+    info!("🔍 DIAGNOSTIC: Creating MoleculeRange with UUID: {} -> atom: {} (range_key: {})", molecule_uuid, atom_uuid, range_key);
+    
     info!("🔍 DIAGNOSTIC: Extracted range key: '{}' from value: {}", range_key, request.value);
     
     let range_result = manager.db_ops.update_molecule_range(
@@ -141,6 +146,70 @@ fn create_range_molecule(manager: &AtomManager, request: &FieldValueSetRequest, 
             error!("❌ DIAGNOSTIC: Failed to create MoleculeRange: {}", e);
             Err(Box::new(e))
         }
+    }
+}
+
+/// Create MoleculeHashRange for HashRange fields
+fn create_hashrange_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let molecule_uuid = format!("{}_{}_hashrange", request.schema_name, request.field_name);
+    println!("🔧 DEBUG: Creating HashRange molecule with UUID: {} -> atom: {}", molecule_uuid, atom_uuid);
+    info!("🔍 DIAGNOSTIC: Creating MoleculeHashRange with UUID: {} -> atom: {}", molecule_uuid, atom_uuid);
+    
+    let hash_key = extract_hash_key_from_value(&request.value);
+    let range_key = extract_range_key_from_value(&request.value);
+    info!("🔍 DIAGNOSTIC: Extracted hash_key: '{}' and range_key: '{}' from value: {}", hash_key, range_key, request.value);
+    
+    // For HashRange fields, we need to store the data in a special format
+    // The key format is: {schema_name}_{field_name}_{hash_key}
+    let hashrange_key = format!("{}_{}_{}", request.schema_name, request.field_name, hash_key);
+    
+    // Retrieve existing BTree for this hash_key and field, or create a new one
+    let existing_btree_json = match manager.db_ops.get_item(&hashrange_key) {
+        Ok(Some(data)) => data,
+        Ok(None) => "{}".to_string(),
+        Err(_) => "{}".to_string(),
+    };
+    
+    let mut existing_btree: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&existing_btree_json)
+        .unwrap_or_else(|_| serde_json::Map::new());
+    
+    // Insert or update the range_key and its value
+    if let Some(value_obj) = request.value.as_object() {
+        if let Some(actual_value) = value_obj.get("value") {
+            existing_btree.insert(range_key.clone(), actual_value.clone());
+        }
+    }
+    
+    // Store the updated BTree back into the database
+    let updated_btree_json = serde_json::to_string(&existing_btree).unwrap_or_else(|_| "{}".to_string());
+    if let Err(e) = manager.db_ops.store_item(&hashrange_key, &updated_btree_json) {
+        error!("❌ DIAGNOSTIC: Failed to store HashRange data: {}", e);
+        return Err(Box::new(e));
+    }
+    
+    info!("🔍 DIAGNOSTIC: Successfully stored HashRange data for key: {}", hashrange_key);
+    
+    // For HashRange fields, we don't create a traditional molecule
+    // Instead, we return the hashrange_key as the "molecule" identifier
+    Ok(hashrange_key)
+}
+
+/// Extract hash key from request value for HashRange fields
+fn extract_hash_key_from_value(value: &serde_json::Value) -> String {
+    if let Some(obj) = value.as_object() {
+        if let Some(hash_key_value) = obj.get("hash_key") {
+            if let Some(key_str) = hash_key_value.as_str() {
+                key_str.to_string()
+            } else {
+                hash_key_value.to_string().trim_matches('"').to_string()
+            }
+        } else {
+            warn!("🔶 HASH KEY WARNING: No 'hash_key' field found in value, using 'default'");
+            "default".to_string()
+        }
+    } else {
+        warn!("🔶 HASH KEY WARNING: Value is not an object, using 'default'");
+        "default".to_string()
     }
 }
 
@@ -270,33 +339,45 @@ fn create_atom_error_response(correlation_id: &str, error: Box<dyn std::error::E
 
 /// Determine field type based on schema and field name
 fn determine_field_type(manager: &AtomManager, schema_name: &str, field_name: &str) -> String {
+    println!("🔧 DEBUG: Determining field type for {}.{}", schema_name, field_name);
     // Look up the actual schema to determine field type
     match manager.db_ops.get_schema(schema_name) {
         Ok(Some(schema)) => {
+            println!("🔧 DEBUG: Schema '{}' loaded successfully", schema_name);
+            println!("🔧 DEBUG: Schema fields: {:?}", schema.fields.keys().collect::<Vec<_>>());
+            for (field_name, field_variant) in &schema.fields {
+                println!("🔧 DEBUG: Field '{}' variant: {:?}", field_name, field_variant);
+            }
             match schema.fields.get(field_name) {
                 Some(crate::schema::types::field::FieldVariant::Range(_)) => {
+                    println!("🔧 DEBUG: Field {}.{} is Range", schema_name, field_name);
                     info!("🔍 FIELD TYPE: {} in schema {} is Range", field_name, schema_name);
                     "Range".to_string()
                 }
                 Some(crate::schema::types::field::FieldVariant::Single(_)) => {
+                    println!("🔧 DEBUG: Field {}.{} is Single", schema_name, field_name);
                     info!("🔍 FIELD TYPE: {} in schema {} is Single", field_name, schema_name);
                     "Single".to_string()
                 }
                 Some(crate::schema::types::field::FieldVariant::HashRange(_)) => {
+                    println!("🔧 DEBUG: Field {}.{} is HashRange", schema_name, field_name);
                     info!("🔍 FIELD TYPE: {} in schema {} is HashRange", field_name, schema_name);
                     "HashRange".to_string()
                 }
                 None => {
+                    println!("⚠️ DEBUG: Field {} not found in schema {}", field_name, schema_name);
                     warn!("⚠️ FIELD TYPE: Field {} not found in schema {}, defaulting to Single", field_name, schema_name);
                     "Single".to_string()
                 }
             }
         }
         Ok(None) => {
+            println!("⚠️ DEBUG: Schema {} not found", schema_name);
             warn!("⚠️ FIELD TYPE: Schema {} not found, defaulting to Single", schema_name);
             "Single".to_string()
         }
         Err(e) => {
+            println!("❌ DEBUG: Error loading schema {}: {}", schema_name, e);
             error!("❌ FIELD TYPE: Error loading schema {}: {}, defaulting to Single", schema_name, e);
             "Single".to_string()
         }

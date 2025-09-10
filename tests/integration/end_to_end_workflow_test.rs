@@ -337,6 +337,7 @@ impl EndToEndWorkflowFixture {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_complete_mutation_to_query_workflow() {
     println!("🧪 TEST: Complete Mutation→Query Workflow");
     println!("   This validates the full data flow from mutation to queryable results");
@@ -413,6 +414,7 @@ fn test_complete_mutation_to_query_workflow() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_multi_schema_dependency_chain() {
     println!("🧪 TEST: Multi-Schema Dependency Chain");
     println!("   This validates complex workflows across multiple interconnected schemas");
@@ -576,6 +578,7 @@ fn test_multi_schema_dependency_chain() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_complex_data_transformation_scenarios() {
     println!("🧪 TEST: Complex Data Transformation Scenarios");
     println!("   This validates realistic data transformation patterns");
@@ -774,6 +777,7 @@ fn test_complex_data_transformation_scenarios() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_error_recovery_scenarios() {
     println!("🧪 TEST: Error Recovery Scenarios");
     println!("   This validates system resilience under various error conditions");
@@ -916,6 +920,7 @@ fn test_error_recovery_scenarios() {
 }
 
 #[test]
+#[serial_test::serial]
 #[ignore = "Performance characteristics depend on environment; run manually"]
 fn test_workflow_performance_characteristics() {
     println!("🧪 TEST: Workflow Performance Characteristics");

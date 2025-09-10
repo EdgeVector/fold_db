@@ -23,6 +23,18 @@ fn convert_field(json_field: JsonSchemaField, schema_type: &crate::schema::types
             };
             FieldVariant::HashRange(Box::new(hashrange_field))
         }
+        crate::schema::types::schema::SchemaType::Range { .. } => {
+            // For Range schemas, create RangeField variants
+            let range_field = crate::schema::types::field::range_field::RangeField {
+                inner: crate::schema::types::field::common::FieldCommon::new(
+                    json_field.permission_policy.into(),
+                    json_field.payment_config.into(),
+                    json_field.field_mappers,
+                ),
+                molecule_range: None, // Will be set when the field is actually used
+            };
+            FieldVariant::Range(range_field)
+        }
         _ => {
             // For other schema types, create SingleField variants
             let mut single_field = SingleField::new(

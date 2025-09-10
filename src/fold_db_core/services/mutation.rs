@@ -18,13 +18,13 @@ use crate::fold_db_core::infrastructure::message_bus::{
 use crate::fold_db_core::infrastructure::factory::InfrastructureLogger;
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::types::field::FieldVariant;
+use serde_json::Value;
 use crate::schema::types::schema::Schema;
 use crate::schema::types::Mutation;
 use crate::schema::SchemaError;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use uuid::Uuid;
-use serde_json::Value;
 
 /// Mutation service responsible for field updates and atom modifications
 pub struct MutationService {
@@ -63,11 +63,66 @@ impl MutationService {
                 self.update_range_field(schema, field_name, range_field, value, mutation_hash)
             }
             FieldVariant::HashRange(_hash_range_field) => {
-                Err(SchemaError::InvalidData(
-                    "HashRange field updates not yet implemented".to_string()
-                ))
+                self.update_hashrange_field(schema, field_name, value, mutation_hash)
             }
         }
+    }
+
+    /// Update atoms for a HashRange schema mutation (aggregating by hash_key)
+    pub fn update_hashrange_schema_fields(
+        &self,
+        schema: &Schema,
+        fields_and_values: &std::collections::HashMap<String, Value>,
+        hash_key_value: &str,
+        range_key_value: &str,
+        _mutation_hash: &str,
+    ) -> Result<(), SchemaError> {
+        InfrastructureLogger::log_debug_info("MutationService", &format!("Processing HashRange schema mutation for hash_key: {} and range_key: {}", hash_key_value, range_key_value));
+        
+        // Process each field in the HashRange schema
+        for (field_name, value) in fields_and_values {
+            InfrastructureLogger::log_operation_start("MutationService", "Processing HashRange field", &format!("{}.{} with value: {}", schema.name, field_name, value));
+            
+            // Skip hash_key and range_key fields as they are metadata for the HashRange structure
+            if field_name == "hash_key" || field_name == "range_key" {
+                InfrastructureLogger::log_debug_info("MutationService", &format!("Skipping metadata field: {}", field_name));
+                continue;
+            }
+            
+            // Create a HashRange-aware field value request that includes the hash_key and range_key
+            let hashrange_aware_value = serde_json::json!({
+                "hash_key": hash_key_value,
+                "range_key": range_key_value,
+                "value": value
+            });
+            
+            let correlation_id = Uuid::new_v4().to_string();
+            let field_request = FieldValueSetRequest {
+                correlation_id: correlation_id.clone(),
+                schema_name: schema.name.clone(),
+                field_name: field_name.clone(),
+                value: hashrange_aware_value,
+                source_pub_key: "mutation_service".to_string(),
+            };
+
+            println!("🔧 DEBUG: Publishing HashRange field request for {}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value);
+            println!("🔧 DEBUG: FieldValueSetRequest content: {}", serde_json::to_string_pretty(&field_request).unwrap_or_else(|_| "Failed to serialize".to_string()));
+            match self.message_bus.publish(field_request) {
+                Ok(_) => {
+                    println!("✅ DEBUG: HashRange field update request sent successfully for {}.{}", schema.name, field_name);
+                    // Add a small delay to ensure the message is processed
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    InfrastructureLogger::log_operation_success("MutationService", "HashRange field update request sent", &format!("{}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value));
+                }
+                Err(e) => {
+                    InfrastructureLogger::log_operation_error("MutationService", "Failed to send HashRange field update", &format!("{}.{}: {:?}", schema.name, field_name, e));
+                    return Err(SchemaError::InvalidData(format!("Failed to update HashRange field {}: {}", field_name, e)));
+                }
+            }
+        }
+        
+        InfrastructureLogger::log_operation_success("MutationService", "All HashRange field updates sent successfully", "");
+        Ok(())
     }
 
     /// Update atoms for a range schema mutation (sharing MoleculeRange)
@@ -167,6 +222,24 @@ impl MutationService {
         // Transform triggers are now handled automatically by TransformOrchestrator
         // via direct FieldValueSet event monitoring
         Ok(())
+    }
+
+    /// Handle HashRange field mutation
+    fn update_hashrange_field(
+        &self,
+        schema: &Schema,
+        field_name: &str,
+        _value: &Value,
+        _mutation_hash: &str,
+    ) -> Result<(), SchemaError> {
+        InfrastructureLogger::log_operation_start("MutationService", "Updating HashRange field", &format!("{}.{}", schema.name, field_name));
+        
+        // HashRange fields should be processed via the HashRange schema method which has proper hash_key and range_key context
+        InfrastructureLogger::log_operation_error("MutationService", "Individual HashRange field updates not supported", "HashRange fields must be updated via HashRange schema mutation.");
+        Err(SchemaError::InvalidData(format!(
+            "HashRange field '{}' in schema '{}' cannot be updated individually. Use HashRange schema mutation instead.",
+            field_name, schema.name
+        )))
     }
 
     /// Handle range field mutation (REMOVED - use update_range_schema_fields instead)

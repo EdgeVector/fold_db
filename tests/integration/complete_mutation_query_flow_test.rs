@@ -162,6 +162,7 @@ fn query_field_value(
     }
 
 #[test]
+#[serial_test::serial]
 fn test_single_field_mutation_to_query_flow() {
     println!("🧪 TEST: Single Field Mutation→Query Flow");
     println!("   This validates the complete flow for individual field mutations");
@@ -188,6 +189,7 @@ fn test_single_field_mutation_to_query_flow() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_multiple_field_mutations_and_queries() {
     println!("🧪 TEST: Multiple Field Mutations and Queries");
     println!("   This validates mutations and queries across multiple fields");
@@ -227,6 +229,7 @@ fn test_multiple_field_mutations_and_queries() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_multiple_mutation_cycles_on_same_field() {
     println!("🧪 TEST: Multiple Mutation Cycles on Same Field");
     println!("   This validates that Molecule updates work consistently across multiple mutations");
@@ -276,6 +279,7 @@ fn test_multiple_mutation_cycles_on_same_field() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_mutation_query_flow_with_different_data_types() {
     println!("🧪 TEST: Mutation→Query Flow with Different Data Types");
     println!("   This validates the system handles various JSON data types correctly");
@@ -319,6 +323,7 @@ fn test_mutation_query_flow_with_different_data_types() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_concurrent_mutations_and_queries() {
     println!("🧪 TEST: Concurrent Mutations and Queries");
     println!("   This validates thread safety and consistency under concurrent operations");
@@ -384,6 +389,7 @@ fn test_concurrent_mutations_and_queries() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_complete_range_only_architecture_validation() {
     println!("🧪 TEST: Complete Range-Only Architecture Validation");
     println!("   This validates that the system works correctly without Collection dependencies");
@@ -426,6 +432,7 @@ fn test_complete_range_only_architecture_validation() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_diagnostic_molecule_bug_prevention() {
     println!("🧪 TEST: Diagnostic Molecule Bug Prevention");
     println!("   This validates that the static-schema-reference bug is prevented");
@@ -476,6 +483,7 @@ fn test_diagnostic_molecule_bug_prevention() {
 
 /// Integration test covering the complete mutation→query workflow
 #[test]
+#[serial_test::serial]
 fn test_complete_mutation_query_integration_workflow() {
     println!("🧪 COMPREHENSIVE TEST: Complete Mutation→Query Integration Workflow");
     println!("   This validates the entire end-to-end flow with realistic scenarios");

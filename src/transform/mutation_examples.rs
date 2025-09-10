@@ -6,6 +6,7 @@
 #[allow(unused_imports)]
 use crate::schema::types::{Mutation, MutationType, Transform};
 use crate::schema::SchemaError;
+use crate::schema::constants::DATA_STORAGE_SYSTEM_ID;
 use crate::transform::standardized_executor::{
     StandardizedTransformExecutor, InputProvider, MutationExecutor,
     StandardizedExecutionResult,
@@ -46,7 +47,7 @@ impl MutationBasedDataStorage {
         let mutation = Mutation::new(
             "UserProfile".to_string(),
             fields_and_values,
-            "data_storage_system".to_string(),
+            DATA_STORAGE_SYSTEM_ID.to_string(),
             0, // trust_distance
             MutationType::Create,
         );
@@ -80,7 +81,7 @@ impl MutationBasedDataStorage {
         let mutation = Mutation::new(
             "BlogPost".to_string(),
             fields_and_values,
-            "data_storage_system".to_string(),
+            DATA_STORAGE_SYSTEM_ID.to_string(),
             0,
             MutationType::Update,
         );
@@ -112,7 +113,7 @@ impl MutationBasedDataStorage {
         let mutation = Mutation::new(
             "Inventory".to_string(),
             fields_and_values,
-            "data_storage_system".to_string(),
+            DATA_STORAGE_SYSTEM_ID.to_string(),
             0,
             MutationType::Create,
         );

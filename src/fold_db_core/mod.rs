@@ -17,6 +17,8 @@ pub mod infrastructure;
 pub mod orchestration;
 pub mod shared;
 pub mod transform_manager;
+pub mod query;
+pub mod mutation;
 
 // Core components
 pub mod mutation_completion_handler;
@@ -28,6 +30,8 @@ pub use infrastructure::{MessageBus, EventMonitor};
 pub use orchestration::TransformOrchestrator;
 pub use transform_manager::TransformManager;
 pub use shared::*;
+pub use query::QueryExecutor;
+pub use mutation::MutationExecutor;
 
 // Re-export core components
 pub use mutation_completion_handler::{MutationCompletionHandler, MutationCompletionError, MutationCompletionResult, MutationCompletionDiagnostics, DEFAULT_COMPLETION_TIMEOUT};
@@ -38,7 +42,6 @@ use infrastructure::message_bus::{
         FieldValueSetResponse, FieldUpdateResponse, SchemaLoadResponse, SchemaApprovalResponse,
         AtomCreateResponse, MoleculeCreateResponse, MoleculeUpdateRequest, SystemInitializationRequest,
     },
-    query_events::MutationExecuted,
 };
 use crate::fold_db_core::transform_manager::types::TransformRunner;
 use infrastructure::init::{init_orchestrator, init_transform_manager};
@@ -50,15 +53,13 @@ use crate::permissions::PermissionWrapper;
 use crate::schema::SchemaState;
 use crate::schema::SchemaCore;
 use crate::schema::{Schema, SchemaError};
-use log::{info, warn};
+use log::info;
 use crate::logging::features::{log_feature, LogFeature};
 use serde_json::Value;
-use std::time::Instant;
 use crate::schema::types::{Mutation, Query};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use sha2::Digest;
 
 // REMOVED: PendingOperationRequest - marked as dead code, never used
 
@@ -84,7 +85,12 @@ pub struct FoldDB {
     pub(crate) transform_orchestrator: Arc<TransformOrchestrator>,
     /// Shared database operations
     pub(crate) db_ops: Arc<DbOperations>,
+    #[allow(dead_code)]
     permission_wrapper: PermissionWrapper,
+    /// Query executor for handling all query operations
+    query_executor: QueryExecutor,
+    /// Mutation executor for handling all mutation operations
+    mutation_executor: MutationExecutor,
     /// Message bus for event-driven communication
     pub(crate) message_bus: Arc<MessageBus>,
     /// Event monitor for system-wide observability
@@ -236,6 +242,23 @@ impl FoldDB {
         let completion_handler = Arc::new(MutationCompletionHandler::new(Arc::clone(&message_bus)));
         info!("Created MutationCompletionHandler for mutation completion tracking");
 
+        // Create QueryExecutor for handling all query operations
+        let query_executor = QueryExecutor::new(
+            Arc::new(db_ops.clone()),
+            Arc::clone(&schema_manager),
+            PermissionWrapper::new(),
+        );
+        info!("Created QueryExecutor for query operations");
+
+        // Create MutationExecutor for handling all mutation operations
+        let mutation_executor = MutationExecutor::new(
+            Arc::new(db_ops.clone()),
+            Arc::clone(&schema_manager),
+            Arc::clone(&message_bus),
+            Arc::clone(&completion_handler),
+        );
+        info!("Created MutationExecutor for mutation operations");
+
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
@@ -250,6 +273,8 @@ impl FoldDB {
             transform_orchestrator: orchestrator,
             db_ops: Arc::new(db_ops.clone()),
             permission_wrapper: PermissionWrapper::new(),
+            query_executor,
+            mutation_executor,
             message_bus,
             event_monitor,
             completion_handler,
@@ -364,294 +389,23 @@ impl FoldDB {
     }
 
     /// Query a Range schema and return grouped results by range_key
-    pub fn query_range_schema(&self, _query: Query) -> Result<Value, SchemaError> {
-        // CONVERTED TO EVENT-DRIVEN: Use SchemaLoadRequest instead of direct schema_manager access
-        Err(SchemaError::InvalidData(
-            "Method deprecated: Use event-driven SchemaLoadRequest via message bus instead of direct schema_manager access".to_string()
-        ))
+    pub fn query_range_schema(&self, query: Query) -> Result<Value, SchemaError> {
+        self.query_executor.query_range_schema(query)
     }
 
     /// Query multiple fields from a schema
     pub fn query(&self, query: Query) -> Result<Value, SchemaError> {
-        use log::info;
-        
-        info!("🔍 EVENT-DRIVEN query for schema: {}", query.schema_name);
-        println!("🔍 DEBUG: Query called for schema: {}", query.schema_name);
-        
-        // Get schema first
-        let schema = match self.schema_manager.get_schema(&query.schema_name)? {
-            Some(schema) => schema,
-            None => {
-                return Err(SchemaError::NotFound(format!(
-                    "Schema '{}' not found",
-                    query.schema_name
-                )));
-            }
-        };
-        
-        // Check field-level permissions for each field in the query
-        for field_name in &query.fields {
-            let permission_result = self.permission_wrapper.check_query_field_permission(
-                &query,
-                field_name,
-                &self.schema_manager,
-            );
-            
-            if !permission_result.allowed {
-                return Err(permission_result.error.unwrap_or_else(|| {
-                    SchemaError::InvalidData(format!(
-                        "Permission denied for field '{}' in schema '{}' with trust distance {}",
-                        field_name, query.schema_name, query.trust_distance
-                    ))
-                }));
-            }
-        }
-        
-        // Extract range key filter if this is a range schema with a filter
-        let range_key_filter: Option<Value> = if let (Some(range_key), Some(filter)) = (schema.range_key(), &query.filter) {
-            if let Some(range_filter_obj) = filter.get("range_filter") {
-                if let Some(range_filter_map) = range_filter_obj.as_object() {
-                    range_filter_map.get(range_key).cloned()
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // Extract hash key filter if this is a HashRange schema with a filter
-        let hash_key_filter: Option<Value> = if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
-            println!("🔍 DEBUG: Schema '{}' is HashRange type", schema.name);
-            if let Some(filter) = &query.filter {
-                println!("🔍 DEBUG: Query has filter: {:?}", filter);
-                if let Some(hash_filter_obj) = filter.get("hash_filter") {
-                    println!("🔑 HashRange schema detected with hash_filter: {:?}", hash_filter_obj);
-                    Some(hash_filter_obj.clone())
-                } else {
-                    println!("🔍 DEBUG: No hash_filter found in query filter");
-                    None
-                }
-            } else {
-                println!("🔍 DEBUG: Query has no filter");
-                None
-            }
-        } else {
-            println!("🔍 DEBUG: Schema '{}' is not HashRange type: {:?}", schema.name, schema.schema_type);
-            None
-        };
-
-        // Retrieve actual field values by accessing database directly
-        let mut field_values = serde_json::Map::new();
-        
-        for field_name in &query.fields {
-            println!("🔍 DEBUG: Retrieving field '{}' for schema '{}'", field_name, schema.name);
-            match self.get_field_value_from_db(&schema, field_name, range_key_filter.clone(), hash_key_filter.clone()) {
-                Ok(value) => {
-                    println!("✅ DEBUG: Retrieved field '{}' value: {}", field_name, value);
-                    field_values.insert(field_name.clone(), value);
-                }
-                Err(e) => {
-                    println!("❌ DEBUG: Failed to retrieve field '{}': {}", field_name, e);
-                    field_values.insert(field_name.clone(), serde_json::Value::Null);
-                }
-            }
-        }
-        
-        // Return actual field values
-        Ok(serde_json::Value::Object(field_values))
-    }
-
-    /// Get field value directly from database using unified resolver
-    fn get_field_value_from_db(&self, schema: &Schema, field_name: &str, range_key_filter: Option<Value>, hash_key_filter: Option<Value>) -> Result<Value, SchemaError> {
-        // Use the unified FieldValueResolver to eliminate duplicate code
-        crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(&self.db_ops, schema, field_name, range_key_filter, hash_key_filter)
+        self.query_executor.query(query)
     }
 
     /// Query a schema (compatibility method)
     pub fn query_schema(&self, query: Query) -> Vec<Result<Value, SchemaError>> {
-        println!("🔍 DEBUG: query_schema called for schema: {}", query.schema_name);
-        // Delegate to the main query method and wrap in Vec
-        vec![self.query(query)]
+        self.query_executor.query_schema(query)
     }
 
     /// Write schema operation - main orchestration method for mutations
     pub fn write_schema(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
-        let start_time = Instant::now();
-        let fields_count = mutation.fields_and_values.len();
-        let operation_type = format!("{:?}", mutation.mutation_type);
-        let schema_name = mutation.schema_name.clone();
-        
-        // Generate unique mutation ID
-        let mutation_id = uuid::Uuid::new_v4().to_string();
-        
-        log_feature!(LogFeature::Mutation, info,
-            "Starting mutation execution for schema: {} with ID: {}",
-            mutation.schema_name, mutation_id
-        );
-        log_feature!(LogFeature::Mutation, info, "Mutation type: {:?}", mutation.mutation_type);
-        log_feature!(LogFeature::Mutation, info,
-            "Fields to mutate: {:?}",
-            mutation.fields_and_values.keys().collect::<Vec<_>>()
-        );
-
-        if mutation.fields_and_values.is_empty() {
-            return Err(SchemaError::InvalidData("No fields to write".to_string()));
-        }
-
-        // Register mutation with completion handler for tracking
-        log_feature!(LogFeature::Mutation, info, "Generated mutation ID {} for completion tracking", mutation_id);
-
-        // 1. Prepare mutation and validate schema
-        let (schema, processed_mutation, mutation_hash) = self.prepare_mutation_and_schema(mutation)?;
-
-        // 2. Create mutation service and delegate field updates
-        let mutation_service = services::mutation::MutationService::new(Arc::clone(&self.message_bus));
-        let result = self.process_field_mutations_via_service(&mutation_service, &schema, &processed_mutation, &mutation_hash);
-        
-        // 3. Publish MutationExecuted event
-        let execution_time_ms = start_time.elapsed().as_millis() as u64;
-        let mutation_event = MutationExecuted::new(
-            operation_type,
-            schema_name,
-            execution_time_ms,
-            fields_count,
-        );
-
-        if let Err(e) = self.message_bus.publish(mutation_event) {
-            warn!("Failed to publish MutationExecuted event: {}", e);
-        }
-
-        // 4. Signal completion for mutation tracking AFTER database operations are complete
-        // This ensures wait_for_mutation doesn't return until atoms are persisted
-        if processed_mutation.synchronous.unwrap_or(false) {
-            // Synchronous mode: signal completion immediately
-            log_feature!(LogFeature::Mutation, info, "Synchronous mode: signaling completion immediately for mutation ID {}", mutation_id);
-            if let Err(e) = self.completion_handler.signal_completion_sync(&mutation_id) {
-                warn!("Failed to signal synchronous completion for mutation {}: {}", mutation_id, e);
-            }
-        } else {
-            // Asynchronous mode: spawn task to signal completion AFTER database persistence
-            let completion_handler = Arc::clone(&self.completion_handler);
-            let mutation_id_clone = mutation_id.clone();
-            let db_ops = Arc::clone(&self.db_ops);
-
-            tokio::spawn(async move {
-                // Wait a bit to ensure database operations are fully persisted
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                // Flush the database to ensure all writes are persisted
-                if let Err(e) = db_ops.db().flush() {
-                    log_feature!(LogFeature::Mutation, warn, "Failed to flush database before signaling completion: {}", e);
-                } else {
-                    log_feature!(LogFeature::Mutation, info, "Database flushed before signaling mutation completion");
-                }
-
-                // Now signal completion
-                completion_handler.signal_completion(&mutation_id_clone).await;
-                log_feature!(LogFeature::Mutation, info, "✅ Mutation {} completion signaled after database persistence", mutation_id_clone);
-            });
-        }
-
-        // Return the mutation ID regardless of result
-        match result {
-            Ok(()) => Ok(mutation_id),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Prepare mutation and schema - extract and validate components
-    fn prepare_mutation_and_schema(
-        &self,
-        mutation: Mutation,
-    ) -> Result<(Schema, Mutation, String), SchemaError> {
-        // Get schema
-        let schema = match self.schema_manager.get_schema(&mutation.schema_name)? {
-            Some(schema) => schema,
-            None => {
-                return Err(SchemaError::InvalidData(format!(
-                    "Schema '{}' not found",
-                    mutation.schema_name
-                )));
-            }
-        };
-
-        // Check field-level permissions for each field in the mutation
-        for field_name in mutation.fields_and_values.keys() {
-            let permission_result = self.permission_wrapper.check_mutation_field_permission(
-                &mutation,
-                field_name,
-                &self.schema_manager,
-            );
-            
-            if !permission_result.allowed {
-                return Err(permission_result.error.unwrap_or_else(|| {
-                    SchemaError::InvalidData(format!(
-                        "Permission denied for field '{}' in schema '{}' with trust distance {}",
-                        field_name, mutation.schema_name, mutation.trust_distance
-                    ))
-                }));
-            }
-        }
-
-        // Generate mutation hash for tracking
-        let mut hasher = <sha2::Sha256 as Digest>::new();
-        hasher.update(format!("{:?}", mutation).as_bytes());
-        let mutation_hash = format!("{:x}", hasher.finalize());
-
-        Ok((schema, mutation, mutation_hash))
-    }
-
-    /// Process field mutations via service delegation
-    fn process_field_mutations_via_service(
-        &self,
-        mutation_service: &services::mutation::MutationService,
-        schema: &Schema,
-        mutation: &Mutation,
-        mutation_hash: &str,
-    ) -> Result<(), SchemaError> {
-        // Check if this is a range schema
-        if let Some(range_key) = schema.range_key() {
-            log_feature!(LogFeature::Mutation, info, "🎯 DEBUG: Processing range schema mutation for schema '{}' with range_key '{}'", schema.name, range_key);
-            
-            // Extract the range key value from the mutation data
-            let range_key_value = mutation.fields_and_values.get(range_key)
-                .ok_or_else(|| SchemaError::InvalidData(format!(
-                    "Range schema mutation missing range_key field '{}'", range_key
-                )))?;
-            
-            let range_key_str = match range_key_value {
-                Value::String(s) => s.clone(),
-                _ => range_key_value.to_string().trim_matches('"').to_string(),
-            };
-            
-            log_feature!(LogFeature::Mutation, info, "🎯 DEBUG: Range key value: '{}'", range_key_str);
-            
-            // Use the specialized range schema mutation method
-            return mutation_service.update_range_schema_fields(
-                schema,
-                &mutation.fields_and_values,
-                &range_key_str,
-                mutation_hash,
-            );
-        } else {
-            log_feature!(LogFeature::Mutation, info, "🔍 DEBUG: Processing regular schema mutation for schema '{}'", schema.name);
-        }
-
-        // For non-range schemas, process fields individually
-        for (field_name, field_value) in &mutation.fields_and_values {
-            // Get field definition
-            let _field = schema.fields.get(field_name).ok_or_else(|| {
-                SchemaError::InvalidData(format!("Field '{}' not found in schema", field_name))
-            })?;
-
-            // Delegate to mutation service
-            mutation_service.update_field_value(schema, field_name.as_str(), field_value, mutation_hash)?;
-        }
-
-        Ok(())
+        self.mutation_executor.write_schema(mutation)
     }
 
     /// Register a transform with the system
@@ -782,52 +536,6 @@ impl FoldDB {
     /// The method is async and non-blocking, allowing other operations to continue while
     /// waiting for mutation completion.
     pub async fn wait_for_mutation(&self, mutation_id: &str) -> Result<(), SchemaError> {
-        log_feature!(LogFeature::Mutation, info,
-            "Waiting for completion of mutation: {}", mutation_id);
-        
-        // Use the completion handler to wait for the mutation with default timeout
-        match self.completion_handler.wait_for_completion(mutation_id).await {
-            Ok(()) => {
-                log_feature!(LogFeature::Mutation, info,
-                    "Mutation {} completed successfully", mutation_id);
-                Ok(())
-            }
-            Err(mutation_error) => {
-                // Convert MutationCompletionError to SchemaError with appropriate error messages
-                let schema_error = match mutation_error {
-                    MutationCompletionError::Timeout(id, duration) => {
-                        log_feature!(LogFeature::Mutation, warn,
-                            "Mutation {} timed out after {:?}", id, duration);
-                        SchemaError::InvalidData("Mutation failed".to_string())
-                    }
-                    MutationCompletionError::MutationNotFound(id) => {
-                        log_feature!(LogFeature::Mutation, warn,
-                            "Mutation {} not found in completion tracking system", id);
-                        SchemaError::InvalidData(format!(
-                            "Mutation '{}' not found in tracking system. The mutation may have already completed, never been registered, or the ID is invalid.",
-                            id
-                        ))
-                    }
-                    MutationCompletionError::SignalFailed(id, reason) => {
-                        log_feature!(LogFeature::Mutation, error,
-                            "Failed to receive completion signal for mutation {}: {}", id, reason);
-                        SchemaError::InvalidData(format!(
-                            "Mutation '{}' completion signal failed: {}. This may indicate a system error or that the mutation process was interrupted.",
-                            id, reason
-                        ))
-                    }
-                    MutationCompletionError::LockFailed(reason) => {
-                        log_feature!(LogFeature::Mutation, error,
-                            "Failed to acquire lock for mutation completion tracking: {}", reason);
-                        SchemaError::InvalidData(format!(
-                            "Failed to access mutation tracking system: {}. This may indicate high system load or a concurrency issue.",
-                            reason
-                        ))
-                    }
-                };
-                
-                Err(schema_error)
-            }
-        }
+        self.mutation_executor.wait_for_mutation(mutation_id).await
     }
 }

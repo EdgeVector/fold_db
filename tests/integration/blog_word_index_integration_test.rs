@@ -503,6 +503,7 @@ async fn test_blog_word_index_declarative_transform_workflow() {
 
 /// Test that declarative schema loading automatically registers transforms
 #[test]
+#[serial_test::serial]
 fn test_declarative_schema_automatic_transform_registration() {
     let mut fixture = BlogWordIndexIntegrationFixture::new()
         .expect("Failed to create integration test fixture");

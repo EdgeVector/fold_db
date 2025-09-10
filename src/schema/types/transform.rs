@@ -255,10 +255,13 @@ impl Transform {
             // For declarative transforms, analyze field expressions
             for field_def in schema.fields.values() {
                 if let Some(atom_uuid) = &field_def.atom_uuid {
-                    // Extract potential dependencies from atom_uuid expressions
-                    // This is a simple analysis - could be made more sophisticated
-                    if atom_uuid.contains('.') && !atom_uuid.starts_with('.') {
-                        dependencies.insert(atom_uuid.clone());
+                    // Extract schema names from expressions like "BlogPost.map().content"
+                    // Take the first part before the first dot
+                    if let Some(first_dot) = atom_uuid.find('.') {
+                        let schema_name = &atom_uuid[..first_dot];
+                        if !schema_name.is_empty() {
+                            dependencies.insert(schema_name.to_string());
+                        }
                     }
                 }
             }

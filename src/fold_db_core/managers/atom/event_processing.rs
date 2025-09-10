@@ -162,6 +162,7 @@ impl AtomManager {
             loop {
                 match consumer.recv_timeout(Duration::from_millis(100)) {
                     Ok(request) => {
+                        println!("🔧 DEBUG: FieldValueSetRequest processor received request for {}.{}", request.schema_name, request.field_name);
                         if let Err(e) = manager.handle_fieldvalueset_request(request) {
                             error!("❌ Error processing FieldValueSetRequest: {}", e);
                         }

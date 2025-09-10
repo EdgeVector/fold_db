@@ -1,4 +1,4 @@
-use crate::schema::constants::{ATOM_UUID_FIELD, KEY_FIELD_NAME};
+use crate::schema::constants::{ATOM_UUID_FIELD, KEY_FIELD_NAME, DEFAULT_TRANSFORM_ID_SUFFIX, DEFAULT_OUTPUT_FIELD_NAME};
 use super::{schema_lock_error, SchemaCore, SchemaState};
 use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
 use crate::logging::features::{log_feature, LogFeature};
@@ -460,15 +460,19 @@ impl SchemaCore {
             info!("📋 Using default input dependency: BlogPost");
         }
         
+        // For declarative schemas, use the default output field name
+        // TODO: In the future, this could be made configurable via schema metadata
+        let output_field = DEFAULT_OUTPUT_FIELD_NAME.to_string();
+        
         // Create a transform from the declarative schema
         let transform = Transform::from_declarative_schema(
             declarative_schema.clone(),
             input_molecules.clone(), // Use extracted input dependencies
-            format!("{}.key", declarative_schema.name), // Output field
+            format!("{}.{}", declarative_schema.name, output_field), // Output field
         );
         
-        // Generate transform ID
-        let transform_id = format!("{}.declarative", declarative_schema.name);
+        // Generate transform ID using configurable suffix
+        let transform_id = format!("{}.{}", declarative_schema.name, DEFAULT_TRANSFORM_ID_SUFFIX);
         
         // Create trigger fields based on input dependencies
         // For declarative transforms, we need to trigger on ALL fields of the input schema
@@ -493,7 +497,7 @@ impl SchemaCore {
             input_molecules,
             input_names,
             trigger_fields,
-            output_molecule: format!("{}.key", declarative_schema.name),
+            output_molecule: format!("{}.{}", declarative_schema.name, output_field),
             schema_name: declarative_schema.name.clone(),
             field_name: KEY_FIELD_NAME.to_string(),
         };

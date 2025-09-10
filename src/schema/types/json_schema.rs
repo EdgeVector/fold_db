@@ -2,6 +2,7 @@ use crate::fees::payment_config::SchemaPaymentConfig;
 use crate::fees::types::config::FieldPaymentConfig;
 use crate::fees::types::config::TrustDistanceScaling;
 use crate::permissions::types::policy::{ExplicitCounts, PermissionsPolicy, TrustDistance};
+use crate::schema::constants::DEFAULT_VALIDATION_MAX_LOGIC_LENGTH;
 use crate::schema::types::field::FieldType;
 use crate::schema::types::SchemaError;
 use crate::schema::types::Transform;
@@ -132,10 +133,10 @@ impl TransformKind {
         // Basic syntax validation for procedural logic
         let trimmed_logic = logic.trim();
         
-        // Check for reasonable length
-        if trimmed_logic.len() > 10000 {
+        // Check for reasonable length using configurable limit
+        if trimmed_logic.len() > DEFAULT_VALIDATION_MAX_LOGIC_LENGTH {
             return Err(SchemaError::InvalidField(
-                "Procedural transform logic is too long (max 10000 characters)".to_string()
+                format!("Procedural transform logic is too long (max {} characters)", DEFAULT_VALIDATION_MAX_LOGIC_LENGTH)
             ));
         }
 

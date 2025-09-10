@@ -11,6 +11,7 @@
 
 use crate::schema::types::{Transform, Mutation, MutationType};
 use crate::schema::SchemaError;
+use crate::schema::constants::TRANSFORM_SYSTEM_ID;
 use crate::fold_db_core::services::mutation::MutationService;
 use crate::fold_db_core::infrastructure::message_bus::{
     MessageBus, 
@@ -236,7 +237,7 @@ impl StandardizedTransformExecutor {
             let mutation = Mutation::new(
                 schema_name.to_string(),
                 fields_and_values,
-                "transform_system".to_string(),
+                TRANSFORM_SYSTEM_ID.to_string(),
                 0, // trust_distance
                 MutationType::Update,
             );

@@ -19,3 +19,12 @@ pub const KEY_FIELD_NAME: &str = "key";
 /// Internal field names used in transform execution (prefixed versions)
 pub const INTERNAL_HASH_FIELD: &str = "_hash_field";
 pub const INTERNAL_RANGE_FIELD: &str = "_range_field";
+
+/// Transform configuration constants
+pub const DEFAULT_TRANSFORM_ID_SUFFIX: &str = "declarative";
+pub const DEFAULT_OUTPUT_FIELD_NAME: &str = "output";
+pub const DEFAULT_VALIDATION_MAX_LOGIC_LENGTH: usize = 10000;
+
+/// System identifiers for mutations and operations
+pub const TRANSFORM_SYSTEM_ID: &str = "transform_system";
+pub const DATA_STORAGE_SYSTEM_ID: &str = "data_storage_system";
