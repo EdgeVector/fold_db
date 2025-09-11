@@ -371,29 +371,39 @@ impl HashRangeEndToEndTestFixture {
         println!("🔍 Validating query result format for word '{}'", word);
         
         if let Some(result_obj) = result.as_object() {
-            // Check that we have the expected fields
-            let expected_fields = ["content", "author", "title", "tags"];
-            for field in &expected_fields {
-                if !result_obj.contains_key(*field) {
-                    return Err(format!("Query result missing field '{}' for word '{}'", field, word).into());
-                }
-                
-                // Each field should be an array of range_key/value pairs
-                if let Some(field_value) = result_obj.get(*field) {
-                    if let Some(field_array) = field_value.as_array() {
-                        for entry in field_array {
-                            if let Some(entry_obj) = entry.as_object() {
-                                if !entry_obj.contains_key("range_key") || !entry_obj.contains_key("value") {
-                                    return Err(format!("Invalid entry format in field '{}' for word '{}': missing range_key or value", field, word).into());
+            // Check that we have the expected word as a key
+            if !result_obj.contains_key(word) {
+                return Err(format!("Query result missing word '{}'", word).into());
+            }
+            
+            // Get the word data
+            if let Some(word_data) = result_obj.get(word) {
+                if let Some(word_obj) = word_data.as_object() {
+                    // Check that we have range keys (timestamps) as keys
+                    let mut has_valid_range_entries = false;
+                    for (range_key, range_data) in word_obj {
+                        if let Some(range_obj) = range_data.as_object() {
+                            // Check that we have the expected fields in each range entry
+                            let expected_fields = ["content", "author", "title", "tags"];
+                            for field in &expected_fields {
+                                if !range_obj.contains_key(*field) {
+                                    return Err(format!("Query result missing field '{}' for word '{}' in range '{}'", field, word, range_key).into());
                                 }
-                            } else {
-                                return Err(format!("Invalid entry format in field '{}' for word '{}': not an object", field, word).into());
                             }
+                            has_valid_range_entries = true;
+                        } else {
+                            return Err(format!("Invalid range data format for word '{}' in range '{}': not an object", word, range_key).into());
                         }
-                    } else {
-                        return Err(format!("Field '{}' is not an array for word '{}'", field, word).into());
                     }
+                    
+                    if !has_valid_range_entries {
+                        return Err(format!("No valid range entries found for word '{}'", word).into());
+                    }
+                } else {
+                    return Err(format!("Word data is not an object for word '{}'", word).into());
                 }
+            } else {
+                return Err(format!("No data found for word '{}'", word).into());
             }
             
             println!("✅ Query result format is correct for word '{}'", word);
@@ -409,30 +419,36 @@ impl HashRangeEndToEndTestFixture {
         println!("🔍 Validating query result data for word '{}'", word);
         
         if let Some(result_obj) = result.as_object() {
-            // Check that we have non-empty arrays for each field
-            let expected_fields = ["content", "author", "title", "tags"];
-            for field in &expected_fields {
-                if let Some(field_value) = result_obj.get(*field) {
-                    if let Some(field_array) = field_value.as_array() {
-                        if field_array.is_empty() {
-                            return Err(format!("Field '{}' is empty for word '{}'", field, word).into());
-                        }
-                        
-                        // Validate that we have meaningful data
-                        for entry in field_array {
-                            if let Some(entry_obj) = entry.as_object() {
-                                if let Some(value) = entry_obj.get("value") {
-                                    if value.is_null() {
-                                        return Err(format!("Entry has null value in field '{}' for word '{}'", field, word).into());
+            if let Some(word_data) = result_obj.get(word) {
+                if let Some(word_obj) = word_data.as_object() {
+                    // Check that we have non-empty range entries
+                    if word_obj.is_empty() {
+                        return Err(format!("No range entries found for word '{}'", word).into());
+                    }
+                    
+                    // Check that we have meaningful data in each range entry
+                    for (range_key, range_data) in word_obj {
+                        if let Some(range_obj) = range_data.as_object() {
+                            let expected_fields = ["content", "author", "title", "tags"];
+                            for field in &expected_fields {
+                                if let Some(field_value) = range_obj.get(*field) {
+                                    if field_value.is_null() {
+                                        return Err(format!("Field '{}' has null value for word '{}' in range '{}'", field, word, range_key).into());
                                     }
+                                } else {
+                                    return Err(format!("Field '{}' missing for word '{}' in range '{}'", field, word, range_key).into());
                                 }
                             }
                         }
                     }
+                    
+                    println!("✅ Query result contains valid data for word '{}'", word);
+                } else {
+                    return Err(format!("Word data is not an object for word '{}'", word).into());
                 }
+            } else {
+                return Err(format!("No data found for word '{}'", word).into());
             }
-            
-            println!("✅ Query result contains valid data for word '{}'", word);
         }
         
         Ok(())

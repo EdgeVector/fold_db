@@ -296,10 +296,9 @@ impl TransformManager {
                 info!("✅ Mutation executed successfully for {}.{}", schema_name, field_name);
                 Ok(())
             } else {
-                // Fallback to direct atom creation if FoldDB is not available
-                warn!("⚠️ FoldDB not available, falling back to direct atom creation for {}.{}", schema_name, field_name);
-                let atom = db_ops.create_atom(schema_name, TRANSFORM_SYSTEM_ID.to_string(), None, result.clone(), None)?;
-                Self::update_field_reference(db_ops, schema_name, field_name, atom.uuid())
+                // FoldDB not available - cannot create mutations
+                warn!("⚠️ FoldDB not available, cannot create mutation for {}.{}", schema_name, field_name);
+                Err(SchemaError::InvalidData("FoldDB not available for mutation execution".to_string()))
             }
         } else {
             Err(SchemaError::InvalidField(format!("Invalid output field format '{}', expected 'Schema.field'", transform.get_output())))
@@ -307,7 +306,7 @@ impl TransformManager {
     }
     
     /// Special storage for HashRange schema transform results using mutations
-    fn store_hashrange_transform_result_with_mutations(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue, _fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
+    fn store_hashrange_transform_result_with_mutations(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue, mut fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
         info!("🔑 Storing HashRange transform result for schema '{}' using mutations: {}", schema_name, result);
         
         // Get the schema definition to determine field names dynamically
@@ -491,7 +490,7 @@ impl TransformManager {
                         
                         // Execute the field value request directly through the field value system
                         // This is the key fix - we're actually executing the request instead of just storing it
-                        match TransformManager::process_hashrange_field_value(db_ops, schema_name, field_name, &hashrange_aware_value) {
+                        match TransformManager::process_hashrange_field_value(schema_name, field_name, &hashrange_aware_value, fold_db.as_deref_mut()) {
                             Ok(_) => {
                                 println!("✅ HashRange field value processed successfully for {}.{} with word '{}'", schema_name, field_name, word);
                             }
@@ -510,40 +509,6 @@ impl TransformManager {
             Err(SchemaError::InvalidData(format!("HashRange transform result must be an object, got: {}", result)))
         }
     }
-    
-    /// Update a field's molecule_uuid to point to a new atom and create proper linking
-    /// SCHEMA-003: Only updates field values, NOT schema structure (schemas are immutable)
-    fn update_field_reference(
-        db_ops: &Arc<crate::db_operations::DbOperations>,
-        schema_name: &str,
-        field_name: &str,
-        atom_uuid: &str,
-    ) -> Result<(), SchemaError> {
-        info!("🔗 Updating field reference: {}.{} -> atom {}", schema_name, field_name, atom_uuid);
-        
-        // 1. Load the schema (read-only - we will NOT modify it)
-        let schema = db_ops.get_schema(schema_name)?
-            .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", schema_name)))?;
-        
-        // 2. Get the field (read-only)
-        let _field = schema.fields.get(field_name)
-            .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in schema '{}'", field_name, schema_name)))?;
-        
-        // 3. Get the field's molecule_uuid (should already exist in schema)
-        let molecule_uuid = format!("{}_{}_single", schema_name, field_name);
-        
-        // 4. Create/update Molecule to point to the new atom (this is a field VALUE update, not schema structure)
-        let molecule = crate::atom::Molecule::new(atom_uuid.to_string(), TRANSFORM_SYSTEM_ID.to_string());
-        db_ops.store_item(&format!("ref:{}", molecule_uuid), &molecule)?;
-        
-        info!("✅ Updated field value reference for '{}.{}' to point to atom {}", schema_name, field_name, atom_uuid);
-        LoggingHelper::log_molecule_operation(&molecule_uuid, atom_uuid, "creation");
-        
-        // SCHEMA-003: Do NOT modify schema structure - only update field value through Molecule
-        // The schema remains immutable, we only updated what the field's reference points to
-        
-        Ok(())
-    }
 
     /// Get field value from a schema using database operations (consolidated implementation)
     fn get_field_value_from_schema(
@@ -555,14 +520,14 @@ impl TransformManager {
         crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(db_ops, schema, field_name, None, None)
     }
 
-    /// Process HashRange field value directly without going through the message bus
+    /// Process HashRange field value by creating and executing mutations
     fn process_hashrange_field_value(
-        db_ops: &Arc<crate::db_operations::DbOperations>,
         schema_name: &str,
         field_name: &str,
         value: &JsonValue,
+        fold_db: Option<&mut crate::fold_db_core::FoldDB>,
     ) -> Result<(), SchemaError> {
-        info!("🔧 Processing HashRange field value for {}.{}", schema_name, field_name);
+        info!("🔧 Processing HashRange field value for {}.{} using mutations", schema_name, field_name);
         
         // Extract hash_key and range_key from the value
         let hash_key = if let Some(obj) = value.as_object() {
@@ -595,31 +560,36 @@ impl TransformManager {
         
         info!("🔍 Extracted hash_key: '{}' and range_key: '{}'", hash_key, range_key);
         
-        // Create the HashRange key format: {schema_name}_{field_name}_{hash_key}
-        let hashrange_key = format!("{}_{}_{}", schema_name, field_name, hash_key);
-        
-        // Retrieve existing BTree for this hash_key and field, or create a new one
-        let existing_btree_json = match db_ops.get_item(&hashrange_key) {
-            Ok(Some(data)) => data,
-            Ok(None) => "{}".to_string(),
-            Err(_) => "{}".to_string(),
+        // Extract the actual field value
+        let field_value = if let Some(value_obj) = value.as_object() {
+            value_obj.get("value").cloned().unwrap_or(value.clone())
+        } else {
+            value.clone()
         };
         
-        let mut existing_btree: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&existing_btree_json)
-            .unwrap_or_else(|_| serde_json::Map::new());
+        // Create a HashRange mutation with proper structure
+        let mut fields_and_values = std::collections::HashMap::new();
+        fields_and_values.insert("hash_key".to_string(), serde_json::Value::String(hash_key.clone()));
+        fields_and_values.insert("range_key".to_string(), serde_json::Value::String(range_key.clone()));
+        fields_and_values.insert(field_name.to_string(), field_value.clone());
         
-        // Insert or update the range_key and its value
-        if let Some(value_obj) = value.as_object() {
-            if let Some(actual_value) = value_obj.get("value") {
-                existing_btree.insert(range_key.clone(), actual_value.clone());
-            }
+        let mutation = crate::schema::types::Mutation::new(
+            schema_name.to_string(),
+            fields_and_values,
+            TRANSFORM_SYSTEM_ID.to_string(),
+            0, // trust_distance
+            crate::schema::types::MutationType::Create,
+        );
+        
+        // Execute the mutation through FoldDB if available
+        if let Some(fold_db) = fold_db {
+            info!("📝 Executing HashRange mutation for {}.{}", schema_name, field_name);
+            fold_db.write_schema(mutation)?;
+            info!("✅ HashRange mutation executed successfully for {}.{}", schema_name, field_name);
+            Ok(())
+        } else {
+            warn!("⚠️ FoldDB not available, cannot execute HashRange mutation for {}.{}", schema_name, field_name);
+            Err(SchemaError::InvalidData("FoldDB not available for HashRange mutation execution".to_string()))
         }
-        
-        // Store the updated BTree back into the database
-        let updated_btree_json = serde_json::to_string(&existing_btree).unwrap_or_else(|_| "{}".to_string());
-        db_ops.store_item(&hashrange_key, &updated_btree_json)?;
-        
-        info!("✅ Successfully stored HashRange data for key: {}", hashrange_key);
-        Ok(())
     }
 }

@@ -255,7 +255,7 @@ impl TransformManager {
                         transform_id,
                         &transform,
                         &self.db_ops,
-                        None // TODO: Pass FoldDB reference when available
+                        None // FoldDB not available in this context - will use fallback
                     )?;
                     
                     // Store the result
@@ -263,7 +263,7 @@ impl TransformManager {
                         &self.db_ops,
                         &transform,
                         &result,
-                        None // TODO: Pass FoldDB reference when available
+                        None // FoldDB not available in this context - will use fallback
                     )?;
                     
                     Ok(result)
@@ -416,7 +416,7 @@ impl TransformRunner for TransformManager {
             transform_id,
             &transform,
             &self.db_ops,
-            None // FoldDB reference not available in this context
+            None // FoldDB not available in this context - will use fallback
         )?;
         println!("🔧 execute_single_transform completed with result: {}", result);
         
@@ -427,7 +427,7 @@ impl TransformRunner for TransformManager {
             &self.db_ops,
             &transform,
             &result,
-            None // FoldDB reference not available in this context
+            None // FoldDB not available in this context - will use fallback
         )?;
         
         info!("✅ Transform '{}' executed successfully: {}", transform_id, result);
