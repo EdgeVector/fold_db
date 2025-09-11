@@ -82,16 +82,17 @@ def query_user_activities_via_curl(user_id=None, action=None):
     query_data = {
         "type": "query",
         "schema": "UserActivity",
-        "query_type": "get_all"
+        "query_type": "get_all",
+        "fields": ["user_id", "action", "resource", "timestamp", "metadata"]
     }
     
-    # Add filters if specified
+    # Add hash filter if user_id is specified (HashRange schemas use hash_filter format)
     if user_id:
-        query_data["filters"] = {"user_id": user_id}
-    if action:
-        if "filters" not in query_data:
-            query_data["filters"] = {}
-        query_data["filters"]["action"] = action
+        query_data["filter"] = {
+            "hash_filter": {
+                "Key": user_id
+            }
+        }
     
     # Convert to JSON string
     json_data = json.dumps(query_data)
@@ -309,16 +310,39 @@ def display_activities(activities_data, title="User Activities"):
     print("=" * 80)
     
     for activity in activities:
-        print(f"👤 User: {activity.get('user_id', 'N/A')}")
-        print(f"🎯 Action: {activity.get('action', 'N/A')}")
-        print(f"📍 Resource: {activity.get('resource', 'N/A')}")
-        print(f"⏰ Timestamp: {activity.get('timestamp', 'N/A')}")
+        # Handle HashRange data format where fields contain arrays of {range_key, value} objects
+        def extract_field_value(field_data):
+            if isinstance(field_data, list) and len(field_data) > 0:
+                # HashRange format: array of {range_key, value} objects
+                return [item.get('value', 'N/A') for item in field_data]
+            elif isinstance(field_data, dict):
+                # Regular format: direct value
+                return field_data
+            else:
+                return field_data
+        
+        user_id = extract_field_value(activity.get('user_id', 'N/A'))
+        action = extract_field_value(activity.get('action', 'N/A'))
+        resource = extract_field_value(activity.get('resource', 'N/A'))
+        timestamp = extract_field_value(activity.get('timestamp', 'N/A'))
+        
+        print(f"👤 User: {user_id}")
+        print(f"🎯 Action: {action}")
+        print(f"📍 Resource: {resource}")
+        print(f"⏰ Timestamp: {timestamp}")
         
         metadata = activity.get('metadata', {})
         if metadata:
             print("📋 Metadata:")
-            for key, value in metadata.items():
-                print(f"   {key}: {value}")
+            if isinstance(metadata, list) and len(metadata) > 0:
+                # HashRange format for metadata
+                for i, meta_item in enumerate(metadata):
+                    if isinstance(meta_item, dict) and 'value' in meta_item:
+                        print(f"   Entry {i+1}: {meta_item['value']}")
+            elif isinstance(metadata, dict):
+                # Regular format for metadata
+                for key, value in metadata.items():
+                    print(f"   {key}: {value}")
         
         print("-" * 40)
 
