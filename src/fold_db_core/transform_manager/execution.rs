@@ -7,6 +7,7 @@ use log::{info, warn};
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde_json::{Value as JsonValue, json};
+use uuid;
 
 impl TransformManager {
 
@@ -263,7 +264,7 @@ impl TransformManager {
     
     
     /// Generic result storage for any transform using mutations
-    pub fn store_transform_result_generic(db_ops: &Arc<crate::db_operations::DbOperations>, transform: &crate::schema::types::Transform, result: &JsonValue, fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
+    pub fn store_transform_result_generic(db_ops: &Arc<crate::db_operations::DbOperations>, transform: &crate::schema::types::Transform, result: &JsonValue, message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>) -> Result<(), SchemaError> {
         if let Some(dot_pos) = transform.get_output().find('.') {
             let schema_name = &transform.get_output()[..dot_pos];
             let field_name = &transform.get_output()[dot_pos + 1..];
@@ -271,43 +272,49 @@ impl TransformManager {
             // Check if this is a HashRange schema and handle it specially
             if let Ok(Some(schema)) = db_ops.get_schema(schema_name) {
                 if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
-                    info!("🔑 Storing HashRange transform result for schema '{}' using mutations", schema_name);
-                    return Self::store_hashrange_transform_result_with_mutations(db_ops, schema_name, result, fold_db);
+                    info!("🔑 Storing HashRange transform result for schema '{}' using message bus", schema_name);
+                    if let Some(message_bus) = message_bus {
+                        return Self::store_hashrange_transform_result_with_message_bus(db_ops, schema_name, result, message_bus);
+                    } else {
+                        warn!("⚠️ Message bus not available for HashRange transform result storage");
+                        return Err(SchemaError::InvalidData("Message bus not available for HashRange transform result storage".to_string()));
+                    }
                 }
             }
             
-            // For non-HashRange schemas, create a mutation instead of direct atom creation
-            if let Some(fold_db) = fold_db {
-                info!("📝 Creating mutation for {}.{} using FoldDB", schema_name, field_name);
+            // For non-HashRange schemas, submit through message bus if available
+            if let Some(message_bus) = message_bus {
+                info!("📝 Submitting field value for {}.{} through message bus", schema_name, field_name);
                 
-                let mut fields_and_values = std::collections::HashMap::new();
-                fields_and_values.insert(field_name.to_string(), result.clone());
-                
-                let mutation = crate::schema::types::Mutation::new(
+                // Create FieldValueSetRequest and publish through message bus
+                let correlation_id = uuid::Uuid::new_v4().to_string();
+                let field_value_request = crate::fold_db_core::infrastructure::message_bus::request_events::FieldValueSetRequest::new(
+                    correlation_id.clone(),
                     schema_name.to_string(),
-                    fields_and_values,
+                    field_name.to_string(),
+                    result.clone(),
                     TRANSFORM_SYSTEM_ID.to_string(),
-                    0, // trust_distance
-                    crate::schema::types::MutationType::Update,
                 );
                 
-                // Execute the mutation through FoldDB
-                fold_db.write_schema(mutation)?;
-                info!("✅ Mutation executed successfully for {}.{}", schema_name, field_name);
+                if let Err(e) = message_bus.publish(field_value_request) {
+                    warn!("⚠️ Failed to publish FieldValueSetRequest for {}.{}: {}", schema_name, field_name, e);
+                    return Err(SchemaError::InvalidData(format!("Failed to submit field value: {}", e)));
+                }
+                
+                info!("✅ FieldValueSetRequest submitted successfully for {}.{} with correlation_id: {}", schema_name, field_name, correlation_id);
                 Ok(())
             } else {
-                // FoldDB not available - cannot create mutations
-                warn!("⚠️ FoldDB not available, cannot create mutation for {}.{}", schema_name, field_name);
-                Err(SchemaError::InvalidData("FoldDB not available for mutation execution".to_string()))
+                warn!("⚠️ Message bus not available, cannot submit field value for {}.{}", schema_name, field_name);
+                Err(SchemaError::InvalidData("Message bus not available for field value submission".to_string()))
             }
         } else {
             Err(SchemaError::InvalidField(format!("Invalid output field format '{}', expected 'Schema.field'", transform.get_output())))
         }
     }
     
-    /// Special storage for HashRange schema transform results using mutations
-    fn store_hashrange_transform_result_with_mutations(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue, mut fold_db: Option<&mut crate::fold_db_core::FoldDB>) -> Result<(), SchemaError> {
-        info!("🔑 Storing HashRange transform result for schema '{}' using mutations: {}", schema_name, result);
+    /// Special storage for HashRange schema transform results using message bus
+    fn store_hashrange_transform_result_with_message_bus(db_ops: &Arc<crate::db_operations::DbOperations>, schema_name: &str, result: &JsonValue, message_bus: &Arc<crate::fold_db_core::infrastructure::MessageBus>) -> Result<(), SchemaError> {
+        info!("🔑 Storing HashRange transform result for schema '{}' using message bus: {}", schema_name, result);
         
         // Get the schema definition to determine field names dynamically
         let schema = db_ops.get_schema(schema_name)?
@@ -461,11 +468,11 @@ impl TransformManager {
                 }
             }
             
-            // Execute mutations directly through the field value system
-            info!("🚀 Executing HashRange mutations directly through field value system");
+            // Submit HashRange field values through message bus
+            info!("🚀 Submitting HashRange field values through message bus");
             
-            for (word, atom_uuid, mutation, _field_values, _range) in all_mutations {
-                println!("📝 Executing mutation for word '{}' with UUID: {}", word, atom_uuid);
+            for (word, _atom_uuid, mutation, _field_values, _range) in all_mutations {
+                println!("📝 Submitting field values for word '{}' through message bus", word);
                 
                 // Extract hash_key and range_key from the mutation
                 let hash_key = mutation.fields_and_values.get("hash_key")
@@ -476,10 +483,10 @@ impl TransformManager {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SchemaError::InvalidData("HashRange mutation missing range_key".to_string()))?;
                 
-                // Execute each field mutation directly through the field value system
+                // Submit each field value through the message bus
                 for (field_name, value) in &mutation.fields_and_values {
                     if field_name != "hash_key" && field_name != "range_key" {
-                        println!("🔧 Processing field '{}' for word '{}'", field_name, word);
+                        println!("🔧 Submitting field '{}' for word '{}' through message bus", field_name, word);
                         
                         // Create a HashRange-aware field value request
                         let hashrange_aware_value = serde_json::json!({
@@ -488,22 +495,27 @@ impl TransformManager {
                             "value": value
                         });
                         
-                        // Execute the field value request directly through the field value system
-                        // This is the key fix - we're actually executing the request instead of just storing it
-                        match TransformManager::process_hashrange_field_value(schema_name, field_name, &hashrange_aware_value, fold_db.as_deref_mut()) {
-                            Ok(_) => {
-                                println!("✅ HashRange field value processed successfully for {}.{} with word '{}'", schema_name, field_name, word);
-                            }
-                            Err(e) => {
-                                println!("❌ HashRange field value processing failed for {}.{} with word '{}': {}", schema_name, field_name, word, e);
-                                return Err(SchemaError::InvalidData(format!("Failed to process field value: {}", e)));
-                            }
+                        // Submit the field value request through the message bus
+                        let correlation_id = uuid::Uuid::new_v4().to_string();
+                        let field_value_request = crate::fold_db_core::infrastructure::message_bus::request_events::FieldValueSetRequest::new(
+                            correlation_id.clone(),
+                            schema_name.to_string(),
+                            field_name.clone(),
+                            hashrange_aware_value,
+                            TRANSFORM_SYSTEM_ID.to_string(),
+                        );
+                        
+                        if let Err(e) = message_bus.publish(field_value_request) {
+                            println!("❌ HashRange field value submission failed for {}.{} with word '{}': {}", schema_name, field_name, word, e);
+                            return Err(SchemaError::InvalidData(format!("Failed to submit field value: {}", e)));
                         }
+                        
+                        println!("✅ HashRange field value submitted successfully for {}.{} with word '{}'", schema_name, field_name, word);
                     }
                 }
             }
             
-            info!("🎯 All HashRange mutations executed successfully");
+            info!("🎯 All HashRange field values submitted successfully through message bus");
             Ok(())
         } else {
             Err(SchemaError::InvalidData(format!("HashRange transform result must be an object, got: {}", result)))
@@ -520,76 +532,4 @@ impl TransformManager {
         crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(db_ops, schema, field_name, None, None)
     }
 
-    /// Process HashRange field value by creating and executing mutations
-    fn process_hashrange_field_value(
-        schema_name: &str,
-        field_name: &str,
-        value: &JsonValue,
-        fold_db: Option<&mut crate::fold_db_core::FoldDB>,
-    ) -> Result<(), SchemaError> {
-        info!("🔧 Processing HashRange field value for {}.{} using mutations", schema_name, field_name);
-        
-        // Extract hash_key and range_key from the value
-        let hash_key = if let Some(obj) = value.as_object() {
-            if let Some(hash_key_value) = obj.get("hash_key") {
-                if let Some(key_str) = hash_key_value.as_str() {
-                    key_str.to_string()
-                } else {
-                    hash_key_value.to_string().trim_matches('"').to_string()
-                }
-            } else {
-                "default".to_string()
-            }
-        } else {
-            "default".to_string()
-        };
-        
-        let range_key = if let Some(obj) = value.as_object() {
-            if let Some(range_key_value) = obj.get("range_key") {
-                if let Some(key_str) = range_key_value.as_str() {
-                    key_str.to_string()
-                } else {
-                    range_key_value.to_string().trim_matches('"').to_string()
-                }
-            } else {
-                "default".to_string()
-            }
-        } else {
-            "default".to_string()
-        };
-        
-        info!("🔍 Extracted hash_key: '{}' and range_key: '{}'", hash_key, range_key);
-        
-        // Extract the actual field value
-        let field_value = if let Some(value_obj) = value.as_object() {
-            value_obj.get("value").cloned().unwrap_or(value.clone())
-        } else {
-            value.clone()
-        };
-        
-        // Create a HashRange mutation with proper structure
-        let mut fields_and_values = std::collections::HashMap::new();
-        fields_and_values.insert("hash_key".to_string(), serde_json::Value::String(hash_key.clone()));
-        fields_and_values.insert("range_key".to_string(), serde_json::Value::String(range_key.clone()));
-        fields_and_values.insert(field_name.to_string(), field_value.clone());
-        
-        let mutation = crate::schema::types::Mutation::new(
-            schema_name.to_string(),
-            fields_and_values,
-            TRANSFORM_SYSTEM_ID.to_string(),
-            0, // trust_distance
-            crate::schema::types::MutationType::Create,
-        );
-        
-        // Execute the mutation through FoldDB if available
-        if let Some(fold_db) = fold_db {
-            info!("📝 Executing HashRange mutation for {}.{}", schema_name, field_name);
-            fold_db.write_schema(mutation)?;
-            info!("✅ HashRange mutation executed successfully for {}.{}", schema_name, field_name);
-            Ok(())
-        } else {
-            warn!("⚠️ FoldDB not available, cannot execute HashRange mutation for {}.{}", schema_name, field_name);
-            Err(SchemaError::InvalidData("FoldDB not available for HashRange mutation execution".to_string()))
-        }
-    }
 }
