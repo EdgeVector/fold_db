@@ -93,11 +93,16 @@ impl QueryExecutor {
             println!("🔍 DEBUG: Schema '{}' is HashRange type", schema.name);
             if let Some(filter) = &query.filter {
                 println!("🔍 DEBUG: Query has filter: {:?}", filter);
+                // Check for both hash_filter and hash_key formats
                 if let Some(hash_filter_obj) = filter.get("hash_filter") {
                     println!("🔑 HashRange schema detected with hash_filter: {:?}", hash_filter_obj);
                     Some(hash_filter_obj.clone())
+                } else if let Some(hash_key_value) = filter.get("hash_key") {
+                    println!("🔑 HashRange schema detected with hash_key: {:?}", hash_key_value);
+                    // Convert hash_key format to hash_filter format for compatibility
+                    Some(serde_json::json!({"Key": hash_key_value}))
                 } else {
-                    println!("🔍 DEBUG: No hash_filter found in query filter");
+                    println!("🔍 DEBUG: No hash_filter or hash_key found in query filter");
                     None
                 }
             } else {

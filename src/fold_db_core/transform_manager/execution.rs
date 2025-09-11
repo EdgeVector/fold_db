@@ -462,26 +462,49 @@ impl TransformManager {
                 }
             }
             
-            // Store all mutations for later execution
-            // NOTE: Transform system creates mutations but does NOT execute them directly
-            // The mutations will be executed by the mutation system when they are processed
+            // Execute mutations directly through the field value system
+            info!("🚀 Executing HashRange mutations directly through field value system");
+            
             for (word, atom_uuid, mutation, _field_values, _range) in all_mutations {
-                println!("📝 Storing mutation for word '{}' with UUID: {}", word, atom_uuid);
+                println!("📝 Executing mutation for word '{}' with UUID: {}", word, atom_uuid);
                 
-                // Store the mutation in the database for processing by the mutation system
-                let mutation_json = serde_json::to_value(&mutation).map_err(|e| SchemaError::InvalidData(format!("Failed to serialize mutation: {}", e)))?;
+                // Extract hash_key and range_key from the mutation
+                let hash_key = mutation.fields_and_values.get("hash_key")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| SchemaError::InvalidData("HashRange mutation missing hash_key".to_string()))?;
                 
-                // Store the mutation with a unique key for each word occurrence
-                let mutation_key = format!("mutation:{}:{}", atom_uuid, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
-                db_ops.store_item(&mutation_key, &mutation_json)?;
+                let range_key = mutation.fields_and_values.get("range_key")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| SchemaError::InvalidData("HashRange mutation missing range_key".to_string()))?;
                 
-                println!("✅ HashRange mutation stored successfully for word '{}' with key: {}", word, mutation_key);
+                // Execute each field mutation directly through the field value system
+                for (field_name, value) in &mutation.fields_and_values {
+                    if field_name != "hash_key" && field_name != "range_key" {
+                        println!("🔧 Processing field '{}' for word '{}'", field_name, word);
+                        
+                        // Create a HashRange-aware field value request
+                        let hashrange_aware_value = serde_json::json!({
+                            "hash_key": hash_key,
+                            "range_key": range_key,
+                            "value": value
+                        });
+                        
+                        // Execute the field value request directly through the field value system
+                        // This is the key fix - we're actually executing the request instead of just storing it
+                        match TransformManager::process_hashrange_field_value(db_ops, schema_name, field_name, &hashrange_aware_value) {
+                            Ok(_) => {
+                                println!("✅ HashRange field value processed successfully for {}.{} with word '{}'", schema_name, field_name, word);
+                            }
+                            Err(e) => {
+                                println!("❌ HashRange field value processing failed for {}.{} with word '{}': {}", schema_name, field_name, word, e);
+                                return Err(SchemaError::InvalidData(format!("Failed to process field value: {}", e)));
+                            }
+                        }
+                    }
+                }
             }
             
-            // TODO: Execute stored mutations through mutation system
-            // This requires access to FoldDB instance which is not available in this context
-            // The mutations are stored and will be processed by the mutation system
-            
+            info!("🎯 All HashRange mutations executed successfully");
             Ok(())
         } else {
             Err(SchemaError::InvalidData(format!("HashRange transform result must be an object, got: {}", result)))
@@ -530,5 +553,73 @@ impl TransformManager {
     ) -> Result<JsonValue, SchemaError> {
         // Use the unified FieldValueResolver instead of duplicate implementation
         crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(db_ops, schema, field_name, None, None)
+    }
+
+    /// Process HashRange field value directly without going through the message bus
+    fn process_hashrange_field_value(
+        db_ops: &Arc<crate::db_operations::DbOperations>,
+        schema_name: &str,
+        field_name: &str,
+        value: &JsonValue,
+    ) -> Result<(), SchemaError> {
+        info!("🔧 Processing HashRange field value for {}.{}", schema_name, field_name);
+        
+        // Extract hash_key and range_key from the value
+        let hash_key = if let Some(obj) = value.as_object() {
+            if let Some(hash_key_value) = obj.get("hash_key") {
+                if let Some(key_str) = hash_key_value.as_str() {
+                    key_str.to_string()
+                } else {
+                    hash_key_value.to_string().trim_matches('"').to_string()
+                }
+            } else {
+                "default".to_string()
+            }
+        } else {
+            "default".to_string()
+        };
+        
+        let range_key = if let Some(obj) = value.as_object() {
+            if let Some(range_key_value) = obj.get("range_key") {
+                if let Some(key_str) = range_key_value.as_str() {
+                    key_str.to_string()
+                } else {
+                    range_key_value.to_string().trim_matches('"').to_string()
+                }
+            } else {
+                "default".to_string()
+            }
+        } else {
+            "default".to_string()
+        };
+        
+        info!("🔍 Extracted hash_key: '{}' and range_key: '{}'", hash_key, range_key);
+        
+        // Create the HashRange key format: {schema_name}_{field_name}_{hash_key}
+        let hashrange_key = format!("{}_{}_{}", schema_name, field_name, hash_key);
+        
+        // Retrieve existing BTree for this hash_key and field, or create a new one
+        let existing_btree_json = match db_ops.get_item(&hashrange_key) {
+            Ok(Some(data)) => data,
+            Ok(None) => "{}".to_string(),
+            Err(_) => "{}".to_string(),
+        };
+        
+        let mut existing_btree: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&existing_btree_json)
+            .unwrap_or_else(|_| serde_json::Map::new());
+        
+        // Insert or update the range_key and its value
+        if let Some(value_obj) = value.as_object() {
+            if let Some(actual_value) = value_obj.get("value") {
+                existing_btree.insert(range_key.clone(), actual_value.clone());
+            }
+        }
+        
+        // Store the updated BTree back into the database
+        let updated_btree_json = serde_json::to_string(&existing_btree).unwrap_or_else(|_| "{}".to_string());
+        db_ops.store_item(&hashrange_key, &updated_btree_json)?;
+        
+        info!("✅ Successfully stored HashRange data for key: {}", hashrange_key);
+        Ok(())
     }
 }
