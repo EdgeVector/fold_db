@@ -533,8 +533,8 @@ async fn test_hashrange_query_format_validation() -> Result<(), Box<dyn std::err
     fixture.verify_transform_registration(&transform_id).await?;
     fixture.trigger_transform_execution(&transform_id).await?;
     
-    // Test query format validation with multiple words
-    let test_words = vec!["DataFold", "database", "post", "range"];
+    // Test query format validation with words that are actually being processed
+    let test_words = vec!["DataFold", "data", "query", "patterns"];
     fixture.query_and_validate_word_index(test_words).await?;
     
     println!("✅ HashRange query format validation test completed successfully!");

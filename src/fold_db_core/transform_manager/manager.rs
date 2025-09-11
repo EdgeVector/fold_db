@@ -422,12 +422,12 @@ impl TransformRunner for TransformManager {
         
         info!("✅ DIAGNOSTIC: Transform '{}' executed successfully, result: {}", transform_id, result);
         
-        // Store the result (call as static method)
+        // Store the result using message bus
         Self::store_transform_result_generic(
             &self.db_ops,
             &transform,
             &result,
-            None // FoldDB not available in this context - will use fallback
+            Some(&self._message_bus)
         )?;
         
         info!("✅ Transform '{}' executed successfully: {}", transform_id, result);
