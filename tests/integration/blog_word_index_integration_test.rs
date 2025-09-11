@@ -460,25 +460,31 @@ async fn test_blog_word_index_declarative_transform_workflow() {
         let result = fixture.query_blog_word_index(word)
             .expect(&format!("Failed to query BlogWordIndex for word: {}", word));
         
-        // Verify the result structure
+        // Verify the result structure - expect hash->range->fields format
         assert!(result.is_object(), "Query result should be an object");
         
         let result_obj = result.as_object().unwrap();
-        assert!(result_obj.contains_key("content"), "Result should contain 'content' field");
-        assert!(result_obj.contains_key("author"), "Result should contain 'author' field");
-        assert!(result_obj.contains_key("title"), "Result should contain 'title' field");
-        assert!(result_obj.contains_key("tags"), "Result should contain 'tags' field");
+        assert!(result_obj.contains_key(word), "Result should contain the word '{}' as a key", word);
         
-        // Check if we got actual data (not just null values)
-        let has_data = result_obj.values().any(|v| !v.is_null());
-        if has_data {
-            println!("✅ Query for '{}' returned actual data from declarative transform!", word);
-        } else {
-            println!("❌ Query for '{}' returned null values - transform is not working!", word);
-            panic!("Query for '{}' returned null values - declarative transform failed to index this word", word);
+        let word_data = result_obj.get(word).unwrap();
+        assert!(word_data.is_object(), "Word data should be an object");
+        
+        let word_obj = word_data.as_object().unwrap();
+        assert!(!word_obj.is_empty(), "Word data should not be empty");
+        
+        // Check that we have range entries with the expected fields
+        let mut has_valid_data = false;
+        for (_range_key, range_data) in word_obj {
+            if let Some(range_obj) = range_data.as_object() {
+                assert!(range_obj.contains_key("content"), "Range entry should contain 'content' field");
+                assert!(range_obj.contains_key("author"), "Range entry should contain 'author' field");
+                assert!(range_obj.contains_key("title"), "Range entry should contain 'title' field");
+                assert!(range_obj.contains_key("tags"), "Range entry should contain 'tags' field");
+                has_valid_data = true;
+            }
         }
         
-        println!("✅ Query for '{}' returned expected structure", word);
+        assert!(has_valid_data, "Should have at least one valid range entry");
     }
     
     // Step 7: Test querying for a word that should exist in multiple posts
@@ -490,7 +496,25 @@ async fn test_blog_word_index_declarative_transform_workflow() {
     assert!(datafold_result.is_object(), "DataFold query result should be an object");
     
     let datafold_obj = datafold_result.as_object().unwrap();
-    let has_datafold_data = datafold_obj.values().any(|v| !v.is_null());
+    assert!(datafold_obj.contains_key("DataFold"), "Result should contain 'DataFold' as a key");
+    
+    let datafold_data = datafold_obj.get("DataFold").unwrap();
+    assert!(datafold_data.is_object(), "DataFold data should be an object");
+    
+    let datafold_word_obj = datafold_data.as_object().unwrap();
+    assert!(!datafold_word_obj.is_empty(), "DataFold data should not be empty");
+    
+    // Check that we have range entries with actual data
+    let mut has_datafold_data = false;
+    for (range_key, range_data) in datafold_word_obj {
+        if let Some(range_obj) = range_data.as_object() {
+            if range_obj.values().any(|v| !v.is_null()) {
+                has_datafold_data = true;
+                break;
+            }
+        }
+    }
+    
     if has_datafold_data {
         println!("✅ DataFold query returned actual data from declarative transform!");
     } else {
@@ -627,18 +651,37 @@ async fn test_declarative_transform_execution() {
         let result = fixture.query_blog_word_index(word)
             .expect(&format!("Failed to query for word: {}", word));
         
-        // Check if we got actual data for ALL fields
+        // Check if we got actual data for ALL fields in the hash->range->fields format
         if let Some(obj) = result.as_object() {
-            let null_fields: Vec<String> = obj.iter()
-                .filter(|(_, v)| v.is_null())
-                .map(|(k, _)| k.clone())
-                .collect();
-            
-            if null_fields.is_empty() {
-                println!("✅ Declarative transform successfully indexed word: '{}'", word);
+            // Check that we have the word as a key
+            if let Some(word_data) = obj.get(word) {
+                if let Some(word_obj) = word_data.as_object() {
+                    let mut has_valid_data = false;
+                    for (_range_key, range_data) in word_obj {
+                        if let Some(range_obj) = range_data.as_object() {
+                            let null_fields: Vec<String> = range_obj.iter()
+                                .filter(|(_, v)| v.is_null())
+                                .map(|(k, _)| k.clone())
+                                .collect();
+                            
+                            if null_fields.is_empty() {
+                                has_valid_data = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if has_valid_data {
+                        println!("✅ Declarative transform successfully indexed word: '{}'", word);
+                    } else {
+                        println!("❌ Declarative transform did not index word: '{}' - all range entries have null values", word);
+                        panic!("Query for '{}' returned null values for all range entries - declarative transform failed to index this word", word);
+                    }
+                } else {
+                    panic!("Word data for '{}' is not an object", word);
+                }
             } else {
-                println!("❌ Declarative transform did not index word: '{}' - null fields: {:?}", word, null_fields);
-                panic!("Query for '{}' returned null values for fields: {:?} - declarative transform failed to index these fields", word, null_fields);
+                panic!("Query result for '{}' does not contain the word as a key", word);
             }
         } else {
             panic!("Query result for '{}' is not an object", word);
