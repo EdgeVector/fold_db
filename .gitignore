@@ -58,6 +58,7 @@ fold_node/data/schema_states/
 /fold_node/tests/test_data/request_forwarding/
 /tests/test_data/
 /data_temp/
+/scripts/target/
 
 # Example generated files
 examples/*/db/

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
+import { getHashRangeSchemaInfo } from '../../utils/hashRangeSchemaUtils'
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
 import {
   selectAllSchemas,
@@ -195,6 +196,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     const isExpanded = expandedSchemas[schema.name]
     const state = schema.state || 'Unknown'
     const rangeSchemaInfo = schema.fields ? getRangeSchemaInfo(schema) : null
+    const hashRangeSchemaInfo = getHashRangeSchemaInfo(schema)
 
     return (
       <div key={schema.name} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
@@ -216,6 +218,11 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               {rangeSchemaInfo && (
                 <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
                   Range Schema
+                </span>
+              )}
+              {hashRangeSchemaInfo && (
+                <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                  HashRange Schema
                 </span>
               )}
             </div>
@@ -279,6 +286,21 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               </div>
             )}
             
+            {/* HashRange Schema Information */}
+            {hashRangeSchemaInfo && (
+              <div className="mb-4 p-3 bg-blue-50 rounded-md border border-blue-200">
+                <h4 className="text-sm font-medium text-blue-900 mb-2">HashRange Schema Information</h4>
+                <div className="space-y-1 text-xs text-blue-800">
+                  <p><strong>Hash Field:</strong> {hashRangeSchemaInfo.hashField}</p>
+                  <p><strong>Range Field:</strong> {hashRangeSchemaInfo.rangeField}</p>
+                  <p><strong>Total Fields:</strong> {hashRangeSchemaInfo.totalFields}</p>
+                  <p className="text-blue-600">
+                    This schema uses hash-range-based storage for efficient querying and mutations with both hash and range keys.
+                  </p>
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-3">
               {Object.entries(schema.fields).map(([fieldName, field]) =>
                 renderField(field, fieldName, rangeSchemaInfo?.rangeKey === fieldName)
@@ -331,6 +353,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 <div className="space-y-2 p-4">
                   {availableSchemas.map(schema => {
                     const schemaRangeInfo = schema.fields ? getRangeSchemaInfo(schema) : null
+                    const schemaHashRangeInfo = getHashRangeSchemaInfo(schema)
                     return (
                       <div key={schema.name} className="flex items-center justify-between p-3 bg-white rounded border">
                         <div className="flex items-center space-x-3">
@@ -343,6 +366,11 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                           {schemaRangeInfo && (
                             <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
                               Range Schema
+                            </span>
+                          )}
+                          {schemaHashRangeInfo && (
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                              HashRange Schema
                             </span>
                           )}
                         </div>
