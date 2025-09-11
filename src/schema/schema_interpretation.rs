@@ -50,8 +50,11 @@ fn convert_field(json_field: JsonSchemaField, schema_type: &crate::schema::types
             // Add transform if present
             if let Some(json_transform) = json_field.transform {
                 single_field.set_transform(json_transform.into());
-                // Derived fields with transforms should not be writable through mutations
-                // They should only be populated by executing the transform
+                // IMPORTANT: Fields with transforms are derived/computed fields that:
+                // 1. Cannot be directly modified through mutations (they're read-only)
+                // 2. Are automatically populated by executing the associated transform
+                // 3. Depend on other fields as inputs defined in the transform
+                // This ensures data consistency and prevents manual override of computed values
                 single_field.set_writable(false);
             }
 
