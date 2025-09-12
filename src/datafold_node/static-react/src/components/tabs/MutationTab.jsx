@@ -94,7 +94,7 @@ function MutationTab({ onResult }) {
       const data = response
       
       // Note: Removed response.ok check since response is ApiResponse, not fetch Response
-      // The httpClient already handles HTTP errors and the response.success check above handles failures
+      // The API client already handles HTTP errors and the response.success check above handles failures
       
       setResult(data)
       onResult(data)
