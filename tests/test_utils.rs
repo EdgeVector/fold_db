@@ -402,8 +402,4 @@ impl CommonTestFixture {
         TestFixture::create_sample_registration()
     }
 
-    #[allow(dead_code)]
-    pub async fn wait_for_async_operation() {
-        TestFixture::wait_for_async_operation().await;
-    }
 }
