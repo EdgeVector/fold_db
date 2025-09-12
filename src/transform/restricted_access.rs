@@ -181,20 +181,6 @@ pub enum TransformAccessError {
 /// 
 /// This macro can be used to wrap transform execution and ensure
 /// all data persistence goes through mutations.
-#[macro_export]
-macro_rules! ensure_mutation_only_persistence {
-    ($transform_executor:expr, $persistence_handler:expr) => {
-        {
-            // Validate that the transform doesn't contain forbidden patterns
-            let transform_code = $transform_executor.get_transform_code();
-            TransformAccessValidator::validate_no_direct_creation(&transform_code)?;
-            TransformAccessValidator::validate_mutation_usage(&transform_code)?;
-            
-            // Execute with mutation-only persistence
-            $transform_executor.execute_with_persistence($persistence_handler)
-        }
-    };
-}
 
 #[cfg(test)]
 mod tests {

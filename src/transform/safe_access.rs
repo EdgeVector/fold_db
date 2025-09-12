@@ -170,19 +170,6 @@ impl TransformSafeDataAccess for DatabaseTransformDataAccess {
 /// 
 /// This macro wraps transform execution to ensure only read-only access
 /// to atoms and molecules.
-#[macro_export]
-macro_rules! ensure_safe_transform_access {
-    ($transform_executor:expr, $data_access:expr) => {
-        {
-            // Validate that the transform doesn't contain forbidden creation patterns
-            let transform_code = $transform_executor.get_transform_code();
-            $crate::transform::restricted_access::TransformAccessValidator::validate_no_direct_creation(&transform_code)?;
-            
-            // Execute with safe data access
-            $transform_executor.execute_with_safe_access($data_access)
-        }
-    };
-}
 
 #[cfg(test)]
 mod tests {

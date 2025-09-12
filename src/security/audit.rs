@@ -367,16 +367,6 @@ impl SecurityTimer {
     }
 }
 
-/// Convenience macro for timing security operations
-#[macro_export]
-macro_rules! time_security_op {
-    ($operation:expr, $code:block) => {{
-        let timer = SecurityTimer::start($operation.to_string());
-        let result = $code;
-        let (op, duration) = timer.stop();
-        (result, Some(duration))
-    }};
-}
 
 /// Global security audit logger instance
 static SECURITY_AUDIT_LOGGER: once_cell::sync::OnceCell<SecurityAuditLogger> = once_cell::sync::OnceCell::new();
