@@ -334,40 +334,6 @@ impl TransformManager {
 
         Ok(())
     }
-    /// Execute transform directly using transform_id (unified approach)
-    /// MADE PRIVATE - Only ExecutionCoordinator should call this
-    pub fn execute_transform_with_db(
-        transform_id: &str,
-        _message_bus: &Arc<MessageBus>,
-        db_ops: Option<&Arc<crate::db_operations::DbOperations>>,
-    ) -> (usize, bool, Option<String>) {
-        info!("🚀 TransformManager: Executing transform directly: {}", transform_id);
-        
-        // Get database operations
-        let _db_ops = match db_ops {
-            Some(ops) => {
-                info!("✅ Database operations available");
-                ops
-            }
-            None => {
-                error!("❌ No database operations provided for transform execution");
-                return (0_usize, false, Some("Database operations required".to_string()));
-            }
-        };
-        
-        // Execute directly without helper dependency
-        error!("❌ DEPRECATED: TransformManager::execute_transform_with_db is no longer used");
-        error!("❌ All execution should go through TransformOrchestrator -> ExecutionCoordinator");
-        let success = false;
-        let error_msg = Some("Direct transform execution through TransformManager is deprecated".to_string());
-        
-        if success {
-            info!("🎯 Transform execution completed successfully");
-            (1_usize, true, None)
-        } else {
-            (0_usize, false, error_msg)
-        }
-    }
 }
 
 impl TransformRunner for TransformManager {
