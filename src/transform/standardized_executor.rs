@@ -634,6 +634,7 @@ mod tests {
 
     /// Mock mutation executor for testing
     struct MockMutationExecutor {
+        #[allow(dead_code)]
         executed_mutations: Vec<Mutation>,
     }
 
@@ -644,6 +645,7 @@ mod tests {
             }
         }
 
+        #[allow(dead_code)]
         fn get_executed_mutations(&self) -> &[Mutation] {
             &self.executed_mutations
         }
