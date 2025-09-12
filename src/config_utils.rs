@@ -355,20 +355,6 @@ macro_rules! hashmap {
     };
 }
 
-/// Macro for creating metadata with standard entries
-#[macro_export]
-macro_rules! test_metadata {
-    ($($key:expr => $value:expr),* $(,)?) => {
-        {
-            let mut metadata = $crate::config_utils::ConfigFactory::test_metadata();
-            $(
-                metadata.insert($key.to_string(), $value.to_string());
-            )*
-            metadata
-        }
-    };
-}
-
 /// Macro for creating field maps with default configurations
 #[macro_export]
 macro_rules! field_map {
