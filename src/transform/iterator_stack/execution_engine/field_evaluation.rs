@@ -290,20 +290,10 @@ impl FieldEvaluator for DefaultFieldEvaluator {
                 }
             }
             ChainOperation::SplitByWord => {
-                debug!("process_operation - SplitByWord operation");
-                if let Value::String(text) = &current_value {
-                    let words: Vec<&str> = text.split_whitespace().collect();
-                    if let Some(first_word) = words.first() {
-                        debug!("process_operation - returning first word: {}", first_word);
-                        Ok(Value::String(first_word.to_string()))
-                    } else {
-                        debug!("process_operation - no words found in text");
-                        Ok(Value::Null)
-                    }
-                } else {
-                    debug!("process_operation - current_value is not a string: {}", current_value);
-                    Ok(current_value)
-                }
+                debug!("process_operation - SplitByWord operation - delegating to iterator management");
+                // SplitByWord should be handled by iterator management, not field evaluation
+                // This operation should not modify the current value - the iterator will handle splitting
+                Ok(current_value)
             }
             ChainOperation::Reducer(_reducer_name) => {
                 debug!("process_operation - Reducer operation (not implemented)");
