@@ -16,9 +16,6 @@ pub const KEY_CONFIG_RANGE_FIELD: &str = "range_field";
 pub const ATOM_UUID_FIELD: &str = "$atom_uuid";
 pub const KEY_FIELD_NAME: &str = "key";
 
-/// Internal field names used in transform execution (prefixed versions)
-pub const INTERNAL_HASH_FIELD: &str = "_hash_field";
-pub const INTERNAL_RANGE_FIELD: &str = "_range_field";
 
 /// Transform configuration constants
 pub const DEFAULT_TRANSFORM_ID_SUFFIX: &str = "declarative";
