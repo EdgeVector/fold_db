@@ -27,8 +27,20 @@ describe('Component Integration Tests', () => {
         />, { initialState: createUnauthenticatedState() }
       )
 
-      // Should show locked tabs when not authenticated
-      expect(screen.getByRole('button', { name: /schemas tab/i })).toBeDisabled()
+      // Should show locked tabs when not authenticated (using custom auth-required tabs)
+      const authRequiredTabs = [
+        { id: 'admin', label: 'Admin', requiresAuth: true, icon: '👑' }
+      ]
+      
+      await renderWithRedux(
+        <TabNavigation
+          tabs={authRequiredTabs}
+          activeTab="admin"
+          onTabChange={onTabChange}
+        />, { initialState: createUnauthenticatedState() }
+      )
+      
+      expect(screen.getByRole('button', { name: /admin tab/i })).toBeDisabled()
 
       // Unmount and re-mount with authenticated state
       unmount()

@@ -91,8 +91,8 @@ function useQueryState() {
   // Redux state - following SchemaTab.jsx pattern (lines 16-21)
   const schemas = useAppSelector(selectAllSchemas);
   const schemasLoading = useAppSelector(selectFetchLoading);
-  const authState = useAppSelector((state) => state.auth || {});
-  const isAuthenticated = Boolean(authState.isAuthenticated);
+  const authState = useAppSelector(state => state.auth);
+  const isAuthenticated = Boolean(authState?.isAuthenticated);
 
   // Local state management
   const [selectedSchema, setSelectedSchema] = useState('');
@@ -119,12 +119,13 @@ function useQueryState() {
 
   // Memoized selected schema object
   const selectedSchemaObj = useMemo(() => {
-    if (!isAuthenticated || !selectedSchema) {
+    // Check authentication status - if not authenticated, return null
+    if (authState && !authState.isAuthenticated) {
       return null;
     }
-
-    return (schemas || []).find(s => s.name === selectedSchema) || null;
-  }, [isAuthenticated, selectedSchema, schemas]);
+    
+    return selectedSchema ? (schemas || []).find(s => s.name === selectedSchema) : null;
+  }, [selectedSchema, schemas, authState]);
 
   // Memoized schema type checks
   const isCurrentSchemaRangeSchema = useMemo(() => {
