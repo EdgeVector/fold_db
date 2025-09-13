@@ -5,7 +5,7 @@
  * TASK-008: Updated to use consolidated form utilities
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import FieldWrapper from './FieldWrapper.jsx';
 import { FORM_FIELD_DEBOUNCE_MS } from '../../constants/ui.js';
 import {
@@ -63,26 +63,25 @@ function TextField({
   }, [value]);
 
   // Debounced onChange handler
-  const debouncedOnChange = useCallback(() => {
-    let timeoutId;
-    return (newValue) => {
-      setIsDebouncing(true);
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        onChange(newValue);
-        setIsDebouncing(false);
-      }, debounceMs);
-    };
+  const timeoutRef = useRef(null);
+  
+  const debouncedOnChange = useCallback((newValue) => {
+    setIsDebouncing(true);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = setTimeout(() => {
+      onChange(newValue);
+      setIsDebouncing(false);
+    }, debounceMs);
   }, [onChange, debounceMs]);
-
-  const debouncedCallback = debouncedOnChange();
 
   const handleChange = (e) => {
     const newValue = e.target.value;
     setInternalValue(newValue);
     
     if (debounced) {
-      debouncedCallback(newValue);
+      debouncedOnChange(newValue);
     } else {
       onChange(newValue);
     }

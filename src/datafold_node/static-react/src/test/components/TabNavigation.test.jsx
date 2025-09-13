@@ -83,10 +83,14 @@ describe('TabNavigation', () => {
   })
 
   it('does not call onTabChange when clicking disabled auth-required tab', async () => {
-    await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createUnauthenticatedState() })
+    const authRequiredTabs = [
+      { id: 'admin', label: 'Admin', requiresAuth: true, icon: '👑' }
+    ]
     
-    const schemasTab = screen.getByRole('button', { name: /schemas tab/i })
-    fireEvent.click(schemasTab)
+    await renderWithRedux(<TabNavigation {...defaultProps} tabs={authRequiredTabs} />, { initialState: createUnauthenticatedState() })
+    
+    const adminTab = screen.getByRole('button', { name: /admin tab/i })
+    fireEvent.click(adminTab)
     
     expect(defaultProps.onTabChange).not.toHaveBeenCalled()
   })
