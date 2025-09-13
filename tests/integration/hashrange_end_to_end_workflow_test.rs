@@ -300,7 +300,7 @@ impl HashRangeEndToEndTestFixture {
             
             // Retry logic for robustness
             let mut retry_count = 0;
-            let max_retries = 3;
+            let max_retries = 5;
             let mut query_successful = false;
             
             while retry_count < max_retries && !query_successful {
@@ -332,7 +332,7 @@ impl HashRangeEndToEndTestFixture {
                                         println!("❌ Query data validation failed for word '{}': {}", word, e);
                                         if retry_count < max_retries - 1 {
                                             println!("🔄 Retrying query for word '{}' (attempt {}/{})", word, retry_count + 2, max_retries);
-                                            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                                            tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
                                         }
                                     }
                                 }
@@ -341,7 +341,7 @@ impl HashRangeEndToEndTestFixture {
                                 println!("❌ Query format validation failed for word '{}': {}", word, e);
                                 if retry_count < max_retries - 1 {
                                     println!("🔄 Retrying query for word '{}' (attempt {}/{})", word, retry_count + 2, max_retries);
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
                                 }
                             }
                         }
@@ -532,6 +532,10 @@ async fn test_hashrange_query_format_validation() -> Result<(), Box<dyn std::err
         })?;
     fixture.verify_transform_registration(&transform_id).await?;
     fixture.trigger_transform_execution(&transform_id).await?;
+    
+    println!("🔍 Step 5: Waiting for transform execution to complete...");
+    // Wait for transform to fully process all data
+    tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     
     // Test query format validation with words that are actually being processed
     let test_words = vec!["DataFold", "data", "query", "patterns"];

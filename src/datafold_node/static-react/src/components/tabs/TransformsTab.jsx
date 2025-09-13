@@ -19,6 +19,23 @@ const TransformsTab = ({ _onResult }) => {
   const [isLoadingTransforms, setIsLoadingTransforms] = useState(false)
   const [transformsError, setTransformsError] = useState(null)
 
+  // Fetch transforms from dedicated API
+  const fetchApiTransforms = async () => {
+    setIsLoadingTransforms(true)
+    setTransformsError(null)
+    try {
+      const response = await fetch('/api/transforms')
+      const data = await response.json()
+      setApiTransforms(data.data || data || {})
+    } catch (error) {
+      console.error('Failed to fetch API transforms:', error)
+      setTransformsError(error.message || 'Failed to fetch transforms')
+      setApiTransforms({})
+    } finally {
+      setIsLoadingTransforms(false)
+    }
+  }
+
   useEffect(() => {
     // Enhanced debug information
     const debug = {
@@ -58,23 +75,6 @@ const TransformsTab = ({ _onResult }) => {
     const transformSchemas = [] // Don't show schema-based transforms anymore
     
     setTransforms(transformSchemas)
-
-    // Fetch transforms from dedicated API
-    const fetchApiTransforms = async () => {
-      setIsLoadingTransforms(true)
-      setTransformsError(null)
-      try {
-        const response = await fetch('/api/transforms')
-        const data = await response.json()
-        setApiTransforms(data.data || data || {})
-      } catch (error) {
-        console.error('Failed to fetch API transforms:', error)
-        setTransformsError(error.message || 'Failed to fetch transforms')
-        setApiTransforms({})
-      } finally {
-        setIsLoadingTransforms(false)
-      }
-    }
 
     // Fetch queue information
     const fetchQueueInfo = async () => {
