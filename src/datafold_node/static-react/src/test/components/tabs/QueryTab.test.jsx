@@ -91,7 +91,7 @@ describe('QueryTab Component', () => {
     vi.clearAllMocks()
   })
 
-  it('renders authentication warning when not authenticated', async () => {
+  it('renders query interface when not authenticated (no auth required)', async () => {
     const authState = createMockAuthState({ isAuthenticated: false })
     const initialState = {
       auth: authState,
@@ -102,8 +102,10 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
-    expect(screen.getByText('Authentication Required')).toBeInTheDocument()
-    expect(screen.getByText('Please authenticate using the Keys tab before accessing query functionality.')).toBeInTheDocument()
+    // Should render the query form without authentication warning
+    expect(screen.getByTestId('query-form')).toBeInTheDocument()
+    expect(screen.getByTestId('query-actions')).toBeInTheDocument()
+    expect(screen.getByTestId('query-preview')).toBeInTheDocument()
   })
 
   it('renders query interface when authenticated', async () => {

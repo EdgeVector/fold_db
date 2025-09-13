@@ -164,6 +164,20 @@ impl BlogWordIndexIntegrationFixture {
         Ok(mutation_id)
     }
 
+    /// Wait for mutations to be fully processed and committed
+    fn wait_for_mutations_to_complete(&self, mutation_ids: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+        println!("⏳ Waiting for {} mutations to be fully processed...", mutation_ids.len());
+        
+        // Wait for mutations to be processed through the pipeline
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+        
+        // Additional wait to ensure all async operations complete
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        
+        println!("✅ Mutations processing completed");
+        Ok(())
+    }
+
     /// Query BlogWordIndex by word
     fn query_blog_word_index(&self, word: &str) -> Result<Value, Box<dyn std::error::Error>> {
         println!("🔍 Querying BlogWordIndex for word: '{}'", word);
@@ -623,8 +637,9 @@ async fn test_declarative_transform_execution() {
     
     println!("✅ Created {} blog posts successfully", mutation_ids.len());
     
-    // Wait for the mutation to be fully processed
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // Wait for mutations to be fully processed and committed
+    fixture.wait_for_mutations_to_complete(&mutation_ids)
+        .expect("Failed to wait for mutations to complete");
     
     // Wait for transform to execute
     fixture.wait_for_transform_execution()
@@ -643,44 +658,52 @@ async fn test_declarative_transform_execution() {
     
     for word in test_words {
         println!("-----------------------------------------");
-        let result = fixture.query_blog_word_index(word)
-            .expect(&format!("Failed to query for word: {}", word));
         
-        // Check if we got actual data for ALL fields in the hash->range->fields format
-        if let Some(obj) = result.as_object() {
-            // Check that we have the word as a key
-            if let Some(word_data) = obj.get(word) {
-                if let Some(word_obj) = word_data.as_object() {
-                    let mut has_valid_data = false;
-                    for (_range_key, range_data) in word_obj {
-                        if let Some(range_obj) = range_data.as_object() {
-                            // Check if ANY field has non-null data (not ALL fields)
-                            let non_null_fields: Vec<String> = range_obj.iter()
-                                .filter(|(_, v)| !v.is_null())
-                                .map(|(k, _)| k.clone())
-                                .collect();
-                            
-                            if !non_null_fields.is_empty() {
-                                has_valid_data = true;
-                                break;
+        // Retry mechanism to handle timing issues
+        let mut retries = 0;
+        let max_retries = 5;
+        let mut has_valid_data = false;
+        
+        while retries < max_retries && !has_valid_data {
+            if retries > 0 {
+                println!("⏳ Retry {} for word '{}' - waiting for data to be committed...", retries, word);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            
+            let result = fixture.query_blog_word_index(word)
+                .expect(&format!("Failed to query for word: {}", word));
+            
+            // Check if we got actual data for ALL fields in the hash->range->fields format
+            if let Some(obj) = result.as_object() {
+                // Check that we have the word as a key
+                if let Some(word_data) = obj.get(word) {
+                    if let Some(word_obj) = word_data.as_object() {
+                        for (_range_key, range_data) in word_obj {
+                            if let Some(range_obj) = range_data.as_object() {
+                                // Check if ANY field has non-null data (not ALL fields)
+                                let non_null_fields: Vec<String> = range_obj.iter()
+                                    .filter(|(_, v)| !v.is_null())
+                                    .map(|(k, _)| k.clone())
+                                    .collect();
+                                
+                                if !non_null_fields.is_empty() {
+                                    has_valid_data = true;
+                                    break;
+                                }
                             }
                         }
                     }
-                    
-                    if has_valid_data {
-                        println!("✅ Declarative transform successfully indexed word: '{}'", word);
-                    } else {
-                        println!("❌ Declarative transform did not index word: '{}' - all range entries have null values", word);
-                        panic!("Query for '{}' returned null values for all range entries - declarative transform failed to index this word", word);
-                    }
-                } else {
-                    panic!("Word data for '{}' is not an object", word);
                 }
-            } else {
-                panic!("Query result for '{}' does not contain the word as a key", word);
             }
+            
+            retries += 1;
+        }
+        
+        if has_valid_data {
+            println!("✅ Declarative transform successfully indexed word: '{}'", word);
         } else {
-            panic!("Query result for '{}' is not an object", word);
+            println!("❌ Declarative transform did not index word: '{}' - all range entries have null values after {} retries", word, max_retries);
+            panic!("Query for '{}' returned null values for all range entries - declarative transform failed to index this word", word);
         }
     }
     

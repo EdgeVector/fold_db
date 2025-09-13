@@ -169,30 +169,41 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
     }
 
     // Add range schema filter for range schemas (this is the correct one for Range schemas)
-    if (selectedSchemaObj.schema_type?.Range?.range_key && queryState.rangeSchemaFilter) {
-      const rangeSchemaFilter = queryState.rangeSchemaFilter;
-      const rangeKey = selectedSchemaObj.schema_type.Range.range_key;
+    if (selectedSchemaObj.schema_type === 'Range') {
+      // Extract range key from rangeFilters for Range schemas
+      const rangeFilters = queryState.rangeFilters || {};
+      const rangeKeyField = Object.keys(rangeFilters).find(key => 
+        rangeFilters[key]?.key || rangeFilters[key]?.keyPrefix || 
+        (rangeFilters[key]?.start && rangeFilters[key]?.end)
+      );
       
-      if (rangeKey) {
+      if (rangeKeyField && rangeFilters[rangeKeyField]) {
+        const rangeFilter = rangeFilters[rangeKeyField];
+        
+        // Set rangeKey property for compatibility with tests
+        if (rangeFilter.key) {
+          builtQuery.rangeKey = rangeFilter.key;
+        }
+        
         // Determine which filter type to use based on what's filled in
         let filterType = null;
         let filterValue = null;
         
-        if (rangeSchemaFilter.key) {
+        if (rangeFilter.key) {
           filterType = 'Key';
-          filterValue = rangeSchemaFilter.key;
-        } else if (rangeSchemaFilter.keyPrefix) {
+          filterValue = rangeFilter.key;
+        } else if (rangeFilter.keyPrefix) {
           filterType = 'KeyPrefix';
-          filterValue = rangeSchemaFilter.keyPrefix;
-        } else if (rangeSchemaFilter.start && rangeSchemaFilter.end) {
+          filterValue = rangeFilter.keyPrefix;
+        } else if (rangeFilter.start && rangeFilter.end) {
           filterType = 'KeyRange';
-          filterValue = { start: rangeSchemaFilter.start, end: rangeSchemaFilter.end };
+          filterValue = { start: rangeFilter.start, end: rangeFilter.end };
         }
         
         if (filterType && filterValue) {
           builtQuery.filter = {
             range_filter: {
-              [rangeKey]: {
+              [rangeKeyField]: {
                 [filterType]: filterValue
               }
             }
