@@ -386,6 +386,7 @@ fn test_concurrent_transform_execution() {
                 let transform_id = format!("stress_transform_{}_{}", thread_id, i);
                 let trigger_event = TransformTriggered {
                     transform_id,
+                    mutation_context: None,
                 };
                 
                 if message_bus.publish(trigger_event).is_ok() {
@@ -488,6 +489,7 @@ fn test_concurrent_transform_execution() {
             for i in 0..load_operations / transform_thread_count {
                 let trigger_event = TransformTriggered {
                     transform_id: format!("load_transform_{}_{}", thread_id, i),
+                    mutation_context: None,
                 };
                 
                 message_bus.publish(trigger_event).ok();
@@ -723,6 +725,7 @@ fn test_event_system_performance_under_load() {
             for i in 0..events_per_thread {
                 let transform_event = TransformTriggered {
                     transform_id: format!("high_freq_{}_{}", thread_id, i),
+                    mutation_context: None,
                 };
                 
                 if message_bus.publish(transform_event).is_ok() {
@@ -792,6 +795,7 @@ fn test_event_system_performance_under_load() {
             for i in 0..events_per_publisher {
                 let event = TransformTriggered {
                     transform_id: format!("concurrent_{}_{}", thread_id, i),
+                    mutation_context: None,
                 };
                 
                 if message_bus.publish(event).is_ok() {
@@ -876,6 +880,7 @@ fn test_event_system_performance_under_load() {
             for i in 0..backpressure_events {
                 let event = TransformTriggered {
                     transform_id: format!("backpressure_{}", i),
+                    mutation_context: None,
                 };
                 
                 if message_bus.publish(event).is_ok() {
