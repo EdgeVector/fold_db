@@ -59,6 +59,7 @@ async fn test_event_handlers_module_exists() {
     // Test basic event publishing works
     let trigger_event = TransformTriggered {
         transform_id: "test_transform".to_string(),
+        mutation_context: None,
     };
 
     let publish_result = fixture.common.message_bus.publish(trigger_event);

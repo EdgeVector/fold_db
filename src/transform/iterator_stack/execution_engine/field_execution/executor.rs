@@ -26,8 +26,15 @@ impl FieldExecutor for DefaultFieldExecutor {
         let mut entries = Vec::new();
         let mut warnings = Vec::new();
 
-        debug!("execute_one_to_one starting for chain: {} at emission_depth: {}", chain.expression, context.emission_depth);
-        debug!("Stack has {} scopes", stack.len());
+        debug!("🚀 execute_one_to_one starting for chain: {} at emission_depth: {}", chain.expression, context.emission_depth);
+        debug!("📊 Stack has {} scopes", stack.len());
+        
+        // Debug: Log all scopes in the stack
+        for i in 0..stack.len() {
+            if let Some(scope) = stack.scope_at_depth(i) {
+                debug!("  📝 Scope {}: {:?}", i, scope.iterator_type);
+            }
+        }
 
         // Check if we have any iterators that can actually iterate
         let can_iterate = (0..stack.len()).any(|depth| {

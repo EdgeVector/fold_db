@@ -398,6 +398,7 @@ fn test_transform_trigger_bug_prevention() {
         let transform_id = format!("trigger_test_{}", i);
         let trigger_event = TransformTriggered {
             transform_id: transform_id.clone(),
+            mutation_context: None,
         };
         
         fixture.message_bus.publish(trigger_event)
@@ -439,6 +440,7 @@ fn test_transform_trigger_bug_prevention() {
         let transform_id = format!("order_test_{:03}", i);
         let trigger_event = TransformTriggered {
             transform_id: transform_id.clone(),
+            mutation_context: None,
         };
         
         ordered_triggers.lock().unwrap().push(transform_id);
@@ -491,6 +493,7 @@ fn test_transform_trigger_bug_prevention() {
                 let transform_id = format!("concurrent_{}_{}", thread_id, i);
                 let trigger_event = TransformTriggered {
                     transform_id,
+                    mutation_context: None,
                 };
                 
                 if message_bus.publish(trigger_event).is_ok() {
@@ -519,6 +522,7 @@ fn test_transform_trigger_bug_prevention() {
     // Trigger with invalid transform ID
     let invalid_trigger = TransformTriggered {
         transform_id: "INVALID_TRANSFORM_ID_SHOULD_FAIL".to_string(),
+        mutation_context: None,
     };
     
     // Should not cause system failure
@@ -528,6 +532,7 @@ fn test_transform_trigger_bug_prevention() {
     // System should continue working after invalid trigger
     let recovery_trigger = TransformTriggered {
         transform_id: "recovery_test".to_string(),
+        mutation_context: None,
     };
     
     let recovery_result = fixture.message_bus.publish(recovery_trigger);

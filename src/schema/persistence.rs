@@ -280,6 +280,20 @@ impl SchemaCore {
     }
 
     /// Registers a declarative transform automatically when a declarative schema is loaded
+    /// 
+    /// PURPOSE: This is a SECONDARY/LEGACY registration path for declarative transforms.
+    /// Called during schema interpretation IF the schema is already approved.
+    /// 
+    /// FLOW: Schema interpretation → Check if approved → Transform registration (if approved)
+    /// 
+    /// NOTE: This path is DEPRECATED and should be removed. The primary path is in 
+    /// schema_operations.rs during schema approval. This creates duplicate registration
+    /// attempts and potential conflicts.
+    /// 
+    /// This method:
+    /// 1. Extracts input dependencies from raw declarative schema field definitions
+    /// 2. Creates trigger fields for all fields in the input schema  
+    /// 3. Stores the transform and registration in the database
     pub fn register_declarative_transform(
         &self,
         declarative_schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,

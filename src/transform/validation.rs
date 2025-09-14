@@ -72,6 +72,13 @@ pub fn validate_field_alignment(
         }
     }
     
+    // Add HashRange special field expressions if this is a HashRange schema
+    if let Some(key_config) = &schema.key {
+        info!("🔑 Adding HashRange special field expressions to alignment validation");
+        all_expressions.push(("_hash_field".to_string(), key_config.hash_field.clone()));
+        all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
+    }
+    
     if all_expressions.is_empty() {
         info!("⚠️ No expressions found for alignment validation");
         return Ok(AlignmentValidationResult {
@@ -127,6 +134,13 @@ pub fn validate_field_alignment(
     let validator = FieldAlignmentValidator::new();
     let alignment_result = validator.validate_alignment(&chains_only)
         .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
+    
+    // Debug: Log all field alignments generated
+    info!("🔍 Generated {} field alignments:", alignment_result.field_alignments.len());
+    for (expression, alignment_info) in &alignment_result.field_alignments {
+        info!("  📝 Expression: '{}' -> alignment: {:?}, depth: {}, requires_reducer: {}", 
+              expression, alignment_info.alignment, alignment_info.depth, alignment_info.requires_reducer);
+    }
     
     process_alignment_validation_result(&alignment_result, &parsed_chains)
 }

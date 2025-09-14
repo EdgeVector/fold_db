@@ -110,7 +110,10 @@ pub struct FieldValueSetRequest {
     pub field_name: String,
     pub value: Value,
     pub source_pub_key: String,
+    /// Context information about the mutation that triggered this request
+    pub mutation_context: Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
 }
+
 
 impl EventType for FieldValueSetRequest {
     fn type_id() -> &'static str { "FieldValueSetRequest" }
