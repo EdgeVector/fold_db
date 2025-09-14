@@ -229,12 +229,27 @@ impl SchemaCore {
         }
 
         // CRITICAL: Check if this is a declarative schema and register its transform
-        if let Ok(Some(approved_schema)) = self.get_schema(schema_name) {
-            if matches!(approved_schema.schema_type, crate::schema::types::schema::SchemaType::HashRange) {
-                info!("🔍 Detected HashRange declarative schema '{}', registering declarative transform", schema_name);
-                if let Err(e) = self.register_declarative_transform_for_schema(&approved_schema) {
-                    log_feature!(LogFeature::Schema, warn, "Failed to register declarative transform for schema '{}': {}", schema_name, e);
+        info!("🔍 DEBUG: Checking if schema '{}' is HashRange for declarative transform registration", schema_name);
+        
+        match self.get_schema(schema_name) {
+            Ok(Some(approved_schema)) => {
+                info!("🔍 DEBUG: Retrieved schema '{}' with type: {:?}", schema_name, approved_schema.schema_type);
+                if matches!(approved_schema.schema_type, crate::schema::types::schema::SchemaType::HashRange) {
+                    info!("🔍 Detected HashRange declarative schema '{}', registering declarative transform", schema_name);
+                    if let Err(e) = self.register_declarative_transform_for_schema(&approved_schema) {
+                        log_feature!(LogFeature::Schema, warn, "Failed to register declarative transform for schema '{}': {}", schema_name, e);
+                    } else {
+                        info!("✅ Successfully registered declarative transform for schema '{}'", schema_name);
+                    }
+                } else {
+                    info!("⏸️ Schema '{}' is not HashRange type, skipping declarative transform registration", schema_name);
                 }
+            }
+            Ok(None) => {
+                log_feature!(LogFeature::Schema, error, "🚨 CRITICAL: Schema '{}' not found after approval!", schema_name);
+            }
+            Err(e) => {
+                log_feature!(LogFeature::Schema, error, "🚨 CRITICAL: Failed to retrieve schema '{}' after approval: {}", schema_name, e);
             }
         }
 
@@ -265,8 +280,18 @@ impl SchemaCore {
     }
 
     /// Register a declarative transform for a HashRange schema
-    /// This method is called when a HashRange schema is approved to automatically
-    /// register the corresponding declarative transform
+    /// 
+    /// PURPOSE: This is the PRIMARY registration path for declarative transforms.
+    /// Called when a HashRange schema is approved to automatically register the 
+    /// corresponding declarative transform that will process data for that schema.
+    /// 
+    /// FLOW: Schema approval → HashRange detection → Transform registration
+    /// 
+    /// This method:
+    /// 1. Extracts input dependencies from HashRange field atom_uuid expressions
+    /// 2. Creates trigger fields for all fields in the input schema
+    /// 3. Stores the transform and registration in the database
+    /// 4. Creates field-to-transform mappings for trigger detection
     pub fn register_declarative_transform_for_schema(&self, schema: &Schema) -> Result<(), SchemaError> {
         use crate::schema::types::{Transform, TransformRegistration};
         use log::info;
@@ -358,15 +383,15 @@ impl SchemaCore {
             return Err(SchemaError::InvalidData(format!("Failed to store transform registration {}: {}", transform_id, e)));
         }
         
-        // Create field-to-transform mappings
-        for input_field in &registration.input_molecules {
-            if let Err(e) = self.store_field_to_transform_mapping(input_field, &transform_id) {
+        // Create field-to-transform mappings using trigger_fields (individual field names)
+        for trigger_field in &registration.trigger_fields {
+            if let Err(e) = self.store_field_to_transform_mapping(trigger_field, &transform_id) {
                 log_feature!(LogFeature::Schema, error,
                     "Failed to store field mapping '{}' → '{}': {}",
-                    input_field, transform_id, e
+                    trigger_field, transform_id, e
                 );
             } else {
-                info!("✅ Stored field mapping: '{}' → '{}' transform", input_field, transform_id);
+                info!("✅ Stored field mapping: '{}' → '{}' transform", trigger_field, transform_id);
             }
         }
         

@@ -9,6 +9,7 @@ use crate::transform::iterator_stack::types::{
     IteratorStack, ActiveScope, IteratorType, ScopeContext, IteratorState, IteratorStackSummary
 };
 use std::collections::HashMap;
+use log::debug;
 
 impl Default for IteratorStack {
     fn default() -> Self {
@@ -39,14 +40,19 @@ impl IteratorStack {
 
     /// Builds an iterator stack from a parsed chain
     pub fn from_chain(chain: &ParsedChain) -> IteratorStackResult<Self> {
+        debug!("🔧 IteratorStack::from_chain called for expression: {}", chain.expression);
         let mut stack = Self::new();
         stack.build_from_chain(chain)?;
+        debug!("✅ IteratorStack::from_chain completed with {} scopes", stack.len());
         Ok(stack)
     }
 
     /// Builds the iterator stack from a parsed chain expression
     fn build_from_chain(&mut self, chain: &ParsedChain) -> IteratorStackResult<()> {
+        debug!("🔧 build_from_chain called for expression: {} with {} scopes", chain.expression, chain.scopes.len());
+        
         if chain.depth > self.max_depth {
+            debug!("❌ Max depth exceeded: {} > {}", chain.depth, self.max_depth);
             return Err(IteratorStackError::MaxDepthExceeded {
                 current_depth: chain.depth,
                 max_depth: self.max_depth,
@@ -54,10 +60,12 @@ impl IteratorStack {
         }
 
         // Build scopes from the chain's iterator scopes
-        for scope in &chain.scopes {
+        for (i, scope) in chain.scopes.iter().enumerate() {
+            debug!("🔧 Building scope {} for expression: {}", i, chain.expression);
             self.push_scope_from_iterator_scope(scope)?;
         }
 
+        debug!("✅ build_from_chain completed for expression: {}", chain.expression);
         Ok(())
     }
 

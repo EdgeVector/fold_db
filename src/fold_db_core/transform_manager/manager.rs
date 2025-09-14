@@ -228,8 +228,8 @@ impl TransformManager {
 
     /// Start the orchestration system to handle TransformTriggered events
     fn start_orchestration_system(
-        db_ops: Arc<crate::db_operations::DbOperations>,
-        message_bus: Arc<MessageBus>,
+        _db_ops: Arc<crate::db_operations::DbOperations>,
+        _message_bus: Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
         info!("🚀 Starting orchestration system for TransformTriggered event handling");
 
@@ -238,13 +238,15 @@ impl TransformManager {
         let temp_db = temp_config.open().map_err(|e| {
             SchemaError::InvalidData(format!("Failed to create temporary database for orchestration: {}", e))
         })?;
-        let tree = temp_db.open_tree("orchestration").map_err(|e| {
+        let _tree = temp_db.open_tree("orchestration").map_err(|e| {
             SchemaError::InvalidData(format!("Failed to create orchestration tree: {}", e))
         })?;
 
         // Create a simple transform runner wrapper for the manager
+        #[allow(dead_code)]
         struct SimpleTransformRunner {
             db_ops: Arc<crate::db_operations::DbOperations>,
+            message_bus: Arc<MessageBus>,
         }
 
         impl crate::fold_db_core::transform_manager::types::TransformRunner for SimpleTransformRunner {
@@ -259,11 +261,40 @@ impl TransformManager {
                     )?;
                     
                     // Store the result
-                    crate::fold_db_core::transform_manager::manager::TransformManager::store_transform_result_generic(
+                    crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
                         &self.db_ops,
                         &transform,
                         &result,
+                        Some(&self.message_bus) // Pass the message bus for HashRange storage
+                    )?;
+                    
+                    Ok(result)
+                } else {
+                    Err(SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)))
+                }
+            }
+
+            fn execute_transform_with_context(
+                &self, 
+                transform_id: &str, 
+                mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+            ) -> Result<serde_json::Value, SchemaError> {
+                // Load and execute the transform with context
+                if let Ok(Some(transform)) = self.db_ops.get_transform(transform_id) {
+                    let result = crate::fold_db_core::transform_manager::manager::TransformManager::execute_single_transform_with_context(
+                        transform_id,
+                        &transform,
+                        &self.db_ops,
+                        mutation_context,
                         None // FoldDB not available in this context - will use fallback
+                    )?;
+                    
+                    // Store the result
+                    crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
+                        &self.db_ops,
+                        &transform,
+                        &result,
+                        Some(&self.message_bus) // Pass the message bus for HashRange storage
                     )?;
                     
                     Ok(result)
@@ -307,30 +338,9 @@ impl TransformManager {
             }
         }
 
-        let transform_runner = Arc::new(SimpleTransformRunner {
-            db_ops: Arc::clone(&db_ops),
-        });
-
-        // Start the EventMonitor to handle TransformTriggered events
-        let persistence = crate::fold_db_core::orchestration::persistence_manager::PersistenceManager::new(tree);
-        let _event_monitor = crate::fold_db_core::orchestration::event_monitor::EventMonitor::new(
-            Arc::clone(&message_bus),
-            transform_runner,
-            persistence,
-        );
-
-        // Store the event monitor in a static variable so it doesn't get dropped
-        use std::sync::Mutex;
-        use once_cell::sync::Lazy;
-        
-        static EVENT_MONITOR: Lazy<Mutex<Option<crate::fold_db_core::orchestration::event_monitor::EventMonitor>>> = Lazy::new(|| Mutex::new(None));
-        
-        if let Ok(mut monitor) = EVENT_MONITOR.lock() {
-            *monitor = Some(_event_monitor);
-            info!("✅ Orchestration system started successfully");
-        } else {
-            error!("❌ Failed to store EventMonitor in static variable");
-        }
+        // Note: EventMonitor is now created by TransformOrchestrator with proper manager access
+        // This ensures EventMonitor uses in-memory field mappings from TransformManager
+        info!("✅ Orchestration system initialization completed (EventMonitor will be created by TransformOrchestrator)");
 
         Ok(())
     }
@@ -389,7 +399,7 @@ impl TransformRunner for TransformManager {
         info!("✅ DIAGNOSTIC: Transform '{}' executed successfully, result: {}", transform_id, result);
         
         // Store the result using message bus
-        Self::store_transform_result_generic(
+        crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
             &self.db_ops,
             &transform,
             &result,
@@ -397,6 +407,61 @@ impl TransformRunner for TransformManager {
         )?;
         
         info!("✅ Transform '{}' executed successfully: {}", transform_id, result);
+        Ok(result)
+    }
+
+    fn execute_transform_with_context(
+        &self, 
+        transform_id: &str, 
+        mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🚀 DIAGNOSTIC: TransformManager executing transform with context: {}", transform_id);
+        
+        // Load the transform from the database
+        let transform = match self.db_ops.get_transform(transform_id) {
+            Ok(Some(transform)) => {
+                info!("✅ DIAGNOSTIC: Transform '{}' loaded - output: {}, inputs: {:?}",
+                      transform_id, transform.get_output(), transform.get_inputs());
+                transform
+            }
+            Ok(None) => {
+                error!("❌ DIAGNOSTIC: Transform '{}' not found in database", transform_id);
+                return Err(SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)));
+            }
+            Err(e) => {
+                error!("❌ DIAGNOSTIC: Failed to load transform '{}': {}", transform_id, e);
+                return Err(SchemaError::InvalidData(format!("Failed to load transform: {}", e)));
+            }
+        };
+        
+        // Log mutation context if available
+        if let Some(ref context) = mutation_context {
+            info!("🎯 DIAGNOSTIC: Transform execution with mutation context - range_key: {:?}, hash_key: {:?}, incremental: {}", 
+                  context.range_key, context.hash_key, context.incremental);
+        }
+        
+        // Execute the transform using the execution module with mutation context
+        println!("🔧 About to call execute_single_transform with context for transform: {}", transform_id);
+        let result = TransformManager::execute_single_transform_with_context(
+            transform_id,
+            &transform,
+            &self.db_ops,
+            mutation_context,
+            None // FoldDB not available in this context - will use fallback
+        )?;
+        println!("🔧 execute_single_transform with context completed with result: {}", result);
+        
+        info!("✅ DIAGNOSTIC: Transform '{}' executed successfully with context, result: {}", transform_id, result);
+        
+        // Store the result using message bus
+        crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
+            &self.db_ops,
+            &transform,
+            &result,
+            Some(&self._message_bus)
+        )?;
+        
+        info!("✅ Transform '{}' executed successfully with context: {}", transform_id, result);
         Ok(result)
     }
 

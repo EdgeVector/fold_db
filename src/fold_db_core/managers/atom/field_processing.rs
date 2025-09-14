@@ -297,13 +297,27 @@ fn handle_successful_field_value_processing(manager: &AtomManager, request: &Fie
 /// Publish FieldValueSet event to trigger transform chain
 fn publish_field_value_set_event(manager: &AtomManager, request: &FieldValueSetRequest) {
     let field_key = format!("{}.{}", request.schema_name, request.field_name);
-    let field_value_event = FieldValueSet {
-        field: field_key.clone(),
-        value: request.value.clone(),
-        source: "AtomManager".to_string(),
+    let field_value_event = if let Some(ref context) = request.mutation_context {
+        FieldValueSet::with_context(
+            field_key.clone(),
+            request.value.clone(),
+            "AtomManager".to_string(),
+            context.clone(),
+        )
+    } else {
+        FieldValueSet::new(
+            field_key.clone(),
+            request.value.clone(),
+            "AtomManager".to_string(),
+        )
     };
     
     info!("🔔 DIAGNOSTIC FIX: Publishing FieldValueSet event - field: {}, source: AtomManager", field_key);
+    if let Some(ref context) = request.mutation_context {
+        info!("🔔 DIAGNOSTIC FIX: FieldValueSet event includes mutation context - range_key: {:?}, hash_key: {:?}, incremental: {}", 
+              context.range_key, context.hash_key, context.incremental);
+    }
+    
     match manager.message_bus.publish(field_value_event) {
         Ok(_) => {
             info!("✅ DIAGNOSTIC FIX: Successfully published FieldValueSet event for: {}", field_key);

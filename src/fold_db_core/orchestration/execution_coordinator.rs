@@ -329,6 +329,36 @@ mod tests {
             }
         }
 
+        fn execute_transform_with_context(
+            &self, 
+            transform_id: &str, 
+            mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+        ) -> Result<JsonValue, SchemaError> {
+            if self.execution_delay_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(self.execution_delay_ms));
+            }
+            
+            if self.should_succeed {
+                if let Some(ref context) = mutation_context {
+                    Ok(serde_json::json!({
+                        "status": "success_with_context",
+                        "transform_id": transform_id,
+                        "range_key": context.range_key,
+                        "hash_key": context.hash_key,
+                        "incremental": context.incremental
+                    }))
+                } else {
+                    Ok(serde_json::json!({
+                        "status": "success_with_context",
+                        "transform_id": transform_id,
+                        "no_context": true
+                    }))
+                }
+            } else {
+                Err(SchemaError::InvalidData("Mock execution failure".to_string()))
+            }
+        }
+
         fn transform_exists(&self, _transform_id: &str) -> Result<bool, SchemaError> {
             Ok(true)
         }

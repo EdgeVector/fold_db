@@ -40,6 +40,8 @@ impl EventType for SchemaChanged {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformTriggered {
     pub transform_id: String,
+    /// Context information about the mutation that triggered this transform
+    pub mutation_context: Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
 }
 
 impl EventType for TransformTriggered {

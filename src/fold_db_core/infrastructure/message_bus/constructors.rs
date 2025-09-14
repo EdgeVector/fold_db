@@ -15,6 +15,22 @@ impl FieldValueSet {
             field: field.into(),
             value,
             source: source.into(),
+            mutation_context: None,
+        }
+    }
+
+    /// Create a new FieldValueSet event with mutation context
+    pub fn with_context(
+        field: impl Into<String>, 
+        value: Value, 
+        source: impl Into<String>,
+        mutation_context: atom_events::MutationContext
+    ) -> Self {
+        Self {
+            field: field.into(),
+            value,
+            source: source.into(),
+            mutation_context: Some(mutation_context),
         }
     }
 }
@@ -95,6 +111,18 @@ impl TransformTriggered {
     pub fn new(transform_id: impl Into<String>) -> Self {
         Self {
             transform_id: transform_id.into(),
+            mutation_context: None,
+        }
+    }
+
+    /// Create a new TransformTriggered event with mutation context
+    pub fn with_context(
+        transform_id: impl Into<String>,
+        mutation_context: atom_events::MutationContext
+    ) -> Self {
+        Self {
+            transform_id: transform_id.into(),
+            mutation_context: Some(mutation_context),
         }
     }
 }
@@ -280,6 +308,26 @@ impl FieldValueSetRequest {
             field_name,
             value,
             source_pub_key,
+            mutation_context: None,
+        }
+    }
+
+    /// Create a new FieldValueSetRequest with mutation context
+    pub fn with_context(
+        correlation_id: String,
+        schema_name: String,
+        field_name: String,
+        value: Value,
+        source_pub_key: String,
+        mutation_context: atom_events::MutationContext,
+    ) -> Self {
+        Self {
+            correlation_id,
+            schema_name,
+            field_name,
+            value,
+            source_pub_key,
+            mutation_context: Some(mutation_context),
         }
     }
 }

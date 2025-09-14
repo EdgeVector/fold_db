@@ -19,6 +19,17 @@ impl SchemaCore {
     }
 
     /// Auto-register field transforms with TransformManager during schema loading
+    /// 
+    /// PURPOSE: This registers transforms that are defined ON INDIVIDUAL FIELDS of schemas.
+    /// This is different from declarative transforms which are schema-level transforms.
+    /// 
+    /// FLOW: Schema loading → Check each field for transform definitions → Register field transforms
+    /// 
+    /// This method:
+    /// 1. Iterates through all fields in the schema
+    /// 2. Checks if each field has a transform defined (via field.transform())
+    /// 3. Validates that target schemas are approved before registering
+    /// 4. Registers the field-level transforms with the transform manager
     pub(crate) fn register_schema_transforms(&self, schema: &Schema) -> Result<(), SchemaError> {
         info!("🔧 DEBUG: Auto-registering transforms for schema: {}", schema.name);
         info!("🔍 DEBUG: Schema has {} fields to check for transforms", schema.fields.len());

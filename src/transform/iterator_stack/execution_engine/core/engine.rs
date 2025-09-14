@@ -62,6 +62,12 @@ impl ExecutionEngine {
         for chain in chains {
             expression_groups.entry(chain.expression.clone()).or_default().push(chain);
         }
+        
+        // Debug: Log all expressions being processed
+        debug!("🔍 ExecutionEngine received {} chains with {} unique expressions:", chains.len(), expression_groups.len());
+        for (expression, chain_group) in &expression_groups {
+            debug!("  📝 Expression: '{}' (used by {} chains)", expression, chain_group.len());
+        }
 
         // Execute each unique expression only once
         for (expression, chain_group) in expression_groups.iter() {
@@ -99,13 +105,19 @@ impl ExecutionEngine {
         chain: &ParsedChain,
         context: &ExecutionContext,
     ) -> IteratorStackResult<FieldExecutionResult> {
-        debug!("Executing single field: {}", chain.expression);
+        debug!("🚀 Executing single field: {}", chain.expression);
 
         // Get alignment information for this field
         let alignment_info = context.field_alignments.get(&chain.expression)
-            .ok_or_else(|| IteratorStackError::ExecutionError {
-                message: format!("No alignment information found for field: {}", chain.expression)
+            .ok_or_else(|| {
+                debug!("❌ No alignment information found for expression: '{}'", chain.expression);
+                debug!("🔍 Available alignments: {:?}", context.field_alignments.keys().collect::<Vec<_>>());
+                IteratorStackError::ExecutionError {
+                    message: format!("No alignment information found for field: {}", chain.expression)
+                }
             })?;
+        
+        debug!("✅ Found alignment information for expression: '{}'", chain.expression);
 
         // Create iterator stack from the chain
         let mut stack = IteratorStack::from_chain(chain)?;
