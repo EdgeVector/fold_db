@@ -26,6 +26,7 @@ async fn test_basic_event_publishing() {
     
     let trigger_event = TransformTriggered {
         transform_id: "test_transform".to_string(),
+        mutation_context: None,
     };
     
     let result = fixture.message_bus.publish(trigger_event);

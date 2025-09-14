@@ -75,9 +75,17 @@ impl MutationService {
         fields_and_values: &std::collections::HashMap<String, Value>,
         hash_key_value: &str,
         range_key_value: &str,
-        _mutation_hash: &str,
+        mutation_hash: &str,
     ) -> Result<(), SchemaError> {
         InfrastructureLogger::log_debug_info("MutationService", &format!("Processing HashRange schema mutation for hash_key: {} and range_key: {}", hash_key_value, range_key_value));
+        
+        // Create mutation context for incremental processing
+        let mutation_context = crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+            range_key: Some(range_key_value.to_string()),
+            hash_key: Some(hash_key_value.to_string()),
+            mutation_hash: Some(mutation_hash.to_string()),
+            incremental: true, // Enable incremental processing for hashrange schemas
+        };
         
         // Process each field in the HashRange schema
         for (field_name, value) in fields_and_values {
@@ -97,13 +105,14 @@ impl MutationService {
             });
             
             let correlation_id = Uuid::new_v4().to_string();
-            let field_request = FieldValueSetRequest {
-                correlation_id: correlation_id.clone(),
-                schema_name: schema.name.clone(),
-                field_name: field_name.clone(),
-                value: hashrange_aware_value,
-                source_pub_key: "mutation_service".to_string(),
-            };
+            let field_request = FieldValueSetRequest::with_context(
+                correlation_id.clone(),
+                schema.name.clone(),
+                field_name.clone(),
+                hashrange_aware_value,
+                "mutation_service".to_string(),
+                mutation_context.clone(),
+            );
 
             println!("🔧 DEBUG: Publishing HashRange field request for {}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value);
             println!("🔧 DEBUG: FieldValueSetRequest content: {}", serde_json::to_string_pretty(&field_request).unwrap_or_else(|_| "Failed to serialize".to_string()));
@@ -131,9 +140,17 @@ impl MutationService {
         schema: &Schema,
         fields_and_values: &std::collections::HashMap<String, Value>,
         range_key_value: &str,
-        _mutation_hash: &str,
+        mutation_hash: &str,
     ) -> Result<(), SchemaError> {
         InfrastructureLogger::log_debug_info("MutationService", &format!("Processing range schema mutation for range_key_value: {}", range_key_value));
+        
+        // Create mutation context for incremental processing
+        let mutation_context = crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+            range_key: Some(range_key_value.to_string()),
+            hash_key: None,
+            mutation_hash: Some(mutation_hash.to_string()),
+            incremental: true, // Enable incremental processing for range schemas
+        };
         
         // DIRECT APPROACH: Since mutation service doesn't have direct DB access,
         // we need to use FieldValueSetRequest with range-specific handling
@@ -147,13 +164,14 @@ impl MutationService {
             });
             
             let correlation_id = Uuid::new_v4().to_string();
-            let field_request = FieldValueSetRequest {
-                correlation_id: correlation_id.clone(),
-                schema_name: schema.name.clone(),
-                field_name: field_name.clone(),
-                value: range_aware_value,
-                source_pub_key: "mutation_service".to_string(),
-            };
+            let field_request = FieldValueSetRequest::with_context(
+                correlation_id.clone(),
+                schema.name.clone(),
+                field_name.clone(),
+                range_aware_value,
+                "mutation_service".to_string(),
+                mutation_context.clone(),
+            );
 
             match self.message_bus.publish(field_request) {
                 Ok(_) => {

@@ -312,6 +312,18 @@ mod tests {
             Ok(serde_json::json!({"status": "success"}))
         }
 
+        fn execute_transform_with_context(
+            &self, 
+            _transform_id: &str, 
+            mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+        ) -> Result<JsonValue, SchemaError> {
+            if let Some(ref context) = mutation_context {
+                Ok(serde_json::json!({"status": "success_with_context", "range_key": context.range_key, "hash_key": context.hash_key, "incremental": context.incremental}))
+            } else {
+                Ok(serde_json::json!({"status": "success_with_context", "no_context": true}))
+            }
+        }
+
         fn transform_exists(&self, _transform_id: &str) -> Result<bool, SchemaError> {
             Ok(true)
         }

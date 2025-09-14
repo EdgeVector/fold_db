@@ -25,6 +25,7 @@
 //!     field: "user.name".to_string(),
 //!     value: json!("Alice"),
 //!     source: "mutation_engine".to_string(),
+//!     mutation_context: None,
 //! });
 //!
 //! // Receive the event
@@ -118,7 +119,7 @@ pub use async_bus::{AsyncConsumer, AsyncEventHandler, AsyncMessageBus};
 // Import constructor implementations (these add methods to the event types)
 
 // Internal modules
-mod events;
+pub mod events;
 mod error_handling;
 mod sync_bus;
 mod async_bus;

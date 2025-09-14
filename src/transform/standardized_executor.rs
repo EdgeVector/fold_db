@@ -296,6 +296,7 @@ impl EventDrivenInputProvider {
                 field_name: field_name.to_string(),
                 value: JsonValue::Null, // Request current value
                 source_pub_key: "event_driven_input_provider".to_string(),
+                mutation_context: None, // No mutation context for input requests
             };
             
             // Publish request

@@ -32,6 +32,21 @@ impl TransformRunner for MockTransformRunner {
         Ok(json!({"status": "success", "transform_id": transform_id}))
     }
 
+    fn execute_transform_with_context(
+        &self, 
+        transform_id: &str, 
+        mutation_context: &Option<datafold::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+    ) -> Result<serde_json::Value, SchemaError> {
+        println!("🚀 DIAGNOSTIC: MockTransformRunner executing transform with context: {}", transform_id);
+        if let Some(ref context) = mutation_context {
+            println!("🎯 DIAGNOSTIC: Mutation context - range_key: {:?}, hash_key: {:?}, incremental: {}", 
+                     context.range_key, context.hash_key, context.incremental);
+            Ok(json!({"status": "success_with_context", "transform_id": transform_id, "range_key": context.range_key, "hash_key": context.hash_key, "incremental": context.incremental}))
+        } else {
+            Ok(json!({"status": "success_with_context", "transform_id": transform_id, "no_context": true}))
+        }
+    }
+
     fn transform_exists(&self, _transform_id: &str) -> Result<bool, SchemaError> {
         Ok(true)
     }

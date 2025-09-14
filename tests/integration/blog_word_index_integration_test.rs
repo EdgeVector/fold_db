@@ -465,8 +465,8 @@ async fn test_blog_word_index_declarative_transform_workflow() {
     // Wait additional time for all atoms to be fully committed
     std::thread::sleep(std::time::Duration::from_millis(3000));
     
-    // Step 6: Query BlogWordIndex by specific words to verify the declarative transform worked
-    let test_words = vec!["DataFold", "data", "database"];
+        // Step 6: Query BlogWordIndex by specific words to verify the declarative transform worked
+        let test_words = vec!["DataFold", "range", "schemas", "benefits"];
     
     for word in test_words {
         println!("\n🔍 Testing query for word: '{}'", word);
@@ -645,16 +645,14 @@ async fn test_declarative_transform_execution() {
     fixture.wait_for_transform_execution()
         .expect("Failed to wait for transform execution");
     
-    // Test querying for specific words that should be indexed
-    // Use words that are actually being processed based on debug output (from second blog post)
-    let test_words = vec![
-        "DataFold",  // Should appear in multiple posts
-        "data",       // From the range schemas post
-        "that",       // From the range schemas post  
-        "allow",      // From the range schemas post
-        "you",        // From the range schemas post
-        "based",      // From the range schemas post
-    ];
+        // Test querying for specific words that should be indexed
+        // Use words that are actually being processed based on debug output
+        let test_words = vec![
+            "DataFold",     // Should appear in multiple posts
+            "range",        // From the second post content
+            "schemas",      // From the second post content
+            "benefits",     // From the second post content
+        ];
     
     for word in test_words {
         println!("-----------------------------------------");

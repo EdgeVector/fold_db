@@ -107,8 +107,21 @@ impl EventMonitor {
             }
         }
 
-        // Execute the transform directly
-        match manager.execute_transform_now(&event.transform_id) {
+        // Execute the transform with context if available
+        let result = if let Some(ref context) = &event.mutation_context {
+            if context.incremental {
+                info!("🎯 DIAGNOSTIC: Using incremental transform execution for {}", event.transform_id);
+                manager.execute_transform_with_context(&event.transform_id, &event.mutation_context)
+            } else {
+                info!("🎯 DIAGNOSTIC: Using standard transform execution for {}", event.transform_id);
+                manager.execute_transform_now(&event.transform_id)
+            }
+        } else {
+            info!("🎯 DIAGNOSTIC: No mutation context, using standard transform execution for {}", event.transform_id);
+            manager.execute_transform_now(&event.transform_id)
+        };
+        
+        match result {
             Ok(result) => {
                 info!("✅ Transform {} executed successfully: {}", event.transform_id, result);
                 
@@ -162,7 +175,7 @@ impl EventMonitor {
         
         // Parse schema.field from the field path
         if let Some((schema_name, field_name)) = event.field.split_once('.') {
-            Self::process_discovered_transforms(schema_name, field_name, &event.source, manager, tree, message_bus)
+            Self::process_discovered_transforms(schema_name, field_name, &event.source, manager, tree, message_bus, &event.mutation_context)
         } else {
             error!(
                 "❌ Invalid field format '{}' - expected 'schema.field'",
@@ -183,6 +196,7 @@ impl EventMonitor {
         manager: &Arc<dyn TransformRunner>,
         tree: &sled::Tree,
         message_bus: &Arc<MessageBus>,
+        mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
     ) -> Result<(), SchemaError> {
         // Look up transforms for this field using the manager
         info!("🔍 DIAGNOSTIC: Looking up transforms for field {}.{} from manager", schema_name, field_name);
@@ -196,7 +210,7 @@ impl EventMonitor {
                         transform_ids.len(), schema_name, field_name, transform_ids
                     );
                     
-                    Self::add_transforms_to_queue(&transform_ids, source, tree, message_bus)?;
+                    Self::add_transforms_to_queue(&transform_ids, source, tree, message_bus, mutation_context)?;
                     info!("✅ EventMonitor triggered {} transforms via TransformTriggered events", transform_ids.len());
                 } else {
                     info!(
@@ -223,6 +237,7 @@ impl EventMonitor {
         _source: &str,
         _tree: &sled::Tree,
         message_bus: &Arc<MessageBus>,
+        mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
     ) -> Result<(), SchemaError> {
         info!("🚀 EventMonitor: Discovered {} transforms for field update", transform_ids.len());
         
@@ -230,8 +245,15 @@ impl EventMonitor {
         for transform_id in transform_ids {
             info!("🔔 Publishing TransformTriggered event for: {}", transform_id);
             
-            let triggered_event = TransformTriggered {
-                transform_id: transform_id.clone(),
+            let triggered_event = if let Some(ref context) = mutation_context {
+                if context.incremental {
+                    info!("🎯 DIAGNOSTIC: Publishing TransformTriggered with mutation context for incremental processing");
+                    TransformTriggered::with_context(transform_id.clone(), context.clone())
+                } else {
+                    TransformTriggered::new(transform_id.clone())
+                }
+            } else {
+                TransformTriggered::new(transform_id.clone())
             };
             
             match message_bus.publish(triggered_event) {
@@ -315,6 +337,18 @@ mod tests {
             Ok(serde_json::json!({"status": "success"}))
         }
 
+        fn execute_transform_with_context(
+            &self, 
+            _transform_id: &str, 
+            mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+        ) -> Result<JsonValue, SchemaError> {
+            if let Some(ref context) = mutation_context {
+                Ok(serde_json::json!({"status": "success_with_context", "range_key": context.range_key, "hash_key": context.hash_key, "incremental": context.incremental}))
+            } else {
+                Ok(serde_json::json!({"status": "success_with_context", "no_context": true}))
+            }
+        }
+
         fn transform_exists(&self, _transform_id: &str) -> Result<bool, SchemaError> {
             Ok(true)
         }
@@ -345,6 +379,7 @@ mod tests {
             &manager,
             &tree,
             &message_bus,
+            &None, // No mutation context for this test
         );
         
         assert!(result.is_ok());
@@ -364,6 +399,7 @@ mod tests {
             field: "test_schema.test_field".to_string(),
             value: serde_json::json!("test_value"),
             source: "test_source".to_string(),
+            mutation_context: None,
         };
         
         let message_bus = Arc::new(MessageBus::new());
@@ -380,6 +416,7 @@ mod tests {
             field: "invalid_field_format".to_string(),
             value: serde_json::json!("test_value"),
             source: "test_source".to_string(),
+            mutation_context: None,
         };
         
         let message_bus = Arc::new(MessageBus::new());
