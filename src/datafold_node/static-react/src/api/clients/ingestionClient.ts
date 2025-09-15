@@ -1,47 +1,38 @@
 /**
  * Ingestion API Client - Unified Implementation
- * Handles AI-powered data ingestion, schema generation, and OpenRouter configuration
+ * Handles AI-powered data ingestion, schema generation, and AI provider configuration
  * Part of API-STD-1 standardization initiative
  */
 
 import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
-import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL } from '../../constants/api';
+import { API_TIMEOUTS, API_RETRIES } from '../../constants/api';
 import type { EnhancedApiResponse } from '../core/types';
 
 // Ingestion-specific response types
 export interface IngestionStatus {
   enabled: boolean;
   configured: boolean;
+  provider: 'OpenRouter' | 'Ollama';
   model: string;
   auto_execute_mutations: boolean;
   default_trust_distance: number;
-  last_activity?: string;
-  api_key_set?: boolean;
 }
 
 export interface OpenRouterConfig {
   api_key: string;
   model: string;
-  max_tokens?: number;
-  temperature?: number;
 }
 
-export interface OpenRouterConfigResponse {
-  api_key: string;
+export interface OllamaConfig {
   model: string;
-  max_tokens?: number;
-  temperature?: number;
-  last_updated?: string;
+  base_url: string;
 }
 
-export interface IngestionConfigResponse {
-  enabled: boolean;
-  model: string;
-  auto_execute_mutations: boolean;
-  default_trust_distance: number;
-  api_key_configured: boolean;
-  configured: boolean;
+export interface IngestionConfig {
+  provider: 'OpenRouter' | 'Ollama';
+  openrouter: OpenRouterConfig;
+  ollama: OllamaConfig;
 }
 
 export interface ValidationRequest {
@@ -109,13 +100,13 @@ export class UnifiedIngestionClient {
   }
 
   /**
-   * Get ingestion configuration (without sensitive data)
+   * Get ingestion configuration
    * UNPROTECTED - No authentication required
    * 
    * @returns Promise resolving to general ingestion configuration
    */
-  async getConfig(): Promise<EnhancedApiResponse<IngestionConfigResponse>> {
-    return this.client.get<IngestionConfigResponse>(
+  async getConfig(): Promise<EnhancedApiResponse<IngestionConfig>> {
+    return this.client.get<IngestionConfig>(
       API_ENDPOINTS.INGESTION_CONFIG,
       {
         timeout: API_TIMEOUTS.QUICK,
@@ -126,38 +117,15 @@ export class UnifiedIngestionClient {
   }
 
   /**
-   * Get OpenRouter AI configuration specifically
+   * Save AI provider configuration
    * UNPROTECTED - No authentication required
    * 
-   * @returns Promise resolving to OpenRouter configuration
-   */
-  async getOpenRouterConfig(): Promise<EnhancedApiResponse<OpenRouterConfigResponse>> {
-    return this.client.get<OpenRouterConfigResponse>(
-      API_ENDPOINTS.INGESTION_OPENROUTER_CONFIG,
-      {
-        timeout: API_TIMEOUTS.QUICK,
-        retries: API_RETRIES.STANDARD,
-        cacheable: false // Config should not be cached for security
-      }
-    );
-  }
-
-  /**
-   * Save OpenRouter AI configuration
-   * UNPROTECTED - No authentication required
-   * 
-   * @param config The OpenRouter configuration to save
+   * @param config The Ingestion configuration to save
    * @returns Promise resolving to save operation result
    */
-  async saveConfig(config: OpenRouterConfig): Promise<EnhancedApiResponse<{ success: boolean; message: string }>> {
-    // Validate config before sending
-    const validation = this.validateOpenRouterConfig(config);
-    if (!validation.isValid) {
-      throw new Error(`Invalid OpenRouter configuration: ${validation.errors.join(', ')}`);
-    }
-
+  async saveConfig(config: IngestionConfig): Promise<EnhancedApiResponse<{ success: boolean; message: string }>> {
     return this.client.post<{ success: boolean; message: string }>(
-      API_ENDPOINTS.INGESTION_OPENROUTER_CONFIG,
+      API_ENDPOINTS.INGESTION_CONFIG,
       config,
       {
         timeout: API_TIMEOUTS.CONFIG, // Longer timeout for config operations
@@ -228,55 +196,6 @@ export class UnifiedIngestionClient {
   }
 
   /**
-   * Validate OpenRouter configuration before sending
-   * Client-side validation helper
-   * 
-   * @param config The configuration to validate
-   * @returns Validation result
-   */
-  validateOpenRouterConfig(config: OpenRouterConfig): {
-    isValid: boolean;
-    errors: string[];
-    warnings: string[];
-  } {
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    // Validate API key
-    if (!config.api_key || config.api_key.trim().length === 0) {
-      errors.push('API key is required');
-    } else if (config.api_key.length < 10) {
-      warnings.push('API key seems unusually short');
-    }
-
-    // Validate model
-    if (!config.model || config.model.trim().length === 0) {
-      errors.push('Model selection is required');
-    }
-
-    // Validate optional parameters
-    if (config.max_tokens !== undefined) {
-      if (typeof config.max_tokens !== 'number' || config.max_tokens <= 0) {
-        errors.push('Max tokens must be a positive number');
-      } else if (config.max_tokens > 32000) {
-        warnings.push('Max tokens value is very high and may be expensive');
-      }
-    }
-
-    if (config.temperature !== undefined) {
-      if (typeof config.temperature !== 'number' || config.temperature < 0 || config.temperature > 2) {
-        errors.push('Temperature must be a number between 0 and 2');
-      }
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors,
-      warnings
-    };
-  }
-
-  /**
    * Validate ingestion request before sending
    * Client-side validation helper
    * 
@@ -319,31 +238,6 @@ export class UnifiedIngestionClient {
       isValid: errors.length === 0,
       errors,
       warnings
-    };
-  }
-
-  /**
-   * Create a properly structured OpenRouter configuration
-   * Helper function for creating valid configuration objects
-   * 
-   * @param apiKey The OpenRouter API key
-   * @param model The AI model to use
-   * @param options Additional configuration options
-   * @returns OpenRouter configuration object
-   */
-  createOpenRouterConfig(
-    apiKey: string,
-    model: string = 'anthropic/claude-3.5-sonnet',
-    options: {
-      maxTokens?: number;
-      temperature?: number;
-    } = {}
-  ): OpenRouterConfig {
-    return {
-      api_key: apiKey.trim(),
-      model: model.trim(),
-      ...(options.maxTokens && { max_tokens: options.maxTokens }),
-      ...(options.temperature !== undefined && { temperature: options.temperature })
     };
   }
 
@@ -399,23 +293,20 @@ export function createIngestionClient(client?: ApiClient): UnifiedIngestionClien
 // Named exports for backward compatibility and convenience
 export const getStatus = ingestionClient.getStatus.bind(ingestionClient);
 export const getConfig = ingestionClient.getConfig.bind(ingestionClient);
-export const getOpenRouterConfig = ingestionClient.getOpenRouterConfig.bind(ingestionClient);
 export const saveConfig = ingestionClient.saveConfig.bind(ingestionClient);
 export const validateData = ingestionClient.validateData.bind(ingestionClient);
 export const processIngestion = ingestionClient.processIngestion.bind(ingestionClient);
 
 // Helper exports
-export const validateOpenRouterConfig = ingestionClient.validateOpenRouterConfig.bind(ingestionClient);
 export const validateIngestionRequest = ingestionClient.validateIngestionRequest.bind(ingestionClient);
-export const createOpenRouterConfig = ingestionClient.createOpenRouterConfig.bind(ingestionClient);
 export const createIngestionRequest = ingestionClient.createIngestionRequest.bind(ingestionClient);
 
 // Type exports
 export type {
   IngestionStatus,
   OpenRouterConfig,
-  OpenRouterConfigResponse,
-  IngestionConfigResponse,
+  OllamaConfig,
+  IngestionConfig,
   ValidationRequest,
   ValidationResponse,
   ProcessIngestionRequest,
