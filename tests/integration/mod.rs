@@ -35,3 +35,6 @@ pub mod hashrange_mutation_integration_test;
 
 // HashRange end-to-end workflow test
 pub mod hashrange_end_to_end_workflow_test;
+
+// Simplified format end-to-end tests
+pub mod simplified_format_e2e_tests;

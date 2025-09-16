@@ -6,12 +6,13 @@ This document covers fold db's schema management system built on the core princi
 
 1. [Schema Immutability](#schema-immutability)
 2. [Schema Structure](#schema-structure)
-3. [Field Types](#field-types)
-4. [Permission Policies](#permission-policies)
-5. [Payment Configuration](#payment-configuration)
-6. [Schema States and Lifecycle](#schema-states-and-lifecycle)
-7. [Migration Patterns](#migration-patterns)
-8. [Best Practices](#best-practices)
+3. [Simplified Schema Formats](#simplified-schema-formats) ⭐ **NEW**
+4. [Field Types](#field-types)
+5. [Permission Policies](#permission-policies)
+6. [Payment Configuration](#payment-configuration)
+7. [Schema States and Lifecycle](#schema-states-and-lifecycle)
+8. [Migration Patterns](#migration-patterns)
+9. [Best Practices](#best-practices)
 
 ## Schema Immutability
 
@@ -92,6 +93,126 @@ datafold_cli load-schema schema.json
   "params": {
     "schema": { /* schema definition */ }
   }
+}
+```
+
+## Simplified Schema Formats
+
+FoldDB now supports simplified schema formats that reduce boilerplate by up to 90% while maintaining full backward compatibility.
+
+### Format Types
+
+#### 1. Ultra-Minimal Format (Regular Schemas)
+Use empty field objects `{}` to get default configurations:
+
+```json
+{
+  "name": "UserProfile",
+  "schema_type": "Single",
+  "fields": {
+    "id": {},
+    "name": {},
+    "email": {},
+    "avatar": {}
+  },
+  "payment_config": {
+    "base_multiplier": 1.0,
+    "min_payment_threshold": 0
+  }
+}
+```
+
+#### 2. String Expression Format (Declarative Transforms)
+Use string expressions for field mappings:
+
+```json
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "BlogPost.map().content.split_by_word().map()",
+    "range_field": "BlogPost.map().publish_date"
+  },
+  "fields": {
+    "content": "BlogPost.map().content",
+    "author": "BlogPost.map().author",
+    "title": "BlogPost.map().title",
+    "tags": "BlogPost.map().tags"
+  }
+}
+```
+
+#### 3. Mixed Format
+Combine simplified and verbose formats in the same schema:
+
+```json
+{
+  "name": "MixedSchema",
+  "schema_type": "Single",
+  "fields": {
+    "simple_field": "Source.map().id",
+    "complex_field": {
+      "atom_uuid": "Source.map().metadata.tags",
+      "field_type": "Single",
+      "permission_policy": {
+        "read_policy": {"Distance": 0},
+        "write_policy": {"Distance": 1}
+      }
+    },
+    "empty_field": {}
+  }
+}
+```
+
+### Benefits
+
+- ✅ **90% Less Boilerplate**: Dramatically reduced schema size
+- ✅ **Better Readability**: Cleaner, more intuitive definitions
+- ✅ **Faster Development**: Quick schema creation and iteration
+- ✅ **Backward Compatible**: All existing schemas continue to work
+- ✅ **Flexible**: Mix simplified and verbose formats as needed
+
+### Default Values
+
+When using simplified formats, the following defaults are applied:
+
+**Regular Schema Fields:**
+- `field_type`: `"Single"`
+- `permission_policy`: `{"read_policy": {"Distance": 0}, "write_policy": {"Distance": 1}}`
+- `payment_config`: `{"base_multiplier": 1.0, "trust_distance_scaling": "None"}`
+- `molecule_uuid`: `null`
+- `field_mappers`: `{}`
+- `transform`: `null`
+
+**Declarative Transform Fields:**
+- `atom_uuid`: String expression value
+- `field_type`: `null` (inherited from schema context)
+
+### Migration Guide
+
+**From Verbose to Simplified:**
+
+1. **Regular Schemas**: Replace verbose field definitions with `{}`
+2. **Declarative Transforms**: Convert `{"atom_uuid": "expression"}` to `"expression"`
+3. **Mixed Approach**: Gradually migrate fields as needed
+
+**Example Migration:**
+```bash
+# Before (verbose)
+"fields": {
+  "id": {
+    "permission_policy": {"read_policy": {"Distance": 0}, "write_policy": {"Distance": 1}},
+    "molecule_uuid": null,
+    "payment_config": {"base_multiplier": 1.0, "trust_distance_scaling": "None"},
+    "field_mappers": {},
+    "field_type": "Single",
+    "transform": null
+  }
+}
+
+# After (simplified)
+"fields": {
+  "id": {}
 }
 ```
 
