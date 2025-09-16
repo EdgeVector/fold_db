@@ -26,10 +26,13 @@ pub struct JsonSchemaDefinition {
 /// Represents a field in the JSON schema
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonSchemaField {
+    #[serde(default = "default_permission_policy")]
     pub permission_policy: JsonPermissionPolicy,
     #[serde(default)]
     pub molecule_uuid: Option<String>,
+    #[serde(default = "default_payment_config")]
     pub payment_config: JsonFieldPaymentConfig,
+    #[serde(default)]
     pub field_mappers: HashMap<String, String>,
     #[serde(default = "default_field_type")]
     pub field_type: FieldType,
@@ -712,6 +715,24 @@ impl From<JsonTransform> for Transform {
 fn default_field_type() -> FieldType {
     FieldType::Single
 }
+
+fn default_permission_policy() -> JsonPermissionPolicy {
+    JsonPermissionPolicy {
+        read: TrustDistance::Distance(0),
+        write: TrustDistance::Distance(0),
+        explicit_read: None,
+        explicit_write: None,
+    }
+}
+
+fn default_payment_config() -> JsonFieldPaymentConfig {
+    JsonFieldPaymentConfig {
+        base_multiplier: 1.0,
+        trust_distance_scaling: TrustDistanceScaling::None,
+        min_payment: None,
+    }
+}
+
 
 impl JsonSchemaDefinition {
     /// Validates the schema definition according to the rules.
