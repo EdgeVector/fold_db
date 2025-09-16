@@ -164,17 +164,34 @@ impl BlogWordIndexIntegrationFixture {
         Ok(mutation_id)
     }
 
-    /// Wait for mutations to be fully processed and committed
-    fn wait_for_mutations_to_complete(&self, mutation_ids: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    /// Wait for mutations to be fully processed and committed using the real wait_for_mutation method
+    async fn wait_for_mutations_to_complete(&self, mutation_ids: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         println!("⏳ Waiting for {} mutations to be fully processed...", mutation_ids.len());
         
-        // Wait for mutations to be processed through the pipeline
-        std::thread::sleep(std::time::Duration::from_millis(2000));
+        // Use the real wait_for_mutation method for each mutation
+        for (index, mutation_id) in mutation_ids.iter().enumerate() {
+            println!("⏳ Waiting for mutation {} of {}: {}", index + 1, mutation_ids.len(), mutation_id);
+            
+            // Use the real async wait_for_mutation method with a reasonable timeout
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(30), // 30 second timeout per mutation
+                self.fold_db.wait_for_mutation(mutation_id)
+            ).await {
+                Ok(Ok(_)) => {
+                    println!("✅ Mutation {} completed successfully", mutation_id);
+                }
+                Ok(Err(e)) => {
+                    println!("❌ Mutation {} failed: {}", mutation_id, e);
+                    return Err(format!("Mutation {} failed: {}", mutation_id, e).into());
+                }
+                Err(_timeout) => {
+                    println!("⏰ Mutation {} timed out after 30 seconds", mutation_id);
+                    return Err(format!("Mutation {} timed out", mutation_id).into());
+                }
+            }
+        }
         
-        // Additional wait to ensure all async operations complete
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        
-        println!("✅ Mutations processing completed");
+        println!("✅ All {} mutations completed successfully", mutation_ids.len());
         Ok(())
     }
 
@@ -441,18 +458,19 @@ async fn test_blog_word_index_declarative_transform_workflow() {
     fixture.load_blogpost_schema()
         .expect("Failed to load BlogPost schema");
     
-    // Step 2: Create test blog posts (these should trigger transforms later)
+    // Step 2: Load BlogWordIndex declarative schema (this should automatically register transforms)
+    fixture.load_blog_word_index_declarative_schema()
+        .expect("Failed to load BlogWordIndex declarative schema");
+    
+    // Step 3: Create test blog posts (these should trigger transforms as they are created)
     let mutation_ids = fixture.create_test_blog_posts()
         .expect("Failed to create test blog posts");
     
     println!("📊 Created {} blog posts", mutation_ids.len());
     
-    // Wait a bit for all mutations to be fully processed
-    std::thread::sleep(std::time::Duration::from_millis(1000));
-    
-    // Step 3: Load BlogWordIndex declarative schema (this should automatically register transforms)
-    fixture.load_blog_word_index_declarative_schema()
-        .expect("Failed to load BlogWordIndex declarative schema");
+    // Wait for mutations to be fully processed and committed
+    fixture.wait_for_mutations_to_complete(&mutation_ids).await
+        .expect("Failed to wait for mutations to complete");
     
     // Step 4: Verify transforms are automatically registered
     fixture.verify_transforms_registered()
@@ -462,11 +480,8 @@ async fn test_blog_word_index_declarative_transform_workflow() {
     fixture.wait_for_transform_execution()
         .expect("Failed to wait for transform execution");
     
-    // Wait additional time for all atoms to be fully committed
-    std::thread::sleep(std::time::Duration::from_millis(3000));
-    
-        // Step 6: Query BlogWordIndex by specific words to verify the declarative transform worked
-        let test_words = vec!["DataFold", "range", "schemas", "benefits"];
+    // Step 6: Query BlogWordIndex by specific words to verify the declarative transform worked
+    let test_words = vec!["DataFold", "range", "schemas", "benefits"];
     
     for word in test_words {
         println!("\n🔍 Testing query for word: '{}'", word);
@@ -638,7 +653,7 @@ async fn test_declarative_transform_execution() {
     println!("✅ Created {} blog posts successfully", mutation_ids.len());
     
     // Wait for mutations to be fully processed and committed
-    fixture.wait_for_mutations_to_complete(&mutation_ids)
+    fixture.wait_for_mutations_to_complete(&mutation_ids).await
         .expect("Failed to wait for mutations to complete");
     
     // Wait for transform to execute

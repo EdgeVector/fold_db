@@ -506,14 +506,22 @@ async fn test_hashrange_query_format_validation() -> Result<(), Box<dyn std::err
             e
         })?;
     
-    println!("🔍 Step 2: Creating test blog posts...");
+    println!("🔍 Step 2: Loading and approving BlogPostWordIndex schema...");
+    let transform_id = fixture.load_and_approve_word_index_schema().await
+        .map_err(|e| {
+            println!("❌ Failed to load BlogPostWordIndex schema: {:?}", e);
+            e
+        })?;
+    fixture.verify_transform_registration(&transform_id).await?;
+    
+    println!("🔍 Step 3: Creating test blog posts...");
     let mutation_ids = fixture.create_test_blog_posts().await
         .map_err(|e| {
             println!("❌ Failed to create blog posts: {:?}", e);
             e
         })?;
     
-    println!("🔍 Step 3: Waiting for mutations to complete...");
+    println!("🔍 Step 4: Waiting for mutations to complete...");
     // Wait for mutations to complete
     for (index, mutation_id) in mutation_ids.iter().enumerate() {
         println!("🔍 Waiting for mutation {} of {}: {}", index + 1, mutation_ids.len(), mutation_id);
@@ -524,21 +532,15 @@ async fn test_hashrange_query_format_validation() -> Result<(), Box<dyn std::err
             })?;
     }
     
-    println!("🔍 Step 4: Loading and approving BlogPostWordIndex schema...");
-    let transform_id = fixture.load_and_approve_word_index_schema().await
-        .map_err(|e| {
-            println!("❌ Failed to load BlogPostWordIndex schema: {:?}", e);
-            e
-        })?;
-    fixture.verify_transform_registration(&transform_id).await?;
+    println!("🔍 Step 5: Triggering transform execution...");
     fixture.trigger_transform_execution(&transform_id).await?;
     
-    println!("🔍 Step 5: Waiting for transform execution to complete...");
+    println!("🔍 Step 6: Waiting for transform execution to complete...");
     // Wait for transform to fully process all data
     tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     
-        // Test query format validation with words that are actually being processed
-        let test_words = vec!["DataFold", "range", "schemas", "benefits"];
+    // Test query format validation with words that are actually being processed
+    let test_words = vec!["DataFold", "range", "schemas", "benefits"];
     fixture.query_and_validate_word_index(test_words).await?;
     
     println!("✅ HashRange query format validation test completed successfully!");
