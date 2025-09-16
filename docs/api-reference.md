@@ -350,6 +350,112 @@ EXAMPLES:
     datafold_cli get-schema EventAnalytics --format json
 ```
 
+### Simplified Schema Formats
+
+FoldDB now supports simplified schema formats that reduce boilerplate by up to 90% while maintaining full backward compatibility.
+
+#### Declarative Transform Schemas
+
+**Simplified Format (Recommended):**
+```json
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "BlogPost.map().content.split_by_word().map()",
+    "range_field": "BlogPost.map().publish_date"
+  },
+  "fields": {
+    "content": "BlogPost.map().content",
+    "author": "BlogPost.map().author",
+    "title": "BlogPost.map().title",
+    "tags": "BlogPost.map().tags"
+  }
+}
+```
+
+**Verbose Format (Legacy):**
+```json
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "BlogPost.map().content.split_by_word().map()",
+    "range_field": "BlogPost.map().publish_date"
+  },
+  "fields": {
+    "content": { "atom_uuid": "BlogPost.map().content" },
+    "author": { "atom_uuid": "BlogPost.map().author" },
+    "title": { "atom_uuid": "BlogPost.map().title" },
+    "tags": { "atom_uuid": "BlogPost.map().tags" }
+  }
+}
+```
+
+#### Regular Schemas
+
+**Simplified Format (Ultra-minimal):**
+```json
+{
+  "name": "UserProfile",
+  "schema_type": "Single",
+  "fields": {
+    "id": {},
+    "name": {},
+    "email": {},
+    "avatar": {}
+  },
+  "payment_config": {
+    "base_multiplier": 1.0,
+    "min_payment_threshold": 0
+  }
+}
+```
+
+**Mixed Format (Best of both worlds):**
+```json
+{
+  "name": "MixedSchema",
+  "schema_type": "Single",
+  "fields": {
+    "simple_field": "Source.map().id",
+    "complex_field": {
+      "atom_uuid": "Source.map().metadata.tags",
+      "field_type": "Single"
+    },
+    "empty_field": {}
+  }
+}
+```
+
+#### Format Support
+
+- ✅ **String Expressions**: `"field": "Source.map().expression"`
+- ✅ **Empty Objects**: `"field": {}` (uses defaults)
+- ✅ **Mixed Formats**: Combine string and object formats
+- ✅ **Backward Compatibility**: All existing schemas continue to work
+- ✅ **Custom Deserialization**: Automatic conversion of string expressions
+
+#### Migration
+
+**From Verbose to Simplified:**
+```bash
+# Convert declarative transform schemas
+sed -i 's/"atom_uuid": "\([^"]*\)"/\1/g' schema.json
+
+# Convert regular schemas (replace verbose field definitions with {})
+# Manual conversion recommended for complex schemas
+```
+
+**Examples:**
+```bash
+# Load simplified schema
+datafold_cli load-schema schemas/simplified_user_profile.json
+
+# List schemas (shows both formats)
+datafold_cli list-schemas --format json
+```
+
 #### unload-schema
 Unload a schema from the node.
 
