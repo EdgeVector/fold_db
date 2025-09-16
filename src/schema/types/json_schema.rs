@@ -7,8 +7,10 @@ use crate::schema::types::field::FieldType;
 use crate::schema::types::SchemaError;
 use crate::schema::types::Transform;
 use crate::transform::parser::TransformParser;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde::de::{self, Visitor};
 use std::collections::HashMap;
+use std::fmt;
 
 /// Represents a complete JSON schema definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -366,7 +368,7 @@ impl FieldDefinition {
 }
 
 /// Declarative schema definition used by declarative transforms.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DeclarativeSchemaDefinition {
     /// Schema name (same as transform name)
     pub name: String,
@@ -376,6 +378,7 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<KeyConfig>,
     /// Field definitions with their mapping expressions
+    #[serde(deserialize_with = "deserialize_mixed_format_fields")]
     pub fields: HashMap<String, FieldDefinition>,
 }
 
@@ -652,6 +655,86 @@ impl DeclarativeSchemaDefinition {
         }
 
         Ok(())
+    }
+}
+
+/// Custom deserializer for mixed format fields that supports both string expressions
+/// and FieldDefinition objects in the same schema
+fn deserialize_mixed_format_fields<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<String, FieldDefinition>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct MixedFormatFieldsVisitor;
+
+    impl<'de> Visitor<'de> for MixedFormatFieldsVisitor {
+        type Value = HashMap<String, FieldDefinition>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map of field names to either string expressions or FieldDefinition objects")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let mut fields = HashMap::new();
+
+            while let Some((field_name, field_value)) = map.next_entry::<String, serde_json::Value>()? {
+                let field_definition = match field_value {
+                    serde_json::Value::String(expression) => {
+                        // Convert string expression to FieldDefinition with atom_uuid
+                        FieldDefinition {
+                            atom_uuid: Some(expression),
+                            field_type: None,
+                        }
+                    }
+                    serde_json::Value::Object(_) => {
+                        // Deserialize as FieldDefinition object
+                        serde_json::from_value(field_value)
+                            .map_err(|e| de::Error::custom(format!("Invalid FieldDefinition: {}", e)))?
+                    }
+                    _ => {
+                        return Err(de::Error::custom(format!(
+                            "Field '{}' must be either a string expression or a FieldDefinition object",
+                            field_name
+                        )));
+                    }
+                };
+
+                fields.insert(field_name, field_definition);
+            }
+
+            Ok(fields)
+        }
+    }
+
+    deserializer.deserialize_map(MixedFormatFieldsVisitor)
+}
+
+impl<'de> Deserialize<'de> for DeclarativeSchemaDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct DeclarativeSchemaDefinitionHelper {
+            name: String,
+            schema_type: crate::schema::types::schema::SchemaType,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            key: Option<KeyConfig>,
+            #[serde(deserialize_with = "deserialize_mixed_format_fields")]
+            fields: HashMap<String, FieldDefinition>,
+        }
+
+        let helper = DeclarativeSchemaDefinitionHelper::deserialize(deserializer)?;
+        Ok(DeclarativeSchemaDefinition {
+            name: helper.name,
+            schema_type: helper.schema_type,
+            key: helper.key,
+            fields: helper.fields,
+        })
     }
 }
 
