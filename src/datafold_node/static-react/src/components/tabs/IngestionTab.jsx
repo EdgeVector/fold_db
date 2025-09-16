@@ -14,6 +14,7 @@ function IngestionTab({ onResult }) {
   const [aiProvider, setAiProvider] = useState('OpenRouter')
   const [openrouterApiKey, setOpenrouterApiKey] = useState('')
   const [openrouterModel, setOpenrouterModel] = useState('anthropic/claude-3.5-sonnet')
+  const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1')
   const [ollamaModel, setOllamaModel] = useState('llama3')
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
@@ -41,6 +42,7 @@ function IngestionTab({ onResult }) {
       if (response.success) {
         setOpenrouterApiKey(response.data.openrouter.api_key || '')
         setOpenrouterModel(response.data.openrouter.model || 'anthropic/claude-3.5-sonnet')
+        setOpenrouterBaseUrl(response.data.openrouter.base_url || 'https://openrouter.ai/api/v1')
         setOllamaModel(response.data.ollama.model || 'llama3')
         setOllamaBaseUrl(response.data.ollama.base_url || 'http://localhost:11434')
         setAiProvider(response.data.provider || 'OpenRouter')
@@ -57,6 +59,7 @@ function IngestionTab({ onResult }) {
         openrouter: {
           api_key: openrouterApiKey,
           model: openrouterModel,
+          base_url: openrouterBaseUrl,
         },
         ollama: {
           model: ollamaModel,
@@ -358,6 +361,19 @@ function IngestionTab({ onResult }) {
                   </select>
                 </div>
               </div>
+              <div>
+                  <label htmlFor="openrouterBaseUrl" className="block text-sm font-medium text-gray-700 mb-1">
+                    OpenRouter Base URL
+                  </label>
+                  <input
+                    type="text"
+                    id="openrouterBaseUrl"
+                    value={openrouterBaseUrl}
+                    onChange={(e) => setOpenrouterBaseUrl(e.target.value)}
+                    placeholder="e.g., https://openrouter.ai/api/v1"
+                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                  />
+                </div>
             </div>
           )}
 

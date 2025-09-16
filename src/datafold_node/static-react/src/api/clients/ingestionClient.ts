@@ -22,6 +22,7 @@ export interface IngestionStatus {
 export interface OpenRouterConfig {
   api_key: string;
   model: string;
+  base_url: string;
 }
 
 export interface OllamaConfig {
