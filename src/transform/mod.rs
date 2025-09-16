@@ -54,6 +54,8 @@ pub mod restricted_access_integration_test;
 // New modular components
 pub mod validation;
 pub mod coordination;
+
+// Execution coordination components
 pub mod shared_utilities;
 pub mod aggregation;
 pub mod hash_range_executor;

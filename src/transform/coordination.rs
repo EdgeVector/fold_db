@@ -32,7 +32,31 @@ pub fn execute_multi_chain_coordination_with_monitoring(
     let start_time = Instant::now();
     info!("🔗 Starting enhanced multi-chain coordination for HashRange schema");
     
-    // Parse all field expressions for multi-chain coordination
+    let expressions = collect_all_expressions(schema, key_config)?;
+    let parsed_chains = parse_expressions_with_monitoring(&expressions)?;
+    let alignment_result = validate_field_alignment(&parsed_chains)?;
+    let result = execute_coordination_with_engine(&parsed_chains, input_values, &alignment_result)?;
+    
+    let total_duration = start_time.elapsed();
+    info!("⏱️ Enhanced multi-chain coordination completed in {:?}", total_duration);
+    
+    Ok(result)
+}
+
+/// Collects all expressions from schema and key configuration.
+///
+/// # Arguments
+///
+/// * `schema` - The declarative schema definition
+/// * `key_config` - The key configuration
+///
+/// # Returns
+///
+/// Vector of (field_name, expression) pairs
+fn collect_all_expressions(
+    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    key_config: &crate::schema::types::json_schema::KeyConfig,
+) -> Result<Vec<(String, String)>, SchemaError> {
     let mut all_expressions = Vec::new();
     
     // Add key expressions (hash_field and range_field) - these are expressions, not field names
@@ -47,13 +71,26 @@ pub fn execute_multi_chain_coordination_with_monitoring(
     }
     
     info!("📊 Coordinating {} expressions for enhanced multi-chain execution", all_expressions.len());
-    
-    // Parse all expressions using ChainParser with retry mechanism
+    Ok(all_expressions)
+}
+
+/// Parses expressions using ChainParser with retry mechanism and monitoring.
+///
+/// # Arguments
+///
+/// * `expressions` - Vector of (field_name, expression) pairs
+///
+/// # Returns
+///
+/// Vector of (field_name, ParsedChain) pairs
+fn parse_expressions_with_monitoring(
+    expressions: &[(String, String)],
+) -> Result<Vec<(String, ParsedChain)>, SchemaError> {
     let parsing_start = Instant::now();
     let mut parsed_chains = Vec::new();
     let mut parsing_errors = Vec::new();
     
-    for (field_name, expression) in &all_expressions {
+    for (field_name, expression) in expressions {
         info!("🔗 Parsing expression for field '{}': {}", field_name, expression);
         
         match parse_with_default_retry(expression, field_name) {
@@ -78,7 +115,21 @@ pub fn execute_multi_chain_coordination_with_monitoring(
         ));
     }
     
-    // Validate field alignment across all chains with enhanced monitoring
+    Ok(parsed_chains)
+}
+
+/// Validates field alignment across all chains with enhanced monitoring.
+///
+/// # Arguments
+///
+/// * `parsed_chains` - Vector of (field_name, ParsedChain) pairs
+///
+/// # Returns
+///
+/// Alignment validation result
+fn validate_field_alignment(
+    parsed_chains: &[(String, ParsedChain)],
+) -> Result<AlignmentValidationResult, SchemaError> {
     let validation_start = Instant::now();
     let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
     let validator = FieldAlignmentValidator::new();
@@ -99,17 +150,30 @@ pub fn execute_multi_chain_coordination_with_monitoring(
     }
     
     info!("✅ Enhanced multi-chain field alignment validation passed");
-    
-    // Execute multi-chain coordination with ExecutionEngine and enhanced monitoring
+    Ok(alignment_result)
+}
+
+/// Executes coordination with ExecutionEngine.
+///
+/// # Arguments
+///
+/// * `parsed_chains` - Vector of (field_name, ParsedChain) pairs
+/// * `input_values` - The input values for execution
+/// * `alignment_result` - The alignment validation result
+///
+/// # Returns
+///
+/// Execution result
+fn execute_coordination_with_engine(
+    parsed_chains: &[(String, ParsedChain)],
+    input_values: &HashMap<String, JsonValue>,
+    alignment_result: &AlignmentValidationResult,
+) -> Result<JsonValue, SchemaError> {
     let execution_start = Instant::now();
-    let result = execute_multi_chain_with_engine_enhanced(&parsed_chains, input_values, &alignment_result);
+    let result = execute_multi_chain_with_engine_enhanced(parsed_chains, input_values, alignment_result)?;
     let execution_duration = execution_start.elapsed();
-    
-    let total_duration = start_time.elapsed();
-    info!("⏱️ Enhanced multi-chain coordination completed in {:?} (parsing: {:?}, validation: {:?}, execution: {:?})", 
-          total_duration, parsing_duration, validation_duration, execution_duration);
-    
-    result
+    info!("⏱️ Enhanced execution took: {:?}", execution_duration);
+    Ok(result)
 }
 
 /// Executes multi-chain coordination with enhanced ExecutionEngine.
@@ -131,13 +195,50 @@ fn execute_multi_chain_with_engine_enhanced(
     let start_time = Instant::now();
     info!("🚀 Executing enhanced multi-chain coordination with ExecutionEngine");
     
-    // Convert input_values HashMap to JSON object for ExecutionEngine
+    let input_data = convert_input_values_to_json(input_values)?;
+    let execution_result = execute_with_engine(parsed_chains, &input_data, alignment_result)?;
+    log_execution_statistics(&execution_result);
+    let result = aggregate_execution_results(parsed_chains, &execution_result, input_values)?;
+    
+    let total_duration = start_time.elapsed();
+    info!("⏱️ Enhanced multi-chain execution completed in {:?}", total_duration);
+    
+    Ok(result)
+}
+
+/// Converts input values HashMap to JSON object for ExecutionEngine.
+///
+/// # Arguments
+///
+/// * `input_values` - The input values HashMap
+///
+/// # Returns
+///
+/// JSON object representation of input values
+fn convert_input_values_to_json(input_values: &HashMap<String, JsonValue>) -> Result<JsonValue, SchemaError> {
     let conversion_start = Instant::now();
     let input_data = JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
     let conversion_duration = conversion_start.elapsed();
     info!("⏱️ Input data conversion took: {:?}", conversion_duration);
-    
-    // Create and execute with ExecutionEngine for all chains with enhanced monitoring
+    Ok(input_data)
+}
+
+/// Executes chains with ExecutionEngine.
+///
+/// # Arguments
+///
+/// * `parsed_chains` - The parsed chains with their field names
+/// * `input_data` - The input data as JSON
+/// * `alignment_result` - The alignment validation result
+///
+/// # Returns
+///
+/// Execution result from the engine
+fn execute_with_engine(
+    parsed_chains: &[(String, ParsedChain)],
+    input_data: &JsonValue,
+    alignment_result: &AlignmentValidationResult,
+) -> Result<ExecutionResult, SchemaError> {
     let engine_start = Instant::now();
     let mut execution_engine = ExecutionEngine::new();
     let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
@@ -145,7 +246,7 @@ fn execute_multi_chain_with_engine_enhanced(
     let execution_result = execution_engine.execute_fields(
         &chains_only,
         alignment_result,
-        input_data,
+        input_data.clone(),
     ).map_err(convert_iterator_stack_error)?;
     
     let engine_duration = engine_start.elapsed();
@@ -154,18 +255,29 @@ fn execute_multi_chain_with_engine_enhanced(
     info!("📈 Enhanced ExecutionEngine produced {} index entries, {} warnings", 
           execution_result.index_entries.len(), execution_result.warnings.len());
     
-    // Log execution statistics for advanced monitoring
-    log_execution_statistics(&execution_result);
-    
-    // Aggregate results from multi-chain execution with enhanced error handling
+    Ok(execution_result)
+}
+
+/// Aggregates execution results from multi-chain execution.
+///
+/// # Arguments
+///
+/// * `parsed_chains` - The parsed chains with their field names
+/// * `execution_result` - The execution result from the engine
+/// * `input_values` - The original input values
+///
+/// # Returns
+///
+/// Aggregated result
+fn aggregate_execution_results(
+    parsed_chains: &[(String, ParsedChain)],
+    execution_result: &ExecutionResult,
+    input_values: &HashMap<String, JsonValue>,
+) -> Result<JsonValue, SchemaError> {
     let aggregation_start = Instant::now();
-    let result = crate::transform::aggregation::aggregate_multi_chain_results_enhanced(parsed_chains, &execution_result, input_values);
+    let result = crate::transform::aggregation::aggregate_multi_chain_results_enhanced(parsed_chains, execution_result, input_values);
     let aggregation_duration = aggregation_start.elapsed();
-    
-    let total_duration = start_time.elapsed();
-    info!("⏱️ Enhanced multi-chain execution completed in {:?} (conversion: {:?}, engine: {:?}, aggregation: {:?})", 
-          total_duration, conversion_duration, engine_duration, aggregation_duration);
-    
+    info!("⏱️ Aggregation took: {:?}", aggregation_duration);
     result
 }
 
