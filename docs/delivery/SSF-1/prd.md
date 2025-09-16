@@ -128,7 +128,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 
 ### Core Functionality
 1. **JsonSchemaField Default Values**: All required fields have sensible defaults, enabling empty field objects `{}` ✅ **COMPLETED**
-2. **Custom Deserialization**: Supports both string expressions and `FieldDefinition` objects in the same schema
+2. **Custom Deserialization**: Supports both string expressions and `FieldDefinition` objects in the same schema ✅ **COMPLETED**
 3. **Backward Compatibility**: All existing schemas continue to work without modification ✅ **VERIFIED**
 4. **Mixed Format Support**: Schemas can combine simplified and verbose formats within the same definition
 
@@ -173,7 +173,7 @@ This PBI will be broken down into the following tasks:
 
 1. **SSF-1-1**: Add default values to JsonSchemaField struct ✅ **COMPLETED**
 2. **SSF-1-2**: ~~Add transform_type field to DeclarativeSchemaDefinition~~ ❌ **CANCELLED**
-3. **SSF-1-3**: Implement custom deserialization for mixed format support
+3. **SSF-1-3**: Implement custom deserialization for mixed format support ✅ **COMPLETED**
 4. **SSF-1-4**: Add comprehensive unit tests for simplified formats
 5. **SSF-1-5**: Update documentation with new format examples
 6. **SSF-1-6**: E2E CoS Test - Verify simplified schemas work end-to-end
