@@ -65,7 +65,7 @@ impl TransformExecutor {
                 crate::transform::single_executor::execute_single_schema(schema, input_values)
             }
             crate::schema::types::schema::SchemaType::Range { range_key } => {
-                crate::transform::range_executor::execute_range_schema(schema, input_values, &range_key)
+                crate::transform::range_executor::execute_range_schema(schema, input_values, range_key)
             }
             crate::schema::types::schema::SchemaType::HashRange => {
                 crate::transform::hash_range_executor::execute_hashrange_schema(schema, input_values)
