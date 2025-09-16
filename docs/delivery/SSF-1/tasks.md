@@ -10,7 +10,7 @@ This document lists all tasks associated with PBI SSF-1.
 | :------ | :--------------------------------------- | :------- | :--------------------------------- |
 | SSF-1-1 | [Add default values to JsonSchemaField struct](./SSF-1-1.md) | Done | Implement default values for all required fields to support ultra-minimal schemas with empty field objects |
 | SSF-1-2 | [CANCELLED - No transform_type field requirement](./SSF-1-2.md) | Cancelled | Task cancelled - no transform_type field requirement |
-| SSF-1-3 | [Implement custom deserialization for mixed format support](./SSF-1-3.md) | Proposed | Support both string expressions and FieldDefinition objects in the same schema |
+| SSF-1-3 | [Implement custom deserialization for mixed format support](./SSF-1-3.md) | Done | Support both string expressions and FieldDefinition objects in the same schema |
 | SSF-1-4 | [Add comprehensive unit tests for simplified formats](./SSF-1-4.md) | Proposed | Test simplified format parsing, backward compatibility, and mixed formats |
 | SSF-1-5 | [Update documentation with new format examples](./SSF-1-5.md) | Proposed | Document both formats with examples and migration guide |
 | SSF-1-6 | [E2E CoS Test - Verify simplified schemas work end-to-end](./SSF-1-6.md) | Proposed | End-to-end testing to verify all acceptance criteria are met |
