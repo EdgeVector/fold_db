@@ -174,9 +174,9 @@ This PBI will be broken down into the following tasks:
 1. **SSF-1-1**: Add default values to JsonSchemaField struct ✅ **COMPLETED**
 2. **SSF-1-2**: ~~Add transform_type field to DeclarativeSchemaDefinition~~ ❌ **CANCELLED**
 3. **SSF-1-3**: Implement custom deserialization for mixed format support ✅ **COMPLETED**
-4. **SSF-1-4**: Add comprehensive unit tests for simplified formats
-5. **SSF-1-5**: Update documentation with new format examples
-6. **SSF-1-6**: E2E CoS Test - Verify simplified schemas work end-to-end
+4. **SSF-1-4**: Add comprehensive unit tests for simplified formats ✅ **COMPLETED**
+5. **SSF-1-5**: Update documentation with new format examples ✅ **COMPLETED**
+6. **SSF-1-6**: E2E CoS Test - Verify simplified schemas work end-to-end ✅ **COMPLETED**
 
 ## Benefits
 
