@@ -1,0 +1,15 @@
+{
+  "name": "BlogPost",
+  "schema_type": {
+    "Range": {
+      "range_key": "publish_date"
+    }
+  },
+  "fields": {
+    "title": {},
+    "content": {},
+    "author": {},
+    "publish_date": {},
+    "tags": {}
+  }
+}
