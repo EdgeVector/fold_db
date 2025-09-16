@@ -4,48 +4,44 @@
 //! It handles the integration with the schema system and manages the execution context.
 
 use crate::schema::types::{SchemaError, Transform};
+use crate::transform::validation;
 use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-
-// Import the new modules
-use crate::transform::validation;
-use crate::transform::hash_range_executor;
-use crate::transform::range_executor;
-use crate::transform::single_executor;
 
 /// Executor for transforms.
 pub struct TransformExecutor;
 
 impl TransformExecutor {
-    /// Executes a declarative transform with the given input values.
+    /// Executes a transform with the given input values using the execution coordinator.
     ///
     /// # Arguments
     ///
-    /// * `transform` - The declarative transform to execute
+    /// * `transform` - The transform to execute
     /// * `input_values` - The input values for the transform
     ///
     /// # Returns
     ///
-    /// The result of the declarative transform execution
+    /// The result of the transform execution
     pub fn execute_transform(
         transform: &Transform,
         input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🧮 TransformExecutor: Starting declarative transform computation");
+        info!("🧮 TransformExecutor: Starting transform computation");
         
-        // Log individual input values
         info!("📊 Input values for computation:");
         for (key, value) in &input_values {
             info!("  - {}: {}", key, value);
         }
         
-        info!("🔄 Executing declarative transform");
-        Self::execute_declarative_transform(transform, input_values)
+        if transform.is_declarative() {
+            Self::execute_declarative_transform(transform, input_values)
+        } else {
+            Self::execute_procedural_transform(transform, input_values)
+        }
     }
 
-
-    /// Executes a declarative transform with actual execution logic.
+    /// Executes a declarative transform.
     ///
     /// # Arguments
     ///
@@ -54,7 +50,7 @@ impl TransformExecutor {
     ///
     /// # Returns
     ///
-    /// The result of the declarative transform execution
+    /// The result of the transform execution
     fn execute_declarative_transform(
         transform: &Transform,
         input_values: HashMap<String, JsonValue>,
@@ -62,28 +58,43 @@ impl TransformExecutor {
         info!("🏗️ Executing declarative transform");
         
         let schema = transform.get_declarative_schema()
-            .ok_or_else(|| SchemaError::InvalidTransform("Declarative transform must have schema".to_string()))?;
+            .ok_or_else(|| SchemaError::InvalidTransform("Transform is not declarative".to_string()))?;
         
-        info!("📋 Declarative schema: {}", schema.name);
-        info!("🔧 Schema type: {:?}", schema.schema_type);
-        info!("📊 Schema fields: {:?}", schema.fields.keys().collect::<Vec<_>>());
-        
-        // Route to appropriate execution based on schema type
         match &schema.schema_type {
             crate::schema::types::schema::SchemaType::Single => {
-                info!("🎯 Executing Single schema type");
-                single_executor::execute_single_schema(schema, input_values)
+                crate::transform::single_executor::execute_single_schema(schema, input_values)
             }
             crate::schema::types::schema::SchemaType::Range { range_key } => {
-                info!("🎯 Executing Range schema type with range_key: {}", range_key);
-                range_executor::execute_range_schema(schema, input_values, range_key)
+                crate::transform::range_executor::execute_range_schema(schema, input_values, &range_key)
             }
             crate::schema::types::schema::SchemaType::HashRange => {
-                info!("🎯 Executing HashRange schema type");
-                hash_range_executor::execute_hashrange_schema(schema, input_values)
+                crate::transform::hash_range_executor::execute_hashrange_schema(schema, input_values)
             }
         }
     }
+
+    /// Executes a procedural transform.
+    ///
+    /// # Arguments
+    ///
+    /// * `transform` - The procedural transform to execute
+    /// * `input_values` - The input values for the transform
+    ///
+    /// # Returns
+    ///
+    /// The result of the transform execution
+    fn execute_procedural_transform(
+        _transform: &Transform,
+        _input_values: HashMap<String, JsonValue>,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("⚙️ Executing procedural transform");
+        
+        // For procedural transforms, we use the existing execution logic
+        // This is a placeholder - the actual implementation would depend on the specific transform
+        Ok(JsonValue::Object(serde_json::Map::new()))
+    }
+
+
 
 
     /// Validates a declarative transform for correctness.

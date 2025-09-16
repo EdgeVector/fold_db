@@ -182,38 +182,94 @@ impl InputFetcher {
     ) -> Result<JsonValue, SchemaError> {
         println!("🔍 TransformManager: Fetching schema data with context for '{}'", schema_name);
         
-        // Check if we have mutation context for incremental processing
         if let Some(ref context) = mutation_context {
             if context.incremental {
-                println!("🎯 TransformManager: Using incremental processing for schema '{}'", schema_name);
-                
-                // Get the schema definition to check if it's a range or hashrange schema
-                let schema = db_ops.get_schema(schema_name)?
-                    .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", schema_name)))?;
-                
-                // For range schemas, only fetch data for the specific range key
-                if matches!(schema.schema_type, crate::schema::types::SchemaType::Range { .. }) {
-                    if let Some(ref range_key) = context.range_key {
-                        println!("🎯 TransformManager: Fetching only range_key '{}' for schema '{}'", range_key, schema_name);
-                        return Self::fetch_schema_data_for_range_key(db_ops, schema_name, range_key);
-                    }
-                }
-                
-                // For hashrange schemas, only fetch data for the specific hash_key and range_key combination
-                if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
-                    if let (Some(ref hash_key), Some(ref range_key)) = (&context.hash_key, &context.range_key) {
-                        println!("🎯 TransformManager: Fetching only hash_key '{}' and range_key '{}' for schema '{}'", hash_key, range_key, schema_name);
-                        return Self::fetch_schema_data_for_hashrange_key(db_ops, schema_name, hash_key, range_key);
-                    }
-                }
-                
-                println!("⚠️ TransformManager: Incremental processing requested but no specific keys provided, falling back to full schema fetch");
+                return Self::handle_incremental_fetch(db_ops, schema_name, context);
             }
         }
         
         // Fall back to fetching entire schema data
         println!("🔍 TransformManager: Falling back to full schema data fetch for '{}'", schema_name);
         Self::fetch_entire_schema_data(db_ops, schema_name)
+    }
+
+    /// Handles incremental fetch based on schema type and context.
+    ///
+    /// # Arguments
+    ///
+    /// * `db_ops` - Database operations
+    /// * `schema_name` - Name of the schema
+    /// * `context` - Mutation context with keys
+    ///
+    /// # Returns
+    ///
+    /// Schema data for specific keys or full schema data
+    fn handle_incremental_fetch(
+        db_ops: &Arc<crate::db_operations::DbOperations>,
+        schema_name: &str,
+        context: &MutationContext,
+    ) -> Result<JsonValue, SchemaError> {
+        println!("🎯 TransformManager: Using incremental processing for schema '{}'", schema_name);
+        
+        let schema = db_ops.get_schema(schema_name)?
+            .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", schema_name)))?;
+        
+        if let Some(range_key) = &context.range_key {
+            if matches!(schema.schema_type, crate::schema::types::SchemaType::Range { .. }) {
+                return Self::fetch_range_schema_incremental(db_ops, schema_name, range_key);
+            }
+        }
+        
+        if let (Some(hash_key), Some(range_key)) = (&context.hash_key, &context.range_key) {
+            if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
+                return Self::fetch_hashrange_schema_incremental(db_ops, schema_name, hash_key, range_key);
+            }
+        }
+        
+        println!("⚠️ TransformManager: Incremental processing requested but no specific keys provided, falling back to full schema fetch");
+        Self::fetch_entire_schema_data(db_ops, schema_name)
+    }
+
+    /// Fetches range schema data for specific range key.
+    ///
+    /// # Arguments
+    ///
+    /// * `db_ops` - Database operations
+    /// * `schema_name` - Name of the schema
+    /// * `range_key` - Range key to fetch
+    ///
+    /// # Returns
+    ///
+    /// Schema data for the specific range key
+    fn fetch_range_schema_incremental(
+        db_ops: &Arc<crate::db_operations::DbOperations>,
+        schema_name: &str,
+        range_key: &str,
+    ) -> Result<JsonValue, SchemaError> {
+        println!("🎯 TransformManager: Fetching only range_key '{}' for schema '{}'", range_key, schema_name);
+        Self::fetch_schema_data_for_range_key(db_ops, schema_name, range_key)
+    }
+
+    /// Fetches hashrange schema data for specific hash and range keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `db_ops` - Database operations
+    /// * `schema_name` - Name of the schema
+    /// * `hash_key` - Hash key to fetch
+    /// * `range_key` - Range key to fetch
+    ///
+    /// # Returns
+    ///
+    /// Schema data for the specific hash and range key combination
+    fn fetch_hashrange_schema_incremental(
+        db_ops: &Arc<crate::db_operations::DbOperations>,
+        schema_name: &str,
+        hash_key: &str,
+        range_key: &str,
+    ) -> Result<JsonValue, SchemaError> {
+        println!("🎯 TransformManager: Fetching only hash_key '{}' and range_key '{}' for schema '{}'", hash_key, range_key, schema_name);
+        Self::fetch_schema_data_for_hashrange_key(db_ops, schema_name, hash_key, range_key)
     }
 
     /// Fetch schema data for a specific range key only
