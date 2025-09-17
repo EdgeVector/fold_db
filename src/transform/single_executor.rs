@@ -86,22 +86,13 @@ fn execute_with_execution_engine(
         }
     }
     
-    // Validate field alignment using the modified chains
+    // Validate field alignment using the unified validation function
     let modified_chains_only: Vec<crate::transform::iterator_stack::chain_parser::ParsedChain> = 
         modified_chains.iter().map(|(_, chain)| chain.clone()).collect();
-    let validator = crate::transform::iterator_stack::field_alignment::FieldAlignmentValidator::new();
-    let alignment_result = validator.validate_alignment(&modified_chains_only)
-        .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
-    
-    if !alignment_result.valid {
-        let error_messages: Vec<String> = alignment_result.errors.iter()
-            .map(|err| format!("{:?}: {}", err.error_type, err.message))
-            .collect();
-        return Err(SchemaError::InvalidField(format!(
-            "Field alignment validation failed: {}", 
-            error_messages.join("; ")
-        )));
-    }
+    let alignment_result = crate::transform::validation::validate_field_alignment_unified(
+        None, 
+        Some(&modified_chains_only)
+    )?;
     
     // Structure input data with "input" field containing the actual input values
     let mut root_object = serde_json::Map::new();

@@ -4,11 +4,11 @@
 //! transform chains together, particularly for HashRange and Range schemas.
 
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
-use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
+use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
 use crate::transform::shared_utilities::{convert_iterator_stack_error, parse_with_default_retry};
 use crate::schema::types::SchemaError;
-use log::{info, error};
+use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -132,22 +132,12 @@ fn validate_field_alignment(
 ) -> Result<AlignmentValidationResult, SchemaError> {
     let validation_start = Instant::now();
     let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
-    let validator = FieldAlignmentValidator::new();
-    let alignment_result = validator.validate_alignment(&chains_only)
-        .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
+    let alignment_result = crate::transform::validation::validate_field_alignment_unified(
+        None, 
+        Some(&chains_only)
+    )?;
     let validation_duration = validation_start.elapsed();
     info!("⏱️ Enhanced field alignment validation took: {:?}", validation_duration);
-    
-    if !alignment_result.valid {
-        let error_messages: Vec<String> = alignment_result.errors.iter()
-            .map(|err| format!("{:?}: {}", err.error_type, err.message))
-            .collect();
-        error!("🚨 Enhanced multi-chain field alignment validation failed: {}", error_messages.join("; "));
-        return Err(SchemaError::InvalidField(format!(
-            "Enhanced multi-chain field alignment validation failed: {}", 
-            error_messages.join("; ")
-        )));
-    }
     
     info!("✅ Enhanced multi-chain field alignment validation passed");
     Ok(alignment_result)

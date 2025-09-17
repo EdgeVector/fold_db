@@ -3,7 +3,6 @@
 //! This module provides validation functions for schema structure, field alignment,
 //! and other validation concerns in the transform execution framework.
 
-use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
 use crate::transform::shared_utilities::parse_atom_uuid_expression;
 use crate::schema::types::SchemaError;
@@ -60,8 +59,95 @@ pub fn validate_hashrange_schema(
 pub fn validate_field_alignment(
     schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
 ) -> Result<AlignmentValidationResult, SchemaError> {
-    info!("🔍 Validating field alignment for schema: {}", schema.name);
+    validate_field_alignment_unified(Some(schema), None)
+}
+
+/// Unified field alignment validation function that consolidates all validation logic.
+///
+/// This function eliminates duplication across executor modules by providing a single
+/// source of truth for field alignment validation.
+///
+/// # Arguments
+///
+/// * `schema` - The declarative schema definition (optional)
+/// * `parsed_chains` - Pre-parsed chains (optional, if provided, skips parsing)
+///
+/// # Returns
+///
+/// Validation result or error
+pub fn validate_field_alignment_unified(
+    schema: Option<&crate::schema::types::json_schema::DeclarativeSchemaDefinition>,
+    parsed_chains: Option<&[crate::transform::iterator_stack::chain_parser::ParsedChain]>,
+) -> Result<AlignmentValidationResult, SchemaError> {
+    // Handle case where parsed chains are provided directly (from executor modules)
+    if let Some(chains) = parsed_chains {
+        info!("🔍 Validating field alignment with {} pre-parsed chains", chains.len());
+        return validate_alignment_with_chains(chains);
+    }
     
+    // Handle case where schema is provided (original behavior)
+    if let Some(schema) = schema {
+        info!("🔍 Validating field alignment for schema: {}", schema.name);
+        return validate_alignment_from_schema(schema);
+    }
+    
+    // Neither schema nor chains provided - return empty result
+    info!("⚠️ No schema or parsed chains provided for alignment validation");
+    Ok(AlignmentValidationResult {
+        valid: true,
+        max_depth: 0,
+        field_alignments: std::collections::HashMap::new(),
+        errors: Vec::new(),
+        warnings: Vec::new(),
+    })
+}
+
+/// Validates field alignment using pre-parsed chains (for executor modules).
+///
+/// # Arguments
+///
+/// * `parsed_chains` - Pre-parsed chains from executor modules
+///
+/// # Returns
+///
+/// Validation result or error
+fn validate_alignment_with_chains(
+    parsed_chains: &[crate::transform::iterator_stack::chain_parser::ParsedChain],
+) -> Result<AlignmentValidationResult, SchemaError> {
+    if parsed_chains.is_empty() {
+        info!("⚠️ No parsed chains provided for alignment validation");
+        return Ok(AlignmentValidationResult {
+            valid: true,
+            max_depth: 0,
+            field_alignments: std::collections::HashMap::new(),
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        });
+    }
+    
+    info!("📊 Validating alignment for {} pre-parsed chains", parsed_chains.len());
+    
+    // Perform alignment validation using the unified logic
+    let validator = FieldAlignmentValidator::new();
+    let alignment_result = validator.validate_alignment(parsed_chains)
+        .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
+    
+    // Process and return the result
+    process_unified_alignment_result(&alignment_result)
+}
+
+/// Validates field alignment from schema definition (original behavior).
+///
+/// # Arguments
+///
+/// * `schema` - The declarative schema definition
+///
+/// # Returns
+///
+/// Validation result or error
+fn validate_alignment_from_schema(
+    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+) -> Result<AlignmentValidationResult, SchemaError> {
     // Collect all expressions for alignment validation
     let mut all_expressions = Vec::new();
     
@@ -99,7 +185,7 @@ pub fn validate_field_alignment(
     for (field_name, expression) in &all_expressions {
         match parse_atom_uuid_expression(expression) {
             Ok(parsed_chain) => {
-                parsed_chains.push((field_name.clone(), parsed_chain));
+                parsed_chains.push(parsed_chain);
             }
             Err(parse_error) => {
                 parsing_errors.push((field_name.clone(), expression.clone(), parse_error));
@@ -129,12 +215,27 @@ pub fn validate_field_alignment(
         });
     }
     
-    // Perform alignment validation
-    let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
+    // Perform alignment validation using the unified logic
     let validator = FieldAlignmentValidator::new();
-    let alignment_result = validator.validate_alignment(&chains_only)
+    let alignment_result = validator.validate_alignment(&parsed_chains)
         .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
     
+    // Process and return the result
+    process_unified_alignment_result(&alignment_result)
+}
+
+/// Processes alignment validation results with unified error handling and logging.
+///
+/// # Arguments
+///
+/// * `alignment_result` - The result from field alignment validation
+///
+/// # Returns
+///
+/// Processed validation result
+fn process_unified_alignment_result(
+    alignment_result: &AlignmentValidationResult,
+) -> Result<AlignmentValidationResult, SchemaError> {
     // Debug: Log all field alignments generated
     info!("🔍 Generated {} field alignments:", alignment_result.field_alignments.len());
     for (expression, alignment_info) in &alignment_result.field_alignments {
@@ -142,33 +243,11 @@ pub fn validate_field_alignment(
               expression, alignment_info.alignment, alignment_info.depth, alignment_info.requires_reducer);
     }
     
-    process_alignment_validation_result(&alignment_result, &parsed_chains)
-}
-
-/// Processes alignment validation results and provides detailed feedback.
-///
-/// # Arguments
-///
-/// * `alignment_result` - The result from field alignment validation
-/// * `parsed_chains` - The parsed chains for context
-///
-/// # Returns
-///
-/// Processed validation result
-fn process_alignment_validation_result(
-    alignment_result: &AlignmentValidationResult,
-    parsed_chains: &[(String, ParsedChain)],
-) -> Result<AlignmentValidationResult, SchemaError> {
     if !alignment_result.valid {
         let error_messages: Vec<String> = alignment_result.errors.iter()
             .map(|err| format!("{:?}: {}", err.error_type, err.message))
             .collect();
         error!("🚨 Field alignment validation failed: {}", error_messages.join("; "));
-        
-        // Log detailed information about the chains that failed
-        for (field_name, parsed_chain) in parsed_chains {
-            info!("🔍 Failed chain for field '{}': {:?}", field_name, parsed_chain);
-        }
         
         return Err(SchemaError::InvalidField(format!(
             "Field alignment validation failed: {}", 
@@ -183,7 +262,7 @@ fn process_alignment_validation_result(
         info!("⚠️ Field alignment validation warnings: {}", warning_messages.join("; "));
     }
     
-    
     info!("✅ Field alignment validation passed");
     Ok(alignment_result.clone())
 }
+
