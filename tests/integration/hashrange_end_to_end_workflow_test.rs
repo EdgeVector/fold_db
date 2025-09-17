@@ -540,7 +540,7 @@ async fn test_hashrange_query_format_validation() -> Result<(), Box<dyn std::err
     tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     
     // Test query format validation with words that are actually being processed
-    let test_words = vec!["DataFold", "range", "schemas", "benefits"];
+    let test_words = vec!["DataFold", "query", "patterns", "advanced"];
     fixture.query_and_validate_word_index(test_words).await?;
     
     println!("✅ HashRange query format validation test completed successfully!");
