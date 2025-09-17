@@ -291,19 +291,52 @@ impl FieldEvaluator for DefaultFieldEvaluator {
             }
             ChainOperation::SplitByWord => {
                 debug!("process_operation - SplitByWord operation");
-                if let Value::String(text) = &current_value {
-                    let words: Vec<&str> = text.split_whitespace().collect();
-                    if let Some(first_word) = words.first() {
-                        debug!("process_operation - returning first word: {}", first_word);
-                        Ok(Value::String(first_word.to_string()))
+                
+                // Handle different data formats
+                let text_to_split = if let Value::String(text) = &current_value {
+                    // Direct string format: "blahblah"
+                    text.clone()
+                } else if let Value::Array(array) = &current_value {
+                    // Array format: [{"value": "blahblah"}]
+                    if let Some(first_item) = array.first() {
+                        if let Some(value_obj) = first_item.as_object() {
+                            if let Some(value_str) = value_obj.get("value").and_then(|v| v.as_str()) {
+                                debug!("process_operation - extracted text from array format: '{}'", value_str);
+                                value_str.to_string()
+                            } else {
+                                debug!("process_operation - array item doesn't have 'value' field");
+                                return Ok(Value::Null);
+                            }
+                        } else {
+                            debug!("process_operation - array item is not an object");
+                            return Ok(Value::Null);
+                        }
                     } else {
-                        debug!("process_operation - no words found in text");
-                        Ok(Value::Null)
+                        debug!("process_operation - array is empty");
+                        return Ok(Value::Null);
+                    }
+                } else if let Value::Object(obj) = &current_value {
+                    // Object format: {"value": "blahblah"}
+                    if let Some(value_str) = obj.get("value").and_then(|v| v.as_str()) {
+                        debug!("process_operation - extracted text from object format: '{}'", value_str);
+                        value_str.to_string()
+                    } else {
+                        debug!("process_operation - object doesn't have 'value' field");
+                        return Ok(Value::Null);
                     }
                 } else {
-                    debug!("process_operation - current_value is not a string: {}", current_value);
-                    Ok(current_value)
-                }
+                    debug!("process_operation - current_value is neither string, array, nor object: {}", current_value);
+                    return Ok(current_value);
+                };
+                
+           let words: Vec<&str> = text_to_split.split_whitespace().collect();
+           if let Some(first_word) = words.first() {
+               debug!("process_operation - returning first word: {}", first_word);
+               Ok(Value::String(first_word.to_string()))
+           } else {
+               debug!("process_operation - no words found in text");
+               Ok(Value::Null)
+           }
             }
             ChainOperation::Reducer(_reducer_name) => {
                 debug!("process_operation - Reducer operation (not implemented)");

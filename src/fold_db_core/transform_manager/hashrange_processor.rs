@@ -119,7 +119,7 @@ impl HashRangeProcessor {
         info!("🚀 Processing HashRange data with {} hash keys and {} range keys", 
               transform_data.hash_keys.len(), transform_data.range_keys.len());
 
-        let content_field_name = Self::find_content_field(field_names);
+        let _content_field_name = Self::find_content_field(field_names);
         
         // Handle the case where hash_key array contains all words from all content
         // and range_key array contains the publish dates
@@ -127,17 +127,22 @@ impl HashRangeProcessor {
             info!("🔧 Detected flattened structure: {} hash keys vs {} range keys", 
                   transform_data.hash_keys.len(), transform_data.range_keys.len());
             
+            // Use the words already extracted by the transform execution engine
+            let words_from_transform = transform_data.hash_keys.iter()
+                .filter_map(|key| key.as_str())
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>();
+            
+            info!("🔍 Using {} words from transform execution engine: {:?}", words_from_transform.len(), words_from_transform);
+            
             // Process each range key (content entry) and create word mutations
             for range_index in 0..transform_data.range_keys.len() {
                 let field_values = Self::extract_field_values_for_entry(transform_data, field_names, range_index);
                 let range = transform_data.range_keys[range_index].clone();
                 
-                let content = Self::extract_content_from_field_values(&field_values, &content_field_name);
-                let words = Self::extract_words_from_content(&content);
+                debug!("🔍 Processing range entry {}: using {} words from transform", range_index, words_from_transform.len());
                 
-                debug!("🔍 Processing range entry {}: extracted {} words", range_index, words.len());
-                
-                Self::submit_word_mutations(schema_name, &words, &field_values, &range, message_bus)?;
+                Self::submit_word_mutations(schema_name, &words_from_transform, &field_values, &range, message_bus)?;
             }
         } else {
             // Original logic for matching array lengths
@@ -145,12 +150,16 @@ impl HashRangeProcessor {
                 let field_values = Self::extract_field_values_for_entry(transform_data, field_names, data_index);
                 let range = transform_data.range_keys[data_index].clone();
                 
-                let content = Self::extract_content_from_field_values(&field_values, &content_field_name);
-                let words = Self::extract_words_from_content(&content);
+                // Use the word from the hash_key array (already extracted by transform execution engine)
+                let word_from_transform = transform_data.hash_keys[data_index].as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
                 
-                debug!("🔍 Processing data entry {}: extracted {} words", data_index, words.len());
+                debug!("🔍 Processing data entry {}: using word '{}' from transform", data_index, word_from_transform);
                 
-                Self::submit_word_mutations(schema_name, &words, &field_values, &range, message_bus)?;
+                if !word_from_transform.is_empty() {
+                    Self::submit_word_mutations(schema_name, &[word_from_transform], &field_values, &range, message_bus)?;
+                }
             }
         }
         
@@ -191,25 +200,6 @@ impl HashRangeProcessor {
         field_values
     }
 
-    /// Extract content string from field values
-    fn extract_content_from_field_values(
-        field_values: &HashMap<String, JsonValue>,
-        content_field_name: &str
-    ) -> String {
-        field_values.get(content_field_name)
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string()
-    }
-
-    /// Extract words from content string
-    fn extract_words_from_content(content: &str) -> Vec<String> {
-        content
-            .split_whitespace()
-            .map(|word| word.trim_matches(|c: char| c.is_ascii_punctuation()).to_string())
-            .filter(|word| !word.is_empty())
-            .collect()
-    }
 
     /// Submit mutations for all words in a data entry
     fn submit_word_mutations(

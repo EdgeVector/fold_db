@@ -396,6 +396,48 @@ impl SchemaCore {
         }
         
         info!("✅ Successfully registered declarative transform '{}' for schema '{}'", transform_id, schema.name);
+        
+        // BACKFILL: Trigger the transform to process existing data
+        info!("🔄 BACKFILL: Triggering declarative transform '{}' to process existing data", transform_id);
+        self.trigger_transform_backfill(&transform_id)?;
+        
+        Ok(())
+    }
+    
+    /// Trigger a transform to process existing data (backfill mechanism)
+    /// 
+    /// PURPOSE: When a declarative transform is registered, it should automatically
+    /// process all existing data in the source schemas to create the initial index.
+    /// 
+    /// FLOW: Transform registration → Backfill trigger → Transform execution
+    /// 
+    /// This method:
+    /// 1. Publishes a TransformTriggered event for the transform
+    /// 2. The event system will automatically queue and execute the transform
+    /// 3. The transform will process all existing data in the source schemas
+    fn trigger_transform_backfill(&self, transform_id: &str) -> Result<(), SchemaError> {
+        use crate::fold_db_core::infrastructure::message_bus::events::schema_events::TransformTriggered;
+        
+        info!("🔄 BACKFILL: Publishing TransformTriggered event for backfill: {}", transform_id);
+        
+        // Create a TransformTriggered event for backfill
+        let triggered_event = TransformTriggered::new(transform_id.to_string());
+        
+        // Publish the event to trigger transform execution
+        match self.message_bus.publish(triggered_event) {
+            Ok(()) => {
+                info!("✅ BACKFILL: Successfully published TransformTriggered event for: {}", transform_id);
+            }
+            Err(e) => {
+                log_feature!(LogFeature::Schema, error, "❌ BACKFILL: Failed to publish TransformTriggered event for {}: {}", transform_id, e);
+                return Err(SchemaError::InvalidData(format!(
+                    "Failed to publish TransformTriggered event for backfill {}: {}",
+                    transform_id, e
+                )));
+            }
+        }
+        
+        info!("✅ BACKFILL: Transform '{}' backfill trigger completed", transform_id);
         Ok(())
     }
     
