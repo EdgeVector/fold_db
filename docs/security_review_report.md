@@ -113,26 +113,34 @@ let cors = Cors::default()
 
 | Endpoint | Authentication | Risk Level | Notes |
 |----------|---------------|------------|-------|
-| `/api/security/*` | Required | ✅ Low | Properly protected |
-| `/api/schemas/*` | None | ⚠️ Medium | Should consider auth for mutations |
-| `/api/ingestion/*` | None | 🚨 High | Processes external data |
-| `/api/system/*` | None | 🚨 High | Administrative functions |
-| `/api/logs/*` | None | ⚠️ Medium | May leak sensitive data |
+| `/api/security/*` | None | ⚠️ Medium | Development mode - no auth required |
+| `/api/schemas/*` | None | ⚠️ Medium | Development mode - no auth required |
+| `/api/ingestion/*` | None | 🚨 High | Development mode - processes external data |
+| `/api/system/*` | None | 🚨 High | Development mode - administrative functions |
+| `/api/logs/*` | None | ⚠️ Medium | Development mode - may leak sensitive data |
 
-### 🚨 CRITICAL ISSUES
+### 🚨 DEVELOPMENT MODE SECURITY NOTES
 
-#### 1. Unauthenticated Administrative Endpoints
-**Location:** [`src/datafold_node/http_server.rs:238-240`](../src/datafold_node/http_server.rs#L238)
+#### 1. All Endpoints Unauthenticated
+**Location:** [`src/datafold_node/query_routes.rs:120-135`](../src/datafold_node/query_routes.rs#L120)
 ```rust
-.route("/system/reset-database", web::post().to(system_routes::reset_database))
+// Create a mock verification result for mutations (no signing required)
+let verification_data = VerificationResult {
+    is_valid: true,
+    public_key_info: Some(crate::security::types::PublicKeyInfo {
+        id: "web-ui".to_string(),
+        // ... mock verification data
+    }),
+    // ...
+};
 ```
-**Impact:** Database reset available without authentication.
-**Recommendation:** Require admin-level authentication for destructive operations.
+**Impact:** All endpoints use mock authentication for development.
+**Status:** This is intentional for development mode.
 
-#### 2. Unauthenticated Data Ingestion
-**Location:** [`src/datafold_node/http_server.rs:177-180`](../src/datafold_node/http_server.rs#L177)
-**Impact:** External data processing without authentication creates attack vectors.
-**Recommendation:** Require authentication for data ingestion endpoints.
+#### 2. Administrative Endpoints Accessible
+**Location:** [`src/datafold_node/http_server.rs:238-240`](../src/datafold_node/http_server.rs#L238)
+**Impact:** Database reset and other admin functions available without authentication.
+**Status:** Development mode - authentication disabled for all endpoints.
 
 ### Missing Security Controls
 
