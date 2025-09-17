@@ -4,7 +4,10 @@
 //! form of declarative transforms without range semantics or complex indexing.
 
 use crate::schema::types::{SchemaError, json_schema::DeclarativeSchemaDefinition};
-use crate::transform::shared_utilities::{parse_atom_uuid_expression, convert_iterator_stack_error, resolve_field_value_from_chain};
+use crate::transform::shared_utilities::{
+    convert_iterator_stack_error, resolve_field_value_from_chain,
+    collect_expressions_from_schema, parse_expressions_batch, modify_expressions_with_input_prefix
+};
 use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -45,14 +48,8 @@ fn execute_with_execution_engine(
 ) -> Result<JsonValue, SchemaError> {
     info!("🚀 Executing Single schema with ExecutionEngine: {}", schema.name);
     
-    // Collect all expressions for execution
-    let mut all_expressions = Vec::new();
-    
-    for (field_name, field_def) in &schema.fields {
-        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-            all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
-        }
-    }
+    // Collect all expressions for execution using unified function
+    let all_expressions = collect_expressions_from_schema(schema);
     
     if all_expressions.is_empty() {
         info!("⚠️ No expressions found for Single schema execution");
@@ -61,30 +58,11 @@ fn execute_with_execution_engine(
     
     info!("📊 Executing {} expressions for Single schema", all_expressions.len());
     
-    // Parse all expressions and modify them to add "input." prefix if needed
-    let mut modified_chains = Vec::new();
-    let mut modified_expressions = Vec::new();
+    // Modify expressions to add "input." prefix if needed using unified function
+    let modified_expressions = modify_expressions_with_input_prefix(&all_expressions, true);
     
-    for (field_name, expression) in &all_expressions {
-        let modified_expression = if expression.starts_with("input.") {
-            expression.clone()
-        } else {
-            format!("input.{}", expression)
-        };
-        
-        // Parse the modified expression
-        match parse_atom_uuid_expression(&modified_expression) {
-            Ok(modified_chain) => {
-                modified_chains.push((field_name.clone(), modified_chain));
-                modified_expressions.push((field_name.clone(), modified_expression));
-            }
-            Err(err) => {
-                info!("⚠️ Failed to parse modified expression for field '{}': {}, will try fallback", field_name, err);
-                // For parsing failures, we'll handle them in aggregation by trying fallback resolution
-                // Don't fail the entire execution, just skip this field for ExecutionEngine
-            }
-        }
-    }
+    // Parse all modified expressions using unified batch parsing
+    let modified_chains = parse_expressions_batch(&modified_expressions)?;
     
     // Validate field alignment using the unified validation function
     let modified_chains_only: Vec<crate::transform::iterator_stack::chain_parser::ParsedChain> = 
@@ -107,7 +85,7 @@ fn execute_with_execution_engine(
     ).map_err(convert_iterator_stack_error)?;
     
     // Aggregate results into final output format
-    aggregate_single_results(&modified_chains, &execution_result, input_values, &all_expressions)
+    aggregate_single_results(&modified_chains, &execution_result, input_values, &modified_expressions)
 }
 
 /// Aggregates results from ExecutionEngine into final output format for Single schemas.
