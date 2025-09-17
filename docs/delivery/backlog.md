@@ -4,7 +4,9 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 
 ## PBIs
 
-*No active PBIs currently in the backlog.*
+| ID | Actor | User Story | Status | Conditions of Satisfaction (CoS) |
+|----|-------|------------|--------|-----------------------------------|
+| DTS-DEDUP-1 | Developer | As a developer, I want to eliminate duplicate code patterns in declarative transforms so I can reduce maintenance burden, improve consistency, and reduce the codebase by 40-50% | **Proposed** | Field alignment validation consolidated into unified module, expression parsing duplication eliminated across executor modules, result aggregation patterns unified, error handling standardized, expression collection logic consolidated, shared utilities expanded, base executor trait implemented, comprehensive testing maintains functionality, code duplication reduced by 40-50%. [View Details](./DTS-DEDUP-1/prd.md) |
 
 ## PBI History
 
@@ -18,6 +20,7 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 | 20250630-103830 | UCR-1 | create_pbi | Created PBI for component complexity reduction and UI maintainability | User |
 | 20250127-180000 | SSF-1 | create_pbi | Created PBI for simplified schema formats implementation to reduce boilerplate by 90% while maintaining backward compatibility | User |
 | 20250127-230500 | SSF-1 | approve | PBI completed successfully with all 6 tasks finished: default values, custom deserialization, comprehensive testing, documentation updates, and E2E validation. All acceptance criteria met with 90% boilerplate reduction achieved. | User |
+| 20250117-154500 | DTS-DEDUP-1 | create_pbi | Created PBI for eliminating duplicate code patterns in declarative transforms to reduce maintenance burden, improve consistency, and reduce codebase by 40-50% | AI Agent |
 
 
 
