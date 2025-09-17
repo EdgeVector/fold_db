@@ -142,17 +142,50 @@ impl IteratorManager {
                 debug!("WordSplit iterator - looking for field '{}' in data", field_name);
                 if let Some(field_value) = data.get(field_name) {
                     debug!("Found field '{}' with value: {}", field_name, field_value);
-                    if let Some(text) = field_value.as_str() {
-                        let words: Vec<Value> = text
-                            .split_whitespace()
-                            .map(|word| Value::String(word.to_string()))
-                            .collect();
-                        debug!("Split text '{}' into {} words: {:?}", text, words.len(), words);
-                        Ok(words)
+                    
+                    // Handle different data formats
+                    let text_to_split = if let Some(text) = field_value.as_str() {
+                        // Direct string format: "blahblah"
+                        text.to_string()
+                    } else if let Some(array) = field_value.as_array() {
+                        // Array format: [{"value": "blahblah"}]
+                        if let Some(first_item) = array.first() {
+                            if let Some(value_obj) = first_item.as_object() {
+                                if let Some(value_str) = value_obj.get("value").and_then(|v| v.as_str()) {
+                                    debug!("WordSplit iterator - extracted text from array format: '{}'", value_str);
+                                    value_str.to_string()
+                                } else {
+                                    debug!("WordSplit iterator - array item doesn't have 'value' field");
+                                    return Ok(vec![]);
+                                }
+                            } else {
+                                debug!("WordSplit iterator - array item is not an object");
+                                return Ok(vec![]);
+                            }
+                        } else {
+                            debug!("WordSplit iterator - array is empty");
+                            return Ok(vec![]);
+                        }
+                    } else if let Some(obj) = field_value.as_object() {
+                        // Object format: {"value": "blahblah"}
+                        if let Some(value_str) = obj.get("value").and_then(|v| v.as_str()) {
+                            debug!("WordSplit iterator - extracted text from object format: '{}'", value_str);
+                            value_str.to_string()
+                        } else {
+                            debug!("WordSplit iterator - object doesn't have 'value' field");
+                            return Ok(vec![]);
+                        }
                     } else {
-                        debug!("Field '{}' is not a string, returning empty", field_name);
-                        Ok(vec![])
-                    }
+                        debug!("WordSplit iterator - field '{}' is neither string, array, nor object, returning empty", field_name);
+                        return Ok(vec![]);
+                    };
+                    
+               let words: Vec<Value> = text_to_split
+                   .split_whitespace()
+                   .map(|word| Value::String(word.to_string()))
+                   .collect();
+               debug!("Split text '{}' into {} words: {:?}", text_to_split, words.len(), words);
+                    Ok(words)
                 } else {
                     debug!("Field '{}' not found in data structure", field_name);
                     Ok(vec![])

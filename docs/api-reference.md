@@ -1474,7 +1474,7 @@ curl -H "X-Signature: ed25519:signature-hash" \
 
 - `200 OK`: Request succeeded
 - `400 Bad Request`: Invalid request format
-- `401 Unauthorized`: Authentication required
+- `401 Unauthorized`: Authentication required (currently disabled in development mode)
 - `403 Forbidden`: Permission denied
 - `404 Not Found`: Resource not found
 - `402 Payment Required`: Payment needed

@@ -295,21 +295,10 @@ interface SignedMessage {
 
 ### Execute Mutation
 - **Endpoint**: `POST /api/mutation`
-- **Description**: Execute a signed mutation operation
-- **Request Body Type**: `SignedMessage`
-- **Authentication**: Requires valid Ed25519 signature
+- **Description**: Execute a mutation operation
+- **Request Body Type**: `MutationRequest`
+- **Authentication**: None required (uses "web-ui" as default pub_key)
 - **Request Body Structure**:
-  ```json
-  {
-    "payload": "base64-encoded-mutation-json",
-    "signature": "ed25519-signature-hex",
-    "public_key_id": "user-public-key-identifier",
-    "timestamp": 1672531200
-  }
-  ```
-- **Payload Examples** (before base64 encoding):
-  
-  Create mutation:
   ```json
   {
     "type": "mutation",
@@ -325,6 +314,7 @@ interface SignedMessage {
     }
   }
   ```
+- **Additional Examples**:
   
   Update mutation:
   ```json
@@ -1026,10 +1016,8 @@ Common error codes returned in the `details.code` field:
 - `SCHEMA_ALREADY_EXISTS`: Attempted to create duplicate schema
 
 #### Authentication/Security Errors
-- `SIGNATURE_INVALID`: Ed25519 signature verification failed
-- `PUBLIC_KEY_NOT_FOUND`: Referenced public key not registered
-- `TIMESTAMP_EXPIRED`: Request timestamp too old
 - `PERMISSION_DENIED`: Insufficient permissions for operation
+- Note: Authentication is currently disabled for all endpoints
 
 #### Network Errors
 - `NETWORK_NOT_INITIALIZED`: Network service must be initialized first
@@ -1050,17 +1038,16 @@ Common error codes returned in the `details.code` field:
 - **Default Identity**: `web-ui` with `trust_distance: 0`
 
 ### Mutation Operations
-- **Authentication**: Ed25519 signature required
+- **Authentication**: None required (uses "web-ui" as default pub_key)
 - **Process**: 
-  1. Payload is base64 encoded
-  2. Message signed with private key
-  3. Signature verified against registered public key
-  4. Public key permissions checked
+  1. Mutation request sent directly as JSON
+  2. Server processes with mock verification
+  3. Uses "web-ui" identity for all operations
 
-### Protected Endpoints
-- Some endpoints may require specific permissions
-- Authentication handled via signed message verification
-- Permission requirements vary by endpoint
+### All Endpoints
+- **Authentication**: None required for any endpoint
+- **Default Identity**: All operations use "web-ui" with `trust_distance: 0`
+- **Development Mode**: Simplified authentication for development and testing
 
 ---
 

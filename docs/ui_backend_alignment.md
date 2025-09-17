@@ -87,10 +87,10 @@ All API clients follow standardized patterns:
 - **Error handling**: Standardized error types and user-friendly messages
 
 ### Authentication Integration
-- **Redux integration**: Authentication state managed centrally
-- **Automatic signing**: Requests requiring auth are automatically signed with Ed25519
+- **Development mode**: Authentication is currently disabled for all endpoints
+- **Default identity**: All requests use "web-ui" identity automatically
 - **Schema validation**: SCHEMA-002 compliance enforced at API layer
-- **Key management**: Secure key generation and validation
+- **Simplified access**: No key management required for development
 
 ## Missing Components Analysis
 
@@ -107,9 +107,9 @@ All API clients follow standardized patterns:
 ## Security & Best Practices ✅ VERIFIED
 
 ### Authentication Requirements
-- **Unprotected endpoints**: Status, logs, schema reading, transforms reading
-- **Protected endpoints**: Mutations, schema state changes, system operations, ingestion
-- **Signature verification**: All mutations require Ed25519 signatures
+- **All endpoints**: Currently unprotected for development
+- **Default identity**: All operations use "web-ui" identity automatically
+- **No signature verification**: Simplified development mode
 - **Schema compliance**: Only approved schemas can be used for mutations/queries
 
 ### Error Handling

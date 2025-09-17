@@ -9,7 +9,7 @@ use crate::transform::iterator_stack::types::IteratorStack;
 use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use serde_json::Value;
 use std::collections::HashMap;
-use log::debug;
+use log::{debug, info};
 
 use super::types::{ExecutionContext, ExecutionResult, ExecutionStatistics};
 use super::scope_creation::ScopeCreationHelper;
@@ -64,19 +64,27 @@ impl ExecutionEngine {
         }
         
         // Debug: Log all expressions being processed
-        debug!("🔍 ExecutionEngine received {} chains with {} unique expressions:", chains.len(), expression_groups.len());
+        info!("🔍 ExecutionEngine received {} chains with {} unique expressions:", chains.len(), expression_groups.len());
         for (expression, chain_group) in &expression_groups {
-            debug!("  📝 Expression: '{}' (used by {} chains)", expression, chain_group.len());
+            info!("  📝 Expression: '{}' (used by {} chains)", expression, chain_group.len());
         }
 
         // Execute each unique expression only once
         for (expression, chain_group) in expression_groups.iter() {
-            debug!("Executing unique expression: {} (used by {} fields)", expression, chain_group.len());
+            info!("Executing unique expression: {} (used by {} fields)", expression, chain_group.len());
             
             // Use the first chain as the representative for execution
             let representative_chain = chain_group[0];
+            
+            // Add debug logging for complex expressions
+            if expression.contains("split_by_word") {
+                info!("🔍 Processing complex expression with split_by_word: {}", expression);
+                info!("🔍 Chain operations: {:?}", representative_chain.operations);
+                info!("🔍 Chain depth: {}", representative_chain.depth);
+            }
+            
             let field_result = self.execute_single_field(representative_chain, &context)?;
-            debug!("Expression '{}' produced {} entries", expression, field_result.entries.len());
+            info!("Expression '{}' produced {} entries", expression, field_result.entries.len());
 
             // Add the results once (not duplicated for each field)
             index_entries.extend(field_result.entries);

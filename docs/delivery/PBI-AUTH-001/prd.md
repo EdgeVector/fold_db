@@ -2,6 +2,10 @@
 
 [View in Backlog](../backlog.md#user-content-PBI-AUTH-001)
 
+## ⚠️ CURRENT STATUS: DISABLED FOR DEVELOPMENT
+
+**Note**: This PBI is currently **NOT IMPLEMENTED** in the system. All endpoints operate in development mode with authentication disabled. All requests automatically use "web-ui" identity without requiring signatures or authentication.
+
 ## Overview
 
 This PBI implements a comprehensive authenticated request signing system that requires users to provide authentication (passphrase/PIN) to unlock their client-side private key for signing API requests. The system builds upon existing Ed25519 infrastructure to provide secure, user-controlled authentication with automatic tab unlocking capabilities and re-authentication flows.
