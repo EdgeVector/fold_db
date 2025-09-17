@@ -4,7 +4,7 @@
 //! and other validation concerns in the transform execution framework.
 
 use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
-use crate::transform::shared_utilities::parse_atom_uuid_expression;
+use crate::transform::shared_utilities::{parse_atom_uuid_expression, collect_expressions_from_schema};
 use crate::schema::types::SchemaError;
 use log::{info, error};
 
@@ -148,15 +148,8 @@ fn validate_alignment_with_chains(
 fn validate_alignment_from_schema(
     schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
 ) -> Result<AlignmentValidationResult, SchemaError> {
-    // Collect all expressions for alignment validation
-    let mut all_expressions = Vec::new();
-    
-    // Add expressions from schema fields
-    for (field_name, field_def) in &schema.fields {
-        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-            all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
-        }
-    }
+    // Collect all expressions for alignment validation using unified function
+    let mut all_expressions = collect_expressions_from_schema(schema);
     
     // Add HashRange special field expressions if this is a HashRange schema
     if let Some(key_config) = &schema.key {

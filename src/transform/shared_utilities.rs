@@ -189,6 +189,130 @@ pub fn parse_with_default_retry(expression: &str, field_name: &str) -> Result<Pa
     parse_with_retry(expression, field_name, 2)
 }
 
+/// Parses multiple expressions in batch with unified error handling.
+///
+/// This function consolidates the duplicate batch parsing logic that was previously
+/// scattered across multiple executor modules.
+///
+/// # Arguments
+///
+/// * `expressions` - Vector of (field_name, expression) pairs to parse
+///
+/// # Returns
+///
+/// Vector of (field_name, ParsedChain) pairs for successfully parsed expressions
+pub fn parse_expressions_batch(expressions: &[(String, String)]) -> Result<Vec<(String, ParsedChain)>, SchemaError> {
+    let mut parsed_chains = Vec::new();
+    let mut parsing_errors = Vec::new();
+    
+    for (field_name, expression) in expressions {
+        match parse_atom_uuid_expression(expression) {
+            Ok(parsed_chain) => {
+                parsed_chains.push((field_name.clone(), parsed_chain));
+            }
+            Err(err) => {
+                parsing_errors.push((field_name.clone(), expression.clone(), err));
+            }
+        }
+    }
+    
+    // Log warnings for failed expressions but don't fail the entire batch
+    if !parsing_errors.is_empty() {
+        let error_messages: Vec<String> = parsing_errors.iter()
+            .map(|(field, expr, err)| format!("Field '{}' expression '{}': {}", field, expr, err))
+            .collect();
+        log::warn!("⚠️ {} expressions failed to parse (will use fallback): {}", 
+                   parsing_errors.len(), error_messages.join("; "));
+    }
+    
+    Ok(parsed_chains)
+}
+
+/// Collects all expressions from a schema definition.
+///
+/// This function consolidates the duplicate expression collection logic that was
+/// previously scattered across multiple executor modules.
+///
+/// # Arguments
+///
+/// * `schema` - The declarative schema definition
+///
+/// # Returns
+///
+/// Vector of (field_name, expression) pairs
+pub fn collect_expressions_from_schema(
+    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+) -> Vec<(String, String)> {
+    let mut all_expressions = Vec::new();
+    
+    for (field_name, field_def) in &schema.fields {
+        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+            all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
+        }
+    }
+    
+    all_expressions
+}
+
+/// Collects expressions from schema with additional key expressions.
+///
+/// This function consolidates the duplicate expression collection logic that was
+/// previously scattered across coordination and range executor modules.
+///
+/// # Arguments
+///
+/// * `schema` - The declarative schema definition
+/// * `key_expressions` - Additional key expressions to include (e.g., hash_field, range_field)
+///
+/// # Returns
+///
+/// Vector of (field_name, expression) pairs
+pub fn collect_expressions_from_schema_with_keys(
+    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    key_expressions: &[(String, String)],
+) -> Vec<(String, String)> {
+    let mut all_expressions = Vec::new();
+    
+    // Add key expressions first
+    all_expressions.extend(key_expressions.iter().cloned());
+    
+    // Add regular field expressions from schema
+    all_expressions.extend(collect_expressions_from_schema(schema));
+    
+    all_expressions
+}
+
+/// Modifies expressions to add input prefix if needed.
+///
+/// This function consolidates the duplicate expression modification logic that was
+/// previously scattered across executor modules.
+///
+/// # Arguments
+///
+/// * `expressions` - Vector of (field_name, expression) pairs
+/// * `add_input_prefix` - Whether to add "input." prefix to expressions that don't have it
+///
+/// # Returns
+///
+/// Vector of (field_name, modified_expression) pairs
+pub fn modify_expressions_with_input_prefix(
+    expressions: &[(String, String)],
+    add_input_prefix: bool,
+) -> Vec<(String, String)> {
+    if !add_input_prefix {
+        return expressions.to_vec();
+    }
+    
+    expressions.iter().map(|(field_name, expression)| {
+        let modified_expression = if expression.starts_with("input.") {
+            expression.clone()
+        } else {
+            format!("input.{}", expression)
+        };
+        (field_name.clone(), modified_expression)
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,5 +392,117 @@ mod tests {
         let operations = vec![];
         let path = extract_simple_path_from_operations(&operations);
         assert_eq!(path, "");
+    }
+
+    #[test]
+    fn test_parse_expressions_batch_success() {
+        let expressions = vec![
+            ("field1".to_string(), "input.value1".to_string()),
+            ("field2".to_string(), "input.value2".to_string()),
+        ];
+        
+        let result = parse_expressions_batch(&expressions);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_parse_expressions_batch_failure() {
+        let expressions = vec![
+            ("field1".to_string(), "input.value1".to_string()),
+            ("field2".to_string(), "invalid..syntax".to_string()),
+        ];
+        
+        let result = parse_expressions_batch(&expressions);
+        assert!(result.is_ok());
+        
+        // Should return only the successfully parsed expressions
+        let parsed_chains = result.unwrap();
+        assert_eq!(parsed_chains.len(), 1);
+        assert_eq!(parsed_chains[0].0, "field1");
+    }
+
+    #[test]
+    fn test_collect_expressions_from_schema() {
+        use crate::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
+        use crate::schema::types::schema::SchemaType;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: "test_schema".to_string(),
+            schema_type: SchemaType::Single,
+            key: None,
+            fields: HashMap::from([
+                ("field1".to_string(), FieldDefinition {
+                    atom_uuid: Some("input.value1".to_string()),
+                    field_type: None,
+                }),
+                ("field2".to_string(), FieldDefinition {
+                    atom_uuid: Some("input.value2".to_string()),
+                    field_type: None,
+                }),
+                ("field3".to_string(), FieldDefinition {
+                    atom_uuid: None,
+                    field_type: None,
+                }),
+            ]),
+        };
+        
+        let expressions = collect_expressions_from_schema(&schema);
+        assert_eq!(expressions.len(), 2);
+        
+        // Check that both fields are present (order is not guaranteed with HashMap)
+        let field_names: Vec<&String> = expressions.iter().map(|(name, _)| name).collect();
+        assert!(field_names.contains(&&"field1".to_string()));
+        assert!(field_names.contains(&&"field2".to_string()));
+        
+        // Check the expressions
+        let expressions_map: HashMap<String, String> = expressions.into_iter().collect();
+        assert_eq!(expressions_map.get("field1"), Some(&"input.value1".to_string()));
+        assert_eq!(expressions_map.get("field2"), Some(&"input.value2".to_string()));
+    }
+
+    #[test]
+    fn test_collect_expressions_from_schema_with_keys() {
+        use crate::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
+        use crate::schema::types::schema::SchemaType;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: "test_schema".to_string(),
+            schema_type: SchemaType::Single,
+            key: None,
+            fields: HashMap::from([
+                ("field1".to_string(), FieldDefinition {
+                    atom_uuid: Some("input.value1".to_string()),
+                    field_type: None,
+                }),
+            ]),
+        };
+        
+        let key_expressions = vec![
+            ("_hash_field".to_string(), "input.hash".to_string()),
+            ("_range_field".to_string(), "input.range".to_string()),
+        ];
+        
+        let expressions = collect_expressions_from_schema_with_keys(&schema, &key_expressions);
+        assert_eq!(expressions.len(), 3);
+        assert_eq!(expressions[0].0, "_hash_field");
+        assert_eq!(expressions[1].0, "_range_field");
+        assert_eq!(expressions[2].0, "field1");
+    }
+
+    #[test]
+    fn test_modify_expressions_with_input_prefix() {
+        let expressions = vec![
+            ("field1".to_string(), "input.value1".to_string()),
+            ("field2".to_string(), "value2".to_string()),
+        ];
+        
+        let modified = modify_expressions_with_input_prefix(&expressions, true);
+        assert_eq!(modified[0].1, "input.value1"); // Already has prefix
+        assert_eq!(modified[1].1, "input.value2"); // Added prefix
+        
+        let unmodified = modify_expressions_with_input_prefix(&expressions, false);
+        assert_eq!(unmodified[0].1, "input.value1"); // No change
+        assert_eq!(unmodified[1].1, "value2"); // No change
     }
 }

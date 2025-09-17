@@ -6,7 +6,10 @@
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
-use crate::transform::shared_utilities::{convert_iterator_stack_error, parse_with_default_retry};
+use crate::transform::shared_utilities::{
+    convert_iterator_stack_error, 
+    collect_expressions_from_schema_with_keys, parse_expressions_batch
+};
 use crate::schema::types::SchemaError;
 use log::info;
 use serde_json::Value as JsonValue;
@@ -43,7 +46,7 @@ pub fn execute_multi_chain_coordination_with_monitoring(
     Ok(result)
 }
 
-/// Collects all expressions from schema and key configuration.
+/// Collects all expressions from schema and key configuration using unified function.
 ///
 /// # Arguments
 ///
@@ -57,18 +60,13 @@ fn collect_all_expressions(
     schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
     key_config: &crate::schema::types::json_schema::KeyConfig,
 ) -> Result<Vec<(String, String)>, SchemaError> {
-    let mut all_expressions = Vec::new();
+    // Use unified function to collect expressions with key expressions
+    let key_expressions = vec![
+        ("_hash_field".to_string(), key_config.hash_field.clone()),
+        ("_range_field".to_string(), key_config.range_field.clone()),
+    ];
     
-    // Add key expressions (hash_field and range_field) - these are expressions, not field names
-    all_expressions.push(("_hash_field".to_string(), key_config.hash_field.clone()));
-    all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
-    
-    // Add regular field expressions from schema
-    for (field_name, field_def) in &schema.fields {
-        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-            all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
-        }
-    }
+    let all_expressions = collect_expressions_from_schema_with_keys(schema, &key_expressions);
     
     info!("📊 Coordinating {} expressions for enhanced multi-chain execution", all_expressions.len());
     Ok(all_expressions)
@@ -87,33 +85,19 @@ fn parse_expressions_with_monitoring(
     expressions: &[(String, String)],
 ) -> Result<Vec<(String, ParsedChain)>, SchemaError> {
     let parsing_start = Instant::now();
-    let mut parsed_chains = Vec::new();
-    let mut parsing_errors = Vec::new();
     
-    for (field_name, expression) in expressions {
-        info!("🔗 Parsing expression for field '{}': {}", field_name, expression);
-        
-        match parse_with_default_retry(expression, field_name) {
-            Ok(parsed_chain) => {
-                parsed_chains.push((field_name.clone(), parsed_chain));
-                info!("✅ Successfully parsed expression for field '{}'", field_name);
-            }
-            Err(parse_error) => {
-                info!("⚠️ Failed to parse expression for field '{}': {}", field_name, parse_error);
-                parsing_errors.push((field_name.clone(), expression.clone(), parse_error));
-            }
-        }
-    }
+    info!("🔗 Starting batch parsing of {} expressions", expressions.len());
+    
+    // Use unified batch parsing function
+    let parsed_chains = parse_expressions_batch(expressions)?;
     
     let parsing_duration = parsing_start.elapsed();
     info!("⏱️ Enhanced parsing took: {:?}", parsing_duration);
     
-    // Check if we have enough parsed chains to proceed
-    if parsed_chains.is_empty() {
-        return Err(SchemaError::InvalidField(
-            "No expressions could be parsed for enhanced multi-chain coordination".to_string()
-        ));
-    }
+    // Log parsing statistics
+    let success_rate = (parsed_chains.len() as f64 / expressions.len() as f64) * 100.0;
+    info!("📊 Parsing completed: {}/{} expressions parsed successfully ({:.1}% success rate)", 
+          parsed_chains.len(), expressions.len(), success_rate);
     
     Ok(parsed_chains)
 }

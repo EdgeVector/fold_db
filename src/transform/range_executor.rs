@@ -6,7 +6,10 @@
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
-use crate::transform::shared_utilities::{parse_atom_uuid_expression, convert_iterator_stack_error, resolve_field_value_from_chain};
+use crate::transform::shared_utilities::{
+    convert_iterator_stack_error, resolve_field_value_from_chain,
+    collect_expressions_from_schema_with_keys, parse_expressions_batch
+};
 use crate::schema::types::SchemaError;
 use log::info;
 use serde_json::Value as JsonValue;
@@ -58,18 +61,9 @@ fn execute_range_coordination(
 ) -> Result<JsonValue, SchemaError> {
     info!("🔧 Executing Range coordination for schema: {} with range_key: {}", schema.name, range_key);
     
-    // Collect all expressions for Range coordination
-    let mut all_expressions = Vec::new();
-    
-    // Add range key expression
-    all_expressions.push(("_range_field".to_string(), range_key.to_string()));
-    
-    // Add regular field expressions from schema
-    for (field_name, field_def) in &schema.fields {
-        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-            all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
-        }
-    }
+    // Collect all expressions for Range coordination using unified function
+    let key_expressions = vec![("_range_field".to_string(), range_key.to_string())];
+    let all_expressions = collect_expressions_from_schema_with_keys(schema, &key_expressions);
     
     info!("📊 Coordinating {} expressions for Range execution", all_expressions.len());
     
@@ -95,31 +89,9 @@ fn execute_range_multi_chain_coordination(
 ) -> Result<JsonValue, SchemaError> {
     info!("🚀 Executing Range multi-chain coordination");
     
-    // Parse all expressions using ChainParser
-    let mut parsed_chains = Vec::new();
-    let mut parsing_errors = Vec::new();
-    
-    for (field_name, expression) in &all_expressions {
-        info!("🔗 Parsing expression for field '{}': {}", field_name, expression);
-        
-        match parse_atom_uuid_expression(expression) {
-            Ok(parsed_chain) => {
-                parsed_chains.push((field_name.clone(), parsed_chain));
-                info!("✅ Successfully parsed expression for field '{}'", field_name);
-            }
-            Err(parse_error) => {
-                info!("⚠️ Failed to parse expression for field '{}': {}", field_name, parse_error);
-                parsing_errors.push((field_name.clone(), expression.clone(), parse_error));
-            }
-        }
-    }
-    
-    // Check if we have enough parsed chains to proceed
-    if parsed_chains.is_empty() {
-        return Err(SchemaError::InvalidField(
-            "No expressions could be parsed for Range coordination".to_string()
-        ));
-    }
+    // Parse all expressions using unified batch parsing
+    let parsed_chains = parse_expressions_batch(&all_expressions)?;
+    info!("✅ Successfully parsed {} expressions", parsed_chains.len());
     
     // Validate field alignment using the unified validation function
     let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
