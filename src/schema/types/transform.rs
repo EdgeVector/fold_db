@@ -433,32 +433,18 @@ impl Transform {
             )));
         }
 
-        // Validate field alignment across all expressions
+        // Validate field alignment across all expressions using unified validation
         if !parsed_chains.is_empty() {
-            let validator = FieldAlignmentValidator::new();
-            match validator.validate_alignment(&parsed_chains) {
+            match crate::transform::validation::validate_field_alignment_unified(None, Some(&parsed_chains)) {
                 Ok(alignment_result) => {
-                    if !alignment_result.valid {
-                        let error_messages: Vec<String> = alignment_result.errors.iter()
-                            .map(|err| format!("{:?}: {}", err.error_type, err.message))
-                            .collect();
-                        return Err(crate::schema::types::SchemaError::InvalidField(format!(
-                            "Transform field alignment validation failed: {}", 
-                            error_messages.join("; ")
-                        )));
-                    }
-
                     // Provide guidance on warnings
                     for warning in &alignment_result.warnings {
                         log::warn!("Transform validation warning: {:?}: {} (Fields: {})", 
                                   warning.warning_type, warning.message, warning.fields.join(", "));
                     }
                 }
-                Err(iterator_error) => {
-                    return Err(crate::schema::types::SchemaError::InvalidField(format!(
-                        "Transform field alignment error: {}", 
-                        self.convert_iterator_error_to_readable_message(&iterator_error)
-                    )));
+                Err(schema_error) => {
+                    return Err(schema_error);
                 }
             }
         }
