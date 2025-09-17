@@ -4,11 +4,11 @@
 //! validation, coordination, and multi-chain execution.
 
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
-use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
+use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
 use crate::transform::shared_utilities::{parse_atom_uuid_expression, convert_iterator_stack_error, resolve_field_value_from_chain};
 use crate::schema::types::SchemaError;
-use log::{info, error};
+use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -121,22 +121,12 @@ fn execute_range_multi_chain_coordination(
         ));
     }
     
-    // Validate field alignment across all chains
+    // Validate field alignment using the unified validation function
     let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
-    let validator = FieldAlignmentValidator::new();
-    let alignment_result = validator.validate_alignment(&chains_only)
-        .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
-    
-    if !alignment_result.valid {
-        let error_messages: Vec<String> = alignment_result.errors.iter()
-            .map(|err| format!("{:?}: {}", err.error_type, err.message))
-            .collect();
-        error!("🚨 Range multi-chain field alignment validation failed: {}", error_messages.join("; "));
-        return Err(SchemaError::InvalidField(format!(
-            "Range multi-chain field alignment validation failed: {}", 
-            error_messages.join("; ")
-        )));
-    }
+    let alignment_result = crate::transform::validation::validate_field_alignment_unified(
+        None, 
+        Some(&chains_only)
+    )?;
     
     info!("✅ Range multi-chain field alignment validation passed");
     
