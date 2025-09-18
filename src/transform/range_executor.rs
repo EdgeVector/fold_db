@@ -5,11 +5,12 @@
 
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
-use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
+use crate::transform::iterator_stack::execution_engine::ExecutionEngine;
 use crate::transform::shared_utilities::{
-    convert_iterator_stack_error, resolve_field_value_from_chain,
+    convert_iterator_stack_error,
     collect_expressions_from_schema_with_keys, parse_expressions_batch
 };
+use crate::transform::aggregation::{aggregate_results_unified, SchemaType};
 use crate::schema::types::SchemaError;
 use log::info;
 use serde_json::Value as JsonValue;
@@ -139,90 +140,12 @@ fn execute_multi_chain_with_engine(
     
     info!("📈 Multi-chain ExecutionEngine produced {} index entries", execution_result.index_entries.len());
     
-    // Aggregate results from multi-chain execution
-    aggregate_multi_chain_results(parsed_chains, &execution_result, input_values)
+    // Reconstruct expressions from parsed chains for unified aggregation
+    let all_expressions: Vec<(String, String)> = parsed_chains.iter()
+        .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
+        .collect();
+    
+    // Aggregate results from multi-chain execution using unified aggregation
+    aggregate_results_unified(parsed_chains, &execution_result, input_values, &all_expressions, SchemaType::Range)
 }
 
-/// Aggregates results from multi-chain execution into final output format.
-///
-/// # Arguments
-///
-/// * `parsed_chains` - The parsed chains with their field names
-/// * `execution_result` - The execution result from ExecutionEngine
-/// * `input_values` - The original input values for fallback
-///
-/// # Returns
-///
-/// The aggregated result object
-fn aggregate_multi_chain_results(
-    parsed_chains: &[(String, ParsedChain)],
-    execution_result: &ExecutionResult,
-    input_values: &HashMap<String, JsonValue>,
-) -> Result<JsonValue, SchemaError> {
-    info!("🔄 Aggregating results from multi-chain execution");
-    
-    let mut result_object = serde_json::Map::new();
-    
-    if execution_result.index_entries.is_empty() {
-        info!("⚠️ ExecutionEngine produced empty results, using fallback resolution");
-        
-        // Fallback resolution for empty results
-        for (field_name, parsed_chain) in parsed_chains {
-            let field_value = match resolve_field_value(parsed_chain, input_values, field_name) {
-                Ok(value) => value,
-                Err(err) => {
-                    info!("⚠️ Fallback resolution failed for field '{}': {}", field_name, err);
-                    JsonValue::Null
-                }
-            };
-            
-            // Special handling for key fields (don't include in final output)
-            if !field_name.starts_with('_') {
-                result_object.insert(field_name.clone(), field_value);
-            }
-        }
-    } else {
-        info!("✅ Using ExecutionEngine results for multi-chain coordination");
-        
-        // Process results from ExecutionEngine
-        for (i, (field_name, _)) in parsed_chains.iter().enumerate() {
-            if let Some(entry) = execution_result.index_entries.get(i) {
-                let field_value = serde_json::to_value(&entry.hash_value).unwrap_or(JsonValue::Null);
-                
-                // Special handling for key fields (don't include in final output)
-                if !field_name.starts_with('_') {
-                    result_object.insert(field_name.clone(), field_value);
-                }
-            } else {
-                // No entry for this field, use null
-                if !field_name.starts_with('_') {
-                    result_object.insert(field_name.clone(), JsonValue::Null);
-                }
-            }
-        }
-    }
-    
-    let result = JsonValue::Object(result_object);
-    info!("✨ Range aggregation completed: {}", result);
-    Ok(result)
-}
-
-/// Resolves field value from parsed chain with fallback.
-///
-/// # Arguments
-///
-/// * `parsed_chain` - The parsed chain to resolve
-/// * `input_values` - The input values for fallback
-/// * `field_name` - The field name for context
-///
-/// # Returns
-///
-/// Resolved field value or error
-fn resolve_field_value(
-    parsed_chain: &ParsedChain,
-    input_values: &HashMap<String, JsonValue>,
-    field_name: &str,
-) -> Result<JsonValue, SchemaError> {
-    // Use shared utility for field resolution
-    resolve_field_value_from_chain(parsed_chain, input_values, field_name)
-}
