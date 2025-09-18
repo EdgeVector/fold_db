@@ -10,6 +10,7 @@ use crate::transform::shared_utilities::{
     convert_iterator_stack_error, 
     collect_expressions_from_schema_with_keys, parse_expressions_batch
 };
+use crate::transform::aggregation::{aggregate_results_unified, SchemaType};
 use crate::schema::types::SchemaError;
 use log::info;
 use serde_json::Value as JsonValue;
@@ -172,7 +173,11 @@ fn execute_multi_chain_with_engine_enhanced(
     let input_data = convert_input_values_to_json(input_values)?;
     let execution_result = execute_with_engine(parsed_chains, &input_data, alignment_result)?;
     log_execution_statistics(&execution_result);
-    let result = aggregate_execution_results(parsed_chains, &execution_result, input_values)?;
+    // Reconstruct expressions from parsed chains for unified aggregation
+    let all_expressions: Vec<(String, String)> = parsed_chains.iter()
+        .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
+        .collect();
+    let result = aggregate_results_unified(parsed_chains, &execution_result, input_values, &all_expressions, SchemaType::HashRange)?;
     
     let total_duration = start_time.elapsed();
     info!("⏱️ Enhanced multi-chain execution completed in {:?}", total_duration);
@@ -232,28 +237,6 @@ fn execute_with_engine(
     Ok(execution_result)
 }
 
-/// Aggregates execution results from multi-chain execution.
-///
-/// # Arguments
-///
-/// * `parsed_chains` - The parsed chains with their field names
-/// * `execution_result` - The execution result from the engine
-/// * `input_values` - The original input values
-///
-/// # Returns
-///
-/// Aggregated result
-fn aggregate_execution_results(
-    parsed_chains: &[(String, ParsedChain)],
-    execution_result: &ExecutionResult,
-    input_values: &HashMap<String, JsonValue>,
-) -> Result<JsonValue, SchemaError> {
-    let aggregation_start = Instant::now();
-    let result = crate::transform::aggregation::aggregate_multi_chain_results_enhanced(parsed_chains, execution_result, input_values);
-    let aggregation_duration = aggregation_start.elapsed();
-    info!("⏱️ Aggregation took: {:?}", aggregation_duration);
-    result
-}
 
 /// Logs execution statistics for advanced monitoring.
 ///
@@ -271,45 +254,6 @@ fn log_execution_statistics(execution_result: &ExecutionResult) {
         }
     }
     
-    // Analyze execution quality
-    let analysis = analyze_execution_results(execution_result);
-    info!("  - Quality score: {:.2}", analysis.quality_score);
-    info!("  - Has placeholders: {}", analysis.has_placeholders);
-    
-    if !analysis.issues.is_empty() {
-        info!("  - Issues detected: {}", analysis.issues.join(", "));
-    }
 }
 
-/// Analyzes execution results for placeholder detection and quality assessment.
-fn analyze_execution_results(execution_result: &ExecutionResult) -> crate::transform::aggregation::ExecutionAnalysis {
-    let mut analysis = crate::transform::aggregation::ExecutionAnalysis {
-        has_placeholders: false,
-        quality_score: 1.0,
-        issues: Vec::new(),
-    };
-    
-    // Check for placeholder content
-    for entry in &execution_result.index_entries {
-        if entry.hash_value.to_string().contains("placeholder") || 
-           entry.range_value.to_string().contains("placeholder") ||
-           entry.hash_value.to_string().contains("null") ||
-           entry.range_value.to_string().contains("null") {
-            analysis.has_placeholders = true;
-            analysis.quality_score -= 0.1;
-            analysis.issues.push("Contains placeholder values".to_string());
-        }
-    }
-    
-    // Check for warnings
-    if !execution_result.warnings.is_empty() {
-        analysis.quality_score -= 0.2;
-        analysis.issues.push(format!("{} warnings generated", execution_result.warnings.len()));
-    }
-    
-    // Ensure quality score doesn't go below 0
-    analysis.quality_score = analysis.quality_score.max(0.0);
-    
-    analysis
-}
 
