@@ -535,7 +535,7 @@ async fn test_blog_word_index_declarative_transform_workflow() {
     
     // Check that we have range entries with actual data
     let mut has_datafold_data = false;
-    for (range_key, range_data) in datafold_word_obj {
+    for (_range_key, range_data) in datafold_word_obj {
         if let Some(range_obj) = range_data.as_object() {
             if range_obj.values().any(|v| !v.is_null()) {
                 has_datafold_data = true;

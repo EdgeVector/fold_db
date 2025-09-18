@@ -43,7 +43,7 @@ fn test_single_schema_execution_with_simple_fields() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Single schema execution should succeed");
     
@@ -95,7 +95,7 @@ fn test_single_schema_execution_with_dotted_paths() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Dotted path execution should succeed");
     
@@ -137,7 +137,7 @@ fn test_single_schema_execution_with_missing_fields() {
     // Note: "nonexistent" is not provided
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Execution should succeed even with missing fields");
     
@@ -177,7 +177,7 @@ fn test_single_schema_execution_skips_function_calls() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Function call skipping should succeed");
     
@@ -212,7 +212,7 @@ fn test_range_and_hashrange_schemas_use_placeholder() {
     );
 
     let input_values = HashMap::new();
-    let range_result = TransformExecutor::execute_transform_with_expr(&range_transform, input_values.clone());
+    let range_result = TransformExecutor::execute_transform(&range_transform, input_values.clone());
     
     // Range schemas now have actual execution, not placeholders
     match range_result {
@@ -251,7 +251,7 @@ fn test_range_and_hashrange_schemas_use_placeholder() {
         "output.hashrange_test".to_string(),
     );
 
-    let hashrange_result = TransformExecutor::execute_transform_with_expr(&hashrange_transform, input_values);
+    let hashrange_result = TransformExecutor::execute_transform(&hashrange_transform, input_values);
     
     // HashRange schemas now have actual execution, not placeholders
     match hashrange_result {

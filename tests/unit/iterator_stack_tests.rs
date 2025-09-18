@@ -3,8 +3,7 @@
 //! Comprehensive test suite for the iterator stack functionality,
 //! including scope management, iterator operations, and state handling.
 
-use datafold::transform::iterator_stack::chain_parser::{ChainParser, ChainOperation};
-use datafold::transform::iterator_stack::chain_parser;
+use datafold::transform::iterator_stack::chain_parser::ChainParser;
 use datafold::transform::iterator_stack::types::{
     IteratorStack, ActiveScope, IteratorType, IteratorConfig, MemoryHint, IteratorState
 };
@@ -694,9 +693,9 @@ fn test_iterator_stack_from_chain() {
 #[test]
 fn test_iterator_stack_from_chain_exceeds_max_depth() {
     let parser = ChainParser::new();
-    let mut stack = IteratorStack::with_max_depth(1);
+    let _stack = IteratorStack::with_max_depth(1);
     
-    let chain = parser.parse("blogpost.map().content.split_by_word().map()").unwrap();
+    let _chain = parser.parse("blogpost.map().content.split_by_word().map()").unwrap();
     
     // This test is removed because build_from_chain is private
     // The functionality is tested through the public from_chain method

@@ -120,7 +120,7 @@ fn test_end_to_end_declarative_transform_workflow() {
         "published_date": "2025-01-27"
     }));
     
-    let result = TransformExecutor::execute_transform_with_expr(
+    let result = TransformExecutor::execute_transform(
         &transforms[&"blog_processor".to_string()],
         input_values
     ).expect("Failed to execute declarative transform");
@@ -233,7 +233,7 @@ fn test_complex_declarative_transform_scenarios() {
     let transforms = fixture.transform_manager.list_transforms()
         .expect("Failed to list transforms");
     
-    let result = TransformExecutor::execute_transform_with_expr(
+    let result = TransformExecutor::execute_transform(
         &transforms[&"analytics_processor".to_string()],
         complex_input_values
     ).expect("Failed to execute HashRange transform");
@@ -311,7 +311,7 @@ fn test_error_recovery_and_edge_cases() {
         .expect("Failed to list transforms");
     
     // Test execution with malformed data - should handle gracefully
-    let result = TransformExecutor::execute_transform_with_expr(
+    let result = TransformExecutor::execute_transform(
         &transforms[&"simple_processor".to_string()],
         malformed_input_values
     );
@@ -332,7 +332,7 @@ fn test_error_recovery_and_edge_cases() {
     // Test with empty input data
     let empty_input_values = HashMap::new();
     
-    let empty_result = TransformExecutor::execute_transform_with_expr(
+    let empty_result = TransformExecutor::execute_transform(
         &transforms[&"simple_processor".to_string()],
         empty_input_values
     );
@@ -405,7 +405,7 @@ fn test_performance_under_various_conditions() {
             "value": format!("test_value_{}", i)
         }));
         
-        let result = TransformExecutor::execute_transform_with_expr(
+        let result = TransformExecutor::execute_transform(
             &transforms[transform_id],
             input_values
         ).expect("Failed to execute performance transform");

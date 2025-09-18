@@ -59,7 +59,7 @@ fn test_hashrange_compound_key_structure() {
     ]));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -199,8 +199,8 @@ fn test_hashrange_vs_regular_schema_distinction() {
     ])));
 
     // Execute both transforms
-    let hashrange_result = TransformExecutor::execute_transform_with_expr(&hashrange_transform, input_values.clone());
-    let regular_result = TransformExecutor::execute_transform_with_expr(&regular_transform, input_values);
+    let hashrange_result = TransformExecutor::execute_transform(&hashrange_transform, input_values.clone());
+    let regular_result = TransformExecutor::execute_transform(&regular_transform, input_values);
 
     // Both should execute without crashing
     match (hashrange_result, regular_result) {

@@ -57,7 +57,7 @@ fn test_basic_range_schema_execution() {
     ]));
 
     // Execute the transform - should handle Range schema with range coordination
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // May succeed or fail depending on ExecutionEngine behavior - the important thing is no crash
     match result {
@@ -122,7 +122,7 @@ fn test_range_schema_validation() {
     }));
 
     // Execute the transform - should validate and execute or fail gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -163,7 +163,7 @@ fn test_range_schema_missing_range_key_field() {
     let input_values = HashMap::new();
 
     // Execute the transform - should fail due to missing range_key field
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_err(), "Range schema with missing range_key field should fail");
     
@@ -204,7 +204,7 @@ fn test_range_schema_field_without_atom_uuid() {
     let input_values = HashMap::new();
 
     // Execute the transform - should fail due to missing atom_uuid in range_key field
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_err(), "Range schema with range_key field missing atom_uuid should fail");
     
@@ -254,7 +254,7 @@ fn test_range_schema_with_complex_expressions() {
     ]));
 
     // Execute the transform - complex expressions may succeed or fail validation
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Complex expressions might fail alignment validation, which is acceptable
     match result {
@@ -303,7 +303,7 @@ fn test_range_schema_with_single_field() {
     }));
 
     // Execute the transform - should handle single field Range schema
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -346,7 +346,7 @@ fn test_range_schema_backward_compatibility() {
     }));
 
     // Execute the transform - Single schemas should still work
-    let result = TransformExecutor::execute_transform_with_expr(&single_transform, input_values);
+    let result = TransformExecutor::execute_transform(&single_transform, input_values);
     
     assert!(result.is_ok(), "Single schemas should maintain backward compatibility after Range implementation");
     
@@ -384,7 +384,7 @@ fn test_range_schema_error_handling() {
     input_values.insert("test".to_string(), serde_json::json!({"data": "test"}));
 
     // Execute the transform - should handle errors gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should either succeed with fallback or fail gracefully
     match result {
@@ -461,8 +461,8 @@ fn test_range_vs_hashrange_distinction() {
     }));
 
     // Execute both transforms
-    let range_result = TransformExecutor::execute_transform_with_expr(&range_transform, input_values.clone());
-    let hashrange_result = TransformExecutor::execute_transform_with_expr(&hashrange_transform, input_values);
+    let range_result = TransformExecutor::execute_transform(&range_transform, input_values.clone());
+    let hashrange_result = TransformExecutor::execute_transform(&hashrange_transform, input_values);
 
     // Both should execute without confusion about their different structures
     // Range schema should process range_key as a regular field

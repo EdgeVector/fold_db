@@ -232,13 +232,13 @@ fn test_mixed_transform_scenarios() {
     });
     
     // Execute procedural transform
-    let procedural_result = TransformExecutor::execute_transform_with_expr(
+    let procedural_result = TransformExecutor::execute_transform(
         &transforms[&"procedural_double".to_string()],
         procedural_data
     ).expect("Failed to execute procedural transform");
     
     // Execute declarative transform
-    let declarative_result = TransformExecutor::execute_transform_with_expr(
+    let declarative_result = TransformExecutor::execute_transform(
         &transforms[&"declarative_process".to_string()],
         declarative_data
     ).expect("Failed to execute declarative transform");
@@ -446,7 +446,7 @@ fn test_backward_compatibility_integration() {
         "input_field": 5
     });
     
-    let result = TransformExecutor::execute_transform_with_expr(
+    let result = TransformExecutor::execute_transform(
         &transforms[&"legacy_procedural".to_string()],
         input_data
     ).expect("Failed to execute procedural transform");

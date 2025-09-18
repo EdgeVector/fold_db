@@ -63,7 +63,7 @@ fn test_hashrange_performance_monitoring() {
     ]));
 
     // Execute the transform - should include performance monitoring
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // The main test is that performance monitoring doesn't crash and provides useful logging
     match result {
@@ -123,7 +123,7 @@ fn test_hashrange_enhanced_error_recovery() {
     }));
 
     // Execute the transform - enhanced error recovery should handle partial failures
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -177,7 +177,7 @@ fn test_hashrange_retry_mechanism() {
     }));
 
     // Execute the transform - retry mechanism should be tested internally
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // The retry mechanism is internal - we test that it doesn't break execution
     match result {
@@ -230,7 +230,7 @@ fn test_hashrange_execution_statistics_logging() {
     }));
 
     // Execute the transform - should log execution statistics
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Statistics logging is internal - we test that it doesn't break execution
     match result {
@@ -287,7 +287,7 @@ fn test_hashrange_enhanced_fallback_resolution() {
     }));
 
     // Execute the transform - enhanced fallback should work
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -352,7 +352,7 @@ fn test_hashrange_optimal_field_value_extraction() {
     }));
 
     // Execute the transform - optimal field extraction should work
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -408,7 +408,7 @@ fn test_hashrange_execution_analysis() {
     }));
 
     // Execute the transform - execution analysis should be performed internally
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Execution analysis is internal - we test that it doesn't interfere with results
     match result {
@@ -464,7 +464,7 @@ fn test_hashrange_advanced_timing_measurements() {
     }));
 
     // Execute the transform - advanced timing should be measured internally
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Timing measurements are internal - we test that they don't break execution
     match result {
@@ -533,7 +533,7 @@ fn test_hashrange_advanced_features_integration() {
     ]));
 
     // Execute the transform - all advanced features should work together
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Test that all advanced features (performance monitoring, error recovery, 
     // enhanced fallback, retry mechanisms, etc.) work together without conflicts

@@ -216,7 +216,7 @@ fn test_execution_performance_under_various_conditions() {
             })
         };
         
-        let result = TransformExecutor::execute_transform_with_expr(
+        let result = TransformExecutor::execute_transform(
             &transforms[transform_id],
             input_data
         ).expect("Failed to execute transform");
@@ -325,7 +325,7 @@ fn test_concurrent_execution_performance() {
             })
         };
         
-        let result = TransformExecutor::execute_transform_with_expr(
+        let result = TransformExecutor::execute_transform(
             &transforms[transform_id],
             input_data
         ).expect("Failed to execute concurrent transform");
@@ -401,7 +401,7 @@ fn test_scalability_with_increasing_data_sizes() {
         });
         
         let execution_start = Instant::now();
-        let result = TransformExecutor::execute_transform_with_expr(
+        let result = TransformExecutor::execute_transform(
             &transforms[&"scalability_transform".to_string()],
             input_data
         ).expect("Failed to execute scalability transform");
@@ -501,7 +501,7 @@ fn test_performance_regression_prevention() {
         "input_value": 10
     });
     
-    let procedural_result = TransformExecutor::execute_transform_with_expr(
+    let procedural_result = TransformExecutor::execute_transform(
         &transforms[&"baseline_procedural".to_string()],
         procedural_input
     ).expect("Failed to execute procedural transform");
@@ -513,7 +513,7 @@ fn test_performance_regression_prevention() {
         }
     });
     
-    let declarative_result = TransformExecutor::execute_transform_with_expr(
+    let declarative_result = TransformExecutor::execute_transform(
         &transforms[&"baseline_declarative".to_string()],
         declarative_input
     ).expect("Failed to execute declarative transform");

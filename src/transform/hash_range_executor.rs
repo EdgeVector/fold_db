@@ -6,6 +6,7 @@
 use crate::schema::types::SchemaError;
 use crate::transform::validation::ValidationTimings;
 use crate::transform::coordination::execute_multi_chain_coordination_with_monitoring;
+use crate::transform::shared_utilities::log_schema_execution_start;
 use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -33,7 +34,7 @@ pub fn execute_hashrange_schema(
     input_values: HashMap<String, JsonValue>,
 ) -> Result<JsonValue, SchemaError> {
     let start_time = Instant::now();
-    info!("🔧 Executing HashRange schema: {}", schema.name);
+    log_schema_execution_start("HashRange", &schema.name, None);
     
     // Validate schema structure and field alignment
     let validation_timings = crate::transform::validation::validate_hashrange_schema(schema)?;

@@ -120,22 +120,6 @@ impl TransformExecutor {
         Ok(())
     }
 
-    /// Executes a transform with the given input values (alias for execute_transform).
-    ///
-    /// # Arguments
-    ///
-    /// * `transform` - The transform to execute
-    /// * `input_values` - The input values for the transform
-    ///
-    /// # Returns
-    ///
-    /// The result of the transform execution
-    pub fn execute_transform_with_expr(
-        transform: &Transform,
-        input_values: HashMap<String, JsonValue>,
-    ) -> Result<JsonValue, SchemaError> {
-        Self::execute_transform(transform, input_values)
-    }
 }
 
 #[cfg(test)]
