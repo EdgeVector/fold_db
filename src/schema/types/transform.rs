@@ -20,12 +20,17 @@ use std::collections::HashSet;
 /// # Example
 ///
 /// ```
-/// use datafold::schema::types::Transform;
+/// use datafold::schema::types::{Transform, json_schema::DeclarativeSchemaDefinition, SchemaType};
+/// use std::collections::HashMap;
 ///
-/// let transform = Transform::new(
-///     "let bmi = weight / (height ^ 2); return 0.5 * blood_pressure + 1.2 * bmi;".to_string(),
-///     "health.risk_score".to_string(),
-/// );
+/// let schema = DeclarativeSchemaDefinition {
+///     name: "health_schema".to_string(),
+///     schema_type: SchemaType::Single,
+///     fields: HashMap::new(),
+///     key: None,
+/// };
+///
+/// let transform = Transform::new(schema, "health.risk_score".to_string());
 /// ```
 /// Parameters for registering a transform
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,9 +63,9 @@ pub struct Transform {
     /// Output field for this transform in `Schema.field` format
     pub output: String,
 
-    /// The transform kind (procedural or declarative)
+    /// The declarative schema definition
     #[serde(flatten)]
-    pub kind: crate::schema::types::json_schema::TransformKind,
+    pub schema: crate::schema::types::json_schema::DeclarativeSchemaDefinition,
 
     /// The parsed expression (not serialized, used for procedural transforms)
     #[serde(skip)]
@@ -77,18 +82,12 @@ impl<'de> serde::Deserialize<'de> for Transform {
         #[serde(untagged)]
         enum Helper {
             Str(String),
-            // Legacy struct format with logic field (backward compatibility)
-            LegacyStruct {
-                inputs: Option<Vec<String>>,
-                logic: String,
-                output: String,
-            },
-            // New struct format with kind field
+            // New struct format with schema field
             NewStruct {
                 inputs: Option<Vec<String>>,
                 output: String,
                 #[serde(flatten)]
-                kind: crate::schema::types::json_schema::TransformKind,
+                schema: crate::schema::types::json_schema::DeclarativeSchemaDefinition,
             },
         }
 
@@ -100,24 +99,14 @@ impl<'de> serde::Deserialize<'de> for Transform {
                 })?;
                 Ok(Self::from_declaration(decl))
             }
-            Helper::LegacyStruct {
-                inputs,
-                logic,
-                output,
-            } => Ok(Self {
-                inputs: inputs.unwrap_or_default(),
-                output,
-                kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
-                parsed_expression: None,
-            }),
             Helper::NewStruct {
                 inputs,
                 output,
-                kind,
+                schema,
             } => Ok(Self {
                 inputs: inputs.unwrap_or_default(),
                 output,
-                kind,
+                schema,
                 parsed_expression: None,
             }),
         }
@@ -125,31 +114,17 @@ impl<'de> serde::Deserialize<'de> for Transform {
 }
 
 impl Transform {
-    /// Creates a new procedural `Transform` from raw logic and output field.
+    /// Creates a new declarative `Transform` from schema definition and output field.
     #[must_use]
-    pub fn new(logic: String, output: String) -> Self {
+    pub fn new(schema: crate::schema::types::json_schema::DeclarativeSchemaDefinition, output: String) -> Self {
         Self {
             inputs: Vec::new(),
             output,
-            kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
+            schema,
             parsed_expression: None,
         }
     }
 
-    /// Creates a new procedural `Transform` with a pre-parsed expression.
-    #[must_use]
-    pub fn new_with_expr(
-        logic: String,
-        parsed_expression: crate::transform::ast::Expression,
-        output: String,
-    ) -> Self {
-        Self {
-            inputs: Vec::new(),
-            output,
-            kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
-            parsed_expression: Some(parsed_expression),
-        }
-    }
 
     /// Creates a new declarative `Transform` from schema definition.
     #[must_use]
@@ -161,37 +136,33 @@ impl Transform {
         Self {
             inputs,
             output,
-            kind: crate::schema::types::json_schema::TransformKind::Declarative { schema },
+            schema,
             parsed_expression: None,
         }
     }
 
     /// Returns true if this is a declarative transform.
+    /// Since only declarative transforms are supported, this always returns true.
     pub fn is_declarative(&self) -> bool {
-        matches!(self.kind, crate::schema::types::json_schema::TransformKind::Declarative { .. })
+        true
     }
 
     /// Returns true if this is a procedural transform.
+    /// Since procedural transforms are no longer supported, this always returns false.
     pub fn is_procedural(&self) -> bool {
-        matches!(self.kind, crate::schema::types::json_schema::TransformKind::Procedural { .. })
+        false
     }
 
-    /// Gets the declarative schema if this is a declarative transform.
+    /// Gets the declarative schema.
+    /// Since only declarative transforms are supported, this always returns the schema.
     pub fn get_declarative_schema(&self) -> Option<&crate::schema::types::json_schema::DeclarativeSchemaDefinition> {
-        if let crate::schema::types::json_schema::TransformKind::Declarative { schema } = &self.kind {
-            Some(schema)
-        } else {
-            None
-        }
+        Some(&self.schema)
     }
 
     /// Gets the procedural logic if this is a procedural transform.
+    /// Since procedural transforms are no longer supported, this always returns None.
     pub fn get_procedural_logic(&self) -> Option<&str> {
-        if let crate::schema::types::json_schema::TransformKind::Procedural { logic } = &self.kind {
-            Some(logic)
-        } else {
-            None
-        }
+        None
     }
 
     /// Sets the explicit input fields for this transform.
@@ -286,7 +257,7 @@ impl Transform {
     #[must_use]
     pub fn from_declaration(declaration: TransformDeclaration) -> Self {
         // Extract logic from the declaration
-        let logic = declaration
+        let _logic = declaration
             .logic
             .iter()
             .map(|expr| format!("{}", expr))
@@ -299,7 +270,12 @@ impl Transform {
         Self {
             inputs: Vec::new(),
             output,
-            kind: crate::schema::types::json_schema::TransformKind::Procedural { logic },
+            schema: crate::schema::types::json_schema::DeclarativeSchemaDefinition {
+                name: "legacy_transform".to_string(),
+                schema_type: crate::schema::types::schema::SchemaType::Single,
+                fields: std::collections::HashMap::new(),
+                key: None,
+            },
             parsed_expression: None,
         }
     }
@@ -312,10 +288,10 @@ impl Transform {
     pub fn validate(&self) -> Result<(), crate::schema::types::SchemaError> {
         use log::info;
 
-        info!("🔍 Validating transform: {:?}", self.kind);
+        info!("🔍 Validating transform: {:?}", self.schema);
 
-        // Validate transform kind
-        self.kind.validate()?;
+        // Validate declarative schema
+        self.schema.validate()?;
 
         // Validate inputs and output
         if self.output.trim().is_empty() {
@@ -327,26 +303,13 @@ impl Transform {
         // **CRITICAL**: Validate that transform doesn't attempt direct atom/molecule creation
         self.validate_no_direct_creation()?;
 
-        // Additional validation based on transform type
-        match &self.kind {
-            crate::schema::types::json_schema::TransformKind::Procedural { logic: _ } => {
-                self.validate_procedural_transform()?;
-            }
-            crate::schema::types::json_schema::TransformKind::Declarative { schema } => {
-                self.validate_declarative_transform(schema)?;
-            }
-        }
+        // Validate declarative transform
+        self.validate_declarative_transform(&self.schema)?;
 
         info!("✅ Transform validation completed successfully");
         Ok(())
     }
 
-    /// Validates procedural transform specific requirements
-    fn validate_procedural_transform(&self) -> Result<(), crate::schema::types::SchemaError> {
-        // Procedural validation is already handled by TransformKind::validate()
-        // Additional procedural-specific validation could go here
-        Ok(())
-    }
 
     /// **CRITICAL**: Validates that transform doesn't attempt direct atom/molecule creation.
     /// 
@@ -354,20 +317,14 @@ impl Transform {
     fn validate_no_direct_creation(&self) -> Result<(), crate::schema::types::SchemaError> {
         use crate::transform::restricted_access::TransformAccessValidator;
         
-        // Get the transform code to validate
-        let transform_code = match &self.kind {
-            crate::schema::types::json_schema::TransformKind::Procedural { logic } => logic.clone(),
-            crate::schema::types::json_schema::TransformKind::Declarative { schema } => {
-                // For declarative transforms, check field expressions
-                let mut code_parts = Vec::new();
-                for field_def in schema.fields.values() {
-                    if let Some(atom_uuid) = &field_def.atom_uuid {
-                        code_parts.push(atom_uuid.clone());
-                    }
-                }
-                code_parts.join(" ")
+        // Get the transform code to validate (only declarative transforms supported)
+        let mut code_parts = Vec::new();
+        for field_def in self.schema.fields.values() {
+            if let Some(atom_uuid) = &field_def.atom_uuid {
+                code_parts.push(atom_uuid.clone());
             }
-        };
+        }
+        let transform_code = code_parts.join(" ");
         
         // Validate no direct creation patterns
         TransformAccessValidator::validate_no_direct_creation(&transform_code)?;
@@ -578,18 +535,9 @@ impl Transform {
 
     /// Get debug information about the transform for logging and debugging
     pub fn get_debug_info(&self) -> String {
-        let transform_type = match &self.kind {
-            crate::schema::types::json_schema::TransformKind::Procedural { logic } => {
-                format!("Procedural (logic: {})", logic)
-            }
-            crate::schema::types::json_schema::TransformKind::Declarative { schema } => {
-                format!("Declarative (schema: {})", schema.name)
-            }
-        };
-        
         format!(
-            "Transform{{type: {}, inputs: {:?}, output: {}}}",
-            transform_type, self.inputs, self.output
+            "Transform{{schema: {}, inputs: {:?}, output: {}}}",
+            self.schema.name, self.inputs, self.output
         )
     }
 }
@@ -613,14 +561,25 @@ mod tests {
 
         let transform = Transform::from_declaration(declaration);
 
-        assert_eq!(transform.get_procedural_logic().unwrap(), "return (field1 + field2)"); // Removed trailing semicolon
+        assert_eq!(transform.get_procedural_logic(), None); // Procedural transforms no longer supported
         assert_eq!(transform.output, "test.test_transform"); // Output derived from declaration name
         assert!(transform.parsed_expression.is_none());
     }
 
     #[test]
     fn test_output_field() {
-        let transform = Transform::new("return x + 1".to_string(), "test.number".to_string());
+        use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+        use crate::schema::types::schema::SchemaType;
+        use std::collections::HashMap;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: "test_schema".to_string(),
+            schema_type: SchemaType::Single,
+            fields: HashMap::new(),
+            key: None,
+        };
+        
+        let transform = Transform::new(schema, "test.number".to_string());
 
         assert_eq!(transform.get_output(), "test.number");
     }

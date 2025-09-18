@@ -50,9 +50,9 @@ pub struct JsonSchemaField {
 /// silently pass through the system.
 #[derive(Debug, Clone, Serialize)]
 pub struct JsonTransform {
-    /// The transform type and configuration
+    /// The declarative schema definition
     #[serde(flatten)]
-    pub kind: TransformKind,
+    pub schema: DeclarativeSchemaDefinition,
 
     /// Explicit list of input fields in `Schema.field` format
     #[serde(default)]
@@ -62,105 +62,30 @@ pub struct JsonTransform {
     pub output: String,
 }
 
-// Custom deserialization to maintain backward compatibility with existing procedural transforms
+// Custom deserialization for declarative transforms only
 impl<'de> serde::Deserialize<'de> for JsonTransform {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(serde::Deserialize)]
-        #[serde(untagged)]
-        enum Helper {
-            // New format with explicit kind
-            NewFormat {
-                #[serde(flatten)]
-                kind: TransformKind,
-                #[serde(default)]
-                inputs: Vec<String>,
-                output: String,
-            },
-            // Legacy format with logic field (backward compatibility)
-            LegacyFormat {
-                logic: String,
-                #[serde(default)]
-                inputs: Vec<String>,
-                output: String,
-            },
+        struct Helper {
+            #[serde(flatten)]
+            schema: DeclarativeSchemaDefinition,
+            #[serde(default)]
+            inputs: Vec<String>,
+            output: String,
         }
 
-        match Helper::deserialize(deserializer)? {
-            Helper::NewFormat { kind, inputs, output } => Ok(JsonTransform {
-                kind,
-                inputs,
-                output,
-            }),
-            Helper::LegacyFormat { logic, inputs, output } => Ok(JsonTransform {
-                kind: TransformKind::Procedural { logic },
-                inputs,
-                output,
-            }),
-        }
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(JsonTransform {
+            schema: helper.schema,
+            inputs: helper.inputs,
+            output: helper.output,
+        })
     }
 }
 
-/// Represents the type of transform being applied.
-///
-/// Supports both procedural transforms using DSL logic and
-/// placeholder declarative transforms.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TransformKind {
-    /// Transform defined by DSL logic.
-    Procedural { logic: String },
-    /// Transform defined by declarative schema.
-    Declarative { schema: DeclarativeSchemaDefinition },
-}
-
-impl TransformKind {
-    /// Validates the transform kind based on its variant.
-    pub fn validate(&self) -> Result<(), SchemaError> {
-        match self {
-            TransformKind::Procedural { logic } => {
-                self.validate_procedural_logic(logic)
-            }
-            TransformKind::Declarative { schema } => {
-                schema.validate()
-            }
-        }
-    }
-
-    /// Validates procedural transform logic
-    fn validate_procedural_logic(&self, logic: &str) -> Result<(), SchemaError> {
-        use crate::validation_utils::ValidationUtils;
-
-        ValidationUtils::require_non_empty_string(logic, "Procedural transform logic")?;
-
-        // Basic syntax validation for procedural logic
-        let trimmed_logic = logic.trim();
-        
-        // Check for reasonable length using configurable limit
-        if trimmed_logic.len() > DEFAULT_VALIDATION_MAX_LOGIC_LENGTH {
-            return Err(SchemaError::InvalidField(
-                format!("Procedural transform logic is too long (max {} characters)", DEFAULT_VALIDATION_MAX_LOGIC_LENGTH)
-            ));
-        }
-
-        // Check for obviously malformed logic
-        if trimmed_logic.chars().filter(|&c| c == '{').count() != trimmed_logic.chars().filter(|&c| c == '}').count() {
-            return Err(SchemaError::InvalidField(
-                "Procedural transform logic has mismatched braces".to_string()
-            ));
-        }
-
-        if trimmed_logic.chars().filter(|&c| c == '(').count() != trimmed_logic.chars().filter(|&c| c == ')').count() {
-            return Err(SchemaError::InvalidField(
-                "Procedural transform logic has mismatched parentheses".to_string()
-            ));
-        }
-
-        Ok(())
-    }
-}
 
 impl JsonTransform {
     /// Validates the complete JSON transform structure.
@@ -188,8 +113,8 @@ impl JsonTransform {
             }
         }
 
-        // Validate the transform kind
-        self.kind.validate()?;
+        // Validate the declarative schema
+        self.schema.validate()?;
 
         Ok(())
     }
@@ -782,16 +707,7 @@ impl From<JsonFieldPaymentConfig> for FieldPaymentConfig {
 
 impl From<JsonTransform> for Transform {
     fn from(json: JsonTransform) -> Self {
-        match json.kind {
-            TransformKind::Procedural { logic } => {
-                let mut transform = Transform::new(logic, json.output);
-                transform.set_inputs(json.inputs);
-                transform
-            }
-            TransformKind::Declarative { schema } => {
-                Transform::from_declarative_schema(schema, json.inputs, json.output)
-            }
-        }
+        Transform::from_declarative_schema(json.schema, json.inputs, json.output)
     }
 }
 
@@ -871,37 +787,15 @@ impl JsonSchemaDefinition {
             }
         }
 
-        // Validate transform if present
+        // Validate transform if present (only declarative transforms supported)
         if let Some(transform) = &field.transform {
-            // Validate transform based on its kind
-            match &transform.kind {
-                TransformKind::Procedural { logic } => {
-                    // Logic cannot be empty for procedural transforms
-                    if logic.is_empty() {
-                        return Err(SchemaError::InvalidField(format!(
-                            "Field {field_name} transform logic cannot be empty"
-                        )));
-                    }
-
-                    // Parse transform logic using the DSL parser
-                    let parser = TransformParser::new();
-                    parser.parse_expression(logic).map_err(|e| {
-                        SchemaError::InvalidField(format!(
-                            "Error parsing transform for field {field_name}: {}",
-                            e
-                        ))
-                    })?;
-                }
-                TransformKind::Declarative { schema } => {
-                    // Validate declarative schema
-                    schema.validate().map_err(|e| {
-                        SchemaError::InvalidField(format!(
-                            "Error validating declarative transform for field {field_name}: {}",
-                            e
-                        ))
-                    })?;
-                }
-            }
+            // Validate declarative schema
+            transform.schema.validate().map_err(|e| {
+                SchemaError::InvalidField(format!(
+                    "Error validating declarative transform for field {field_name}: {}",
+                    e
+                ))
+            })?;
         }
 
         Ok(())

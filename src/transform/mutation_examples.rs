@@ -449,10 +449,18 @@ mod tests {
     #[test]
     fn test_transform_with_mutation_storage() {
         // Create a simple transform
-        let transform = Transform::new(
-            "TestSchema.field1 + TestSchema.field2".to_string(),
-            "TestSchema.result".to_string(),
-        );
+        use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+        use crate::schema::types::schema::SchemaType;
+        use std::collections::HashMap;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: "test_transform".to_string(),
+            schema_type: SchemaType::Single,
+            fields: HashMap::new(),
+            key: None,
+        };
+        
+        let transform = Transform::new(schema, "TestSchema.result".to_string());
 
         // Create mock input provider
         let mut input_provider = MockInputProvider::new();

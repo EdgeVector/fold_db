@@ -15,7 +15,7 @@
 
 use datafold::db_operations::DbOperations;
 use datafold::schema::types::transform::{Transform, TransformRegistration};
-use datafold::schema::types::json_schema::{TransformKind, DeclarativeSchemaDefinition, FieldDefinition};
+use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
 use datafold::schema::types::schema::SchemaType;
 use datafold::schema::indexing::{
     ChainParser, IteratorStack, FieldAlignmentValidator, ExecutionEngine,
@@ -458,8 +458,7 @@ fn test_backward_compatibility_integration() {
     
     // Verify the transform type is correctly identified
     let transform = &transforms[&"legacy_procedural".to_string()];
-    assert!(matches!(transform.kind, TransformKind::Procedural { .. }));
-    assert!(!transform.is_declarative());
+    assert!(transform.is_declarative()); // Only declarative transforms are supported
     
     // Test that iterator stack components don't interfere with procedural transforms
     // Procedural transforms should not use iterator stack infrastructure
