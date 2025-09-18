@@ -583,4 +583,5 @@ mod tests {
 
         assert_eq!(transform.get_output(), "test.number");
     }
+
 }
