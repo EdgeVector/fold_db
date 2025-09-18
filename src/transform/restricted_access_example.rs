@@ -49,20 +49,14 @@ impl ExampleTransformExecutor {
     fn validate_transform_access(&self, transform: &Transform) -> Result<(), SchemaError> {
         info!("🔍 Validating transform access restrictions");
         
-        // Get transform code for validation
-        let transform_code = match &transform.kind {
-            crate::schema::types::json_schema::TransformKind::Procedural { logic } => logic.clone(),
-            crate::schema::types::json_schema::TransformKind::Declarative { schema } => {
-                // For declarative transforms, check field expressions
-                let mut code_parts = Vec::new();
-                for field_def in schema.fields.values() {
-                    if let Some(atom_uuid) = &field_def.atom_uuid {
-                        code_parts.push(atom_uuid.clone());
-                    }
-                }
-                code_parts.join(" ")
+        // Get transform code for validation (only declarative transforms supported)
+        let mut code_parts = Vec::new();
+        for field_def in transform.schema.fields.values() {
+            if let Some(atom_uuid) = &field_def.atom_uuid {
+                code_parts.push(atom_uuid.clone());
             }
-        };
+        }
+        let transform_code = code_parts.join(" ");
         
         // Validate no direct creation patterns
         TransformAccessValidator::validate_no_direct_creation(&transform_code)?;

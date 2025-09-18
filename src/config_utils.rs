@@ -179,8 +179,19 @@ impl StandardInitializers {
     }
 
     /// Initialize transform with standard test configuration
-    pub fn test_transform(input_expr: &str, output_expr: &str) -> crate::schema::types::Transform {
-        crate::schema::types::Transform::new(input_expr.to_string(), output_expr.to_string())
+    pub fn test_transform(_input_expr: &str, output_expr: &str) -> crate::schema::types::Transform {
+        use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+        use crate::schema::types::schema::SchemaType;
+        use std::collections::HashMap;
+        
+        let schema = DeclarativeSchemaDefinition {
+            name: "test_transform".to_string(),
+            schema_type: SchemaType::Single,
+            fields: HashMap::new(),
+            key: None,
+        };
+        
+        crate::schema::types::Transform::new(schema, output_expr.to_string())
     }
 
     /// Initialize mutation with standard test configuration

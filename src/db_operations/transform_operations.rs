@@ -10,14 +10,10 @@ impl DbOperations {
         transform_id: &str,
         transform: &Transform,
     ) -> Result<(), SchemaError> {
-        // Log transform type information for better debugging
-        let transform_type = match &transform.kind {
-            crate::schema::types::json_schema::TransformKind::Procedural { .. } => "Procedural",
-            crate::schema::types::json_schema::TransformKind::Declarative { .. } => "Declarative",
-        };
+        // Log transform information for better debugging
         log_feature!(LogFeature::Database, info, 
-            "💾 Storing {} transform '{}' with output: {}", 
-            transform_type, transform_id, transform.output
+            "💾 Storing transform '{}' with output: {}", 
+            transform_id, transform.output
         );
         
         self.store_in_tree(&self.transforms_tree, transform_id, transform)
@@ -27,14 +23,10 @@ impl DbOperations {
     pub fn get_transform(&self, transform_id: &str) -> Result<Option<Transform>, SchemaError> {
         match self.get_from_tree::<Transform>(&self.transforms_tree, transform_id) {
             Ok(Some(transform)) => {
-                // Log transform type information for better debugging
-                let transform_type = match &transform.kind {
-                    crate::schema::types::json_schema::TransformKind::Procedural { .. } => "Procedural",
-                    crate::schema::types::json_schema::TransformKind::Declarative { .. } => "Declarative",
-                };
+                // Log transform information for better debugging
                 log_feature!(LogFeature::Database, info, 
-                    "📖 Retrieved {} transform '{}' with output: {}", 
-                    transform_type, transform_id, transform.output
+                    "📖 Retrieved transform '{}' with output: {}", 
+                    transform_id, transform.output
                 );
                 Ok(Some(transform))
             }

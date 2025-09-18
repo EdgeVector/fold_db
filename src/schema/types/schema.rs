@@ -378,7 +378,17 @@ mod tests {
                     \"molecule_uuid\": null,
                     \"field_type\": \"Single\",
                     \"field_mappers\": {},
-                    \"transform\": \"transform temp_calc { logic: { return 1; } }\"
+                    \"transform\": {
+                        \"name\": \"test_transform\",
+                        \"schema_type\": \"Single\",
+                        \"fields\": {
+                            \"result\": {
+                                \"atom_uuid\": \"input.value\"
+                            }
+                        },
+                        \"inputs\": [\"input.value\"],
+                        \"output\": \"test_schema_with_transforms.calculated_field\"
+                    }
                 }
             },
             \"payment_config\": {
@@ -398,6 +408,9 @@ mod tests {
             .get("calculated_field")
             .expect("calculated_field not found");
         assert!(calculated_field.transform().is_some());
-        assert_eq!(calculated_field.transform().unwrap().get_procedural_logic().unwrap(), "return 1");
+        
+        let transform = calculated_field.transform().unwrap();
+        assert!(transform.is_declarative());
+        assert_eq!(transform.get_declarative_schema().unwrap().name, "test_transform");
     }
 }
