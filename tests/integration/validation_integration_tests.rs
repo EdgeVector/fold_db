@@ -52,7 +52,7 @@ fn test_validation_integration_with_transform_execution() {
         "id": "12345"
     }));
 
-    let execution_result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let execution_result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should not crash due to validation issues
     match execution_result {
@@ -154,7 +154,7 @@ fn test_validation_with_complex_hashrange_scenario() {
         ]
     }));
 
-    let execution_result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let execution_result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should handle execution gracefully (success or controlled failure)
     match execution_result {
@@ -207,7 +207,7 @@ fn test_validation_error_integration_with_execution() {
         "title": "Test"
     }));
 
-    let execution_result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let execution_result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Execution may succeed or fail, but should not crash
     match execution_result {
@@ -260,7 +260,7 @@ fn test_validation_warning_integration() {
     }
     input_values.insert("blogpost".to_string(), serde_json::Value::Object(blogpost_data));
 
-    let execution_result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let execution_result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should handle execution despite performance warnings
     match execution_result {
@@ -313,7 +313,7 @@ fn test_range_schema_validation_integration() {
         "published_date": "2025-01-27"
     }));
 
-    let execution_result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let execution_result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should handle Range execution appropriately
     match execution_result {
@@ -347,7 +347,7 @@ fn test_backward_compatibility_with_validation() {
         "title": "Test Title"
     }));
 
-    let execution_result = TransformExecutor::execute_transform_with_expr(&procedural_transform, input_values);
+    let execution_result = TransformExecutor::execute_transform(&procedural_transform, input_values);
     
     // Procedural execution should work as before
     match execution_result {

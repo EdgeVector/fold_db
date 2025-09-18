@@ -40,7 +40,7 @@ fn test_simple_field_access_parsing() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Simple field access should succeed");
     
@@ -79,7 +79,7 @@ fn test_chain_expression_with_map() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Chain expression with map() should succeed");
     
@@ -125,7 +125,7 @@ fn test_complex_chain_expression() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -183,7 +183,7 @@ fn test_special_field_in_chain() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Special field in chain should succeed");
     
@@ -222,7 +222,7 @@ fn test_chain_parsing_error_handling() {
     }));
 
     // Execute the transform - should handle parsing error gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // The transform should fail due to unknown function, but gracefully (no panic)
     match result {
@@ -276,7 +276,7 @@ fn test_chain_with_reducer_function() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Chain with reducer may now fail field alignment validation (which is correct behavior)
     match result {
@@ -328,7 +328,7 @@ fn test_empty_chain_expression() {
     input_values.insert("data".to_string(), JsonValue::String("Simple data value".to_string()));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Simple expression should succeed");
     
@@ -363,7 +363,7 @@ fn test_chain_with_missing_data() {
     let input_values = HashMap::new();
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Missing data should be handled gracefully");
     
@@ -419,7 +419,7 @@ fn test_multiple_chain_expressions_in_single_schema() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Multiple chain expressions should succeed");
     
@@ -471,7 +471,7 @@ fn test_backward_compatibility_with_simple_expressions() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Backward compatibility should be maintained");
     

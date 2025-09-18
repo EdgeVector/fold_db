@@ -44,7 +44,7 @@ fn test_valid_single_depth_alignment() {
     }));
 
     // Execute the transform - should pass field alignment validation
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Valid field alignment should succeed: {:?}", result);
     
@@ -88,7 +88,7 @@ fn test_broadcast_alignment_validation() {
     }));
 
     // Execute the transform - should handle broadcast alignment
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Broadcast alignment should be valid: {:?}", result);
     
@@ -133,7 +133,7 @@ fn test_simple_expressions_fallback_validation() {
     }));
 
     // Execute the transform - should handle simple expressions gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Simple expressions should be handled gracefully");
     
@@ -183,7 +183,7 @@ fn test_complex_chain_alignment_validation() {
     }));
 
     // Execute the transform - should validate complex chains with same branch
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Complex compatible chains on same branch should pass validation: {:?}", result);
     
@@ -261,7 +261,7 @@ fn test_mixed_expression_types_validation() {
     }));
 
     // Execute the transform - should handle mixed expression types
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Mixed expression types should be handled correctly");
     
@@ -319,7 +319,7 @@ fn test_special_field_alignment_validation() {
     }));
 
     // Execute the transform - should handle special fields in alignment validation
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Special fields should be handled in alignment validation");
     
@@ -363,7 +363,7 @@ fn test_field_alignment_validation_with_invalid_expressions() {
     }));
 
     // Execute the transform - should handle invalid expressions gracefully (either with fallback or validation error)
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -437,7 +437,7 @@ fn test_single_field_alignment_validation() {
     }));
 
     // Execute the transform - should validate single field
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Single field alignment validation should succeed");
     
@@ -481,7 +481,7 @@ fn test_reducer_function_alignment_validation() {
     }));
 
     // Execute the transform - may fail validation but should handle gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // The transform may fail due to field alignment validation issues with reducers
     // This is expected behavior - the validator is correctly identifying alignment problems
@@ -543,7 +543,7 @@ fn test_field_alignment_validation_cartesian_product_error() {
     }));
 
     // Execute the transform - should fail with cartesian product error
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_err(), "Cartesian product should be detected and rejected");
     

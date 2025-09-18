@@ -6,7 +6,8 @@
 use crate::schema::types::{SchemaError, json_schema::DeclarativeSchemaDefinition};
 use crate::transform::shared_utilities::{
     convert_iterator_stack_error,
-    collect_expressions_from_schema, parse_expressions_batch, modify_expressions_with_input_prefix
+    collect_expressions_from_schema, parse_expressions_batch, modify_expressions_with_input_prefix,
+    log_schema_execution_start
 };
 use crate::transform::aggregation::{aggregate_results_unified, SchemaType};
 use log::info;
@@ -27,7 +28,7 @@ pub fn execute_single_schema(
     schema: &DeclarativeSchemaDefinition,
     input_values: HashMap<String, JsonValue>,
 ) -> Result<JsonValue, SchemaError> {
-    info!("🚀 Executing Single schema: {}", schema.name);
+    log_schema_execution_start("Single", &schema.name, None);
     
     // Use ExecutionEngine for consistent execution across all field types
     execute_with_execution_engine(schema, &input_values)

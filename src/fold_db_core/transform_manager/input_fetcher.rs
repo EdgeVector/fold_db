@@ -19,13 +19,8 @@ impl InputFetcher {
         db_ops: &Arc<crate::db_operations::DbOperations>, 
         _fold_db: Option<&mut crate::fold_db_core::FoldDB>
     ) -> Result<JsonValue, SchemaError> {
-        println!("🔧 TransformManager: Executing transform '{}'", _transform_id);
-        println!("🔧 TransformManager: Transform inputs: {:?}", transform.get_inputs());
-        
         let mut input_values = HashMap::new();
         let inputs_to_process = Self::get_inputs_to_process(transform);
-        
-        println!("🔍 TransformManager: Processing {} inputs for transform", inputs_to_process.len());
         
         for input_field in inputs_to_process {
             info!("🔍 TransformManager: Processing input: {}", input_field);
@@ -46,13 +41,10 @@ impl InputFetcher {
         mutation_context: &Option<MutationContext>,
         _fold_db: Option<&mut crate::fold_db_core::FoldDB>
     ) -> Result<JsonValue, SchemaError> {
-        println!("🔧 TransformManager: Executing transform '{}' with mutation context", _transform_id);
-        println!("🔧 TransformManager: Transform inputs: {:?}", transform.get_inputs());
         
         let mut input_values = HashMap::new();
         let inputs_to_process = Self::get_inputs_to_process(transform);
         
-        println!("🔍 TransformManager: Processing {} inputs for transform with context", inputs_to_process.len());
         
         for input_field in inputs_to_process {
             info!("🔍 TransformManager: Processing input: {}", input_field);

@@ -392,7 +392,7 @@ fn test_invalid_input_handling() {
     
     for (i, invalid_input) in invalid_inputs.iter().enumerate() {
         let input_map = HashMap::from([("data".to_string(), invalid_input.clone())]);
-        let result = TransformExecutor::execute_transform_with_expr(
+        let result = TransformExecutor::execute_transform(
             &transforms[&"input_test_transform".to_string()],
             input_map
         );
@@ -474,7 +474,7 @@ fn test_resource_exhaustion_scenarios() {
     
     // Test execution with large data
     let input_map = HashMap::from([("data".to_string(), large_data)]);
-    let result = TransformExecutor::execute_transform_with_expr(
+    let result = TransformExecutor::execute_transform(
         &transforms[&"large_data_transform".to_string()],
         input_map
     );
@@ -502,7 +502,7 @@ fn test_resource_exhaustion_scenarios() {
         
         let input_map = HashMap::from([("data".to_string(), test_data)]);
         let handle = std::thread::spawn(move || {
-            TransformExecutor::execute_transform_with_expr(&transform_clone, input_map)
+            TransformExecutor::execute_transform(&transform_clone, input_map)
         });
         handles.push(handle);
     }
@@ -585,7 +585,7 @@ fn test_concurrent_error_scenarios() {
         
         let input_map = HashMap::from([("data".to_string(), test_data)]);
         let handle = std::thread::spawn(move || {
-            TransformExecutor::execute_transform_with_expr(&transform_clone, input_map)
+            TransformExecutor::execute_transform(&transform_clone, input_map)
         });
         handles.push(handle);
     }

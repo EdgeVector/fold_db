@@ -8,7 +8,8 @@ use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult
 use crate::transform::iterator_stack::execution_engine::ExecutionEngine;
 use crate::transform::shared_utilities::{
     convert_iterator_stack_error,
-    collect_expressions_from_schema_with_keys, parse_expressions_batch
+    collect_expressions_from_schema_with_keys, parse_expressions_batch,
+    validate_schema_basic, log_schema_execution_start
 };
 use crate::transform::aggregation::{aggregate_results_unified, SchemaType};
 use crate::schema::types::SchemaError;
@@ -32,10 +33,10 @@ pub fn execute_range_schema(
     input_values: HashMap<String, JsonValue>,
     range_key: &str,
 ) -> Result<JsonValue, SchemaError> {
-    info!("🔧 Executing Range schema: {} with range_key: {}", schema.name, range_key);
+    log_schema_execution_start("Range", &schema.name, Some(range_key));
     
     // Validate schema structure
-    schema.validate()?;
+    validate_schema_basic(schema)?;
     
     // Validate field alignment for declarative transforms (reusing existing validation)
     crate::transform::validation::validate_field_alignment(schema)?;
