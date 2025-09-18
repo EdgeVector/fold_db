@@ -14,7 +14,7 @@
 
 use datafold::db_operations::DbOperations;
 use datafold::schema::types::transform::{Transform, TransformRegistration};
-use datafold::schema::types::json_schema::{TransformKind, DeclarativeSchemaDefinition, FieldDefinition};
+use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
 use datafold::schema::types::schema::SchemaType;
 use datafold::fold_db_core::transform_manager::TransformManager;
 use datafold::fold_db_core::infrastructure::message_bus::MessageBus;

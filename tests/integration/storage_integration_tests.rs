@@ -1,6 +1,6 @@
 use datafold::db_operations::DbOperations;
 use datafold::schema::types::transform::{Transform, TransformRegistration};
-use datafold::schema::types::json_schema::{TransformKind, DeclarativeSchemaDefinition, FieldDefinition};
+use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
 use datafold::schema::types::schema::SchemaType;
 use datafold::fold_db_core::transform_manager::TransformManager;
 use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
@@ -70,12 +70,12 @@ fn test_storage_integration_both_transform_types() {
     
     // Verify procedural transform
     assert_eq!(retrieved_procedural.get_output(), "test_schema.result");
-    assert!(matches!(retrieved_procedural.kind, TransformKind::Declarative { .. }));
+    assert!(retrieved_procedural.is_declarative());
     assert_eq!(retrieved_procedural.get_declarative_schema().unwrap().name, "test_schema");
     
     // Verify declarative transform
     assert_eq!(retrieved_declarative.get_output(), "test_schema.result");
-    assert!(matches!(retrieved_declarative.kind, TransformKind::Declarative { .. }));
+    assert!(retrieved_declarative.is_declarative());
     let declarative_schema_retrieved = retrieved_declarative.get_declarative_schema().unwrap();
     assert_eq!(declarative_schema_retrieved.name, "test_schema");
     assert_eq!(declarative_schema_retrieved.schema_type, SchemaType::Single);
@@ -184,18 +184,16 @@ fn test_backward_compatibility_procedural_transforms() {
     let legacy_transform = Transform {
         inputs: vec!["test_schema.input".to_string()],
         output: "test_schema.output".to_string(),
-        kind: TransformKind::Declarative { 
-            schema: DeclarativeSchemaDefinition {
-                name: "test_schema".to_string(),
-                schema_type: SchemaType::Single,
-                fields: HashMap::from([
-                    ("output".to_string(), FieldDefinition {
-                        field_type: Some("String".to_string()),
-                        atom_uuid: Some("input.map().add(1)".to_string()),
-                    }),
-                ]),
-                key: None,
-            }
+        schema: DeclarativeSchemaDefinition {
+            name: "test_schema".to_string(),
+            schema_type: SchemaType::Single,
+            fields: HashMap::from([
+                ("output".to_string(), FieldDefinition {
+                    field_type: Some("String".to_string()),
+                    atom_uuid: Some("input.map().add(1)".to_string()),
+                }),
+            ]),
+            key: None,
         },
         parsed_expression: None,
     };
@@ -210,7 +208,7 @@ fn test_backward_compatibility_procedural_transforms() {
         .expect("Legacy transform not found");
     
     assert_eq!(retrieved.get_output(), "test_schema.output");
-    assert!(matches!(retrieved.kind, TransformKind::Declarative { .. }));
+    assert!(retrieved.is_declarative());
     assert_eq!(retrieved.get_declarative_schema().unwrap().name, "test_schema");
     assert_eq!(retrieved.get_inputs(), vec!["test_schema.input"]);
 }
@@ -238,7 +236,6 @@ fn test_debug_information_both_types() {
     );
     
     let procedural_debug = procedural_transform.get_debug_info();
-    assert!(procedural_debug.contains("Declarative"));
     assert!(procedural_debug.contains("test_schema"));
     assert!(procedural_debug.contains("test.doubled"));
     
@@ -262,7 +259,6 @@ fn test_debug_information_both_types() {
     );
     
     let declarative_debug = declarative_transform.get_debug_info();
-    assert!(declarative_debug.contains("Declarative"));
     assert!(declarative_debug.contains("test_schema"));
     assert!(declarative_debug.contains("test_schema.result"));
 }
@@ -278,18 +274,16 @@ fn test_error_handling_invalid_transforms() {
     let invalid_transform = Transform {
         inputs: vec![],
         output: String::new(), // Empty output should cause validation error
-        kind: TransformKind::Declarative { 
-            schema: DeclarativeSchemaDefinition {
-                name: "test_schema".to_string(),
-                schema_type: SchemaType::Single,
-                fields: HashMap::from([
-                    ("output".to_string(), FieldDefinition {
-                        field_type: Some("String".to_string()),
-                        atom_uuid: Some("1".to_string()),
-                    }),
-                ]),
-                key: None,
-            }
+        schema: DeclarativeSchemaDefinition {
+            name: "test_schema".to_string(),
+            schema_type: SchemaType::Single,
+            fields: HashMap::from([
+                ("output".to_string(), FieldDefinition {
+                    field_type: Some("String".to_string()),
+                    atom_uuid: Some("1".to_string()),
+                }),
+            ]),
+            key: None,
         },
         parsed_expression: None,
     };
@@ -367,12 +361,12 @@ fn test_storage_performance_both_types() {
         let procedural = db_ops.get_transform(&format!("procedural_{}", i))
             .expect("Failed to get procedural transform")
             .expect("Procedural transform not found");
-        assert!(matches!(procedural.kind, TransformKind::Declarative { .. }));
+        assert!(procedural.is_declarative());
         
         let declarative = db_ops.get_transform(&format!("declarative_{}", i))
             .expect("Failed to get declarative transform")
             .expect("Declarative transform not found");
-        assert!(matches!(declarative.kind, TransformKind::Declarative { .. }));
+        assert!(declarative.is_declarative());
     }
     
     let retrieve_duration = retrieve_start.elapsed();

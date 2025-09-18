@@ -2,6 +2,8 @@
 //!
 //! This module provides the high-level interface for applying declarative transforms to field values.
 //! It handles the integration with the schema system and manages the execution context.
+//!
+//! **Note**: This executor only supports declarative transforms. Procedural transforms are not supported.
 
 use crate::schema::types::{SchemaError, Transform};
 use crate::transform::validation;
@@ -13,32 +15,39 @@ use std::collections::HashMap;
 pub struct TransformExecutor;
 
 impl TransformExecutor {
-    /// Executes a transform with the given input values using the execution coordinator.
+    /// Executes a declarative transform with the given input values.
     ///
     /// # Arguments
     ///
-    /// * `transform` - The transform to execute
+    /// * `transform` - The declarative transform to execute
     /// * `input_values` - The input values for the transform
     ///
     /// # Returns
     ///
     /// The result of the transform execution
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transform is not declarative or if execution fails
     pub fn execute_transform(
         transform: &Transform,
         input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🧮 TransformExecutor: Starting transform computation");
+        info!("🧮 TransformExecutor: Starting declarative transform computation");
         
         info!("📊 Input values for computation:");
         for (key, value) in &input_values {
             info!("  - {}: {}", key, value);
         }
         
-        if transform.is_declarative() {
-            Self::execute_declarative_transform(transform, input_values)
-        } else {
-            Self::execute_procedural_transform(transform, input_values)
+        // Only support declarative transforms
+        if !transform.is_declarative() {
+            return Err(SchemaError::InvalidTransform(
+                "Only declarative transforms are supported by this executor".to_string()
+            ));
         }
+        
+        Self::execute_declarative_transform(transform, input_values)
     }
 
     /// Executes a declarative transform.
@@ -73,26 +82,6 @@ impl TransformExecutor {
         }
     }
 
-    /// Executes a procedural transform.
-    ///
-    /// # Arguments
-    ///
-    /// * `transform` - The procedural transform to execute
-    /// * `input_values` - The input values for the transform
-    ///
-    /// # Returns
-    ///
-    /// The result of the transform execution
-    fn execute_procedural_transform(
-        _transform: &Transform,
-        _input_values: HashMap<String, JsonValue>,
-    ) -> Result<JsonValue, SchemaError> {
-        info!("⚙️ Executing procedural transform");
-        
-        // For procedural transforms, we use the existing execution logic
-        // This is a placeholder - the actual implementation would depend on the specific transform
-        Ok(JsonValue::Object(serde_json::Map::new()))
-    }
 
 
 
@@ -106,7 +95,18 @@ impl TransformExecutor {
     /// # Returns
     ///
     /// Validation result or error
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transform is not declarative or if validation fails
     pub fn validate_transform(transform: &Transform) -> Result<(), SchemaError> {
+        // Only support declarative transforms
+        if !transform.is_declarative() {
+            return Err(SchemaError::InvalidTransform(
+                "Only declarative transforms are supported by this validator".to_string()
+            ));
+        }
+        
         // Validate declarative transform
         let schema = transform.get_declarative_schema()
             .ok_or_else(|| SchemaError::InvalidTransform("Declarative transform must have schema".to_string()))?;

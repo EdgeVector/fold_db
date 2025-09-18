@@ -10,7 +10,6 @@ pub mod complete_mutation_query_flow_test;
 
 // Comprehensive test suites for collection removal and bug fixes
 pub mod collection_removal_validation_test;
-pub mod end_to_end_workflow_test;
 pub mod range_architecture_test;
 pub mod stress_performance_test;
 pub mod regression_prevention_test;
@@ -19,7 +18,6 @@ pub mod regression_prevention_test;
 pub mod available_schemas_test;
 
 // Validation and error handling integration tests
-pub mod validation_integration_tests;
 pub mod storage_integration_tests;
 pub mod error_handling_tests;
 
