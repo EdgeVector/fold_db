@@ -4,7 +4,12 @@
 //! and other validation concerns in the transform execution framework.
 
 use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
-use crate::transform::shared_utilities::{parse_atom_uuid_expression, collect_expressions_from_schema};
+use crate::transform::shared_utilities::{
+    parse_atom_uuid_expression, 
+    collect_expressions_from_schema,
+    create_parsing_error,
+    format_alignment_validation_errors,
+};
 use crate::schema::types::SchemaError;
 use log::{info, error};
 
@@ -187,14 +192,11 @@ fn validate_alignment_from_schema(
     }
     
     if !parsing_errors.is_empty() {
-        let error_messages: Vec<String> = parsing_errors.iter()
-            .map(|(field, expr, err)| format!("Field '{}' expression '{}': {}", field, expr, err))
-            .collect();
-        error!("🚨 Field alignment validation failed due to parsing errors: {}", error_messages.join("; "));
-        return Err(SchemaError::InvalidField(format!(
-            "Field alignment validation failed due to parsing errors: {}", 
-            error_messages.join("; ")
-        )));
+        error!("🚨 Field alignment validation failed due to parsing errors: {}", 
+               format_alignment_validation_errors(&parsing_errors.iter()
+                   .map(|(field, expr, err)| format!("Field '{}' expression '{}': {}", field, expr, err))
+                   .collect::<Vec<_>>()));
+        return Err(create_parsing_error(&parsing_errors, "Field alignment validation"));
     }
     
     if parsed_chains.is_empty() {
@@ -240,12 +242,9 @@ fn process_unified_alignment_result(
         let error_messages: Vec<String> = alignment_result.errors.iter()
             .map(|err| format!("{:?}: {}", err.error_type, err.message))
             .collect();
-        error!("🚨 Field alignment validation failed: {}", error_messages.join("; "));
+        error!("🚨 Field alignment validation failed: {}", format_alignment_validation_errors(&error_messages));
         
-        return Err(SchemaError::InvalidField(format!(
-            "Field alignment validation failed: {}", 
-            error_messages.join("; ")
-        )));
+        return Err(SchemaError::InvalidField(format_alignment_validation_errors(&error_messages)));
     }
     
     if !alignment_result.warnings.is_empty() {
