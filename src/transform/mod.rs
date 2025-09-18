@@ -12,9 +12,7 @@
 //! * `validation` - Validation utilities for transform execution
 //! * `coordination` - Multi-chain coordination for complex schemas
 //! * `aggregation` - Result aggregation for different schema types
-//! * `hash_range_executor` - HashRange schema executor
-//! * `range_executor` - Range schema executor
-//! * `single_executor` - Single schema executor
+//! * `executor` - Unified executor for all schema types (Single, Range, HashRange)
 //! * `restricted_access` - Enforces mutation-only data persistence
 //!
 //! ## Architecture
@@ -57,9 +55,6 @@ pub mod coordination;
 // Execution coordination components
 pub mod shared_utilities;
 pub mod aggregation;
-pub mod hash_range_executor;
-pub mod range_executor;
-pub mod single_executor;
 pub mod iterator_stack;
 
 // Public re-exports
