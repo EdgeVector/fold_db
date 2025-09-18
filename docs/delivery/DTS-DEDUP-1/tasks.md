@@ -13,4 +13,4 @@ This document lists all tasks associated with PBI DTS-DEDUP-1.
 | DTS-DEDUP-1-3 | [Consolidate Result Aggregation](./DTS-DEDUP-1-3.md) | Done | Unify result aggregation patterns across modules by enhancing aggregation module |
 | DTS-DEDUP-1-4 | [Standardize Error Handling](./DTS-DEDUP-1-4.md) | Done | Standardize error handling patterns across modules by creating unified error utilities |
 | DTS-DEDUP-1-5 | [Create Base Executor Trait](./DTS-DEDUP-1-5.md) | Done | Create base executor trait with shared behavior to eliminate remaining duplication |
-| DTS-DEDUP-1-6 | [E2E CoS Test](./DTS-DEDUP-1-6.md) | Proposed | Comprehensive end-to-end testing to verify all acceptance criteria are met |
+| DTS-DEDUP-1-6 | [E2E CoS Test](./DTS-DEDUP-1-6.md) | Done | Comprehensive end-to-end testing to verify all acceptance criteria are met |
