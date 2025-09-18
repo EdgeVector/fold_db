@@ -19,6 +19,7 @@ use crate::fold_db_core::infrastructure::message_bus::{
     schema_events::TransformExecuted,
 };
 use crate::fold_db_core::orchestration::TransformOrchestrator;
+use crate::transform::shared_utilities::format_field_access_error;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -176,9 +177,10 @@ impl StandardizedTransformExecutor {
                 }
                 Err(e) => {
                     error!("❌ Failed to gather input '{}': {}", input_name, e);
-                    return Err(SchemaError::InvalidField(format!(
-                        "Failed to gather input '{}': {}",
-                        input_name, e
+                    return Err(SchemaError::InvalidField(format_field_access_error(
+                        &input_name, 
+                        "input gathering", 
+                        &e.to_string()
                     )));
                 }
             }
@@ -245,9 +247,10 @@ impl StandardizedTransformExecutor {
             mutations.push(mutation);
             info!("📝 Prepared mutation for {}.{}", schema_name, field_name);
         } else {
-            return Err(SchemaError::InvalidField(format!(
-                "Invalid output field format '{}', expected 'Schema.field'",
-                output_field
+            return Err(SchemaError::InvalidField(format_field_access_error(
+                "output_field",
+                output_field,
+                "Invalid format, expected 'Schema.field'"
             )));
         }
         
@@ -466,9 +469,10 @@ impl OrchestratedTransformExecutor {
                 }
                 Err(e) => {
                     error!("❌ Failed to gather input '{}' with orchestration: {}", input_name, e);
-                    return Err(SchemaError::InvalidField(format!(
-                        "Failed to gather input '{}' with orchestration: {}",
-                        input_name, e
+                    return Err(SchemaError::InvalidField(format_field_access_error(
+                        &input_name,
+                        "orchestrated input gathering",
+                        &e.to_string()
                     )));
                 }
             }
@@ -572,9 +576,10 @@ impl OrchestratedTransformExecutor {
             info!("📋 Queued transform for orchestrated execution: {}.{}", schema_name, field_name);
             Ok(())
         } else {
-            Err(SchemaError::InvalidField(format!(
-                "Invalid output field format '{}', expected 'Schema.field'",
-                output_field
+            Err(SchemaError::InvalidField(format_field_access_error(
+                "output_field",
+                output_field,
+                "Invalid format, expected 'Schema.field'"
             )))
         }
     }
