@@ -10,6 +10,7 @@ use crate::transform::shared_utilities::{
     convert_iterator_stack_error, 
     collect_expressions_from_schema_with_keys, parse_expressions_batch
 };
+use crate::transform::validation::validate_field_alignment_unified;
 use crate::transform::aggregation::{aggregate_results_unified, SchemaType};
 use crate::schema::types::SchemaError;
 use log::info;
@@ -36,9 +37,14 @@ pub fn execute_multi_chain_coordination_with_monitoring(
     let start_time = Instant::now();
     info!("🔗 Starting enhanced multi-chain coordination for HashRange schema");
     
-    let expressions = collect_all_expressions(schema, key_config)?;
+    let key_expressions = vec![
+        ("_hash_field".to_string(), key_config.hash_field.clone()),
+        ("_range_field".to_string(), key_config.range_field.clone()),
+    ];
+    let expressions = collect_expressions_from_schema_with_keys(schema, &key_expressions);
     let parsed_chains = parse_expressions_with_monitoring(&expressions)?;
-    let alignment_result = validate_field_alignment(&parsed_chains)?;
+    let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
+    let alignment_result = validate_field_alignment_unified(None, Some(&chains_only))?;
     let result = execute_coordination_with_engine(&parsed_chains, input_values, &alignment_result)?;
     
     let total_duration = start_time.elapsed();
@@ -47,31 +53,6 @@ pub fn execute_multi_chain_coordination_with_monitoring(
     Ok(result)
 }
 
-/// Collects all expressions from schema and key configuration using unified function.
-///
-/// # Arguments
-///
-/// * `schema` - The declarative schema definition
-/// * `key_config` - The key configuration
-///
-/// # Returns
-///
-/// Vector of (field_name, expression) pairs
-fn collect_all_expressions(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
-    key_config: &crate::schema::types::json_schema::KeyConfig,
-) -> Result<Vec<(String, String)>, SchemaError> {
-    // Use unified function to collect expressions with key expressions
-    let key_expressions = vec![
-        ("_hash_field".to_string(), key_config.hash_field.clone()),
-        ("_range_field".to_string(), key_config.range_field.clone()),
-    ];
-    
-    let all_expressions = collect_expressions_from_schema_with_keys(schema, &key_expressions);
-    
-    info!("📊 Coordinating {} expressions for enhanced multi-chain execution", all_expressions.len());
-    Ok(all_expressions)
-}
 
 /// Parses expressions using ChainParser with retry mechanism and monitoring.
 ///
@@ -103,30 +84,6 @@ fn parse_expressions_with_monitoring(
     Ok(parsed_chains)
 }
 
-/// Validates field alignment across all chains with enhanced monitoring.
-///
-/// # Arguments
-///
-/// * `parsed_chains` - Vector of (field_name, ParsedChain) pairs
-///
-/// # Returns
-///
-/// Alignment validation result
-fn validate_field_alignment(
-    parsed_chains: &[(String, ParsedChain)],
-) -> Result<AlignmentValidationResult, SchemaError> {
-    let validation_start = Instant::now();
-    let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
-    let alignment_result = crate::transform::validation::validate_field_alignment_unified(
-        None, 
-        Some(&chains_only)
-    )?;
-    let validation_duration = validation_start.elapsed();
-    info!("⏱️ Enhanced field alignment validation took: {:?}", validation_duration);
-    
-    info!("✅ Enhanced multi-chain field alignment validation passed");
-    Ok(alignment_result)
-}
 
 /// Executes coordination with ExecutionEngine.
 ///

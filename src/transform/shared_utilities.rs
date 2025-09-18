@@ -44,6 +44,130 @@ pub fn convert_iterator_stack_error(error: IteratorStackError) -> SchemaError {
     SchemaError::InvalidField(format!("Iterator stack error: {}", error))
 }
 
+/// Formats validation errors with standardized message format.
+///
+/// This function consolidates the duplicate validation error formatting logic that was
+/// previously scattered across multiple modules.
+///
+/// # Arguments
+///
+/// * `errors` - Vector of validation error messages
+/// * `context` - Additional context for the error (e.g., "Field alignment validation")
+///
+/// # Returns
+///
+/// Formatted error message
+pub fn format_validation_errors(errors: &[String], context: &str) -> String {
+    if errors.is_empty() {
+        return format!("{} failed: No errors provided", context);
+    }
+    
+    if errors.len() == 1 {
+        format!("{} failed: {}", context, errors[0])
+    } else {
+        format!("{} failed: {}", context, errors.join("; "))
+    }
+}
+
+/// Formats parsing errors with standardized message format.
+///
+/// This function consolidates the duplicate parsing error formatting logic that was
+/// previously scattered across multiple modules.
+///
+/// # Arguments
+///
+/// * `parsing_errors` - Vector of (field_name, expression, error) tuples
+/// * `context` - Additional context for the error (e.g., "Expression parsing")
+///
+/// # Returns
+///
+/// Formatted error message
+pub fn format_parsing_errors(
+    parsing_errors: &[(String, String, SchemaError)], 
+    context: &str
+) -> String {
+    if parsing_errors.is_empty() {
+        return format!("{} failed: No parsing errors provided", context);
+    }
+    
+    let error_messages: Vec<String> = parsing_errors.iter()
+        .map(|(field, expr, err)| format!("Field '{}' expression '{}': {}", field, expr, err))
+        .collect();
+    
+    format!("{} failed due to parsing errors: {}", context, error_messages.join("; "))
+}
+
+/// Formats field access errors with standardized message format.
+///
+/// This function consolidates the duplicate field access error formatting logic that was
+/// previously scattered across multiple modules.
+///
+/// # Arguments
+///
+/// * `field_name` - The field name that failed to access
+/// * `path` - The path that was being accessed
+/// * `reason` - The reason for the failure
+///
+/// # Returns
+///
+/// Formatted error message
+pub fn format_field_access_error(field_name: &str, path: &str, reason: &str) -> String {
+    format!("Field access failed for '{}' at path '{}': {}", field_name, path, reason)
+}
+
+/// Formats alignment validation errors with standardized message format.
+///
+/// This function consolidates the duplicate alignment validation error formatting logic that was
+/// previously scattered across validation modules.
+///
+/// # Arguments
+///
+/// * `alignment_errors` - Vector of alignment error messages
+///
+/// # Returns
+///
+/// Formatted error message
+pub fn format_alignment_validation_errors(alignment_errors: &[String]) -> String {
+    format_validation_errors(alignment_errors, "Field alignment validation")
+}
+
+/// Creates a standardized SchemaError for validation failures.
+///
+/// This function consolidates the duplicate SchemaError creation logic that was
+/// previously scattered across multiple modules.
+///
+/// # Arguments
+///
+/// * `errors` - Vector of validation error messages
+/// * `context` - Additional context for the error
+///
+/// # Returns
+///
+/// Standardized SchemaError
+pub fn create_validation_error(errors: &[String], context: &str) -> SchemaError {
+    SchemaError::InvalidField(format_validation_errors(errors, context))
+}
+
+/// Creates a standardized SchemaError for parsing failures.
+///
+/// This function consolidates the duplicate SchemaError creation logic that was
+/// previously scattered across multiple modules.
+///
+/// # Arguments
+///
+/// * `parsing_errors` - Vector of (field_name, expression, error) tuples
+/// * `context` - Additional context for the error
+///
+/// # Returns
+///
+/// Standardized SchemaError
+pub fn create_parsing_error(
+    parsing_errors: &[(String, String, SchemaError)], 
+    context: &str
+) -> SchemaError {
+    SchemaError::InvalidField(format_parsing_errors(parsing_errors, context))
+}
+
 /// Resolves a dotted path in input values.
 ///
 /// This function consolidates the duplicate path resolution logic that was
@@ -184,10 +308,6 @@ pub fn parse_with_retry(expression: &str, field_name: &str, max_retries: u32) ->
     unreachable!("Retry loop should have returned or errored")
 }
 
-/// Default retry parsing with standard retry count.
-pub fn parse_with_default_retry(expression: &str, field_name: &str) -> Result<ParsedChain, SchemaError> {
-    parse_with_retry(expression, field_name, 2)
-}
 
 /// Parses multiple expressions in batch with unified error handling.
 ///
@@ -504,5 +624,81 @@ mod tests {
         let unmodified = modify_expressions_with_input_prefix(&expressions, false);
         assert_eq!(unmodified[0].1, "input.value1"); // No change
         assert_eq!(unmodified[1].1, "value2"); // No change
+    }
+
+    #[test]
+    fn test_format_validation_errors_single() {
+        let errors = vec!["Field 'name' is required".to_string()];
+        let result = format_validation_errors(&errors, "Schema validation");
+        assert_eq!(result, "Schema validation failed: Field 'name' is required");
+    }
+
+    #[test]
+    fn test_format_validation_errors_multiple() {
+        let errors = vec![
+            "Field 'name' is required".to_string(),
+            "Field 'age' must be positive".to_string(),
+        ];
+        let result = format_validation_errors(&errors, "Schema validation");
+        assert_eq!(result, "Schema validation failed: Field 'name' is required; Field 'age' must be positive");
+    }
+
+    #[test]
+    fn test_format_validation_errors_empty() {
+        let errors = vec![];
+        let result = format_validation_errors(&errors, "Schema validation");
+        assert_eq!(result, "Schema validation failed: No errors provided");
+    }
+
+    #[test]
+    fn test_format_parsing_errors() {
+        let parsing_errors = vec![
+            ("field1".to_string(), "input.value1".to_string(), SchemaError::InvalidField("Parse error".to_string())),
+            ("field2".to_string(), "invalid..syntax".to_string(), SchemaError::InvalidField("Syntax error".to_string())),
+        ];
+        let result = format_parsing_errors(&parsing_errors, "Expression parsing");
+        assert!(result.contains("Expression parsing failed due to parsing errors"));
+        assert!(result.contains("Field 'field1' expression 'input.value1'"));
+        assert!(result.contains("Field 'field2' expression 'invalid..syntax'"));
+    }
+
+    #[test]
+    fn test_format_field_access_error() {
+        let result = format_field_access_error("user", "user.profile.name", "Field not found");
+        assert_eq!(result, "Field access failed for 'user' at path 'user.profile.name': Field not found");
+    }
+
+    #[test]
+    fn test_format_alignment_validation_errors() {
+        let errors = vec!["Fields have incompatible depths".to_string()];
+        let result = format_alignment_validation_errors(&errors);
+        assert_eq!(result, "Field alignment validation failed: Fields have incompatible depths");
+    }
+
+    #[test]
+    fn test_create_validation_error() {
+        let errors = vec!["Field 'name' is required".to_string()];
+        let result = create_validation_error(&errors, "Schema validation");
+        match result {
+            SchemaError::InvalidField(msg) => {
+                assert_eq!(msg, "Schema validation failed: Field 'name' is required");
+            }
+            _ => panic!("Expected InvalidField error"),
+        }
+    }
+
+    #[test]
+    fn test_create_parsing_error() {
+        let parsing_errors = vec![
+            ("field1".to_string(), "input.value1".to_string(), SchemaError::InvalidField("Parse error".to_string())),
+        ];
+        let result = create_parsing_error(&parsing_errors, "Expression parsing");
+        match result {
+            SchemaError::InvalidField(msg) => {
+                assert!(msg.contains("Expression parsing failed due to parsing errors"));
+                assert!(msg.contains("Field 'field1' expression 'input.value1'"));
+            }
+            _ => panic!("Expected InvalidField error"),
+        }
     }
 }
