@@ -6,6 +6,7 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 
 | ID | Actor | User Story | Status | Conditions of Satisfaction (CoS) |
 |----|-------|------------|--------|-----------------------------------|
+| DTS-MERGE-1 | Developer | As a developer, I want unused executor classes removed so I can have a cleaner codebase and reduce maintenance overhead | **Proposed** | StandardizedTransformExecutor and OrchestratedTransformExecutor deleted (dead code removal), TransformExecutor unchanged, no functional changes, clean compilation maintained, all existing functionality preserved, architectural complexity reduced by eliminating unused classes. [View Details](./DTS-MERGE-1/prd.md) |
 
 ## PBI History
 
@@ -21,6 +22,7 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 | 20250127-230500 | SSF-1 | approve | PBI completed successfully with all 6 tasks finished: default values, custom deserialization, comprehensive testing, documentation updates, and E2E validation. All acceptance criteria met with 90% boilerplate reduction achieved. | User |
 | 20250117-154500 | DTS-DEDUP-1 | create_pbi | Created PBI for eliminating duplicate code patterns in declarative transforms to reduce maintenance burden, improve consistency, and reduce codebase by 40-50% | AI Agent |
 | 20250117-180000 | DTS-DEDUP-1 | approve | PBI completed successfully with all 6 tasks finished: field alignment validation consolidated, expression parsing duplication eliminated, result aggregation patterns unified, error handling standardized, shared utilities created, comprehensive E2E testing completed. All acceptance criteria met with significant code duplication reduction achieved. | AI Agent |
+| 20250127-190000 | DTS-MERGE-1 | create_pbi | Created PBI for merging TransformExecutor and StandardizedTransformExecutor to eliminate architectural complexity and code duplication | AI Agent |
 
 
 
