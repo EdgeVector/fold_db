@@ -121,7 +121,7 @@ fn test_existing_procedural_transforms_unchanged() {
     ];
     
     for (transform_id, input_data) in test_cases {
-        let result = TransformExecutor::execute_transform_with_expr(
+        let result = TransformExecutor::execute_transform(
             &transforms[transform_id],
             input_data
         ).expect("Failed to execute procedural transform");
@@ -218,12 +218,12 @@ fn test_mixed_transform_scenarios() {
         }
     });
     
-    let procedural_result = TransformExecutor::execute_transform_with_expr(
+    let procedural_result = TransformExecutor::execute_transform(
         procedural_transform,
         procedural_input
     ).expect("Failed to execute procedural transform");
     
-    let declarative_result = TransformExecutor::execute_transform_with_expr(
+    let declarative_result = TransformExecutor::execute_transform(
         declarative_transform,
         declarative_input
     ).expect("Failed to execute declarative transform");
@@ -294,7 +294,7 @@ fn test_no_regression_in_existing_functionality() {
         "input_value": 5
     });
     
-    let result = TransformExecutor::execute_transform_with_expr(
+    let result = TransformExecutor::execute_transform(
         &transforms[&"regression_test".to_string()],
         input_data
     ).expect("Failed to execute transform");
@@ -458,7 +458,7 @@ fn test_legacy_data_support() {
     ];
     
     for (transform_id, input_data) in legacy_test_cases {
-        let result = TransformExecutor::execute_transform_with_expr(
+        let result = TransformExecutor::execute_transform(
             &transforms[transform_id],
             input_data
         ).expect("Failed to execute legacy transform");
@@ -555,7 +555,7 @@ fn test_api_compatibility() {
             json!({"data": {"value": "api_test"}})
         };
         
-        let _result = TransformExecutor::execute_transform_with_expr(transform, input_data)
+        let _result = TransformExecutor::execute_transform(transform, input_data)
             .expect("Failed to execute transform");
         
         println!("API compatibility test passed for transform: {}", transform_id);

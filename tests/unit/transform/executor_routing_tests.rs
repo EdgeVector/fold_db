@@ -18,7 +18,7 @@ fn test_procedural_transform_routing() {
     
     // This should route to procedural execution
     // Note: This test may fail if the parser has specific requirements, but routing should work
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // We're testing routing, so we check that it didn't fail with routing errors
     match result {
@@ -67,7 +67,7 @@ fn test_declarative_transform_routing() {
     }));
     
     // This should route to declarative execution
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should succeed and return actual execution result
     assert!(result.is_ok(), "Declarative transform routing should succeed");
@@ -150,7 +150,7 @@ fn test_declarative_transform_placeholder_content() {
     let mut input_values = HashMap::new();
     input_values.insert("test_input".to_string(), JsonValue::String("test_value".to_string()));
     
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // HashRange schemas now execute actual multi-chain coordination instead of returning placeholders
     match result {
@@ -201,7 +201,7 @@ fn test_routing_with_empty_input_values() {
     let procedural_transform = Transform::new("return 42".to_string(), "output.const".to_string());
     let empty_inputs = HashMap::new();
     
-    let procedural_result = TransformExecutor::execute_transform_with_expr(&procedural_transform, empty_inputs.clone());
+    let procedural_result = TransformExecutor::execute_transform(&procedural_transform, empty_inputs.clone());
     // Should route correctly (may fail on execution but not routing)
     match procedural_result {
         Err(err) => {
@@ -231,7 +231,7 @@ fn test_routing_with_empty_input_values() {
         "output.constant".to_string(),
     );
     
-    let declarative_result = TransformExecutor::execute_transform_with_expr(&declarative_transform, empty_inputs);
+    let declarative_result = TransformExecutor::execute_transform(&declarative_transform, empty_inputs);
     assert!(declarative_result.is_ok(), "Declarative transform routing should succeed with empty inputs");
 }
 
@@ -265,7 +265,7 @@ fn test_multiple_routing_calls() {
     // Multiple calls should work consistently
     for i in 0..3 {
         // Test procedural routing
-        let proc_result = TransformExecutor::execute_transform_with_expr(&procedural_transform, input_values.clone());
+        let proc_result = TransformExecutor::execute_transform(&procedural_transform, input_values.clone());
         match proc_result {
             Err(err) => {
                 let error_msg = format!("{:?}", err);
@@ -276,7 +276,7 @@ fn test_multiple_routing_calls() {
         }
         
         // Test declarative routing
-        let decl_result = TransformExecutor::execute_transform_with_expr(&declarative_transform, input_values.clone());
+        let decl_result = TransformExecutor::execute_transform(&declarative_transform, input_values.clone());
         assert!(decl_result.is_ok(), "Declarative routing failed on iteration {}", i);
         
         let json_result = decl_result.unwrap();

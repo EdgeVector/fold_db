@@ -39,7 +39,7 @@ fn test_single_expression_execution_with_engine() {
     ]));
 
     // Execute the transform - should use ExecutionEngine or fallback to simple resolution
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "ExecutionEngine integration should succeed: {:?}", result);
     
@@ -99,7 +99,7 @@ fn test_execution_engine_with_simple_field_access() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Simple field access should succeed");
     
@@ -137,7 +137,7 @@ fn test_execution_engine_fallback_behavior() {
     }));
 
     // Execute the transform - should fallback to simple resolution if ExecutionEngine fails
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Fallback behavior should ensure success");
     
@@ -177,7 +177,7 @@ fn test_execution_engine_with_map_operation() {
     ]));
 
     // Execute the transform - ExecutionEngine should handle map operations
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Map operation should be handled by ExecutionEngine");
     
@@ -215,7 +215,7 @@ fn test_execution_engine_error_handling() {
     }));
 
     // Execute the transform - should handle errors gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should either succeed with fallback or fail gracefully
     match result {
@@ -262,7 +262,7 @@ fn test_execution_engine_with_multiple_operations() {
     ]));
 
     // Execute the transform - should handle complex operations
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Result may succeed or fail depending on ExecutionEngine capability
     // The important thing is no crashes and graceful error handling
@@ -314,7 +314,7 @@ fn test_execution_engine_integration_with_validation() {
     ]));
 
     // Execute the transform - should pass validation and then execute with ExecutionEngine
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Validated expressions should execute successfully");
     
@@ -353,7 +353,7 @@ fn test_execution_engine_result_format() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Result formatting should work correctly");
     
@@ -395,7 +395,7 @@ fn test_execution_engine_with_no_input_data() {
     let input_values = HashMap::new();
 
     // Execute the transform - should handle empty input gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -461,7 +461,7 @@ fn test_execution_engine_with_special_fields() {
     ]));
 
     // Execute the transform - should handle special fields
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should either succeed with ExecutionEngine or fallback to simple resolution
     match result {

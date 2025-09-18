@@ -58,7 +58,7 @@ fn test_basic_hashrange_schema_execution() {
     ]));
 
     // Execute the transform - should handle HashRange schema with multi-chain coordination
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Basic HashRange schema execution should succeed: {:?}", result);
     
@@ -110,7 +110,7 @@ fn test_hashrange_schema_validation() {
     }));
 
     // Execute the transform - should validate and execute successfully or fail gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // May succeed or fail depending on ExecutionEngine behavior with simple expressions
     match result {
@@ -152,7 +152,7 @@ fn test_hashrange_schema_missing_key_config() {
     let input_values = HashMap::new();
 
     // Execute the transform - should fail due to missing key configuration
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_err(), "HashRange schema without key config should fail");
     
@@ -205,7 +205,7 @@ fn test_multi_chain_coordination_with_different_depths() {
     }));
 
     // Execute the transform - should handle different depths appropriately
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // May succeed or fail depending on field alignment validation for different depths
     match result {
@@ -266,7 +266,7 @@ fn test_multi_chain_parsing_errors() {
     }));
 
     // Execute the transform - should handle parsing errors gracefully
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Should either succeed with valid fields or handle errors gracefully
     match result {
@@ -320,7 +320,7 @@ fn test_multi_chain_fallback_behavior() {
     }));
 
     // Execute the transform - should fallback to simple resolution if ExecutionEngine produces placeholders
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // May succeed with fallback or fail due to ExecutionEngine limitations
     match result {
@@ -376,7 +376,7 @@ fn test_multi_chain_empty_expressions() {
     }));
 
     // Execute the transform - should handle minimal expressions
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // May succeed or fail depending on ExecutionEngine behavior with minimal expressions
     match result {
@@ -435,7 +435,7 @@ fn test_multi_chain_complex_expressions() {
     ]));
 
     // Execute the transform - complex expressions may succeed or fail validation
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // Complex expressions might fail alignment validation, which is acceptable
     match result {
@@ -481,7 +481,7 @@ fn test_backward_compatibility_after_multi_chain_integration() {
     }));
 
     // Execute the transform - Single schemas should still work
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Single schemas should maintain backward compatibility");
     
@@ -526,7 +526,7 @@ fn test_multi_chain_coordination_logging() {
     }));
 
     // Execute the transform - should produce logging without issues
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     // The main requirement is that it doesn't crash and produces some result
     match result {

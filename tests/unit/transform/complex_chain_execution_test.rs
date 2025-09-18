@@ -46,7 +46,7 @@ fn test_complex_chain_expression_execution() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     match result {
         Ok(json_result) => {
@@ -111,7 +111,7 @@ fn test_simple_chain_expression_execution() {
     }));
 
     // Execute the transform
-    let result = TransformExecutor::execute_transform_with_expr(&transform, input_values);
+    let result = TransformExecutor::execute_transform(&transform, input_values);
     
     assert!(result.is_ok(), "Simple chain expression should succeed");
     
