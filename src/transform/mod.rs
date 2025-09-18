@@ -13,6 +13,7 @@
 //! * `coordination` - Multi-chain coordination for complex schemas
 //! * `aggregation` - Result aggregation for different schema types
 //! * `executor` - Unified executor for all schema types (Single, Range, HashRange)
+//! * `iterator_stack` - Sophisticated execution model for complex nested iterations and fan-out operations
 //! * `restricted_access` - Enforces mutation-only data persistence
 //!
 //! ## Architecture
@@ -37,6 +38,13 @@
 //!
 //! Use the `TransformDataPersistence` trait and `MutationBasedPersistence` 
 //! implementation for all data persistence needs.
+//!
+//! ## Documentation
+//!
+//! For detailed architecture documentation, see:
+//! - [Iterator Stack Architecture](../../docs/design/iterator_stack_architecture.md)
+//! - [Iterator Stack Quick Reference](../../docs/design/iterator_stack_quick_reference.md)
+//! - [Iterator Stack Flow Diagram](../../docs/design/iterator_stack_flow_diagram.md)
 
 pub mod ast;
 pub mod executor;
