@@ -6,7 +6,7 @@
 //! **Note**: This executor only supports declarative transforms. Procedural transforms are not supported.
 
 use crate::schema::types::{SchemaError, Transform, json_schema::DeclarativeSchemaDefinition, schema::SchemaType};
-use crate::transform::validation::{ValidationTimings, validate_hashrange_schema, validate_field_alignment_unified, validate_field_alignment};
+use crate::transform::validation::{validate_hashrange_schema, validate_field_alignment_unified, validate_field_alignment};
 use crate::transform::shared_utilities::{
     convert_iterator_stack_error,
     collect_expressions_from_schema, collect_expressions_from_schema_with_keys,
@@ -238,7 +238,7 @@ impl TransformExecutor {
         // Execute multi-chain coordination
         let execution_start = Instant::now();
         let result = execute_multi_chain_coordination_with_monitoring(schema, input_values, key_config)?;
-        let execution_duration = execution_start.elapsed();
+        let _execution_duration = execution_start.elapsed();
         
         // Log performance summary
         Self::log_execution_performance(
