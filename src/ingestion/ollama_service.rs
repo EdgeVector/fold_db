@@ -1,6 +1,6 @@
-// OpenRouter API service for AI-powered schema analysis
+//! Ollama API service for AI-powered schema analysis
 
-use crate::ingestion::config::OpenRouterConfig;
+use crate::ingestion::config::OllamaConfig;
 use crate::ingestion::{AISchemaResponse, IngestionError, IngestionResult};
 use crate::logging::features::LogFeature;
 use crate::log_feature;
@@ -12,15 +12,15 @@ use std::time::Duration;
 /// Prompt header shared across requests
 const PROMPT_HEADER: &str = r#"Tell me which of these schemas to use for this sample json data. If none are available, then create a new one. Return the value in this format:
 {
-  \"existing_schemas\": [<list_of_schema_names>],
-  \"new_schemas\": <single_schema_definition>,
-  \"mutation_mappers\": {json_field_path: schema_field_path}
+  "existing_schemas": [<list_of_schema_names visualized>],
+  "new_schemas": <single_schema_definition>,
+  "mutation_mappers": {json_field_path: schema_field_path}
 }
 
 Where:
 - existing_schemas is an array of schema names that match the input data
 - new_schemas is a single schema definition if no existing schemas match
-- mutation_mappers maps JSON paths (like \"path.field[0]") to schema paths (like \"schema.field[\\\"key\\\"]\")
+- mutation_mappers maps JSON paths (like "path.field[0]") to schema paths (like "schema.field[\"key\"]")
 "#;
 
 /// Instructions appended to every prompt
@@ -38,60 +38,31 @@ fn pretty_json_or_empty(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string())
 }
 
-/// OpenRouter API service
-pub struct OpenRouterService {
+/// Ollama API service
+pub struct OllamaService {
     client: Client,
-    config: OpenRouterConfig,
+    config: OllamaConfig,
     max_retries: u32,
 }
 
-/// Request to OpenRouter API
+/// Request to Ollama API
 #[derive(Debug, Serialize)]
-struct OpenRouterRequest {
+struct OllamaRequest {
     model: String,
-    messages: Vec<OpenRouterMessage>,
-    max_tokens: Option<u32>,
-    temperature: Option<f32>,
+    prompt: String,
+    stream: bool,
 }
 
-/// Message in OpenRouter request
-#[derive(Debug, Serialize)]
-struct OpenRouterMessage {
-    role: String,
-    content: String,
-}
-
-/// Response from OpenRouter API
+/// Response from Ollama API
 #[derive(Debug, Deserialize)]
-struct OpenRouterResponse {
-    choices: Vec<OpenRouterChoice>,
-    usage: Option<OpenRouterUsage>,
+struct OllamaResponse {
+    response: String,
 }
 
-/// Choice in OpenRouter response
-#[derive(Debug, Deserialize)]
-struct OpenRouterChoice {
-    message: OpenRouterResponseMessage,
-}
-
-/// Response message from OpenRouter
-#[derive(Debug, Deserialize)]
-struct OpenRouterResponseMessage {
-    content: String,
-}
-
-/// Usage information from OpenRouter
-#[derive(Debug, Deserialize)]
-struct OpenRouterUsage {
-    prompt_tokens: Option<u32>,
-    completion_tokens: Option<u32>,
-    total_tokens: Option<u32>,
-}
-
-impl OpenRouterService {
-    /// Create a new OpenRouter service
+impl OllamaService {
+    /// Create a new Ollama service
     pub fn new(
-        config: OpenRouterConfig,
+        config: OllamaConfig,
         timeout_seconds: u64,
         max_retries: u32,
     ) -> IngestionResult<Self> {
@@ -101,7 +72,7 @@ impl OpenRouterService {
             .timeout(Duration::from_secs(timeout_seconds))
             .build()
             .map_err(|e| {
-                IngestionError::openrouter_error(format!("Failed to create HTTP client: {}", e))
+                IngestionError::ollama_error(format!("Failed to create HTTP client: {}", e))
             })?;
 
         Ok(Self { client, config, max_retries })
@@ -131,7 +102,7 @@ impl OpenRouterService {
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "Sending request to OpenRouter API with model: {}",
+            "Sending request to Ollama API with model: {}",
             self.config.model
         );
         log_feature!(
@@ -140,13 +111,14 @@ impl OpenRouterService {
             "AI Request Prompt (length: {} chars): {}",
             prompt.len(),
             if prompt.len() > 1000 {
-                format!("{}...[truncated]", &prompt[..1000])
+                format!("{}
+...[truncated]", &prompt[..1000])
             } else {
                 prompt.clone()
             }
         );
 
-        let response = self.call_openrouter_api(&prompt).await?;
+        let response = self.call_ollama_api(&prompt).await?;
         log_feature!(LogFeature::Ingestion, info, "=== FULL AI RESPONSE ===");
         log_feature!(
             LogFeature::Ingestion,
@@ -171,16 +143,12 @@ impl OpenRouterService {
         )
     }
 
-    /// Call the OpenRouter API
-    async fn call_openrouter_api(&self, prompt: &str) -> IngestionResult<String> {
-        let request = OpenRouterRequest {
+    /// Call the Ollama API
+    async fn call_ollama_api(&self, prompt: &str) -> IngestionResult<String> {
+        let request = OllamaRequest {
             model: self.config.model.clone(),
-            messages: vec![OpenRouterMessage {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            }],
-            max_tokens: Some(4000),
-            temperature: Some(0.1),
+            prompt: prompt.to_string(),
+            stream: false,
         };
 
         let mut last_error = None;
@@ -189,7 +157,7 @@ impl OpenRouterService {
             log_feature!(
                 LogFeature::Ingestion,
                 info,
-                "OpenRouter API attempt {} of {}",
+                "Ollama API attempt {} of {}",
                 attempt,
                 self.max_retries
             );
@@ -199,7 +167,7 @@ impl OpenRouterService {
                     log_feature!(
                         LogFeature::Ingestion,
                         info,
-                        "OpenRouter API call successful on attempt {}",
+                        "Ollama API call successful on attempt {}",
                         attempt
                     );
                     return Ok(response);
@@ -208,7 +176,7 @@ impl OpenRouterService {
                     log_feature!(
                         LogFeature::Ingestion,
                         warn,
-                        "OpenRouter API attempt {} failed: {}",
+                        "Ollama API attempt {} failed: {}",
                         attempt,
                         e
                     );
@@ -225,23 +193,17 @@ impl OpenRouterService {
         }
 
         Err(last_error
-            .unwrap_or_else(|| IngestionError::openrouter_error("All API attempts failed")))
+            .unwrap_or_else(|| IngestionError::ollama_error("All API attempts failed")))
     }
 
     /// Make a single API request
-    async fn make_api_request(&self, request: &OpenRouterRequest) -> IngestionResult<String> {
-        let url = format!("{}/chat/completions", self.config.base_url);
+    async fn make_api_request(&self, request: &OllamaRequest) -> IngestionResult<String> {
+        let url = format!("{}/api/generate", self.config.base_url);
 
         let response = self
             .client
             .post(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.config.api_key),
-            )
             .header("Content-Type", "application/json")
-            .header("HTTP-Referer", "https://github.com/datafold/datafold")
-            .header("X-Title", "DataFold Ingestion")
             .json(request)
             .send()
             .await?;
@@ -252,32 +214,15 @@ impl OpenRouterService {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(IngestionError::openrouter_error(format!(
+            return Err(IngestionError::ollama_error(format!(
                 "API request failed with status {}: {}",
                 status, error_text
             )));
         }
 
-        let openrouter_response: OpenRouterResponse = response.json().await?;
+        let ollama_response: OllamaResponse = response.json().await?;
 
-        if let Some(usage) = &openrouter_response.usage {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "OpenRouter API usage - Prompt tokens: {:?}, Completion tokens: {:?}, Total tokens: {:?}",
-                usage.prompt_tokens,
-                usage.completion_tokens,
-                usage.total_tokens
-            );
-        }
-
-        if openrouter_response.choices.is_empty() {
-            return Err(IngestionError::openrouter_error(
-                "No choices in API response",
-            ));
-        }
-
-        Ok(openrouter_response.choices[0].message.content.clone())
+        Ok(ollama_response.response)
     }
 
     /// Parse the AI response
@@ -404,6 +349,7 @@ impl OpenRouterService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ingestion::config::OllamaConfig;
 
     #[test]
     fn test_extract_json_from_response() {
@@ -470,11 +416,11 @@ That should work."###;
         assert!(pretty_json_or_empty(&value).contains("\"x\": 1"));
     }
 
-    fn create_test_service() -> OpenRouterService {
-        let config = OpenRouterConfig {
-            api_key: "test-key".to_string(),
-            ..Default::default()
+    fn create_test_service() -> OllamaService {
+        let config = OllamaConfig {
+            model: "test-model".to_string(),
+            base_url: "http://localhost:11434".to_string(),
         };
-        OpenRouterService::new(config, 10, 3).unwrap()
+        OllamaService::new(config, 10, 3).unwrap()
     }
 }
