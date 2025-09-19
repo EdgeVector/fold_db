@@ -1,5 +1,6 @@
 use crate::fees::SchemaPaymentConfig;
 use crate::schema::types::field::FieldVariant;
+use crate::schema::types::json_schema::KeyConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -40,6 +41,9 @@ pub struct Schema {
     /// The type of schema. Defaults to a key range schema.
     #[serde(default = "default_schema_type")]
     pub schema_type: SchemaType,
+    /// Universal key configuration for all schema types
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<KeyConfig>,
     /// Collection of fields with their definitions and configurations
     pub fields: HashMap<String, FieldVariant>,
     /// Payment configuration for schema-level access control
@@ -64,6 +68,7 @@ impl Schema {
         Self {
             name,
             schema_type: default_schema_type(),
+            key: None,
             fields: HashMap::new(),
             payment_config: SchemaPaymentConfig::default(),
             hash: None,
@@ -79,6 +84,7 @@ impl Schema {
         Self {
             name,
             schema_type: SchemaType::Range { range_key },
+            key: None,
             fields: HashMap::new(),
             payment_config: SchemaPaymentConfig::default(),
             hash: None,

@@ -120,17 +120,26 @@ impl JsonTransform {
     }
 }
 
-/// Configuration for hash and range key expressions in HashRange schemas.
+/// Configuration for hash and range key expressions.
+///
+/// JSON parsing allows these to be omitted. Missing values default to empty strings
+/// and are ignored for Single/Range unless required by schema type. For HashRange,
+/// both must be provided and non-empty.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KeyConfig {
-    /// Hash field expression for the key
+    /// Hash field expression for the key (optional for Single/Range; required for HashRange)
+    #[serde(default = "empty_string", skip_serializing_if = "is_empty_string")] 
     pub hash_field: String,
-    /// Range field expression for the key
+    /// Range field expression for the key (optional for Single; required for Range/HashRange when key present)
+    #[serde(default = "empty_string", skip_serializing_if = "is_empty_string")] 
     pub range_field: String,
 }
 
+fn empty_string() -> String { String::new() }
+fn is_empty_string(s: &str) -> bool { s.trim().is_empty() }
+
 impl KeyConfig {
-    /// Validates the key configuration for HashRange schemas.
+    /// Validates the key configuration for HashRange schemas where both fields are required.
     pub fn validate(&self) -> Result<(), SchemaError> {
         use crate::validation_utils::ValidationUtils;
 
@@ -558,10 +567,14 @@ impl DeclarativeSchemaDefinition {
 
     /// Validates Single schema specific requirements
     fn validate_single_requirements(&self) -> Result<(), SchemaError> {
-        if self.key.is_some() {
-            return Err(SchemaError::InvalidField(
-                "Single schema should not have key configuration".to_string()
-            ));
+        // Universal key: allow optional key for Single. If provided, validate syntax of any provided fields.
+        if let Some(key) = &self.key {
+            if !key.hash_field.trim().is_empty() {
+                self.validate_key_expression("Single", "hash_field", &key.hash_field)?;
+            }
+            if !key.range_field.trim().is_empty() {
+                self.validate_key_expression("Single", "range_field", &key.range_field)?;
+            }
         }
 
         Ok(())
@@ -571,15 +584,35 @@ impl DeclarativeSchemaDefinition {
     fn validate_range_requirements(&self, range_key: &str) -> Result<(), SchemaError> {
         use crate::validation_utils::ValidationUtils;
 
+        // Legacy support: ensure range_key is non-empty and exists in fields; iterator checks elsewhere
         ValidationUtils::require_non_empty_string(range_key, "Range schema range_key")?;
 
-        if self.key.is_some() {
-            return Err(SchemaError::InvalidField(
-                "Range schema should not have key configuration (range_key is specified in schema_type)".to_string()
-            ));
+        // Universal key support: allow optional key; require that range_field (if present) is non-empty and valid
+        if let Some(key) = &self.key {
+            if !key.range_field.trim().is_empty() {
+                self.validate_key_expression("Range", "range_field", &key.range_field)?;
+            }
+            if !key.hash_field.trim().is_empty() {
+                // hash_field is optional for Range, but if present ensure valid expression
+                self.validate_key_expression("Range", "hash_field", &key.hash_field)?;
+            }
         }
 
         Ok(())
+    }
+
+    /// Helper to validate key expressions consistently
+    fn validate_key_expression(&self, schema_label: &str, field_name: &str, expr: &str) -> Result<(), SchemaError> {
+        let trimmed = expr.trim();
+        if trimmed.is_empty() {
+            return Err(SchemaError::InvalidField(format!(
+                "{} schema {} cannot be empty",
+                schema_label, field_name
+            )));
+        }
+        // Reuse existing basic validator from KeyConfig
+        let temp = KeyConfig { hash_field: String::new(), range_field: String::new() };
+        temp.validate_field_expression(trimmed, field_name)
     }
 }
 

@@ -69,6 +69,7 @@ impl HashRangeTestFixture {
         Schema {
             name: "BlogPostWordIndex".to_string(),
             schema_type: SchemaType::HashRange,
+            key: None,
             fields,
             payment_config: SchemaPaymentConfig::default(),
             hash: None,
@@ -108,6 +109,7 @@ impl HashRangeTestFixture {
         Schema {
             name: "BlogPostWordIndex".to_string(),
             schema_type: SchemaType::HashRange,
+            key: None,
             fields,
             payment_config: SchemaPaymentConfig::default(),
             hash: None,
@@ -129,6 +131,7 @@ impl HashRangeTestFixture {
         Schema {
             name: "BlogPost".to_string(),
             schema_type: SchemaType::Single,
+            key: None,
             fields,
             payment_config: SchemaPaymentConfig::default(),
             hash: None,

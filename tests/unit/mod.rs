@@ -17,3 +17,6 @@ pub mod iterator_stack_tests;
 pub mod field_alignment_tests;
 pub mod chain_parser_tests;
 pub mod hashrange_mutation_core_test;
+pub mod schema_universal_key_validation_tests;
+pub mod schema_universal_key_parsing_tests;
+pub mod unified_key_extraction_tests;

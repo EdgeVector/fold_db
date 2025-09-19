@@ -81,6 +81,7 @@ pub fn interpret_schema(
     Ok(Schema {
         name: json_schema.name,
         schema_type: json_schema.schema_type,
+        key: None, // Legacy JSON schema interpretation doesn't support universal keys yet
         fields,
         payment_config: json_schema.payment_config,
         hash: json_schema.hash,
