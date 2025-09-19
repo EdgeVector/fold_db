@@ -3,7 +3,7 @@ import {
   isRangeSchema,
   getRangeKey,
   getNonRangeKeyFields
-} from '../rangeSchemaUtils'
+} from '../rangeSchemaHelpers'
 
 // This is the actual UserScores schema structure from the file
 const realUserScoresSchema = {

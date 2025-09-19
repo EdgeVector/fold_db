@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
-import { getRangeSchemaInfo } from '../../utils/rangeSchemaUtils'
-import { getHashRangeSchemaInfo } from '../../utils/hashRangeSchemaUtils'
+import { getRangeSchemaInfo, getHashRangeSchemaInfo } from '../../utils/rangeSchemaHelpers'
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
 import {
   selectAllSchemas,

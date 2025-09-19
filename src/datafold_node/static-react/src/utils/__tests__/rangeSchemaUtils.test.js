@@ -6,7 +6,7 @@ import {
   formatRangeSchemaQuery,
   validateRangeKeyForMutation,
   getRangeSchemaInfo
-} from '../rangeSchemaUtils'
+} from '../rangeSchemaHelpers'
 
 describe('rangeSchemaUtils', () => {
   describe('isRangeSchema', () => {
