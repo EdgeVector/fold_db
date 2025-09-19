@@ -10,6 +10,8 @@ Replace ad-hoc backend branches that special-case `Range { range_key }` with cal
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-19 12:06:00 | Created | N/A | Proposed | Task file created | ai-agent |
 | 2025-09-19 16:00:00 | Status Update | Proposed | InProgress | Start removing legacy Range { range_key } branching in backend | ai-agent |
+| 2025-09-19 16:30:00 | Status Update | InProgress | Review | Legacy Range branching removed, unified key extraction implemented, backward compatibility maintained | ai-agent |
+| 2025-09-19 17:25:00 | Status Update | Review | Done | Task verified complete - legacy Range branching removed, unified key extraction implemented | ai-agent |
 
 ## Requirements
 - Identify and replace code that checks schema variants directly for range handling.
