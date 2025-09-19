@@ -15,6 +15,26 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use log::{info, error};
 
+/// Generate a simple hash for mutation tracking
+fn generate_mutation_hash(mutation: &Mutation) -> String {
+    use sha2::{Sha256, Digest};
+    
+    let mut hasher = Sha256::new();
+    hasher.update(mutation.schema_name.as_bytes());
+    hasher.update(format!("{:?}", mutation.mutation_type).as_bytes());
+    
+    // Add field names and values to hash
+    let mut field_entries: Vec<_> = mutation.fields_and_values.iter().collect();
+    field_entries.sort_by_key(|(key, _)| *key);
+    
+    for (field_name, field_value) in field_entries {
+        hasher.update(field_name.as_bytes());
+        hasher.update(field_value.to_string().as_bytes());
+    }
+    
+    format!("{:x}", hasher.finalize())
+}
+
 /// Example: Creating and executing a mutation for data storage
 pub struct MutationBasedDataStorage;
 
@@ -125,7 +145,7 @@ impl MutationBasedDataStorage {
     /// Execute a mutation through the mutation service
     fn execute_mutation(&self, mutation: &Mutation) -> Result<(), SchemaError> {
         // Generate mutation hash for tracking
-        let mutation_hash = MutationService::generate_mutation_hash(mutation)?;
+        let mutation_hash = generate_mutation_hash(mutation);
         
         info!("🔄 Executing mutation with hash: {}", mutation_hash);
 
@@ -182,7 +202,7 @@ impl BatchMutationExecutor {
             info!("🔄 Executing mutation {}/{}", i + 1, self.mutations.len());
             
             // Generate mutation hash
-            let mutation_hash = MutationService::generate_mutation_hash(mutation)?;
+            let mutation_hash = generate_mutation_hash(mutation);
             
             // Execute the mutation (placeholder - would use actual mutation service method)
             info!("🔄 Would execute mutation with hash: {}", mutation_hash);
@@ -270,7 +290,7 @@ impl ConditionalMutationExecutor {
 
     /// Execute mutation through the mutation service
     fn execute_mutation(&self, mutation: &Mutation) -> Result<(), SchemaError> {
-        let mutation_hash = MutationService::generate_mutation_hash(mutation)?;
+        let mutation_hash = generate_mutation_hash(mutation);
         
         // TODO: Implement actual mutation execution
         // This would use the mutation service to update field values
@@ -278,6 +298,7 @@ impl ConditionalMutationExecutor {
         
         Ok(())
     }
+
 }
 
 // Note: Tests removed as they depended on deleted StandardizedTransformExecutor
