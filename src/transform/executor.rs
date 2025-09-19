@@ -178,17 +178,49 @@ impl TransformExecutor {
     fn execute_range_pattern(
         schema: &DeclarativeSchemaDefinition,
         input_values: &HashMap<String, JsonValue>,
-        range_key: &str,
+        _range_key: &str, // Keep for backward compatibility but use unified extraction
     ) -> Result<JsonValue, SchemaError> {
         Self::execute_with_common_pattern(
             schema,
             input_values,
             "Range",
             |schema, input_values, _parsed_chains, _alignment_result| {
-                info!("🔧 Executing Range coordination for schema: {} with range_key: {}", schema.name, range_key);
+                // Use unified key extraction logic instead of legacy range_key parameter
+                let range_key = match &schema.schema_type {
+                    SchemaType::Range { range_key } => {
+                        // Use universal key configuration if available, otherwise fall back to legacy range_key
+                        if let Some(key_config) = &schema.key {
+                            if !key_config.range_field.trim().is_empty() {
+                                key_config.range_field.clone()
+                            } else {
+                                return Err(SchemaError::InvalidData(
+                                    "Range schema with key configuration must have range_field".to_string()
+                                ));
+                            }
+                        } else {
+                            // Legacy range_key support - this maintains backward compatibility
+                            range_key.clone()
+                        }
+                    },
+                    _ => return Err(SchemaError::InvalidData("Expected Range schema type".to_string()))
+                };
+                
+                let hash_key = if let Some(key_config) = &schema.key {
+                    if !key_config.hash_field.trim().is_empty() {
+                        Some(key_config.hash_field.clone())
+                    } else { None }
+                } else {
+                    None
+                };
+                
+                info!("🔧 Executing Range coordination for schema: {} with unified keys - hash: {:?}, range: {}", 
+                      schema.name, hash_key, range_key);
                 
                 // Collect all expressions for Range coordination using unified function
-                let key_expressions = vec![("_range_field".to_string(), range_key.to_string())];
+                let mut key_expressions = vec![("_range_field".to_string(), range_key)];
+                if let Some(hash_key) = hash_key {
+                    key_expressions.push(("_hash_field".to_string(), hash_key));
+                }
                 let all_expressions = collect_expressions_from_schema_with_keys(schema, &key_expressions);
                 
                 info!("📊 Coordinating {} expressions for Range execution", all_expressions.len());
