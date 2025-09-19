@@ -55,9 +55,6 @@ impl HashRangeQueryProcessor {
     fn fetch_first_10_hash_keys(&self, schema: &Schema, fields: &[String]) -> Result<Value, SchemaError> {
         info!("🔍 Fetching first 10 hash keys for schema '{}' with hash->range->fields format", schema.name);
         
-        // Get the hash field name from the schema's universal key configuration
-        let (_hash_field_name, _range_field_name) = self.get_key_field_names(schema)?;
-        
         // Use the first field to find hash keys (all fields should have the same hash keys)
         let first_field = fields.first().ok_or_else(|| {
             SchemaError::InvalidData("No fields specified for HashRange query".to_string())
@@ -92,36 +89,7 @@ impl HashRangeQueryProcessor {
         let mut result_data = serde_json::Map::new();
         
         for hash_key in selected_hash_keys {
-            let mut range_data = serde_json::Map::new();
-            
-            for field_name in fields {
-                // Construct the key for the HashRange field: schema_name_field_name_hash_key
-                let field_key = format!("{}_{}_{}", schema.name, field_name, hash_key);
-                
-                // Retrieve the BTree for this hash_key and field
-                match self.db_ops.get_item::<String>(&field_key)? {
-                    Some(btree_json) => {
-                        if let Ok(btree_data) = serde_json::from_str::<serde_json::Map<String, Value>>(&btree_json) {
-                            // For each range_key, add the field value to the range_data
-                            for (range_key, value) in &btree_data {
-                                if let Some(range_obj) = range_data.get_mut(range_key) {
-                                    if let Some(range_map) = range_obj.as_object_mut() {
-                                        range_map.insert(field_name.clone(), value.clone());
-                                    }
-                                } else {
-                                    let mut range_map = serde_json::Map::new();
-                                    range_map.insert(field_name.clone(), value.clone());
-                                    range_data.insert(range_key.clone(), json!(range_map));
-                                }
-                            }
-                        }
-                    }
-                    None => {
-                        // No data for this field, continue
-                    }
-                }
-            }
-            
+            let range_data = self.fetch_range_data_for_hash_key(schema, fields, &hash_key)?;
             result_data.insert(hash_key, json!(range_data));
         }
         
@@ -129,15 +97,47 @@ impl HashRangeQueryProcessor {
         Ok(json!(result_data))
     }
 
+    /// Fetch range data for a specific hash key and restructure to hash->range->fields format
+    fn fetch_range_data_for_hash_key(&self, schema: &Schema, fields: &[String], hash_key: &str) -> Result<serde_json::Map<String, Value>, SchemaError> {
+        let mut range_data = serde_json::Map::new();
+        
+        for field_name in fields {
+            // Construct the key for the HashRange field: schema_name_field_name_hash_key
+            let field_key = format!("{}_{}_{}", schema.name, field_name, hash_key);
+            
+            // Retrieve the BTree for this hash_key and field
+            match self.db_ops.get_item::<String>(&field_key)? {
+                Some(btree_json) => {
+                    if let Ok(btree_data) = serde_json::from_str::<serde_json::Map<String, Value>>(&btree_json) {
+                        // For each range_key, add the field value to the range_data
+                        for (range_key, value) in &btree_data {
+                            if let Some(range_obj) = range_data.get_mut(range_key) {
+                                if let Some(range_map) = range_obj.as_object_mut() {
+                                    range_map.insert(field_name.clone(), value.clone());
+                                }
+                            } else {
+                                let mut range_map = serde_json::Map::new();
+                                range_map.insert(field_name.clone(), value.clone());
+                                range_data.insert(range_key.clone(), json!(range_map));
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // No data for this field, continue
+                }
+            }
+        }
+        
+        Ok(range_data)
+    }
+
     /// Query HashRange schema with proper grouping by hash_key -> range_key -> fields
     pub fn query_hashrange_schema(&self, schema: &Schema, fields: &[String], hash_key_filter: Option<Value>) -> Result<Value, SchemaError> {
         info!("🔑 Querying HashRange schema '{}' with hash->range->fields grouping", schema.name);
         
-        // Get the hash and range field names from the schema's universal key configuration
-        let (hash_field_name, range_field_name) = self.get_key_field_names(schema)?;
-        
-        info!("🔑 Using universal key configuration - hash_field: '{}', range_field: '{}'", 
-              hash_field_name, range_field_name);
+        // Validate schema has proper key configuration
+        self.get_key_field_names(schema)?;
         
         if let Some(hash_filter) = &hash_key_filter {
             // Query specific hash key
@@ -157,42 +157,8 @@ impl HashRangeQueryProcessor {
             
             info!("🔍 HashRange query for hash key: '{}'", hash_key);
             
-            // Query HashRange data using the new format: {schema_name}_{field_name}_{hash_key}
-            // Restructure to hash->range->fields format
-            let mut range_data = serde_json::Map::new();
-            
-            for field_name in fields {
-                // Construct the key for the HashRange field: schema_name_field_name_hash_key
-                let field_key = format!("{}_{}_{}", schema.name, field_name, hash_key);
-                println!("🔍 DEBUG: Querying HashRange field key: '{}'", field_key);
-                
-                // Retrieve the BTree for this hash_key and field
-                match self.db_ops.get_item::<String>(&field_key)? {
-                    Some(btree_json) => {
-                        println!("🔍 DEBUG: Found data for key '{}': {}", field_key, btree_json);
-                        if let Ok(btree_data) = serde_json::from_str::<serde_json::Map<String, Value>>(&btree_json) {
-                            // For each range_key, add the field value to the range_data
-                            for (range_key, value) in &btree_data {
-                                if let Some(range_obj) = range_data.get_mut(range_key) {
-                                    if let Some(range_map) = range_obj.as_object_mut() {
-                                        range_map.insert(field_name.clone(), value.clone());
-                                    }
-                                } else {
-                                    let mut range_map = serde_json::Map::new();
-                                    range_map.insert(field_name.clone(), value.clone());
-                                    range_data.insert(range_key.clone(), json!(range_map));
-                                }
-                            }
-                            println!("🔍 DEBUG: Processed {} range entries for field '{}'", btree_data.len(), field_name);
-                        } else {
-                            println!("🔍 DEBUG: Failed to parse BTree data for field '{}'", field_name);
-                        }
-                    }
-                    None => {
-                        println!("🔍 DEBUG: No data found for key '{}'", field_key);
-                    }
-                }
-            }
+            // Fetch range data for the specific hash key
+            let range_data = self.fetch_range_data_for_hash_key(schema, fields, &hash_key)?;
             
             // Create the final result structure: {hash_key: {range_key: {fields}}}
             let mut result = serde_json::Map::new();
