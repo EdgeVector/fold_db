@@ -4,16 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::env;
 
 /// Specifies the AI provider to use for ingestion.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum AIProvider {
+    #[default]
     OpenRouter,
     Ollama,
-}
-
-impl Default for AIProvider {
-    fn default() -> Self {
-        AIProvider::OpenRouter
-    }
 }
 
 /// Configuration for the OpenRouter AI provider.
@@ -89,7 +84,7 @@ impl OllamaConfig {
 
 
 /// Configuration for the ingestion module.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestionConfig {
     /// The AI provider to use.
     pub provider: AIProvider,
@@ -107,6 +102,21 @@ pub struct IngestionConfig {
     pub auto_execute_mutations: bool,
     /// Default trust distance for mutations.
     pub default_trust_distance: u32,
+}
+
+impl Default for IngestionConfig {
+    fn default() -> Self {
+        Self {
+            provider: AIProvider::default(),
+            openrouter: OpenRouterConfig::default(),
+            ollama: OllamaConfig::default(),
+            enabled: false,
+            max_retries: 3,
+            timeout_seconds: 60,
+            auto_execute_mutations: true,
+            default_trust_distance: 0,
+        }
+    }
 }
 
 impl IngestionConfig {
@@ -133,16 +143,19 @@ impl IngestionConfig {
 
     /// Create a new ingestion config allowing empty API key (for configuration endpoints).
     pub fn from_env_allow_empty() -> Self {
-        let mut config = IngestionConfig::default();
-
         // Load provider from environment, default to OpenRouter
-        config.provider = env::var("AI_PROVIDER")
+        let provider = env::var("AI_PROVIDER")
             .ok()
-            .and_then(|p| match p.to_lowercase().as_str() {
-                "ollama" => Some(AIProvider::Ollama),
-                _ => Some(AIProvider::OpenRouter),
+            .map(|p| match p.to_lowercase().as_str() {
+                "ollama" => AIProvider::Ollama,
+                _ => AIProvider::OpenRouter,
             })
             .unwrap_or_default();
+
+        let mut config = IngestionConfig {
+            provider,
+            ..Default::default()
+        };
 
         // Load saved config if it exists
         if let Ok(saved_config) = Self::load_saved_config() {
