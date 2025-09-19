@@ -8,12 +8,13 @@ This document covers fold db's schema management system built on the core princi
 2. [Schema Structure](#schema-structure)
 3. [Universal Key Configuration](#universal-key-configuration) ⭐ **NEW**
 4. [Simplified Schema Formats](#simplified-schema-formats) ⭐ **NEW**
-5. [Field Types](#field-types)
-6. [Permission Policies](#permission-policies)
-7. [Payment Configuration](#payment-configuration)
-8. [Schema States and Lifecycle](#schema-states-and-lifecycle)
-9. [Migration Patterns](#migration-patterns)
-10. [Best Practices](#best-practices)
+5. [HashRange Query Processing](#hashrange-query-processing) ⭐ **NEW**
+6. [Field Types](#field-types)
+7. [Permission Policies](#permission-policies)
+8. [Payment Configuration](#payment-configuration)
+9. [Schema States and Lifecycle](#schema-states-and-lifecycle)
+10. [Migration Patterns](#migration-patterns)
+11. [Best Practices](#best-practices)
 
 ## Schema Immutability
 
@@ -509,6 +510,203 @@ For comprehensive migration strategies, patterns, and step-by-step processes, se
 3. **Migrate Data** → Transform data from old to new schema
 4. **Switch References** → Update app to use new schema
 5. **Deprecate Old** → Block old schema when migration complete
+
+## HashRange Query Processing
+
+HashRange schemas support efficient querying with universal key configuration, enabling both hash-based partitioning and range-based ordering.
+
+### Query Structure
+
+HashRange queries return results in a consistent `hash->range->fields` format:
+
+```json
+{
+  "hash_key_1": {
+    "range_key_1": {
+      "field1": "value1",
+      "field2": "value2"
+    },
+    "range_key_2": {
+      "field1": "value3",
+      "field2": "value4"
+    }
+  },
+  "hash_key_2": {
+    "range_key_1": {
+      "field1": "value5",
+      "field2": "value6"
+    }
+  }
+}
+```
+
+### Universal Key Configuration
+
+HashRange schemas **require** both `hash_field` and `range_field` in their key configuration:
+
+```json
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "word",
+    "range_field": "publish_date"
+  },
+  "fields": {
+    "word": {},
+    "publish_date": {},
+    "content": {}
+  }
+}
+```
+
+### Query Methods
+
+#### 1. Hash-Filtered Queries
+
+Query specific hash keys with their range data:
+
+```bash
+curl -X POST http://localhost:9001/api/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schema": "BlogPostWordIndex",
+    "fields": ["word", "publish_date", "content"],
+    "filter": {
+      "hash_filter": {
+        "Key": "technology"
+      }
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "technology": {
+    "2025-01-15": {
+      "word": "technology",
+      "publish_date": "2025-01-15",
+      "content": "AI and machine learning..."
+    },
+    "2025-01-20": {
+      "word": "technology",
+      "publish_date": "2025-01-20",
+      "content": "Quantum computing advances..."
+    }
+  }
+}
+```
+
+#### 2. Unfiltered Queries
+
+Get the first 10 hash keys and their data:
+
+```bash
+curl -X POST http://localhost:9001/api/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schema": "BlogPostWordIndex",
+    "fields": ["word", "publish_date", "content"]
+  }'
+```
+
+**Response:**
+```json
+{
+  "technology": {
+    "2025-01-15": {
+      "word": "technology",
+      "publish_date": "2025-01-15",
+      "content": "AI and machine learning..."
+    }
+  },
+  "science": {
+    "2025-01-10": {
+      "word": "science",
+      "publish_date": "2025-01-10",
+      "content": "New discoveries in physics..."
+    }
+  }
+}
+```
+
+### Error Handling
+
+#### Missing Key Configuration
+
+```json
+{
+  "error": "HashRange schema 'BlogPostWordIndex' requires key configuration"
+}
+```
+
+**Solution:** Ensure HashRange schemas include both `hash_field` and `range_field`:
+
+```json
+{
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "word",
+    "range_field": "publish_date"
+  }
+}
+```
+
+#### Empty Key Fields
+
+```json
+{
+  "error": "HashRange schema 'BlogPostWordIndex' requires non-empty hash_field in key configuration"
+}
+```
+
+**Solution:** Provide non-empty values for both key fields:
+
+```json
+{
+  "key": {
+    "hash_field": "word",      // Must not be empty
+    "range_field": "publish_date"  // Must not be empty
+  }
+}
+```
+
+#### Invalid Hash Filter
+
+```json
+{
+  "error": "Hash filter must be an object"
+}
+```
+
+**Solution:** Use proper hash filter format:
+
+```json
+{
+  "filter": {
+    "hash_filter": {
+      "Key": "technology"  // Must be an object with 'Key' field
+    }
+  }
+}
+```
+
+### Performance Considerations
+
+- **Hash Partitioning**: Efficient data distribution across hash keys
+- **Range Ordering**: Fast range-based queries within hash partitions
+- **Memory Usage**: Optimized storage for large datasets
+- **Query Speed**: Sub-linear lookup times for hash-filtered queries
+
+### Migration from Legacy HashRange
+
+Legacy HashRange schemas continue to work without changes. The universal key configuration provides:
+
+- ✅ **Consistent API**: Same key structure as other schema types
+- ✅ **Better Performance**: Optimized key extraction and query processing
+- ✅ **Clear Error Messages**: Detailed validation feedback
+- ✅ **Future-Proof**: Unified approach for new features
 
 ## Best Practices
 
