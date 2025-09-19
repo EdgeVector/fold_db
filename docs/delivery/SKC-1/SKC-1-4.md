@@ -9,6 +9,7 @@ Update UI utilities to read optional `key` on Single/Range and required on HashR
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-19 12:03:30 | Created | N/A | Proposed | Task file created | ai-agent |
+| 2025-09-19 13:15:00 | Status Update | Proposed | InProgress | Start UI helpers update for universal key support | ai-agent |
 
 ## Requirements
 - UI helpers expose `getHashKey`, `getRangeKey`, and `getKeyShape` uniformly.
