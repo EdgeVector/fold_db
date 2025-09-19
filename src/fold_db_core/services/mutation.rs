@@ -114,14 +114,12 @@ impl MutationService {
                 mutation_context.clone(),
             );
 
-            println!("🔧 DEBUG: Publishing HashRange field request for {}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value);
-            println!("🔧 DEBUG: FieldValueSetRequest content: {}", serde_json::to_string_pretty(&field_request).unwrap_or_else(|_| "Failed to serialize".to_string()));
+            InfrastructureLogger::log_debug_info("MutationService", &format!("Publishing HashRange field request for {}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value));
             match self.message_bus.publish(field_request) {
                 Ok(_) => {
-                    println!("✅ DEBUG: HashRange field update request sent successfully for {}.{}", schema.name, field_name);
+                    InfrastructureLogger::log_operation_success("MutationService", "HashRange field update request sent", &format!("{}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value));
                     // Add a small delay to ensure the message is processed
                     std::thread::sleep(std::time::Duration::from_millis(10));
-                    InfrastructureLogger::log_operation_success("MutationService", "HashRange field update request sent", &format!("{}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value));
                 }
                 Err(e) => {
                     InfrastructureLogger::log_operation_error("MutationService", "Failed to send HashRange field update", &format!("{}.{}: {:?}", schema.name, field_name, e));
