@@ -37,7 +37,7 @@ Update documentation to reflect the changes made to the HashRange query processo
 - All documentation is consistent and up-to-date
 
 ## Files Modified
-- `docs/schema-management.md` (update HashRange query processor documentation)
-- `docs/universal-key-migration-guide.md` (add HashRange query examples)
+- `docs/reference/schema-management.md` (update HashRange query processor documentation)
+- `docs/guides/operations/universal-key-migration-guide.md` (add HashRange query examples)
 - API documentation files (if any)
 - README files (if needed)

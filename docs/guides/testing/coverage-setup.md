@@ -169,7 +169,7 @@ Backend: target/
 - **CI optimization**: Performance monitoring and improvements
 
 ### Documentation
-- **Detailed guide**: [`src/datafold_node/static-react/COVERAGE.md`](src/datafold_node/static-react/COVERAGE.md)
+- **Detailed guide**: [`docs/ui/static-react/coverage.md`](../../ui/static-react/coverage.md)
 - **Configuration**: All settings documented and explained
 - **Troubleshooting**: Common issues and solutions
 

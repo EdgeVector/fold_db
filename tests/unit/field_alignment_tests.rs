@@ -1,7 +1,6 @@
 use datafold::transform::iterator_stack::chain_parser::{ChainParser, FieldAlignment};
 use datafold::transform::iterator_stack::field_alignment::types::{
-    AlignmentErrorType, FieldAlignmentValidator,
-    OptimizationType,
+    AlignmentErrorType, FieldAlignmentValidator, OptimizationType,
 };
 use std::collections::HashMap;
 
@@ -26,7 +25,9 @@ fn test_broadcast_alignment() {
     let validator = FieldAlignmentValidator::new();
     let parser = ChainParser::new();
 
-    let chain1 = parser.parse("blogpost.map().content.split_by_word().map()").unwrap();
+    let chain1 = parser
+        .parse("blogpost.map().content.split_by_word().map()")
+        .unwrap();
     let chain2 = parser.parse("blogpost.map().publish_date").unwrap();
 
     let result = validator.validate_alignment(&[chain1, chain2]).unwrap();
@@ -35,10 +36,16 @@ fn test_broadcast_alignment() {
     assert_eq!(result.max_depth, 2);
 
     // Check alignments
-    let content_alignment = result.field_alignments.get("blogpost.map().content.split_by_word().map()").unwrap();
+    let content_alignment = result
+        .field_alignments
+        .get("blogpost.map().content.split_by_word().map()")
+        .unwrap();
     assert_eq!(content_alignment.alignment, FieldAlignment::OneToOne);
 
-    let date_alignment = result.field_alignments.get("blogpost.map().publish_date").unwrap();
+    let date_alignment = result
+        .field_alignments
+        .get("blogpost.map().publish_date")
+        .unwrap();
     assert_eq!(date_alignment.alignment, FieldAlignment::Broadcast);
 }
 
@@ -47,7 +54,9 @@ fn test_cartesian_product_detection() {
     let validator = FieldAlignmentValidator::new();
     let parser = ChainParser::new();
 
-    let chain1 = parser.parse("blogpost.map().tags.split_array().map()").unwrap();
+    let chain1 = parser
+        .parse("blogpost.map().tags.split_array().map()")
+        .unwrap();
     let chain2 = parser.parse("blogpost.map().comments.map()").unwrap();
 
     let result = validator.validate_alignment(&[chain1, chain2]).unwrap();
@@ -65,7 +74,9 @@ fn test_depth_exceeded_validation() {
     let validator = FieldAlignmentValidator::with_config(2, false);
     let parser = ChainParser::new();
 
-    let chain = parser.parse("blogpost.map().content.split_by_word().map().split_array().map()").unwrap();
+    let chain = parser
+        .parse("blogpost.map().content.split_by_word().map().split_array().map()")
+        .unwrap();
 
     let result = validator.validate_alignment(&[chain]).unwrap();
 
@@ -82,8 +93,12 @@ fn test_reducer_suggestions() {
     let validator = FieldAlignmentValidator::new();
     let parser = ChainParser::new();
 
-    let chain1 = parser.parse("blogpost.map().content.split_by_word().map()").unwrap();
-    let chain2 = parser.parse("blogpost.map().tags.split_array().map().split_by_word().map()").unwrap();
+    let chain1 = parser
+        .parse("blogpost.map().content.split_by_word().map()")
+        .unwrap();
+    let chain2 = parser
+        .parse("blogpost.map().tags.split_array().map().split_by_word().map()")
+        .unwrap();
 
     let result = validator.validate_alignment(&[chain1, chain2]).unwrap();
 
@@ -92,7 +107,10 @@ fn test_reducer_suggestions() {
     // With the updated logic, chains at the depth limit should require reducers for optimization
     // - chain1: depth=2, max_depth=3 -> Broadcast (no reducer needed)
     // - chain2: depth=3, max_depth=3 -> OneToOne (reducer suggested for optimization)
-    let tags_alignment = result.field_alignments.get("blogpost.map().tags.split_array().map().split_by_word().map()").unwrap();
+    let tags_alignment = result
+        .field_alignments
+        .get("blogpost.map().tags.split_array().map().split_by_word().map()")
+        .unwrap();
     assert_eq!(tags_alignment.alignment, FieldAlignment::OneToOne); // Correct based on current logic
     assert!(tags_alignment.requires_reducer); // OneToOne at depth limit should suggest reducer for optimization
     assert!(tags_alignment.suggested_reducer.is_some()); // Reducer suggestion should be provided
@@ -101,9 +119,9 @@ fn test_reducer_suggestions() {
 #[test]
 fn test_optimization_suggestions() {
     let validator = FieldAlignmentValidator::new();
-    
+
     let mut field_alignments = HashMap::new();
-    
+
     // Create many broadcast fields
     for i in 0..10 {
         field_alignments.insert(

@@ -3,8 +3,8 @@
 //! This module provides the synchronous message bus that uses std::sync::mpsc
 //! for communication between components.
 
-use super::events::{Event, EventType};
 use super::error_handling::{MessageBusError, MessageBusResult};
+use super::events::{Event, EventType};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -31,7 +31,10 @@ impl<T: EventType> Consumer<T> {
     }
 
     /// Try to receive an event with a timeout
-    pub fn recv_timeout(&mut self, timeout: std::time::Duration) -> Result<T, mpsc::RecvTimeoutError> {
+    pub fn recv_timeout(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<T, mpsc::RecvTimeoutError> {
         self.receiver.recv_timeout(timeout)
     }
 }
@@ -53,7 +56,7 @@ impl SubscriberRegistry {
     fn add_subscriber<T: EventType>(&mut self, sender: Sender<T>) {
         let type_id = T::type_id();
         let boxed_sender = Box::new(sender);
-        
+
         self.subscribers
             .entry(type_id.to_string())
             .or_default()
@@ -91,10 +94,10 @@ impl MessageBus {
     /// Returns a Consumer that can be used to receive events
     pub fn subscribe<T: EventType>(&self) -> Consumer<T> {
         let (sender, receiver) = mpsc::channel();
-        
+
         let mut registry = self.registry.lock().unwrap();
         registry.add_subscriber(sender);
-        
+
         Consumer { receiver }
     }
 
@@ -102,7 +105,7 @@ impl MessageBus {
     pub fn publish<T: EventType>(&self, event: T) -> MessageBusResult<()> {
         let registry = self.registry.lock().unwrap();
         let subscribers = registry.get_subscribers::<T>();
-        
+
         if subscribers.is_empty() {
             // No subscribers for this event type - this is not an error
             return Ok(());
@@ -119,7 +122,10 @@ impl MessageBus {
 
         if failed_sends > 0 {
             return Err(MessageBusError::SendFailed {
-                reason: format!("{} of {} subscribers failed to receive event", failed_sends, total_subscribers),
+                reason: format!(
+                    "{} of {} subscribers failed to receive event",
+                    failed_sends, total_subscribers
+                ),
             });
         }
 
@@ -192,9 +198,9 @@ impl Default for MessageBus {
 mod tests {
     use super::*;
     use crate::fold_db_core::infrastructure::message_bus::{
-        atom_events::{FieldValueSet, AtomCreated},
+        atom_events::{AtomCreated, FieldValueSet},
+        query_events::{MutationExecuted, QueryExecuted},
         schema_events::{SchemaChanged, TransformTriggered},
-        query_events::{QueryExecuted, MutationExecuted},
     };
     use serde_json::json;
     use std::time::Duration;
@@ -284,7 +290,7 @@ mod tests {
     #[test]
     fn test_no_subscribers() {
         let bus = MessageBus::new();
-        
+
         // Publishing to no subscribers should not fail
         let event = TransformTriggered::new("transform-123");
         bus.publish(event).unwrap();

@@ -105,14 +105,14 @@
 //! - [Execution Flow Diagram](../../docs/design/iterator_stack_flow_diagram.md)
 
 pub mod chain_parser;
-pub mod types;
-pub mod stack;
-pub mod field_alignment;
-pub mod execution_engine;
 pub mod errors;
+pub mod execution_engine;
+pub mod field_alignment;
+pub mod stack;
+pub mod types;
 
 pub use chain_parser::*;
-pub use types::*;
-pub use field_alignment::*;
-pub use execution_engine::*;
 pub use errors::*;
+pub use execution_engine::*;
+pub use field_alignment::*;
+pub use types::*;

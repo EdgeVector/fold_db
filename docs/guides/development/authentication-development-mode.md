@@ -73,9 +73,9 @@ When ready for production deployment, the following changes will be needed:
 
 The following documentation has been updated to reflect the current development mode:
 
-- `docs/http_routes.md`: Updated authentication requirements
-- `docs/ui_backend_alignment.md`: Updated authentication integration notes
-- `docs/security_review_report.md`: Updated security assessment
+- `docs/reference/http-routes.md`: Updated authentication requirements
+- `docs/ui/ui-backend-alignment.md`: Updated authentication integration notes
+- `docs/security/security-review-report.md`: Updated security assessment
 - `docs/project_logic.md`: Added AUTH-DEV-001 logic entry
 - `docs/delivery/PBI-AUTH-001/prd.md`: Added development mode status note
 

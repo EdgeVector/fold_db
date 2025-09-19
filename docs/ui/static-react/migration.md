@@ -375,8 +375,8 @@ const rules = [
 ## Support Resources
 
 ### Documentation
-- [Architecture Guide](./ARCHITECTURE.md) - Detailed architectural overview
-- [Testing Guide](./TESTING.md) - Testing strategies and utilities
+- [Architecture Guide](./architecture.md) - Detailed architectural overview
+- [Testing Guide](./testing.md) - Testing strategies and utilities
 - [API Documentation](./docs/) - Complete API reference
 
 ### Common Patterns
@@ -399,4 +399,4 @@ const rules = [
 |---------|------|---------|
 | 2.0.0 | 2025-06-24 | Initial migration guide for React simplification |
 
-For questions or issues during migration, refer to the [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed implementation guidance.
+For questions or issues during migration, refer to the [architecture.md](./architecture.md) for detailed implementation guidance.

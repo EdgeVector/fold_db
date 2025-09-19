@@ -39,7 +39,7 @@ Update documentation to reflect the mutation processor's universal key configura
 - Troubleshooting covers common issues
 
 ## Files Modified
-- `docs/schema-management.md` (update with mutation processor examples)
-- `docs/universal-key-migration-guide.md` (add mutation processor section)
-- `docs/api-reference.md` (update mutation processor API documentation)
-- `docs/developer-guide.md` (add mutation processor troubleshooting section)
+- `docs/reference/schema-management.md` (update with mutation processor examples)
+- `docs/guides/operations/universal-key-migration-guide.md` (add mutation processor section)
+- `docs/reference/api-reference.md` (update mutation processor API documentation)
+- `docs/guides/development/developer-guide.md` (add mutation processor troubleshooting section)

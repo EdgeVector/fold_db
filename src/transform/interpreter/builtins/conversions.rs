@@ -35,7 +35,13 @@ pub fn conversion_functions() -> HashMap<String, TransformFunction> {
 
             let result = match &args[0] {
                 Value::Number(n) => *n,
-                Value::Boolean(b) => if *b { 1.0 } else { 0.0 },
+                Value::Boolean(b) => {
+                    if *b {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
                 Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
                 Value::Null => 0.0,
                 Value::Object(_) => 0.0,
@@ -68,4 +74,3 @@ pub fn conversion_functions() -> HashMap<String, TransformFunction> {
 
     functions
 }
-

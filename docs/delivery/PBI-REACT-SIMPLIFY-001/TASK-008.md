@@ -141,8 +141,8 @@ const DUPLICATE_LINE_THRESHOLD = 10;
 - `src/datafold_node/static-react/src/components/schema/` - Unified schema operation patterns
 
 ### Documentation Files
-- `src/datafold_node/static-react/docs/CONSOLIDATION_REPORT.md` - Document consolidation decisions
-- `src/datafold_node/static-react/docs/DRY_GUIDELINES.md` - Guidelines for preventing duplication
+- `docs/ui/static-react/reports/consolidation-report.md` - Document consolidation decisions
+- `docs/ui/static-react/dry-guidelines.md` - Guidelines for preventing duplication
 
 ### Test Updates
 - `src/datafold_node/static-react/src/test/utils/consolidatedUtilities.test.js` - Test consolidated utilities

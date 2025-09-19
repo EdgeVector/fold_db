@@ -9,9 +9,9 @@ use crate::fold_db_core::FoldDB;
 use crate::network::{NetworkConfig, NetworkCore, PeerId};
 use crate::security::{EncryptionManager, SecurityManager};
 
-use super::DataFoldNode;
 use super::config::NodeInfo;
 use super::node::NetworkStatus;
+use super::DataFoldNode;
 use std::future::Future;
 
 impl DataFoldNode {
@@ -107,46 +107,42 @@ impl DataFoldNode {
     }
 
     /// Get a mutable reference to the network core
-    pub async fn get_network_mut(
-        &self,
-    ) -> FoldDbResult<tokio::sync::MutexGuard<'_, NetworkCore>> {
+    pub async fn get_network_mut(&self) -> FoldDbResult<tokio::sync::MutexGuard<'_, NetworkCore>> {
         self.with_network(|guard| async move { Ok(guard) }).await
     }
 
     /// Discover nodes on the local network using mDNS
     pub async fn discover_nodes(&self) -> FoldDbResult<Vec<PeerId>> {
-        self
-            .with_network(|network_guard| async move {
-                log_feature!(LogFeature::Network, info, "Triggering mDNS discovery...");
-                let known_peers: Vec<PeerId> = network_guard.known_peers().iter().cloned().collect();
-                Ok(known_peers)
-            })
-            .await
+        self.with_network(|network_guard| async move {
+            log_feature!(LogFeature::Network, info, "Triggering mDNS discovery...");
+            let known_peers: Vec<PeerId> = network_guard.known_peers().iter().cloned().collect();
+            Ok(known_peers)
+        })
+        .await
     }
 
     /// Get the list of known nodes
     pub async fn get_known_nodes(&self) -> FoldDbResult<HashMap<String, NodeInfo>> {
-        self
-            .with_network(|network_guard| async move {
-                let mut result = HashMap::new();
-                for peer_id in network_guard.known_peers() {
-                    let peer_id_str = peer_id.to_string();
+        self.with_network(|network_guard| async move {
+            let mut result = HashMap::new();
+            for peer_id in network_guard.known_peers() {
+                let peer_id_str = peer_id.to_string();
 
-                    if let Some(info) = self.trusted_nodes.get(&peer_id_str) {
-                        result.insert(peer_id_str, info.clone());
-                    } else {
-                        result.insert(
-                            peer_id_str.clone(),
-                            NodeInfo {
-                                id: peer_id_str,
-                                trust_distance: self.config.default_trust_distance,
-                            },
-                        );
-                    }
+                if let Some(info) = self.trusted_nodes.get(&peer_id_str) {
+                    result.insert(peer_id_str, info.clone());
+                } else {
+                    result.insert(
+                        peer_id_str.clone(),
+                        NodeInfo {
+                            id: peer_id_str,
+                            trust_distance: self.config.default_trust_distance,
+                        },
+                    );
                 }
-                Ok(result)
-            })
-            .await
+            }
+            Ok(result)
+        })
+        .await
     }
 
     /// Check which schemas are available on a remote peer
@@ -162,49 +158,47 @@ impl DataFoldNode {
             )))
         })?;
 
-        self
-            .with_network(|mut network| async move {
-                let result = network
-                    .check_schemas(peer_id, schema_names)
-                    .await
-                    .map_err(|e| FoldDbError::Network(e.into()))?;
-                Ok(result)
-            })
-            .await
+        self.with_network(|mut network| async move {
+            let result = network
+                .check_schemas(peer_id, schema_names)
+                .await
+                .map_err(|e| FoldDbError::Network(e.into()))?;
+            Ok(result)
+        })
+        .await
     }
 
     /// Forward a request to another node
     pub async fn forward_request(&self, peer_id: PeerId, request: Value) -> FoldDbResult<Value> {
-        self
-            .with_network(|mut network| async move {
-                let node_id = network
-                    .get_node_id_for_peer(&peer_id)
-                    .unwrap_or_else(|| peer_id.to_string());
+        self.with_network(|mut network| async move {
+            let node_id = network
+                .get_node_id_for_peer(&peer_id)
+                .unwrap_or_else(|| peer_id.to_string());
 
-                log_feature!(
-                    LogFeature::Network,
-                    info,
-                    "Forwarding request to node {} (peer {})",
-                    node_id,
-                    peer_id
-                );
+            log_feature!(
+                LogFeature::Network,
+                info,
+                "Forwarding request to node {} (peer {})",
+                node_id,
+                peer_id
+            );
 
-                let response = network
-                    .forward_request(peer_id, request)
-                    .await
-                    .map_err(|e| FoldDbError::Network(e.into()))?;
+            let response = network
+                .forward_request(peer_id, request)
+                .await
+                .map_err(|e| FoldDbError::Network(e.into()))?;
 
-                log_feature!(
-                    LogFeature::Network,
-                    info,
-                    "Received response from node {} (peer {})",
-                    node_id,
-                    peer_id
-                );
+            log_feature!(
+                LogFeature::Network,
+                info,
+                "Received response from node {} (peer {})",
+                node_id,
+                peer_id
+            );
 
-                Ok(response)
-            })
-            .await
+            Ok(response)
+        })
+        .await
     }
 
     /// Simple method to connect to another node
@@ -233,9 +227,18 @@ impl DataFoldNode {
         log_feature!(LogFeature::Network, info, "Restarting DataFoldNode...");
 
         if self.network.is_some() {
-            log_feature!(LogFeature::Network, info, "Stopping network service for restart");
+            log_feature!(
+                LogFeature::Network,
+                info,
+                "Stopping network service for restart"
+            );
             if let Err(e) = self.stop_network().await {
-                log_feature!(LogFeature::Network, warn, "Failed to stop network during restart: {}", e);
+                log_feature!(
+                    LogFeature::Network,
+                    warn,
+                    "Failed to stop network during restart: {}",
+                    e
+                );
             }
         }
 
@@ -247,14 +250,19 @@ impl DataFoldNode {
             .to_string();
 
         log_feature!(LogFeature::Network, info, "Closing existing database");
-        
+
         // Properly close the database to release file locks
         if let Ok(db_guard) = self.db.lock() {
             if let Err(e) = db_guard.close() {
-                log_feature!(LogFeature::Network, warn, "Failed to close database properly: {}", e);
+                log_feature!(
+                    LogFeature::Network,
+                    warn,
+                    "Failed to close database properly: {}",
+                    e
+                );
             }
         }
-        
+
         // Replace with a temporary database and drop the old one
         let old_db = std::mem::replace(
             &mut self.db,
@@ -268,12 +276,27 @@ impl DataFoldNode {
 
         // Force remove the database directory to ensure clean slate
         if let Err(e) = std::fs::remove_dir_all(&storage_path) {
-            log_feature!(LogFeature::Network, warn, "Failed to remove database directory {}: {}", storage_path, e);
+            log_feature!(
+                LogFeature::Network,
+                warn,
+                "Failed to remove database directory {}: {}",
+                storage_path,
+                e
+            );
         }
-        
+
         // Create directory if it doesn't exist
-        if let Err(e) = std::fs::create_dir_all(std::path::Path::new(&storage_path).parent().unwrap_or(std::path::Path::new("."))) {
-            log_feature!(LogFeature::Network, warn, "Failed to create parent directory: {}", e);
+        if let Err(e) = std::fs::create_dir_all(
+            std::path::Path::new(&storage_path)
+                .parent()
+                .unwrap_or(std::path::Path::new(".")),
+        ) {
+            log_feature!(
+                LogFeature::Network,
+                warn,
+                "Failed to create parent directory: {}",
+                e
+            );
         }
 
         log_feature!(LogFeature::Network, info, "Reinitializing database");
@@ -292,13 +315,21 @@ impl DataFoldNode {
                 .map_err(|e| FoldDbError::SecurityError(e.to_string()))?,
         );
 
-        log_feature!(LogFeature::Network, info, "DataFoldNode restart completed successfully");
+        log_feature!(
+            LogFeature::Network,
+            info,
+            "DataFoldNode restart completed successfully"
+        );
         Ok(())
     }
 
     /// Perform a soft restart that preserves network connections
     pub async fn soft_restart(&mut self) -> FoldDbResult<()> {
-        log_feature!(LogFeature::Network, info, "Performing soft restart of DataFoldNode...");
+        log_feature!(
+            LogFeature::Network,
+            info,
+            "Performing soft restart of DataFoldNode..."
+        );
 
         let storage_path = self
             .config
@@ -308,14 +339,19 @@ impl DataFoldNode {
             .to_string();
 
         log_feature!(LogFeature::Network, info, "Closing existing database");
-        
+
         // Properly close the database to release file locks
         if let Ok(db_guard) = self.db.lock() {
             if let Err(e) = db_guard.close() {
-                log_feature!(LogFeature::Network, warn, "Failed to close database properly: {}", e);
+                log_feature!(
+                    LogFeature::Network,
+                    warn,
+                    "Failed to close database properly: {}",
+                    e
+                );
             }
         }
-        
+
         // Replace with a temporary database and drop the old one
         let old_db = std::mem::replace(
             &mut self.db,
@@ -329,20 +365,38 @@ impl DataFoldNode {
 
         // Force remove the database directory to ensure clean slate
         if let Err(e) = std::fs::remove_dir_all(&storage_path) {
-            log_feature!(LogFeature::Network, warn, "Failed to remove database directory {}: {}", storage_path, e);
+            log_feature!(
+                LogFeature::Network,
+                warn,
+                "Failed to remove database directory {}: {}",
+                storage_path,
+                e
+            );
         }
-        
+
         // Create directory if it doesn't exist
-        if let Err(e) = std::fs::create_dir_all(std::path::Path::new(&storage_path).parent().unwrap_or(std::path::Path::new("."))) {
-            log_feature!(LogFeature::Network, warn, "Failed to create parent directory: {}", e);
+        if let Err(e) = std::fs::create_dir_all(
+            std::path::Path::new(&storage_path)
+                .parent()
+                .unwrap_or(std::path::Path::new(".")),
+        ) {
+            log_feature!(
+                LogFeature::Network,
+                warn,
+                "Failed to create parent directory: {}",
+                e
+            );
         }
 
         log_feature!(LogFeature::Network, info, "Reinitializing database");
         let new_db = Arc::new(Mutex::new(FoldDB::new(&storage_path)?));
         self.db = new_db;
 
-        log_feature!(LogFeature::Network, info, "DataFoldNode soft restart completed successfully");
+        log_feature!(
+            LogFeature::Network,
+            info,
+            "DataFoldNode soft restart completed successfully"
+        );
         Ok(())
     }
 }
-

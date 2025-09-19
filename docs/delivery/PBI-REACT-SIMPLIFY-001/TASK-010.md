@@ -147,8 +147,8 @@ const TEST_VALIDATION_BATCH_SIZE = 10;
 - `src/datafold_node/static-react/package.json` - Updated test scripts and dependencies
 
 ### Documentation
-- `src/datafold_node/static-react/docs/TESTING.md` - Updated testing guidelines
-- `src/datafold_node/static-react/docs/TEST_FIXES.md` - Document test fix decisions
+- `docs/ui/static-react/testing.md` - Updated testing guidelines
+- `docs/ui/static-react/test-fixes.md` - Document test fix decisions
 
 ## Rollback Plan
 

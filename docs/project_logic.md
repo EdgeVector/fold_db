@@ -15,9 +15,12 @@ This document contains the most up-to-date and condensed information about the p
 | API-CONFIG-001 | API endpoint URLs and configuration must be centralized to eliminate duplication and ensure consistency. | constants/api, api/endpoints | 2025-06-28 19:02:00 | None |
 | API-CACHE-001 | API clients must implement intelligent caching, request deduplication, and timeout management for performance. | api/core/client, api/core/cache | 2025-06-28 19:02:00 | None |
 | API-SEC-001 | Authentication patterns and security validation must be standardized across all API operations. | api/core/client, utils/authenticationWrapper | 2025-06-28 19:02:00 | None |
+| DOCS-001 | Markdown documentation (excluding root project README and AGENTS.md) must reside under the organized `docs/` hierarchy defined in `docs/README.md`. | documentation | 2025-09-19 18:56:00 | None |
 | INGESTION-001 | Large file ingestion must use streaming architecture with configurable batch processing to handle files of any size without memory constraints. | ingestion/core, ingestion/large_file | 2025-01-27 15:30:00 | None |
 | TRANSFORM-001 | Transform system must support both procedural and declarative transform types seamlessly while maintaining backward compatibility. | transform/, schema/types, fold_db_core/transform_manager, fold_db_core/orchestration | 2025-01-27 12:00:00 | None |
 | TRANSFORM-003 | DeclarativeSchemaDefinition requires KeyConfig with hash_field and range_field for HashRange schemas and FieldDefinition metadata for optional atom_uuid and field_type. | schema/types/json_schema.rs | 2025-08-26 19:00:00 | None |
+| TRANSFORM-004 | ExecutionEngine orchestration for declarative transforms must use shared helper `execute_chains_with_engine` for consistent logging and reduced duplication. | transform/shared_utilities.rs, transform/executor.rs, transform/coordination.rs | 2025-09-19 12:13:25 | None |
+| TRANSFORM-005 | Single and Range declarative execution must prepare expression lists via the shared executor helper, allowing call-site customization before a single batch parse/alignment pass. | transform/executor.rs | 2025-09-19 12:20:29 | None |
 | SCHEMA-KEY-001 | Universal KeyConfig is supported across Single, Range, and HashRange. Single: key optional; Range: range_field required, hash_field optional; HashRange: both required. Backward compatibility for legacy Range { range_key } retained. | schema/types/json_schema.rs, schema/types/schema.rs, transform/executor.rs, schema/schema_operations.rs, ui utils | 2025-09-19 12:05:00 | None |
 | SCHEMA-KEY-002 | Backend exposes unified helpers: extract_unified_keys(schema, data) and shape_unified_result(schema, data, hash, range) to standardize key extraction and result shape {hash, range, fields} across all schema types. KeyConfig fields are Strings; empty string denotes absence. | schema/schema_operations.rs | 2025-09-19 13:10:00 | None |
 | SCHEMA-KEY-003 | Universal key configuration implementation completed. All schema types use consistent KeyConfig structure. Legacy code paths removed, UI helpers consolidated, comprehensive documentation created, E2E tests validate functionality. Backward compatibility maintained for existing schemas. | schema/, transform/, ui/, docs/ | 2025-09-19 17:25:00 | None |
@@ -178,6 +181,14 @@ This document contains the most up-to-date and condensed information about the p
   - Core client integrates with authentication context
   - Security validation performed before request transmission
   - Authentication errors handled consistently across all operations
+
+### DOCS-001: Centralized Documentation Structure
+- **Description**: Consolidates markdown documentation under the organized `docs/` hierarchy.
+- **Rationale**: Eliminates scattered documents, simplifies discovery, and ensures repository-wide consistency.
+- **Implementation Notes**:
+  - Only the root `README.md` and `AGENTS.md` remain outside the `docs/` directory.
+  - `docs/README.md` outlines categories such as guides, reference material, UI documentation, and delivery records.
+  - New documentation should be added to the appropriate `docs/` subdirectory rather than creating standalone markdown files elsewhere.
 
 ### INGESTION-001: Large File Ingestion Architecture
 - **Description**: Mandates streaming architecture with batch processing for handling large files efficiently

@@ -1,6 +1,6 @@
-use actix_web::{web, HttpResponse, Responder};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -24,9 +24,9 @@ pub async fn get_system_status(_state: web::Data<AppState>) -> impl Responder {
 /// The private key is generated automatically when the node is created.
 pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    
+
     let private_key = node.get_node_private_key();
-    
+
     log_feature!(
         LogFeature::HttpServer,
         info,
@@ -45,9 +45,9 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
 /// The public key is generated automatically when the node is created.
 pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    
+
     let public_key = node.get_node_public_key();
-    
+
     log_feature!(
         LogFeature::HttpServer,
         info,
@@ -84,7 +84,7 @@ pub struct ResetDatabaseResponse {
 /// This is a destructive operation that cannot be undone.
 pub async fn reset_database(
     state: web::Data<AppState>,
-    req: web::Json<ResetDatabaseRequest>
+    req: web::Json<ResetDatabaseRequest>,
 ) -> impl Responder {
     // Require explicit confirmation
     if !req.confirm {
@@ -118,7 +118,12 @@ pub async fn reset_database(
             })
         }
         Err(e) => {
-            log_feature!(LogFeature::HttpServer, error, "Database reset failed: {}", e);
+            log_feature!(
+                LogFeature::HttpServer,
+                error,
+                "Database reset failed: {}",
+                e
+            );
             HttpResponse::InternalServerError().json(ResetDatabaseResponse {
                 success: false,
                 message: format!("Database reset failed: {}", e),
@@ -163,12 +168,12 @@ mod tests {
         let req = test::TestRequest::get().to_http_request();
         let resp = get_node_private_key(state).await.respond_to(&req);
         assert_eq!(resp.status(), 200);
-        
+
         // Parse the response to verify it contains the private key
         let body = resp.into_body();
         let bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
         let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
-        
+
         assert!(response["success"].as_bool().unwrap_or(false));
         assert!(response["private_key"].as_str().is_some());
         assert!(!response["private_key"].as_str().unwrap_or("").is_empty());
@@ -187,12 +192,12 @@ mod tests {
         let req = test::TestRequest::get().to_http_request();
         let resp = get_node_public_key(state).await.respond_to(&req);
         assert_eq!(resp.status(), 200);
-        
+
         // Parse the response to verify it contains the public key
         let body = resp.into_body();
         let bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
         let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
-        
+
         assert!(response["success"].as_bool().unwrap_or(false));
         assert!(response["public_key"].as_str().is_some());
         assert!(!response["public_key"].as_str().unwrap_or("").is_empty());
@@ -244,8 +249,10 @@ mod tests {
         let req = test::TestRequest::post()
             .set_json(&req_body)
             .to_http_request();
-        
-        let resp = reset_database(state, web::Json(req_body)).await.respond_to(&req);
+
+        let resp = reset_database(state, web::Json(req_body))
+            .await
+            .respond_to(&req);
         assert_eq!(resp.status(), 400);
     }
 
@@ -263,12 +270,14 @@ mod tests {
         let req = test::TestRequest::post()
             .set_json(&req_body)
             .to_http_request();
-        
-        let resp = reset_database(state, web::Json(req_body)).await.respond_to(&req);
+
+        let resp = reset_database(state, web::Json(req_body))
+            .await
+            .respond_to(&req);
         // The response should be either 200 (success) or 500 (expected failure in test env)
         // Both are acceptable as the API is working correctly
         assert!(resp.status() == 200 || resp.status() == 500);
-        
+
         // If it's a 500, verify it's the expected database reset error
         if resp.status() == 500 {
             // This is expected in the test environment due to file system constraints

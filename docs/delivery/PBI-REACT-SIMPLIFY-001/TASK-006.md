@@ -91,16 +91,16 @@ const DOCUMENTATION_VERSION = '2.0.0';
 ## Files Modified
 
 ### Created Documentation Files
-- `src/datafold_node/static-react/docs/ARCHITECTURE.md`
-- `src/datafold_node/static-react/docs/HOOKS.md`
-- `src/datafold_node/static-react/docs/COMPONENTS.md`
-- `src/datafold_node/static-react/docs/API_CLIENT.md`
-- `src/datafold_node/static-react/docs/TESTING.md`
-- `src/datafold_node/static-react/docs/MIGRATION.md`
+- `docs/ui/static-react/architecture.md`
+- `docs/ui/static-react/hooks.md`
+- `docs/ui/static-react/components.md`
+- `docs/ui/static-react/api-client.md`
+- `docs/ui/static-react/testing.md`
+- `docs/ui/static-react/migration.md`
 
 ### Updated Documentation Files
-- `src/datafold_node/static-react/README.md` - Updated architecture overview
-- `src/datafold_node/static-react/REGRESSION_PREVENTION.md` - Updated testing guidelines
+- `docs/ui/static-react/overview.md` - Updated architecture overview
+- `docs/ui/static-react/regression-prevention.md` - Updated testing guidelines
 
 ### Created Test Files
 - `src/datafold_node/static-react/src/test/utils/testingUtilities.ts`

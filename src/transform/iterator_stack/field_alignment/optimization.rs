@@ -34,7 +34,8 @@ impl FieldAlignmentValidator {
         if broadcast_fields.len() > 5 {
             suggestions.push(OptimizationSuggestion {
                 suggestion_type: OptimizationType::ReduceBroadcast,
-                message: "Consider reducing the number of broadcast fields to improve memory usage".to_string(),
+                message: "Consider reducing the number of broadcast fields to improve memory usage"
+                    .to_string(),
                 affected_fields: broadcast_fields,
                 estimated_benefit: "Reduced memory usage and improved cache efficiency".to_string(),
             });

@@ -1,6 +1,6 @@
-use log::{info, error};
-use std::sync::RwLock;
 use crate::schema::types::SchemaError;
+use log::{error, info};
+use std::sync::RwLock;
 
 use super::TransformUtils;
 
@@ -22,15 +22,16 @@ impl TransformUtils {
             SchemaError::InvalidData(error_msg)
         })?;
 
-        info!("✅ Successfully serialized mapping: {} ({} bytes)", mapping_name, json.len());
+        info!(
+            "✅ Successfully serialized mapping: {} ({} bytes)",
+            mapping_name,
+            json.len()
+        );
         Ok(json)
     }
 
     /// Deserialize mapping data with consistent error handling
-    pub fn deserialize_mapping<T>(
-        data: &[u8],
-        mapping_name: &str,
-    ) -> Result<T, SchemaError>
+    pub fn deserialize_mapping<T>(data: &[u8], mapping_name: &str) -> Result<T, SchemaError>
     where
         T: serde::de::DeserializeOwned + Default,
     {
@@ -44,7 +45,10 @@ impl TransformUtils {
             Err(e) => {
                 let error_msg = format!("Failed to deserialize {}: {}", mapping_name, e);
                 error!("❌ {}", error_msg);
-                info!("🔄 Using default value for {} due to deserialization error", mapping_name);
+                info!(
+                    "🔄 Using default value for {} due to deserialization error",
+                    mapping_name
+                );
                 Ok(T::default())
             }
         }
@@ -65,7 +69,10 @@ impl TransformUtils {
         let json = Self::serialize_mapping(mapping, mapping_name)?;
         db_ops.store_transform_mapping(key, &json)?;
 
-        info!("✅ Successfully stored mapping: {} to database", mapping_name);
+        info!(
+            "✅ Successfully stored mapping: {} to database",
+            mapping_name
+        );
         Ok(())
     }
 }

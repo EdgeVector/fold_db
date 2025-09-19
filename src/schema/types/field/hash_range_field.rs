@@ -3,16 +3,16 @@
 //! Provides a field type that combines hash and range functionality for
 //! efficient indexing with complex fan-out operations.
 
-use crate::transform::iterator_stack::{
-    chain_parser::{ChainParser, ParsedChain},
-    field_alignment::FieldAlignmentValidator,
-    execution_engine::ExecutionEngine,
-    errors::IteratorStackResult,
-};
 use crate::fees::types::config::FieldPaymentConfig;
 use crate::impl_field;
 use crate::permissions::types::policy::PermissionsPolicy;
 use crate::schema::types::field::common::FieldCommon;
+use crate::transform::iterator_stack::{
+    chain_parser::{ChainParser, ParsedChain},
+    errors::IteratorStackResult,
+    execution_engine::ExecutionEngine,
+    field_alignment::FieldAlignmentValidator,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -114,7 +114,7 @@ impl HashRangeField {
     /// Validates the field expressions using the iterator stack model
     pub fn validate_expressions(&mut self) -> IteratorStackResult<()> {
         let chains = self.get_or_parse_chains()?;
-        
+
         let validator = FieldAlignmentValidator::new();
         let all_chains = vec![
             chains.hash_chain.clone(),
@@ -123,12 +123,17 @@ impl HashRangeField {
         ];
 
         let alignment_result = validator.validate_alignment(&all_chains)?;
-        
+
         if !alignment_result.valid {
-            return Err(crate::transform::iterator_stack::errors::IteratorStackError::FieldAlignmentError {
-                field: "HashRange".to_string(),
-                reason: format!("Field alignment validation failed: {:?}", alignment_result.errors),
-            });
+            return Err(
+                crate::transform::iterator_stack::errors::IteratorStackError::FieldAlignmentError {
+                    field: "HashRange".to_string(),
+                    reason: format!(
+                        "Field alignment validation failed: {:?}",
+                        alignment_result.errors
+                    ),
+                },
+            );
         }
 
         Ok(())
@@ -137,7 +142,7 @@ impl HashRangeField {
     /// Executes the field expressions and generates index entries
     pub fn execute_indexing(&mut self, input_data: Value) -> IteratorStackResult<Vec<IndexEntry>> {
         let chains = self.get_or_parse_chains()?;
-        
+
         let validator = FieldAlignmentValidator::new();
         let all_chains = vec![
             chains.hash_chain.clone(),
@@ -146,18 +151,21 @@ impl HashRangeField {
         ];
 
         let alignment_result = validator.validate_alignment(&all_chains)?;
-        
+
         if !alignment_result.valid {
-            return Err(crate::transform::iterator_stack::errors::IteratorStackError::ExecutionError {
-                message: "Cannot execute with invalid field alignment".to_string(),
-            });
+            return Err(
+                crate::transform::iterator_stack::errors::IteratorStackError::ExecutionError {
+                    message: "Cannot execute with invalid field alignment".to_string(),
+                },
+            );
         }
 
         let mut engine = ExecutionEngine::new();
         let execution_result = engine.execute_fields(&all_chains, &alignment_result, input_data)?;
 
         // Convert execution result to index entries
-        let index_entries: Vec<IndexEntry> = execution_result.index_entries
+        let index_entries: Vec<IndexEntry> = execution_result
+            .index_entries
             .into_iter()
             .map(|entry| IndexEntry {
                 hash_value: entry.hash_value,
@@ -174,7 +182,7 @@ impl HashRangeField {
     fn get_or_parse_chains(&mut self) -> IteratorStackResult<&HashRangeChains> {
         if self.cached_chains.is_none() {
             let parser = ChainParser::new();
-            
+
             let hash_chain = parser.parse(&self.hash_field)?;
             let range_chain = parser.parse(&self.range_field)?;
             let atom_uuid_chain = parser.parse(&self.atom_uuid)?;
@@ -192,7 +200,7 @@ impl HashRangeField {
     /// Gets information about the field's iterator stack structure
     pub fn get_stack_info(&mut self) -> IteratorStackResult<HashRangeStackInfo> {
         let chains = self.get_or_parse_chains()?;
-        
+
         let validator = FieldAlignmentValidator::new();
         let all_chains = vec![
             chains.hash_chain.clone(),
@@ -207,13 +215,16 @@ impl HashRangeField {
             hash_depth: chains.hash_chain.depth,
             range_depth: chains.range_chain.depth,
             atom_uuid_depth: chains.atom_uuid_chain.depth,
-            hash_alignment: alignment_result.field_alignments
+            hash_alignment: alignment_result
+                .field_alignments
                 .get(&chains.hash_chain.expression)
                 .map(|info| info.alignment.clone()),
-            range_alignment: alignment_result.field_alignments
+            range_alignment: alignment_result
+                .field_alignments
                 .get(&chains.range_chain.expression)
                 .map(|info| info.alignment.clone()),
-            atom_uuid_alignment: alignment_result.field_alignments
+            atom_uuid_alignment: alignment_result
+                .field_alignments
                 .get(&chains.atom_uuid_chain.expression)
                 .map(|info| info.alignment.clone()),
             compatible: alignment_result.valid,
@@ -224,8 +235,10 @@ impl HashRangeField {
     /// Analyzes the performance characteristics of the field
     pub fn analyze_performance(&mut self) -> IteratorStackResult<PerformanceAnalysis> {
         let chains = self.get_or_parse_chains()?;
-        
-        let max_depth = chains.hash_chain.depth
+
+        let max_depth = chains
+            .hash_chain
+            .depth
             .max(chains.range_chain.depth)
             .max(chains.atom_uuid_chain.depth);
 
@@ -254,7 +267,9 @@ impl HashRangeField {
         let uuid_ops = Self::count_operations_static(&chains.atom_uuid_chain);
 
         let total_ops = hash_ops + range_ops + uuid_ops;
-        let max_depth = chains.hash_chain.depth
+        let max_depth = chains
+            .hash_chain
+            .depth
             .max(chains.range_chain.depth)
             .max(chains.atom_uuid_chain.depth);
 
@@ -280,10 +295,12 @@ impl HashRangeField {
     fn estimate_memory_usage_for_chains(chains: &HashRangeChains) -> usize {
         // Simple estimation based on depth and operation count
         let base_usage = 100; // Base memory per field
-        let depth_multiplier = chains.hash_chain.depth
+        let depth_multiplier = chains
+            .hash_chain
+            .depth
             .max(chains.range_chain.depth)
             .max(chains.atom_uuid_chain.depth);
-        
+
         base_usage * (depth_multiplier + 1) * chains.hash_chain.operations.len()
     }
 
@@ -291,20 +308,25 @@ impl HashRangeField {
     fn generate_performance_recommendations_for_chains(chains: &HashRangeChains) -> Vec<String> {
         let mut recommendations = Vec::new();
 
-        let max_depth = chains.hash_chain.depth
+        let max_depth = chains
+            .hash_chain
+            .depth
             .max(chains.range_chain.depth)
             .max(chains.atom_uuid_chain.depth);
 
         if max_depth > 3 {
-            recommendations.push("Consider reducing iterator depth for better performance".to_string());
+            recommendations
+                .push("Consider reducing iterator depth for better performance".to_string());
         }
 
         if chains.range_chain.depth < chains.hash_chain.depth - 1 {
-            recommendations.push("Range field will be heavily broadcast; consider restructuring".to_string());
+            recommendations
+                .push("Range field will be heavily broadcast; consider restructuring".to_string());
         }
 
         if chains.atom_uuid_chain.depth < chains.hash_chain.depth - 1 {
-            recommendations.push("Atom UUID field will be heavily broadcast; consider caching".to_string());
+            recommendations
+                .push("Atom UUID field will be heavily broadcast; consider caching".to_string());
         }
 
         recommendations
@@ -388,11 +410,10 @@ mod tests {
     use crate::permissions::types::policy::TrustDistance;
 
     fn create_test_hash_range_field() -> HashRangeField {
-        let permission_policy = PermissionsPolicy::new(
-            TrustDistance::Distance(0),
-            TrustDistance::Distance(0),
-        );
-        let payment_config = FieldPaymentConfig::new(1.0, TrustDistanceScaling::None, None).unwrap();
+        let permission_policy =
+            PermissionsPolicy::new(TrustDistance::Distance(0), TrustDistance::Distance(0));
+        let payment_config =
+            FieldPaymentConfig::new(1.0, TrustDistanceScaling::None, None).unwrap();
 
         HashRangeField::new(
             permission_policy,
@@ -407,8 +428,11 @@ mod tests {
     #[test]
     fn test_hash_range_field_creation() {
         let field = create_test_hash_range_field();
-        
-        assert_eq!(field.hash_field(), "blogpost.map().content.split_by_word().map()");
+
+        assert_eq!(
+            field.hash_field(),
+            "blogpost.map().content.split_by_word().map()"
+        );
         assert_eq!(field.range_field(), "blogpost.map().publish_date");
         assert_eq!(field.atom_uuid_field(), "blogpost.map().$atom_uuid");
     }
@@ -416,7 +440,7 @@ mod tests {
     #[test]
     fn test_expression_validation() {
         let mut field = create_test_hash_range_field();
-        
+
         // This should validate successfully
         let result = field.validate_expressions();
         assert!(result.is_ok());
@@ -424,11 +448,10 @@ mod tests {
 
     #[test]
     fn test_invalid_expressions() {
-        let permission_policy = PermissionsPolicy::new(
-            TrustDistance::Distance(0),
-            TrustDistance::Distance(0),
-        );
-        let payment_config = FieldPaymentConfig::new(1.0, TrustDistanceScaling::None, None).unwrap();
+        let permission_policy =
+            PermissionsPolicy::new(TrustDistance::Distance(0), TrustDistance::Distance(0));
+        let payment_config =
+            FieldPaymentConfig::new(1.0, TrustDistanceScaling::None, None).unwrap();
 
         let mut field = HashRangeField::new(
             permission_policy,
@@ -447,7 +470,7 @@ mod tests {
     #[test]
     fn test_stack_info() {
         let mut field = create_test_hash_range_field();
-        
+
         let stack_info = field.get_stack_info().unwrap();
         assert_eq!(stack_info.max_depth, 2);
         assert_eq!(stack_info.hash_depth, 2);
@@ -459,7 +482,7 @@ mod tests {
     #[test]
     fn test_performance_analysis() {
         let mut field = create_test_hash_range_field();
-        
+
         let analysis = field.analyze_performance().unwrap();
         assert_eq!(analysis.max_depth, 2);
         assert!(analysis.estimated_complexity.operation_count > 0);
@@ -469,11 +492,11 @@ mod tests {
     #[test]
     fn test_field_updates() {
         let mut field = create_test_hash_range_field();
-        
+
         // Modify field expressions
         field.set_hash_field("blogpost.map().title".to_string());
         field.set_range_field("blogpost.map().created_at".to_string());
-        
+
         // Should parse new expressions
         let stack_info = field.get_stack_info().unwrap();
         assert_eq!(stack_info.hash_depth, 1);
@@ -483,7 +506,7 @@ mod tests {
     #[test]
     fn test_indexing_execution() {
         let mut field = create_test_hash_range_field();
-        
+
         let input_data = serde_json::json!({
             "blogpost": [
                 {
@@ -496,7 +519,7 @@ mod tests {
 
         let result = field.execute_indexing(input_data);
         assert!(result.is_ok());
-        
+
         let entries = result.unwrap();
         assert!(!entries.is_empty());
     }
@@ -504,28 +527,46 @@ mod tests {
     #[test]
     fn test_stack_info_alignment_lookups() {
         let mut field = create_test_hash_range_field();
-        
+
         let stack_info = field.get_stack_info().unwrap();
-        
+
         // Verify that all alignments are successfully retrieved
-        assert!(stack_info.hash_alignment.is_some(), "Hash alignment should be retrieved successfully");
-        assert!(stack_info.range_alignment.is_some(), "Range alignment should be retrieved successfully");
-        assert!(stack_info.atom_uuid_alignment.is_some(), "Atom UUID alignment should be retrieved successfully");
-        
+        assert!(
+            stack_info.hash_alignment.is_some(),
+            "Hash alignment should be retrieved successfully"
+        );
+        assert!(
+            stack_info.range_alignment.is_some(),
+            "Range alignment should be retrieved successfully"
+        );
+        assert!(
+            stack_info.atom_uuid_alignment.is_some(),
+            "Atom UUID alignment should be retrieved successfully"
+        );
+
         // Verify the specific alignment types
         let hash_alignment = stack_info.hash_alignment.unwrap();
         let range_alignment = stack_info.range_alignment.unwrap();
         let atom_uuid_alignment = stack_info.atom_uuid_alignment.unwrap();
-        
+
         // Hash field should be OneToOne (depth 2, max depth 2)
-        assert_eq!(hash_alignment, crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne);
-        
+        assert_eq!(
+            hash_alignment,
+            crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne
+        );
+
         // Range field should be Broadcast (depth 1, max depth 2)
-        assert_eq!(range_alignment, crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast);
-        
+        assert_eq!(
+            range_alignment,
+            crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast
+        );
+
         // Atom UUID field should be Broadcast (depth 1, max depth 2)
-        assert_eq!(atom_uuid_alignment, crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast);
-        
+        assert_eq!(
+            atom_uuid_alignment,
+            crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast
+        );
+
         // Verify that the field is compatible
         assert!(stack_info.compatible, "Field should be compatible");
     }

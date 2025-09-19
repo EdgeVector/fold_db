@@ -141,8 +141,8 @@ const CLEANUP_VALIDATION_TIMEOUT_MS = 60000;
 - `src/datafold_node/static-react/webpack.config.js` - Remove legacy build configurations
 
 ### Documentation Updates
-- `src/datafold_node/static-react/README.md` - Remove references to deleted files
-- `src/datafold_node/static-react/docs/CLEANUP_LOG.md` - Document cleanup decisions
+- `docs/ui/static-react/overview.md` - Remove references to deleted files
+- `docs/ui/static-react/cleanup-log.md` - Document cleanup decisions
 
 ## Rollback Plan
 

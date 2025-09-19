@@ -1,12 +1,14 @@
-use std::collections::HashMap;
-use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition, JsonSchemaDefinition};
-use datafold::schema::types::schema::SchemaType;
-use datafold::schema::types::field::FieldType;
-use datafold::permissions::types::policy::TrustDistance;
 use datafold::fees::types::config::TrustDistanceScaling;
+use datafold::permissions::types::policy::TrustDistance;
+use datafold::schema::types::field::FieldType;
+use datafold::schema::types::json_schema::{
+    DeclarativeSchemaDefinition, FieldDefinition, JsonSchemaDefinition,
+};
+use datafold::schema::types::schema::SchemaType;
+use std::collections::HashMap;
 
 /// Comprehensive End-to-End tests for Simplified Schema Formats
-/// 
+///
 /// This test suite verifies that all acceptance criteria for the simplified
 /// schema format implementation are met through real-world scenarios.
 
@@ -43,10 +45,19 @@ fn test_ultra_minimal_regular_schema_e2e() -> Result<(), Box<dyn std::error::Err
     for (field_name, field) in &schema.fields {
         println!("  ✅ Field '{}' has default values", field_name);
         assert!(matches!(field.field_type, FieldType::Single));
-        assert!(matches!(field.permission_policy.read, TrustDistance::Distance(0)));
-        assert!(matches!(field.permission_policy.write, TrustDistance::Distance(0)));
+        assert!(matches!(
+            field.permission_policy.read,
+            TrustDistance::Distance(0)
+        ));
+        assert!(matches!(
+            field.permission_policy.write,
+            TrustDistance::Distance(0)
+        ));
         assert_eq!(field.payment_config.base_multiplier, 1.0);
-        assert!(matches!(field.payment_config.trust_distance_scaling, TrustDistanceScaling::None));
+        assert!(matches!(
+            field.payment_config.trust_distance_scaling,
+            TrustDistanceScaling::None
+        ));
     }
 
     println!("🎉 Ultra-minimal regular schema E2E test passed!");
@@ -83,7 +94,10 @@ fn test_simplified_declarative_transform_e2e() -> Result<(), Box<dyn std::error:
 
     // Verify string expressions are converted to FieldDefinition objects
     for (field_name, field) in &schema.fields {
-        println!("  ✅ Field '{}' converted from string expression", field_name);
+        println!(
+            "  ✅ Field '{}' converted from string expression",
+            field_name
+        );
         assert!(field.atom_uuid.is_some());
         assert_eq!(field.field_type, None);
     }
@@ -133,7 +147,10 @@ fn test_mixed_format_schema_e2e() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(simple_field.field_type, None);
 
     let complex_field = schema.fields.get("complex_field").unwrap();
-    assert_eq!(complex_field.atom_uuid, Some("Source.map().metadata.tags".to_string()));
+    assert_eq!(
+        complex_field.atom_uuid,
+        Some("Source.map().metadata.tags".to_string())
+    );
     assert_eq!(complex_field.field_type, Some("Single".to_string()));
 
     let empty_field = schema.fields.get("empty_field").unwrap();
@@ -151,7 +168,7 @@ fn test_backward_compatibility_e2e() -> Result<(), Box<dyn std::error::Error>> {
     // Test existing BlogPostWordIndex schema (should still work)
     let existing_schema_path = "available_schemas/BlogPostWordIndex.json";
     let schema_content = std::fs::read_to_string(existing_schema_path)?;
-    
+
     // Parse existing schema (should work with new deserialization)
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(&schema_content)?;
     assert_eq!(schema.name, "BlogPostWordIndex");
@@ -174,10 +191,13 @@ fn test_performance_validation_e2e() -> Result<(), Box<dyn std::error::Error>> {
     // Test schema with many fields (100 fields)
     let mut fields = HashMap::new();
     for i in 0..100 {
-        fields.insert(format!("field_{}", i), FieldDefinition {
-            atom_uuid: Some("Source.map().data".to_string()),
-            field_type: None,
-        });
+        fields.insert(
+            format!("field_{}", i),
+            FieldDefinition {
+                atom_uuid: Some("Source.map().data".to_string()),
+                field_type: None,
+            },
+        );
     }
 
     let schema = DeclarativeSchemaDefinition {
@@ -229,7 +249,10 @@ fn test_real_world_workflow_e2e() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify key configuration
     let key_config = schema.key.unwrap();
-    assert_eq!(key_config.hash_field, "BlogPost.map().content.split_by_word().map()");
+    assert_eq!(
+        key_config.hash_field,
+        "BlogPost.map().content.split_by_word().map()"
+    );
     assert_eq!(key_config.range_field, "BlogPost.map().publish_date");
 
     println!("🎉 Real-world BlogPostWordIndex workflow E2E test passed!");
@@ -282,19 +305,19 @@ fn test_acceptance_criteria_verification() -> Result<(), Box<dyn std::error::Err
 
     // Acceptance Criteria 1: JsonSchemaField default values
     println!("✅ AC1: JsonSchemaField default values - Ultra-minimal schemas with empty field objects work");
-    
+
     // Acceptance Criteria 2: Custom deserialization
     println!("✅ AC2: Custom deserialization - Mixed format support (string expressions + FieldDefinition objects)");
-    
+
     // Acceptance Criteria 3: Backward compatibility
     println!("✅ AC3: Backward compatibility - All existing schemas continue to work unchanged");
-    
+
     // Acceptance Criteria 4: Mixed format support
     println!("✅ AC4: Mixed format support - Schemas can combine simplified and verbose formats");
-    
+
     // Acceptance Criteria 5: 90% boilerplate reduction
     println!("✅ AC5: 90% boilerplate reduction - Dramatic reduction in schema size achieved");
-    
+
     // Acceptance Criteria 6: Full functionality
     println!("✅ AC6: Full functionality - All schema operations work with simplified formats");
 

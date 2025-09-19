@@ -1,5 +1,5 @@
 //! Shared utilities and common components
-//! 
+//!
 //! This module contains shared utilities and common components
 //! used across the FoldDB system:
 //! - Error types and handling

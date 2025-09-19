@@ -22,11 +22,11 @@
 //! ```rust
 //! // Create a HashRange schema with universal key configuration
 //! let schema = fixture.create_hashrange_schema_with_universal_key(
-//!     "TestSchema", 
-//!     "user_id", 
+//!     "TestSchema",
+//!     "user_id",
 //!     "timestamp"
 //! );
-//! 
+//!
 //! // Test field name extraction
 //! let (hash_field, range_field) = mutation_service
 //!     .get_hashrange_key_field_names(&schema)?;
@@ -34,24 +34,24 @@
 //! assert_eq!(range_field, "timestamp");
 //! ```
 
+pub mod chain_parser_tests;
+pub mod declarative_transform_tests;
+pub mod field_alignment_tests;
+pub mod hashrange_mutation_core_test;
+pub mod hashrange_query_processor_tests;
+pub mod hashrange_schema_tests;
+pub mod iterator_stack_tests;
 pub mod mutation_completion_tests;
+pub mod mutation_processor_universal_key_tests;
+pub mod mutation_service_universal_key_tests;
 pub mod range_filter_tests;
 pub mod schema;
+pub mod schema_declarative_transform_interpretation_tests;
 pub mod schema_parsing_test;
+pub mod schema_universal_key_parsing_tests;
+pub mod schema_universal_key_validation_tests;
 pub mod transform;
 pub mod transform_manager_module_tests;
 pub mod transform_utils_helper_tests;
-pub mod declarative_transform_tests;
-pub mod hashrange_schema_tests;
-pub mod schema_declarative_transform_interpretation_tests;
-pub mod iterator_stack_tests;
-pub mod field_alignment_tests;
-pub mod chain_parser_tests;
-pub mod hashrange_mutation_core_test;
-pub mod schema_universal_key_validation_tests;
-pub mod schema_universal_key_parsing_tests;
 pub mod unified_key_extraction_tests;
-pub mod hashrange_query_processor_tests;
-pub mod mutation_processor_universal_key_tests;
-pub mod mutation_service_universal_key_tests;
 pub mod universal_key_transform_tests;

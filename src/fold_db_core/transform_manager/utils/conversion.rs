@@ -1,6 +1,6 @@
-use serde_json::Value as JsonValue;
-use log::{info, warn, error};
 use crate::schema::types::SchemaError;
+use log::{error, info, warn};
+use serde_json::Value as JsonValue;
 
 use super::TransformUtils;
 
@@ -16,7 +16,10 @@ impl TransformUtils {
         expected_type: &str,
         field_name: &str,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🔄 Converting field '{}' (expected type: {})", field_name, expected_type);
+        info!(
+            "🔄 Converting field '{}' (expected type: {})",
+            field_name, expected_type
+        );
 
         let is_valid = match expected_type.to_lowercase().as_str() {
             "string" | "str" => json_value.is_string(),
@@ -27,7 +30,10 @@ impl TransformUtils {
             "object" => json_value.is_object(),
             "null" => json_value.is_null(),
             _ => {
-                warn!("⚠️ Unknown expected type '{}' for field '{}', allowing any type", expected_type, field_name);
+                warn!(
+                    "⚠️ Unknown expected type '{}' for field '{}', allowing any type",
+                    expected_type, field_name
+                );
                 true
             }
         };
@@ -41,7 +47,10 @@ impl TransformUtils {
             return Err(SchemaError::InvalidData(error_msg));
         }
 
-        info!("✅ Successfully validated and converted field '{}'", field_name);
+        info!(
+            "✅ Successfully validated and converted field '{}'",
+            field_name
+        );
         Ok(json_value)
     }
 
@@ -95,9 +104,17 @@ mod tests {
 
     #[test]
     fn test_string_to_json_value_with_inference() {
-        assert_eq!(TransformUtils::string_to_json_value("true", true), JsonValue::Bool(true));
-        assert_eq!(TransformUtils::string_to_json_value("42", true), JsonValue::Number(serde_json::Number::from(42)));
-        assert_eq!(TransformUtils::string_to_json_value("hello", true), JsonValue::String("hello".to_string()));
+        assert_eq!(
+            TransformUtils::string_to_json_value("true", true),
+            JsonValue::Bool(true)
+        );
+        assert_eq!(
+            TransformUtils::string_to_json_value("42", true),
+            JsonValue::Number(serde_json::Number::from(42))
+        );
+        assert_eq!(
+            TransformUtils::string_to_json_value("hello", true),
+            JsonValue::String("hello".to_string())
+        );
     }
 }
-

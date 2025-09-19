@@ -144,8 +144,8 @@ const OPTIMIZATION_VALIDATION_TIMEOUT_MS = 30000;
 - `src/datafold_node/static-react/src/constants/` - Optimized constant organization
 
 ### Documentation Updates
-- `src/datafold_node/static-react/docs/SIMPLIFICATION_REPORT.md` - Document simplification decisions
-- `src/datafold_node/static-react/docs/ARCHITECTURE.md` - Update architecture documentation
+- `docs/ui/static-react/reports/simplification-report.md` - Document simplification decisions
+- `docs/ui/static-react/architecture.md` - Update architecture documentation
 
 ## Rollback Plan
 

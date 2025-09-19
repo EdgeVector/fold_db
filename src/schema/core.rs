@@ -1,11 +1,12 @@
 use super::{schema_lock_error, validator::SchemaValidator};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::schema::types::{
-    Field, FieldVariant, Schema, SchemaError,
-};
-use crate::schema::{MoleculeVariant, SchemaState, map_fields, interpret_schema, load_schema_from_json, load_schema_from_file};
-use log::{info, error};
 use crate::logging::features::{log_feature, LogFeature};
+use crate::schema::types::{Field, FieldVariant, Schema, SchemaError};
+use crate::schema::{
+    interpret_schema, load_schema_from_file, load_schema_from_json, map_fields, MoleculeVariant,
+    SchemaState,
+};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;

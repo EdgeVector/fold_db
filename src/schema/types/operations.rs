@@ -70,9 +70,10 @@ impl<'de> Deserialize<'de> for MutationType {
             "create" => Ok(MutationType::Create),
             "update" => Ok(MutationType::Update),
             "delete" => Ok(MutationType::Delete),
-            s if s.starts_with("add_to_collection:") => {
-                Err(serde::de::Error::custom(format!("Collection operations are no longer supported: {}", s)))
-            }
+            s if s.starts_with("add_to_collection:") => Err(serde::de::Error::custom(format!(
+                "Collection operations are no longer supported: {}",
+                s
+            ))),
             s if s.starts_with("update_to_collection:") => {
                 let id = s.split(':').nth(1).unwrap_or_default().to_string();
                 Ok(MutationType::UpdateToCollection(id))
@@ -286,12 +287,12 @@ impl Mutation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fees::types::config::FieldPaymentConfig;
+    use crate::permissions::types::policy::PermissionsPolicy;
     use crate::schema::types::field::{FieldVariant, RangeField};
     use crate::schema::types::operations::MutationType;
     use crate::schema::types::Schema;
     use crate::schema::types::SchemaError;
-    use crate::permissions::types::policy::PermissionsPolicy;
-    use crate::fees::types::config::FieldPaymentConfig;
     use serde_json::json;
     use std::collections::HashMap;
 

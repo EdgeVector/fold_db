@@ -159,9 +159,9 @@ describe('Schema State Validation (SCHEMA-002 Compliance)', () => {
 });
 
 describe('Performance Constants Validation', () => {
-  test('should have reasonable timeout values', () => {
+  test('should have reasonable timeout values', async () => {
     // Import config directly for testing
-    const { APP_CONFIG } = require('../config');
+    const { APP_CONFIG } = await import('../config');
     
     // Debounce delays should be reasonable (100ms - 1000ms)
     expect(APP_CONFIG.PERFORMANCE.DEBOUNCE_DELAY_MS).toBeGreaterThanOrEqual(100);

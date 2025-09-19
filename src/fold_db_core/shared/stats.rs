@@ -168,7 +168,7 @@ mod tests {
 
         stats.requests_processed += 1;
         stats.atoms_created += 1;
-        
+
         assert_eq!(stats.requests_processed, 1);
         assert_eq!(stats.atoms_created, 1);
     }
@@ -181,7 +181,7 @@ mod tests {
 
         stats.requests_processed += 1;
         stats.field_sets_processed += 1;
-        
+
         assert_eq!(stats.requests_processed, 1);
         assert_eq!(stats.field_sets_processed, 1);
     }
@@ -194,7 +194,7 @@ mod tests {
 
         stats.requests_processed += 1;
         stats.schemas_loaded += 1;
-        
+
         assert_eq!(stats.requests_processed, 1);
         assert_eq!(stats.schemas_loaded, 1);
     }
@@ -207,7 +207,7 @@ mod tests {
 
         stats.requests_processed += 1;
         stats.mutations_processed += 1;
-        
+
         assert_eq!(stats.requests_processed, 1);
         assert_eq!(stats.mutations_processed, 1);
     }
@@ -216,10 +216,10 @@ mod tests {
     fn test_activity_timestamp() {
         let mut stats = EventDrivenAtomStats::new();
         let initial_time = stats.last_activity.unwrap();
-        
+
         thread::sleep(Duration::from_millis(10));
         stats.last_activity = Some(Instant::now());
-        
+
         let updated_time = stats.last_activity.unwrap();
         assert!(updated_time > initial_time);
     }
@@ -234,7 +234,7 @@ mod tests {
         stats.requests_processed += 1;
         stats.transforms_stored += 1;
         stats.transforms_executed += 1;
-        
+
         assert_eq!(stats.requests_processed, 1);
         assert_eq!(stats.transforms_stored, 1);
         assert_eq!(stats.transforms_executed, 1);
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn test_transform_stats_comprehensive() {
         let mut stats = EventDrivenTransformStats::new();
-        
+
         // Test all transform-specific counters
         stats.transforms_loaded += 2;
         stats.transforms_deleted += 1;
@@ -251,7 +251,7 @@ mod tests {
         stats.transform_mappings_stored += 4;
         stats.transform_mappings_retrieved += 5;
         stats.transform_triggers_processed += 6;
-        
+
         assert_eq!(stats.transforms_loaded, 2);
         assert_eq!(stats.transforms_deleted, 1);
         assert_eq!(stats.transform_lists_generated, 3);

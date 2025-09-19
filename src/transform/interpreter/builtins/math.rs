@@ -76,4 +76,3 @@ pub fn math_functions() -> HashMap<String, TransformFunction> {
 
     functions
 }
-

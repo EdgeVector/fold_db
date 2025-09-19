@@ -248,9 +248,9 @@ The application uses Vite for fast development and optimized production builds:
 
 ### Complete Documentation Suite
 
-- **[Architecture Guide](./ARCHITECTURE.md)**: Detailed architectural overview
-- **[Migration Guide](./MIGRATION.md)**: Upgrading from legacy architecture
-- **[Testing Guide](./TESTING.md)**: Testing strategies and utilities
+- **[Architecture Guide](./architecture.md)**: Detailed architectural overview
+- **[Migration Guide](./migration.md)**: Upgrading from legacy architecture
+- **[Testing Guide](./testing.md)**: Testing strategies and utilities
 - **[API Documentation](./docs/)**: Complete API reference
 
 ### Code Documentation
@@ -288,9 +288,9 @@ All components, hooks, and utilities include comprehensive JSDoc documentation:
 
 ### Getting Help
 
-- **Architecture Questions**: See [ARCHITECTURE.md](./ARCHITECTURE.md)
-- **Migration Issues**: See [MIGRATION.md](./MIGRATION.md)
-- **Testing Help**: See [TESTING.md](./TESTING.md)
+- **Architecture Questions**: See [architecture.md](./architecture.md)
+- **Migration Issues**: See [migration.md](./migration.md)
+- **Testing Help**: See [testing.md](./testing.md)
 - **API Questions**: Check [API Documentation](./docs/)
 
 ### Common Patterns
@@ -311,4 +311,4 @@ All components, hooks, and utilities include comprehensive JSDoc documentation:
 
 **Built with modern React patterns for the Datafold ecosystem** 🚀
 
-For detailed implementation guidance, see the [Architecture Documentation](./ARCHITECTURE.md).
+For detailed implementation guidance, see the [Architecture Documentation](./architecture.md).

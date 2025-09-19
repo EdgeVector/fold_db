@@ -119,11 +119,21 @@ impl DataFoldNode {
                 Ok(false)
             }
             Some(crate::schema::SchemaState::Blocked) => {
-                log_feature!(LogFeature::Permissions, warn, "Schema '{}' is blocked - access denied", schema_name);
+                log_feature!(
+                    LogFeature::Permissions,
+                    warn,
+                    "Schema '{}' is blocked - access denied",
+                    schema_name
+                );
                 Ok(false)
             }
             None => {
-                log_feature!(LogFeature::Permissions, warn, "Schema '{}' not found - access denied", schema_name);
+                log_feature!(
+                    LogFeature::Permissions,
+                    warn,
+                    "Schema '{}' not found - access denied",
+                    schema_name
+                );
                 Ok(false)
             }
         }

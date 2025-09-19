@@ -25,7 +25,6 @@ pub struct MutationContext {
     pub incremental: bool,
 }
 
-
 impl EventType for FieldValueSet {
     fn type_id() -> &'static str {
         "FieldValueSet"
@@ -82,4 +81,3 @@ impl EventType for MoleculeUpdated {
         "MoleculeUpdated"
     }
 }
-

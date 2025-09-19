@@ -63,8 +63,8 @@ Update documentation to include examples of both simplified and verbose schema f
 ## Files Modified
 
 - `docs/declarative-transform-simplified-format.md` - Updated with comprehensive examples
-- `docs/schema-management.md` - Updated with simplified format information
-- `docs/api-reference.md` - Updated with new deserialization capabilities
+- `docs/reference/schema-management.md` - Updated with simplified format information
+- `docs/reference/api-reference.md` - Updated with new deserialization capabilities
 - `docs/delivery/SSF-1/SSF-1-5.md` - This task documentation
 
 ## Verification

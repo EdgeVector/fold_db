@@ -21,10 +21,10 @@ impl FieldValueSet {
 
     /// Create a new FieldValueSet event with mutation context
     pub fn with_context(
-        field: impl Into<String>, 
-        value: Value, 
+        field: impl Into<String>,
+        value: Value,
         source: impl Into<String>,
-        mutation_context: atom_events::MutationContext
+        mutation_context: atom_events::MutationContext,
     ) -> Self {
         Self {
             field: field.into(),
@@ -57,7 +57,11 @@ impl AtomUpdated {
 
 impl MoleculeCreated {
     /// Create a new MoleculeCreated event
-    pub fn new(molecule_uuid: impl Into<String>, molecule_type: impl Into<String>, field_path: impl Into<String>) -> Self {
+    pub fn new(
+        molecule_uuid: impl Into<String>,
+        molecule_type: impl Into<String>,
+        field_path: impl Into<String>,
+    ) -> Self {
         Self {
             molecule_uuid: molecule_uuid.into(),
             molecule_type: molecule_type.into(),
@@ -68,7 +72,11 @@ impl MoleculeCreated {
 
 impl MoleculeUpdated {
     /// Create a new MoleculeUpdated event
-    pub fn new(molecule_uuid: impl Into<String>, field_path: impl Into<String>, operation: impl Into<String>) -> Self {
+    pub fn new(
+        molecule_uuid: impl Into<String>,
+        field_path: impl Into<String>,
+        operation: impl Into<String>,
+    ) -> Self {
         Self {
             molecule_uuid: molecule_uuid.into(),
             field_path: field_path.into(),
@@ -118,7 +126,7 @@ impl TransformTriggered {
     /// Create a new TransformTriggered event with mutation context
     pub fn with_context(
         transform_id: impl Into<String>,
-        mutation_context: atom_events::MutationContext
+        mutation_context: atom_events::MutationContext,
     ) -> Self {
         Self {
             transform_id: transform_id.into(),
@@ -533,12 +541,7 @@ impl MoleculeQueryRequest {
 
 impl MoleculeQueryResponse {
     /// Create a new MoleculeQueryResponse
-    pub fn new(
-        correlation_id: String,
-        success: bool,
-        exists: bool,
-        error: Option<String>,
-    ) -> Self {
+    pub fn new(correlation_id: String, success: bool, exists: bool, error: Option<String>) -> Self {
         Self {
             correlation_id,
             success,
@@ -551,9 +554,7 @@ impl MoleculeQueryResponse {
 impl SchemaStatusRequest {
     /// Create a new SchemaStatusRequest
     pub fn new(correlation_id: String) -> Self {
-        Self {
-            correlation_id,
-        }
+        Self { correlation_id }
     }
 }
 
@@ -577,9 +578,7 @@ impl SchemaStatusResponse {
 impl SchemaDiscoveryRequest {
     /// Create a new SchemaDiscoveryRequest
     pub fn new(correlation_id: String) -> Self {
-        Self {
-            correlation_id,
-        }
+        Self { correlation_id }
     }
 }
 
@@ -626,7 +625,6 @@ impl MoleculeGetResponse {
         }
     }
 }
-
 
 impl SystemInitializationRequest {
     /// Create a new SystemInitializationRequest

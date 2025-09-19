@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
+use datafold::fees::payment_config::SchemaPaymentConfig;
+use datafold::fees::types::config::TrustDistanceScaling;
+use datafold::permissions::types::policy::TrustDistance;
+use datafold::schema::types::field::FieldType;
 use datafold::schema::types::json_schema::{JsonSchemaDefinition, JsonSchemaField};
 use datafold::schema::types::schema::SchemaType;
-use datafold::schema::types::field::FieldType;
-use datafold::permissions::types::policy::TrustDistance;
-use datafold::fees::types::config::TrustDistanceScaling;
-use datafold::fees::payment_config::SchemaPaymentConfig;
 
 /// Tests for ultra-minimal schema support with empty field objects
 /// This validates that JsonSchemaField default values work correctly
@@ -31,43 +31,52 @@ fn test_ultra_minimal_schema_with_empty_fields() {
       }
     }
     "#;
-    
+
     let schema: JsonSchemaDefinition = serde_json::from_str(json).unwrap();
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "BlogPost");
     assert_eq!(schema.fields.len(), 3);
-    
+
     // Verify default values are applied to all fields
     for field_name in ["title", "content", "author"] {
         let field = schema.fields.get(field_name).unwrap();
-        
+
         // Check default field type
         match field.field_type {
-            FieldType::Single => {},
+            FieldType::Single => {}
             _ => panic!("Expected FieldType::Single, got {:?}", field.field_type),
         }
-        
+
         // Check default payment config
         assert_eq!(field.payment_config.base_multiplier, 1.0);
         match field.payment_config.trust_distance_scaling {
-            TrustDistanceScaling::None => {},
-            _ => panic!("Expected TrustDistanceScaling::None, got {:?}", field.payment_config.trust_distance_scaling),
+            TrustDistanceScaling::None => {}
+            _ => panic!(
+                "Expected TrustDistanceScaling::None, got {:?}",
+                field.payment_config.trust_distance_scaling
+            ),
         }
         assert_eq!(field.payment_config.min_payment, None);
-        
+
         // Check default permission policy
         match field.permission_policy.read {
-            TrustDistance::Distance(0) => {},
-            _ => panic!("Expected TrustDistance::Distance(0), got {:?}", field.permission_policy.read),
+            TrustDistance::Distance(0) => {}
+            _ => panic!(
+                "Expected TrustDistance::Distance(0), got {:?}",
+                field.permission_policy.read
+            ),
         }
         match field.permission_policy.write {
-            TrustDistance::Distance(0) => {},
-            _ => panic!("Expected TrustDistance::Distance(0), got {:?}", field.permission_policy.write),
+            TrustDistance::Distance(0) => {}
+            _ => panic!(
+                "Expected TrustDistance::Distance(0), got {:?}",
+                field.permission_policy.write
+            ),
         }
         assert!(field.permission_policy.explicit_read.is_none());
         assert!(field.permission_policy.explicit_write.is_none());
-        
+
         // Check other defaults
         assert_eq!(field.molecule_uuid, None);
         assert!(field.field_mappers.is_empty());
@@ -103,52 +112,73 @@ fn test_mixed_format_schema() {
       }
     }
     "#;
-    
+
     let schema: JsonSchemaDefinition = serde_json::from_str(json).unwrap();
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "MixedSchema");
     assert_eq!(schema.fields.len(), 3);
-    
+
     // Check title field (empty object - should get defaults)
     let title_field = schema.fields.get("title").unwrap();
     match title_field.field_type {
-        FieldType::Single => {},
-        _ => panic!("Expected FieldType::Single, got {:?}", title_field.field_type),
+        FieldType::Single => {}
+        _ => panic!(
+            "Expected FieldType::Single, got {:?}",
+            title_field.field_type
+        ),
     }
     assert_eq!(title_field.payment_config.base_multiplier, 1.0);
     match title_field.permission_policy.read {
-        TrustDistance::Distance(0) => {},
-        _ => panic!("Expected TrustDistance::Distance(0), got {:?}", title_field.permission_policy.read),
+        TrustDistance::Distance(0) => {}
+        _ => panic!(
+            "Expected TrustDistance::Distance(0), got {:?}",
+            title_field.permission_policy.read
+        ),
     }
-    
+
     // Check content field (explicit values - should use provided values)
     let content_field = schema.fields.get("content").unwrap();
     match content_field.field_type {
-        FieldType::Single => {},
-        _ => panic!("Expected FieldType::Single, got {:?}", content_field.field_type),
+        FieldType::Single => {}
+        _ => panic!(
+            "Expected FieldType::Single, got {:?}",
+            content_field.field_type
+        ),
     }
     assert_eq!(content_field.payment_config.base_multiplier, 2.0);
     assert_eq!(content_field.payment_config.min_payment, Some(10));
     match content_field.permission_policy.read {
-        TrustDistance::Distance(1) => {},
-        _ => panic!("Expected TrustDistance::Distance(1), got {:?}", content_field.permission_policy.read),
+        TrustDistance::Distance(1) => {}
+        _ => panic!(
+            "Expected TrustDistance::Distance(1), got {:?}",
+            content_field.permission_policy.read
+        ),
     }
     match content_field.permission_policy.write {
-        TrustDistance::Distance(2) => {},
-        _ => panic!("Expected TrustDistance::Distance(2), got {:?}", content_field.permission_policy.write),
+        TrustDistance::Distance(2) => {}
+        _ => panic!(
+            "Expected TrustDistance::Distance(2), got {:?}",
+            content_field.permission_policy.write
+        ),
     }
-    
+
     // Check author field (empty object - should get defaults)
     let author_field = schema.fields.get("author").unwrap();
     match author_field.field_type {
-        FieldType::Single => {},
-        _ => panic!("Expected FieldType::Single, got {:?}", author_field.field_type),
+        FieldType::Single => {}
+        _ => panic!(
+            "Expected FieldType::Single, got {:?}",
+            author_field.field_type
+        ),
     }
     assert_eq!(author_field.payment_config.base_multiplier, 1.0);
     match author_field.permission_policy.read {
-        TrustDistance::Distance(0) => {},
-        _ => panic!("Expected TrustDistance::Distance(0), got {:?}", author_field.permission_policy.read),
+        TrustDistance::Distance(0) => {}
+        _ => panic!(
+            "Expected TrustDistance::Distance(0), got {:?}",
+            author_field.permission_policy.read
+        ),
     }
 }
 
@@ -181,27 +211,36 @@ fn test_backward_compatibility_with_existing_schemas() {
       }
     }
     "#;
-    
+
     let schema: JsonSchemaDefinition = serde_json::from_str(json).unwrap();
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "VerboseSchema");
     assert_eq!(schema.fields.len(), 1);
-    
+
     // Check that explicit values are preserved
     let title_field = schema.fields.get("title").unwrap();
     match title_field.field_type {
-        FieldType::Single => {},
-        _ => panic!("Expected FieldType::Single, got {:?}", title_field.field_type),
+        FieldType::Single => {}
+        _ => panic!(
+            "Expected FieldType::Single, got {:?}",
+            title_field.field_type
+        ),
     }
     assert_eq!(title_field.payment_config.base_multiplier, 1.0);
     match title_field.permission_policy.read {
-        TrustDistance::Distance(0) => {},
-        _ => panic!("Expected TrustDistance::Distance(0), got {:?}", title_field.permission_policy.read),
+        TrustDistance::Distance(0) => {}
+        _ => panic!(
+            "Expected TrustDistance::Distance(0), got {:?}",
+            title_field.permission_policy.read
+        ),
     }
     match title_field.permission_policy.write {
-        TrustDistance::Distance(1) => {},
-        _ => panic!("Expected TrustDistance::Distance(1), got {:?}", title_field.permission_policy.write),
+        TrustDistance::Distance(1) => {}
+        _ => panic!(
+            "Expected TrustDistance::Distance(1), got {:?}",
+            title_field.permission_policy.write
+        ),
     }
 }
 
@@ -229,43 +268,52 @@ fn test_blogpost_simplified_schema_file() {
       }
     }
     "#;
-    
+
     let schema: JsonSchemaDefinition = serde_json::from_str(json).unwrap();
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "BlogPost");
     assert_eq!(schema.fields.len(), 5);
-    
+
     // Verify all fields get default values
     for field_name in ["title", "content", "author", "publish_date", "tags"] {
         let field = schema.fields.get(field_name).unwrap();
-        
+
         // Check default field type
         match field.field_type {
-            FieldType::Single => {},
+            FieldType::Single => {}
             _ => panic!("Expected FieldType::Single, got {:?}", field.field_type),
         }
-        
+
         // Check default payment config
         assert_eq!(field.payment_config.base_multiplier, 1.0);
         match field.payment_config.trust_distance_scaling {
-            TrustDistanceScaling::None => {},
-            _ => panic!("Expected TrustDistanceScaling::None, got {:?}", field.payment_config.trust_distance_scaling),
+            TrustDistanceScaling::None => {}
+            _ => panic!(
+                "Expected TrustDistanceScaling::None, got {:?}",
+                field.payment_config.trust_distance_scaling
+            ),
         }
         assert_eq!(field.payment_config.min_payment, None);
-        
+
         // Check default permission policy
         match field.permission_policy.read {
-            TrustDistance::Distance(0) => {},
-            _ => panic!("Expected TrustDistance::Distance(0), got {:?}", field.permission_policy.read),
+            TrustDistance::Distance(0) => {}
+            _ => panic!(
+                "Expected TrustDistance::Distance(0), got {:?}",
+                field.permission_policy.read
+            ),
         }
         match field.permission_policy.write {
-            TrustDistance::Distance(0) => {},
-            _ => panic!("Expected TrustDistance::Distance(0), got {:?}", field.permission_policy.write),
+            TrustDistance::Distance(0) => {}
+            _ => panic!(
+                "Expected TrustDistance::Distance(0), got {:?}",
+                field.permission_policy.write
+            ),
         }
         assert!(field.permission_policy.explicit_read.is_none());
         assert!(field.permission_policy.explicit_write.is_none());
-        
+
         // Check other defaults
         assert_eq!(field.molecule_uuid, None);
         assert!(field.field_mappers.is_empty());
@@ -277,24 +325,27 @@ fn test_blogpost_simplified_schema_file() {
 fn test_schema_serialization_round_trip() {
     // Create a schema with empty field objects
     let mut fields = HashMap::new();
-    fields.insert("title".to_string(), JsonSchemaField {
-        permission_policy: datafold::schema::types::json_schema::JsonPermissionPolicy {
-            read: TrustDistance::Distance(0),
-            write: TrustDistance::Distance(0),
-            explicit_read: None,
-            explicit_write: None,
+    fields.insert(
+        "title".to_string(),
+        JsonSchemaField {
+            permission_policy: datafold::schema::types::json_schema::JsonPermissionPolicy {
+                read: TrustDistance::Distance(0),
+                write: TrustDistance::Distance(0),
+                explicit_read: None,
+                explicit_write: None,
+            },
+            molecule_uuid: None,
+            payment_config: datafold::schema::types::json_schema::JsonFieldPaymentConfig {
+                base_multiplier: 1.0,
+                trust_distance_scaling: TrustDistanceScaling::None,
+                min_payment: None,
+            },
+            field_mappers: HashMap::new(),
+            field_type: FieldType::Single,
+            transform: None,
         },
-        molecule_uuid: None,
-        payment_config: datafold::schema::types::json_schema::JsonFieldPaymentConfig {
-            base_multiplier: 1.0,
-            trust_distance_scaling: TrustDistanceScaling::None,
-            min_payment: None,
-        },
-        field_mappers: HashMap::new(),
-        field_type: FieldType::Single,
-        transform: None,
-    });
-    
+    );
+
     let schema = JsonSchemaDefinition {
         name: "TestSchema".to_string(),
         schema_type: SchemaType::Single,
@@ -302,25 +353,28 @@ fn test_schema_serialization_round_trip() {
         payment_config: SchemaPaymentConfig::default(),
         hash: None,
     };
-    
+
     // Serialize
     let serialized = serde_json::to_string(&schema).unwrap();
-    
+
     // Deserialize
     let deserialized: JsonSchemaDefinition = serde_json::from_str(&serialized).unwrap();
-    
+
     // Verify round trip
     assert_eq!(deserialized.name, "TestSchema");
     assert_eq!(deserialized.fields.len(), 1);
-    
+
     let field = deserialized.fields.get("title").unwrap();
     match field.field_type {
-        FieldType::Single => {},
+        FieldType::Single => {}
         _ => panic!("Expected FieldType::Single, got {:?}", field.field_type),
     }
     assert_eq!(field.payment_config.base_multiplier, 1.0);
     match field.permission_policy.read {
-        TrustDistance::Distance(0) => {},
-        _ => panic!("Expected TrustDistance::Distance(0), got {:?}", field.permission_policy.read),
+        TrustDistance::Distance(0) => {}
+        _ => panic!(
+            "Expected TrustDistance::Distance(0), got {:?}",
+            field.permission_policy.read
+        ),
     }
 }

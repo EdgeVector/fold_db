@@ -1167,4 +1167,4 @@ test('should render efficiently', () => {
 |---------|------|---------|
 | 2.0.0 | 2025-06-24 | Comprehensive testing guide for React simplification |
 
-For additional testing resources, see the [Architecture Guide](./ARCHITECTURE.md) and [Migration Guide](./MIGRATION.md).
+For additional testing resources, see the [Architecture Guide](./architecture.md) and [Migration Guide](./migration.md).

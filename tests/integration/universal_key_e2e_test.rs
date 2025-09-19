@@ -1,13 +1,12 @@
 /**
  * Universal Key E2E Test for SKC-1
- * 
+ *
  * This test validates the Conditions of Satisfaction for SKC-1:
  * - Universal `key` supported across Single, Range, HashRange with type-appropriate validation
  * - Backward compatibility retained for existing schemas (no breaking changes)
  * - Query result formatting is consistent as hash->range->fields for all types
  * - One consolidated code path for key extraction/handling in backend
  */
-
 use datafold::schema::types::json_schema::DeclarativeSchemaDefinition;
 use datafold::schema::types::schema::SchemaType;
 
@@ -35,17 +34,17 @@ fn test_universal_key_single_schema_with_key() -> Result<(), Box<dyn std::error:
 
     // Parse schema
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(schema_json)?;
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "TestSingleWithKey");
     assert!(matches!(schema.schema_type, SchemaType::Single));
-    
+
     // Verify key configuration (optional for Single schemas)
     assert!(schema.key.is_some());
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "user_id");
     assert_eq!(key.range_field, "created_at");
-    
+
     // Verify fields
     assert_eq!(schema.fields.len(), 4);
     assert!(schema.fields.contains_key("user_id"));
@@ -75,14 +74,14 @@ fn test_universal_key_single_schema_without_key() -> Result<(), Box<dyn std::err
 
     // Parse schema
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(schema_json)?;
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "TestSingleWithoutKey");
     assert!(matches!(schema.schema_type, SchemaType::Single));
-    
+
     // Verify no key configuration (optional for Single)
     assert!(schema.key.is_none());
-    
+
     // Verify fields
     assert_eq!(schema.fields.len(), 3);
     assert!(schema.fields.contains_key("id"));
@@ -116,17 +115,17 @@ fn test_universal_key_range_schema_with_universal_key() -> Result<(), Box<dyn st
 
     // Parse schema
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(schema_json)?;
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "TestRangeWithUniversalKey");
     assert!(matches!(schema.schema_type, SchemaType::Range { .. }));
-    
+
     // Verify key configuration
     assert!(schema.key.is_some());
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "partition_id");
     assert_eq!(key.range_field, "timestamp");
-    
+
     // Verify fields
     assert_eq!(schema.fields.len(), 4);
     assert!(schema.fields.contains_key("partition_id"));
@@ -156,28 +155,30 @@ fn test_universal_key_range_schema_with_legacy_key() -> Result<(), Box<dyn std::
 
     // Parse schema
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(schema_json)?;
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "TestRangeWithLegacyKey");
     assert!(matches!(schema.schema_type, SchemaType::Range { .. }));
-    
+
     // Verify legacy range_key is preserved
     if let SchemaType::Range { range_key } = &schema.schema_type {
         assert_eq!(*range_key, "timestamp");
     } else {
         panic!("Expected Range schema type with range_key");
     }
-    
+
     // Verify no universal key configuration
     assert!(schema.key.is_none());
-    
+
     // Verify fields
     assert_eq!(schema.fields.len(), 3);
     assert!(schema.fields.contains_key("timestamp"));
     assert!(schema.fields.contains_key("value"));
     assert!(schema.fields.contains_key("metadata"));
 
-    println!("  ✅ Range schema with legacy range_key parsed successfully (backward compatibility)");
+    println!(
+        "  ✅ Range schema with legacy range_key parsed successfully (backward compatibility)"
+    );
     Ok(())
 }
 
@@ -204,17 +205,17 @@ fn test_universal_key_hashrange_schema() -> Result<(), Box<dyn std::error::Error
 
     // Parse schema
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(schema_json)?;
-    
+
     // Verify schema structure
     assert_eq!(schema.name, "TestHashRange");
     assert!(matches!(schema.schema_type, SchemaType::HashRange));
-    
+
     // Verify key configuration
     assert!(schema.key.is_some());
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "word");
     assert_eq!(key.range_field, "publish_date");
-    
+
     // Verify fields
     assert_eq!(schema.fields.len(), 4);
     assert!(schema.fields.contains_key("word"));
@@ -320,7 +321,6 @@ fn test_universal_key_backward_compatibility() -> Result<(), Box<dyn std::error:
           }
         }
         "#,
-        
         // Single without key
         r#"
         {
@@ -332,7 +332,6 @@ fn test_universal_key_backward_compatibility() -> Result<(), Box<dyn std::error:
           }
         }
         "#,
-        
         // Range with universal key
         r#"
         {
@@ -347,7 +346,6 @@ fn test_universal_key_backward_compatibility() -> Result<(), Box<dyn std::error:
           }
         }
         "#,
-        
         // Range with legacy key
         r#"
         {
@@ -359,7 +357,6 @@ fn test_universal_key_backward_compatibility() -> Result<(), Box<dyn std::error:
           }
         }
         "#,
-        
         // HashRange (already universal)
         r#"
         {
@@ -380,14 +377,17 @@ fn test_universal_key_backward_compatibility() -> Result<(), Box<dyn std::error:
 
     for schema_json in schemas {
         let schema: DeclarativeSchemaDefinition = serde_json::from_str(schema_json)?;
-        
+
         // Verify each schema parses correctly
         assert!(!schema.name.is_empty());
-        assert!(matches!(schema.schema_type, SchemaType::Single | SchemaType::Range { .. } | SchemaType::HashRange));
-        
+        assert!(matches!(
+            schema.schema_type,
+            SchemaType::Single | SchemaType::Range { .. } | SchemaType::HashRange
+        ));
+
         // Verify fields exist
         assert!(!schema.fields.is_empty());
-        
+
         println!("  ✅ Schema '{}' parsed successfully", schema.name);
     }
 
@@ -415,7 +415,7 @@ fn test_universal_key_field_defaults() -> Result<(), Box<dyn std::error::Error>>
     "#;
 
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(schema_json)?;
-    
+
     // Verify all fields exist
     for (field_name, field) in &schema.fields {
         println!("  ✅ Field '{}' exists", field_name);

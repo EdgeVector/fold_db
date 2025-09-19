@@ -14,7 +14,9 @@ pub struct AtomCreateRequest {
 }
 
 impl EventType for AtomCreateRequest {
-    fn type_id() -> &'static str { "AtomCreateRequest" }
+    fn type_id() -> &'static str {
+        "AtomCreateRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -27,7 +29,9 @@ pub struct AtomCreateResponse {
 }
 
 impl EventType for AtomCreateResponse {
-    fn type_id() -> &'static str { "AtomCreateResponse" }
+    fn type_id() -> &'static str {
+        "AtomCreateResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -39,7 +43,9 @@ pub struct AtomUpdateRequest {
 }
 
 impl EventType for AtomUpdateRequest {
-    fn type_id() -> &'static str { "AtomUpdateRequest" }
+    fn type_id() -> &'static str {
+        "AtomUpdateRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -50,7 +56,9 @@ pub struct AtomUpdateResponse {
 }
 
 impl EventType for AtomUpdateResponse {
-    fn type_id() -> &'static str { "AtomUpdateResponse" }
+    fn type_id() -> &'static str {
+        "AtomUpdateResponse"
+    }
 }
 
 // Molecule request/response types
@@ -64,7 +72,9 @@ pub struct MoleculeCreateRequest {
 }
 
 impl EventType for MoleculeCreateRequest {
-    fn type_id() -> &'static str { "MoleculeCreateRequest" }
+    fn type_id() -> &'static str {
+        "MoleculeCreateRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -75,7 +85,9 @@ pub struct MoleculeCreateResponse {
 }
 
 impl EventType for MoleculeCreateResponse {
-    fn type_id() -> &'static str { "MoleculeCreateResponse" }
+    fn type_id() -> &'static str {
+        "MoleculeCreateResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -89,7 +101,9 @@ pub struct MoleculeUpdateRequest {
 }
 
 impl EventType for MoleculeUpdateRequest {
-    fn type_id() -> &'static str { "MoleculeUpdateRequest" }
+    fn type_id() -> &'static str {
+        "MoleculeUpdateRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -100,7 +114,9 @@ pub struct MoleculeUpdateResponse {
 }
 
 impl EventType for MoleculeUpdateResponse {
-    fn type_id() -> &'static str { "MoleculeUpdateResponse" }
+    fn type_id() -> &'static str {
+        "MoleculeUpdateResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -111,12 +127,14 @@ pub struct FieldValueSetRequest {
     pub value: Value,
     pub source_pub_key: String,
     /// Context information about the mutation that triggered this request
-    pub mutation_context: Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
+    pub mutation_context:
+        Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
 }
 
-
 impl EventType for FieldValueSetRequest {
-    fn type_id() -> &'static str { "FieldValueSetRequest" }
+    fn type_id() -> &'static str {
+        "FieldValueSetRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -128,7 +146,9 @@ pub struct FieldValueSetResponse {
 }
 
 impl EventType for FieldValueSetResponse {
-    fn type_id() -> &'static str { "FieldValueSetResponse" }
+    fn type_id() -> &'static str {
+        "FieldValueSetResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -141,7 +161,9 @@ pub struct FieldUpdateRequest {
 }
 
 impl EventType for FieldUpdateRequest {
-    fn type_id() -> &'static str { "FieldUpdateRequest" }
+    fn type_id() -> &'static str {
+        "FieldUpdateRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -153,7 +175,9 @@ pub struct FieldUpdateResponse {
 }
 
 impl EventType for FieldUpdateResponse {
-    fn type_id() -> &'static str { "FieldUpdateResponse" }
+    fn type_id() -> &'static str {
+        "FieldUpdateResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -163,7 +187,9 @@ pub struct SchemaLoadRequest {
 }
 
 impl EventType for SchemaLoadRequest {
-    fn type_id() -> &'static str { "SchemaLoadRequest" }
+    fn type_id() -> &'static str {
+        "SchemaLoadRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -175,7 +201,9 @@ pub struct SchemaLoadResponse {
 }
 
 impl EventType for SchemaLoadResponse {
-    fn type_id() -> &'static str { "SchemaLoadResponse" }
+    fn type_id() -> &'static str {
+        "SchemaLoadResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -185,7 +213,9 @@ pub struct SchemaApprovalRequest {
 }
 
 impl EventType for SchemaApprovalRequest {
-    fn type_id() -> &'static str { "SchemaApprovalRequest" }
+    fn type_id() -> &'static str {
+        "SchemaApprovalRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -196,7 +226,9 @@ pub struct SchemaApprovalResponse {
 }
 
 impl EventType for SchemaApprovalResponse {
-    fn type_id() -> &'static str { "SchemaApprovalResponse" }
+    fn type_id() -> &'static str {
+        "SchemaApprovalResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -206,7 +238,9 @@ pub struct AtomHistoryRequest {
 }
 
 impl EventType for AtomHistoryRequest {
-    fn type_id() -> &'static str { "AtomHistoryRequest" }
+    fn type_id() -> &'static str {
+        "AtomHistoryRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -218,7 +252,9 @@ pub struct AtomHistoryResponse {
 }
 
 impl EventType for AtomHistoryResponse {
-    fn type_id() -> &'static str { "AtomHistoryResponse" }
+    fn type_id() -> &'static str {
+        "AtomHistoryResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -228,7 +264,9 @@ pub struct AtomGetRequest {
 }
 
 impl EventType for AtomGetRequest {
-    fn type_id() -> &'static str { "AtomGetRequest" }
+    fn type_id() -> &'static str {
+        "AtomGetRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -240,7 +278,9 @@ pub struct AtomGetResponse {
 }
 
 impl EventType for AtomGetResponse {
-    fn type_id() -> &'static str { "AtomGetResponse" }
+    fn type_id() -> &'static str {
+        "AtomGetResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -252,7 +292,9 @@ pub struct FieldValueQueryRequest {
 }
 
 impl EventType for FieldValueQueryRequest {
-    fn type_id() -> &'static str { "FieldValueQueryRequest" }
+    fn type_id() -> &'static str {
+        "FieldValueQueryRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -264,7 +306,9 @@ pub struct FieldValueQueryResponse {
 }
 
 impl EventType for FieldValueQueryResponse {
-    fn type_id() -> &'static str { "FieldValueQueryResponse" }
+    fn type_id() -> &'static str {
+        "FieldValueQueryResponse"
+    }
 }
 
 // Molecule query types
@@ -275,7 +319,9 @@ pub struct MoleculeQueryRequest {
 }
 
 impl EventType for MoleculeQueryRequest {
-    fn type_id() -> &'static str { "MoleculeQueryRequest" }
+    fn type_id() -> &'static str {
+        "MoleculeQueryRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -287,7 +333,9 @@ pub struct MoleculeQueryResponse {
 }
 
 impl EventType for MoleculeQueryResponse {
-    fn type_id() -> &'static str { "MoleculeQueryResponse" }
+    fn type_id() -> &'static str {
+        "MoleculeQueryResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -296,7 +344,9 @@ pub struct SchemaStatusRequest {
 }
 
 impl EventType for SchemaStatusRequest {
-    fn type_id() -> &'static str { "SchemaStatusRequest" }
+    fn type_id() -> &'static str {
+        "SchemaStatusRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -308,7 +358,9 @@ pub struct SchemaStatusResponse {
 }
 
 impl EventType for SchemaStatusResponse {
-    fn type_id() -> &'static str { "SchemaStatusResponse" }
+    fn type_id() -> &'static str {
+        "SchemaStatusResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -317,7 +369,9 @@ pub struct SchemaDiscoveryRequest {
 }
 
 impl EventType for SchemaDiscoveryRequest {
-    fn type_id() -> &'static str { "SchemaDiscoveryRequest" }
+    fn type_id() -> &'static str {
+        "SchemaDiscoveryRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -329,7 +383,9 @@ pub struct SchemaDiscoveryResponse {
 }
 
 impl EventType for SchemaDiscoveryResponse {
-    fn type_id() -> &'static str { "SchemaDiscoveryResponse" }
+    fn type_id() -> &'static str {
+        "SchemaDiscoveryResponse"
+    }
 }
 
 // Molecule get types
@@ -340,7 +396,9 @@ pub struct MoleculeGetRequest {
 }
 
 impl EventType for MoleculeGetRequest {
-    fn type_id() -> &'static str { "MoleculeGetRequest" }
+    fn type_id() -> &'static str {
+        "MoleculeGetRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -352,7 +410,9 @@ pub struct MoleculeGetResponse {
 }
 
 impl EventType for MoleculeGetResponse {
-    fn type_id() -> &'static str { "MoleculeGetResponse" }
+    fn type_id() -> &'static str {
+        "MoleculeGetResponse"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -363,7 +423,9 @@ pub struct SystemInitializationRequest {
 }
 
 impl EventType for SystemInitializationRequest {
-    fn type_id() -> &'static str { "SystemInitializationRequest" }
+    fn type_id() -> &'static str {
+        "SystemInitializationRequest"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -374,6 +436,7 @@ pub struct SystemInitializationResponse {
 }
 
 impl EventType for SystemInitializationResponse {
-    fn type_id() -> &'static str { "SystemInitializationResponse" }
+    fn type_id() -> &'static str {
+        "SystemInitializationResponse"
+    }
 }
-

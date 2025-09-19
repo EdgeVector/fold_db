@@ -9,7 +9,7 @@ use crate::datafold_node::config::NodeInfo;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::network::NetworkCore;
-use crate::security::{SecurityManager, EncryptionManager, Ed25519KeyPair};
+use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityManager};
 
 /// A node in the DataFold distributed database system.
 ///
@@ -104,21 +104,22 @@ impl DataFoldNode {
         };
 
         // Generate a new keypair for this node
-        let keypair = Ed25519KeyPair::generate()
-            .map_err(|e| FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e)))?;
+        let keypair = Ed25519KeyPair::generate().map_err(|e| {
+            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
+        })?;
         let private_key = keypair.secret_key_base64();
         let public_key = keypair.public_key_base64();
-        
+
         log_feature!(LogFeature::Database, info, "Generated new node keypair");
 
         // Initialize security manager with node configuration
         let mut security_config = config.security_config.clone();
-        
+
         // Generate master key if encryption is enabled but no key is set
         if security_config.encrypt_at_rest && security_config.master_key.is_none() {
             security_config.master_key = Some(EncryptionManager::generate_master_key());
         }
-        
+
         let security_manager = {
             let guard = db
                 .lock()
@@ -145,8 +146,12 @@ impl DataFoldNode {
     }
 
     /// Loads an existing database node from the specified configuration.
-pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
-        log_feature!(LogFeature::Database, info, "Loading DataFoldNode from config");
+    pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "Loading DataFoldNode from config"
+        );
         let node = Self::new(config)?;
 
         // Delegate to SchemaCore for unified schema discovery and loading
@@ -156,9 +161,11 @@ pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
                 .lock()
                 .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
             // Initialize schema system via SchemaCore
-            db.schema_manager.discover_and_load_all_schemas().map_err(|e| {
-                FoldDbError::Config(format!("Failed to initialize schema system: {}", e))
-            })?;
+            db.schema_manager
+                .discover_and_load_all_schemas()
+                .map_err(|e| {
+                    FoldDbError::Config(format!("Failed to initialize schema system: {}", e))
+                })?;
         }
 
         log_feature!(
@@ -171,7 +178,9 @@ pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
 
     /// Get a reference to the underlying FoldDB instance
     pub fn get_fold_db(&self) -> FoldDbResult<std::sync::MutexGuard<'_, FoldDB>> {
-        self.db.lock().map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))
+        self.db
+            .lock()
+            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))
     }
 
     /// Gets the unique identifier for this node.
@@ -198,8 +207,8 @@ pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{engine::general_purpose, Engine as _};
     use tempfile::tempdir;
-    use base64::{Engine as _, engine::general_purpose};
 
     #[test]
     fn test_node_private_key_generation() {

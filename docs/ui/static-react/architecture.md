@@ -722,7 +722,7 @@ test('should fetch schemas with retry', async () => {
 
 ## Migration from Legacy Architecture
 
-For teams migrating from the previous architecture, see the comprehensive [Migration Guide](./MIGRATION.md) which includes:
+For teams migrating from the previous architecture, see the comprehensive [Migration Guide](./migration.md) which includes:
 
 - Step-by-step migration instructions
 - Before/after code examples
@@ -747,4 +747,4 @@ The architecture is designed to support future enhancements:
 | 2.0.0 | 2025-06-24 | Complete architecture redesign with React simplification |
 | 1.x | Prior | Legacy architecture (deprecated) |
 
-For implementation details, see the [API Documentation](./docs/) and [Testing Guide](./TESTING.md).
+For implementation details, see the [API Reference](../../reference/api-reference.md) and [Testing Guide](./testing.md).

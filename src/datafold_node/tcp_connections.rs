@@ -37,7 +37,11 @@ impl TcpServer {
             if let Err(e) = send_response(&mut socket, &response).await {
                 match &e {
                     FoldDbError::Io(io_err) if io_err.kind() == std::io::ErrorKind::BrokenPipe => {
-                        log_feature!(LogFeature::TcpServer, info, "Client disconnected while sending response");
+                        log_feature!(
+                            LogFeature::TcpServer,
+                            info,
+                            "Client disconnected while sending response"
+                        );
                         return Ok(());
                     }
                     _ => return Err(e),

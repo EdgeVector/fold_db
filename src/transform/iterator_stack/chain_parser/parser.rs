@@ -3,9 +3,11 @@
 //! Contains the main parsing algorithms and logic for converting
 //! chain expressions into structured representations.
 
-use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult, constants};
 use crate::transform::iterator_stack::chain_parser::types::{
-    ChainOperation, ParsedChain, IteratorScope,
+    ChainOperation, IteratorScope, ParsedChain,
+};
+use crate::transform::iterator_stack::errors::{
+    constants, IteratorStackError, IteratorStackResult,
 };
 
 /// Parser for chain syntax expressions
@@ -78,9 +80,7 @@ impl ChainParser {
                 "map()" => ChainOperation::Map,
                 "split_array()" => ChainOperation::SplitArray,
                 "split_by_word()" => ChainOperation::SplitByWord,
-                part if part.starts_with('$') => {
-                    ChainOperation::SpecialField(part.to_string())
-                }
+                part if part.starts_with('$') => ChainOperation::SpecialField(part.to_string()),
                 part if part.ends_with("()") => {
                     // Check if it's a reducer function
                     let func_name = &part[..part.len() - 2];
@@ -138,7 +138,11 @@ impl ChainParser {
 
         if branch_parts.is_empty() {
             return Err(IteratorStackError::InvalidIteratorChain {
-                chain: operations.iter().map(|op| format!("{:?}", op)).collect::<Vec<_>>().join("."),
+                chain: operations
+                    .iter()
+                    .map(|op| format!("{:?}", op))
+                    .collect::<Vec<_>>()
+                    .join("."),
                 reason: "No field access found for branch extraction".to_string(),
             });
         }
@@ -147,7 +151,10 @@ impl ChainParser {
     }
 
     /// Builds iterator scopes for each depth level
-    fn build_scopes(&self, operations: &[ChainOperation]) -> IteratorStackResult<Vec<IteratorScope>> {
+    fn build_scopes(
+        &self,
+        operations: &[ChainOperation],
+    ) -> IteratorStackResult<Vec<IteratorScope>> {
         let mut scopes = Vec::new();
         let mut current_ops = Vec::new();
         let mut depth = 0;

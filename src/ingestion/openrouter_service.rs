@@ -1,8 +1,8 @@
 //! OpenRouter API service for AI-powered schema analysis
 
 use crate::ingestion::{IngestionConfig, IngestionError, IngestionResult};
-use crate::logging::features::LogFeature;
 use crate::log_feature;
+use crate::logging::features::LogFeature;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -288,11 +288,21 @@ impl OpenRouterService {
     /// Parse the AI response
     fn parse_ai_response(&self, response_text: &str) -> IngestionResult<AISchemaResponse> {
         log_feature!(LogFeature::Ingestion, info, "=== PARSING AI RESPONSE ===");
-        log_feature!(LogFeature::Ingestion, info, "Raw AI response text: {}", response_text);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Raw AI response text: {}",
+            response_text
+        );
 
         // Try to extract JSON from the response
         let json_str = self.extract_json_from_response(response_text)?;
-        log_feature!(LogFeature::Ingestion, info, "Extracted JSON string: {}", json_str);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Extracted JSON string: {}",
+            json_str
+        );
 
         // Parse the JSON
         let parsed: Value = serde_json::from_str(&json_str).map_err(|e| {
@@ -312,8 +322,17 @@ impl OpenRouterService {
         // Validate and convert to AISchemaResponse
         let result = self.validate_and_convert_response(parsed)?;
 
-        log_feature!(LogFeature::Ingestion, info, "=== FINAL PARSED AI RESPONSE ===");
-        log_feature!(LogFeature::Ingestion, info, "Existing schemas: {:?}", result.existing_schemas);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "=== FINAL PARSED AI RESPONSE ==="
+        );
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Existing schemas: {:?}",
+            result.existing_schemas
+        );
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -324,8 +343,17 @@ impl OpenRouterService {
                 .map(pretty_json)
                 .unwrap_or_else(|| "None".to_string())
         );
-        log_feature!(LogFeature::Ingestion, info, "Mutation mappers: {:?}", result.mutation_mappers);
-        log_feature!(LogFeature::Ingestion, info, "=== END PARSED AI RESPONSE ===");
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Mutation mappers: {:?}",
+            result.mutation_mappers
+        );
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "=== END PARSED AI RESPONSE ==="
+        );
 
         Ok(result)
     }

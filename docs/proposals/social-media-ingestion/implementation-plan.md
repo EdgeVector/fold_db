@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the detailed implementation plan for adding social media data ingestion capabilities to the Datafold system, as specified in [`SOCIAL_MEDIA_INGESTION_PROPOSAL.md`](SOCIAL_MEDIA_INGESTION_PROPOSAL.md). The plan leverages existing infrastructure while adding new components for real-time streaming, deduplication, and social media platform adapters.
+This document outlines the detailed implementation plan for adding social media data ingestion capabilities to the Datafold system, as specified in [`proposal.md`](./proposal.md). The plan leverages existing infrastructure while adding new components for real-time streaming, deduplication, and social media platform adapters.
 
 ## Executive Summary
 

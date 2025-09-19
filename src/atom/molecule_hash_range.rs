@@ -127,7 +127,11 @@ impl MoleculeBehavior for MoleculeHashRange {
         &crate::atom::molecule_types::MoleculeStatus::Active
     }
 
-    fn set_status(&mut self, _status: &crate::atom::molecule_types::MoleculeStatus, _source_pub_key: String) {
+    fn set_status(
+        &mut self,
+        _status: &crate::atom::molecule_types::MoleculeStatus,
+        _source_pub_key: String,
+    ) {
         // HashRange molecules don't support status changes, but we need to implement the trait
         self.updated_at = chrono::Utc::now();
     }
@@ -168,23 +172,23 @@ mod tests {
     #[test]
     fn test_add_and_remove_atom_uuid() {
         let mut molecule = MoleculeHashRange::new("test_id".to_string());
-        
+
         molecule.add_atom_uuid("atom1".to_string());
         assert_eq!(molecule.atom_count(), 1);
         assert!(molecule.atom_uuids.contains(&"atom1".to_string()));
-        
+
         molecule.add_atom_uuid("atom2".to_string());
         assert_eq!(molecule.atom_count(), 2);
-        
+
         // Adding duplicate should not increase count
         molecule.add_atom_uuid("atom1".to_string());
         assert_eq!(molecule.atom_count(), 2);
-        
+
         // Remove atom
         assert!(molecule.remove_atom_uuid("atom1"));
         assert_eq!(molecule.atom_count(), 1);
         assert!(!molecule.atom_uuids.contains(&"atom1".to_string()));
-        
+
         // Remove non-existent atom
         assert!(!molecule.remove_atom_uuid("nonexistent"));
         assert_eq!(molecule.atom_count(), 1);
@@ -193,7 +197,7 @@ mod tests {
     #[test]
     fn test_metadata_operations() {
         let mut molecule = MoleculeHashRange::new("test_id".to_string());
-        
+
         molecule.set_metadata("key1".to_string(), "value1".to_string());
         assert_eq!(molecule.get_metadata("key1"), Some(&"value1".to_string()));
         assert_eq!(molecule.get_metadata("nonexistent"), None);
@@ -202,11 +206,11 @@ mod tests {
     #[test]
     fn test_clear_atoms() {
         let mut molecule = MoleculeHashRange::new("test_id".to_string());
-        
+
         molecule.add_atom_uuid("atom1".to_string());
         molecule.add_atom_uuid("atom2".to_string());
         assert_eq!(molecule.atom_count(), 2);
-        
+
         molecule.clear_atoms();
         assert_eq!(molecule.atom_count(), 0);
         assert!(molecule.is_empty());

@@ -148,8 +148,8 @@ const CODE_QUALITY_BATCH_SIZE = 15;
 - `src/datafold_node/static-react/src/utils/` - Added utility function documentation
 
 ### Quality Assurance
-- `src/datafold_node/static-react/docs/CODE_QUALITY.md` - Document quality standards
-- `src/datafold_node/static-react/docs/LINTING_RULES.md` - Document linting rule decisions
+- `docs/ui/static-react/code-quality.md` - Document quality standards
+- `docs/ui/static-react/linting-rules.md` - Document linting rule decisions
 
 ## Rollback Plan
 

@@ -226,11 +226,11 @@ Field Change → Event Bus → Transform Trigger → Transform Engine → Storag
 
 ## 📚 Documentation Structure
 
-- **`docs/architecture.md`** - Detailed technical architecture
-- **`docs/developer-guide.md`** - Integration and development guide
-- **`docs/api-reference.md`** - Complete API documentation
-- **`docs/deployment-guide.md`** - Production deployment guide
-- **`docs/use-cases.md`** - Common use cases and examples
+- **`docs/overview/architecture.md`** - Detailed technical architecture
+- **`docs/guides/development/developer-guide.md`** - Integration and development guide
+- **`docs/reference/api-reference.md`** - Complete API documentation
+- **`docs/guides/operations/deployment-guide.md`** - Production deployment guide
+- **`docs/overview/use-cases.md`** - Common use cases and examples
 
 ## 🔍 Project Organization
 

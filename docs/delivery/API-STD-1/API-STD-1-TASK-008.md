@@ -76,7 +76,7 @@ Create comprehensive documentation and usage guides for the standardized API cli
 
 ### 3. Technical Documentation Updates ✅
 
-**File:** [`docs/api-reference.md`](../../api-reference.md)  
+**File:** [`docs/reference/api-reference.md`](../../reference/api-reference.md)
 **Changes:** Added comprehensive Frontend API Clients section  
 **Position:** Top priority (position #1) with ⭐ "Recommended for React Applications"
 

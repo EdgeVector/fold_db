@@ -6,10 +6,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq)]
 pub enum IteratorStackError {
     /// Invalid chain syntax in expression
-    InvalidChainSyntax {
-        expression: String,
-        reason: String,
-    },
+    InvalidChainSyntax { expression: String, reason: String },
     /// Incompatible fan-out depths between fields
     IncompatibleFanoutDepths {
         field1: String,
@@ -31,28 +28,18 @@ pub enum IteratorStackError {
         max_depth: usize,
     },
     /// Invalid iterator chain structure
-    InvalidIteratorChain {
-        chain: String,
-        reason: String,
-    },
+    InvalidIteratorChain { chain: String, reason: String },
     /// Ambiguous fan-out on different branches
-    AmbiguousFanoutDifferentBranches {
-        branches: Vec<String>,
-    },
+    AmbiguousFanoutDifferentBranches { branches: Vec<String> },
     /// Iterator depth exceeds maximum allowed
     MaxDepthExceeded {
         current_depth: usize,
         max_depth: usize,
     },
     /// Field alignment validation failed
-    FieldAlignmentError {
-        field: String,
-        reason: String,
-    },
+    FieldAlignmentError { field: String, reason: String },
     /// Runtime execution error
-    ExecutionError {
-        message: String,
-    },
+    ExecutionError { message: String },
 }
 
 impl fmt::Display for IteratorStackError {
@@ -139,10 +126,10 @@ pub type IteratorStackResult<T> = Result<T, IteratorStackError>;
 pub mod constants {
     /// Maximum iterator depth allowed
     pub const MAX_ITERATOR_DEPTH: usize = 10;
-    
+
     /// Maximum number of fields in a single schema
     pub const MAX_FIELDS_PER_SCHEMA: usize = 100;
-    
+
     /// Maximum chain expression length
     pub const MAX_CHAIN_EXPRESSION_LENGTH: usize = 1000;
 }

@@ -4,14 +4,13 @@
 //! appropriate specialized retrievers based on field type. This replaces the
 //! complex branching logic in FieldManager.
 
+use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::{
-    MessageBus,
-    request_events::FieldValueQueryRequest,
+    request_events::FieldValueQueryRequest, MessageBus,
 };
 use crate::schema::types::field::FieldVariant;
 use crate::schema::Schema;
 use crate::schema::SchemaError;
-use crate::db_operations::DbOperations;
 use log::info;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -46,11 +45,7 @@ impl FieldRetrievalService {
     }
 
     /// Retrieves a field value without filtering using unified FieldValueResolver
-    pub fn get_field_value(
-        &self,
-        schema: &Schema,
-        field: &str,
-    ) -> Result<Value, SchemaError> {
+    pub fn get_field_value(&self, schema: &Schema, field: &str) -> Result<Value, SchemaError> {
         info!(
             "🔍 FieldRetrievalService::get_field_value - schema: {}, field: {} (UNIFIED)",
             schema.name, field
@@ -60,7 +55,9 @@ impl FieldRetrievalService {
         // This ensures consistent field resolution across the application
         match &self.db_ops {
             Some(db_ops) => {
-                crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(db_ops, schema, field, None, None)
+                crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(
+                    db_ops, schema, field, None, None,
+                )
             }
             None => {
                 // Fallback to event-driven approach if no db_ops available
@@ -74,11 +71,20 @@ impl FieldRetrievalService {
 
                 match self.message_bus.publish(query_request) {
                     Ok(_) => {
-                        info!("✅ FieldValueQueryRequest sent successfully for {}.{}", schema.name, field);
-                        Ok(Value::String(format!("EVENT_DRIVEN_PLACEHOLDER_{}_{}", schema.name, field)))
+                        info!(
+                            "✅ FieldValueQueryRequest sent successfully for {}.{}",
+                            schema.name, field
+                        );
+                        Ok(Value::String(format!(
+                            "EVENT_DRIVEN_PLACEHOLDER_{}_{}",
+                            schema.name, field
+                        )))
                     }
                     Err(e) => {
-                        let error_msg = format!("Failed to send FieldValueQueryRequest for {}.{}: {:?}", schema.name, field, e);
+                        let error_msg = format!(
+                            "Failed to send FieldValueQueryRequest for {}.{}: {:?}",
+                            schema.name, field, e
+                        );
                         info!("❌ {}", error_msg);
                         Err(SchemaError::InvalidField(error_msg))
                     }
@@ -110,12 +116,21 @@ impl FieldRetrievalService {
 
         match self.message_bus.publish(query_request) {
             Ok(_) => {
-                info!("✅ FieldValueQueryRequest with filter sent successfully for {}.{}", schema.name, field);
+                info!(
+                    "✅ FieldValueQueryRequest with filter sent successfully for {}.{}",
+                    schema.name, field
+                );
                 // For now, return a placeholder - in a real event-driven system, this would wait for response
-                Ok(Value::String(format!("EVENT_DRIVEN_FILTERED_PLACEHOLDER_{}_{}", schema.name, field)))
+                Ok(Value::String(format!(
+                    "EVENT_DRIVEN_FILTERED_PLACEHOLDER_{}_{}",
+                    schema.name, field
+                )))
             }
             Err(e) => {
-                let error_msg = format!("Failed to send filtered FieldValueQueryRequest for {}.{}: {:?}", schema.name, field, e);
+                let error_msg = format!(
+                    "Failed to send filtered FieldValueQueryRequest for {}.{}: {:?}",
+                    schema.name, field, e
+                );
                 info!("❌ {}", error_msg);
                 Err(SchemaError::InvalidField(error_msg))
             }
@@ -217,11 +232,7 @@ impl FieldRetrievalService {
             });
 
             // Get field value with the wrapped range filter
-            match self.get_field_value_with_filter(
-                schema,
-                field_name,
-                &wrapped_filter,
-            ) {
+            match self.get_field_value_with_filter(schema, field_name, &wrapped_filter) {
                 Ok(field_value) => {
                     // For range fields, extract the actual content from the filtered result
                     let actual_content = if let Some(matches) = field_value.get("matches") {

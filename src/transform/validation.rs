@@ -3,15 +3,15 @@
 //! This module provides validation functions for schema structure, field alignment,
 //! and other validation concerns in the transform execution framework.
 
-use crate::transform::iterator_stack::field_alignment::{FieldAlignmentValidator, AlignmentValidationResult};
-use crate::transform::shared_utilities::{
-    parse_atom_uuid_expression, 
-    collect_expressions_from_schema,
-    create_parsing_error,
-    format_alignment_validation_errors,
-};
 use crate::schema::types::SchemaError;
-use log::{info, error};
+use crate::transform::iterator_stack::field_alignment::{
+    AlignmentValidationResult, FieldAlignmentValidator,
+};
+use crate::transform::shared_utilities::{
+    collect_expressions_from_schema, create_parsing_error, format_alignment_validation_errors,
+    parse_atom_uuid_expression,
+};
+use log::{error, info};
 
 /// Timing information for validation phases
 #[derive(Debug)]
@@ -33,19 +33,25 @@ pub fn validate_hashrange_schema(
     schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
 ) -> Result<ValidationTimings, SchemaError> {
     use std::time::Instant;
-    
+
     // Validate schema structure
     let validation_start = Instant::now();
     schema.validate()?;
     let validation_duration = validation_start.elapsed();
-    info!("⏱️ HashRange schema validation took: {:?}", validation_duration);
-    
+    info!(
+        "⏱️ HashRange schema validation took: {:?}",
+        validation_duration
+    );
+
     // Validate field alignment
     let alignment_start = Instant::now();
     validate_field_alignment(schema)?;
     let alignment_duration = alignment_start.elapsed();
-    info!("⏱️ HashRange field alignment validation took: {:?}", alignment_duration);
-    
+    info!(
+        "⏱️ HashRange field alignment validation took: {:?}",
+        alignment_duration
+    );
+
     Ok(ValidationTimings {
         validation_duration,
         alignment_duration,
@@ -86,16 +92,19 @@ pub fn validate_field_alignment_unified(
 ) -> Result<AlignmentValidationResult, SchemaError> {
     // Handle case where parsed chains are provided directly (from executor modules)
     if let Some(chains) = parsed_chains {
-        info!("🔍 Validating field alignment with {} pre-parsed chains", chains.len());
+        info!(
+            "🔍 Validating field alignment with {} pre-parsed chains",
+            chains.len()
+        );
         return validate_alignment_with_chains(chains);
     }
-    
+
     // Handle case where schema is provided (original behavior)
     if let Some(schema) = schema {
         info!("🔍 Validating field alignment for schema: {}", schema.name);
         return validate_alignment_from_schema(schema);
     }
-    
+
     // Neither schema nor chains provided - return empty result
     info!("⚠️ No schema or parsed chains provided for alignment validation");
     Ok(AlignmentValidationResult {
@@ -129,14 +138,18 @@ fn validate_alignment_with_chains(
             warnings: Vec::new(),
         });
     }
-    
-    info!("📊 Validating alignment for {} pre-parsed chains", parsed_chains.len());
-    
+
+    info!(
+        "📊 Validating alignment for {} pre-parsed chains",
+        parsed_chains.len()
+    );
+
     // Perform alignment validation using the unified logic
     let validator = FieldAlignmentValidator::new();
-    let alignment_result = validator.validate_alignment(parsed_chains)
-        .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
-    
+    let alignment_result = validator.validate_alignment(parsed_chains).map_err(|err| {
+        SchemaError::InvalidField(format!("Alignment validation failed: {}", err))
+    })?;
+
     // Process and return the result
     process_unified_alignment_result(&alignment_result)
 }
@@ -155,7 +168,7 @@ fn validate_alignment_from_schema(
 ) -> Result<AlignmentValidationResult, SchemaError> {
     // Collect all expressions for alignment validation using unified function
     let mut all_expressions = collect_expressions_from_schema(schema);
-    
+
     // Add HashRange special field expressions if this is a HashRange schema
     if let Some(key_config) = &schema.key {
         info!("🔑 Adding key expressions to alignment validation when present");
@@ -166,7 +179,7 @@ fn validate_alignment_from_schema(
             all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
         }
     }
-    
+
     if all_expressions.is_empty() {
         info!("⚠️ No expressions found for alignment validation");
         return Ok(AlignmentValidationResult {
@@ -177,13 +190,16 @@ fn validate_alignment_from_schema(
             warnings: Vec::new(),
         });
     }
-    
-    info!("📊 Validating alignment for {} expressions", all_expressions.len());
-    
+
+    info!(
+        "📊 Validating alignment for {} expressions",
+        all_expressions.len()
+    );
+
     // Parse expressions for validation
     let mut parsed_chains = Vec::new();
     let mut parsing_errors = Vec::new();
-    
+
     for (field_name, expression) in &all_expressions {
         match parse_atom_uuid_expression(expression) {
             Ok(parsed_chain) => {
@@ -194,15 +210,26 @@ fn validate_alignment_from_schema(
             }
         }
     }
-    
+
     if !parsing_errors.is_empty() {
-        error!("🚨 Field alignment validation failed due to parsing errors: {}", 
-               format_alignment_validation_errors(&parsing_errors.iter()
-                   .map(|(field, expr, err)| format!("Field '{}' expression '{}': {}", field, expr, err))
-                   .collect::<Vec<_>>()));
-        return Err(create_parsing_error(&parsing_errors, "Field alignment validation"));
+        error!(
+            "🚨 Field alignment validation failed due to parsing errors: {}",
+            format_alignment_validation_errors(
+                &parsing_errors
+                    .iter()
+                    .map(|(field, expr, err)| format!(
+                        "Field '{}' expression '{}': {}",
+                        field, expr, err
+                    ))
+                    .collect::<Vec<_>>()
+            )
+        );
+        return Err(create_parsing_error(
+            &parsing_errors,
+            "Field alignment validation",
+        ));
     }
-    
+
     if parsed_chains.is_empty() {
         info!("⚠️ No valid expressions found for alignment validation");
         return Ok(AlignmentValidationResult {
@@ -213,12 +240,15 @@ fn validate_alignment_from_schema(
             warnings: Vec::new(),
         });
     }
-    
+
     // Perform alignment validation using the unified logic
     let validator = FieldAlignmentValidator::new();
-    let alignment_result = validator.validate_alignment(&parsed_chains)
-        .map_err(|err| SchemaError::InvalidField(format!("Alignment validation failed: {}", err)))?;
-    
+    let alignment_result = validator
+        .validate_alignment(&parsed_chains)
+        .map_err(|err| {
+            SchemaError::InvalidField(format!("Alignment validation failed: {}", err))
+        })?;
+
     // Process and return the result
     process_unified_alignment_result(&alignment_result)
 }
@@ -236,29 +266,48 @@ fn process_unified_alignment_result(
     alignment_result: &AlignmentValidationResult,
 ) -> Result<AlignmentValidationResult, SchemaError> {
     // Debug: Log all field alignments generated
-    info!("🔍 Generated {} field alignments:", alignment_result.field_alignments.len());
+    info!(
+        "🔍 Generated {} field alignments:",
+        alignment_result.field_alignments.len()
+    );
     for (expression, alignment_info) in &alignment_result.field_alignments {
-        info!("  📝 Expression: '{}' -> alignment: {:?}, depth: {}, requires_reducer: {}", 
-              expression, alignment_info.alignment, alignment_info.depth, alignment_info.requires_reducer);
+        info!(
+            "  📝 Expression: '{}' -> alignment: {:?}, depth: {}, requires_reducer: {}",
+            expression,
+            alignment_info.alignment,
+            alignment_info.depth,
+            alignment_info.requires_reducer
+        );
     }
-    
+
     if !alignment_result.valid {
-        let error_messages: Vec<String> = alignment_result.errors.iter()
+        let error_messages: Vec<String> = alignment_result
+            .errors
+            .iter()
             .map(|err| format!("{:?}: {}", err.error_type, err.message))
             .collect();
-        error!("🚨 Field alignment validation failed: {}", format_alignment_validation_errors(&error_messages));
-        
-        return Err(SchemaError::InvalidField(format_alignment_validation_errors(&error_messages)));
+        error!(
+            "🚨 Field alignment validation failed: {}",
+            format_alignment_validation_errors(&error_messages)
+        );
+
+        return Err(SchemaError::InvalidField(
+            format_alignment_validation_errors(&error_messages),
+        ));
     }
-    
+
     if !alignment_result.warnings.is_empty() {
-        let warning_messages: Vec<String> = alignment_result.warnings.iter()
+        let warning_messages: Vec<String> = alignment_result
+            .warnings
+            .iter()
             .map(|warn| format!("{:?}: {}", warn.warning_type, warn.message))
             .collect();
-        info!("⚠️ Field alignment validation warnings: {}", warning_messages.join("; "));
+        info!(
+            "⚠️ Field alignment validation warnings: {}",
+            warning_messages.join("; ")
+        );
     }
-    
+
     info!("✅ Field alignment validation passed");
     Ok(alignment_result.clone())
 }
-

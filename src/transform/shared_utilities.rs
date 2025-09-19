@@ -3,12 +3,15 @@
 //! This module consolidates common functionality used across different
 //! executor modules to eliminate code duplication and improve maintainability.
 
+use crate::schema::types::{json_schema::DeclarativeSchemaDefinition, SchemaError};
 use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
 use crate::transform::iterator_stack::errors::IteratorStackError;
-use crate::schema::types::{SchemaError, json_schema::DeclarativeSchemaDefinition};
+use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
+use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
+use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use log::info;
+use std::time::Instant;
 
 /// Parses atom UUID expressions using ChainParser.
 ///
@@ -25,7 +28,10 @@ use log::info;
 pub fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, SchemaError> {
     let parser = ChainParser::new();
     parser.parse(expression).map_err(|err| {
-        SchemaError::InvalidField(format!("Failed to parse expression '{}': {}", expression, err))
+        SchemaError::InvalidField(format!(
+            "Failed to parse expression '{}': {}",
+            expression, err
+        ))
     })
 }
 
@@ -62,7 +68,7 @@ pub fn format_validation_errors(errors: &[String], context: &str) -> String {
     if errors.is_empty() {
         return format!("{} failed: No errors provided", context);
     }
-    
+
     if errors.len() == 1 {
         format!("{} failed: {}", context, errors[0])
     } else {
@@ -84,18 +90,23 @@ pub fn format_validation_errors(errors: &[String], context: &str) -> String {
 ///
 /// Formatted error message
 pub fn format_parsing_errors(
-    parsing_errors: &[(String, String, SchemaError)], 
-    context: &str
+    parsing_errors: &[(String, String, SchemaError)],
+    context: &str,
 ) -> String {
     if parsing_errors.is_empty() {
         return format!("{} failed: No parsing errors provided", context);
     }
-    
-    let error_messages: Vec<String> = parsing_errors.iter()
+
+    let error_messages: Vec<String> = parsing_errors
+        .iter()
         .map(|(field, expr, err)| format!("Field '{}' expression '{}': {}", field, expr, err))
         .collect();
-    
-    format!("{} failed due to parsing errors: {}", context, error_messages.join("; "))
+
+    format!(
+        "{} failed due to parsing errors: {}",
+        context,
+        error_messages.join("; ")
+    )
 }
 
 /// Formats field access errors with standardized message format.
@@ -113,7 +124,10 @@ pub fn format_parsing_errors(
 ///
 /// Formatted error message
 pub fn format_field_access_error(field_name: &str, path: &str, reason: &str) -> String {
-    format!("Field access failed for '{}' at path '{}': {}", field_name, path, reason)
+    format!(
+        "Field access failed for '{}' at path '{}': {}",
+        field_name, path, reason
+    )
 }
 
 /// Formats alignment validation errors with standardized message format.
@@ -163,8 +177,8 @@ pub fn create_validation_error(errors: &[String], context: &str) -> SchemaError 
 ///
 /// Standardized SchemaError
 pub fn create_parsing_error(
-    parsing_errors: &[(String, String, SchemaError)], 
-    context: &str
+    parsing_errors: &[(String, String, SchemaError)],
+    context: &str,
 ) -> SchemaError {
     SchemaError::InvalidField(format_parsing_errors(parsing_errors, context))
 }
@@ -182,37 +196,59 @@ pub fn create_parsing_error(
 /// # Returns
 ///
 /// Resolved value or error
-pub fn resolve_dotted_path(path: &str, input_values: &HashMap<String, JsonValue>) -> Result<JsonValue, SchemaError> {
+pub fn resolve_dotted_path(
+    path: &str,
+    input_values: &HashMap<String, JsonValue>,
+) -> Result<JsonValue, SchemaError> {
     let parts: Vec<&str> = path.split('.').collect();
-    
+
     if parts.is_empty() {
         return Err(SchemaError::InvalidField("Empty path provided".to_string()));
     }
-    
+
     // Start with the root value
-    let mut current_value = input_values.get(parts[0])
+    let mut current_value = input_values
+        .get(parts[0])
         .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found", parts[0])))?
         .clone();
-    
+
     // Navigate through the path
     for part in parts.iter().skip(1) {
         if let JsonValue::Object(obj) = current_value {
-            current_value = obj.get(*part)
-                .ok_or_else(|| SchemaError::InvalidField(format!("Field '{}' not found in path '{}'", part, path)))?
+            current_value = obj
+                .get(*part)
+                .ok_or_else(|| {
+                    SchemaError::InvalidField(format!(
+                        "Field '{}' not found in path '{}'",
+                        part, path
+                    ))
+                })?
                 .clone();
         } else if let JsonValue::Array(arr) = current_value {
             if let Ok(index) = part.parse::<usize>() {
-                current_value = arr.get(index)
-                    .ok_or_else(|| SchemaError::InvalidField(format!("Index '{}' out of bounds in path '{}'", index, path)))?
+                current_value = arr
+                    .get(index)
+                    .ok_or_else(|| {
+                        SchemaError::InvalidField(format!(
+                            "Index '{}' out of bounds in path '{}'",
+                            index, path
+                        ))
+                    })?
                     .clone();
             } else {
-                return Err(SchemaError::InvalidField(format!("Invalid array index '{}' in path '{}'", part, path)));
+                return Err(SchemaError::InvalidField(format!(
+                    "Invalid array index '{}' in path '{}'",
+                    part, path
+                )));
             }
         } else {
-            return Err(SchemaError::InvalidField(format!("Cannot access '{}' on non-object/non-array value in path '{}'", part, path)));
+            return Err(SchemaError::InvalidField(format!(
+                "Cannot access '{}' on non-object/non-array value in path '{}'",
+                part, path
+            )));
         }
     }
-    
+
     Ok(current_value)
 }
 
@@ -228,12 +264,16 @@ pub fn resolve_dotted_path(path: &str, input_values: &HashMap<String, JsonValue>
 /// # Returns
 ///
 /// The extracted simple path (e.g., "user.profile.name")
-pub fn extract_simple_path_from_operations(operations: &[crate::transform::iterator_stack::chain_parser::ChainOperation]) -> String {
+pub fn extract_simple_path_from_operations(
+    operations: &[crate::transform::iterator_stack::chain_parser::ChainOperation],
+) -> String {
     let mut path_parts = Vec::new();
-    
+
     for operation in operations {
         match operation {
-            crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field_name) => {
+            crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(
+                field_name,
+            ) => {
                 path_parts.push(field_name.clone());
             }
             _ => {
@@ -242,8 +282,38 @@ pub fn extract_simple_path_from_operations(operations: &[crate::transform::itera
             }
         }
     }
-    
+
     path_parts.join(".")
+}
+
+/// Executes parsed chains with the shared `ExecutionEngine` helper.
+pub fn execute_chains_with_engine(
+    parsed_chains: &[(String, ParsedChain)],
+    alignment_result: &AlignmentValidationResult,
+    input_data: JsonValue,
+) -> Result<ExecutionResult, SchemaError> {
+    let engine_start = Instant::now();
+    let mut execution_engine = ExecutionEngine::new();
+    let chains_only: Vec<ParsedChain> = parsed_chains
+        .iter()
+        .map(|(_, chain)| chain.clone())
+        .collect();
+
+    let execution_result = execution_engine
+        .execute_fields(&chains_only, alignment_result, input_data)
+        .map_err(convert_iterator_stack_error)?;
+
+    info!(
+        "⏱️ ExecutionEngine execution took: {:?}",
+        engine_start.elapsed()
+    );
+    info!(
+        "📈 ExecutionEngine produced {} index entries, {} warnings",
+        execution_result.index_entries.len(),
+        execution_result.warnings.len()
+    );
+
+    Ok(execution_result)
 }
 
 /// Resolves field value from parsed chain with fallback mechanisms.
@@ -267,11 +337,14 @@ pub fn resolve_field_value_from_chain(
 ) -> Result<JsonValue, SchemaError> {
     // Extract simple path from operations for basic field access
     let simple_path = extract_simple_path_from_operations(&parsed_chain.operations);
-    
+
     if simple_path.is_empty() {
-        return Err(SchemaError::InvalidField(format!("No simple path found in parsed chain for field '{}'", field_name)));
+        return Err(SchemaError::InvalidField(format!(
+            "No simple path found in parsed chain for field '{}'",
+            field_name
+        )));
     }
-    
+
     // Try to resolve the simple path
     resolve_dotted_path(&simple_path, input_values)
 }
@@ -289,10 +362,12 @@ pub fn resolve_field_value_from_chain(
 /// # Returns
 ///
 /// Vector of (field_name, ParsedChain) pairs for successfully parsed expressions
-pub fn parse_expressions_batch(expressions: &[(String, String)]) -> Result<Vec<(String, ParsedChain)>, SchemaError> {
+pub fn parse_expressions_batch(
+    expressions: &[(String, String)],
+) -> Result<Vec<(String, ParsedChain)>, SchemaError> {
     let mut parsed_chains = Vec::new();
     let mut parsing_errors = Vec::new();
-    
+
     for (field_name, expression) in expressions {
         match parse_atom_uuid_expression(expression) {
             Ok(parsed_chain) => {
@@ -303,16 +378,20 @@ pub fn parse_expressions_batch(expressions: &[(String, String)]) -> Result<Vec<(
             }
         }
     }
-    
+
     // Log warnings for failed expressions but don't fail the entire batch
     if !parsing_errors.is_empty() {
-        let error_messages: Vec<String> = parsing_errors.iter()
+        let error_messages: Vec<String> = parsing_errors
+            .iter()
             .map(|(field, expr, err)| format!("Field '{}' expression '{}': {}", field, expr, err))
             .collect();
-        log::warn!("⚠️ {} expressions failed to parse (will use fallback): {}", 
-                   parsing_errors.len(), error_messages.join("; "));
+        log::warn!(
+            "⚠️ {} expressions failed to parse (will use fallback): {}",
+            parsing_errors.len(),
+            error_messages.join("; ")
+        );
     }
-    
+
     Ok(parsed_chains)
 }
 
@@ -332,13 +411,13 @@ pub fn collect_expressions_from_schema(
     schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
 ) -> Vec<(String, String)> {
     let mut all_expressions = Vec::new();
-    
+
     for (field_name, field_def) in &schema.fields {
         if let Some(atom_uuid_expr) = &field_def.atom_uuid {
             all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
         }
     }
-    
+
     all_expressions
 }
 
@@ -360,13 +439,13 @@ pub fn collect_expressions_from_schema_with_keys(
     key_expressions: &[(String, String)],
 ) -> Vec<(String, String)> {
     let mut all_expressions = Vec::new();
-    
+
     // Add key expressions first
     all_expressions.extend(key_expressions.iter().cloned());
-    
+
     // Add regular field expressions from schema
     all_expressions.extend(collect_expressions_from_schema(schema));
-    
+
     all_expressions
 }
 
@@ -390,15 +469,18 @@ pub fn modify_expressions_with_input_prefix(
     if !add_input_prefix {
         return expressions.to_vec();
     }
-    
-    expressions.iter().map(|(field_name, expression)| {
-        let modified_expression = if expression.starts_with("input.") {
-            expression.clone()
-        } else {
-            format!("input.{}", expression)
-        };
-        (field_name.clone(), modified_expression)
-    }).collect()
+
+    expressions
+        .iter()
+        .map(|(field_name, expression)| {
+            let modified_expression = if expression.starts_with("input.") {
+                expression.clone()
+            } else {
+                format!("input.{}", expression)
+            };
+            (field_name.clone(), modified_expression)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -420,10 +502,9 @@ mod tests {
 
     #[test]
     fn test_resolve_dotted_path_simple() {
-        let input_values = HashMap::from([
-            ("user".to_string(), json!({"name": "John", "age": 30})),
-        ]);
-        
+        let input_values =
+            HashMap::from([("user".to_string(), json!({"name": "John", "age": 30}))]);
+
         let result = resolve_dotted_path("user.name", &input_values);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!("John"));
@@ -431,10 +512,9 @@ mod tests {
 
     #[test]
     fn test_resolve_dotted_path_nested() {
-        let input_values = HashMap::from([
-            ("user".to_string(), json!({"profile": {"name": "John"}})),
-        ]);
-        
+        let input_values =
+            HashMap::from([("user".to_string(), json!({"profile": {"name": "John"}}))]);
+
         let result = resolve_dotted_path("user.profile.name", &input_values);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!("John"));
@@ -442,10 +522,9 @@ mod tests {
 
     #[test]
     fn test_resolve_dotted_path_array() {
-        let input_values = HashMap::from([
-            ("items".to_string(), json!(["first", "second", "third"])),
-        ]);
-        
+        let input_values =
+            HashMap::from([("items".to_string(), json!(["first", "second", "third"]))]);
+
         let result = resolve_dotted_path("items.1", &input_values);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!("second"));
@@ -453,10 +532,8 @@ mod tests {
 
     #[test]
     fn test_resolve_dotted_path_not_found() {
-        let input_values = HashMap::from([
-            ("user".to_string(), json!({"name": "John"})),
-        ]);
-        
+        let input_values = HashMap::from([("user".to_string(), json!({"name": "John"}))]);
+
         let result = resolve_dotted_path("user.age", &input_values);
         assert!(result.is_err());
     }
@@ -464,13 +541,13 @@ mod tests {
     #[test]
     fn test_extract_simple_path_from_operations() {
         use crate::transform::iterator_stack::chain_parser::ChainOperation;
-        
+
         let operations = vec![
             ChainOperation::FieldAccess("user".to_string()),
             ChainOperation::FieldAccess("profile".to_string()),
             ChainOperation::FieldAccess("name".to_string()),
         ];
-        
+
         let path = extract_simple_path_from_operations(&operations);
         assert_eq!(path, "user.profile.name");
     }
@@ -488,7 +565,7 @@ mod tests {
             ("field1".to_string(), "input.value1".to_string()),
             ("field2".to_string(), "input.value2".to_string()),
         ];
-        
+
         let result = parse_expressions_batch(&expressions);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 2);
@@ -500,10 +577,10 @@ mod tests {
             ("field1".to_string(), "input.value1".to_string()),
             ("field2".to_string(), "invalid..syntax".to_string()),
         ];
-        
+
         let result = parse_expressions_batch(&expressions);
         assert!(result.is_ok());
-        
+
         // Should return only the successfully parsed expressions
         let parsed_chains = result.unwrap();
         assert_eq!(parsed_chains.len(), 1);
@@ -514,63 +591,79 @@ mod tests {
     fn test_collect_expressions_from_schema() {
         use crate::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
         use crate::schema::types::schema::SchemaType;
-        
+
         let schema = DeclarativeSchemaDefinition {
             name: "test_schema".to_string(),
             schema_type: SchemaType::Single,
             key: None,
             fields: HashMap::from([
-                ("field1".to_string(), FieldDefinition {
-                    atom_uuid: Some("input.value1".to_string()),
-                    field_type: None,
-                }),
-                ("field2".to_string(), FieldDefinition {
-                    atom_uuid: Some("input.value2".to_string()),
-                    field_type: None,
-                }),
-                ("field3".to_string(), FieldDefinition {
-                    atom_uuid: None,
-                    field_type: None,
-                }),
+                (
+                    "field1".to_string(),
+                    FieldDefinition {
+                        atom_uuid: Some("input.value1".to_string()),
+                        field_type: None,
+                    },
+                ),
+                (
+                    "field2".to_string(),
+                    FieldDefinition {
+                        atom_uuid: Some("input.value2".to_string()),
+                        field_type: None,
+                    },
+                ),
+                (
+                    "field3".to_string(),
+                    FieldDefinition {
+                        atom_uuid: None,
+                        field_type: None,
+                    },
+                ),
             ]),
         };
-        
+
         let expressions = collect_expressions_from_schema(&schema);
         assert_eq!(expressions.len(), 2);
-        
+
         // Check that both fields are present (order is not guaranteed with HashMap)
         let field_names: Vec<&String> = expressions.iter().map(|(name, _)| name).collect();
         assert!(field_names.contains(&&"field1".to_string()));
         assert!(field_names.contains(&&"field2".to_string()));
-        
+
         // Check the expressions
         let expressions_map: HashMap<String, String> = expressions.into_iter().collect();
-        assert_eq!(expressions_map.get("field1"), Some(&"input.value1".to_string()));
-        assert_eq!(expressions_map.get("field2"), Some(&"input.value2".to_string()));
+        assert_eq!(
+            expressions_map.get("field1"),
+            Some(&"input.value1".to_string())
+        );
+        assert_eq!(
+            expressions_map.get("field2"),
+            Some(&"input.value2".to_string())
+        );
     }
 
     #[test]
     fn test_collect_expressions_from_schema_with_keys() {
         use crate::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
         use crate::schema::types::schema::SchemaType;
-        
+
         let schema = DeclarativeSchemaDefinition {
             name: "test_schema".to_string(),
             schema_type: SchemaType::Single,
             key: None,
-            fields: HashMap::from([
-                ("field1".to_string(), FieldDefinition {
+            fields: HashMap::from([(
+                "field1".to_string(),
+                FieldDefinition {
                     atom_uuid: Some("input.value1".to_string()),
                     field_type: None,
-                }),
-            ]),
+                },
+            )]),
         };
-        
+
         let key_expressions = vec![
             ("_hash_field".to_string(), "input.hash".to_string()),
             ("_range_field".to_string(), "input.range".to_string()),
         ];
-        
+
         let expressions = collect_expressions_from_schema_with_keys(&schema, &key_expressions);
         assert_eq!(expressions.len(), 3);
         assert_eq!(expressions[0].0, "_hash_field");
@@ -584,11 +677,11 @@ mod tests {
             ("field1".to_string(), "input.value1".to_string()),
             ("field2".to_string(), "value2".to_string()),
         ];
-        
+
         let modified = modify_expressions_with_input_prefix(&expressions, true);
         assert_eq!(modified[0].1, "input.value1"); // Already has prefix
         assert_eq!(modified[1].1, "input.value2"); // Added prefix
-        
+
         let unmodified = modify_expressions_with_input_prefix(&expressions, false);
         assert_eq!(unmodified[0].1, "input.value1"); // No change
         assert_eq!(unmodified[1].1, "value2"); // No change
@@ -608,7 +701,10 @@ mod tests {
             "Field 'age' must be positive".to_string(),
         ];
         let result = format_validation_errors(&errors, "Schema validation");
-        assert_eq!(result, "Schema validation failed: Field 'name' is required; Field 'age' must be positive");
+        assert_eq!(
+            result,
+            "Schema validation failed: Field 'name' is required; Field 'age' must be positive"
+        );
     }
 
     #[test]
@@ -621,8 +717,16 @@ mod tests {
     #[test]
     fn test_format_parsing_errors() {
         let parsing_errors = vec![
-            ("field1".to_string(), "input.value1".to_string(), SchemaError::InvalidField("Parse error".to_string())),
-            ("field2".to_string(), "invalid..syntax".to_string(), SchemaError::InvalidField("Syntax error".to_string())),
+            (
+                "field1".to_string(),
+                "input.value1".to_string(),
+                SchemaError::InvalidField("Parse error".to_string()),
+            ),
+            (
+                "field2".to_string(),
+                "invalid..syntax".to_string(),
+                SchemaError::InvalidField("Syntax error".to_string()),
+            ),
         ];
         let result = format_parsing_errors(&parsing_errors, "Expression parsing");
         assert!(result.contains("Expression parsing failed due to parsing errors"));
@@ -633,14 +737,20 @@ mod tests {
     #[test]
     fn test_format_field_access_error() {
         let result = format_field_access_error("user", "user.profile.name", "Field not found");
-        assert_eq!(result, "Field access failed for 'user' at path 'user.profile.name': Field not found");
+        assert_eq!(
+            result,
+            "Field access failed for 'user' at path 'user.profile.name': Field not found"
+        );
     }
 
     #[test]
     fn test_format_alignment_validation_errors() {
         let errors = vec!["Fields have incompatible depths".to_string()];
         let result = format_alignment_validation_errors(&errors);
-        assert_eq!(result, "Field alignment validation failed: Fields have incompatible depths");
+        assert_eq!(
+            result,
+            "Field alignment validation failed: Fields have incompatible depths"
+        );
     }
 
     #[test]
@@ -657,9 +767,11 @@ mod tests {
 
     #[test]
     fn test_create_parsing_error() {
-        let parsing_errors = vec![
-            ("field1".to_string(), "input.value1".to_string(), SchemaError::InvalidField("Parse error".to_string())),
-        ];
+        let parsing_errors = vec![(
+            "field1".to_string(),
+            "input.value1".to_string(),
+            SchemaError::InvalidField("Parse error".to_string()),
+        )];
         let result = create_parsing_error(&parsing_errors, "Expression parsing");
         match result {
             SchemaError::InvalidField(msg) => {
@@ -690,7 +802,7 @@ mod deduplication_tests {
             fields: HashMap::new(),
             key: None,
         };
-        
+
         let result = validate_schema_basic(&schema);
         // Check what the actual validation error is
         match result {
@@ -712,7 +824,7 @@ mod deduplication_tests {
             fields: HashMap::new(),
             key: None,
         };
-        
+
         let result = validate_schema_basic(&schema);
         // This should fail validation
         assert!(result.is_err());
@@ -748,7 +860,7 @@ mod deduplication_tests {
             fields: HashMap::new(),
             key: None,
         };
-        
+
         // Test validation utility
         let validation_result = validate_schema_basic(&schema);
         match validation_result {
@@ -759,10 +871,10 @@ mod deduplication_tests {
                 assert!(true, "Empty schema validation failed as expected: {:?}", e);
             }
         }
-        
+
         // Test logging utility (should not panic)
         log_schema_execution_start("Test", &schema.name, None);
-        
+
         // Both utilities should work together
         assert_eq!(schema.name, "consistency_test");
     }
@@ -780,7 +892,10 @@ pub fn validate_schema_basic(schema: &DeclarativeSchemaDefinition) -> Result<(),
 /// This consolidates the duplicate logging patterns across executors.
 pub fn log_schema_execution_start(schema_type: &str, schema_name: &str, range_key: Option<&str>) {
     match range_key {
-        Some(key) => info!("🔧 Executing {} schema: {} with range_key: {}", schema_type, schema_name, key),
+        Some(key) => info!(
+            "🔧 Executing {} schema: {} with range_key: {}",
+            schema_type, schema_name, key
+        ),
         None => info!("🚀 Executing {} schema: {}", schema_type, schema_name),
     }
 }

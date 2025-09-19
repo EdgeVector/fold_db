@@ -8,9 +8,9 @@
 //! - Helper methods
 
 mod event_processing;
-mod request_handlers;
 mod field_processing;
 mod helpers;
+mod request_handlers;
 
 use crate::atom::{Atom, Molecule, MoleculeRange};
 use crate::db_operations::DbOperations;

@@ -24,4 +24,3 @@ pub fn string_functions() -> HashMap<String, TransformFunction> {
 
     functions
 }
-

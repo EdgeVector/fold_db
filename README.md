@@ -229,7 +229,7 @@ DataFold supports ingesting data from various sources with the new adapter-based
 - **Webhooks** - Real-time event processing
 - **Custom Adapters** - Extensible plugin system
 
-See [`SOCIAL_MEDIA_INGESTION_PROPOSAL.md`](SOCIAL_MEDIA_INGESTION_PROPOSAL.md) for the complete ingestion architecture.
+See [`docs/proposals/social-media-ingestion/proposal.md`](docs/proposals/social-media-ingestion/proposal.md) for the complete ingestion architecture.
 
 ## 🛠️ Development Setup
 

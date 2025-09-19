@@ -5,19 +5,22 @@
 //!
 //! **Note**: This executor only supports declarative transforms. Procedural transforms are not supported.
 
-use crate::schema::types::{SchemaError, Transform, json_schema::DeclarativeSchemaDefinition, schema::SchemaType};
-use crate::transform::validation::{validate_hashrange_schema, validate_field_alignment_unified, validate_field_alignment};
-use crate::transform::shared_utilities::{
-    convert_iterator_stack_error,
-    collect_expressions_from_schema, collect_expressions_from_schema_with_keys,
-    parse_expressions_batch, modify_expressions_with_input_prefix,
-    validate_schema_basic, log_schema_execution_start
+use crate::schema::types::{
+    json_schema::DeclarativeSchemaDefinition, schema::SchemaType, SchemaError, Transform,
+};
+use crate::transform::aggregation::{
+    aggregate_results_unified, SchemaType as AggregationSchemaType,
 };
 use crate::transform::coordination::execute_multi_chain_coordination_with_monitoring;
-use crate::transform::aggregation::{aggregate_results_unified, SchemaType as AggregationSchemaType};
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
-use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
+use crate::transform::shared_utilities::{
+    collect_expressions_from_schema, execute_chains_with_engine, log_schema_execution_start,
+    modify_expressions_with_input_prefix, parse_expressions_batch, validate_schema_basic,
+};
+use crate::transform::validation::{
+    validate_field_alignment, validate_field_alignment_unified, validate_hashrange_schema,
+};
 use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -46,19 +49,19 @@ impl TransformExecutor {
         input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
         info!("🧮 TransformExecutor: Starting declarative transform computation");
-        
+
         info!("📊 Input values for computation:");
         for (key, value) in &input_values {
             info!("  - {}: {}", key, value);
         }
-        
+
         // Only support declarative transforms
         if !transform.is_declarative() {
             return Err(SchemaError::InvalidTransform(
-                "Only declarative transforms are supported by this executor".to_string()
+                "Only declarative transforms are supported by this executor".to_string(),
             ));
         }
-        
+
         Self::execute_declarative_transform(transform, input_values)
     }
 
@@ -77,10 +80,11 @@ impl TransformExecutor {
         input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
         info!("🏗️ Executing declarative transform");
-        
-        let schema = transform.get_declarative_schema()
-            .ok_or_else(|| SchemaError::InvalidTransform("Transform is not declarative".to_string()))?;
-        
+
+        let schema = transform.get_declarative_schema().ok_or_else(|| {
+            SchemaError::InvalidTransform("Transform is not declarative".to_string())
+        })?;
+
         Self::execute_declarative_transform_unified(schema, input_values)
     }
 
@@ -100,7 +104,9 @@ impl TransformExecutor {
     ) -> Result<JsonValue, SchemaError> {
         match &schema.schema_type {
             SchemaType::Single => Self::execute_single_pattern(schema, &input_values),
-            SchemaType::Range { range_key } => Self::execute_range_pattern(schema, &input_values, range_key),
+            SchemaType::Range { range_key } => {
+                Self::execute_range_pattern(schema, &input_values, range_key)
+            }
             SchemaType::HashRange => Self::execute_hashrange_pattern(schema, &input_values),
         }
     }
@@ -123,43 +129,40 @@ impl TransformExecutor {
             schema,
             input_values,
             "Single",
-            |schema, input_values, _parsed_chains, _alignment_result| {
-                info!("🚀 Executing Single schema with ExecutionEngine: {}", schema.name);
-                
-                // Collect all expressions for execution using unified function
-                let all_expressions = collect_expressions_from_schema(schema);
-                
-                if all_expressions.is_empty() {
-                    info!("⚠️ No expressions found for Single schema execution");
-                    return Ok(JsonValue::Object(serde_json::Map::new()));
-                }
-                
-                info!("📊 Executing {} expressions for Single schema", all_expressions.len());
-                
-                // Modify expressions to add "input." prefix if needed using unified function
-                let modified_expressions = modify_expressions_with_input_prefix(&all_expressions, true);
-                
-                // Parse all modified expressions using unified batch parsing
-                let modified_chains = parse_expressions_batch(&modified_expressions)?;
-                
-                // Validate field alignment using the unified validation function
-                let modified_chains_only: Vec<ParsedChain> = 
-                    modified_chains.iter().map(|(_, chain)| chain.clone()).collect();
-                let alignment_result = validate_field_alignment_unified(
-                    None, 
-                    Some(&modified_chains_only)
-                )?;
-                
-                // Structure input data with "input" field containing the actual input values
+            |_, collected_expressions| {
+                Ok(modify_expressions_with_input_prefix(
+                    &collected_expressions,
+                    true,
+                ))
+            },
+            |schema, input_values, parsed_chains, expressions, alignment_result| {
+                info!(
+                    "🚀 Executing Single schema with ExecutionEngine: {}",
+                    schema.name
+                );
+
                 let mut root_object = serde_json::Map::new();
-                root_object.insert("input".to_string(), JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
+                root_object.insert(
+                    "input".to_string(),
+                    JsonValue::Object(
+                        input_values
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect(),
+                    ),
+                );
                 let input_data = JsonValue::Object(root_object);
-                
-                // Execute with ExecutionEngine
-                let execution_result = Self::setup_execution_engine(&modified_chains, input_data, &alignment_result)?;
-                
-                // Aggregate results into final output format using unified aggregation
-                aggregate_results_unified(&modified_chains, &execution_result, input_values, &modified_expressions, AggregationSchemaType::Single)
+
+                let execution_result =
+                    execute_chains_with_engine(parsed_chains, alignment_result, input_data)?;
+
+                aggregate_results_unified(
+                    parsed_chains,
+                    &execution_result,
+                    input_values,
+                    expressions,
+                    AggregationSchemaType::Single,
+                )
             },
         )
     }
@@ -184,62 +187,63 @@ impl TransformExecutor {
             schema,
             input_values,
             "Range",
-            |schema, input_values, _parsed_chains, _alignment_result| {
-                // Use unified key extraction logic instead of legacy range_key parameter
-                let range_key = match &schema.schema_type {
+            |schema, collected_expressions| {
+                let range_expression = match &schema.schema_type {
                     SchemaType::Range { range_key } => {
-                        // Use universal key configuration if available, otherwise fall back to legacy range_key
                         if let Some(key_config) = &schema.key {
                             if !key_config.range_field.trim().is_empty() {
                                 key_config.range_field.clone()
                             } else {
                                 return Err(SchemaError::InvalidData(
-                                    "Range schema with key configuration must have range_field".to_string()
+                                    "Range schema with key configuration must have range_field"
+                                        .to_string(),
                                 ));
                             }
                         } else {
-                            // Legacy range_key support - this maintains backward compatibility
                             range_key.clone()
                         }
-                    },
-                    _ => return Err(SchemaError::InvalidData("Expected Range schema type".to_string()))
+                    }
+                    _ => {
+                        return Err(SchemaError::InvalidData(
+                            "Expected Range schema type".to_string(),
+                        ));
+                    }
                 };
-                
-                let hash_key = if let Some(key_config) = &schema.key {
-                    if !key_config.hash_field.trim().is_empty() {
+
+                let hash_expression = schema.key.as_ref().and_then(|key_config| {
+                    let trimmed = key_config.hash_field.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
                         Some(key_config.hash_field.clone())
-                    } else { None }
-                } else {
-                    None
-                };
-                
-                info!("🔧 Executing Range coordination for schema: {} with unified keys - hash: {:?}, range: {}", 
-                      schema.name, hash_key, range_key);
-                
-                // Collect all expressions for Range coordination using unified function
-                let mut key_expressions = vec![("_range_field".to_string(), range_key)];
-                if let Some(hash_key) = hash_key {
-                    key_expressions.push(("_hash_field".to_string(), hash_key));
+                    }
+                });
+
+                info!(
+                    "🔧 Executing Range coordination for schema: {} with unified keys - hash: {:?}, range: {}",
+                    schema.name,
+                    hash_expression.as_deref(),
+                    range_expression.as_str()
+                );
+
+                let mut expressions = vec![("_range_field".to_string(), range_expression)];
+                if let Some(hash) = hash_expression.clone() {
+                    expressions.push(("_hash_field".to_string(), hash));
                 }
-                let all_expressions = collect_expressions_from_schema_with_keys(schema, &key_expressions);
-                
-                info!("📊 Coordinating {} expressions for Range execution", all_expressions.len());
-                
-                // Parse all expressions using unified batch parsing
-                let parsed_chains = parse_expressions_batch(&all_expressions)?;
-                info!("✅ Successfully parsed {} expressions", parsed_chains.len());
-                
-                // Validate field alignment using the unified validation function
-                let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
-                let alignment_result = validate_field_alignment_unified(
-                    None, 
-                    Some(&chains_only)
-                )?;
-                
-                info!("✅ Range multi-chain field alignment validation passed");
-                
-                // Execute using the same multi-chain engine as HashRange
-                Self::execute_multi_chain_with_engine(&parsed_chains, input_values, &alignment_result)
+                expressions.extend(collected_expressions);
+                Ok(expressions)
+            },
+            |schema, input_values, parsed_chains, expressions, alignment_result| {
+                info!(
+                    "✅ Range multi-chain field alignment validation passed: {}",
+                    schema.name
+                );
+                Self::execute_multi_chain_with_engine(
+                    parsed_chains,
+                    expressions,
+                    input_values,
+                    alignment_result,
+                )
             },
         )
     }
@@ -260,84 +264,106 @@ impl TransformExecutor {
     ) -> Result<JsonValue, SchemaError> {
         let start_time = Instant::now();
         log_schema_execution_start("HashRange", &schema.name, None);
-        
+
         // Validate schema structure and field alignment
         let validation_timings = validate_hashrange_schema(schema)?;
-        
+
         // Extract key configuration
         let key_config = Self::extract_hashrange_key_config(schema)?;
-        
+
         // Execute multi-chain coordination
         let execution_start = Instant::now();
-        let result = execute_multi_chain_coordination_with_monitoring(schema, input_values, key_config)?;
+        let result =
+            execute_multi_chain_coordination_with_monitoring(schema, input_values, key_config)?;
         let _execution_duration = execution_start.elapsed();
-        
+
         // Log performance summary
         Self::log_execution_performance(
             "HashRange",
             start_time.elapsed(),
             Some(validation_timings.validation_duration),
         );
-        
+
         Ok(result)
     }
 
     /// Common execution pattern used by Single and Range schema types.
-    fn execute_with_common_pattern<F>(
+    fn execute_with_common_pattern<F, G>(
         schema: &DeclarativeSchemaDefinition,
         input_values: &HashMap<String, JsonValue>,
         schema_type_name: &str,
+        prepare_expressions: G,
         custom_logic: F,
     ) -> Result<JsonValue, SchemaError>
     where
-        F: FnOnce(&DeclarativeSchemaDefinition, &HashMap<String, JsonValue>, Vec<(String, ParsedChain)>, AlignmentValidationResult) -> Result<JsonValue, SchemaError>,
+        G: FnOnce(
+            &DeclarativeSchemaDefinition,
+            Vec<(String, String)>,
+        ) -> Result<Vec<(String, String)>, SchemaError>,
+        F: FnOnce(
+            &DeclarativeSchemaDefinition,
+            &HashMap<String, JsonValue>,
+            &[(String, ParsedChain)],
+            &[(String, String)],
+            &AlignmentValidationResult,
+        ) -> Result<JsonValue, SchemaError>,
     {
         log_schema_execution_start(schema_type_name, &schema.name, None);
         validate_schema_basic(schema)?;
-        let all_expressions = collect_expressions_from_schema(schema);
-        
-        if all_expressions.is_empty() {
-            info!("⚠️ No expressions found for {} schema execution", schema_type_name);
+        let collected_expressions = collect_expressions_from_schema(schema);
+        let final_expressions = prepare_expressions(schema, collected_expressions)?;
+
+        if final_expressions.is_empty() {
+            info!(
+                "⚠️ No expressions found for {} schema execution",
+                schema_type_name
+            );
             return Ok(JsonValue::Object(serde_json::Map::new()));
         }
-        
-        info!("📊 Executing {} expressions for {} schema", all_expressions.len(), schema_type_name);
-        let parsed_chains = parse_expressions_batch(&all_expressions)?;
-        let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
-        let alignment_result = validate_field_alignment_unified(None, Some(&chains_only))?;
-        custom_logic(schema, input_values, parsed_chains, alignment_result)
-    }
 
-    /// Sets up and executes with ExecutionEngine.
-    fn setup_execution_engine(
-        parsed_chains: &[(String, ParsedChain)],
-        input_data: JsonValue,
-        alignment_result: &AlignmentValidationResult,
-    ) -> Result<ExecutionResult, SchemaError> {
-        let mut execution_engine = ExecutionEngine::new();
-        let chains_only: Vec<ParsedChain> = parsed_chains.iter().map(|(_, chain)| chain.clone()).collect();
-        let execution_result = execution_engine.execute_fields(
-            &chains_only,
-            alignment_result,
-            input_data,
-        ).map_err(convert_iterator_stack_error)?;
-        info!("📈 ExecutionEngine produced {} index entries", execution_result.index_entries.len());
-        Ok(execution_result)
+        info!(
+            "📊 Executing {} expressions for {} schema",
+            final_expressions.len(),
+            schema_type_name
+        );
+        let parsed_chains = parse_expressions_batch(&final_expressions)?;
+        let chains_only: Vec<ParsedChain> = parsed_chains
+            .iter()
+            .map(|(_, chain)| chain.clone())
+            .collect();
+        let alignment_result = validate_field_alignment_unified(None, Some(&chains_only))?;
+        custom_logic(
+            schema,
+            input_values,
+            &parsed_chains,
+            &final_expressions,
+            &alignment_result,
+        )
     }
 
     /// Executes multi-chain coordination with ExecutionEngine for Range schemas.
     fn execute_multi_chain_with_engine(
         parsed_chains: &[(String, ParsedChain)],
+        expressions: &[(String, String)],
         input_values: &HashMap<String, JsonValue>,
         alignment_result: &AlignmentValidationResult,
     ) -> Result<JsonValue, SchemaError> {
         info!("🚀 Executing multi-chain coordination with ExecutionEngine");
-        let input_data = JsonValue::Object(input_values.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-        let execution_result = Self::setup_execution_engine(parsed_chains, input_data, alignment_result)?;
-        let all_expressions: Vec<(String, String)> = parsed_chains.iter()
-            .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
-            .collect();
-        aggregate_results_unified(parsed_chains, &execution_result, input_values, &all_expressions, AggregationSchemaType::Range)
+        let input_data = JsonValue::Object(
+            input_values
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        );
+        let execution_result =
+            execute_chains_with_engine(parsed_chains, alignment_result, input_data)?;
+        aggregate_results_unified(
+            parsed_chains,
+            &execution_result,
+            input_values,
+            expressions,
+            AggregationSchemaType::Range,
+        )
     }
 
     /// Extracts and validates key configuration for HashRange schema.
@@ -346,14 +372,16 @@ impl TransformExecutor {
     ) -> Result<&crate::schema::types::json_schema::KeyConfig, SchemaError> {
         let key_config = schema.key.as_ref().ok_or_else(|| {
             SchemaError::InvalidTransform(format!(
-                "HashRange schema '{}' must have key configuration with hash_field and range_field", 
+                "HashRange schema '{}' must have key configuration with hash_field and range_field",
                 schema.name
             ))
         })?;
-        
-        info!("📊 HashRange key config - hash_field: {}, range_field: {}", 
-              key_config.hash_field, key_config.range_field);
-        
+
+        info!(
+            "📊 HashRange key config - hash_field: {}, range_field: {}",
+            key_config.hash_field, key_config.range_field
+        );
+
         Ok(key_config)
     }
 
@@ -364,10 +392,15 @@ impl TransformExecutor {
         validation_duration: Option<std::time::Duration>,
     ) {
         if let Some(validation_duration) = validation_duration {
-            info!("⏱️ {} execution completed in {:?} (validation: {:?})", 
-                  schema_type, total_duration, validation_duration);
+            info!(
+                "⏱️ {} execution completed in {:?} (validation: {:?})",
+                schema_type, total_duration, validation_duration
+            );
         } else {
-            info!("⏱️ {} execution completed in {:?}", schema_type, total_duration);
+            info!(
+                "⏱️ {} execution completed in {:?}",
+                schema_type, total_duration
+            );
         }
     }
 
@@ -388,23 +421,23 @@ impl TransformExecutor {
         // Only support declarative transforms
         if !transform.is_declarative() {
             return Err(SchemaError::InvalidTransform(
-                "Only declarative transforms are supported by this validator".to_string()
+                "Only declarative transforms are supported by this validator".to_string(),
             ));
         }
-        
+
         // Validate declarative transform
-        let schema = transform.get_declarative_schema()
-            .ok_or_else(|| SchemaError::InvalidTransform("Declarative transform must have schema".to_string()))?;
-        
+        let schema = transform.get_declarative_schema().ok_or_else(|| {
+            SchemaError::InvalidTransform("Declarative transform must have schema".to_string())
+        })?;
+
         // Validate schema structure
         schema.validate()?;
-        
+
         // Validate field alignment
         validate_field_alignment(schema)?;
-        
+
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -418,30 +451,31 @@ mod tests {
     fn test_execute_declarative_single_schema() {
         // Create a simple Single schema for testing
         let mut fields = std::collections::HashMap::new();
-        fields.insert("title".to_string(), crate::schema::types::json_schema::FieldDefinition {
-            field_type: Some("string".to_string()),
-            atom_uuid: Some("input.title".to_string()),
-        });
-        
+        fields.insert(
+            "title".to_string(),
+            crate::schema::types::json_schema::FieldDefinition {
+                field_type: Some("string".to_string()),
+                atom_uuid: Some("input.title".to_string()),
+            },
+        );
+
         let schema = DeclarativeSchemaDefinition {
             name: "test_schema".to_string(),
             schema_type: SchemaType::Single,
             fields,
             key: None,
         };
-        
+
         let transform = Transform::from_declarative_schema(
             schema,
             vec!["title".to_string()],
             "result".to_string(),
         );
-        
-        let input_values = HashMap::from([
-            ("title".to_string(), json!("Hello World")),
-        ]);
-        
+
+        let input_values = HashMap::from([("title".to_string(), json!("Hello World"))]);
+
         let result = TransformExecutor::execute_transform(&transform, input_values);
-        
+
         match result {
             Ok(json_result) => {
                 // For Single schemas, the result should be an object with the field
@@ -459,25 +493,31 @@ mod tests {
     fn test_validate_declarative_transform() {
         // Create a simple Single schema for testing
         let mut fields = std::collections::HashMap::new();
-        fields.insert("name".to_string(), crate::schema::types::json_schema::FieldDefinition {
-            field_type: Some("string".to_string()),
-            atom_uuid: Some("input.name".to_string()),
-        });
-        
+        fields.insert(
+            "name".to_string(),
+            crate::schema::types::json_schema::FieldDefinition {
+                field_type: Some("string".to_string()),
+                atom_uuid: Some("input.name".to_string()),
+            },
+        );
+
         let schema = DeclarativeSchemaDefinition {
             name: "test_schema".to_string(),
             schema_type: SchemaType::Single,
             fields,
             key: None,
         };
-        
+
         let transform = Transform::from_declarative_schema(
             schema,
             vec!["name".to_string()],
             "result".to_string(),
         );
-        
+
         let result = TransformExecutor::validate_transform(&transform);
-        assert!(result.is_ok(), "Declarative transform validation should succeed");
+        assert!(
+            result.is_ok(),
+            "Declarative transform validation should succeed"
+        );
     }
 }

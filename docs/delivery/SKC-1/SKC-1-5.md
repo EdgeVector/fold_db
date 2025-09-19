@@ -18,12 +18,12 @@ Document the universal `key` format and provide migration guidance with examples
 - Migration notes for legacy Range and schemas without `key`.
 
 ## Implementation Plan
-- Update `docs/schema-management.md` and related references.
+- Update `docs/reference/schema-management.md` and related references.
 - Add a short migration guide and cross-link from PRD.
 
 ## Verification
 - Documentation lint passes; links valid.
 
 ## Files Modified
-- `docs/schema-management.md`
+- `docs/reference/schema-management.md`
 - `docs/delivery/SKC-1/prd.md`
