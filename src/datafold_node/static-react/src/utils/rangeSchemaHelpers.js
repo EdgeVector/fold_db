@@ -102,6 +102,17 @@ export function getRangeField(schema) {
 }
 
 /**
+ * Returns the last segment of a dotted field expression.
+ * @param {string} expr
+ * @returns {string|null}
+ */
+function lastSegment(expr) {
+  if (typeof expr !== 'string') return null;
+  const parts = expr.split('.');
+  return parts[parts.length - 1] || expr;
+}
+
+/**
  * Detects if a schema is a range schema
  * Range schemas have:
  * 1. A range_key field defined in the schema
@@ -157,18 +168,59 @@ export function isRangeSchema(schema) {
  * @returns {string|null} Range key field name or null if not found
  */
 export function getRangeKey(schema) {
-  // Prefer universal key on Range if present
+  if (!schema || typeof schema !== 'object') return null;
+  // HashRange: derive from universal key if present
+  if (schema.schema_type === 'HashRange') {
+    const rf = schema?.key?.range_field;
+    return (typeof rf === 'string' && rf.trim()) ? lastSegment(rf) : null;
+  }
+  // Range: prefer universal key, fallback to legacy range_key
   if (schema?.schema_type?.Range) {
     const universalRange = schema?.key?.range_field;
     if (typeof universalRange === 'string' && universalRange.trim()) {
-      // Show last segment for readability
-      const parts = universalRange.split('.');
-      return parts[parts.length - 1] || universalRange;
+      return lastSegment(universalRange);
     }
-    // Fallback to legacy
     return schema?.schema_type?.Range?.range_key || schema?.range_key || null;
   }
-  return schema?.range_key || null;
+  // Single: optional universal range_field may exist
+  const rf = schema?.key?.range_field;
+  return (typeof rf === 'string' && rf.trim()) ? lastSegment(rf) : null;
+}
+
+/**
+ * Gets the hash key field name for any schema type (Single, Range, HashRange).
+ * Returns the last segment of the expression if dotted, else the raw field.
+ * @param {Schema} schema
+ * @returns {string|null}
+ */
+export function getHashKey(schema) {
+  if (!schema || typeof schema !== 'object') return null;
+  // Prefer universal key when present
+  const hf = schema?.key?.hash_field;
+  if (typeof hf === 'string' && hf.trim()) {
+    return lastSegment(hf);
+  }
+  // HashRange fallback: try first field definition
+  if (schema.schema_type === 'HashRange') {
+    const hr = Object.values(schema.fields || {}).find(field => field.field_type === 'HashRange' && field.hash_field);
+    return hr ? lastSegment(hr.hash_field) : null;
+  }
+  return null;
+}
+
+/**
+ * Returns a normalized key shape for the schema.
+ * { type: 'single'|'range'|'hashrange', hashField: string|null, rangeField: string|null }
+ * @param {Schema} schema
+ * @returns {{type:string, hashField:string|null, rangeField:string|null}}
+ */
+export function getKeyShape(schema) {
+  const hashField = getHashKey(schema);
+  const rangeField = getRangeKey(schema);
+  let type = 'single';
+  if (schema?.schema_type === 'HashRange') type = 'hashrange';
+  else if (schema?.schema_type?.Range) type = 'range';
+  return { type, hashField, rangeField };
 }
 
 /**
@@ -334,7 +386,7 @@ export function formatRangeQuery(schema, fields, rangeFilterValue) {
  * @param {string} [rangeKey] - Range key value
  * @returns {Object} Formatted query object
  */
-export function formatHashRangeQuery(schema, fields, hashKey, rangeKey) {
+export function formatHashRangeQuery(schema, fields, hashKey, _rangeKey) {
   const query = {
     type: 'query',
     schema: schema.name,
