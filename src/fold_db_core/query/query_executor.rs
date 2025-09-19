@@ -42,7 +42,6 @@ impl QueryExecutor {
     /// Query multiple fields from a schema
     pub fn query(&self, query: Query) -> Result<Value, SchemaError> {
         info!("🔍 EVENT-DRIVEN query for schema: {}", query.schema_name);
-        println!("🔍 DEBUG: Query called for schema: {}", query.schema_name);
         
         // Get schema first
         let schema = match self.schema_manager.get_schema(&query.schema_name)? {
@@ -90,27 +89,19 @@ impl QueryExecutor {
 
         // Extract hash key filter if this is a HashRange schema with a filter
         let hash_key_filter: Option<Value> = if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
-            println!("🔍 DEBUG: Schema '{}' is HashRange type", schema.name);
             if let Some(filter) = &query.filter {
-                println!("🔍 DEBUG: Query has filter: {:?}", filter);
-                // Check for both hash_filter and hash_key formats
+                // Check for hash_filter format (preferred)
                 if let Some(hash_filter_obj) = filter.get("hash_filter") {
-                    println!("🔑 HashRange schema detected with hash_filter: {:?}", hash_filter_obj);
+                    info!("🔑 HashRange schema detected with hash_filter");
                     Some(hash_filter_obj.clone())
-                } else if let Some(hash_key_value) = filter.get("hash_key") {
-                    println!("🔑 HashRange schema detected with hash_key: {:?}", hash_key_value);
-                    // Convert hash_key format to hash_filter format for compatibility
-                    Some(serde_json::json!({"Key": hash_key_value}))
                 } else {
-                    println!("🔍 DEBUG: No hash_filter or hash_key found in query filter");
+                    // No hash filter found
                     None
                 }
             } else {
-                println!("🔍 DEBUG: Query has no filter");
                 None
             }
         } else {
-            println!("🔍 DEBUG: Schema '{}' is not HashRange type: {:?}", schema.name, schema.schema_type);
             None
         };
 
