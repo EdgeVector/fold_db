@@ -89,7 +89,7 @@ impl OllamaConfig {
 
 
 /// Configuration for the ingestion module.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestionConfig {
     /// The AI provider to use.
     pub provider: AIProvider,
@@ -107,6 +107,21 @@ pub struct IngestionConfig {
     pub auto_execute_mutations: bool,
     /// Default trust distance for mutations.
     pub default_trust_distance: u32,
+}
+
+impl Default for IngestionConfig {
+    fn default() -> Self {
+        Self {
+            provider: AIProvider::default(),
+            openrouter: OpenRouterConfig::default(),
+            ollama: OllamaConfig::default(),
+            enabled: false,
+            max_retries: 3,
+            timeout_seconds: 60,
+            auto_execute_mutations: true,
+            default_trust_distance: 0,
+        }
+    }
 }
 
 impl IngestionConfig {

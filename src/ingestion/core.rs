@@ -458,6 +458,7 @@ mod tests {
     use crate::ingestion::config::AIProvider;
     use crate::schema::SchemaCore;
     use std::sync::{Arc, Mutex};
+    use std::fs;
     use tempfile::TempDir;
 
     // REMOVED: create_test_ingestion_core - dead code marked with #[allow(dead_code)]
@@ -469,10 +470,17 @@ mod tests {
         config.provider = AIProvider::Ollama;
 
         let temp_dir = TempDir::new().unwrap();
-        let test_path = temp_dir.path().to_str().unwrap();
+        let temp_path = temp_dir.path();
+        
+        // Create separate subdirectories to avoid conflicts
+        let schema_path = temp_path.join("schema");
+        let db_path = temp_path.join("db");
+        
+        fs::create_dir_all(&schema_path).unwrap();
+        fs::create_dir_all(&db_path).unwrap();
 
-        let schema_core = Arc::new(SchemaCore::new_for_testing(test_path).unwrap());
-        let fold_db = Arc::new(Mutex::new(FoldDB::new(test_path).unwrap()));
+        let schema_core = Arc::new(SchemaCore::new_for_testing(schema_path.to_str().unwrap()).unwrap());
+        let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).unwrap()));
 
         let ingestion_core = IngestionCore::new(config, schema_core, fold_db).unwrap();
 
