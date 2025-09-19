@@ -82,6 +82,11 @@ impl MutationService {
     ) -> Result<(), SchemaError> {
         InfrastructureLogger::log_debug_info("MutationService", &format!("Processing HashRange schema mutation for hash_key: {} and range_key: {}", hash_key_value, range_key_value));
         
+        // Get the actual hash and range field names from the schema's universal key configuration
+        let (hash_field_name, range_field_name) = self.get_hashrange_key_field_names(schema)?;
+        
+        InfrastructureLogger::log_debug_info("MutationService", &format!("HashRange schema '{}' key fields - hash: '{}', range: '{}'", schema.name, hash_field_name, range_field_name));
+        
         // Create mutation context for incremental processing
         let mutation_context = crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
             range_key: Some(range_key_value.to_string()),
@@ -94,9 +99,9 @@ impl MutationService {
         for (field_name, value) in fields_and_values {
             InfrastructureLogger::log_operation_start("MutationService", "Processing HashRange field", &format!("{}.{} with value: {}", schema.name, field_name, value));
             
-            // Skip hash_key and range_key fields as they are metadata for the HashRange structure
-            if field_name == "hash_key" || field_name == "range_key" {
-                InfrastructureLogger::log_debug_info("MutationService", &format!("Skipping metadata field: {}", field_name));
+            // Skip hash and range key fields as they are metadata for the HashRange structure
+            if field_name == &hash_field_name || field_name == &range_field_name {
+                InfrastructureLogger::log_debug_info("MutationService", &format!("Skipping metadata field: {} (universal key field)", field_name));
                 continue;
             }
             
@@ -355,4 +360,38 @@ pub fn validate_range_schema_mutation_format(
     }
 
     Ok(())
+}
+
+
+impl MutationService {
+    /// Get the hash and range field names from the schema's universal key configuration
+    fn get_hashrange_key_field_names(&self, schema: &Schema) -> Result<(String, String), SchemaError> {
+        // For HashRange schemas, both hash_field and range_field are required
+        let key_config = schema.key.as_ref().ok_or_else(|| {
+            SchemaError::InvalidData(format!("HashRange schema '{}' requires key configuration", schema.name))
+        })?;
+
+        let hash_field = if key_config.hash_field.trim().is_empty() {
+            return Err(SchemaError::InvalidData(format!(
+                "HashRange schema '{}' requires non-empty hash_field in key configuration", 
+                schema.name
+            )));
+        } else {
+            key_config.hash_field.clone()
+        };
+
+        let range_field = if key_config.range_field.trim().is_empty() {
+            return Err(SchemaError::InvalidData(format!(
+                "HashRange schema '{}' requires non-empty range_field in key configuration", 
+                schema.name
+            )));
+        } else {
+            key_config.range_field.clone()
+        };
+
+        InfrastructureLogger::log_debug_info("MutationService", &format!("HashRange schema '{}' key fields - hash: '{}', range: '{}'", 
+                  schema.name, hash_field, range_field));
+
+        Ok((hash_field, range_field))
+    }
 }
