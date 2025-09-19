@@ -16,7 +16,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useAppSelector } from '../store/hooks.ts';
 import { selectAllSchemas, selectFetchLoading } from '../store/schemaSlice';
 import { SCHEMA_STATES } from '../constants/redux.js';
-import { isHashRangeSchema } from '../utils/rangeSchemaHelpers.js';
+import { isHashRangeSchema, isRangeSchema, getRangeKey } from '../utils/rangeSchemaHelpers.js';
 
 /**
  * @typedef {Object} QueryState
@@ -47,18 +47,7 @@ import { isHashRangeSchema } from '../utils/rangeSchemaHelpers.js';
  * @property {string|null} rangeKey - Range key for selected schema
  */
 
-/**
- * Range schema utility functions
- */
-const isRangeSchema = (schema) => {
-  return schema?.fields ? Object.values(schema.fields).some(field => field.field_type === 'Range') : false;
-};
-
-const getRangeKey = (schema) => {
-  if (!schema?.fields) return null;
-  const rangeField = Object.entries(schema.fields).find(([, field]) => field.field_type === 'Range');
-  return rangeField ? rangeField[0] : null;
-};
+// Range schema utility functions now imported from rangeSchemaHelpers.js
 
 /**
  * Custom hook for managing query state with Redux integration
