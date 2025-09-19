@@ -277,6 +277,51 @@ curl -X POST http://localhost:9001/api/query \
 - **Storage Efficiency**: Check for better data organization
 - **Memory Usage**: Verify reduced memory overhead
 
+### 5. HashRange Query Examples
+
+**Hash-Filtered Query:**
+```bash
+curl -X POST http://localhost:9001/api/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schema": "BlogPostWordIndex",
+    "fields": ["word", "publish_date", "content"],
+    "filter": {
+      "hash_filter": {
+        "Key": "technology"
+      }
+    }
+  }'
+```
+
+**Response Format (hash->range->fields):**
+```json
+{
+  "technology": {
+    "2025-01-15": {
+      "word": "technology",
+      "publish_date": "2025-01-15",
+      "content": "AI and machine learning..."
+    },
+    "2025-01-20": {
+      "word": "technology",
+      "publish_date": "2025-01-20",
+      "content": "Quantum computing advances..."
+    }
+  }
+}
+```
+
+**Unfiltered Query (first 10 hash keys):**
+```bash
+curl -X POST http://localhost:9001/api/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schema": "BlogPostWordIndex",
+    "fields": ["word", "publish_date", "content"]
+  }'
+```
+
 ## Troubleshooting
 
 ### Common Issues
