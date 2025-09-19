@@ -1,5 +1,5 @@
 {
-  "name": "BlogPost",
+  "name": "BlogPost_old",
   "schema_type": {
     "Range": {
       "range_key": "publish_date"
