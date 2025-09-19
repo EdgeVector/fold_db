@@ -253,20 +253,38 @@ fn create_single_molecule(manager: &AtomManager, request: &FieldValueSetRequest,
 }
 
 /// Extract range key from request value for Range fields
+/// Supports both universal key configuration format and legacy "range_key" format
 fn extract_range_key_from_value(value: &serde_json::Value) -> String {
     if let Some(obj) = value.as_object() {
-        // Extract the VALUE of the "range_key" field, not the field name itself
+        // First, try to find the range key value by looking for common range field names
+        // This handles universal key configuration where the actual field name is used
+        for (key, val) in obj.iter() {
+            // Skip the "value" field as it contains the actual field data
+            if key == "value" {
+                continue;
+            }
+            
+            // Check if this looks like a range key (timestamp, date, id, etc.)
+            if let Some(val_str) = val.as_str() {
+                // If it's a timestamp-like value or looks like a range key, use it
+                if val_str.contains("T") || val_str.contains("-") || val_str.len() > 5 {
+                    return val_str.to_string();
+                }
+            }
+        }
+        
+        // Fallback: Look for legacy "range_key" field
         if let Some(range_key_value) = obj.get("range_key") {
             if let Some(key_str) = range_key_value.as_str() {
-                key_str.to_string()
+                return key_str.to_string();
             } else {
                 // Handle non-string range keys by converting to string
-                range_key_value.to_string().trim_matches('"').to_string()
+                return range_key_value.to_string().trim_matches('"').to_string();
             }
-        } else {
-            warn!("🔶 RANGE KEY WARNING: No 'range_key' field found in value, using 'default'");
-            "default".to_string()
         }
+        
+        warn!("🔶 RANGE KEY WARNING: No range key field found in value, using 'default'");
+        "default".to_string()
     } else {
         warn!("🔶 RANGE KEY WARNING: Value is not an object, using 'default'");
         "default".to_string()

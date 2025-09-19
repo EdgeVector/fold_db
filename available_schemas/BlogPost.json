@@ -5,6 +5,9 @@
       "range_key": "publish_date"
     }
   },
+  "key": {
+    "range_field": "publish_date"
+  },
   "fields": {
     "title": {
       "permission_policy": {
