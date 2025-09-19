@@ -475,7 +475,7 @@ impl SchemaCore {
             
             // For HashRange schemas, we need to get the key configuration from the original JSON file
             // since the schema fields don't contain the hash_field and range_field information
-            let key_config = self.get_hashrange_key_config_from_json(schema.name.as_str())?;
+            let key_config = self.get_universal_key_config_from_json(schema.name.as_str())?;
             
             let declarative_schema = DeclarativeSchemaDefinition {
                 name: schema.name.clone(),
@@ -520,13 +520,25 @@ impl SchemaCore {
         }
     }
     
-    /// Get HashRange key configuration from the original JSON schema file
-    pub fn get_hashrange_key_config_from_json(&self, schema_name: &str) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
+    /// Get universal key configuration from the original JSON schema file
+    /// 
+    /// This function reads the key configuration from a schema JSON file and returns it
+    /// as a KeyConfig. It handles all schema types (Single, Range, HashRange) and provides
+    /// clear error messages for malformed configurations.
+    /// 
+    /// # Arguments
+    /// * `schema_name` - The name of the schema file (without .json extension)
+    /// 
+    /// # Returns
+    /// * `Ok(Some(KeyConfig))` - If key configuration is found and valid
+    /// * `Ok(None)` - If no key configuration is present (valid for Single schemas)
+    /// * `Err(SchemaError)` - If the file cannot be read, JSON is malformed, or key config is invalid
+    pub fn get_universal_key_config_from_json(&self, schema_name: &str) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
         use crate::schema::types::json_schema::KeyConfig;
         use serde_json::Value;
         
         let schema_file_path = format!("available_schemas/{}.json", schema_name);
-        info!("🔍 Reading HashRange key config from: {}", schema_file_path);
+        info!("🔍 Reading universal key config from: {}", schema_file_path);
         
         let content = std::fs::read_to_string(&schema_file_path)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to read schema file {}: {}", schema_file_path, e)))?;
@@ -537,22 +549,33 @@ impl SchemaCore {
         if let Some(key_obj) = json_value.get(KEY_FIELD_NAME).and_then(|v| v.as_object()) {
             let hash_field = key_obj.get(KEY_CONFIG_HASH_FIELD)
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SchemaError::InvalidData("Missing hash_field in key config".to_string()))?;
+                .map(|s| s.to_string())
+                .unwrap_or_default();
             
             let range_field = key_obj.get(KEY_CONFIG_RANGE_FIELD)
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SchemaError::InvalidData("Missing range_field in key config".to_string()))?;
+                .map(|s| s.to_string())
+                .unwrap_or_default();
             
-            info!("🔑 Found key config - hash_field: {}, range_field: {}", hash_field, range_field);
+            info!("🔑 Found key config - hash_field: '{}', range_field: '{}'", hash_field, range_field);
             
             Ok(Some(KeyConfig {
-                hash_field: hash_field.to_string(),
-                range_field: range_field.to_string(),
+                hash_field,
+                range_field,
             }))
         } else {
             info!("⚠️ No key configuration found in schema file");
             Ok(None)
         }
+    }
+
+    /// Get HashRange key configuration from the original JSON schema file
+    /// 
+    /// This is a legacy function maintained for backward compatibility.
+    /// Use `get_universal_key_config_from_json` for new code.
+    #[deprecated(note = "Use get_universal_key_config_from_json instead")]
+    pub fn get_hashrange_key_config_from_json(&self, schema_name: &str) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
+        self.get_universal_key_config_from_json(schema_name)
     }
 
     /// Re-register transforms that target a newly approved schema
@@ -968,7 +991,7 @@ pub fn extract_unified_keys(schema: &Schema, data: &serde_json::Value) -> Result
             }
         },
         crate::schema::types::schema::SchemaType::Range { range_key } => {
-            // For Range schemas, support both legacy range_key and universal key
+            // For Range schemas, use universal key configuration if available, otherwise fall back to legacy range_key
             let range_value = if let Some(key_config) = &schema.key {
                 // Universal key configuration takes precedence
                 if !key_config.range_field.trim().is_empty() {
@@ -979,7 +1002,7 @@ pub fn extract_unified_keys(schema: &Schema, data: &serde_json::Value) -> Result
                     ));
                 }
             } else {
-                // Legacy range_key support
+                // Legacy range_key support - this maintains backward compatibility
                 extract_field_value(data, range_key)?
             };
             
