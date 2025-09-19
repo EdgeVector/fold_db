@@ -16,7 +16,7 @@ import {
   validateRangeKeyForMutation,
   getRangeKey,
   getNonRangeKeyFields
-} from '../../utils/rangeSchemaUtils'
+} from '../../utils/rangeSchemaHelpers'
 import { useAppSelector } from '../../store/hooks'
 import { selectApprovedSchemas } from '../../store/schemaSlice'
 import { Buffer } from 'buffer'
