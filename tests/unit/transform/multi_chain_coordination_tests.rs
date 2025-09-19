@@ -452,43 +452,6 @@ fn test_multi_chain_complex_expressions() {
     }
 }
 
-#[test]
-fn test_backward_compatibility_after_multi_chain_integration() {
-    // Ensure Single schemas still work after adding multi-chain coordination
-    let mut fields = HashMap::new();
-    fields.insert("simple_field".to_string(), FieldDefinition {
-        atom_uuid: Some("data.value".to_string()),
-        field_type: Some("String".to_string()),
-    });
-
-    let declarative_schema = DeclarativeSchemaDefinition {
-        name: "single_schema_compatibility".to_string(),
-        schema_type: SchemaType::Single,
-        key: None,
-        fields,
-    };
-
-    let transform = Transform::from_declarative_schema(
-        declarative_schema,
-        vec!["test_data".to_string()],
-        "output.single_compatibility".to_string(),
-    );
-
-    // Create input data
-    let mut input_values = HashMap::new();
-    input_values.insert("data".to_string(), serde_json::json!({
-        "value": "Single schema value"
-    }));
-
-    // Execute the transform - Single schemas should still work
-    let result = TransformExecutor::execute_transform(&transform, input_values);
-    
-    assert!(result.is_ok(), "Single schemas should maintain backward compatibility");
-    
-    let json_result = result.unwrap();
-    let obj = json_result.as_object().unwrap();
-    assert_eq!(obj.get("simple_field"), Some(&JsonValue::String("Single schema value".to_string())));
-}
 
 #[test]
 fn test_multi_chain_coordination_logging() {

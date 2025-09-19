@@ -10,4 +10,4 @@ This document lists all tasks associated with PBI SKC-4.
 | :------ | :--------------------------------------- | :------- | :--------------------------------- |
 | SKC-4-1 | [Update mutation service to use universal key configuration](./SKC-4-1.md) | Review | Replace hardcoded field name assumptions with universal key configuration in mutation service. |
 | SKC-4-2 | [Add comprehensive tests for universal key mutation service](./SKC-4-2.md) | Done | Add tests validating mutation service works with universal key configuration. |
-| SKC-4-3 | [Update documentation for mutation service changes](./SKC-4-3.md) | InProgress | Document the updated mutation service functionality and usage. |
+| SKC-4-3 | [Update documentation for mutation service changes](./SKC-4-3.md) | Done | Document the updated mutation service functionality and usage. |
