@@ -10,14 +10,18 @@ function IngestionTab({ onResult }) {
   const [ingestionStatus, setIngestionStatus] = useState(null)
   const [validationResult, setValidationResult] = useState(null)
   
-  // OpenRouter configuration
+  // AI Provider configuration
+  const [aiProvider, setAiProvider] = useState('OpenRouter')
   const [openrouterApiKey, setOpenrouterApiKey] = useState('')
   const [openrouterModel, setOpenrouterModel] = useState('anthropic/claude-3.5-sonnet')
+  const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1')
+  const [ollamaModel, setOllamaModel] = useState('llama3')
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
 
   useEffect(() => {
     fetchIngestionStatus()
-    loadOpenRouterConfig()
+    loadAiConfig()
   }, [])
 
   const fetchIngestionStatus = async () => {
@@ -25,29 +29,42 @@ function IngestionTab({ onResult }) {
       const response = await ingestionClient.getStatus()
       if (response.success) {
         setIngestionStatus(response.data)
+        setAiProvider(response.data.provider)
       }
     } catch (error) {
       console.error('Failed to fetch ingestion status:', error)
     }
   }
 
-  const loadOpenRouterConfig = async () => {
+  const loadAiConfig = async () => {
     try {
-      const response = await ingestionClient.getOpenRouterConfig()
+      const response = await ingestionClient.getConfig()
       if (response.success) {
-        setOpenrouterApiKey(response.data.api_key || '')
-        setOpenrouterModel(response.data.model || 'anthropic/claude-3.5-sonnet')
+        setOpenrouterApiKey(response.data.openrouter.api_key || '')
+        setOpenrouterModel(response.data.openrouter.model || 'anthropic/claude-3.5-sonnet')
+        setOpenrouterBaseUrl(response.data.openrouter.base_url || 'https://openrouter.ai/api/v1')
+        setOllamaModel(response.data.ollama.model || 'llama3')
+        setOllamaBaseUrl(response.data.ollama.base_url || 'http://localhost:11434')
+        setAiProvider(response.data.provider || 'OpenRouter')
       }
     } catch (error) {
-      console.error('Failed to load OpenRouter config:', error)
+      console.error('Failed to load AI config:', error)
     }
   }
 
-  const saveOpenRouterConfig = async () => {
+  const saveAiConfig = async () => {
     try {
       const config = {
-        api_key: openrouterApiKey,
-        model: openrouterModel
+        provider: aiProvider,
+        openrouter: {
+          api_key: openrouterApiKey,
+          model: openrouterModel,
+          base_url: openrouterBaseUrl,
+        },
+        ollama: {
+          model: ollamaModel,
+          base_url: ollamaBaseUrl,
+        },
       }
 
       const response = await ingestionClient.saveConfig(config)
@@ -192,16 +209,16 @@ function IngestionTab({ onResult }) {
               </span>
             </div>
             <div>
+              <span className="font-medium">Provider:</span>
+              <span className="ml-2 text-gray-600">{ingestionStatus.provider}</span>
+            </div>
+            <div>
               <span className="font-medium">Model:</span>
               <span className="ml-2 text-gray-600">{ingestionStatus.model}</span>
             </div>
             <div>
               <span className="font-medium">Auto Execute:</span>
               <span className="ml-2 text-gray-600">{ingestionStatus.auto_execute_mutations ? 'Yes' : 'No'}</span>
-            </div>
-            <div>
-              <span className="font-medium">Trust Distance:</span>
-              <span className="ml-2 text-gray-600">{ingestionStatus.default_trust_distance}</span>
             </div>
           </div>
         </div>
@@ -285,52 +302,118 @@ function IngestionTab({ onResult }) {
         </div>
       </div>
 
-      {/* OpenRouter Configuration Section */}
+      {/* AI Provider Configuration Section */}
       <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-medium text-gray-900 mb-3">OpenRouter AI Configuration</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-3">AI Provider Configuration</h3>
         
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="openrouterApiKey" className="block text-sm font-medium text-gray-700 mb-1">
-                OpenRouter API Key
-              </label>
-              <input
-                type="password"
-                id="openrouterApiKey"
-                value={openrouterApiKey}
-                onChange={(e) => setOpenrouterApiKey(e.target.value)}
-                placeholder="Enter your OpenRouter API key"
-                className="w-full p-2 border border-gray-300 rounded text-sm"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">openrouter.ai/keys</a>
-              </p>
-            </div>
-            
-            <div>
-              <label htmlFor="openrouterModel" className="block text-sm font-medium text-gray-700 mb-1">
-                AI Model
-              </label>
-              <select
-                id="openrouterModel"
-                value={openrouterModel}
-                onChange={(e) => setOpenrouterModel(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded text-sm"
-              >
-                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
-                <option value="openai/gpt-4o">GPT-4o</option>
-                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                <option value="meta-llama/llama-3.1-8b-instruct">Llama 3.1 8B</option>
-                <option value="meta-llama/llama-3.1-70b-instruct">Llama 3.1 70B</option>
-              </select>
-            </div>
+          <div>
+            <label htmlFor="aiProvider" className="block text-sm font-medium text-gray-700 mb-1">
+              AI Provider
+            </label>
+            <select
+              id="aiProvider"
+              value={aiProvider}
+              onChange={(e) => setAiProvider(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="OpenRouter">OpenRouter</option>
+              <option value="Ollama">Ollama</option>
+            </select>
           </div>
+
+          {aiProvider === 'OpenRouter' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="openrouterApiKey" className="block text-sm font-medium text-gray-700 mb-1">
+                    OpenRouter API Key
+                  </label>
+                  <input
+                    type="password"
+                    id="openrouterApiKey"
+                    value={openrouterApiKey}
+                    onChange={(e) => setOpenrouterApiKey(e.target.value)}
+                    placeholder="Enter your OpenRouter API key"
+                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">openrouter.ai/keys</a>
+                  </p>
+                </div>
+                
+                <div>
+                  <label htmlFor="openrouterModel" className="block text-sm font-medium text-gray-700 mb-1">
+                    AI Model
+                  </label>
+                  <select
+                    id="openrouterModel"
+                    value={openrouterModel}
+                    onChange={(e) => setOpenrouterModel(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                    <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
+                    <option value="openai/gpt-4o">GPT-4o</option>
+                    <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+                    <option value="meta-llama/llama-3.1-8b-instruct">Llama 3.1 8B</option>
+                    <option value="meta-llama/llama-3.1-70b-instruct">Llama 3.1 70B</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                  <label htmlFor="openrouterBaseUrl" className="block text-sm font-medium text-gray-700 mb-1">
+                    OpenRouter Base URL
+                  </label>
+                  <input
+                    type="text"
+                    id="openrouterBaseUrl"
+                    value={openrouterBaseUrl}
+                    onChange={(e) => setOpenrouterBaseUrl(e.target.value)}
+                    placeholder="e.g., https://openrouter.ai/api/v1"
+                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                  />
+                </div>
+            </div>
+          )}
+
+          {aiProvider === 'Ollama' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="ollamaModel" className="block text-sm font-medium text-gray-700 mb-1">
+                    Ollama Model
+                  </label>
+                  <input
+                    type="text"
+                    id="ollamaModel"
+                    value={ollamaModel}
+                    onChange={(e) => setOllamaModel(e.target.value)}
+                    placeholder="e.g., llama3"
+                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="ollamaBaseUrl" className="block text-sm font-medium text-gray-700 mb-1">
+                    Ollama Base URL
+                  </label>
+                  <input
+                    type="text"
+                    id="ollamaBaseUrl"
+                    value={ollamaBaseUrl}
+                    onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                    placeholder="e.g., http://localhost:11434"
+                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="flex items-center gap-4">
             <button
-              onClick={saveOpenRouterConfig}
+              onClick={saveAiConfig}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
             >
               Save Configuration
@@ -422,7 +505,7 @@ function IngestionTab({ onResult }) {
       <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
         <h4 className="text-sm font-medium text-blue-900 mb-2">How it works:</h4>
         <ol className="text-sm text-blue-800 space-y-1">
-          <li>1. Configure your OpenRouter API key and model</li>
+          <li>1. Configure your AI provider, API key and model</li>
           <li>2. Enter your JSON data or use a sample</li>
           <li>3. Configure ingestion settings (optional)</li>
           <li>4. Click "Process Data" to start AI analysis</li>

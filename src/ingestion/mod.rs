@@ -25,16 +25,19 @@
 //! 6. Generate mutations to store the JSON data
 //! 7. Execute mutations to persist the data
 
+pub mod ai_schema_response;
 pub mod config;
 pub mod core;
 pub mod error;
 pub mod mutation_generator;
+pub mod ollama_service;
 pub mod openrouter_service;
 pub mod routes;
 pub mod schema_stripper;
 pub mod simple_service;
 
 // Public re-exports
+pub use ai_schema_response::AISchemaResponse;
 pub use config::IngestionConfig;
 pub use core::IngestionCore;
 pub use error::IngestionError;

@@ -38,7 +38,6 @@ export const API_ENDPOINTS = {
   INGESTION_CONFIG: '/ingestion/config',
   INGESTION_VALIDATE: '/ingestion/validate',
   INGESTION_PROCESS: '/ingestion/process',
-  INGESTION_OPENROUTER_CONFIG: '/ingestion/openrouter-config',
   
   // Network
   NETWORK_STATUS: '/network/status',
