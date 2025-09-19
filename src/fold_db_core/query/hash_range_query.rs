@@ -20,9 +20,43 @@ impl HashRangeQueryProcessor {
         Self { db_ops }
     }
 
+    /// Get the hash and range field names from the schema's universal key configuration
+    fn get_key_field_names(&self, schema: &Schema) -> Result<(String, String), SchemaError> {
+        // For HashRange schemas, both hash_field and range_field are required
+        let key_config = schema.key.as_ref().ok_or_else(|| {
+            SchemaError::InvalidData(format!("HashRange schema '{}' requires key configuration", schema.name))
+        })?;
+
+        let hash_field = if key_config.hash_field.trim().is_empty() {
+            return Err(SchemaError::InvalidData(format!(
+                "HashRange schema '{}' requires non-empty hash_field in key configuration", 
+                schema.name
+            )));
+        } else {
+            key_config.hash_field.clone()
+        };
+
+        let range_field = if key_config.range_field.trim().is_empty() {
+            return Err(SchemaError::InvalidData(format!(
+                "HashRange schema '{}' requires non-empty range_field in key configuration", 
+                schema.name
+            )));
+        } else {
+            key_config.range_field.clone()
+        };
+
+        info!("🔑 HashRange schema '{}' key fields - hash: '{}', range: '{}'", 
+              schema.name, hash_field, range_field);
+
+        Ok((hash_field, range_field))
+    }
+
     /// Fetch the first 10 hash keys and their associated data for a HashRange schema
     fn fetch_first_10_hash_keys(&self, schema: &Schema, fields: &[String]) -> Result<Value, SchemaError> {
         info!("🔍 Fetching first 10 hash keys for schema '{}' with hash->range->fields format", schema.name);
+        
+        // Get the hash field name from the schema's universal key configuration
+        let (_hash_field_name, _range_field_name) = self.get_key_field_names(schema)?;
         
         // Use the first field to find hash keys (all fields should have the same hash keys)
         let first_field = fields.first().ok_or_else(|| {
@@ -98,6 +132,12 @@ impl HashRangeQueryProcessor {
     /// Query HashRange schema with proper grouping by hash_key -> range_key -> fields
     pub fn query_hashrange_schema(&self, schema: &Schema, fields: &[String], hash_key_filter: Option<Value>) -> Result<Value, SchemaError> {
         info!("🔑 Querying HashRange schema '{}' with hash->range->fields grouping", schema.name);
+        
+        // Get the hash and range field names from the schema's universal key configuration
+        let (hash_field_name, range_field_name) = self.get_key_field_names(schema)?;
+        
+        info!("🔑 Using universal key configuration - hash_field: '{}', range_field: '{}'", 
+              hash_field_name, range_field_name);
         
         if let Some(hash_filter) = &hash_key_filter {
             // Query specific hash key
