@@ -12,7 +12,7 @@ import SelectField from '../form/SelectField';
 import RangeField from '../form/RangeField';
 import { FORM_LABELS } from '../../constants/ui.js';
 import { SCHEMA_ERROR_MESSAGES } from '../../constants/redux.js';
-import { getHashField, getRangeField } from '../../utils/rangeSchemaHelpers.js';
+import { getHashKey, getRangeKey } from '../../utils/rangeSchemaHelpers.js';
 
 /**
  * @typedef {Object} QueryFormProps
@@ -203,7 +203,7 @@ function QueryForm({
                   onChange={(e) => onHashKeyChange(e.target.value)}
                 />
                 <div className="text-xs text-gray-500">
-                  Hash field: {getHashField(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
+                  Hash field: {getHashKey(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
                 </div>
               </div>
 
@@ -220,7 +220,7 @@ function QueryForm({
                   onChange={(e) => onRangeSchemaFilterChange({ key: e.target.value })}
                 />
                 <div className="text-xs text-gray-500">
-                  Range field: {getRangeField(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
+                  Range field: {getRangeKey(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
                 </div>
               </div>
             </div>
