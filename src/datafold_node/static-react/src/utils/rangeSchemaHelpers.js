@@ -50,14 +50,21 @@ export function isHashRangeSchema(schema) {
     return false;
   }
   
-  return schema.schema_type === 'HashRange' && 
-         schema.fields && 
-         typeof schema.fields === 'object' &&
-         Object.values(schema.fields).some(field => 
-           field.field_type === 'HashRange' && 
-           field.hash_field && 
-           field.range_field
-         );
+  // Prefer universal key detection for HashRange
+  if (schema.schema_type === 'HashRange' && schema.key && typeof schema.key === 'object') {
+    const { hash_field, range_field } = schema.key || {};
+    return typeof hash_field === 'string' && hash_field.trim() && typeof range_field === 'string' && range_field.trim();
+  }
+  
+  // Fallback: legacy field-based detection
+  return schema.schema_type === 'HashRange' &&
+    schema.fields &&
+    typeof schema.fields === 'object' &&
+    Object.values(schema.fields).some(field =>
+      field.field_type === 'HashRange' &&
+      field.hash_field &&
+      field.range_field
+    );
 }
 
 /**
@@ -67,15 +74,13 @@ export function isHashRangeSchema(schema) {
  * @returns {string|null} Hash field expression or null if not found
  */
 export function getHashField(schema) {
-  if (!isHashRangeSchema(schema)) {
-    return null;
+  if (!schema || schema.schema_type !== 'HashRange') return null;
+  // Prefer universal key
+  if (schema.key && typeof schema.key?.hash_field === 'string' && schema.key.hash_field.trim()) {
+    return schema.key.hash_field;
   }
-  
-  // Find the first field with HashRange type and return its hash_field
-  const hashRangeField = Object.values(schema.fields).find(field => 
-    field.field_type === 'HashRange' && field.hash_field
-  );
-  
+  // Fallback to first HashRange field definition
+  const hashRangeField = Object.values(schema.fields || {}).find(field => field.field_type === 'HashRange' && field.hash_field);
   return hashRangeField ? hashRangeField.hash_field : null;
 }
 
@@ -86,15 +91,13 @@ export function getHashField(schema) {
  * @returns {string|null} Range field expression or null if not found
  */
 export function getRangeField(schema) {
-  if (!isHashRangeSchema(schema)) {
-    return null;
+  if (!schema || schema.schema_type !== 'HashRange') return null;
+  // Prefer universal key
+  if (schema.key && typeof schema.key?.range_field === 'string' && schema.key.range_field.trim()) {
+    return schema.key.range_field;
   }
-  
-  // Find the first field with HashRange type and return its range_field
-  const hashRangeField = Object.values(schema.fields).find(field => 
-    field.field_type === 'HashRange' && field.range_field
-  );
-  
+  // Fallback to first HashRange field definition
+  const hashRangeField = Object.values(schema.fields || {}).find(field => field.field_type === 'HashRange' && field.range_field);
   return hashRangeField ? hashRangeField.range_field : null;
 }
 
@@ -154,8 +157,18 @@ export function isRangeSchema(schema) {
  * @returns {string|null} Range key field name or null if not found
  */
 export function getRangeKey(schema) {
-  // Check new schema_type structure first, then fall back to old format
-  return schema?.schema_type?.Range?.range_key || schema?.range_key || null;
+  // Prefer universal key on Range if present
+  if (schema?.schema_type?.Range) {
+    const universalRange = schema?.key?.range_field;
+    if (typeof universalRange === 'string' && universalRange.trim()) {
+      // Show last segment for readability
+      const parts = universalRange.split('.');
+      return parts[parts.length - 1] || universalRange;
+    }
+    // Fallback to legacy
+    return schema?.schema_type?.Range?.range_key || schema?.range_key || null;
+  }
+  return schema?.range_key || null;
 }
 
 /**

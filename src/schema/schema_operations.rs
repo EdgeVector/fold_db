@@ -929,3 +929,206 @@ impl SchemaCore {
         self.load_schema_internal(schema)
     }
 }
+
+/// Unified key extraction helper for all schema types.
+/// 
+/// This function provides a single entry point to extract hash and range values
+/// from any schema type, supporting both the new universal KeyConfig and legacy
+/// range_key patterns.
+/// 
+/// # Arguments
+/// 
+/// * `schema` - The schema to extract keys from
+/// * `data` - The data object containing the actual values
+/// 
+/// # Returns
+/// 
+/// A tuple of (hash_value, range_value) where both are Option<String>.
+/// For Single schemas, both will be None unless key is provided.
+/// For Range schemas, hash_value may be None, range_value will be extracted.
+/// For HashRange schemas, both will be extracted from key configuration.
+pub fn extract_unified_keys(schema: &Schema, data: &serde_json::Value) -> Result<(Option<String>, Option<String>), SchemaError> {
+    match &schema.schema_type {
+        crate::schema::types::schema::SchemaType::Single => {
+            // For Single schemas, keys are optional and used for indexing hints
+            // Check if schema has a key configuration
+            if let Some(key_config) = &schema.key {
+                let hash_value = if !key_config.hash_field.trim().is_empty() {
+                    extract_field_value(data, &key_config.hash_field)?
+                } else { None };
+
+                let range_value = if !key_config.range_field.trim().is_empty() {
+                    extract_field_value(data, &key_config.range_field)?
+                } else { None };
+                
+                Ok((hash_value, range_value))
+            } else {
+                // No key configuration, return None for both
+                Ok((None, None))
+            }
+        },
+        crate::schema::types::schema::SchemaType::Range { range_key } => {
+            // For Range schemas, support both legacy range_key and universal key
+            let range_value = if let Some(key_config) = &schema.key {
+                // Universal key configuration takes precedence
+                if !key_config.range_field.trim().is_empty() {
+                    extract_field_value(data, &key_config.range_field)?
+                } else {
+                    return Err(SchemaError::InvalidData(
+                        "Range schema with key configuration must have range_field".to_string()
+                    ));
+                }
+            } else {
+                // Legacy range_key support
+                extract_field_value(data, range_key)?
+            };
+            
+            let hash_value = if let Some(key_config) = &schema.key {
+                if !key_config.hash_field.trim().is_empty() {
+                    extract_field_value(data, &key_config.hash_field)?
+                } else { None }
+            } else {
+                None
+            };
+            
+            Ok((hash_value, range_value))
+        },
+        crate::schema::types::schema::SchemaType::HashRange => {
+            // For HashRange schemas, both hash and range are required
+            let key_config = schema.key.as_ref().ok_or_else(|| {
+                SchemaError::InvalidData("HashRange schema requires key configuration".to_string())
+            })?;
+            
+            if key_config.hash_field.trim().is_empty() {
+                return Err(SchemaError::InvalidData("HashRange schema requires key.hash_field".to_string()));
+            }
+            if key_config.range_field.trim().is_empty() {
+                return Err(SchemaError::InvalidData("HashRange schema requires key.range_field".to_string()));
+            }
+            let hash_field: &str = &key_config.hash_field;
+            let range_field: &str = &key_config.range_field;
+            
+            let hash_value = extract_field_value(data, hash_field)?
+                .ok_or_else(|| SchemaError::InvalidData(
+                    format!("HashRange hash_field '{}' not found in data", hash_field)
+                ))?;
+            
+            let range_value = extract_field_value(data, range_field)?
+                .ok_or_else(|| SchemaError::InvalidData(
+                    format!("HashRange range_field '{}' not found in data", range_field)
+                ))?;
+            
+            Ok((Some(hash_value), Some(range_value)))
+        },
+    }
+}
+
+/// Helper function to extract field value from data using field expression.
+/// 
+/// Supports both direct field access and dotted path expressions.
+fn extract_field_value(data: &serde_json::Value, field_expression: &str) -> Result<Option<String>, SchemaError> {
+    let trimmed_expr = field_expression.trim();
+    if trimmed_expr.is_empty() {
+        return Ok(None);
+    }
+    
+    // Handle dotted path expressions (e.g., "data.timestamp", "input.map().id")
+    if trimmed_expr.contains('.') {
+        // For now, support simple dotted paths like "data.field" or "field.subfield"
+        let parts: Vec<&str> = trimmed_expr.split('.').collect();
+        let mut current = data;
+        
+        for part in parts {
+            if let Some(obj) = current.as_object() {
+                if let Some(value) = obj.get(part) {
+                    current = value;
+                } else {
+                    return Ok(None);
+                }
+            } else {
+                return Ok(None);
+            }
+        }
+        
+        // Convert the final value to string
+        Ok(Some(current.to_string().trim_matches('"').to_string()))
+    } else {
+        // Direct field access
+        if let Some(obj) = data.as_object() {
+            if let Some(value) = obj.get(trimmed_expr) {
+                Ok(Some(value.to_string().trim_matches('"').to_string()))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+#[inline]
+fn last_segment(expression: &str) -> &str {
+    expression.rsplit('.').next().unwrap_or("")
+}
+
+/// Standardized result shaping helper for all schema types.
+///
+/// Shapes query/mutation results into a consistent { hash, range, fields } object.
+pub fn shape_unified_result(
+    schema: &Schema,
+    data: &serde_json::Value,
+    hash_value: Option<String>,
+    range_value: Option<String>,
+) -> Result<serde_json::Value, SchemaError> {
+    let mut result = serde_json::Map::new();
+    result.insert("hash".to_string(), serde_json::Value::String(hash_value.unwrap_or_default()));
+    result.insert("range".to_string(), serde_json::Value::String(range_value.unwrap_or_default()));
+
+    // Determine key field names (last segment of expressions)
+    let mut key_field_names: Vec<String> = Vec::new();
+    match &schema.schema_type {
+        crate::schema::types::schema::SchemaType::Single => {
+            if let Some(key) = &schema.key {
+                if !key.hash_field.trim().is_empty() {
+                    key_field_names.push(last_segment(&key.hash_field).to_string());
+                }
+                if !key.range_field.trim().is_empty() {
+                    key_field_names.push(last_segment(&key.range_field).to_string());
+                }
+            }
+        }
+        crate::schema::types::schema::SchemaType::Range { range_key } => {
+            key_field_names.push(range_key.clone());
+            if let Some(key) = &schema.key {
+                if !key.hash_field.trim().is_empty() {
+                    key_field_names.push(last_segment(&key.hash_field).to_string());
+                }
+                if !key.range_field.trim().is_empty() {
+                    key_field_names.push(last_segment(&key.range_field).to_string());
+                }
+            }
+        }
+        crate::schema::types::schema::SchemaType::HashRange => {
+            if let Some(key) = &schema.key {
+                if key.hash_field.trim().is_empty() || key.range_field.trim().is_empty() {
+                    return Err(SchemaError::InvalidData("HashRange schema requires key.hash_field and key.range_field".to_string()));
+                }
+                key_field_names.push(last_segment(&key.hash_field).to_string());
+                key_field_names.push(last_segment(&key.range_field).to_string());
+            }
+        }
+    }
+
+    // Build fields object excluding key field names
+    let mut fields_obj = serde_json::Map::new();
+    if let Some(obj) = data.as_object() {
+        for (k, v) in obj {
+            if !key_field_names.iter().any(|n| n == k) {
+                fields_obj.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    result.insert("fields".to_string(), serde_json::Value::Object(fields_obj));
+
+    Ok(serde_json::Value::Object(result))
+}

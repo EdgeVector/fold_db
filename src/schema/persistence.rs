@@ -249,6 +249,7 @@ impl SchemaCore {
         let schema = Schema {
             name: declarative_schema.name.clone(),
             schema_type: declarative_schema.schema_type.clone(),
+            key: declarative_schema.key.clone(), // Copy universal key configuration
             fields,
             payment_config: SchemaPaymentConfig {
                 base_multiplier: 1.0,

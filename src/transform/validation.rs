@@ -158,9 +158,13 @@ fn validate_alignment_from_schema(
     
     // Add HashRange special field expressions if this is a HashRange schema
     if let Some(key_config) = &schema.key {
-        info!("🔑 Adding HashRange special field expressions to alignment validation");
-        all_expressions.push(("_hash_field".to_string(), key_config.hash_field.clone()));
-        all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
+        info!("🔑 Adding key expressions to alignment validation when present");
+        if !key_config.hash_field.trim().is_empty() {
+            all_expressions.push(("_hash_field".to_string(), key_config.hash_field.clone()));
+        }
+        if !key_config.range_field.trim().is_empty() {
+            all_expressions.push(("_range_field".to_string(), key_config.range_field.clone()));
+        }
     }
     
     if all_expressions.is_empty() {

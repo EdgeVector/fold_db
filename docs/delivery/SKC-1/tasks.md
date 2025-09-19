@@ -8,10 +8,10 @@ This document lists all tasks associated with PBI SKC-1.
 
 | Task ID | Name | Status | Description |
 | :------ | :--------------------------------------- | :------- | :--------------------------------- |
-| SKC-1-1 | [Define universal KeyConfig and validation rules](./SKC-1-1.md) | Proposed | Introduce universal KeyConfig applicable to Single, Range, and HashRange with per-type validation. |
-| SKC-1-2 | [Parser updates to accept key for all schema types](./SKC-1-2.md) | Proposed | Update JSON parsing to accept key for all types and preserve legacy Range { range_key } support. |
-| SKC-1-3 | [Backend unify key extraction and result shaping](./SKC-1-3.md) | Proposed | Consolidate key handling and standardize output as hash->range->fields across types. |
-| SKC-1-4 | [UI helpers support universal key and consistent detection](./SKC-1-4.md) | Proposed | Update UI utilities to read optional key on Single/Range and required on HashRange. |
+| SKC-1-1 | [Define universal KeyConfig and validation rules](./SKC-1-1.md) | Review | Introduce universal KeyConfig applicable to Single, Range, and HashRange with per-type validation. |
+| SKC-1-2 | [Parser updates to accept key for all schema types](./SKC-1-2.md) | Review | Update JSON parsing to accept key for all types and preserve legacy Range { range_key } support. |
+| SKC-1-3 | [Backend unify key extraction and result shaping](./SKC-1-3.md) | Done | Consolidate key handling and standardize output as hash->range->fields across types. |
+| SKC-1-4 | [UI helpers support universal key and consistent detection](./SKC-1-4.md) | InProgress | Update UI utilities to read optional key on Single/Range and required on HashRange. |
 | SKC-1-5 | [Docs and migration guide for universal key](./SKC-1-5.md) | Proposed | Document new universal key format and provide migration guidance and examples. |
 | SKC-1-6 | [E2E CoS test for SKC-1](./SKC-1-6.md) | Proposed | Add E2E test task verifying CoS across Single, Range, HashRange. |
 | SKC-1-7 | [Remove legacy Range { range_key } branching in backend](./SKC-1-7.md) | Proposed | Replace ad-hoc range_key branches with unified key helper; keep parsing compat. |

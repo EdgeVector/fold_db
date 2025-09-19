@@ -60,6 +60,7 @@ impl DatabaseTestFixture {
         Schema {
             name: name.to_string(),
             schema_type: SchemaType::Single,
+            key: None,
             fields,
             payment_config: SchemaPaymentConfig::default(),
             hash: None,
@@ -245,6 +246,7 @@ fn test_cross_database_instance_persistence() {
         let schema = Schema {
             name: "PersistenceTestSchema".to_string(),
             schema_type: SchemaType::Single,
+            key: None,
             fields,
             payment_config: SchemaPaymentConfig::default(),
             hash: None,
