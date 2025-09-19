@@ -64,6 +64,12 @@ function TextField({
 
   // Debounced onChange handler
   const timeoutRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  
+  // Keep onChangeRef current with the latest onChange
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
   
   const debouncedOnChange = useCallback((newValue) => {
     setIsDebouncing(true);
@@ -71,10 +77,10 @@ function TextField({
       clearTimeout(timeoutRef.current);
     }
     timeoutRef.current = setTimeout(() => {
-      onChange(newValue);
+      onChangeRef.current(newValue);
       setIsDebouncing(false);
     }, debounceMs);
-  }, [onChange, debounceMs]);
+  }, [debounceMs]);
 
   const handleChange = (e) => {
     const newValue = e.target.value;
