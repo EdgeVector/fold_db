@@ -117,22 +117,31 @@ impl MutationService {
     /// 
     /// ```rust
     /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
+    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::SchemaType;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
     /// # use std::sync::Arc;
-    /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
+    /// # use datafold::fees::SchemaPaymentConfig;
+    /// 
+    /// // Create mutation service
+    /// let message_bus = Arc::new(MessageBus::new());
+    /// let mutation_service = MutationService::new(message_bus);
     /// 
     /// // Schema with universal key configuration:
-    /// // {
-    /// //   "name": "UserActivity",
-    /// //   "schema_type": "HashRange",
-    /// //   "key": {
-    /// //     "hash_field": "user_id",
-    /// //     "range_field": "timestamp"
-    /// //   },
-    /// //   "fields": { ... }
-    /// // }
+    /// let schema = Schema {
+    ///     name: "UserActivity".to_string(),
+    ///     schema_type: SchemaType::HashRange,
+    ///     key: Some(KeyConfig {
+    ///         hash_field: "user_id".to_string(),
+    ///         range_field: "timestamp".to_string(),
+    ///     }),
+    ///     fields: HashMap::new(),
+    ///     hash: Some("test_hash".to_string()),
+    ///     payment_config: SchemaPaymentConfig::default(),
+    /// };
     /// 
     /// let mut fields_and_values = HashMap::new();
     /// fields_and_values.insert("action".to_string(), json!("login"));
@@ -249,19 +258,31 @@ impl MutationService {
     /// 
     /// ```rust
     /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
+    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::SchemaType;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
+    /// # use std::sync::Arc;
+    /// # use datafold::fees::SchemaPaymentConfig;
+    /// 
+    /// // Create mutation service
+    /// let message_bus = Arc::new(MessageBus::new());
+    /// let mutation_service = MutationService::new(message_bus);
     /// 
     /// // Schema with universal key configuration:
-    /// // {
-    /// //   "name": "UserSessions",
-    /// //   "schema_type": "Range",
-    /// //   "key": {
-    /// //     "range_field": "session_id"
-    /// //   },
-    /// //   "fields": { ... }
-    /// // }
+    /// let schema = Schema {
+    ///     name: "UserSessions".to_string(),
+    ///     schema_type: SchemaType::Range { range_key: "session_id".to_string() },
+    ///     key: Some(KeyConfig {
+    ///         hash_field: "".to_string(),
+    ///         range_field: "session_id".to_string(),
+    ///     }),
+    ///     fields: HashMap::new(),
+    ///     hash: Some("test_hash".to_string()),
+    ///     payment_config: SchemaPaymentConfig::default(),
+    /// };
     /// 
     /// let mut fields_and_values = HashMap::new();
     /// fields_and_values.insert("user_id".to_string(), json!("user123"));
@@ -466,6 +487,8 @@ impl MutationService {
 /// # use datafold::schema::types::SchemaType;
 /// # use serde_json::json;
 /// # use std::collections::HashMap;
+/// # use datafold::fees::SchemaPaymentConfig;
+/// # use datafold::permissions::types::policy::PermissionsPolicy;
 /// 
 /// // Schema with universal key configuration:
 /// let schema = Schema {
@@ -488,6 +511,9 @@ impl MutationService {
 ///     schema_name: "UserSessions".to_string(),
 ///     mutation_type: MutationType::Create,
 ///     fields_and_values,
+///     pub_key: "test_pub_key".to_string(),
+///     synchronous: Some(false),
+///     trust_distance: 0,
 /// };
 /// 
 /// let result = validate_range_schema_mutation_format(&schema, &mutation);
@@ -605,6 +631,7 @@ impl MutationService {
     /// 
     /// ```rust
     /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
     /// # use datafold::schema::types::json_schema::KeyConfig;
     /// # use datafold::schema::types::SchemaType;
@@ -614,6 +641,12 @@ impl MutationService {
     /// # use datafold::permissions::types::policy::PermissionsPolicy;
     /// # use datafold::fees::types::config::FieldPaymentConfig;
     /// # use datafold::fees::SchemaPaymentConfig;
+    /// # use std::sync::Arc;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// 
+    /// // Create mutation service
+    /// let message_bus = Arc::new(MessageBus::new());
+    /// let mutation_service = MutationService::new(message_bus);
     /// 
     /// // Schema with universal key configuration:
     /// let schema = Schema {
@@ -631,6 +664,8 @@ impl MutationService {
     /// let (hash_field, range_field) = mutation_service.get_hashrange_key_field_names(&schema)?;
     /// assert_eq!(hash_field, "user_id");
     /// assert_eq!(range_field, "timestamp");
+    /// # Ok(())
+    /// # }
     /// ```
     /// 
     /// # Errors
@@ -639,7 +674,7 @@ impl MutationService {
     /// - The schema has no key configuration (`SchemaError::InvalidData`)
     /// - The hash_field is empty or whitespace-only (`SchemaError::InvalidData`)
     /// - The range_field is empty or whitespace-only (`SchemaError::InvalidData`)
-    fn get_hashrange_key_field_names(&self, schema: &Schema) -> Result<(String, String), SchemaError> {
+    pub fn get_hashrange_key_field_names(&self, schema: &Schema) -> Result<(String, String), SchemaError> {
         // For HashRange schemas, both hash_field and range_field are required
         let key_config = schema.key.as_ref().ok_or_else(|| {
             SchemaError::InvalidData(format!("HashRange schema '{}' requires key configuration", schema.name))
@@ -693,11 +728,18 @@ impl MutationService {
     /// 
     /// ```rust
     /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
     /// # use datafold::schema::types::json_schema::KeyConfig;
     /// # use datafold::schema::types::SchemaType;
     /// # use std::collections::HashMap;
     /// # use datafold::fees::SchemaPaymentConfig;
+    /// # use std::sync::Arc;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// 
+    /// // Create mutation service
+    /// let message_bus = Arc::new(MessageBus::new());
+    /// let mutation_service = MutationService::new(message_bus);
     /// 
     /// // Schema with universal key configuration:
     /// let schema_with_key = Schema {
@@ -727,6 +769,8 @@ impl MutationService {
     /// 
     /// let range_field = mutation_service.get_range_key_field_name(&schema_legacy)?;
     /// assert_eq!(range_field, "legacy_key"); // Falls back to legacy
+    /// # Ok(())
+    /// # }
     /// ```
     /// 
     /// # Errors
@@ -734,7 +778,7 @@ impl MutationService {
     /// This method will return an error if:
     /// - The schema has universal key configuration but range_field is empty (`SchemaError::InvalidData`)
     /// - The schema has no key configuration and no legacy range_key (`SchemaError::InvalidData`)
-    fn get_range_key_field_name(&self, schema: &Schema) -> Result<String, SchemaError> {
+    pub fn get_range_key_field_name(&self, schema: &Schema) -> Result<String, SchemaError> {
         match &schema.schema_type {
             crate::schema::types::schema::SchemaType::Range { range_key } => {
                 if let Some(key_config) = &schema.key {
