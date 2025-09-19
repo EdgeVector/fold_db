@@ -104,7 +104,7 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    expect(screen.getByText('OpenRouter AI Configuration')).toBeInTheDocument()
+    expect(screen.getByText('AI Provider Configuration')).toBeInTheDocument()
     expect(screen.getByLabelText('OpenRouter API Key')).toBeInTheDocument()
     expect(screen.getByLabelText('AI Model')).toBeInTheDocument()
   })
