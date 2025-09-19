@@ -6,13 +6,14 @@ This document covers fold db's schema management system built on the core princi
 
 1. [Schema Immutability](#schema-immutability)
 2. [Schema Structure](#schema-structure)
-3. [Simplified Schema Formats](#simplified-schema-formats) ⭐ **NEW**
-4. [Field Types](#field-types)
-5. [Permission Policies](#permission-policies)
-6. [Payment Configuration](#payment-configuration)
-7. [Schema States and Lifecycle](#schema-states-and-lifecycle)
-8. [Migration Patterns](#migration-patterns)
-9. [Best Practices](#best-practices)
+3. [Universal Key Configuration](#universal-key-configuration) ⭐ **NEW**
+4. [Simplified Schema Formats](#simplified-schema-formats) ⭐ **NEW**
+5. [Field Types](#field-types)
+6. [Permission Policies](#permission-policies)
+7. [Payment Configuration](#payment-configuration)
+8. [Schema States and Lifecycle](#schema-states-and-lifecycle)
+9. [Migration Patterns](#migration-patterns)
+10. [Best Practices](#best-practices)
 
 ## Schema Immutability
 
@@ -95,6 +96,161 @@ datafold_cli load-schema schema.json
   }
 }
 ```
+
+## Universal Key Configuration
+
+FoldDB now supports a universal `key` configuration that works across all schema types (Single, Range, and HashRange), providing consistent key management while maintaining full backward compatibility.
+
+### Key Configuration Structure
+
+The universal `key` configuration uses a consistent structure across all schema types:
+
+```json
+{
+  "key": {
+    "hash_field": "field_name_or_expression",
+    "range_field": "field_name_or_expression"
+  }
+}
+```
+
+### Schema Type Requirements
+
+#### Single Schema
+- **Key**: Optional
+- **Usage**: When present, can include either `hash_field`, `range_field`, or both
+- **Purpose**: Enables consistent key-based operations across schema types
+
+```json
+{
+  "name": "UserProfile",
+  "schema_type": "Single",
+  "key": {
+    "hash_field": "user_id"
+  },
+  "fields": {
+    "user_id": {},
+    "name": {},
+    "email": {}
+  }
+}
+```
+
+#### Range Schema
+- **Key**: Optional (legacy `range_key` still supported)
+- **Requirements**: If `key` is present, `range_field` is required
+- **Migration**: Legacy `range_key` field continues to work
+
+```json
+{
+  "name": "TimeSeriesData",
+  "schema_type": "Range",
+  "key": {
+    "range_field": "timestamp"
+  },
+  "fields": {
+    "timestamp": {},
+    "value": {},
+    "metadata": {}
+  }
+}
+```
+
+#### HashRange Schema
+- **Key**: Required
+- **Requirements**: Both `hash_field` and `range_field` must be specified
+- **Purpose**: Enables efficient partitioning and ordering
+
+```json
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "word",
+    "range_field": "publish_date"
+  },
+  "fields": {
+    "word": {},
+    "publish_date": {},
+    "content": {}
+  }
+}
+```
+
+### Migration from Legacy Formats
+
+#### From Legacy Range Schema
+Legacy Range schemas using `range_key` continue to work without changes:
+
+```json
+// Legacy format (still supported)
+{
+  "name": "LegacyRange",
+  "schema_type": "Range",
+  "range_key": "timestamp",
+  "fields": {
+    "timestamp": {},
+    "value": {}
+  }
+}
+
+// New universal format (recommended)
+{
+  "name": "ModernRange",
+  "schema_type": "Range", 
+  "key": {
+    "range_field": "timestamp"
+  },
+  "fields": {
+    "timestamp": {},
+    "value": {}
+  }
+}
+```
+
+#### From Schemas Without Keys
+Schemas without key configuration can be enhanced by adding the universal `key`:
+
+```json
+// Before: No key configuration
+{
+  "name": "SimpleSchema",
+  "schema_type": "Single",
+  "fields": {
+    "id": {},
+    "name": {}
+  }
+}
+
+// After: With universal key
+{
+  "name": "EnhancedSchema",
+  "schema_type": "Single",
+  "key": {
+    "hash_field": "id"
+  },
+  "fields": {
+    "id": {},
+    "name": {}
+  }
+}
+```
+
+### Benefits of Universal Key Configuration
+
+- ✅ **Consistent API**: Same key structure across all schema types
+- ✅ **Backward Compatible**: Legacy formats continue to work
+- ✅ **Future-Proof**: Unified approach for new features
+- ✅ **Simplified Logic**: Reduces code complexity in applications
+- ✅ **Better Performance**: Optimized key-based operations
+
+### Best Practices
+
+1. **Use Universal Keys**: Prefer the new `key` format over legacy `range_key`
+2. **Consistent Naming**: Use descriptive field names for keys
+3. **Migration Strategy**: Gradually migrate existing schemas
+4. **Documentation**: Document key fields and their purposes
+5. **Testing**: Verify key-based operations work as expected
 
 ## Simplified Schema Formats
 

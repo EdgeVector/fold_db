@@ -53,5 +53,10 @@ Unify the schema-level key configuration by introducing a universal `key` config
 - Should Single schemas allow `range_field` in `key`, and how should ordering be exposed if present?
 - Do we expose null vs omit for missing `hash`/`range` consistently across APIs?
 
+## Documentation
+- **Schema Management Guide**: Updated with universal key configuration examples and migration guidance
+- **Migration Guide**: Comprehensive [Universal Key Migration Guide](../../universal-key-migration-guide.md) with step-by-step instructions
+- **Migration Examples**: See [Schema Management Documentation](../../schema-management.md#universal-key-configuration) for detailed examples and best practices
+
 ## Related Tasks
 To be created in `docs/delivery/SKC-1/tasks.md` following the tasks framework.
