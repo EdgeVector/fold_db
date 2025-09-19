@@ -1,0 +1,27 @@
+# [SKC-1-2] Parser updates to accept key for all schema types
+
+[Back to task list](./tasks.md)
+
+## Description
+Update JSON schema parsing to accept optional `key` for all schema types, with per-type validation and full backward compatibility for legacy Range.
+
+## Status History
+| Timestamp | Event Type | From Status | To Status | Details | User |
+|-----------|------------|-------------|-----------|---------|------|
+| 2025-09-19 12:02:30 | Created | N/A | Proposed | Task file created | ai-agent |
+
+## Requirements
+- Parse `key` for all schema types.
+- Do not require `key` for Single; require `range_field` for Range; require both for HashRange.
+- Continue supporting `SchemaType::Range { range_key }` without `key`.
+
+## Implementation Plan
+- Extend `DeclarativeSchemaDefinition` and deserialization as needed.
+- Update `validate_*` functions in `json_schema.rs` to enforce new rules.
+
+## Verification
+- Unit tests covering parsing with/without `key` for each schema type.
+- Backward-compat tests for legacy Range-only `range_key`.
+
+## Files Modified
+- `src/schema/types/json_schema.rs`

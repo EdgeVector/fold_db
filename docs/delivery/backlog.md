@@ -6,7 +6,7 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 
 | ID | Actor | User Story | Status | Conditions of Satisfaction (CoS) |
 |----|-------|------------|--------|-----------------------------------|
-| SKC-1 | Developer | As a developer, I want to unify schema key configuration across Single, Range, and HashRange so code paths and query formatting are consistent and simpler | Proposed | Universal `key` config supported across all schema types; backward-compatible parsing maintained; queries formatted consistently as hash->range->fields; PRD linked. [View Details](./SKC-1/prd.md) |
+| SKC-1 | Developer | As a developer, I want to unify schema key configuration across Single, Range, and HashRange so code paths and query formatting are consistent and simpler | Agreed | Universal `key` config supported across all schema types; backward-compatible parsing maintained; queries formatted consistently as hash->range->fields; PRD linked. [View Details](./SKC-1/prd.md) |
 | DTS-MERGE-1 | Developer | As a developer, I want unused executor classes removed so I can have a cleaner codebase and reduce maintenance overhead | **Done** | StandardizedTransformExecutor and OrchestratedTransformExecutor deleted (dead code removal), TransformExecutor unchanged, no functional changes, clean compilation maintained, all existing functionality preserved, architectural complexity reduced by eliminating unused classes. [View Details](./DTS-MERGE-1/prd.md) |
 | DTS-CONSOLIDATE-1 | Developer | As a developer, I want the three separate executor modules consolidated into a unified executor so I can eliminate 50%+ code duplication and simplify the transform execution architecture | **Done** | single_executor.rs, range_executor.rs, and hash_range_executor.rs merged into executor.rs, unified execution pattern implemented, all existing functionality preserved, code duplication eliminated, architectural complexity reduced, all tests pass, clean compilation maintained. [View Details](./DTS-CONSOLIDATE-1/prd.md) |
 
@@ -15,6 +15,7 @@ This document contains all Product Backlog Items (PBIs) for the project, ordered
 | Timestamp | PBI_ID | Event_Type | Details | User |
 |-----------|--------|------------|---------|------|
 | 20250919-120000 | SKC-1 | create_pbi | Created PBI to unify schema key configuration across Single, Range, and HashRange using universal key config | User |
+| 20250919-120100 | SKC-1 | propose_for_backlog | PBI approved and prioritized for implementation | User |
 | 20250127-120000 | DTS-REFACTOR-1 | create_pbi | Created PBI for declarative transforms architectural refactoring to eliminate complexity, circular dependencies, and performance issues | User |
 | 20250127-120000 | DTS-REFACTOR-1 | approve | PBI completed successfully with all architectural improvements implemented | User |
 | 20250127-160000 | DTS-REVIEW-1 | create_pbi | Created PBI for comprehensive declarative transforms system review to identify duplicate code paths, architectural complexity, and optimization opportunities | User |
