@@ -24,11 +24,12 @@ describe('useQueryState Hook', () => {
     {
       name: 'UserSchema',
       state: 'approved',
+      range_key: 'range_field',
       fields: {
-        id: { field_type: 'String' },
-        name: { field_type: 'String' },
-        age: { field_type: 'Number' },
-        range_field: { field_type: 'Range' }
+        range_field: { field_type: 'Range' },
+        id: { field_type: 'Range' },
+        name: { field_type: 'Range' },
+        age: { field_type: 'Range' }
       }
     },
     {
@@ -153,7 +154,7 @@ describe('useQueryState Hook', () => {
         result.current.handleSchemaChange('UserSchema');
       });
 
-      expect(result.current.state.queryFields).toEqual(['id', 'name', 'age', 'range_field']);
+      expect(result.current.state.queryFields).toEqual(['range_field', 'id', 'name', 'age']);
     });
 
     it('should clear fields when schema is deselected', () => {

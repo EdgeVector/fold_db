@@ -169,11 +169,13 @@ export function isRangeSchema(schema) {
  */
 export function getRangeKey(schema) {
   if (!schema || typeof schema !== 'object') return null;
+  
   // HashRange: derive from universal key if present
   if (schema.schema_type === 'HashRange') {
     const rf = schema?.key?.range_field;
     return (typeof rf === 'string' && rf.trim()) ? lastSegment(rf) : null;
   }
+  
   // Range: prefer universal key, fallback to legacy range_key
   if (schema?.schema_type?.Range) {
     const universalRange = schema?.key?.range_field;
@@ -182,6 +184,16 @@ export function getRangeKey(schema) {
     }
     return schema?.schema_type?.Range?.range_key || schema?.range_key || null;
   }
+  
+  // Legacy Range format: schema_type is string "Range" or has range_key directly
+  if (schema.schema_type === 'Range' || schema.range_key) {
+    const universalRange = schema?.key?.range_field;
+    if (typeof universalRange === 'string' && universalRange.trim()) {
+      return lastSegment(universalRange);
+    }
+    return schema?.range_key || null;
+  }
+  
   // Single: optional universal range_field may exist
   const rf = schema?.key?.range_field;
   return (typeof rf === 'string' && rf.trim()) ? lastSegment(rf) : null;
@@ -474,4 +486,23 @@ export const formatRangeSchemaQuery = formatRangeQuery;
 
 // From useRangeSchema.js hook - alias exports
 export const isRange = isRangeSchema;
+
+/**
+ * Gets HashRange schema display information
+ * @param {Schema} schema - Schema object to analyze
+ * @returns {Object|null} HashRange schema info or null if not HashRange
+ */
+export function getHashRangeSchemaInfo(schema) {
+  if (!isHashRangeSchema(schema)) {
+    return null;
+  }
+  
+  return {
+    isHashRangeSchema: true,
+    hashField: getHashKey(schema),
+    rangeField: getRangeKey(schema),
+    totalFields: Object.keys(schema.fields || {}).length
+  };
+}
+
 // Note: formatRangeQuery and formatRangeMutation already exported above as formatRangeSchemaQuery and formatEnhancedRangeSchemaMutation

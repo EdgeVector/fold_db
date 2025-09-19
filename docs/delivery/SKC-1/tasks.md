@@ -16,5 +16,5 @@ This document lists all tasks associated with PBI SKC-1.
 | SKC-1-6 | [E2E CoS test for SKC-1](./SKC-1-6.md) | Review | Add E2E test task verifying CoS across Single, Range, HashRange. |
 | SKC-1-7 | [Remove legacy Range { range_key } branching in backend](./SKC-1-7.md) | InProgress | Replace ad-hoc range_key branches with unified key helper; keep parsing compat. |
 | SKC-1-8 | [Consolidate JSON readers for key config](./SKC-1-8.md) | Review | Remove duplicate key readers; centralize in one module with tests. |
-| SKC-1-9 | [Retire redundant UI detection code paths](./SKC-1-9.md) | Proposed | Delete specialized detection in favor of universal key-based helpers. |
+| SKC-1-9 | [Retire redundant UI detection code paths](./SKC-1-9.md) | Review | Delete specialized detection in favor of universal key-based helpers. |
 | SKC-1-10 | [Delete dead types and constants related to legacy keys](./SKC-1-10.md) | Proposed | Remove unused Range/HashRange split constants, types, and flags. |
