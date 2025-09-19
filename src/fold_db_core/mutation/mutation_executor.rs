@@ -207,10 +207,6 @@ impl MutationExecutor {
     /// // Create a mutation executor (this would be done by FoldDB internally)
     /// // let executor = MutationExecutor::new(...);
     /// 
-    /// // match executor.wait_for_mutation("invalid-mutation-id").await {
-    /// //     Ok(()) => println!("Mutation completed successfully"),
-    /// //     Err(e) => println!("Mutation failed or timed out: {}", e),
-    /// // }
     /// # Ok(())
     /// # }
     /// ```

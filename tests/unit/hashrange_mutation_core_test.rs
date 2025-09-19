@@ -1,9 +1,28 @@
 //! Simple unit tests for HashRange mutation system core functionality
 
 use datafold::schema::types::{Mutation, MutationType};
-use datafold::fold_db_core::services::mutation::MutationService;
 use serde_json::json;
 use std::collections::HashMap;
+
+/// Generate a simple hash for mutation tracking
+fn generate_mutation_hash(mutation: &Mutation) -> String {
+    use sha2::{Sha256, Digest};
+    
+    let mut hasher = Sha256::new();
+    hasher.update(mutation.schema_name.as_bytes());
+    hasher.update(format!("{:?}", mutation.mutation_type).as_bytes());
+    
+    // Add field names and values to hash
+    let mut field_entries: Vec<_> = mutation.fields_and_values.iter().collect();
+    field_entries.sort_by_key(|(key, _)| *key);
+    
+    for (field_name, field_value) in field_entries {
+        hasher.update(field_name.as_bytes());
+        hasher.update(field_value.to_string().as_bytes());
+    }
+    
+    format!("{:x}", hasher.finalize())
+}
 
 #[cfg(test)]
 mod tests {
@@ -157,12 +176,12 @@ mod tests {
         );
         
         // Test hash generation
-        let hash = MutationService::generate_mutation_hash(&mutation).unwrap();
+        let hash = generate_mutation_hash(&mutation);
         assert!(!hash.is_empty());
         assert_eq!(hash.len(), 64); // SHA256 hex string length
         
         // Same mutation should generate same hash
-        let hash2 = MutationService::generate_mutation_hash(&mutation).unwrap();
+        let hash2 = generate_mutation_hash(&mutation);
         assert_eq!(hash, hash2);
     }
 
@@ -195,8 +214,8 @@ mod tests {
         );
         
         // Test hash generation
-        let hash1 = MutationService::generate_mutation_hash(&mutation1).unwrap();
-        let hash2 = MutationService::generate_mutation_hash(&mutation2).unwrap();
+        let hash1 = generate_mutation_hash(&mutation1);
+        let hash2 = generate_mutation_hash(&mutation2);
         
         // Different mutations should generate different hashes
         assert_ne!(hash1, hash2);

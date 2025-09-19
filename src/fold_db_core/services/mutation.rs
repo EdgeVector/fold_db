@@ -22,7 +22,6 @@ use serde_json::Value;
 use crate::schema::types::schema::Schema;
 use crate::schema::types::Mutation;
 use crate::schema::SchemaError;
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -59,8 +58,12 @@ impl MutationService {
             FieldVariant::Single(single_field) => {
                 self.update_single_field(schema, field_name, single_field, value, mutation_hash)
             }
-            FieldVariant::Range(range_field) => {
-                self.update_range_field(schema, field_name, range_field, value, mutation_hash)
+            FieldVariant::Range(_range_field) => {
+                InfrastructureLogger::log_operation_error("MutationService", "Individual range field updates not supported", "Range fields must be updated via range schema mutation.");
+                Err(SchemaError::InvalidData(format!(
+                    "Range field '{}' in schema '{}' cannot be updated individually. Use range schema mutation instead.",
+                    field_name, schema.name
+                )))
             }
             FieldVariant::HashRange(_hash_range_field) => {
                 self.update_hashrange_field(schema, field_name, value, mutation_hash)
@@ -258,32 +261,6 @@ impl MutationService {
         )))
     }
 
-    /// Handle range field mutation (REMOVED - use update_range_schema_fields instead)
-    /// Range fields should be processed via the range schema method which has proper range key context
-    fn update_range_field(
-        &self,
-        schema: &Schema,
-        field_name: &str,
-        _range_field: &crate::schema::types::field::range_field::RangeField,
-        _value: &Value,
-        _mutation_hash: &str,
-    ) -> Result<(), SchemaError> {
-        InfrastructureLogger::log_operation_error("MutationService", "Individual range field updates not supported", "Range fields must be updated via range schema mutation.");
-        Err(SchemaError::InvalidData(format!(
-            "Range field '{}' in schema '{}' cannot be updated individually. Use range schema mutation instead.",
-            field_name, schema.name
-        )))
-    }
-    /// Generate mutation hash for tracking
-    pub fn generate_mutation_hash(mutation: &Mutation) -> Result<String, SchemaError> {
-        let mutation_bytes = serde_json::to_vec(&mutation).map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to serialize mutation: {}", e))
-        })?;
-        let mut hasher = Sha256::new();
-        hasher.update(mutation_bytes);
-        let mutation_hash = format!("{:x}", hasher.finalize());
-        Ok(mutation_hash)
-    }
 
     /// Validate field value format (mutation-specific validation)
     pub fn validate_field_value(

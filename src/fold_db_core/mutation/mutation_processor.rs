@@ -158,7 +158,7 @@ impl MutationProcessor {
         Ok((hash_field, range_field))
     }
 
-    /// Extract range field name from schema's universal key configuration or legacy range_key
+    /// Extract range field name from schema's universal key configuration
     fn extract_range_field_name(&self, schema: &Schema) -> Result<Option<String>, SchemaError> {
         match &schema.schema_type {
             crate::schema::types::SchemaType::Range { range_key } => {
@@ -173,7 +173,7 @@ impl MutationProcessor {
                         )))
                     }
                 } else {
-                    // Legacy range_key support
+                    // Legacy range_key support - maintain backward compatibility
                     Ok(Some(range_key.clone()))
                 }
             },
