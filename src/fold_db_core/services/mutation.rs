@@ -4,6 +4,22 @@
 //! - Field value updates
 //! - Atom modifications  
 //! - Collection updates
+//! - Universal key configuration support for HashRange schemas
+//! 
+//! ## Universal Key Configuration
+//! 
+//! The mutation service supports universal key configuration, allowing HashRange schemas to use
+//! any field names for their hash and range keys. This is achieved through:
+//! 
+//! - Dynamic field name extraction from schema key configuration
+//! - Automatic skipping of key fields during mutation processing
+//! - Support for both new universal key format and legacy range_key patterns
+//! 
+//! ## Schema Type Support
+//! 
+//! - **Single**: Direct field value updates
+//! - **Range**: Field updates with range key context (supports both universal key and legacy range_key)
+//! - **HashRange**: Field updates with hash and range key context (requires universal key configuration)
 //! 
 //! It does NOT handle:
 //! - Schema orchestration (belongs to FoldDB)
@@ -71,7 +87,73 @@ impl MutationService {
         }
     }
 
-    /// Update atoms for a HashRange schema mutation (aggregating by hash_key)
+    /// Update atoms for a HashRange schema mutation using universal key configuration
+    /// 
+    /// This method processes HashRange schema mutations by dynamically determining the hash and range
+    /// field names from the schema's universal key configuration, rather than using hardcoded field names.
+    /// This allows HashRange schemas to use any field names for their hash and range keys.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `schema` - The HashRange schema containing the universal key configuration
+    /// * `fields_and_values` - Map of field names to their new values
+    /// * `hash_key_value` - The actual hash key value for this mutation
+    /// * `range_key_value` - The actual range key value for this mutation  
+    /// * `mutation_hash` - Unique identifier for this mutation
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `Ok(())` if all fields are processed successfully, or `Err(SchemaError)` if there
+    /// are issues with the schema configuration or field processing.
+    /// 
+    /// # Behavior
+    /// 
+    /// - Automatically skips hash and range key fields (they are metadata, not data fields)
+    /// - Uses the schema's universal key configuration to determine which fields to skip
+    /// - Creates HashRange-aware field value requests with proper context
+    /// - Supports incremental processing for efficient updates
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::schema::types::Schema;
+    /// # use serde_json::json;
+    /// # use std::collections::HashMap;
+    /// # use std::sync::Arc;
+    /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
+    /// 
+    /// // Schema with universal key configuration:
+    /// // {
+    /// //   "name": "UserActivity",
+    /// //   "schema_type": "HashRange",
+    /// //   "key": {
+    /// //     "hash_field": "user_id",
+    /// //     "range_field": "timestamp"
+    /// //   },
+    /// //   "fields": { ... }
+    /// // }
+    /// 
+    /// let mut fields_and_values = HashMap::new();
+    /// fields_and_values.insert("action".to_string(), json!("login"));
+    /// fields_and_values.insert("details".to_string(), json!("User logged in"));
+    /// // Note: "user_id" and "timestamp" are automatically skipped as they are key fields
+    /// 
+    /// let result = mutation_service.update_hashrange_schema_fields(
+    ///     &schema,
+    ///     &fields_and_values,
+    ///     "user123",           // hash_key_value
+    ///     "2025-01-15T10:30:00Z", // range_key_value
+    ///     "mutation_hash_123"
+    /// );
+    /// ```
+    /// 
+    /// # Errors
+    /// 
+    /// This method will return an error if:
+    /// - The schema is missing key configuration (`SchemaError::InvalidData`)
+    /// - The hash_field or range_field in the key configuration is empty (`SchemaError::InvalidData`)
+    /// - Field processing fails (`SchemaError::InvalidData`)
     pub fn update_hashrange_schema_fields(
         &self,
         schema: &Schema,
@@ -105,10 +187,10 @@ impl MutationService {
                 continue;
             }
             
-            // Create a HashRange-aware field value request that includes the hash_key and range_key
+            // Create a HashRange-aware field value request that includes the actual hash and range field names
             let hashrange_aware_value = serde_json::json!({
-                "hash_key": hash_key_value,
-                "range_key": range_key_value,
+                hash_field_name.clone(): hash_key_value,
+                range_field_name.clone(): range_key_value,
                 "value": value
             });
             
@@ -140,7 +222,58 @@ impl MutationService {
         Ok(())
     }
 
-    /// Update atoms for a range schema mutation (sharing MoleculeRange)
+    /// Update atoms for a range schema mutation using universal key configuration
+    /// 
+    /// This method processes Range schema mutations by dynamically determining the range field name
+    /// from the schema's universal key configuration, falling back to legacy range_key if needed.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `schema` - The Range schema containing the universal key configuration
+    /// * `fields_and_values` - Map of field names to their new values
+    /// * `range_key_value` - The actual range key value for this mutation
+    /// * `mutation_hash` - Unique identifier for this mutation
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `Ok(())` if all fields are processed successfully, or `Err(SchemaError)` if there
+    /// are issues with the schema configuration or field processing.
+    /// 
+    /// # Behavior
+    /// 
+    /// - Uses universal key configuration if available, falls back to legacy range_key
+    /// - Creates Range-aware field value requests with proper context
+    /// - Supports incremental processing for efficient updates
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::schema::types::Schema;
+    /// # use serde_json::json;
+    /// # use std::collections::HashMap;
+    /// 
+    /// // Schema with universal key configuration:
+    /// // {
+    /// //   "name": "UserSessions",
+    /// //   "schema_type": "Range",
+    /// //   "key": {
+    /// //     "range_field": "session_id"
+    /// //   },
+    /// //   "fields": { ... }
+    /// // }
+    /// 
+    /// let mut fields_and_values = HashMap::new();
+    /// fields_and_values.insert("user_id".to_string(), json!("user123"));
+    /// fields_and_values.insert("login_time".to_string(), json!("2025-01-15T10:30:00Z"));
+    /// 
+    /// let result = mutation_service.update_range_schema_fields(
+    ///     &schema,
+    ///     &fields_and_values,
+    ///     "session_456",        // range_key_value
+    ///     "mutation_hash_123"
+    /// );
+    /// ```
     pub fn update_range_schema_fields(
         &self,
         schema: &Schema,
@@ -149,6 +282,11 @@ impl MutationService {
         mutation_hash: &str,
     ) -> Result<(), SchemaError> {
         InfrastructureLogger::log_debug_info("MutationService", &format!("Processing range schema mutation for range_key_value: {}", range_key_value));
+        
+        // Get the actual range field name from the schema's universal key configuration
+        let range_field_name = self.get_range_key_field_name(schema)?;
+        
+        InfrastructureLogger::log_debug_info("MutationService", &format!("Range schema '{}' key field - range: '{}'", schema.name, range_field_name));
         
         // Create mutation context for incremental processing
         let mutation_context = crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
@@ -163,9 +301,9 @@ impl MutationService {
         for (field_name, value) in fields_and_values {
             InfrastructureLogger::log_operation_start("MutationService", "Processing range field", &format!("{} with value: {} for range_key: {}", field_name, value, range_key_value));
             
-            // Create a special field value request that includes the range key
+            // Create a special field value request that includes the actual range field name
             let range_aware_value = serde_json::json!({
-                "range_key": range_key_value,
+                range_field_name.clone(): range_key_value,
                 "value": value
             });
             
@@ -298,42 +436,120 @@ impl MutationService {
     }
 }
 
-/// Range schema mutation validation (domain-specific logic)
+/// Range schema mutation validation using universal key configuration
+/// 
+/// This function validates Range schema mutations by checking for the presence and validity
+/// of the range key field, using universal key configuration when available or falling back
+/// to legacy range_key patterns.
+/// 
+/// # Parameters
+/// 
+/// * `schema` - The Range schema containing the universal key configuration or legacy range_key
+/// * `mutation` - The mutation containing the fields and values to validate
+/// 
+/// # Returns
+/// 
+/// Returns `Ok(())` if the mutation is valid, or `Err(SchemaError)` if validation fails.
+/// 
+/// # Behavior
+/// 
+/// - Uses universal key configuration if available, falls back to legacy range_key
+/// - Validates that the range key field is present in the mutation
+/// - Validates that the range key value is not null or empty
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// # use datafold::fold_db_core::services::mutation::validate_range_schema_mutation_format;
+/// # use datafold::schema::types::{Schema, Mutation, MutationType};
+/// # use datafold::schema::types::json_schema::KeyConfig;
+/// # use datafold::schema::types::SchemaType;
+/// # use serde_json::json;
+/// # use std::collections::HashMap;
+/// 
+/// // Schema with universal key configuration:
+/// let schema = Schema {
+///     name: "UserSessions".to_string(),
+///     schema_type: SchemaType::Range { range_key: "legacy_key".to_string() },
+///     key: Some(KeyConfig {
+///         range_field: "session_id".to_string(),
+///         hash_field: "".to_string(),
+///     }),
+///     fields: HashMap::new(),
+///     hash: Some("test_hash".to_string()),
+///     payment_config: SchemaPaymentConfig::default(),
+/// };
+/// 
+/// let mut fields_and_values = HashMap::new();
+/// fields_and_values.insert("session_id".to_string(), json!("session_123"));
+/// fields_and_values.insert("user_id".to_string(), json!("user_456"));
+/// 
+/// let mutation = Mutation {
+///     schema_name: "UserSessions".to_string(),
+///     mutation_type: MutationType::Create,
+///     fields_and_values,
+/// };
+/// 
+/// let result = validate_range_schema_mutation_format(&schema, &mutation);
+/// assert!(result.is_ok()); // Valid mutation with session_id field
+/// ```
 pub fn validate_range_schema_mutation_format(
     schema: &Schema,
     mutation: &Mutation,
 ) -> Result<(), SchemaError> {
-    if let Some(range_key) = schema.range_key() {
-        log_feature!(LogFeature::Mutation, info,
-            "🔍 Validating Range schema mutation format for schema: {} with range_key: {}",
-            schema.name,
-            range_key
-        );
-
-        // MANDATORY: Range schema mutations MUST include the range_key field
-        let range_key_value = mutation.fields_and_values.get(range_key)
-            .ok_or_else(|| SchemaError::InvalidData(format!(
-                "Range schema mutation for '{}' is missing required range_key field '{}'. All range schema mutations must provide a value for the range_key.",
-                schema.name, range_key
-            )))?;
-
-        // Validate the range_key value is not null or empty
-        if range_key_value.is_null() {
-            return Err(SchemaError::InvalidData(format!(
-                "Range schema mutation for '{}' has null value for range_key field '{}'. Range key must have a valid value.",
-                schema.name, range_key
-            )));
-        }
-
-        // If range_key value is a string, ensure it's not empty
-        if let Some(str_value) = range_key_value.as_str() {
-            if str_value.trim().is_empty() {
-                return Err(SchemaError::InvalidData(format!(
-                    "Range schema mutation for '{}' has empty string value for range_key field '{}'. Range key must have a non-empty value.",
-                    schema.name, range_key
-                )));
+    // Get the range field name using universal key configuration or legacy range_key
+    let range_field_name = match &schema.schema_type {
+        crate::schema::types::schema::SchemaType::Range { range_key } => {
+            if let Some(key_config) = &schema.key {
+                // Universal key configuration takes precedence
+                if key_config.range_field.trim().is_empty() {
+                    return Err(SchemaError::InvalidData(format!(
+                        "Range schema '{}' with key configuration requires non-empty range_field", 
+                        schema.name
+                    )));
+                }
+                key_config.range_field.clone()
+            } else {
+                // Fall back to legacy range_key for backward compatibility
+                range_key.clone()
             }
         }
+        _ => return Err(SchemaError::InvalidData(format!(
+            "validate_range_schema_mutation_format can only be called on Range schemas, got: {:?}",
+            schema.schema_type
+        )))
+    };
+
+    log_feature!(LogFeature::Mutation, info,
+        "🔍 Validating Range schema mutation format for schema: {} with range_field: {}",
+        schema.name,
+        range_field_name
+    );
+
+    // MANDATORY: Range schema mutations MUST include the range field
+    let range_key_value = mutation.fields_and_values.get(&range_field_name)
+        .ok_or_else(|| SchemaError::InvalidData(format!(
+            "Range schema mutation for '{}' is missing required range field '{}'. All range schema mutations must provide a value for the range field.",
+            schema.name, range_field_name
+        )))?;
+
+    // Validate the range field value is not null or empty
+    if range_key_value.is_null() {
+        return Err(SchemaError::InvalidData(format!(
+            "Range schema mutation for '{}' has null value for range field '{}'. Range field must have a valid value.",
+            schema.name, range_field_name
+        )));
+    }
+
+    // If range field value is a string, ensure it's not empty
+    if let Some(str_value) = range_key_value.as_str() {
+        if str_value.trim().is_empty() {
+            return Err(SchemaError::InvalidData(format!(
+                "Range schema mutation for '{}' has empty string value for range field '{}'. Range field must have a non-empty value.",
+                schema.name, range_field_name
+            )));
+        }
+    }
 
         // Validate all fields in the schema are RangeFields
         for (field_name, field_variant) in &schema.fields {
@@ -357,7 +573,6 @@ pub fn validate_range_schema_mutation_format(
         }
 
         InfrastructureLogger::log_operation_success("MutationService", "Range schema mutation format validation passed", &format!("schema: {}", schema.name));
-    }
 
     Ok(())
 }
@@ -365,6 +580,65 @@ pub fn validate_range_schema_mutation_format(
 
 impl MutationService {
     /// Get the hash and range field names from the schema's universal key configuration
+    /// 
+    /// This helper method extracts the actual field names used for hash and range keys from a
+    /// HashRange schema's universal key configuration. This allows the mutation service to work
+    /// with any HashRange schema regardless of the field names chosen for the keys.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `schema` - The HashRange schema containing the universal key configuration
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `Ok((hash_field_name, range_field_name))` if the schema has valid key configuration,
+    /// or `Err(SchemaError)` if the configuration is missing or invalid.
+    /// 
+    /// # Requirements
+    /// 
+    /// The schema must have:
+    /// - A `key` configuration (not `None`)
+    /// - Non-empty `hash_field` in the key configuration
+    /// - Non-empty `range_field` in the key configuration
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::schema::types::Schema;
+    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::SchemaType;
+    /// # use std::collections::HashMap;
+    /// # use datafold::schema::types::field::FieldVariant;
+    /// # use datafold::schema::types::field::single_field::SingleField;
+    /// # use datafold::permissions::types::policy::PermissionsPolicy;
+    /// # use datafold::fees::types::config::FieldPaymentConfig;
+    /// # use datafold::fees::SchemaPaymentConfig;
+    /// 
+    /// // Schema with universal key configuration:
+    /// let schema = Schema {
+    ///     name: "UserActivity".to_string(),
+    ///     schema_type: SchemaType::HashRange,
+    ///     key: Some(KeyConfig {
+    ///         hash_field: "user_id".to_string(),
+    ///         range_field: "timestamp".to_string(),
+    ///     }),
+    ///     fields: HashMap::new(),
+    ///     hash: Some("test_hash".to_string()),
+    ///     payment_config: SchemaPaymentConfig::default(),
+    /// };
+    /// 
+    /// let (hash_field, range_field) = mutation_service.get_hashrange_key_field_names(&schema)?;
+    /// assert_eq!(hash_field, "user_id");
+    /// assert_eq!(range_field, "timestamp");
+    /// ```
+    /// 
+    /// # Errors
+    /// 
+    /// This method will return an error if:
+    /// - The schema has no key configuration (`SchemaError::InvalidData`)
+    /// - The hash_field is empty or whitespace-only (`SchemaError::InvalidData`)
+    /// - The range_field is empty or whitespace-only (`SchemaError::InvalidData`)
     fn get_hashrange_key_field_names(&self, schema: &Schema) -> Result<(String, String), SchemaError> {
         // For HashRange schemas, both hash_field and range_field are required
         let key_config = schema.key.as_ref().ok_or_else(|| {
@@ -393,5 +667,94 @@ impl MutationService {
                   schema.name, hash_field, range_field));
 
         Ok((hash_field, range_field))
+    }
+
+    /// Get the range field name from the schema's universal key configuration or legacy range_key
+    /// 
+    /// This helper method extracts the actual field name used for the range key from a Range schema.
+    /// It supports both universal key configuration and legacy range_key patterns for backward compatibility.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `schema` - The Range schema containing the universal key configuration or legacy range_key
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `Ok(range_field_name)` if the schema has valid range key configuration,
+    /// or `Err(SchemaError)` if the configuration is missing or invalid.
+    /// 
+    /// # Behavior
+    /// 
+    /// 1. If universal key configuration exists and has a non-empty range_field, use that
+    /// 2. If universal key configuration exists but range_field is empty, return error
+    /// 3. If no universal key configuration, fall back to legacy range_key from SchemaType
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// # use datafold::fold_db_core::services::mutation::MutationService;
+    /// # use datafold::schema::types::Schema;
+    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::SchemaType;
+    /// # use std::collections::HashMap;
+    /// # use datafold::fees::SchemaPaymentConfig;
+    /// 
+    /// // Schema with universal key configuration:
+    /// let schema_with_key = Schema {
+    ///     name: "UserSessions".to_string(),
+    ///     schema_type: SchemaType::Range { range_key: "legacy_key".to_string() },
+    ///     key: Some(KeyConfig {
+    ///         range_field: "session_id".to_string(),
+    ///         hash_field: "".to_string(),
+    ///     }),
+    ///     fields: HashMap::new(),
+    ///     hash: Some("test_hash".to_string()),
+    ///     payment_config: SchemaPaymentConfig::default(),
+    /// };
+    /// 
+    /// let range_field = mutation_service.get_range_key_field_name(&schema_with_key)?;
+    /// assert_eq!(range_field, "session_id"); // Uses universal key config
+    /// 
+    /// // Schema with legacy range_key only:
+    /// let schema_legacy = Schema {
+    ///     name: "UserSessions".to_string(),
+    ///     schema_type: SchemaType::Range { range_key: "legacy_key".to_string() },
+    ///     key: None,
+    ///     fields: HashMap::new(),
+    ///     hash: Some("test_hash".to_string()),
+    ///     payment_config: SchemaPaymentConfig::default(),
+    /// };
+    /// 
+    /// let range_field = mutation_service.get_range_key_field_name(&schema_legacy)?;
+    /// assert_eq!(range_field, "legacy_key"); // Falls back to legacy
+    /// ```
+    /// 
+    /// # Errors
+    /// 
+    /// This method will return an error if:
+    /// - The schema has universal key configuration but range_field is empty (`SchemaError::InvalidData`)
+    /// - The schema has no key configuration and no legacy range_key (`SchemaError::InvalidData`)
+    fn get_range_key_field_name(&self, schema: &Schema) -> Result<String, SchemaError> {
+        match &schema.schema_type {
+            crate::schema::types::schema::SchemaType::Range { range_key } => {
+                if let Some(key_config) = &schema.key {
+                    // Universal key configuration takes precedence
+                    if key_config.range_field.trim().is_empty() {
+                        return Err(SchemaError::InvalidData(format!(
+                            "Range schema '{}' with key configuration requires non-empty range_field", 
+                            schema.name
+                        )));
+                    }
+                    Ok(key_config.range_field.clone())
+                } else {
+                    // Fall back to legacy range_key for backward compatibility
+                    Ok(range_key.clone())
+                }
+            }
+            _ => Err(SchemaError::InvalidData(format!(
+                "get_range_key_field_name can only be called on Range schemas, got: {:?}",
+                schema.schema_type
+            )))
+        }
     }
 }
