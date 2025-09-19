@@ -514,7 +514,7 @@ impl SchemaDataFetcher {
     ) -> Result<Vec<JsonValue>, SchemaError> {
         // Get the actual hash_key and range_key field names from the schema
         // For HashRange schemas, we need to get the key configuration from the JSON schema file
-        let key_config = Self::get_hashrange_key_config_from_json(schema_name)?
+        let key_config = Self::get_universal_key_config_from_json(schema_name)?
             .ok_or_else(|| SchemaError::InvalidData(format!("No key configuration found for HashRange schema '{}'", schema_name)))?;
         
         let hash_key_field_name = key_config.hash_field;
@@ -587,14 +587,17 @@ impl SchemaDataFetcher {
         Ok(schema_array)
     }
 
-    /// Get HashRange key configuration from the original JSON schema file
-    fn get_hashrange_key_config_from_json(schema_name: &str) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
+    /// Get universal key configuration from the original JSON schema file
+    /// 
+    /// This is a static version of the unified key config reader that can be used
+    /// without requiring a SchemaCore instance.
+    fn get_universal_key_config_from_json(schema_name: &str) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
         use crate::schema::types::json_schema::KeyConfig;
-        use crate::schema::constants::{KEY_CONFIG_HASH_FIELD, KEY_CONFIG_RANGE_FIELD};
+        use crate::schema::constants::{KEY_FIELD_NAME, KEY_CONFIG_HASH_FIELD, KEY_CONFIG_RANGE_FIELD};
         use serde_json::Value;
         
         let schema_file_path = format!("available_schemas/{}.json", schema_name);
-        info!("🔍 Reading HashRange key config from: {}", schema_file_path);
+        info!("🔍 Reading universal key config from: {}", schema_file_path);
         
         let content = std::fs::read_to_string(&schema_file_path)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to read schema file {}: {}", schema_file_path, e)))?;
@@ -602,20 +605,22 @@ impl SchemaDataFetcher {
         let json_value: Value = serde_json::from_str(&content)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to parse JSON from {}: {}", schema_file_path, e)))?;
         
-        if let Some(key_obj) = json_value.get("key").and_then(|v| v.as_object()) {
+        if let Some(key_obj) = json_value.get(KEY_FIELD_NAME).and_then(|v| v.as_object()) {
             let hash_field = key_obj.get(KEY_CONFIG_HASH_FIELD)
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SchemaError::InvalidData("Missing hash_field in key config".to_string()))?;
+                .map(|s| s.to_string())
+                .unwrap_or_default();
             
             let range_field = key_obj.get(KEY_CONFIG_RANGE_FIELD)
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| SchemaError::InvalidData("Missing range_field in key config".to_string()))?;
+                .map(|s| s.to_string())
+                .unwrap_or_default();
             
-            info!("🔑 Found key config - hash_field: {}, range_field: {}", hash_field, range_field);
+            info!("🔑 Found key config - hash_field: '{}', range_field: '{}'", hash_field, range_field);
             
             Ok(Some(KeyConfig {
-                hash_field: hash_field.to_string(),
-                range_field: range_field.to_string(),
+                hash_field,
+                range_field,
             }))
         } else {
             info!("⚠️ No key configuration found in schema file");
