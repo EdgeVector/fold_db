@@ -147,13 +147,6 @@ impl QueryExecutor {
         vec![self.query(query)]
     }
 
-    /// Query range schema (deprecated method)
-    pub fn query_range_schema(&self, _query: Query) -> Result<Value, SchemaError> {
-        // CONVERTED TO EVENT-DRIVEN: Use SchemaLoadRequest instead of direct schema_manager access
-        Err(SchemaError::InvalidData(
-            "Method deprecated: Use event-driven SchemaLoadRequest via message bus instead of direct schema_manager access".to_string()
-        ))
-    }
 
     /// Get field value directly from database using unified resolver
     fn get_field_value_from_db(&self, schema: &Schema, field_name: &str, range_key_filter: Option<Value>, hash_key_filter: Option<Value>) -> Result<Value, SchemaError> {

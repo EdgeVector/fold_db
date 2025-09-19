@@ -390,7 +390,7 @@ impl FoldDB {
 
     /// Query a Range schema and return grouped results by range_key
     pub fn query_range_schema(&self, query: Query) -> Result<Value, SchemaError> {
-        self.query_executor.query_range_schema(query)
+        self.query_executor.query(query)
     }
 
     /// Query multiple fields from a schema
