@@ -4,9 +4,6 @@
 pub const HASH_FIELD_NAME: &str = "hash_field";
 pub const RANGE_FIELD_NAME: &str = "range_field";
 
-/// HashRange transform output field names
-pub const HASH_KEY_NAME: &str = "hash_key";
-pub const RANGE_KEY_NAME: &str = "range_key";
 
 /// HashRange schema key configuration JSON field names
 pub const KEY_CONFIG_HASH_FIELD: &str = "hash_field";

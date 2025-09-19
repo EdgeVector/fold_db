@@ -569,14 +569,6 @@ impl SchemaCore {
         }
     }
 
-    /// Get HashRange key configuration from the original JSON schema file
-    /// 
-    /// This is a legacy function maintained for backward compatibility.
-    /// Use `get_universal_key_config_from_json` for new code.
-    #[deprecated(note = "Use get_universal_key_config_from_json instead")]
-    pub fn get_hashrange_key_config_from_json(&self, schema_name: &str) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
-        self.get_universal_key_config_from_json(schema_name)
-    }
 
     /// Re-register transforms that target a newly approved schema
     /// This method is called when a schema is approved to ensure that transforms

@@ -211,7 +211,7 @@ fn test_hashrange_schema_key_config_reading() {
     println!("🔧 Testing HashRange schema key config reading");
     
     // Test the key config reading function directly
-    let key_config = fixture.schema_core.get_hashrange_key_config_from_json("BlogPostWordIndex");
+    let key_config = fixture.schema_core.get_universal_key_config_from_json("BlogPostWordIndex");
     
     match key_config {
         Ok(Some(config)) => {
