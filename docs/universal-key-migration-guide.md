@@ -322,6 +322,165 @@ curl -X POST http://localhost:9001/api/query \
   }'
 ```
 
+## Mutation Processor Migration
+
+The mutation processor has been updated to support universal key configuration across all schema types. This section covers migrating your mutations to use the new key system.
+
+### Mutation Requirements by Schema Type
+
+#### HashRange Schemas
+HashRange mutations must include values for both hash and range fields as defined in the schema's key configuration:
+
+```json
+{
+  "schema_name": "BlogPostWordIndex",
+  "mutation_type": "Update",
+  "fields_and_values": {
+    "word": "technology",           // hash_field
+    "publish_date": "2025-01-15",  // range_field
+    "content": "AI advances..."
+  }
+}
+```
+
+#### Range Schemas
+Range mutations must include the range field value. Hash field is optional:
+
+```json
+{
+  "schema_name": "UserActivity",
+  "mutation_type": "Update",
+  "fields_and_values": {
+    "timestamp": "2025-01-15T10:30:00Z",  // range_field
+    "action": "login",
+    "user_id": "user123"
+  }
+}
+```
+
+#### Single Schemas
+Single mutations can optionally include key field values for indexing hints:
+
+```json
+{
+  "schema_name": "UserProfile",
+  "mutation_type": "Update",
+  "fields_and_values": {
+    "user_id": "user123",           // hash_field (optional)
+    "name": "John Doe",
+    "email": "john@example.com",
+    "created_at": "2025-01-15"      // range_field (optional)
+  }
+}
+```
+
+### Migration Examples
+
+#### HashRange Mutation Migration
+**Before (Legacy Field Names):**
+```json
+{
+  "schema_name": "BlogPostWordIndex",
+  "fields_and_values": {
+    "hash_key": "technology",
+    "range_key": "2025-01-15",
+    "content": "AI advances..."
+  }
+}
+```
+
+**After (Universal Key Field Names):**
+```json
+{
+  "schema_name": "BlogPostWordIndex",
+  "fields_and_values": {
+    "word": "technology",           // matches hash_field in schema
+    "publish_date": "2025-01-15",   // matches range_field in schema
+    "content": "AI advances..."
+  }
+}
+```
+
+#### Range Mutation Migration
+**Before (Legacy range_key):**
+```json
+{
+  "schema_name": "UserActivity",
+  "fields_and_values": {
+    "range_key": "2025-01-15T10:30:00Z",
+    "action": "login",
+    "user_id": "user123"
+  }
+}
+```
+
+**After (Universal Key):**
+```json
+{
+  "schema_name": "UserActivity",
+  "fields_and_values": {
+    "timestamp": "2025-01-15T10:30:00Z",  // matches range_field in schema
+    "action": "login",
+    "user_id": "user123"
+  }
+}
+```
+
+### Error Handling
+
+The mutation processor provides clear error messages for invalid configurations:
+
+#### Missing Key Configuration
+```json
+{
+  "error": "HashRange schema 'BlogPostWordIndex' requires key configuration"
+}
+```
+
+#### Missing Required Fields
+```json
+{
+  "error": "HashRange schema mutation missing hash field 'word'"
+}
+```
+
+```json
+{
+  "error": "Range schema mutation missing range field 'timestamp'"
+}
+```
+
+#### Empty Key Fields
+```json
+{
+  "error": "HashRange schema 'BlogPostWordIndex' requires non-empty hash_field in key configuration"
+}
+```
+
+### Backward Compatibility
+
+Legacy mutations continue to work without changes:
+
+- **Legacy Range Schemas**: Mutations using `range_key` field names work unchanged
+- **Existing HashRange Schemas**: Mutations continue to work with existing field names
+- **Single Schema Mutations**: No changes required for existing mutations
+
+### Migration Checklist
+
+- [ ] **Identify Schema Types**: Determine which schemas use HashRange, Range, or Single
+- [ ] **Check Key Configuration**: Verify schemas have proper `key` configuration
+- [ ] **Update Field Names**: Change mutation field names to match schema key configuration
+- [ ] **Test Mutations**: Verify mutations work with new field names
+- [ ] **Update Documentation**: Update API documentation and examples
+- [ ] **Monitor Errors**: Watch for mutation validation errors
+
+### Performance Benefits
+
+- **Optimized Key Extraction**: Universal key extraction is faster than legacy methods
+- **Early Validation**: Field validation happens before processing
+- **Clear Error Messages**: Reduced debugging time with descriptive errors
+- **Consistent API**: Unified approach across all schema types
+
 ## Troubleshooting
 
 ### Common Issues

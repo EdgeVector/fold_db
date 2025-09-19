@@ -1850,6 +1850,122 @@ volumes:
   folddb_data:
 ```
 
+## Troubleshooting
+
+### Mutation Processor Issues
+
+#### Common Mutation Errors
+
+**1. Missing Key Configuration**
+```
+Error: "HashRange schema 'BlogPostWordIndex' requires key configuration"
+```
+**Solution:** Ensure HashRange schemas have a `key` field with both `hash_field` and `range_field`:
+```json
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "word",
+    "range_field": "publish_date"
+  }
+}
+```
+
+**2. Missing Required Fields**
+```
+Error: "HashRange schema mutation missing hash field 'word'"
+```
+**Solution:** Include values for all required key fields in your mutation:
+```json
+{
+  "schema_name": "BlogPostWordIndex",
+  "fields_and_values": {
+    "word": "technology",           // Required hash field
+    "publish_date": "2025-01-15",  // Required range field
+    "content": "AI advances..."
+  }
+}
+```
+
+**3. Empty Key Fields**
+```
+Error: "HashRange schema 'BlogPostWordIndex' requires non-empty hash_field in key configuration"
+```
+**Solution:** Ensure key configuration has non-empty field names:
+```json
+{
+  "key": {
+    "hash_field": "word",        // Must not be empty
+    "range_field": "publish_date" // Must not be empty
+  }
+}
+```
+
+**4. Field Name Mismatch**
+```
+Error: "Range schema mutation missing range field 'timestamp'"
+```
+**Solution:** Verify mutation field names match the schema's key configuration:
+```json
+// Schema key configuration
+{
+  "key": {
+    "range_field": "timestamp"
+  }
+}
+
+// Mutation must use 'timestamp', not 'date' or 'time'
+{
+  "fields_and_values": {
+    "timestamp": "2025-01-15T10:30:00Z",  // Correct field name
+    "action": "login"
+  }
+}
+```
+
+#### Debugging Mutation Issues
+
+**1. Verify Schema Key Configuration**
+```bash
+# Check schema key configuration
+curl -X GET http://localhost:9001/api/schema/BlogPostWordIndex
+```
+
+**2. Validate Mutation Field Names**
+```bash
+# Test mutation with correct field names
+curl -X POST http://localhost:9001/api/mutation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schema_name": "BlogPostWordIndex",
+    "mutation_type": "create",
+    "fields_and_values": {
+      "word": "technology",
+      "publish_date": "2025-01-15",
+      "content": "AI advances..."
+    }
+  }'
+```
+
+**3. Check Error Logs**
+```bash
+# View mutation processor logs
+tail -f logs/mutation_processor.log
+```
+
+#### Migration Troubleshooting
+
+**Legacy Mutations Failing**
+- Verify schema still supports legacy field names
+- Check if schema was updated to require universal key configuration
+- Ensure backward compatibility is maintained
+
+**Performance Issues**
+- Universal key extraction is optimized for performance
+- Early validation prevents unnecessary processing
+- Clear error messages reduce debugging time
+
 This comprehensive developer guide provides the foundation for integrating Fold DB into various types of applications, from embedded libraries to distributed microservices. The examples and patterns shown here can be adapted to specific use cases and requirements.
 
 ---
