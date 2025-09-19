@@ -1,0 +1,114 @@
+name: Test Suite
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust-tests:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run clippy
+        id: clippy
+        continue-on-error: true
+        run: cargo clippy --workspace
+
+      - name: Run cargo test
+        id: cargo-test
+        continue-on-error: true
+        run: cargo test --workspace
+
+      - name: Rust test summary
+        if: always()
+        run: |
+          clippy_status="${{ steps.clippy.outcome }}"
+          test_status="${{ steps.cargo-test.outcome }}"
+          
+          if [ "$clippy_status" = "success" ]; then
+            echo "✅ **Rust Clippy**" >> $GITHUB_STEP_SUMMARY
+            echo "Clippy checks passed successfully." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Rust Clippy**" >> $GITHUB_STEP_SUMMARY
+            echo "Clippy checks failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "$test_status" = "success" ]; then
+            echo "✅ **Rust Tests**" >> $GITHUB_STEP_SUMMARY
+            echo "All cargo tests passed successfully." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Rust Tests**" >> $GITHUB_STEP_SUMMARY
+            echo "Cargo tests failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if clippy or tests failed
+        if: steps.clippy.outcome == 'failure' || steps.cargo-test.outcome == 'failure'
+        run: exit 1
+
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src/datafold_node/static-react
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: src/datafold_node/static-react/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm test
+        id: npm-test
+        continue-on-error: true
+        run: npm test
+
+      - name: Frontend test summary
+        if: always()
+        run: |
+          status="${{ steps.npm-test.outcome }}"
+          if [ "$status" = "success" ]; then
+            echo "✅ **Frontend Tests**" >> $GITHUB_STEP_SUMMARY
+            echo "All npm tests passed successfully." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Frontend Tests**" >> $GITHUB_STEP_SUMMARY
+            echo "npm tests failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if npm tests failed
+        if: steps.npm-test.outcome == 'failure'
+        run: exit 1
