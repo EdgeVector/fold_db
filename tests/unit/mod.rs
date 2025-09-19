@@ -21,3 +21,4 @@ pub mod schema_universal_key_validation_tests;
 pub mod schema_universal_key_parsing_tests;
 pub mod unified_key_extraction_tests;
 pub mod hashrange_query_processor_tests;
+pub mod mutation_processor_universal_key_tests;
