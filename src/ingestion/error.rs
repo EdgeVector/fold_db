@@ -9,6 +9,10 @@ pub enum IngestionError {
     #[error("OpenRouter API error: {0}")]
     OpenRouterError(String),
 
+    /// Ollama API communication errors
+    #[error("Ollama API error: {0}")]
+    OllamaError(String),
+
     /// HTTP request errors
     #[error("HTTP request failed: {0}")]
     HttpError(#[from] reqwest::Error),
@@ -62,6 +66,11 @@ impl IngestionError {
     /// Create a new OpenRouter API error
     pub fn openrouter_error(msg: impl Into<String>) -> Self {
         Self::OpenRouterError(msg.into())
+    }
+
+    /// Create a new Ollama API error
+    pub fn ollama_error(msg: impl Into<String>) -> Self {
+        Self::OllamaError(msg.into())
     }
 
     /// Create a new schema parsing error

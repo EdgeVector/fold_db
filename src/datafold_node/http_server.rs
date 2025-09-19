@@ -187,19 +187,15 @@ impl DataFoldHttpServer {
                         )
                         .route(
                             "/ingestion/config",
-                            web::get().to(ingestion_routes::get_config),
+                            web::get().to(ingestion_routes::get_ingestion_config),
+                        )
+                        .route(
+                            "/ingestion/config",
+                            web::post().to(ingestion_routes::save_ingestion_config),
                         )
                         .route(
                             "/ingestion/validate",
                             web::post().to(ingestion_routes::validate_json),
-                        )
-                        .route(
-                            "/ingestion/openrouter-config",
-                            web::get().to(ingestion_routes::get_openrouter_config),
-                        )
-                        .route(
-                            "/ingestion/openrouter-config",
-                            web::post().to(ingestion_routes::save_openrouter_config),
                         )
                         // Transform endpoints
                         .route("/transforms", web::get().to(query_routes::list_transforms))

@@ -1,11 +1,15 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
 
 use crate::datafold_node::DataFoldNode;
+use crate::ingestion::config::AIProvider;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;
-use crate::ingestion::openrouter_service::{AISchemaResponse, OpenRouterService};
+use crate::ingestion::ollama_service::OllamaService;
+use crate::ingestion::openrouter_service::OpenRouterService;
 use crate::ingestion::schema_stripper::SchemaStripper;
-use crate::ingestion::{IngestionConfig, IngestionError, IngestionResponse, IngestionResult};
+use crate::ingestion::{
+    AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
+};
 use crate::schema::types::{Mutation, Operation};
 use crate::logging::features::LogFeature;
 use crate::log_feature;
@@ -14,7 +18,8 @@ use serde_json::Value;
 /// Simplified ingestion service that works with DataFoldNode
 pub struct SimpleIngestionService {
     config: IngestionConfig,
-    openrouter_service: OpenRouterService,
+    openrouter_service: Option<OpenRouterService>,
+    ollama_service: Option<OllamaService>,
     schema_stripper: SchemaStripper,
     mutation_generator: MutationGenerator,
 }
@@ -22,13 +27,33 @@ pub struct SimpleIngestionService {
 impl SimpleIngestionService {
     /// Create a new simple ingestion service
     pub fn new(config: IngestionConfig) -> IngestionResult<Self> {
-        let openrouter_service = OpenRouterService::new(config.clone())?;
+        let openrouter_service = if config.provider == AIProvider::OpenRouter {
+            Some(OpenRouterService::new(
+                config.openrouter.clone(),
+                config.timeout_seconds,
+                config.max_retries,
+            )?)
+        } else {
+            None
+        };
+
+        let ollama_service = if config.provider == AIProvider::Ollama {
+            Some(OllamaService::new(
+                config.ollama.clone(),
+                config.timeout_seconds,
+                config.max_retries,
+            )?)
+        } else {
+            None
+        };
+
         let schema_stripper = SchemaStripper::new();
         let mutation_generator = MutationGenerator::new();
 
         Ok(Self {
             config,
             openrouter_service,
+            ollama_service,
             schema_stripper,
             mutation_generator,
         })
@@ -62,9 +87,9 @@ impl SimpleIngestionService {
 
         // Step 3: Get AI recommendation
         let ai_response = self
-            .openrouter_service
-            .get_schema_recommendation(&request.data, &available_schemas)
+            .get_ai_recommendation(&request.data, &available_schemas)
             .await?;
+
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -117,6 +142,28 @@ impl SimpleIngestionService {
         ))
     }
 
+    /// Get AI schema recommendation
+    async fn get_ai_recommendation(
+        &self,
+        json_data: &Value,
+        available_schemas: &Value,
+    ) -> IngestionResult<AISchemaResponse> {
+        match self.config.provider {
+            AIProvider::OpenRouter => self
+                .openrouter_service
+                .as_ref()
+                .ok_or_else(|| IngestionError::configuration_error("OpenRouter service not initialized"))?
+                .get_schema_recommendation(json_data, available_schemas)
+                .await,
+            AIProvider::Ollama => self
+                .ollama_service
+                .as_ref()
+                .ok_or_else(|| IngestionError::configuration_error("Ollama service not initialized"))?
+                .get_schema_recommendation(json_data, available_schemas)
+                .await,
+        }
+    }
+
     /// Validate JSON input
     pub fn validate_input(&self, data: &Value) -> IngestionResult<()> {
         if data.is_null() {
@@ -134,10 +181,16 @@ impl SimpleIngestionService {
 
     /// Get status information
     pub fn get_status(&self) -> IngestionResult<Value> {
+        let (provider_name, model) = match self.config.provider {
+            AIProvider::OpenRouter => ("OpenRouter", self.config.openrouter.model.clone()),
+            AIProvider::Ollama => ("Ollama", self.config.ollama.model.clone()),
+        };
+
         Ok(serde_json::json!({
             "enabled": self.config.enabled,
             "configured": self.config.is_ready(),
-            "model": self.config.openrouter_model,
+            "provider": provider_name,
+            "model": model,
             "auto_execute_mutations": self.config.auto_execute_mutations,
             "default_trust_distance": self.config.default_trust_distance
         }))

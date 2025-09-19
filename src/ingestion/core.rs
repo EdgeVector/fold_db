@@ -2,10 +2,12 @@
 
 use crate::fold_db_core::FoldDB;
 use crate::ingestion::{
+    config::AIProvider,
     mutation_generator::MutationGenerator,
-    openrouter_service::{AISchemaResponse, OpenRouterService},
+    ollama_service::OllamaService,
+    openrouter_service::OpenRouterService,
     schema_stripper::SchemaStripper,
-    IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
+    AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
 };
 use crate::schema::types::{JsonSchemaDefinition, Mutation};
 use crate::schema::{Schema, SchemaCore};
@@ -17,7 +19,8 @@ use std::sync::Arc;
 /// Core ingestion service that orchestrates the entire ingestion process
 pub struct IngestionCore {
     config: IngestionConfig,
-    openrouter_service: OpenRouterService,
+    openrouter_service: Option<OpenRouterService>,
+    ollama_service: Option<OllamaService>,
     schema_stripper: SchemaStripper,
     mutation_generator: MutationGenerator,
     schema_core: Arc<SchemaCore>,
@@ -44,13 +47,33 @@ impl IngestionCore {
         schema_core: Arc<SchemaCore>,
         fold_db: Arc<std::sync::Mutex<FoldDB>>,
     ) -> IngestionResult<Self> {
-        let openrouter_service = OpenRouterService::new(config.clone())?;
+        let openrouter_service = if config.provider == AIProvider::OpenRouter {
+            Some(OpenRouterService::new(
+                config.openrouter.clone(),
+                config.timeout_seconds,
+                config.max_retries,
+            )?)
+        } else {
+            None
+        };
+
+        let ollama_service = if config.provider == AIProvider::Ollama {
+            Some(OllamaService::new(
+                config.ollama.clone(),
+                config.timeout_seconds,
+                config.max_retries,
+            )?)
+        } else {
+            None
+        };
+
         let schema_stripper = SchemaStripper::new();
         let mutation_generator = MutationGenerator::new();
 
         Ok(Self {
             config,
             openrouter_service,
+            ollama_service,
             schema_stripper,
             mutation_generator,
             schema_core,
@@ -207,9 +230,20 @@ impl IngestionCore {
         json_data: &Value,
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
-        self.openrouter_service
-            .get_schema_recommendation(json_data, available_schemas)
-            .await
+        match self.config.provider {
+            AIProvider::OpenRouter => self
+                .openrouter_service
+                .as_ref()
+                .ok_or_else(|| IngestionError::configuration_error("OpenRouter service not initialized"))?
+                .get_schema_recommendation(json_data, available_schemas)
+                .await,
+            AIProvider::Ollama => self
+                .ollama_service
+                .as_ref()
+                .ok_or_else(|| IngestionError::configuration_error("Ollama service not initialized"))?
+                .get_schema_recommendation(json_data, available_schemas)
+                .await,
+        }
     }
 
     /// Determine which schema to use based on AI response
@@ -386,10 +420,16 @@ impl IngestionCore {
 
     /// Get ingestion status
     pub fn get_status(&self) -> IngestionResult<Value> {
+        let (provider_name, model) = match self.config.provider {
+            AIProvider::OpenRouter => ("OpenRouter", self.config.openrouter.model.clone()),
+            AIProvider::Ollama => ("Ollama", self.config.ollama.model.clone()),
+        };
+
         Ok(serde_json::json!({
             "enabled": self.config.enabled,
             "configured": self.config.is_ready(),
-            "model": self.config.openrouter_model,
+            "provider": provider_name,
+            "model": model,
             "auto_execute_mutations": self.config.auto_execute_mutations,
             "default_trust_distance": self.config.default_trust_distance
         }))
@@ -415,6 +455,7 @@ impl IngestionCore {
 mod tests {
     use super::*;
     use crate::fold_db_core::FoldDB;
+    use crate::ingestion::config::AIProvider;
     use crate::schema::SchemaCore;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
@@ -423,13 +464,28 @@ mod tests {
     // This duplicated test setup logic available in testing_utils module
 
     #[test]
+    fn test_ingestion_core_new_with_ollama_provider() {
+        let mut config = IngestionConfig::default();
+        config.provider = AIProvider::Ollama;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path().to_str().unwrap();
+
+        let schema_core = Arc::new(SchemaCore::new_for_testing(test_path).unwrap());
+        let fold_db = Arc::new(Mutex::new(FoldDB::new(test_path).unwrap()));
+
+        let ingestion_core = IngestionCore::new(config, schema_core, fold_db).unwrap();
+
+        assert!(ingestion_core.ollama_service.is_some());
+        assert!(ingestion_core.openrouter_service.is_none());
+    }
+
+    #[test]
     fn test_validate_input() {
         // Create isolated test setup for this test
-        let config = IngestionConfig {
-            openrouter_api_key: "test-key".to_string(),
-            enabled: true,
-            ..Default::default()
-        };
+        let mut config = IngestionConfig::from_env_allow_empty();
+        config.enabled = true;
+        config.openrouter.api_key = "test-key".to_string();
 
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir
@@ -478,11 +534,9 @@ mod tests {
     #[test]
     fn test_create_basic_schema_from_definition() {
         // Create isolated test setup for this test
-        let config = IngestionConfig {
-            openrouter_api_key: "test-key".to_string(),
-            enabled: true,
-            ..Default::default()
-        };
+        let mut config = IngestionConfig::from_env_allow_empty();
+        config.enabled = true;
+        config.openrouter.api_key = "test-key".to_string();
 
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir

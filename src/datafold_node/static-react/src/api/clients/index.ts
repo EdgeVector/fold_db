@@ -72,9 +72,7 @@ export {
   saveConfig,
   validateData,
   processIngestion,
-  validateOpenRouterConfig,
   validateIngestionRequest,
-  createOpenRouterConfig,
   createIngestionRequest
 } from './ingestionClient';
 
@@ -109,7 +107,8 @@ export type {
 export type {
   IngestionStatus,
   OpenRouterConfig,
-  OpenRouterConfigResponse,
+  OllamaConfig,
+  IngestionConfig,
   ValidationRequest,
   ValidationResponse,
   ProcessIngestionRequest,
