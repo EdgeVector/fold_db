@@ -9,12 +9,13 @@ This document covers fold db's schema management system built on the core princi
 3. [Universal Key Configuration](#universal-key-configuration) ⭐ **NEW**
 4. [Simplified Schema Formats](#simplified-schema-formats) ⭐ **NEW**
 5. [HashRange Query Processing](#hashrange-query-processing) ⭐ **NEW**
-6. [Field Types](#field-types)
-7. [Permission Policies](#permission-policies)
-8. [Payment Configuration](#payment-configuration)
-9. [Schema States and Lifecycle](#schema-states-and-lifecycle)
-10. [Migration Patterns](#migration-patterns)
-11. [Best Practices](#best-practices)
+6. [Mutation Processing](#mutation-processing) ⭐ **NEW**
+7. [Field Types](#field-types)
+8. [Permission Policies](#permission-policies)
+9. [Payment Configuration](#payment-configuration)
+10. [Schema States and Lifecycle](#schema-states-and-lifecycle)
+11. [Migration Patterns](#migration-patterns)
+12. [Best Practices](#best-practices)
 
 ## Schema Immutability
 
@@ -707,6 +708,224 @@ Legacy HashRange schemas continue to work without changes. The universal key con
 - ✅ **Better Performance**: Optimized key extraction and query processing
 - ✅ **Clear Error Messages**: Detailed validation feedback
 - ✅ **Future-Proof**: Unified approach for new features
+
+## Mutation Processing
+
+FoldDB's mutation processor supports universal key configuration across all schema types, providing consistent mutation handling while maintaining full backward compatibility.
+
+### Universal Key Mutation Support
+
+The mutation processor automatically extracts hash and range values from mutations using the schema's universal key configuration:
+
+```json
+{
+  "schema_name": "BlogPostWordIndex",
+  "mutation_type": "Update",
+  "fields_and_values": {
+    "word": "technology",
+    "publish_date": "2025-01-15",
+    "content": "AI and machine learning advances..."
+  }
+}
+```
+
+### Schema Type Support
+
+#### HashRange Schemas
+HashRange schemas require both `hash_field` and `range_field` in their key configuration:
+
+```json
+{
+  "name": "BlogPostWordIndex",
+  "schema_type": "HashRange",
+  "key": {
+    "hash_field": "word",
+    "range_field": "publish_date"
+  },
+  "fields": {
+    "word": {},
+    "publish_date": {},
+    "content": {}
+  }
+}
+```
+
+**Mutation Requirements:**
+- Must include values for both hash and range fields
+- Hash field value determines the partition
+- Range field value determines the sort order within the partition
+
+#### Range Schemas
+Range schemas can use either universal key configuration or legacy `range_key`:
+
+**Universal Key Configuration:**
+```json
+{
+  "name": "UserActivity",
+  "schema_type": "Range",
+  "key": {
+    "hash_field": "",
+    "range_field": "timestamp"
+  },
+  "fields": {
+    "timestamp": {},
+    "action": {},
+    "user_id": {}
+  }
+}
+```
+
+**Legacy Format (Backward Compatible):**
+```json
+{
+  "name": "UserActivity",
+  "schema_type": "Range",
+  "range_key": "timestamp",
+  "fields": {
+    "timestamp": {},
+    "action": {},
+    "user_id": {}
+  }
+}
+```
+
+#### Single Schemas
+Single schemas can optionally use universal key configuration for indexing hints:
+
+```json
+{
+  "name": "UserProfile",
+  "schema_type": "Single",
+  "key": {
+    "hash_field": "user_id",
+    "range_field": "created_at"
+  },
+  "fields": {
+    "user_id": {},
+    "name": {},
+    "email": {},
+    "created_at": {}
+  }
+}
+```
+
+### Error Handling
+
+The mutation processor provides clear error messages for invalid configurations:
+
+#### Missing Key Configuration
+```json
+{
+  "error": "HashRange schema 'BlogPostWordIndex' requires key configuration"
+}
+```
+
+#### Empty Key Fields
+```json
+{
+  "error": "HashRange schema 'BlogPostWordIndex' requires non-empty hash_field in key configuration"
+}
+```
+
+#### Missing Required Fields
+```json
+{
+  "error": "HashRange schema mutation missing hash field 'word'"
+}
+```
+
+```json
+{
+  "error": "Range schema mutation missing range field 'timestamp'"
+}
+```
+
+### Backward Compatibility
+
+Legacy mutation formats continue to work without changes:
+
+- **Legacy Range Schemas**: Mutations using `range_key` field names work unchanged
+- **Existing HashRange Schemas**: Mutations continue to work with existing field names
+- **Single Schema Mutations**: No changes required for existing mutations
+
+### Migration Examples
+
+#### Updating HashRange Mutations
+**Before (Legacy):**
+```json
+{
+  "schema_name": "BlogPostWordIndex",
+  "fields_and_values": {
+    "hash_key": "technology",
+    "range_key": "2025-01-15",
+    "content": "AI advances..."
+  }
+}
+```
+
+**After (Universal Key):**
+```json
+{
+  "schema_name": "BlogPostWordIndex",
+  "fields_and_values": {
+    "word": "technology",
+    "publish_date": "2025-01-15",
+    "content": "AI advances..."
+  }
+}
+```
+
+#### Updating Range Mutations
+**Before (Legacy):**
+```json
+{
+  "schema_name": "UserActivity",
+  "fields_and_values": {
+    "range_key": "2025-01-15T10:30:00Z",
+    "action": "login",
+    "user_id": "user123"
+  }
+}
+```
+
+**After (Universal Key):**
+```json
+{
+  "schema_name": "UserActivity",
+  "fields_and_values": {
+    "timestamp": "2025-01-15T10:30:00Z",
+    "action": "login",
+    "user_id": "user123"
+  }
+}
+```
+
+### Performance Considerations
+
+- **Key Extraction**: Universal key extraction is optimized for performance
+- **Field Validation**: Early validation prevents unnecessary processing
+- **Error Handling**: Clear error messages reduce debugging time
+- **Backward Compatibility**: No performance impact on legacy mutations
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **"Missing key configuration"**
+   - Ensure HashRange schemas have a `key` field
+   - Verify key configuration is properly formatted
+
+2. **"Missing hash/range field"**
+   - Check that mutation includes values for required key fields
+   - Verify field names match the schema's key configuration
+
+3. **"Empty key fields"**
+   - Ensure key configuration has non-empty field names
+   - Check for typos in field names
+
+4. **Legacy mutations failing**
+   - Verify schema still supports legacy field names
+   - Check if schema was updated to require universal key configuration
 
 ## Best Practices
 

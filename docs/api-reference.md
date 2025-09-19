@@ -1204,7 +1204,7 @@ Execute a query.
 ```
 
 #### mutation
-Execute a mutation.
+Execute a mutation with universal key configuration support.
 
 **Request:**
 ```json
@@ -1221,6 +1221,55 @@ Execute a mutation.
   }
 }
 ```
+
+**Universal Key Configuration Support:**
+
+The mutation processor automatically extracts hash and range values from mutations using the schema's universal key configuration. Field names in mutations must match the schema's key configuration:
+
+**HashRange Schema Example:**
+```json
+{
+  "app_id": "my-app",
+  "operation": "mutation",
+  "params": {
+    "schema": "BlogPostWordIndex",
+    "mutation_type": "create",
+    "data": {
+      "word": "technology",           // hash_field from schema key
+      "publish_date": "2025-01-15",  // range_field from schema key
+      "content": "AI advances..."
+    }
+  }
+}
+```
+
+**Range Schema Example:**
+```json
+{
+  "app_id": "my-app",
+  "operation": "mutation",
+  "params": {
+    "schema": "UserActivity",
+    "mutation_type": "create",
+    "data": {
+      "timestamp": "2025-01-15T10:30:00Z",  // range_field from schema key
+      "action": "login",
+      "user_id": "user123"
+    }
+  }
+}
+```
+
+**Error Handling:**
+The mutation processor provides clear error messages for invalid configurations:
+
+- `"HashRange schema 'SchemaName' requires key configuration"`
+- `"HashRange schema mutation missing hash field 'field_name'"`
+- `"Range schema mutation missing range field 'field_name'"`
+- `"HashRange schema 'SchemaName' requires non-empty hash_field in key configuration"`
+
+**Backward Compatibility:**
+Legacy mutations continue to work without changes for existing schemas.
 
 #### discover_nodes
 Discover network peers.
