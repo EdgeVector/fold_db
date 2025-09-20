@@ -34,6 +34,7 @@
 //! assert_eq!(range_field, "timestamp");
 //! ```
 
+pub mod field_processing;
 pub mod mutation_completion_tests;
 pub mod range_filter_tests;
 pub mod schema;

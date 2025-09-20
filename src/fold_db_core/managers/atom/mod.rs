@@ -9,7 +9,7 @@
 
 mod event_processing;
 mod request_handlers;
-mod field_processing;
+pub mod field_processing;
 mod helpers;
 
 use crate::atom::{Atom, Molecule, MoleculeRange};
