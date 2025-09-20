@@ -1,48 +1,40 @@
-# SKC-6-4 Document universal key field processing behavior
+# SKC-6-4 Retire legacy key heuristics and tighten error reporting
 
 ## Description
-
-Update developer-facing documentation so field processing workflows with universal key configuration are fully described. Capture new helper usage, payload structure, and troubleshooting guidance for Range and HashRange schemas.
+After all field processing paths consume the universal key snapshot, remove the legacy `extract_range_key_from_value` and `extract_hash_key_from_value` helpers and consolidate error handling. The goal is to eliminate dead code, reduce branching, and ensure all failures leverage the new descriptive error surface.
 
 ## Status History
-
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-21 12:15:00 | Created | N/A | Proposed | Task file created | ai-agent |
+| 2025-09-23 09:20:00 | Scope Refined | Proposed | Proposed | Converted task into cleanup and error-hardening step | ai-agent |
 
 ## Requirements
-
-- Document the normalized FieldValueSet payload format and key extraction flow in `docs/guides/operations/universal-key-migration-guide.md` (or a new referenced section).
-- Update API/reference docs describing `FieldValueSetRequest`, `MutationService`, and AtomManager field processing to reflect universal key usage.
-- Capture troubleshooting steps for common error scenarios (missing key config, dotted path resolution failures, inconsistent payloads).
-- Ensure documentation links from the PBI PRD and related tasks reference the updated sections.
-- Maintain consistency with existing terminology and style guides across docs.
+- Delete `extract_range_key_from_value`, `extract_hash_key_from_value`, and any other unused heuristic utilities from `field_processing.rs` and related modules.
+- Remove diagnostic `println!` statements and replace remaining ad-hoc logging with structured `tracing`/`log` calls that summarize schema, field, and error context.
+- Ensure all error paths in field processing derive from the universal helper's error types, providing actionable messages without silent fallbacks.
+- Update documentation comments within `field_processing.rs` to reflect the simplified architecture and point to the universal key helper.
+- Confirm no remaining call sites depend on the deleted helpers before removing them.
 
 ## Implementation Plan
-
-1. Add a dedicated subsection in the universal key migration guide covering field processing utilities, including diagrams or flow descriptions as needed.
-2. Update API or reference documentation (e.g., `docs/reference/fold_db_core/` or equivalent) to describe the normalized payload structure and helper functions.
-3. Refresh inline documentation in source files (`field_processing.rs`, `mutation.rs`) where helpful, ensuring comments reference the updated docs.
-4. Cross-link the documentation updates from the SKC-6 PRD and task list so developers can find the new material easily.
-5. Perform proofreading and consistency checks to ensure formatting, terminology, and links comply with documentation standards.
+1. Search for references to the legacy heuristic functions and confirm the earlier refactor tasks eliminated their usage.
+2. Delete the obsolete helper definitions along with redundant JSON manipulation code, updating imports accordingly.
+3. Normalize logging and error propagation in the affected functions to use the shared error types introduced alongside the universal helper.
+4. Refresh inline documentation and ensure the module-level comment explains the new flow.
 
 ## Test Plan
-
-- Proofread rendered Markdown locally to ensure formatting and links are correct.
-- Run `cargo test --workspace` to verify documentation changes do not break doctests or code snippets.
-- Run `cargo clippy --all-targets --all-features` if source comments are updated alongside docs.
+- Run the full suite `cargo test --workspace` to ensure no regressions after removing the helpers.
+- Run `cargo clippy --all-targets --all-features` to catch unused-code or lint issues introduced by deletions.
+- Spot-check the Single, Range, and HashRange integration tests to verify they continue to pass without the legacy code.
 
 ## Verification
-
-- Documentation clearly explains how universal key extraction is used within field processing workflows.
-- All links resolve correctly, and doctest snippets (if any) compile.
-- PRD references and related tasks point to the updated documentation sections.
+- No references to the legacy heuristic helpers remain in the codebase.
+- Field processing errors surface descriptive messages for missing key configuration or malformed payloads.
+- Logging is consistent, structured, and free of debugging `println!` calls.
 
 ## Files Modified
-
-- `docs/guides/operations/universal-key-migration-guide.md`
-- `docs/reference/...` describing field processing APIs
-- Inline doc comments within relevant Rust source files (as needed)
-- `docs/delivery/SKC-6/prd.md` (link updates, if required)
+- `src/fold_db_core/managers/atom/field_processing.rs`
+- `tests/unit/field_processing/*`
+- `tests/integration/hashrange_end_to_end_workflow_test.rs`
 
 [Back to task list](../tasks.md)

@@ -1,47 +1,41 @@
-# SKC-6-3 Add universal key field processing test coverage
+# SKC-6-3 Refactor HashRange pipeline to use universal key snapshot
 
 ## Description
-
-Expand automated testing to verify field processing utilities operate correctly with universal key configuration across schema types. Cover Range, HashRange, Single schemas, dotted-path keys, and error scenarios to guard against regressions introduced by the refactor.
+Extend the universal key snapshot adoption to the HashRange molecule flow, including storage updates and event publishing. This task ensures HashRange mutations persist and emit schema-derived hash/range metadata without relying on bespoke JSON parsing or map manipulation.
 
 ## Status History
-
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-21 12:10:00 | Created | N/A | Proposed | Task file created | ai-agent |
+| 2025-09-23 09:15:00 | Scope Refined | Proposed | Proposed | Task retargeted to HashRange-specific adoption of the universal snapshot | ai-agent |
 
 ## Requirements
-
-- Create unit tests targeting the new field processing helper to validate key extraction and shaped payloads for Single, Range, and HashRange schemas.
-- Add regression tests for dotted-path key expressions and missing key data error handling.
-- Extend integration tests (including end-to-end hash range workflow) to assert stored molecules/events contain correct universal key metadata.
-- Ensure new tests cover both success and failure paths for universal key processing.
-- Document new test cases inline with comments for future maintainers.
+- Update `create_hashrange_molecule` to consume the universal key snapshot, storing hash/range values based on schema-derived field names rather than hardcoded `hash_key`/`range_key` JSON lookups.
+- Ensure HashRange persistence writes and cache updates reuse shared helpers (for serialization, key formatting) where possible to keep code DRY.
+- Modify `publish_field_value_set_event` (and any related event builders) so mutation events include the normalized hash/range fields from the snapshot.
+- Adjust `handle_successful_field_value_processing` to propagate the normalized metadata for HashRange responses and notifications.
+- Remove `extract_hash_key_from_value` usage within the HashRange branch; any remaining heuristic helpers should be left for the cleanup task.
 
 ## Implementation Plan
-
-1. Add Rust unit tests under `tests/unit/fold_db_core/atom_manager/` (or equivalent) focused on the normalized field processing helper.
-2. Update `tests/integration/hashrange_end_to_end_workflow_test.rs` and other relevant integration suites to validate universal key metadata propagation.
-3. Introduce fixture builders for schemas with dotted-path keys to simplify repetitive setup in tests.
-4. Ensure existing legacy range key tests remain intact or are ported to new helpers for backward compatibility coverage.
-5. Add negative tests asserting descriptive errors when key configuration is missing or payloads omit required key data.
+1. Thread the universal snapshot into `create_hashrange_molecule`, using the resolved hash/range values to construct persistence keys and payloads.
+2. Replace manual JSON manipulation with helper-driven updates when storing HashRange BTree data, ensuring dotted-path configurations work.
+3. Update event publishing to serialize the snapshot's hash/range fields into `FieldValueSet` events and related telemetry.
+4. Validate error handling by ensuring failures within the HashRange branch bubble up with context-rich messages based on the snapshot helper's output.
 
 ## Test Plan
-
-- Run `cargo test --workspace` to execute all new and existing Rust tests.
-- Run `cargo clippy --all-targets --all-features` to confirm lint cleanliness for the test additions.
+- Extend unit tests for HashRange processing to verify persistence keys, stored payloads, and responses use schema-derived names and values.
+- Update integration coverage (e.g., `tests/integration/hashrange_end_to_end_workflow_test.rs`) to assert HashRange events expose the normalized metadata.
+- Run `cargo test --workspace` and `cargo clippy --all-targets --all-features` to confirm the refactor compiles and passes lint checks.
 
 ## Verification
-
-- New tests fail without the universal key refactor and pass after implementation.
-- Integration tests confirm FieldValueSet events and stored molecules carry the expected universal key metadata.
-- Negative scenarios produce the documented error messages.
+- HashRange storage and event flows rely solely on the universal snapshot for key data.
+- Responses and events include accurate hash/range metadata even for dotted-path key definitions.
+- No direct JSON probing remains in `create_hashrange_molecule` or event publishing logic.
 
 ## Files Modified
-
+- `src/fold_db_core/managers/atom/field_processing.rs`
+- `src/fold_db_core/infrastructure/message_bus/atom_events.rs`
 - `tests/integration/hashrange_end_to_end_workflow_test.rs`
-- `tests/unit/...` (new unit tests for AtomManager field processing)
-- `tests/unit/unified_key_extraction_tests.rs` (extended cases for dotted paths / errors)
-- Supporting test fixtures or helpers under `tests/`
+- `tests/unit/field_processing/hashrange_tests.rs`
 
 [Back to task list](../tasks.md)

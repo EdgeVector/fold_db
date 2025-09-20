@@ -1,49 +1,40 @@
-# SKC-6-1 Refactor field processing to use universal key extraction
+# SKC-6-1 Introduce schema-driven key snapshot helper for field processing
 
 ## Description
-
-Update AtomManager field processing utilities to rely on the universal key helpers instead of heuristic key detection. Ensure Range and HashRange workflows load schema metadata, call `extract_unified_keys()`, and propagate consistent key information when storing molecules and publishing events.
+Create a focused helper inside `field_processing.rs` that loads schema metadata and derives a normalized key snapshot using the universal key configuration helpers. Centralizing this logic removes ad-hoc key probing and gives later refactors a single entry point for retrieving `{hash, range, fields}` data for any schema type.
 
 ## Status History
-
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-21 12:00:00 | Created | N/A | Proposed | Task file created | ai-agent |
+| 2025-09-23 09:05:00 | Scope Refined | Proposed | Proposed | Narrowed scope to helper introduction as part of task decomposition | ai-agent |
 
 ## Requirements
-
-- Load schema definitions for incoming `FieldValueSetRequest` operations using existing AtomManager accessors.
-- Replace `extract_range_key_from_value` and `extract_hash_key_from_value` heuristics with `extract_unified_keys()` for Range and HashRange fields.
-- Normalize shaped payloads with `shape_unified_result()` (or equivalent helper) so downstream consumers receive `{hash, range, fields}` objects.
-- Emit precise error messages when universal key extraction fails (missing config, missing data, unsupported dotted paths) without masking failures.
-- Maintain backward compatibility for legacy Range schemas by using universal helpers' legacy fallbacks.
+- Add a private helper (e.g. `resolve_universal_keys`) that receives the manager, schema name, and request payload, loads the schema via `db_ops.get_schema`, and returns a structured snapshot of hash/range/field data.
+- Create a small data structure (struct or tuple) to hold `hash`, `range`, and the normalized `fields` map that other call sites can reuse without JSON probing.
+- Use `extract_unified_keys()` and `shape_unified_result()` to resolve key names and values for Single, Range, and HashRange schemas, including dotted-path configurations.
+- Translate failures from the universal helpers into descriptive errors that preserve context (schema, field, underlying issue) without falling back to silent defaults.
+- Ensure the helper leaves existing call sites untouched for now but is fully covered by unit tests to support subsequent refactors.
 
 ## Implementation Plan
-
-1. Introduce a helper in `field_processing.rs` that loads the schema via `manager.db_ops.get_schema()` and calls `extract_unified_keys()` / `shape_unified_result()` for the current request payload.
-2. Update `create_range_molecule` and `create_hashrange_molecule` to rely on the new helper outputs instead of direct JSON probing; ensure molecule storage keys use the resolved field names and values.
-3. Adjust `create_single_molecule` and `handle_successful_field_value_processing` to include the normalized key snapshot when forming responses and events.
-4. Remove obsolete heuristic helpers (`extract_range_key_from_value`, `extract_hash_key_from_value`) and tighten logging to surface universal key extraction failures with actionable context.
-5. Ensure `publish_field_value_set_event` populates mutation context hash/range values from the normalized snapshot to keep transform triggers aligned.
+1. Define the `ResolvedAtomKeys` struct (or similar) adjacent to existing field-processing types to encapsulate key data returned by the helper.
+2. Implement `resolve_universal_keys(manager, request)` to fetch the schema, call the universal helper functions, and build the normalized payload snapshot.
+3. Map errors from schema lookup or universal helper calls into the existing `FieldValueSet` error types, enriching messages with schema and field context.
+4. Add a thin instrumentation wrapper (debug log or trace) that confirms when universal key resolution succeeds or fails, ensuring no `println!` diagnostics remain.
 
 ## Test Plan
-
-- Add focused unit tests for the new helper to cover Single, Range (legacy + universal), HashRange, and dotted-path key definitions under `tests/unit`.
-- Extend integration coverage (e.g., `tests/integration/hashrange_end_to_end_workflow_test.rs`) to assert that events now carry correct universal key metadata.
-- Run `cargo test --workspace` to ensure all Rust tests pass.
-- Run `cargo clippy --all-targets --all-features` and address lints introduced by the refactor.
+- Add unit tests under `tests/unit/field_processing/` that exercise the helper for Single, Range (legacy + universal), HashRange, and dotted-path key schemas using fixtures from `tests/test_utils.rs`.
+- Add negative tests covering missing key configuration, missing data, and schema lookup failures to verify descriptive errors.
+- Run `cargo test --workspace` and `cargo clippy --all-targets --all-features` to confirm the helper and tests compile cleanly.
 
 ## Verification
-
-- Molecule storage keys and mutation events use resolved universal key field names/values across schema types.
-- Field processing returns descriptive errors when key configuration is invalid or missing data.
-- All existing tests continue to pass alongside the new coverage.
+- The new helper returns the expected `hash`, `range`, and `fields` values for every schema type without relying on ad-hoc JSON probing.
+- Error scenarios surface actionable messages and no longer fall back to silent defaults.
+- Existing behavior remains unchanged until downstream tasks adopt the helper.
 
 ## Files Modified
-
 - `src/fold_db_core/managers/atom/field_processing.rs`
-- `src/schema/schema_operations.rs` (if additional helper exports are required)
-- `tests/unit/...` (new coverage for field processing)
-- `tests/integration/hashrange_end_to_end_workflow_test.rs`
+- `tests/unit/field_processing/universal_key_helper_tests.rs`
+- `tests/test_utils.rs`
 
 [Back to task list](../tasks.md)
