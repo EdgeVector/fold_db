@@ -6,8 +6,92 @@ use crate::fold_db_core::infrastructure::message_bus::{
     atom_events::FieldValueSet,
     request_events::{FieldValueSetRequest, FieldValueSetResponse},
 };
-use log::{info, warn, error};
+use log::{info, warn, error, debug};
 use std::time::Instant;
+use crate::schema::schema_operations::{extract_unified_keys, shape_unified_result};
+use crate::schema::SchemaError;
+
+/// Resolved key data structure for field processing
+#[derive(Debug, Clone)]
+pub struct ResolvedAtomKeys {
+    pub hash: Option<String>,
+    pub range: Option<String>,
+    pub fields: serde_json::Map<String, serde_json::Value>,
+}
+
+impl ResolvedAtomKeys {
+    /// Create a new ResolvedAtomKeys instance
+    pub fn new(hash: Option<String>, range: Option<String>, fields: serde_json::Map<String, serde_json::Value>) -> Self {
+        Self { hash, range, fields }
+    }
+    
+    /// Get hash value as string (empty string if None)
+    pub fn hash_str(&self) -> String {
+        self.hash.clone().unwrap_or_default()
+    }
+    
+    /// Get range value as string (empty string if None)
+    pub fn range_str(&self) -> String {
+        self.range.clone().unwrap_or_default()
+    }
+}
+
+/// Resolve universal keys for field processing using schema-driven approach
+/// 
+/// This helper centralizes key extraction logic and provides a normalized
+/// snapshot of hash, range, and fields data for any schema type.
+pub fn resolve_universal_keys(
+    manager: &AtomManager,
+    schema_name: &str,
+    request_payload: &serde_json::Value,
+) -> Result<ResolvedAtomKeys, Box<dyn std::error::Error>> {
+    debug!("🔑 Resolving universal keys for schema: {}", schema_name);
+    
+    // Load schema from database
+    let schema = manager.db_ops.get_schema(schema_name)
+        .map_err(|e| {
+            let error_msg = format!("Failed to load schema '{}': {}", schema_name, e);
+            error!("❌ {}", error_msg);
+            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+        })?
+        .ok_or_else(|| {
+            let error_msg = format!("Schema '{}' not found", schema_name);
+            error!("❌ {}", error_msg);
+            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+        })?;
+    
+    debug!("📋 Schema '{}' loaded successfully, type: {:?}", schema_name, schema.schema_type);
+    
+    // Extract hash and range keys using universal key configuration
+    let (hash_value, range_value) = extract_unified_keys(&schema, request_payload)
+        .map_err(|e| {
+            let error_msg = format!("Failed to extract keys for schema '{}': {}", schema_name, e);
+            error!("❌ {}", error_msg);
+            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+        })?;
+    
+    debug!("🔑 Extracted keys - hash: {:?}, range: {:?}", hash_value, range_value);
+    
+    // Shape the result to get normalized fields structure
+    let shaped_result = shape_unified_result(&schema, request_payload, hash_value.clone(), range_value.clone())
+        .map_err(|e| {
+            let error_msg = format!("Failed to shape result for schema '{}': {}", schema_name, e);
+            error!("❌ {}", error_msg);
+            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+        })?;
+    
+    // Extract fields from the shaped result
+    let fields = if let Some(fields_obj) = shaped_result.get("fields").and_then(|v| v.as_object()) {
+        fields_obj.clone()
+    } else {
+        // If no fields object, create empty map
+        serde_json::Map::new()
+    };
+    
+    debug!("✅ Successfully resolved keys for schema '{}'", schema_name);
+    
+    Ok(ResolvedAtomKeys::new(hash_value, range_value, fields))
+}
 
 /// Handle FieldValueSetRequest by creating atom and appropriate Molecule - CRITICAL MUTATION BUG FIX
 pub(super) fn handle_fieldvalueset_request(manager: &AtomManager, request: FieldValueSetRequest) -> Result<(), Box<dyn std::error::Error>> {

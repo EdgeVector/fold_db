@@ -8,6 +8,8 @@ Create a focused helper inside `field_processing.rs` that loads schema metadata 
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-21 12:00:00 | Created | N/A | Proposed | Task file created | ai-agent |
 | 2025-09-23 09:05:00 | Scope Refined | Proposed | Proposed | Narrowed scope to helper introduction as part of task decomposition | ai-agent |
+| 2025-01-27 15:30:00 | Status Update | Proposed | InProgress | Started implementation of schema-driven key snapshot helper | ai-agent |
+| 2025-01-27 16:45:00 | Status Update | InProgress | Review | Implementation complete with comprehensive unit tests | ai-agent |
 
 ## Requirements
 - Add a private helper (e.g. `resolve_universal_keys`) that receives the manager, schema name, and request payload, loads the schema via `db_ops.get_schema`, and returns a structured snapshot of hash/range/field data.
@@ -33,8 +35,10 @@ Create a focused helper inside `field_processing.rs` that loads schema metadata 
 - Existing behavior remains unchanged until downstream tasks adopt the helper.
 
 ## Files Modified
-- `src/fold_db_core/managers/atom/field_processing.rs`
-- `tests/unit/field_processing/universal_key_helper_tests.rs`
-- `tests/test_utils.rs`
+- `src/fold_db_core/managers/atom/field_processing.rs` - Added ResolvedAtomKeys struct and resolve_universal_keys helper function
+- `src/fold_db_core/managers/atom/mod.rs` - Made field_processing module public for testing
+- `tests/unit/field_processing/universal_key_helper_tests.rs` - Comprehensive unit tests for all schema types
+- `tests/unit/field_processing/mod.rs` - Test module structure
+- `tests/unit/mod.rs` - Added field_processing module to unit tests
 
 [Back to task list](../tasks.md)
