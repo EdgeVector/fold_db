@@ -12,7 +12,7 @@ This document lists all tasks associated with PBI SKC-6.
 | SKC-6-2 | [Refactor Single and Range molecule creation to use universal key snapshot](./SKC-6-2.md) | Done | Adopt the helper for Single & Range flows so molecules and responses rely on schema-derived keys. |
 | SKC-6-3 | [Refactor HashRange pipeline to use universal key snapshot](./SKC-6-3.md) | Done | Extend the helper to HashRange storage and events. |
 | SKC-6-4 | [Retire legacy key heuristics and tighten error reporting](./SKC-6-4.md) | Done | Remove obsolete key extraction helpers and unify error handling. |
-| SKC-6-5 | [Implement normalized FieldValueSet payload builder in MutationService](./SKC-6-5.md) | Proposed | Create a builder that assembles schema-derived mutation payloads. |
+| SKC-6-5 | [Implement normalized FieldValueSet payload builder in MutationService](./SKC-6-5.md) | Done | Create a builder that assembles schema-derived mutation payloads. |
 | SKC-6-6 | [Adopt normalized payload builder in mutation workflows](./SKC-6-6.md) | Proposed | Update MutationService flows to publish normalized payloads. |
 | SKC-6-7 | [Align downstream producers with normalized mutation payloads](./SKC-6-7.md) | Proposed | Refactor transform/message bus producers to use the shared payload shape. |
 | SKC-6-8 | [Expand universal key regression test coverage](./SKC-6-8.md) | Proposed | Add comprehensive unit and integration tests for universal key workflows. |

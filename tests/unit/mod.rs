@@ -42,6 +42,7 @@ pub mod hashrange_mutation_core_test;
 pub mod hashrange_query_processor_tests;
 pub mod hashrange_schema_tests;
 pub mod iterator_stack_tests;
+pub mod mutation;
 pub mod mutation_completion_tests;
 pub mod mutation_processor_universal_key_tests;
 pub mod mutation_service_universal_key_tests;

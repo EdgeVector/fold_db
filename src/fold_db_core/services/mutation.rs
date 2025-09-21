@@ -32,13 +32,54 @@ use crate::fold_db_core::infrastructure::message_bus::{
     request_events::FieldValueSetRequest, MessageBus,
 };
 use crate::logging::features::{log_feature, LogFeature};
+use crate::schema::schema_operations::{extract_unified_keys, shape_unified_result};
 use crate::schema::types::field::FieldVariant;
-use crate::schema::types::schema::Schema;
+use crate::schema::types::schema::{Schema, SchemaType};
 use crate::schema::types::Mutation;
 use crate::schema::SchemaError;
-use serde_json::Value;
+use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use uuid::Uuid;
+
+const MUTATION_SERVICE_SOURCE: &str = "mutation_service";
+
+/// Lightweight normalized context emitted alongside FieldValueSetRequest payloads
+#[derive(Debug, Clone, PartialEq)]
+pub struct NormalizedFieldContext {
+    pub hash: Option<String>,
+    pub range: Option<String>,
+    pub fields: Map<String, Value>,
+}
+
+/// Wrapper around the serialized request and reusable normalized context data
+#[derive(Debug, Clone, PartialEq)]
+pub struct NormalizedFieldValueRequest {
+    pub request: FieldValueSetRequest,
+    pub context: NormalizedFieldContext,
+}
+
+fn set_value(target: &mut Map<String, Value>, key: &str, value: &Value) {
+    target.insert(key.to_string(), value.clone());
+}
+
+fn sort_fields(fields: &Map<String, Value>) -> Map<String, Value> {
+    let mut sorted = BTreeMap::new();
+    for (key, value) in fields {
+        sorted.insert(key.clone(), value.clone());
+    }
+    sorted.into_iter().collect()
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|candidate| {
+        if candidate.trim().is_empty() {
+            None
+        } else {
+            Some(candidate)
+        }
+    })
+}
 
 /// Mutation service responsible for field updates and atom modifications
 pub struct MutationService {
@@ -48,6 +89,236 @@ pub struct MutationService {
 impl MutationService {
     pub fn new(message_bus: Arc<MessageBus>) -> Self {
         Self { message_bus }
+    }
+
+    /// Construct a normalized FieldValueSetRequest payload using schema-driven key resolution.
+    pub fn normalized_field_value_request(
+        &self,
+        schema: &Schema,
+        field_name: &str,
+        field_value: &Value,
+        hash_key_value: Option<&Value>,
+        range_key_value: Option<&Value>,
+        mutation_hash: Option<&str>,
+    ) -> Result<NormalizedFieldValueRequest, SchemaError> {
+        self.build_field_value_request(
+            schema,
+            field_name,
+            field_value,
+            hash_key_value,
+            range_key_value,
+            mutation_hash,
+        )
+    }
+
+    fn build_field_value_request(
+        &self,
+        schema: &Schema,
+        field_name: &str,
+        field_value: &Value,
+        hash_key_value: Option<&Value>,
+        range_key_value: Option<&Value>,
+        mutation_hash: Option<&str>,
+    ) -> Result<NormalizedFieldValueRequest, SchemaError> {
+        let mut payload = Map::new();
+        set_value(&mut payload, field_name, field_value);
+
+        match &schema.schema_type {
+            SchemaType::HashRange => {
+                let (hash_field_name, range_field_name) =
+                    self.get_hashrange_key_field_names(schema)?;
+
+                let resolved_hash_value = hash_key_value
+                    .cloned()
+                    .or_else(|| {
+                        if field_name == hash_field_name {
+                            Some(field_value.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| {
+                        InfrastructureLogger::log_operation_error(
+                            "MutationService",
+                            "Missing hash key value for normalized request",
+                            &format!(
+                                "HashRange schema '{}' requires hash key value for field '{}'",
+                                schema.name, field_name
+                            ),
+                        );
+                        SchemaError::InvalidData(format!(
+                            "HashRange schema '{}' requires hash key value for field '{}'",
+                            schema.name, field_name
+                        ))
+                    })?;
+
+                let resolved_range_value = range_key_value
+                    .cloned()
+                    .or_else(|| {
+                        if field_name == range_field_name {
+                            Some(field_value.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| {
+                        InfrastructureLogger::log_operation_error(
+                            "MutationService",
+                            "Missing range key value for normalized request",
+                            &format!(
+                                "HashRange schema '{}' requires range key value for field '{}'",
+                                schema.name, field_name
+                            ),
+                        );
+                        SchemaError::InvalidData(format!(
+                            "HashRange schema '{}' requires range key value for field '{}'",
+                            schema.name, field_name
+                        ))
+                    })?;
+
+                set_value(&mut payload, &hash_field_name, &resolved_hash_value);
+                set_value(&mut payload, &range_field_name, &resolved_range_value);
+                set_value(&mut payload, "hash_key", &resolved_hash_value);
+                set_value(&mut payload, "range_key", &resolved_range_value);
+            }
+            SchemaType::Range { .. } => {
+                let range_field_name = self.get_range_key_field_name(schema)?;
+
+                if let Some(explicit_range) = range_key_value {
+                    set_value(&mut payload, &range_field_name, explicit_range);
+                    if range_field_name != "range_key" {
+                        set_value(&mut payload, "range_key", explicit_range);
+                    }
+                } else if field_name == range_field_name {
+                    set_value(&mut payload, &range_field_name, field_value);
+                    if range_field_name != "range_key" {
+                        set_value(&mut payload, "range_key", field_value);
+                    }
+                }
+            }
+            SchemaType::Single => {}
+        }
+
+        let payload_value = Value::Object(payload.clone());
+        let (hash_raw, range_raw) = extract_unified_keys(schema, &payload_value)?;
+        let normalized_hash = normalize_optional_string(hash_raw);
+        let normalized_range = normalize_optional_string(range_raw);
+
+        if matches!(schema.schema_type, SchemaType::HashRange)
+            && (normalized_hash.is_none() || normalized_range.is_none())
+        {
+            InfrastructureLogger::log_operation_error(
+                "MutationService",
+                "Key resolution failed for HashRange normalized payload",
+                &format!(
+                    "Schema '{}' could not resolve hash/range keys for field '{}'",
+                    schema.name, field_name
+                ),
+            );
+            return Err(SchemaError::InvalidData(format!(
+                "HashRange schema '{}' could not resolve hash/range keys for field '{}'",
+                schema.name, field_name
+            )));
+        }
+
+        if matches!(schema.schema_type, SchemaType::Range { .. }) && normalized_range.is_none() {
+            InfrastructureLogger::log_operation_error(
+                "MutationService",
+                "Range key resolution failed for normalized payload",
+                &format!(
+                    "Range schema '{}' requires range key value for field '{}'",
+                    schema.name, field_name
+                ),
+            );
+            return Err(SchemaError::InvalidData(format!(
+                "Range schema '{}' requires range key value for field '{}'",
+                schema.name, field_name
+            )));
+        }
+
+        let shaped_value = shape_unified_result(
+            schema,
+            &payload_value,
+            normalized_hash.clone(),
+            normalized_range.clone(),
+        )?;
+
+        let shaped_object = shaped_value.as_object().ok_or_else(|| {
+            SchemaError::InvalidData(format!(
+                "Normalized payload for '{}.{}' must be an object",
+                schema.name, field_name
+            ))
+        })?;
+
+        let fields_object = shaped_object
+            .get("fields")
+            .and_then(|value| value.as_object())
+            .cloned()
+            .unwrap_or_default();
+        let sorted_fields = sort_fields(&fields_object);
+
+        let mut normalized_payload = Map::new();
+        normalized_payload.insert(
+            "hash".to_string(),
+            Value::String(normalized_hash.clone().unwrap_or_default()),
+        );
+        normalized_payload.insert(
+            "range".to_string(),
+            Value::String(normalized_range.clone().unwrap_or_default()),
+        );
+        normalized_payload.insert("fields".to_string(), Value::Object(sorted_fields.clone()));
+
+        let incremental = normalized_hash.is_some() || normalized_range.is_some();
+        let mutation_context = if incremental || mutation_hash.is_some() {
+            Some(
+                crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+                    range_key: normalized_range.clone(),
+                    hash_key: normalized_hash.clone(),
+                    mutation_hash: mutation_hash.map(|value| value.to_string()),
+                    incremental,
+                },
+            )
+        } else {
+            None
+        };
+
+        let request_value = Value::Object(normalized_payload);
+        let correlation_id = Uuid::new_v4().to_string();
+        let request = if let Some(context) = mutation_context {
+            FieldValueSetRequest::with_context(
+                correlation_id,
+                schema.name.clone(),
+                field_name.to_string(),
+                request_value,
+                MUTATION_SERVICE_SOURCE.to_string(),
+                context,
+            )
+        } else {
+            FieldValueSetRequest::new(
+                correlation_id,
+                schema.name.clone(),
+                field_name.to_string(),
+                request_value,
+                MUTATION_SERVICE_SOURCE.to_string(),
+            )
+        };
+
+        InfrastructureLogger::log_debug_info(
+            "MutationService",
+            &format!(
+                "Constructed normalized FieldValueSetRequest for {}.{} with hash {:?} and range {:?}",
+                schema.name, field_name, normalized_hash, normalized_range
+            ),
+        );
+
+        Ok(NormalizedFieldValueRequest {
+            request,
+            context: NormalizedFieldContext {
+                hash: normalized_hash,
+                range: normalized_range,
+                fields: sorted_fields,
+            },
+        })
     }
 
     /// Update a single field value (core mutation operation)

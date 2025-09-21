@@ -7,6 +7,7 @@ Introduce a MutationService helper that resolves schema key metadata and assembl
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-23 09:25:00 | Created | N/A | Proposed | Task file created during SKC-6 task decomposition | ai-agent |
+| 2025-09-23 15:10:00 | Status Update | Proposed | Done | Normalized FieldValueSet builder implemented with schema-driven context and unit tests | ai-agent |
 
 ## Requirements
 - Add a private builder (e.g., `build_field_value_request`) within `MutationService` that loads schema metadata, resolves universal key information, and constructs the standard request payload structure.
