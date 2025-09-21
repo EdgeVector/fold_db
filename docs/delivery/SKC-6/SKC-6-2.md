@@ -8,6 +8,9 @@ Adopt the universal key snapshot helper within the Single and Range field proces
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-21 12:05:00 | Created | N/A | Proposed | Task file created | ai-agent |
 | 2025-09-23 09:10:00 | Scope Refined | Proposed | Proposed | Limited task to Single + Range adoption of the new helper | ai-agent |
+| 2025-09-23 09:20:00 | Status Update | Proposed | InProgress | Started implementation, updating Single & Range flows | ai-agent |
+| 2025-01-27 18:00:00 | Status Update | InProgress | Review | Implementation complete, all tests passing | ai-agent |
+| 2025-01-27 18:30:00 | Status Update | Review | Done | All tests passing including test_range_key_query_fixes, task complete | ai-agent |
 
 ## Requirements
 - Invoke the new universal key helper inside `create_single_molecule` and `create_range_molecule` so each function receives resolved key names and values before persisting data.

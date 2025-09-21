@@ -4,7 +4,7 @@ use super::AtomManager;
 use crate::atom::{Atom, AtomStatus};
 use crate::fold_db_core::infrastructure::message_bus::{
     atom_events::FieldValueSet,
-    request_events::{FieldValueSetRequest, FieldValueSetResponse},
+    request_events::{FieldValueSetRequest, FieldValueSetResponse, KeySnapshot},
 };
 use log::{info, warn, error, debug};
 use std::time::Instant;
@@ -36,6 +36,30 @@ impl ResolvedAtomKeys {
     }
 }
 
+/// Create legacy resolved keys for backward compatibility when schema is not found
+fn create_legacy_resolved_keys(request_payload: &serde_json::Value) -> ResolvedAtomKeys {
+    // Extract fields from the request payload
+    let mut fields = serde_json::Map::new();
+    if let Some(obj) = request_payload.as_object() {
+        for (key, value) in obj.iter() {
+            // Skip special fields that are not part of the normalized data
+            if key != "value" && !key.starts_with("_") {
+                fields.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    
+    // Use legacy extraction methods for hash and range
+    let hash_value = extract_hash_key_from_value(request_payload);
+    let range_value = extract_range_key_from_value(request_payload);
+    
+    // Return None for hash/range if they're default values (indicating no real key)
+    let hash = if hash_value == "default" { None } else { Some(hash_value) };
+    let range = if range_value == "default" { None } else { Some(range_value) };
+    
+    ResolvedAtomKeys::new(hash, range, fields)
+}
+
 /// Resolve universal keys for field processing using schema-driven approach
 /// 
 /// This helper centralizes key extraction logic and provides a normalized
@@ -63,12 +87,27 @@ pub fn resolve_universal_keys(
     debug!("📋 Schema '{}' loaded successfully, type: {:?}", schema_name, schema.schema_type);
     
     // Extract hash and range keys using universal key configuration
-    let (hash_value, range_value) = extract_unified_keys(&schema, request_payload)
-        .map_err(|e| {
-            let error_msg = format!("Failed to extract keys for schema '{}': {}", schema_name, e);
-            error!("❌ {}", error_msg);
-            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
-        })?;
+    let (hash_value, range_value) = match extract_unified_keys(&schema, request_payload) {
+        Ok(keys) => keys,
+        Err(e) => {
+            // Only fall back to legacy extraction for Single and Range schemas
+            // HashRange schemas require valid key configuration and should fail if invalid
+            match schema.schema_type {
+                crate::schema::types::schema::SchemaType::Single | 
+                crate::schema::types::schema::SchemaType::Range { .. } => {
+                    warn!("⚠️ Universal key extraction failed for schema '{}': {}, falling back to legacy extraction", schema_name, e);
+                    let legacy_keys = create_legacy_resolved_keys(request_payload);
+                    (legacy_keys.hash, legacy_keys.range)
+                },
+                crate::schema::types::schema::SchemaType::HashRange => {
+                    // For HashRange schemas, propagate the error as key configuration is required
+                    let error_msg = format!("Failed to extract keys for HashRange schema '{}': {}", schema_name, e);
+                    error!("❌ {}", error_msg);
+                    return Err(Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>);
+                }
+            }
+        }
+    };
     
     debug!("🔑 Extracted keys - hash: {:?}, range: {:?}", hash_value, range_value);
     
@@ -114,8 +153,8 @@ pub(super) fn handle_fieldvalueset_request(manager: &AtomManager, request: Field
             let molecule_result = create_molecule_for_field(manager, &request, &atom_uuid);
             
             match molecule_result {
-                Ok(molecule_uuid) => {
-                    handle_successful_field_value_processing(manager, &request, &atom_uuid, &molecule_uuid)
+                Ok((molecule_uuid, resolved_keys)) => {
+                    handle_successful_field_value_processing(manager, &request, &atom_uuid, &molecule_uuid, &resolved_keys)
                 }
                 Err(e) => {
                     update_failure_stats(manager);
@@ -178,26 +217,45 @@ fn store_atom_in_cache(manager: &AtomManager, atom: Atom) {
 }
 
 /// Create appropriate Molecule for the field based on its type
-fn create_molecule_for_field(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn create_molecule_for_field(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<(String, ResolvedAtomKeys), Box<dyn std::error::Error>> {
     let field_type = determine_field_type(manager, &request.schema_name, &request.field_name);
     println!("🔧 DEBUG: Creating molecule for field {}.{} with type: {}", request.schema_name, request.field_name, field_type);
     info!("🔍 DIAGNOSTIC: Step 2 - Determined field type: {}", field_type);
     
+    // Try to resolve universal keys, fall back to legacy behavior if schema not found
+    let resolved_keys = match resolve_universal_keys(manager, &request.schema_name, &request.value) {
+        Ok(keys) => keys,
+        Err(_) => {
+            // Fall back to legacy behavior when schema is not found
+            warn!("⚠️ Schema '{}' not found, falling back to legacy key extraction", request.schema_name);
+            create_legacy_resolved_keys(&request.value)
+        }
+    };
+    
     match field_type.as_str() {
-        "Range" => create_range_molecule(manager, request, atom_uuid),
-        "HashRange" => create_hashrange_molecule(manager, request, atom_uuid),
-        _ => create_single_molecule(manager, request, atom_uuid),
+        "Range" => {
+            let molecule_uuid = create_range_molecule(manager, request, atom_uuid, &resolved_keys)?;
+            Ok((molecule_uuid, resolved_keys))
+        },
+        "HashRange" => {
+            let molecule_uuid = create_hashrange_molecule(manager, request, atom_uuid)?;
+            Ok((molecule_uuid, resolved_keys))
+        },
+        _ => {
+            let molecule_uuid = create_single_molecule(manager, request, atom_uuid, &resolved_keys)?;
+            Ok((molecule_uuid, resolved_keys))
+        },
     }
 }
 
 /// Create MoleculeRange for Range fields
-fn create_range_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let range_key = extract_range_key_from_value(&request.value);
+fn create_range_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str, resolved_keys: &ResolvedAtomKeys) -> Result<String, Box<dyn std::error::Error>> {
+    // Use resolved range key instead of heuristic extraction
+    let range_key = resolved_keys.range_str();
     let molecule_uuid = format!("{}_{}_range_{}", request.schema_name, request.field_name, range_key);
     println!("🔧 DEBUG: Creating Range molecule with UUID: {} -> atom: {} (range_key: {})", molecule_uuid, atom_uuid, range_key);
     info!("🔍 DIAGNOSTIC: Creating MoleculeRange with UUID: {} -> atom: {} (range_key: {})", molecule_uuid, atom_uuid, range_key);
-    
-    info!("🔍 DIAGNOSTIC: Extracted range key: '{}' from value: {}", range_key, request.value);
+    info!("🔍 DIAGNOSTIC: Using resolved keys - hash: {:?}, range: {:?}", resolved_keys.hash, resolved_keys.range);
     
     let range_result = manager.db_ops.update_molecule_range(
         &molecule_uuid,
@@ -298,9 +356,10 @@ fn extract_hash_key_from_value(value: &serde_json::Value) -> String {
 }
 
 /// Create Molecule for Single fields (default)
-fn create_single_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn create_single_molecule(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str, resolved_keys: &ResolvedAtomKeys) -> Result<String, Box<dyn std::error::Error>> {
     let molecule_uuid = format!("{}_{}_single", request.schema_name, request.field_name);
     info!("🔍 DIAGNOSTIC: Creating Molecule (Single) with UUID: {} -> atom: {}", molecule_uuid, atom_uuid);
+    info!("🔍 DIAGNOSTIC: Using resolved keys - hash: {:?}, range: {:?}", resolved_keys.hash, resolved_keys.range);
     
     let single_result = manager.db_ops.update_molecule(
         &molecule_uuid,
@@ -376,7 +435,7 @@ fn extract_range_key_from_value(value: &serde_json::Value) -> String {
 }
 
 /// Handle successful field value processing
-fn handle_successful_field_value_processing(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str, molecule_uuid: &str) -> FieldValueSetResponse {
+fn handle_successful_field_value_processing(manager: &AtomManager, request: &FieldValueSetRequest, atom_uuid: &str, molecule_uuid: &str, resolved_keys: &ResolvedAtomKeys) -> FieldValueSetResponse {
     let mut stats = manager.stats.lock().unwrap();
     stats.atoms_created += 1;
     stats.molecules_created += 1;
@@ -384,15 +443,24 @@ fn handle_successful_field_value_processing(manager: &AtomManager, request: &Fie
     
     info!("✅ Successfully processed FieldValueSetRequest - atom: {}, molecule: {}", atom_uuid, molecule_uuid);
     info!("🔍 DIAGNOSTIC: Final mapping - Molecule {} -> Atom {}", molecule_uuid, atom_uuid);
+    info!("🔍 DIAGNOSTIC: Key snapshot - hash: {:?}, range: {:?}, fields: {:?}", resolved_keys.hash, resolved_keys.range, resolved_keys.fields.keys());
     
     // Publish FieldValueSet event to trigger transform chain
     publish_field_value_set_event(manager, request);
     
-    FieldValueSetResponse::new(
+    // Create key snapshot for response
+    let key_snapshot = KeySnapshot {
+        hash: resolved_keys.hash.clone(),
+        range: resolved_keys.range.clone(),
+        fields: resolved_keys.fields.clone(),
+    };
+    
+    FieldValueSetResponse::with_key_snapshot(
         request.correlation_id.clone(),
         true,
         Some(molecule_uuid.to_string()),
         None,
+        Some(key_snapshot),
     )
 }
 
