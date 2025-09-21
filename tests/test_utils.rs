@@ -27,6 +27,17 @@ pub const TEST_WAIT_MS: u64 = 100;
 /// Path to the root test database directory
 pub const TEST_DB_PATH: &str = "test_db";
 
+/// Extract the nested normalized fields map from universal key snapshots.
+#[allow(dead_code)]
+pub fn normalized_fields<'a>(
+    fields: &'a serde_json::Map<String, serde_json::Value>,
+) -> &'a serde_json::Map<String, serde_json::Value> {
+    fields
+        .get("fields")
+        .and_then(|value| value.as_object())
+        .unwrap_or(fields)
+}
+
 /// Single unified test fixture eliminating all duplication
 #[allow(dead_code)]
 pub struct TestFixture {

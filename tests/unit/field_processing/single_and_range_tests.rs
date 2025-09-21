@@ -3,7 +3,7 @@
 //! Tests the refactored Single and Range flows that use the universal key snapshot
 //! instead of heuristic JSON extraction.
 
-use crate::test_utils::TestFixture;
+use crate::test_utils::{normalized_fields, TestFixture};
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fees::SchemaPaymentConfig;
 use datafold::fold_db_core::infrastructure::message_bus::{
@@ -76,10 +76,8 @@ fn test_single_molecule_creation_with_universal_keys() {
         resolved_keys.range,
         Some("2023-01-01T00:00:00Z".to_string())
     );
-    assert_eq!(
-        resolved_keys.fields.get("content"),
-        Some(&json!("test content"))
-    );
+    let resolved_fields = normalized_fields(&resolved_keys.fields);
+    assert_eq!(resolved_fields.get("content"), Some(&json!("test content")));
 
     // Test end-to-end processing
     let message_bus = Arc::new(MessageBus::new());
@@ -101,10 +99,8 @@ fn test_single_molecule_creation_with_universal_keys() {
     let key_snapshot = response.key_snapshot.unwrap();
     assert_eq!(key_snapshot.hash, Some("user123".to_string()));
     assert_eq!(key_snapshot.range, Some("2023-01-01T00:00:00Z".to_string()));
-    assert_eq!(
-        key_snapshot.fields.get("content"),
-        Some(&json!("test content"))
-    );
+    let snapshot_fields = normalized_fields(&key_snapshot.fields);
+    assert_eq!(snapshot_fields.get("content"), Some(&json!("test content")));
 }
 
 /// Test Range molecule creation with universal key configuration
@@ -162,7 +158,8 @@ fn test_range_molecule_creation_with_universal_keys() {
         resolved_keys.range,
         Some("2023-02-01T10:00:00Z".to_string())
     );
-    assert_eq!(resolved_keys.fields.get("score"), Some(&json!(95)));
+    let resolved_fields = normalized_fields(&resolved_keys.fields);
+    assert_eq!(resolved_fields.get("score"), Some(&json!(95)));
 
     // Test end-to-end processing
     let message_bus = Arc::new(MessageBus::new());
@@ -184,7 +181,8 @@ fn test_range_molecule_creation_with_universal_keys() {
     let key_snapshot = response.key_snapshot.unwrap();
     assert_eq!(key_snapshot.hash, Some("user456".to_string()));
     assert_eq!(key_snapshot.range, Some("2023-02-01T10:00:00Z".to_string()));
-    assert_eq!(key_snapshot.fields.get("score"), Some(&json!(95)));
+    let snapshot_fields = normalized_fields(&key_snapshot.fields);
+    assert_eq!(snapshot_fields.get("score"), Some(&json!(95)));
 
     // Verify molecule UUID contains range information
     let molecule_uuid = response.molecule_uuid.unwrap();
@@ -276,10 +274,8 @@ fn test_single_molecule_creation_without_keys() {
 
     assert_eq!(resolved_keys.hash, None);
     assert_eq!(resolved_keys.range, None);
-    assert_eq!(
-        resolved_keys.fields.get("content"),
-        Some(&json!("test content"))
-    );
+    let resolved_fields = normalized_fields(&resolved_keys.fields);
+    assert_eq!(resolved_fields.get("content"), Some(&json!("test content")));
 
     // Test end-to-end processing
     let message_bus = Arc::new(MessageBus::new());
@@ -301,8 +297,6 @@ fn test_single_molecule_creation_without_keys() {
     let key_snapshot = response.key_snapshot.unwrap();
     assert_eq!(key_snapshot.hash, None);
     assert_eq!(key_snapshot.range, None);
-    assert_eq!(
-        key_snapshot.fields.get("content"),
-        Some(&json!("test content"))
-    );
+    let snapshot_fields = normalized_fields(&key_snapshot.fields);
+    assert_eq!(snapshot_fields.get("content"), Some(&json!("test content")));
 }

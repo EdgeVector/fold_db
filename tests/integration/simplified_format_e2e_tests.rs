@@ -251,9 +251,9 @@ fn test_real_world_workflow_e2e() -> Result<(), Box<dyn std::error::Error>> {
     let key_config = schema.key.unwrap();
     assert_eq!(
         key_config.hash_field,
-        "BlogPost.map().content.split_by_word().map()"
+        "BlogPost.map().fields.content.split_by_word().map()"
     );
-    assert_eq!(key_config.range_field, "BlogPost.map().publish_date");
+    assert_eq!(key_config.range_field, "BlogPost.map().fields.publish_date");
 
     println!("🎉 Real-world BlogPostWordIndex workflow E2E test passed!");
     Ok(())
