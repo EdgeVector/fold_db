@@ -172,6 +172,74 @@ mod tests {
     }
 
     #[test]
+    fn test_shared_prefix_iterator_cache_hits() {
+        let mut engine = ExecutionEngine::new();
+        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
+
+        let chain_words = parser
+            .parse("blogpost.map().content.split_by_word().map()")
+            .unwrap();
+        let chain_author = parser.parse("blogpost.map().author").unwrap();
+
+        let mut field_alignments = HashMap::new();
+        field_alignments.insert(
+            chain_words.expression.clone(),
+            FieldAlignmentInfo {
+                expression: chain_words.expression.clone(),
+                depth: chain_words.depth,
+                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
+                branch: chain_words.branch.clone(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
+        field_alignments.insert(
+            chain_author.expression.clone(),
+            FieldAlignmentInfo {
+                expression: chain_author.expression.clone(),
+                depth: chain_author.depth,
+                alignment:
+                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
+                branch: chain_author.branch.clone(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
+
+        let alignment_result = AlignmentValidationResult {
+            valid: true,
+            max_depth: chain_words.depth.max(chain_author.depth),
+            field_alignments,
+            errors: vec![],
+            warnings: vec![],
+        };
+
+        let input_data = json!({
+            "blogpost": [
+                {
+                    "author": "Alice",
+                    "content": "Hello world from Alice"
+                },
+                {
+                    "author": "Bob",
+                    "content": "Bob writes again"
+                }
+            ]
+        });
+
+        let result = engine
+            .execute_fields(&[chain_words, chain_author], &alignment_result, input_data)
+            .unwrap();
+
+        assert_eq!(result.statistics.cache_hits, 1);
+        assert_eq!(result.statistics.cache_misses, 2);
+        assert!(
+            !result.index_entries.is_empty(),
+            "Expected index entries from cached execution"
+        );
+    }
+
+    #[test]
     fn test_execution_warnings() {
         let mut engine = ExecutionEngine::new();
 
