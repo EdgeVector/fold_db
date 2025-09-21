@@ -6,8 +6,7 @@
 use datafold::db_operations::DbOperations;
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fold_db_core::infrastructure::message_bus::{
-    request_events::{FieldValueSetRequest, FieldValueSetResponse},
-    MessageBus,
+    request_events::FieldValueSetResponse, MessageBus,
 };
 use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::permissions::types::policy::PermissionsPolicy;
@@ -19,6 +18,11 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
+
+#[path = "test_utils.rs"]
+mod shared_test_utils;
+
+use shared_test_utils::normalized_field_value_request;
 
 fn register_user_schema(db_ops: &DbOperations) {
     let mut schema = Schema::new("user_schema".to_string());
@@ -69,12 +73,12 @@ fn test_molecule_update_complete_flow() {
     println!("📝 STEP 1: Creating first field value (initial state)");
 
     // Create first FieldValueSetRequest for user.username field
-    let request1 = FieldValueSetRequest::new(
-        "test_correlation_001".to_string(),
-        "user_schema".to_string(),
-        "username".to_string(),
-        json!({ "username": "alice_v1" }),
-        "test_pubkey_001".to_string(),
+    let request1 = normalized_field_value_request(
+        "test_correlation_001",
+        "user_schema",
+        "username",
+        json!("alice_v1"),
+        "test_pubkey_001",
     );
 
     message_bus
@@ -103,12 +107,12 @@ fn test_molecule_update_complete_flow() {
     println!("📝 STEP 2: Creating second field value (should update Molecule)");
 
     // Create second FieldValueSetRequest for same field (should update Molecule)
-    let request2 = FieldValueSetRequest::new(
-        "test_correlation_002".to_string(),
-        "user_schema".to_string(),
-        "username".to_string(),            // Same schema.field combination
-        json!({ "username": "alice_v2" }), // Different value
-        "test_pubkey_002".to_string(),
+    let request2 = normalized_field_value_request(
+        "test_correlation_002",
+        "user_schema",
+        "username",
+        json!("alice_v2"),
+        "test_pubkey_002",
     );
 
     message_bus
@@ -144,12 +148,12 @@ fn test_molecule_update_complete_flow() {
     println!("📝 STEP 3: Creating third field value (final update test)");
 
     // Create third FieldValueSetRequest to test multiple updates
-    let request3 = FieldValueSetRequest::new(
-        "test_correlation_003".to_string(),
-        "user_schema".to_string(),
-        "username".to_string(),            // Same schema.field combination
-        json!({ "username": "alice_v3" }), // Different value
-        "test_pubkey_003".to_string(),
+    let request3 = normalized_field_value_request(
+        "test_correlation_003",
+        "user_schema",
+        "username",
+        json!("alice_v3"),
+        "test_pubkey_003",
     );
 
     message_bus
@@ -211,20 +215,20 @@ fn test_molecule_update_different_fields() {
     let mut response_consumer = message_bus.subscribe::<FieldValueSetResponse>();
 
     // Create requests for different fields
-    let request_username = FieldValueSetRequest::new(
-        "test_username".to_string(),
-        "user_schema".to_string(),
-        "username".to_string(),
-        json!({ "username": "alice" }),
-        "test_pubkey".to_string(),
+    let request_username = normalized_field_value_request(
+        "test_username",
+        "user_schema",
+        "username",
+        json!("alice"),
+        "test_pubkey",
     );
 
-    let request_email = FieldValueSetRequest::new(
-        "test_email".to_string(),
-        "user_schema".to_string(),
-        "email".to_string(), // Different field
-        json!({ "email": "alice@example.com" }),
-        "test_pubkey".to_string(),
+    let request_email = normalized_field_value_request(
+        "test_email",
+        "user_schema",
+        "email", // Different field
+        json!("alice@example.com"),
+        "test_pubkey",
     );
 
     message_bus

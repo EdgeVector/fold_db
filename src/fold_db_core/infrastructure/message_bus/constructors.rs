@@ -5,7 +5,8 @@
 
 use super::events::*;
 use super::request_events::KeySnapshot;
-use serde_json::Value;
+use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 
 // ========== Core Event Constructors ==========
 
@@ -336,7 +337,70 @@ impl MoleculeUpdateResponse {
     }
 }
 
+/// Normalized payload data used to construct FieldValueSetRequest instances.
+pub struct NormalizedRequestParts {
+    pub correlation_id: String,
+    pub schema_name: String,
+    pub field_name: String,
+    pub fields: Map<String, Value>,
+    pub hash: Option<String>,
+    pub range: Option<String>,
+    pub source_pub_key: String,
+    pub mutation_hash: Option<String>,
+}
+
 impl FieldValueSetRequest {
+    /// Create a new FieldValueSetRequest from normalized key/value parts
+    pub fn from_normalized_parts(parts: NormalizedRequestParts) -> Self {
+        let NormalizedRequestParts {
+            correlation_id,
+            schema_name,
+            field_name,
+            fields,
+            hash,
+            range,
+            source_pub_key,
+            mutation_hash,
+        } = parts;
+
+        let normalized_hash = normalize_optional_string(hash);
+        let normalized_range = normalize_optional_string(range);
+
+        let sorted_fields = Map::from_iter(BTreeMap::from_iter(fields));
+
+        let mut normalized_payload = Map::new();
+        normalized_payload.insert(
+            "hash".to_string(),
+            Value::String(normalized_hash.clone().unwrap_or_default()),
+        );
+        normalized_payload.insert(
+            "range".to_string(),
+            Value::String(normalized_range.clone().unwrap_or_default()),
+        );
+        normalized_payload.insert("fields".to_string(), Value::Object(sorted_fields));
+
+        let incremental = normalized_hash.is_some() || normalized_range.is_some();
+        let mutation_context = if incremental || mutation_hash.is_some() {
+            Some(atom_events::MutationContext {
+                range_key: normalized_range,
+                hash_key: normalized_hash,
+                mutation_hash,
+                incremental,
+            })
+        } else {
+            None
+        };
+
+        Self {
+            correlation_id,
+            schema_name,
+            field_name,
+            value: Value::Object(normalized_payload),
+            source_pub_key,
+            mutation_context,
+        }
+    }
+
     /// Create a new FieldValueSetRequest
     pub fn new(
         correlation_id: String,
@@ -373,6 +437,17 @@ impl FieldValueSetRequest {
             mutation_context: Some(mutation_context),
         }
     }
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|candidate| {
+        let trimmed = candidate.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 impl FieldValueSetResponse {

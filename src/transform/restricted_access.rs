@@ -189,7 +189,6 @@ pub enum TransformAccessError {
 ///
 /// This macro can be used to wrap transform execution and ensure
 /// all data persistence goes through mutations.
-
 #[cfg(test)]
 mod tests {
     use super::*;

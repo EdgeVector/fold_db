@@ -206,7 +206,6 @@ impl TransformSafeDataAccess for DatabaseTransformDataAccess {
 ///
 /// This macro wraps transform execution to ensure only read-only access
 /// to atoms and molecules.
-
 #[cfg(test)]
 mod tests {
     use super::*;

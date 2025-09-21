@@ -26,6 +26,7 @@ This document contains the most up-to-date and condensed information about the p
 | SCHEMA-KEY-006 | Atom field processing relies exclusively on `resolve_universal_keys`; missing schemas or key extraction failures return SchemaError-driven responses with no legacy fallback heuristics. | fold_db_core/managers/atom/field_processing.rs, tests/unit/field_processing | 2025-01-27 21:10:00 | None |
 | SCHEMA-KEY-007 | MutationService exposes normalized FieldValueSet builder returning schema-driven hash/range metadata for Single, Range, and HashRange payloads. | fold_db_core/services/mutation.rs, tests/unit/mutation | 2025-09-23 15:15:00 | None |
 | SCHEMA-KEY-008 | MutationService mutation workflows publish FieldValueSet requests exclusively through the normalized builder, and integration tests verify normalized key snapshots for Single and Range flows. | fold_db_core/services/mutation.rs, tests/integration | 2025-09-23 16:45:00 | None |
+| SCHEMA-KEY-009 | Transform managers and downstream message bus constructors must publish FieldValueSet requests using normalized helpers so payloads include schema-derived hash/range metadata. | fold_db_core/transform_manager, fold_db_core/infrastructure/message_bus | 2025-09-23 18:30:00 | None |
 | AUTH-DEV-001 | All endpoints currently operate in development mode with authentication disabled. All requests use "web-ui" identity automatically. | query_routes, http_server, api/clients | 2025-01-27 16:00:00 | None |
 
 ### AUTH-DEV-001: Development Mode Authentication
