@@ -8,7 +8,7 @@ This document lists all tasks associated with PBI SKC-6.
 
 | Task ID | Name | Status | Description |
 | :------ | :------------------------------------------------------------ | :------- | :-------------------------------------------------------------- |
-| SKC-6-1 | [Introduce schema-driven key snapshot helper for field processing](./SKC-6-1.md) | Proposed | Add a universal key helper that returns normalized hash/range metadata for AtomManager. |
+| SKC-6-1 | [Introduce schema-driven key snapshot helper for field processing](./SKC-6-1.md) | Done | Add a universal key helper that returns normalized hash/range metadata for AtomManager. |
 | SKC-6-2 | [Refactor Single and Range molecule creation to use universal key snapshot](./SKC-6-2.md) | Done | Adopt the helper for Single & Range flows so molecules and responses rely on schema-derived keys. |
 | SKC-6-3 | [Refactor HashRange pipeline to use universal key snapshot](./SKC-6-3.md) | Done | Extend the helper to HashRange storage and events. |
 | SKC-6-4 | [Retire legacy key heuristics and tighten error reporting](./SKC-6-4.md) | Proposed | Remove obsolete key extraction helpers and unify error handling. |
