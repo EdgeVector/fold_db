@@ -1,6 +1,6 @@
 use super::{schema_lock_error, SchemaCore, SchemaState};
-use crate::schema::{SchemaLoadingReport, SchemaSource};
 use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
+use crate::schema::{SchemaLoadingReport, SchemaSource};
 use log::info;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -71,9 +71,7 @@ impl SchemaCore {
         let mut loading_sources = HashMap::new();
 
         let current_schemas = {
-            let available = self.available.lock().map_err(|_| {
-                schema_lock_error()
-            })?;
+            let available = self.available.lock().map_err(|_| schema_lock_error())?;
             available
                 .keys()
                 .cloned()
@@ -94,10 +92,8 @@ impl SchemaCore {
                     discovered_schemas.push(schema_name.clone());
 
                     if !loading_sources.contains_key(&schema_name) {
-                        loading_sources.insert(
-                            schema_name.clone(),
-                            SchemaSource::AvailableDirectory,
-                        );
+                        loading_sources
+                            .insert(schema_name.clone(), SchemaSource::AvailableDirectory);
                     }
 
                     // Record schema as available but do not load it automatically
@@ -106,17 +102,14 @@ impl SchemaCore {
                         .copied()
                         .unwrap_or(SchemaState::Available);
                     {
-                        let mut available = self
-                            .available
-                            .lock()
-                            .map_err(|_| schema_lock_error())?;
+                        let mut available =
+                            self.available.lock().map_err(|_| schema_lock_error())?;
                         available.insert(schema_name.clone(), (schema, state));
                     }
 
                     info!(
                         "Discovered available schema '{}' with state {:?} (not auto-loaded)",
-                        schema_name,
-                        state
+                        schema_name, state
                     );
                 }
             }
@@ -133,7 +126,8 @@ impl SchemaCore {
                         discovered_schemas.push(schema_name.clone());
 
                         if !loading_sources.contains_key(&schema_name) {
-                            loading_sources.insert(schema_name.clone(), SchemaSource::DataDirectory);
+                            loading_sources
+                                .insert(schema_name.clone(), SchemaSource::DataDirectory);
                         }
 
                         if !current_schemas.contains(&schema_name) {
@@ -145,7 +139,10 @@ impl SchemaCore {
                                 failed_schemas.push((schema_name, e.to_string()));
                             }
                         } else {
-                            info!("Schema '{}' already in memory, skipping reload", schema_name);
+                            info!(
+                                "Schema '{}' already in memory, skipping reload",
+                                schema_name
+                            );
                         }
                     }
                 }
@@ -236,4 +233,3 @@ impl SchemaCore {
         self.load_schemas_from_disk()
     }
 }
-

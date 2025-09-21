@@ -4,17 +4,19 @@
 //! for processing field expressions and coordinating execution.
 
 use crate::transform::iterator_stack::chain_parser::{FieldAlignment, ParsedChain};
+use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
 use crate::transform::iterator_stack::types::IteratorStack;
-use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
+use log::{debug, info};
 use serde_json::Value;
 use std::collections::HashMap;
-use log::{debug, info};
 
-use super::types::{ExecutionContext, ExecutionResult, ExecutionStatistics};
 use super::scope_creation::ScopeCreationHelper;
 use super::statistics::StatisticsHelper;
-use crate::transform::iterator_stack::execution_engine::field_execution::{FieldExecutionResult, DefaultFieldExecutor, FieldExecutor};
+use super::types::{ExecutionContext, ExecutionResult, ExecutionStatistics};
+use crate::transform::iterator_stack::execution_engine::field_execution::{
+    DefaultFieldExecutor, FieldExecutionResult, FieldExecutor,
+};
 use crate::transform::iterator_stack::execution_engine::iterator_management::IteratorManager;
 
 /// Runtime execution engine for iterator stack operations
@@ -33,7 +35,6 @@ impl ExecutionEngine {
             field_executor: DefaultFieldExecutor::new(),
         }
     }
-
 
     /// Executes multiple field expressions and returns combined results
     pub fn execute_fields(
@@ -60,31 +61,53 @@ impl ExecutionEngine {
         // Group chains by expression to avoid duplicate execution
         let mut expression_groups: HashMap<String, Vec<&ParsedChain>> = HashMap::new();
         for chain in chains {
-            expression_groups.entry(chain.expression.clone()).or_default().push(chain);
+            expression_groups
+                .entry(chain.expression.clone())
+                .or_default()
+                .push(chain);
         }
-        
+
         // Debug: Log all expressions being processed
-        info!("🔍 ExecutionEngine received {} chains with {} unique expressions:", chains.len(), expression_groups.len());
+        info!(
+            "🔍 ExecutionEngine received {} chains with {} unique expressions:",
+            chains.len(),
+            expression_groups.len()
+        );
         for (expression, chain_group) in &expression_groups {
-            info!("  📝 Expression: '{}' (used by {} chains)", expression, chain_group.len());
+            info!(
+                "  📝 Expression: '{}' (used by {} chains)",
+                expression,
+                chain_group.len()
+            );
         }
 
         // Execute each unique expression only once
         for (expression, chain_group) in expression_groups.iter() {
-            info!("Executing unique expression: {} (used by {} fields)", expression, chain_group.len());
-            
+            info!(
+                "Executing unique expression: {} (used by {} fields)",
+                expression,
+                chain_group.len()
+            );
+
             // Use the first chain as the representative for execution
             let representative_chain = chain_group[0];
-            
+
             // Add debug logging for complex expressions
             if expression.contains("split_by_word") {
-                info!("🔍 Processing complex expression with split_by_word: {}", expression);
+                info!(
+                    "🔍 Processing complex expression with split_by_word: {}",
+                    expression
+                );
                 info!("🔍 Chain operations: {:?}", representative_chain.operations);
                 info!("🔍 Chain depth: {}", representative_chain.depth);
             }
-            
+
             let field_result = self.execute_single_field(representative_chain, &context)?;
-            info!("Expression '{}' produced {} entries", expression, field_result.entries.len());
+            info!(
+                "Expression '{}' produced {} entries",
+                expression,
+                field_result.entries.len()
+            );
 
             // Add the results once (not duplicated for each field)
             index_entries.extend(field_result.entries);
@@ -116,47 +139,74 @@ impl ExecutionEngine {
         debug!("🚀 Executing single field: {}", chain.expression);
 
         // Get alignment information for this field
-        let alignment_info = context.field_alignments.get(&chain.expression)
+        let alignment_info = context
+            .field_alignments
+            .get(&chain.expression)
             .ok_or_else(|| {
-                debug!("❌ No alignment information found for expression: '{}'", chain.expression);
-                debug!("🔍 Available alignments: {:?}", context.field_alignments.keys().collect::<Vec<_>>());
+                debug!(
+                    "❌ No alignment information found for expression: '{}'",
+                    chain.expression
+                );
+                debug!(
+                    "🔍 Available alignments: {:?}",
+                    context.field_alignments.keys().collect::<Vec<_>>()
+                );
                 IteratorStackError::ExecutionError {
-                    message: format!("No alignment information found for field: {}", chain.expression)
+                    message: format!(
+                        "No alignment information found for field: {}",
+                        chain.expression
+                    ),
                 }
             })?;
-        
-        debug!("✅ Found alignment information for expression: '{}'", chain.expression);
+
+        debug!(
+            "✅ Found alignment information for expression: '{}'",
+            chain.expression
+        );
 
         // Create iterator stack from the chain
         let mut stack = IteratorStack::from_chain(chain)?;
 
         // If the stack is empty (no scopes), create default scopes based on the chain operations
         if stack.is_empty() {
-            debug!("Stack is empty, creating default scopes for chain: {}", chain.expression);
+            debug!(
+                "Stack is empty, creating default scopes for chain: {}",
+                chain.expression
+            );
             ScopeCreationHelper::create_default_scopes(&mut stack, chain, &context.input_data)?;
         }
 
         // Initialize the iterator stack with input data
-        self.iterator_manager.initialize_stack(&mut stack, &context.input_data)?;
+        self.iterator_manager
+            .initialize_stack(&mut stack, &context.input_data)?;
 
         // Execute based on alignment type
-        debug!("Field {} has alignment: {:?}", chain.expression, alignment_info.alignment);
+        debug!(
+            "Field {} has alignment: {:?}",
+            chain.expression, alignment_info.alignment
+        );
         match alignment_info.alignment {
             FieldAlignment::OneToOne => {
                 debug!("Executing OneToOne for {}", chain.expression);
-                let result = self.field_executor.execute_one_to_one(&mut stack, chain, context)?;
+                let result = self
+                    .field_executor
+                    .execute_one_to_one(&mut stack, chain, context)?;
                 debug!("OneToOne produced {} entries", result.entries.len());
                 Ok(result)
             }
             FieldAlignment::Broadcast => {
                 debug!("Executing Broadcast for {}", chain.expression);
-                let result = self.field_executor.execute_broadcast(&mut stack, chain, context)?;
+                let result = self
+                    .field_executor
+                    .execute_broadcast(&mut stack, chain, context)?;
                 debug!("Broadcast produced {} entries", result.entries.len());
                 Ok(result)
             }
             FieldAlignment::Reduced => {
                 debug!("Executing Reduced for {}", chain.expression);
-                let result = self.field_executor.execute_reduced(&mut stack, chain, context)?;
+                let result = self
+                    .field_executor
+                    .execute_reduced(&mut stack, chain, context)?;
                 debug!("Reduced produced {} entries", result.entries.len());
                 Ok(result)
             }

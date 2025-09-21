@@ -29,4 +29,3 @@ impl EventType for MutationExecuted {
         "MutationExecuted"
     }
 }
-

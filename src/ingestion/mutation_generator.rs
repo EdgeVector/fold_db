@@ -1,9 +1,9 @@
 //! Mutation generator for creating mutations from AI responses and JSON data
 
 use crate::ingestion::{IngestionError, IngestionResult};
-use crate::schema::types::{Mutation, MutationType};
-use crate::logging::features::LogFeature;
 use crate::log_feature;
+use crate::logging::features::LogFeature;
+use crate::schema::types::{Mutation, MutationType};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -62,7 +62,12 @@ impl MutationGenerator {
                     fields_and_values.insert(field_name, value);
                 }
                 Ok(None) => {
-                    log_feature!(LogFeature::Ingestion, warn, "No value found at JSON path: {}", json_path);
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "No value found at JSON path: {}",
+                        json_path
+                    );
                 }
                 Err(e) => {
                     log_feature!(
@@ -94,7 +99,11 @@ impl MutationGenerator {
                 mutations[0].fields_and_values.len()
             );
         } else {
-            log_feature!(LogFeature::Ingestion, warn, "No valid field mappings found, no mutations generated");
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "No valid field mappings found, no mutations generated"
+            );
         }
 
         Ok(mutations)
@@ -225,7 +234,6 @@ impl MutationGenerator {
         );
         Ok(Vec::new())
     }
-
 }
 
 /// Parts of a JSON path

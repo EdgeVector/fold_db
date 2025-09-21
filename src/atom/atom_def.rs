@@ -225,4 +225,4 @@ mod tests {
         assert_eq!(updated_ref.get_atom_uuid(), &new_atom.uuid().to_string());
         assert!(updated_ref.updated_at() >= molecule.updated_at());
     }
-} 
+}

@@ -10,9 +10,9 @@ use crate::ingestion::schema_stripper::SchemaStripper;
 use crate::ingestion::{
     AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
 };
-use crate::schema::types::{Mutation, Operation};
-use crate::logging::features::LogFeature;
 use crate::log_feature;
+use crate::logging::features::LogFeature;
+use crate::schema::types::{Mutation, Operation};
 use serde_json::Value;
 
 /// Simplified ingestion service that works with DataFoldNode
@@ -65,7 +65,11 @@ impl SimpleIngestionService {
         request: IngestionRequest,
         node: &mut DataFoldNode,
     ) -> IngestionResult<IngestionResponse> {
-        log_feature!(LogFeature::Ingestion, info, "Starting JSON ingestion process with DataFoldNode");
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Starting JSON ingestion process with DataFoldNode"
+        );
 
         if !self.config.is_ready() {
             return Ok(IngestionResponse::failure(vec![
@@ -113,7 +117,12 @@ impl SimpleIngestionService {
             request.pub_key.unwrap_or_else(|| "default".to_string()),
         )?;
 
-        log_feature!(LogFeature::Ingestion, info, "Generated {} mutations", mutations.len());
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Generated {} mutations",
+            mutations.len()
+        );
 
         // Step 6: Execute mutations if requested
         let mutations_executed = if request
@@ -149,18 +158,24 @@ impl SimpleIngestionService {
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
         match self.config.provider {
-            AIProvider::OpenRouter => self
-                .openrouter_service
-                .as_ref()
-                .ok_or_else(|| IngestionError::configuration_error("OpenRouter service not initialized"))?
-                .get_schema_recommendation(json_data, available_schemas)
-                .await,
-            AIProvider::Ollama => self
-                .ollama_service
-                .as_ref()
-                .ok_or_else(|| IngestionError::configuration_error("Ollama service not initialized"))?
-                .get_schema_recommendation(json_data, available_schemas)
-                .await,
+            AIProvider::OpenRouter => {
+                self.openrouter_service
+                    .as_ref()
+                    .ok_or_else(|| {
+                        IngestionError::configuration_error("OpenRouter service not initialized")
+                    })?
+                    .get_schema_recommendation(json_data, available_schemas)
+                    .await
+            }
+            AIProvider::Ollama => {
+                self.ollama_service
+                    .as_ref()
+                    .ok_or_else(|| {
+                        IngestionError::configuration_error("Ollama service not initialized")
+                    })?
+                    .get_schema_recommendation(json_data, available_schemas)
+                    .await
+            }
         }
     }
 
@@ -229,14 +244,24 @@ impl SimpleIngestionService {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
             let schema_name = &ai_response.existing_schemas[0];
-            log_feature!(LogFeature::Ingestion, info, "Using existing schema: {}", schema_name);
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Using existing schema: {}",
+                schema_name
+            );
             return Ok(schema_name.clone());
         }
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
             let schema_name = self.create_new_schema_with_node(new_schema_def, node)?;
-            log_feature!(LogFeature::Ingestion, info, "Created new schema: {}", schema_name);
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Created new schema: {}",
+                schema_name
+            );
             return Ok(schema_name);
         }
 
@@ -251,7 +276,11 @@ impl SimpleIngestionService {
         schema_def: &Value,
         node: &mut DataFoldNode,
     ) -> IngestionResult<String> {
-        log_feature!(LogFeature::Ingestion, info, "Creating new schema from AI definition");
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Creating new schema from AI definition"
+        );
 
         // Parse the schema definition
         let schema = self.parse_schema_definition(schema_def)?;
@@ -261,7 +290,12 @@ impl SimpleIngestionService {
         node.load_schema(schema)
             .map_err(|e| IngestionError::SchemaCreationError(e.to_string()))?;
 
-        log_feature!(LogFeature::Ingestion, info, "New schema '{}' created and approved", schema_name);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "New schema '{}' created and approved",
+            schema_name
+        );
         Ok(schema_name)
     }
 
@@ -279,7 +313,11 @@ impl SimpleIngestionService {
 
         // Try to parse as a complete Schema first
         if let Ok(schema) = serde_json::from_value::<crate::schema::Schema>(schema_def.clone()) {
-            log_feature!(LogFeature::Ingestion, info, "Successfully parsed as complete Schema");
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Successfully parsed as complete Schema"
+            );
             return Ok(schema);
         }
 
@@ -287,13 +325,22 @@ impl SimpleIngestionService {
         if let Some(obj) = schema_def.as_object() {
             if obj.len() == 1 {
                 let (schema_name, schema_content) = obj.iter().next().unwrap();
-                log_feature!(LogFeature::Ingestion, info, "Found wrapped schema with name: {}", schema_name);
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Found wrapped schema with name: {}",
+                    schema_name
+                );
 
                 // Try to parse the wrapped content
                 if let Ok(schema) =
                     serde_json::from_value::<crate::schema::Schema>(schema_content.clone())
                 {
-                    log_feature!(LogFeature::Ingestion, info, "Successfully parsed wrapped schema");
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Successfully parsed wrapped schema"
+                    );
                     return Ok(schema);
                 }
 

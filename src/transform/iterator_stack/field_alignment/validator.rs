@@ -3,7 +3,9 @@
 //! Contains the main validation algorithms and logic for ensuring
 //! proper field alignment across iterator chains.
 
-use crate::transform::iterator_stack::chain_parser::{FieldAlignment, FieldAlignmentRequirement, ParsedChain};
+use crate::transform::iterator_stack::chain_parser::{
+    FieldAlignment, FieldAlignmentRequirement, ParsedChain,
+};
 use crate::transform::iterator_stack::errors::IteratorStackResult;
 use crate::transform::iterator_stack::field_alignment::types::{
     AlignmentError, AlignmentErrorType, AlignmentValidationResult, AlignmentWarning,
@@ -83,11 +85,7 @@ impl FieldAlignmentValidator {
     }
 
     /// Validates that all fields respect depth constraints
-    fn validate_depth_constraints(
-        &self,
-        chains: &[ParsedChain],
-        errors: &mut Vec<AlignmentError>,
-    ) {
+    fn validate_depth_constraints(&self, chains: &[ParsedChain], errors: &mut Vec<AlignmentError>) {
         for chain in chains {
             if chain.depth > self.max_depth {
                 errors.push(AlignmentError {
@@ -146,7 +144,6 @@ impl FieldAlignmentValidator {
                 }
             }
         }
-
 
         // Check for incompatible branches at the same depth
         for (depth, branches) in &depth_branches {
@@ -224,7 +221,6 @@ impl FieldAlignmentValidator {
             std::cmp::Ordering::Greater => FieldAlignment::Reduced,
         };
 
-
         // Suggest reducers for chains at the depth limit to optimize performance
         // Note: validate_depth_constraints already rejects chains with depth > max_depth
         let requires_reducer = chain.depth == max_depth;
@@ -248,7 +244,7 @@ impl FieldAlignmentValidator {
     fn suggest_reducer_for_chain(&self, chain: &ParsedChain) -> String {
         // Analyze the chain to suggest the most appropriate reducer
         let operations = &chain.operations;
-        
+
         for operation in operations {
             match operation {
                 crate::transform::iterator_stack::chain_parser::ChainOperation::SplitArray => {
@@ -257,7 +253,9 @@ impl FieldAlignmentValidator {
                 crate::transform::iterator_stack::chain_parser::ChainOperation::SplitByWord => {
                     return "join(' ')".to_string();
                 }
-                crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(field) => {
+                crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(
+                    field,
+                ) => {
                     if field.contains("count") || field.contains("size") {
                         return "count()".to_string();
                     }
@@ -299,7 +297,10 @@ impl FieldAlignmentValidator {
                     message: format!(
                         "Field '{}' should use reducer '{}' to improve performance",
                         field_name,
-                        alignment_info.suggested_reducer.as_ref().unwrap_or(&"first()".to_string())
+                        alignment_info
+                            .suggested_reducer
+                            .as_ref()
+                            .unwrap_or(&"first()".to_string())
                     ),
                     fields: vec![field_name.clone()],
                 });
@@ -335,10 +336,7 @@ impl FieldAlignmentValidator {
         }
 
         // Warn about many broadcast fields
-        let broadcast_count = chains
-            .iter()
-            .filter(|c| c.depth < max_depth)
-            .count();
+        let broadcast_count = chains.iter().filter(|c| c.depth < max_depth).count();
 
         if broadcast_count > 10 {
             let broadcast_fields: Vec<String> = chains

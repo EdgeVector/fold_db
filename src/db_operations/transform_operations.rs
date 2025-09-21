@@ -1,7 +1,7 @@
 use super::core::DbOperations;
+use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::types::transform::{Transform, TransformRegistration};
 use crate::schema::SchemaError;
-use crate::logging::features::{log_feature, LogFeature};
 
 impl DbOperations {
     /// Stores a transform using generic tree operations
@@ -11,11 +11,14 @@ impl DbOperations {
         transform: &Transform,
     ) -> Result<(), SchemaError> {
         // Log transform information for better debugging
-        log_feature!(LogFeature::Database, info, 
-            "💾 Storing transform '{}' with output: {}", 
-            transform_id, transform.output
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "💾 Storing transform '{}' with output: {}",
+            transform_id,
+            transform.output
         );
-        
+
         self.store_in_tree(&self.transforms_tree, transform_id, transform)
     }
 
@@ -24,9 +27,12 @@ impl DbOperations {
         match self.get_from_tree::<Transform>(&self.transforms_tree, transform_id) {
             Ok(Some(transform)) => {
                 // Log transform information for better debugging
-                log_feature!(LogFeature::Database, info, 
-                    "📖 Retrieved transform '{}' with output: {}", 
-                    transform_id, transform.output
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "📖 Retrieved transform '{}' with output: {}",
+                    transform_id,
+                    transform.output
                 );
                 Ok(Some(transform))
             }
@@ -35,8 +41,19 @@ impl DbOperations {
                 // Enhanced error logging for transform deserialization issues
                 if let Ok(Some(bytes)) = self.transforms_tree.get(transform_id.as_bytes()) {
                     let raw_data = String::from_utf8_lossy(&bytes);
-                    log_feature!(LogFeature::Database, error, "Failed to deserialize transform '{}': {}", transform_id, e);
-                    log_feature!(LogFeature::Database, error, "Raw transform data: {}", raw_data);
+                    log_feature!(
+                        LogFeature::Database,
+                        error,
+                        "Failed to deserialize transform '{}': {}",
+                        transform_id,
+                        e
+                    );
+                    log_feature!(
+                        LogFeature::Database,
+                        error,
+                        "Raw transform data: {}",
+                        raw_data
+                    );
                     Err(SchemaError::InvalidData(format!(
                         "Failed to deserialize transform '{}': {}. Raw data: {}",
                         transform_id, e, raw_data

@@ -1,15 +1,15 @@
 use super::molecule_variants::MoleculeVariant;
-use crate::schema::types::{FieldVariant, Schema, SchemaError, field::common::Field};
-use crate::atom::{Molecule, MoleculeRange, MoleculeHashRange};
+use crate::atom::{Molecule, MoleculeHashRange, MoleculeRange};
+use crate::schema::types::{field::common::Field, FieldVariant, Schema, SchemaError};
 use log::info;
 use uuid::Uuid;
 
 /// Maps fields between schemas based on their defined relationships.
-/// 
+///
 /// This function handles field mapping and creates new molecule references for unmapped fields.
 /// Range and HashRange fields are persisted directly as MoleculeRange/MoleculeHashRange records.
 /// Only Single fields result in generic Molecule records being returned.
-/// 
+///
 /// Note: The returned vector contains Molecule records for Single fields only and is not intended
 /// for persistence - Range and HashRange fields are already persisted by this function.
 pub fn map_fields(
@@ -31,7 +31,7 @@ pub fn map_fields(
 
             // Create and store the appropriate atom reference type based on field type
             let key = format!("ref:{}", molecule_uuid);
-            
+
             match field {
                 FieldVariant::Range(_) => {
                     // For range fields, create MoleculeRange
@@ -57,7 +57,10 @@ pub fn map_fields(
                     // For HashRange fields, create MoleculeHashRange with matching ID
                     let molecule_hash_range = MoleculeHashRange::new(molecule_uuid.clone());
                     if let Err(e) = db_ops.store_item(&key, &molecule_hash_range) {
-                        info!("Failed to persist MoleculeHashRange '{}': {}", molecule_uuid, e);
+                        info!(
+                            "Failed to persist MoleculeHashRange '{}': {}",
+                            molecule_uuid, e
+                        );
                     } else {
                         info!("✅ Persisted MoleculeHashRange: {}", key);
                     }

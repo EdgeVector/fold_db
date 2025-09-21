@@ -46,7 +46,10 @@ pub enum IteratorType {
     /// Word split iterator (e.g., content.split_by_word())
     WordSplit { field_name: String },
     /// Custom iterator with specific logic
-    Custom { name: String, config: IteratorConfig },
+    Custom {
+        name: String,
+        config: IteratorConfig,
+    },
 }
 
 /// Configuration for custom iterators

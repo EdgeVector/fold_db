@@ -4,10 +4,12 @@
 //! and alignment processing.
 
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
-use crate::transform::iterator_stack::types::IteratorStack;
 use crate::transform::iterator_stack::errors::IteratorStackResult;
-use crate::transform::iterator_stack::execution_engine::core::{ExecutionContext, IndexEntry, ExecutionWarning};
+use crate::transform::iterator_stack::execution_engine::core::{
+    ExecutionContext, ExecutionWarning, IndexEntry,
+};
 use crate::transform::iterator_stack::execution_engine::field_evaluation::DefaultFieldEvaluator;
+use crate::transform::iterator_stack::types::IteratorStack;
 
 /// Result of executing a single field expression
 #[derive(Debug, Clone, PartialEq)]

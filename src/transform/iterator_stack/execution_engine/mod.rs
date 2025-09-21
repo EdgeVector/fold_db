@@ -4,14 +4,17 @@
 //! iterations, and proper index entry emission at the correct depth.
 
 pub mod core;
-pub mod field_execution;
 pub mod field_evaluation;
+pub mod field_execution;
 pub mod iterator_management;
 pub mod tests;
 
 // Re-export main types and functions
-pub use core::{ExecutionEngine, ExecutionContext, ExecutionResult, IndexEntry, ExecutionStatistics, ExecutionWarning, ExecutionWarningType};
-pub use field_execution::{FieldExecutionResult};
-pub use field_evaluation::{FieldEvaluationError};
+pub use core::{
+    ExecutionContext, ExecutionEngine, ExecutionResult, ExecutionStatistics, ExecutionWarning,
+    ExecutionWarningType, IndexEntry,
+};
+pub use field_evaluation::FieldEvaluationError;
+pub use field_execution::FieldExecutionResult;
 
 // Re-export all public functionality

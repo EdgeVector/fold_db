@@ -1,15 +1,17 @@
-use crate::db_operations::DbOperations;
-use crate::security::types::PublicKeyInfo;
-use crate::schema::types::SchemaError;
-use crate::db_operations::error_utils::ErrorUtils;
 use crate::constants::SINGLE_PUBLIC_KEY_ID;
+use crate::db_operations::error_utils::ErrorUtils;
+use crate::db_operations::DbOperations;
 use crate::logging::features::{log_feature, LogFeature};
+use crate::schema::types::SchemaError;
+use crate::security::types::PublicKeyInfo;
 
 impl DbOperations {
     /// Store the system-wide public key. This will overwrite any existing key.
     pub fn set_system_public_key(&self, key_info: &PublicKeyInfo) -> Result<(), SchemaError> {
         // Clear all existing keys to ensure only one remains.
-        self.public_keys_tree.clear().map_err(|e| ErrorUtils::database_error("clear public keys tree", e))?;
+        self.public_keys_tree
+            .clear()
+            .map_err(|e| ErrorUtils::database_error("clear public keys tree", e))?;
 
         // Clone and overwrite the ID to enforce a single key.
         let mut key_to_store = key_info.clone();
@@ -25,7 +27,10 @@ impl DbOperations {
 
     /// Delete the system-wide public key from the database.
     pub fn delete_system_public_key(&self) -> Result<bool, SchemaError> {
-        match self.public_keys_tree.remove(SINGLE_PUBLIC_KEY_ID.as_bytes()) {
+        match self
+            .public_keys_tree
+            .remove(SINGLE_PUBLIC_KEY_ID.as_bytes())
+        {
             Ok(old_value) => Ok(old_value.is_some()),
             Err(e) => Err(ErrorUtils::database_error("delete system public key", e)),
         }
@@ -33,21 +38,26 @@ impl DbOperations {
 
     pub fn close(&self) {
         if let Err(e) = self.db().flush() {
-            log_feature!(LogFeature::Database, error, "Failed to flush database: {}", e);
+            log_feature!(
+                LogFeature::Database,
+                error,
+                "Failed to flush database: {}",
+                e
+            );
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::testing_utils::TestDatabaseFactory;
-    use crate::security::types::PublicKeyInfo;
     use crate::constants::SINGLE_PUBLIC_KEY_ID;
+    use crate::security::types::PublicKeyInfo;
+    use crate::testing_utils::TestDatabaseFactory;
 
     #[test]
     fn test_set_and_get_system_public_key() {
         let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
-        
+
         let key_info = PublicKeyInfo::new(
             "some_id_that_will_be_ignored".to_string(),
             "test_public_key_base64".to_string(),
@@ -57,7 +67,7 @@ mod tests {
 
         // Store the key
         db_ops.set_system_public_key(&key_info).unwrap();
-        
+
         // Retrieve the key
         let retrieved = db_ops.get_system_public_key().unwrap();
         assert!(retrieved.is_some());
@@ -71,7 +81,7 @@ mod tests {
     #[test]
     fn test_get_nonexistent_system_public_key() {
         let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
-        
+
         // Try to retrieve a key that doesn't exist
         let result = db_ops.get_system_public_key().unwrap();
         assert!(result.is_none());
@@ -80,7 +90,7 @@ mod tests {
     #[test]
     fn test_delete_system_public_key() {
         let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
-        
+
         let key_info = PublicKeyInfo::new(
             "key_to_delete".to_string(),
             "test_key".to_string(),
@@ -98,7 +108,7 @@ mod tests {
 
         // Verify deletion
         assert!(db_ops.get_system_public_key().unwrap().is_none());
-        
+
         // Try to delete it again
         let deleted_again = db_ops.delete_system_public_key().unwrap();
         assert!(!deleted_again);
@@ -107,7 +117,7 @@ mod tests {
     #[test]
     fn test_set_system_public_key_overwrites() {
         let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
-        
+
         // Store initial key
         let key1 = PublicKeyInfo::new(
             "key_1".to_string(),
@@ -128,7 +138,7 @@ mod tests {
             "owner_2".to_string(),
             vec!["write".to_string()],
         );
-        
+
         db_ops.set_system_public_key(&key2).unwrap();
 
         // Get the key and check it's the second one.

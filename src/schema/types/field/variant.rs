@@ -181,15 +181,15 @@ impl<'de> Deserialize<'de> for FieldVariant {
                 Self::Range(range_field)
             }
             FieldType::HashRange => {
-                let hash_field = helper.hash_field.ok_or_else(|| {
-                    serde::de::Error::missing_field("hash_field")
-                })?;
-                let range_field = helper.range_field.ok_or_else(|| {
-                    serde::de::Error::missing_field("range_field")
-                })?;
-                let atom_uuid = helper.atom_uuid.ok_or_else(|| {
-                    serde::de::Error::missing_field("atom_uuid")
-                })?;
+                let hash_field = helper
+                    .hash_field
+                    .ok_or_else(|| serde::de::Error::missing_field("hash_field"))?;
+                let range_field = helper
+                    .range_field
+                    .ok_or_else(|| serde::de::Error::missing_field("range_field"))?;
+                let atom_uuid = helper
+                    .atom_uuid
+                    .ok_or_else(|| serde::de::Error::missing_field("atom_uuid"))?;
 
                 Self::HashRange(Box::new(HashRangeField {
                     inner: helper.inner,

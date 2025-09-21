@@ -5,24 +5,47 @@
 //! - Query looks for atom: f079c516-b08f-4105-a609-7f55ccdfcf0a (old/wrong)
 //! - Molecule UUID: affc56e5-17fb-48ad-b73e-353fe1739d7e (should point to new atom)
 
+use datafold::atom::Molecule;
+use datafold::db_operations::DbOperations;
+use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fold_db_core::infrastructure::message_bus::{
-    MessageBus,
     request_events::{FieldValueSetRequest, FieldValueSetResponse},
+    MessageBus,
 };
 use datafold::fold_db_core::managers::atom::AtomManager;
-use datafold::db_operations::DbOperations;
-use datafold::atom::Molecule;
+use datafold::permissions::types::policy::PermissionsPolicy;
+use datafold::schema::types::field::SingleField;
+use datafold::schema::types::{FieldVariant, Schema};
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 use tempfile::tempdir;
+
+fn register_schema_with_fields(db_ops: &DbOperations, schema_name: &str, fields: &[&str]) {
+    let mut schema = Schema::new(schema_name.to_string());
+    for field in fields {
+        schema.fields.insert(
+            (*field).to_string(),
+            FieldVariant::Single(SingleField::new(
+                PermissionsPolicy::default(),
+                FieldPaymentConfig::default(),
+                HashMap::new(),
+            )),
+        );
+    }
+
+    db_ops
+        .store_schema(schema_name, &schema)
+        .unwrap_or_else(|err| panic!("Failed to store schema {schema_name}: {err}"));
+}
 
 #[test]
 fn test_production_molecule_scenario() {
     println!("🔍 TESTING PRODUCTION MOLECULE SCENARIO");
     println!("   Reproducing: Molecule points to old atom UUID after update");
-    
+
     // Setup database
     let temp_dir = tempdir().expect("Failed to create temp dir");
     let db = sled::Config::new()
@@ -30,16 +53,17 @@ fn test_production_molecule_scenario() {
         .temporary(true)
         .open()
         .expect("Failed to open database");
-    
+
     let db_ops = DbOperations::new(db.clone()).expect("Failed to create DbOperations");
+    register_schema_with_fields(&db_ops, "user_schema", &["profile_data"]);
     let message_bus = Arc::new(MessageBus::new());
-    
+
     // Create AtomManager
     let _atom_manager = AtomManager::new(db_ops.clone(), Arc::clone(&message_bus));
-    
+
     // Subscribe to FieldValueSetResponse events
     let mut response_consumer = message_bus.subscribe::<FieldValueSetResponse>();
-    
+
     // STEP 1: Create initial field value (simulating existing data)
     println!("📝 STEP 1: Creating initial field value");
     let request1 = FieldValueSetRequest::new(
@@ -49,80 +73,103 @@ fn test_production_molecule_scenario() {
         json!({"name": "alice", "version": 1}),
         "pubkey_001".to_string(),
     );
-    
-    message_bus.publish(request1).expect("Failed to publish initial request");
+
+    message_bus
+        .publish(request1)
+        .expect("Failed to publish initial request");
     thread::sleep(Duration::from_millis(200));
-    
-    let response1 = response_consumer.recv_timeout(Duration::from_millis(500))
+
+    let response1 = response_consumer
+        .recv_timeout(Duration::from_millis(500))
         .expect("Should receive initial response");
-    
+
     assert!(response1.success, "Initial request should succeed");
-    let molecule_uuid = response1.molecule_uuid.as_ref().expect("Should return Molecule UUID");
+    let molecule_uuid = response1
+        .molecule_uuid
+        .as_ref()
+        .expect("Should return Molecule UUID");
     println!("✅ Initial Molecule created: {}", molecule_uuid);
-    
+
     // STEP 2: Directly inspect the database to see current state
     println!("🔍 STEP 2: Inspecting database state after initial creation");
-    let stored_molecule = db_ops.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))
+    let stored_molecule = db_ops
+        .get_item::<Molecule>(&format!("ref:{}", molecule_uuid))
         .expect("Should be able to query Molecule")
         .expect("Molecule should exist");
-    
+
     let initial_atom_uuid = stored_molecule.get_atom_uuid().clone();
     println!("✅ Initial atom UUID in Molecule: {}", initial_atom_uuid);
-    
+
     // STEP 3: Create second field value (should update Molecule to new atom)
     println!("📝 STEP 3: Creating updated field value (critical update)");
     let request2 = FieldValueSetRequest::new(
         "updated_value".to_string(),
         "user_schema".to_string(),
-        "profile_data".to_string(), // Same field
+        "profile_data".to_string(),             // Same field
         json!({"name": "alice", "version": 2}), // Updated content
         "pubkey_002".to_string(),
     );
-    
-    message_bus.publish(request2).expect("Failed to publish update request");
+
+    message_bus
+        .publish(request2)
+        .expect("Failed to publish update request");
     thread::sleep(Duration::from_millis(200));
-    
-    let response2 = response_consumer.recv_timeout(Duration::from_millis(500))
+
+    let response2 = response_consumer
+        .recv_timeout(Duration::from_millis(500))
         .expect("Should receive update response");
-    
+
     assert!(response2.success, "Update request should succeed");
-    let molecule_uuid_2 = response2.molecule_uuid.as_ref().expect("Should return Molecule UUID");
-    
+    let molecule_uuid_2 = response2
+        .molecule_uuid
+        .as_ref()
+        .expect("Should return Molecule UUID");
+
     // Verify same Molecule UUID is used
-    assert_eq!(molecule_uuid, molecule_uuid_2, "Should reuse same Molecule UUID");
+    assert_eq!(
+        molecule_uuid, molecule_uuid_2,
+        "Should reuse same Molecule UUID"
+    );
     println!("✅ Update used same Molecule: {}", molecule_uuid_2);
-    
+
     // STEP 4: CRITICAL VALIDATION - Check if Molecule points to new atom
     println!("🔍 STEP 4: CRITICAL VALIDATION - Checking Molecule update");
-    let updated_molecule = db_ops.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))
+    let updated_molecule = db_ops
+        .get_item::<Molecule>(&format!("ref:{}", molecule_uuid))
         .expect("Should be able to query updated Molecule")
         .expect("Updated Molecule should exist");
-    
+
     let final_atom_uuid = updated_molecule.get_atom_uuid().clone();
     println!("✅ Final atom UUID in Molecule: {}", final_atom_uuid);
-    
+
     // CRITICAL TEST: Molecule should point to NEW atom, not old one
     if final_atom_uuid == initial_atom_uuid {
-        panic!("🚨 MOLECULE UPDATE FAILURE DETECTED!
+        panic!(
+            "🚨 MOLECULE UPDATE FAILURE DETECTED!
                Molecule still points to old atom UUID: {}
-               This is the exact bug described in the logs!", final_atom_uuid);
+               This is the exact bug described in the logs!",
+            final_atom_uuid
+        );
     }
-    
+
     println!("✅ SUCCESS: Molecule correctly updated to new atom UUID");
-    
+
     // STEP 5: Verify the new atom exists and old one is different
     println!("🔍 STEP 5: Verifying atom chain integrity");
-    
+
     // Check that new atom exists
     let new_atom_key = format!("atom:{}", final_atom_uuid);
-    let new_atom_exists = db.contains_key(&new_atom_key)
+    let new_atom_exists = db
+        .contains_key(&new_atom_key)
         .expect("Should be able to check atom existence");
     assert!(new_atom_exists, "New atom should exist in database");
-    
+
     // Check that old atom is different
-    assert_ne!(initial_atom_uuid, final_atom_uuid, 
-        "Initial and final atom UUIDs should be different");
-    
+    assert_ne!(
+        initial_atom_uuid, final_atom_uuid,
+        "Initial and final atom UUIDs should be different"
+    );
+
     println!("✅ PRODUCTION SCENARIO TEST PASSED");
     println!("   Initial atom: {}", initial_atom_uuid);
     println!("   Final atom:   {}", final_atom_uuid);
@@ -130,11 +177,11 @@ fn test_production_molecule_scenario() {
     println!("   Molecule correctly points to latest atom");
 }
 
-#[test] 
+#[test]
 fn test_concurrent_molecule_updates() {
     println!("🔍 TESTING CONCURRENT MOLECULE UPDATES");
     println!("   Checking for race conditions in Molecule updates");
-    
+
     // Setup database
     let temp_dir = tempdir().expect("Failed to create temp dir");
     let db = sled::Config::new()
@@ -142,37 +189,42 @@ fn test_concurrent_molecule_updates() {
         .temporary(true)
         .open()
         .expect("Failed to open database");
-    
+
     let db_ops = DbOperations::new(db.clone()).expect("Failed to create DbOperations");
+    register_schema_with_fields(&db_ops, "test_schema", &["concurrent_field"]);
     let message_bus = Arc::new(MessageBus::new());
-    
+
     // Create AtomManager
     let _atom_manager = AtomManager::new(db_ops.clone(), Arc::clone(&message_bus));
-    
+
     // Subscribe to FieldValueSetResponse events
     let mut response_consumer = message_bus.subscribe::<FieldValueSetResponse>();
-    
+
     // Launch multiple concurrent requests for the same field
-    let handles = (0..5).map(|i| {
-        let bus_clone = Arc::clone(&message_bus);
-        thread::spawn(move || {
-            let request = FieldValueSetRequest::new(
-                format!("concurrent_{}", i),
-                "test_schema".to_string(),
-                "concurrent_field".to_string(),
-                json!({"update": i, "timestamp": chrono::Utc::now()}),
-                format!("pubkey_{}", i),
-            );
-            
-            bus_clone.publish(request).expect("Failed to publish concurrent request");
+    let handles = (0..5)
+        .map(|i| {
+            let bus_clone = Arc::clone(&message_bus);
+            thread::spawn(move || {
+                let request = FieldValueSetRequest::new(
+                    format!("concurrent_{}", i),
+                    "test_schema".to_string(),
+                    "concurrent_field".to_string(),
+                    json!({"update": i, "timestamp": chrono::Utc::now()}),
+                    format!("pubkey_{}", i),
+                );
+
+                bus_clone
+                    .publish(request)
+                    .expect("Failed to publish concurrent request");
+            })
         })
-    }).collect::<Vec<_>>();
-    
+        .collect::<Vec<_>>();
+
     // Wait for all requests to be sent
     for handle in handles {
         handle.join().expect("Thread should complete");
     }
-    
+
     // Collect all responses
     let mut responses = Vec::new();
     for i in 0..5 {
@@ -184,29 +236,38 @@ fn test_concurrent_molecule_updates() {
             Err(_) => panic!("Failed to receive response for concurrent request {}", i),
         }
     }
-    
+
     // All responses should have the same Molecule UUID (same field)
     let first_molecule = responses[0].molecule_uuid.as_ref().unwrap();
     for (i, response) in responses.iter().enumerate() {
         let molecule_uuid = response.molecule_uuid.as_ref().unwrap();
-        assert_eq!(first_molecule, molecule_uuid,
-            "All concurrent updates should use same Molecule UUID (response {})", i);
+        assert_eq!(
+            first_molecule, molecule_uuid,
+            "All concurrent updates should use same Molecule UUID (response {})",
+            i
+        );
     }
-    
+
     println!("✅ CONCURRENT UPDATE TEST PASSED");
-    println!("   All {} concurrent updates used same Molecule: {}", responses.len(), first_molecule);
-    
+    println!(
+        "   All {} concurrent updates used same Molecule: {}",
+        responses.len(),
+        first_molecule
+    );
+
     // Final validation: Check final state of Molecule
-    let final_molecule = db_ops.get_item::<Molecule>(&format!("ref:{}", first_molecule))
+    let final_molecule = db_ops
+        .get_item::<Molecule>(&format!("ref:{}", first_molecule))
         .expect("Should be able to query final Molecule")
         .expect("Final Molecule should exist");
-    
+
     let final_atom_uuid = final_molecule.get_atom_uuid();
     println!("   Final Molecule points to atom: {}", final_atom_uuid);
-    
+
     // Verify the final atom exists
     let final_atom_key = format!("atom:{}", final_atom_uuid);
-    let final_atom_exists = db.contains_key(&final_atom_key)
+    let final_atom_exists = db
+        .contains_key(&final_atom_key)
         .expect("Should be able to check final atom existence");
     assert!(final_atom_exists, "Final atom should exist in database");
 }

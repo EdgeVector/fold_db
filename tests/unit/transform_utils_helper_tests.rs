@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use datafold::fold_db_core::transform_manager::utils::TransformUtils;
 use crate::test_utils::TestFixture;
+use datafold::fold_db_core::transform_manager::utils::TransformUtils;
 
 #[tokio::test]
 async fn test_read_mapping_returns_default() {
@@ -42,4 +42,3 @@ fn test_handle_error() {
         _ => panic!("wrong error"),
     }
 }
-

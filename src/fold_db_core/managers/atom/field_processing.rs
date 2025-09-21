@@ -1,4 +1,8 @@
-//! Field value processing logic for AtomManager
+//! Field value processing logic for AtomManager.
+//!
+//! The module exclusively relies on the schema-driven universal key helper to
+//! derive hash/range metadata and normalized field payloads. All ad-hoc
+//! heuristics have been removed in favor of descriptive error propagation.
 
 use super::AtomManager;
 use crate::atom::{Atom, AtomStatus};
@@ -11,7 +15,7 @@ use crate::schema::SchemaError;
 use log::{debug, error, info, warn};
 use std::time::Instant;
 
-/// Resolved key data structure for field processing
+/// Resolved key data structure produced by `resolve_universal_keys`.
 #[derive(Debug, Clone)]
 pub struct ResolvedAtomKeys {
     pub hash: Option<String>,
@@ -53,42 +57,12 @@ impl ResolvedAtomKeys {
     }
 }
 
-/// Create legacy resolved keys for backward compatibility when schema is not found
-fn create_legacy_resolved_keys(request_payload: &serde_json::Value) -> ResolvedAtomKeys {
-    // Extract fields from the request payload
-    let mut fields = serde_json::Map::new();
-    if let Some(obj) = request_payload.as_object() {
-        for (key, value) in obj.iter() {
-            // Skip special fields that are not part of the normalized data
-            if key != "value" && !key.starts_with("_") {
-                fields.insert(key.clone(), value.clone());
-            }
-        }
-    }
-
-    // Use legacy extraction methods for hash and range
-    let hash_value = extract_hash_key_from_value(request_payload);
-    let range_value = extract_range_key_from_value(request_payload);
-
-    // Return None for hash/range if they're default values (indicating no real key)
-    let hash = if hash_value == "default" {
-        None
-    } else {
-        Some(hash_value)
-    };
-    let range = if range_value == "default" {
-        None
-    } else {
-        Some(range_value)
-    };
-
-    ResolvedAtomKeys::new(hash, range, fields)
-}
-
 /// Resolve universal keys for field processing using schema-driven approach
 ///
 /// This helper centralizes key extraction logic and provides a normalized
-/// snapshot of hash, range, and fields data for any schema type.
+/// snapshot of hash, range, and fields data for any schema type. Errors are
+/// surfaced directly when schema lookup or key extraction fails, removing the
+/// need for ad-hoc heuristics or silent fallbacks.
 pub fn resolve_universal_keys(
     manager: &AtomManager,
     schema_name: &str,
@@ -117,32 +91,12 @@ pub fn resolve_universal_keys(
     );
 
     // Extract hash and range keys using universal key configuration
-    let (hash_value, range_value) = match extract_unified_keys(&schema, request_payload) {
-        Ok(keys) => keys,
-        Err(e) => {
-            // Only fall back to legacy extraction for Single and Range schemas
-            // HashRange schemas require valid key configuration and should fail if invalid
-            match schema.schema_type {
-                crate::schema::types::schema::SchemaType::Single
-                | crate::schema::types::schema::SchemaType::Range { .. } => {
-                    warn!("⚠️ Universal key extraction failed for schema '{}': {}, falling back to legacy extraction", schema_name, e);
-                    let legacy_keys = create_legacy_resolved_keys(request_payload);
-                    (legacy_keys.hash, legacy_keys.range)
-                }
-                crate::schema::types::schema::SchemaType::HashRange => {
-                    // For HashRange schemas, propagate the error as key configuration is required
-                    let error_msg = format!(
-                        "Failed to extract keys for HashRange schema '{}': {}",
-                        schema_name, e
-                    );
-                    error!("❌ {}", error_msg);
-                    return Err(
-                        Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
-                    );
-                }
-            }
-        }
-    };
+    let (hash_value, range_value) =
+        extract_unified_keys(&schema, request_payload).map_err(|e| {
+            let error_msg = format!("Failed to extract keys for schema '{}': {}", schema_name, e);
+            error!("❌ {}", error_msg);
+            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+        })?;
 
     debug!(
         "🔑 Extracted keys - hash: {:?}, range: {:?}",
@@ -180,13 +134,9 @@ pub(super) fn handle_fieldvalueset_request(
     manager: &AtomManager,
     request: FieldValueSetRequest,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!(
-        "🔧 DEBUG: Processing FieldValueSetRequest for field: {}.{}",
-        request.schema_name, request.field_name
-    );
-    println!(
-        "🔧 DEBUG: FieldValueSetRequest details - correlation_id: {}, value: {}",
-        request.correlation_id, request.value
+    debug!(
+        "Processing FieldValueSetRequest (schema: {}, field: {}, correlation_id: {}, value: {})",
+        request.schema_name, request.field_name, request.correlation_id, request.value
     );
     info!(
         "📝 Processing FieldValueSetRequest for field: {}.{}",
@@ -297,8 +247,8 @@ fn create_molecule_for_field(
     atom_uuid: &str,
 ) -> Result<(String, ResolvedAtomKeys), Box<dyn std::error::Error>> {
     let field_type = determine_field_type(manager, &request.schema_name, &request.field_name);
-    println!(
-        "🔧 DEBUG: Creating molecule for field {}.{} with type: {}",
+    debug!(
+        "Creating molecule for field {}.{} with type: {}",
         request.schema_name, request.field_name, field_type
     );
     info!(
@@ -306,19 +256,16 @@ fn create_molecule_for_field(
         field_type
     );
 
-    // Try to resolve universal keys, fall back to legacy behavior if schema not found
-    let resolved_keys = match resolve_universal_keys(manager, &request.schema_name, &request.value)
-    {
-        Ok(keys) => keys,
-        Err(_) => {
-            // Fall back to legacy behavior when schema is not found
-            warn!(
-                "⚠️ Schema '{}' not found, falling back to legacy key extraction",
-                request.schema_name
+    // Resolve universal keys or surface descriptive error context
+    let resolved_keys = resolve_universal_keys(manager, &request.schema_name, &request.value)
+        .map_err(|e| {
+            let error_msg = format!(
+                "Failed to resolve keys for {}.{}: {}",
+                request.schema_name, request.field_name, e
             );
-            create_legacy_resolved_keys(&request.value)
-        }
-    };
+            error!("❌ {}", error_msg);
+            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+        })?;
 
     match field_type.as_str() {
         "Range" => {
@@ -351,8 +298,8 @@ fn create_range_molecule(
         "{}_{}_range_{}",
         request.schema_name, request.field_name, range_key
     );
-    println!(
-        "🔧 DEBUG: Creating Range molecule with UUID: {} -> atom: {} (range_key: {})",
+    debug!(
+        "Creating Range molecule with UUID: {} -> atom: {} (range_key: {})",
         molecule_uuid, atom_uuid, range_key
     );
     info!(
@@ -422,8 +369,8 @@ fn create_hashrange_molecule(
     resolved_keys: &ResolvedAtomKeys,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let molecule_uuid = format!("{}_{}_hashrange", request.schema_name, request.field_name);
-    println!(
-        "🔧 DEBUG: Creating HashRange molecule with UUID: {} -> atom: {}",
+    debug!(
+        "Creating HashRange molecule with UUID: {} -> atom: {}",
         molecule_uuid, atom_uuid
     );
     info!(
@@ -507,25 +454,6 @@ fn create_hashrange_molecule(
     Ok(storage_key)
 }
 
-/// Extract hash key from request value for HashRange fields
-fn extract_hash_key_from_value(value: &serde_json::Value) -> String {
-    if let Some(obj) = value.as_object() {
-        if let Some(hash_key_value) = obj.get("hash_key") {
-            if let Some(key_str) = hash_key_value.as_str() {
-                key_str.to_string()
-            } else {
-                hash_key_value.to_string().trim_matches('"').to_string()
-            }
-        } else {
-            warn!("🔶 HASH KEY WARNING: No 'hash_key' field found in value, using 'default'");
-            "default".to_string()
-        }
-    } else {
-        warn!("🔶 HASH KEY WARNING: Value is not an object, using 'default'");
-        "default".to_string()
-    }
-}
-
 /// Create Molecule for Single fields (default)
 fn create_single_molecule(
     manager: &AtomManager,
@@ -596,45 +524,6 @@ fn create_single_molecule(
             error!("❌ DIAGNOSTIC: Failed to create Molecule: {}", e);
             Err(Box::new(e))
         }
-    }
-}
-
-/// Extract range key from request value for Range fields
-/// Supports both universal key configuration format and legacy "range_key" format
-fn extract_range_key_from_value(value: &serde_json::Value) -> String {
-    if let Some(obj) = value.as_object() {
-        // First, try to find the range key value by looking for common range field names
-        // This handles universal key configuration where the actual field name is used
-        for (key, val) in obj.iter() {
-            // Skip the "value" field as it contains the actual field data
-            if key == "value" {
-                continue;
-            }
-
-            // Check if this looks like a range key (timestamp, date, id, etc.)
-            if let Some(val_str) = val.as_str() {
-                // If it's a timestamp-like value or looks like a range key, use it
-                if val_str.contains("T") || val_str.contains("-") || val_str.len() > 5 {
-                    return val_str.to_string();
-                }
-            }
-        }
-
-        // Fallback: Look for legacy "range_key" field
-        if let Some(range_key_value) = obj.get("range_key") {
-            if let Some(key_str) = range_key_value.as_str() {
-                return key_str.to_string();
-            } else {
-                // Handle non-string range keys by converting to string
-                return range_key_value.to_string().trim_matches('"').to_string();
-            }
-        }
-
-        warn!("🔶 RANGE KEY WARNING: No range key field found in value, using 'default'");
-        "default".to_string()
-    } else {
-        warn!("🔶 RANGE KEY WARNING: Value is not an object, using 'default'");
-        "default".to_string()
     }
 }
 
@@ -792,55 +681,48 @@ fn create_atom_error_response(
 
 /// Determine field type based on schema and field name
 fn determine_field_type(manager: &AtomManager, schema_name: &str, field_name: &str) -> String {
-    println!(
-        "🔧 DEBUG: Determining field type for {}.{}",
-        schema_name, field_name
-    );
+    debug!("Determining field type for {}.{}", schema_name, field_name);
     // Look up the actual schema to determine field type
     match manager.db_ops.get_schema(schema_name) {
         Ok(Some(schema)) => {
-            println!("🔧 DEBUG: Schema '{}' loaded successfully", schema_name);
-            println!(
-                "🔧 DEBUG: Schema fields: {:?}",
-                schema.fields.keys().collect::<Vec<_>>()
+            let field_names: Vec<&String> = schema.fields.keys().collect();
+            debug!(
+                "Schema '{}' loaded successfully with fields: {:?}",
+                schema_name, field_names
             );
-            for (field_name, field_variant) in &schema.fields {
-                println!(
-                    "🔧 DEBUG: Field '{}' variant: {:?}",
-                    field_name, field_variant
-                );
-            }
             match schema.fields.get(field_name) {
-                Some(crate::schema::types::field::FieldVariant::Range(_)) => {
-                    println!("🔧 DEBUG: Field {}.{} is Range", schema_name, field_name);
-                    info!(
-                        "🔍 FIELD TYPE: {} in schema {} is Range",
-                        field_name, schema_name
+                Some(field_variant) => {
+                    debug!(
+                        "Resolved field variant for {}.{}: {:?}",
+                        schema_name, field_name, field_variant
                     );
-                    "Range".to_string()
-                }
-                Some(crate::schema::types::field::FieldVariant::Single(_)) => {
-                    println!("🔧 DEBUG: Field {}.{} is Single", schema_name, field_name);
-                    info!(
-                        "🔍 FIELD TYPE: {} in schema {} is Single",
-                        field_name, schema_name
-                    );
-                    "Single".to_string()
-                }
-                Some(crate::schema::types::field::FieldVariant::HashRange(_)) => {
-                    println!(
-                        "🔧 DEBUG: Field {}.{} is HashRange",
-                        schema_name, field_name
-                    );
-                    info!(
-                        "🔍 FIELD TYPE: {} in schema {} is HashRange",
-                        field_name, schema_name
-                    );
-                    "HashRange".to_string()
+                    match field_variant {
+                        crate::schema::types::field::FieldVariant::Range(_) => {
+                            info!(
+                                "🔍 FIELD TYPE: {} in schema {} is Range",
+                                field_name, schema_name
+                            );
+                            "Range".to_string()
+                        }
+                        crate::schema::types::field::FieldVariant::Single(_) => {
+                            info!(
+                                "🔍 FIELD TYPE: {} in schema {} is Single",
+                                field_name, schema_name
+                            );
+                            "Single".to_string()
+                        }
+                        crate::schema::types::field::FieldVariant::HashRange(_) => {
+                            info!(
+                                "🔍 FIELD TYPE: {} in schema {} is HashRange",
+                                field_name, schema_name
+                            );
+                            "HashRange".to_string()
+                        }
+                    }
                 }
                 None => {
-                    println!(
-                        "⚠️ DEBUG: Field {} not found in schema {}",
+                    debug!(
+                        "Field {} not found in schema {}. Defaulting to Single handling.",
                         field_name, schema_name
                     );
                     warn!(
@@ -852,7 +734,6 @@ fn determine_field_type(manager: &AtomManager, schema_name: &str, field_name: &s
             }
         }
         Ok(None) => {
-            println!("⚠️ DEBUG: Schema {} not found", schema_name);
             warn!(
                 "⚠️ FIELD TYPE: Schema {} not found, defaulting to Single",
                 schema_name
@@ -860,7 +741,6 @@ fn determine_field_type(manager: &AtomManager, schema_name: &str, field_name: &s
             "Single".to_string()
         }
         Err(e) => {
-            println!("❌ DEBUG: Error loading schema {}: {}", schema_name, e);
             error!(
                 "❌ FIELD TYPE: Error loading schema {}: {}, defaulting to Single",
                 schema_name, e

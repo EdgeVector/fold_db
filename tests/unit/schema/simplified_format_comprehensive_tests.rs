@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
-use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition, JsonSchemaDefinition};
-use datafold::schema::types::schema::SchemaType;
-use datafold::schema::types::field::FieldType;
-use datafold::permissions::types::policy::TrustDistance;
 use datafold::fees::types::config::TrustDistanceScaling;
+use datafold::permissions::types::policy::TrustDistance;
+use datafold::schema::types::field::FieldType;
+use datafold::schema::types::json_schema::{
+    DeclarativeSchemaDefinition, FieldDefinition, JsonSchemaDefinition,
+};
+use datafold::schema::types::schema::SchemaType;
 
 /// Comprehensive tests for simplified schema formats
 /// This file covers edge cases and scenarios not fully covered in other test files
@@ -31,15 +33,24 @@ fn test_ultra_minimal_schema_with_all_schema_types() {
     let single_schema: JsonSchemaDefinition = serde_json::from_str(single_json).unwrap();
     assert_eq!(single_schema.name, "SingleSchema");
     assert_eq!(single_schema.fields.len(), 3);
-    
+
     // Verify all fields get default values
     for field_name in ["id", "name", "value"] {
         let field = single_schema.fields.get(field_name).unwrap();
         assert!(matches!(field.field_type, FieldType::Single));
-        assert!(matches!(field.permission_policy.read, TrustDistance::Distance(0)));
-        assert!(matches!(field.permission_policy.write, TrustDistance::Distance(0)));
+        assert!(matches!(
+            field.permission_policy.read,
+            TrustDistance::Distance(0)
+        ));
+        assert!(matches!(
+            field.permission_policy.write,
+            TrustDistance::Distance(0)
+        ));
         assert_eq!(field.payment_config.base_multiplier, 1.0);
-        assert!(matches!(field.payment_config.trust_distance_scaling, TrustDistanceScaling::None));
+        assert!(matches!(
+            field.payment_config.trust_distance_scaling,
+            TrustDistanceScaling::None
+        ));
     }
 
     // Test Range schema with ultra-minimal fields
@@ -87,7 +98,8 @@ fn test_ultra_minimal_schema_with_all_schema_types() {
     }
     "#;
 
-    let hashrange_schema: DeclarativeSchemaDefinition = serde_json::from_str(hashrange_json).unwrap();
+    let hashrange_schema: DeclarativeSchemaDefinition =
+        serde_json::from_str(hashrange_json).unwrap();
     assert_eq!(hashrange_schema.name, "HashRangeSchema");
     assert_eq!(hashrange_schema.fields.len(), 3);
 }
@@ -126,7 +138,10 @@ fn test_mixed_format_with_all_field_combinations() {
 
     // Verify object field with atom_uuid only
     let object_atom_field = schema.fields.get("object_field_with_atom_uuid").unwrap();
-    assert_eq!(object_atom_field.atom_uuid, Some("Source.map().metadata".to_string()));
+    assert_eq!(
+        object_atom_field.atom_uuid,
+        Some("Source.map().metadata".to_string())
+    );
     assert_eq!(object_atom_field.field_type, None);
 
     // Verify object field with field_type only
@@ -136,7 +151,10 @@ fn test_mixed_format_with_all_field_combinations() {
 
     // Verify object field with both
     let object_both_field = schema.fields.get("object_field_with_both").unwrap();
-    assert_eq!(object_both_field.atom_uuid, Some("Source.map().data".to_string()));
+    assert_eq!(
+        object_both_field.atom_uuid,
+        Some("Source.map().data".to_string())
+    );
     assert_eq!(object_both_field.field_type, Some("Single".to_string()));
 
     // Verify empty object field
@@ -174,13 +192,22 @@ fn test_declarative_schema_with_complex_expressions() {
 
     // Verify complex expressions are preserved
     let complex_field = schema.fields.get("complex_field").unwrap();
-    assert_eq!(complex_field.atom_uuid, Some("BlogPost.map().content.split_by_word().map()".to_string()));
+    assert_eq!(
+        complex_field.atom_uuid,
+        Some("BlogPost.map().content.split_by_word().map()".to_string())
+    );
 
     let nested_field = schema.fields.get("nested_field").unwrap();
-    assert_eq!(nested_field.atom_uuid, Some("BlogPost.map().author.profile.name".to_string()));
+    assert_eq!(
+        nested_field.atom_uuid,
+        Some("BlogPost.map().author.profile.name".to_string())
+    );
 
     let array_field = schema.fields.get("array_field").unwrap();
-    assert_eq!(array_field.atom_uuid, Some("BlogPost.map().tags".to_string()));
+    assert_eq!(
+        array_field.atom_uuid,
+        Some("BlogPost.map().tags".to_string())
+    );
 }
 
 #[test]
@@ -205,19 +232,34 @@ fn test_schema_with_special_characters_in_expressions() {
 
     // Verify special characters are preserved
     let dots_field = schema.fields.get("field_with_dots").unwrap();
-    assert_eq!(dots_field.atom_uuid, Some("Source.map().field.with.dots".to_string()));
+    assert_eq!(
+        dots_field.atom_uuid,
+        Some("Source.map().field.with.dots".to_string())
+    );
 
     let underscores_field = schema.fields.get("field_with_underscores").unwrap();
-    assert_eq!(underscores_field.atom_uuid, Some("Source.map().field_with_underscores".to_string()));
+    assert_eq!(
+        underscores_field.atom_uuid,
+        Some("Source.map().field_with_underscores".to_string())
+    );
 
     let dashes_field = schema.fields.get("field_with_dashes").unwrap();
-    assert_eq!(dashes_field.atom_uuid, Some("Source.map().field-with-dashes".to_string()));
+    assert_eq!(
+        dashes_field.atom_uuid,
+        Some("Source.map().field-with-dashes".to_string())
+    );
 
     let numbers_field = schema.fields.get("field_with_numbers").unwrap();
-    assert_eq!(numbers_field.atom_uuid, Some("Source.map().field123".to_string()));
+    assert_eq!(
+        numbers_field.atom_uuid,
+        Some("Source.map().field123".to_string())
+    );
 
     let mixed_field = schema.fields.get("field_with_mixed").unwrap();
-    assert_eq!(mixed_field.atom_uuid, Some("Source.map().field_123-with.dots".to_string()));
+    assert_eq!(
+        mixed_field.atom_uuid,
+        Some("Source.map().field_123-with.dots".to_string())
+    );
 }
 
 #[test]
@@ -236,7 +278,7 @@ fn test_schema_with_empty_and_null_values() {
     "#;
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
-    
+
     // Empty string and null should fail deserialization
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -247,8 +289,9 @@ fn test_schema_with_empty_and_null_values() {
 #[test]
 fn test_schema_with_very_long_expressions() {
     let long_expression = "Source.map().very.long.expression.with.many.dots.and.nested.fields.that.goes.on.and.on.and.on";
-    
-    let json = format!(r#"
+
+    let json = format!(
+        r#"
     {{
       "name": "LongExpressionSchema",
       "schema_type": "Single",
@@ -256,7 +299,9 @@ fn test_schema_with_very_long_expressions() {
         "long_field": "{}"
       }}
     }}
-    "#, long_expression);
+    "#,
+        long_expression
+    );
 
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(&json).unwrap();
     assert_eq!(schema.name, "LongExpressionSchema");
@@ -286,23 +331,35 @@ fn test_schema_with_unicode_characters() {
 
     // Verify unicode characters are preserved
     let unicode_field = schema.fields.get("unicode_field").unwrap();
-    assert_eq!(unicode_field.atom_uuid, Some("Source.map().字段.数据.信息".to_string()));
+    assert_eq!(
+        unicode_field.atom_uuid,
+        Some("Source.map().字段.数据.信息".to_string())
+    );
 
     let emoji_field = schema.fields.get("emoji_field").unwrap();
-    assert_eq!(emoji_field.atom_uuid, Some("Source.map().🚀.🌟.💫".to_string()));
+    assert_eq!(
+        emoji_field.atom_uuid,
+        Some("Source.map().🚀.🌟.💫".to_string())
+    );
 
     let mixed_field = schema.fields.get("mixed_unicode_field").unwrap();
-    assert_eq!(mixed_field.atom_uuid, Some("Source.map().field_字段.emoji_🚀".to_string()));
+    assert_eq!(
+        mixed_field.atom_uuid,
+        Some("Source.map().field_字段.emoji_🚀".to_string())
+    );
 }
 
 #[test]
 fn test_schema_performance_with_many_fields() {
     let mut fields = HashMap::new();
     for i in 0..100 {
-        fields.insert(format!("field_{}", i), FieldDefinition {
-            atom_uuid: Some(format!("Source.map().field_{}", i)),
-            field_type: None,
-        });
+        fields.insert(
+            format!("field_{}", i),
+            FieldDefinition {
+                atom_uuid: Some(format!("Source.map().field_{}", i)),
+                field_type: None,
+            },
+        );
     }
 
     let schema = DeclarativeSchemaDefinition {
@@ -327,8 +384,16 @@ fn test_schema_performance_with_many_fields() {
     assert_eq!(deserialized.fields.len(), 100);
 
     // Performance should be reasonable (less than 10ms for 100 fields)
-    assert!(serialize_time.as_millis() < 10, "Serialization took too long: {:?}", serialize_time);
-    assert!(deserialize_time.as_millis() < 10, "Deserialization took too long: {:?}", deserialize_time);
+    assert!(
+        serialize_time.as_millis() < 10,
+        "Serialization took too long: {:?}",
+        serialize_time
+    );
+    assert!(
+        deserialize_time.as_millis() < 10,
+        "Deserialization took too long: {:?}",
+        deserialize_time
+    );
 }
 
 #[test]
@@ -353,19 +418,34 @@ fn test_schema_with_edge_case_field_names() {
 
     // Verify edge case field names are preserved
     let single_char_field = schema.fields.get("a").unwrap();
-    assert_eq!(single_char_field.atom_uuid, Some("Source.map().a".to_string()));
+    assert_eq!(
+        single_char_field.atom_uuid,
+        Some("Source.map().a".to_string())
+    );
 
     let spaces_field = schema.fields.get("field_with_spaces").unwrap();
-    assert_eq!(spaces_field.atom_uuid, Some("Source.map().field with spaces".to_string()));
+    assert_eq!(
+        spaces_field.atom_uuid,
+        Some("Source.map().field with spaces".to_string())
+    );
 
     let quotes_field = schema.fields.get("field_with_quotes").unwrap();
-    assert_eq!(quotes_field.atom_uuid, Some("Source.map().field\"with\"quotes".to_string()));
+    assert_eq!(
+        quotes_field.atom_uuid,
+        Some("Source.map().field\"with\"quotes".to_string())
+    );
 
     let backslashes_field = schema.fields.get("field_with_backslashes").unwrap();
-    assert_eq!(backslashes_field.atom_uuid, Some("Source.map().field\\with\\backslashes".to_string()));
+    assert_eq!(
+        backslashes_field.atom_uuid,
+        Some("Source.map().field\\with\\backslashes".to_string())
+    );
 
     let newlines_field = schema.fields.get("field_with_newlines").unwrap();
-    assert_eq!(newlines_field.atom_uuid, Some("Source.map().field\nwith\nnewlines".to_string()));
+    assert_eq!(
+        newlines_field.atom_uuid,
+        Some("Source.map().field\nwith\nnewlines".to_string())
+    );
 }
 
 #[test]
@@ -387,10 +467,14 @@ fn test_schema_validation_with_simplified_formats() {
     "#;
 
     let schema: DeclarativeSchemaDefinition = serde_json::from_str(json).unwrap();
-    
+
     // Test that validation works with simplified formats
     let validation_result = schema.validate();
-    assert!(validation_result.is_ok(), "Schema validation failed: {:?}", validation_result);
+    assert!(
+        validation_result.is_ok(),
+        "Schema validation failed: {:?}",
+        validation_result
+    );
 }
 
 #[test]
@@ -412,24 +496,27 @@ fn test_schema_round_trip_with_all_formats() {
     "#;
 
     let original_schema: DeclarativeSchemaDefinition = serde_json::from_str(original_json).unwrap();
-    
+
     // Serialize and deserialize
     let serialized = serde_json::to_string(&original_schema).unwrap();
     let deserialized: DeclarativeSchemaDefinition = serde_json::from_str(&serialized).unwrap();
-    
+
     // Verify structure is preserved
     assert_eq!(deserialized.name, original_schema.name);
     assert_eq!(deserialized.fields.len(), original_schema.fields.len());
-    
+
     // Verify each field type is preserved
     let string_field = deserialized.fields.get("string_field").unwrap();
     assert_eq!(string_field.atom_uuid, Some("Source.map().id".to_string()));
     assert_eq!(string_field.field_type, None);
-    
+
     let object_field = deserialized.fields.get("object_field").unwrap();
-    assert_eq!(object_field.atom_uuid, Some("Source.map().data".to_string()));
+    assert_eq!(
+        object_field.atom_uuid,
+        Some("Source.map().data".to_string())
+    );
     assert_eq!(object_field.field_type, Some("Single".to_string()));
-    
+
     let empty_field = deserialized.fields.get("empty_field").unwrap();
     assert_eq!(empty_field.atom_uuid, None);
     assert_eq!(empty_field.field_type, None);

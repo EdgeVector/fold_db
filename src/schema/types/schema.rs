@@ -414,9 +414,12 @@ mod tests {
             .get("calculated_field")
             .expect("calculated_field not found");
         assert!(calculated_field.transform().is_some());
-        
+
         let transform = calculated_field.transform().unwrap();
         assert!(transform.is_declarative());
-        assert_eq!(transform.get_declarative_schema().unwrap().name, "test_transform");
+        assert_eq!(
+            transform.get_declarative_schema().unwrap().name,
+            "test_transform"
+        );
     }
 }

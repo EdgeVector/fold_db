@@ -3,14 +3,14 @@
 //! This module consolidates all the repeated infrastructure creation patterns
 //! found throughout the codebase to eliminate massive duplication.
 
-use std::sync::Arc;
-use crate::fold_db_core::infrastructure::message_bus::{MessageBus};
 use crate::db_operations::DbOperations;
+use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::fold_db_core::managers::AtomManager;
-use crate::schema::core::SchemaCore;
 use crate::fold_db_core::services::field_retrieval::service::FieldRetrievalService;
-use crate::schema::SchemaError;
 use crate::logging::features::{log_feature, LogFeature};
+use crate::schema::core::SchemaCore;
+use crate::schema::SchemaError;
+use std::sync::Arc;
 
 /// Consolidated factory for creating common infrastructure components
 pub struct InfrastructureFactory;
@@ -35,7 +35,7 @@ impl InfrastructureFactory {
         let message_bus = Self::create_message_bus();
         let (db_ops, _) = crate::testing_utils::TestDatabaseFactory::create_test_environment()
             .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
-        
+
         Ok(TestInfrastructure {
             message_bus,
             db_ops,
@@ -44,20 +44,21 @@ impl InfrastructureFactory {
 
     /// Create a complete production infrastructure bundle
     pub fn create_production_infrastructure(
-        db: sled::Db, 
-        schema_path: &str
+        db: sled::Db,
+        schema_path: &str,
     ) -> Result<ProductionInfrastructure, SchemaError> {
         let message_bus = Self::create_message_bus();
-        let db_ops = Self::create_db_ops(db).map_err(|e| SchemaError::InvalidData(e.to_string()))?;
-        
+        let db_ops =
+            Self::create_db_ops(db).map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+
         let atom_manager = AtomManager::new((*db_ops).clone(), Arc::clone(&message_bus));
         let schema_manager = Arc::new(
             SchemaCore::new(schema_path, Arc::clone(&db_ops), Arc::clone(&message_bus))
-                .map_err(|e| SchemaError::InvalidData(e.to_string()))?
+                .map_err(|e| SchemaError::InvalidData(e.to_string()))?,
         );
-        
+
         let field_retrieval_service = FieldRetrievalService::new(Arc::clone(&message_bus));
-        
+
         Ok(ProductionInfrastructure {
             message_bus,
             db_ops,
@@ -90,22 +91,49 @@ pub struct InfrastructureLogger;
 impl InfrastructureLogger {
     /// Log operation start - replaces 🔧 pattern
     pub fn log_operation_start(component: &str, operation: &str, details: &str) {
-        log_feature!(LogFeature::Database, info, "🔧 {}: {} - {}", component, operation, details);
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "🔧 {}: {} - {}",
+            component,
+            operation,
+            details
+        );
     }
 
     /// Log operation success - replaces ✅ pattern  
     pub fn log_operation_success(component: &str, operation: &str, details: &str) {
-        log_feature!(LogFeature::Database, info, "✅ {}: {} - {}", component, operation, details);
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "✅ {}: {} - {}",
+            component,
+            operation,
+            details
+        );
     }
 
     /// Log operation failure - replaces ❌ pattern
     pub fn log_operation_error(component: &str, operation: &str, error: &str) {
-        log_feature!(LogFeature::Database, error, "❌ {}: {} - {}", component, operation, error);
+        log_feature!(
+            LogFeature::Database,
+            error,
+            "❌ {}: {} - {}",
+            component,
+            operation,
+            error
+        );
     }
 
     /// Log debug information - replaces 🎯 pattern
     pub fn log_debug_info(component: &str, info: &str) {
-        log_feature!(LogFeature::Database, info, "🎯 DEBUG {}: {}", component, info);
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "🎯 DEBUG {}: {}",
+            component,
+            info
+        );
     }
 
     /// Log investigation/search - replaces 🔍 pattern
@@ -131,7 +159,10 @@ mod tests {
     #[test]
     fn test_create_message_bus() {
         let bus = InfrastructureFactory::create_message_bus();
-        assert!(!Arc::ptr_eq(&bus, &InfrastructureFactory::create_message_bus()));
+        assert!(!Arc::ptr_eq(
+            &bus,
+            &InfrastructureFactory::create_message_bus()
+        ));
     }
 
     #[test]
@@ -140,7 +171,7 @@ mod tests {
         assert!(infra.is_ok());
     }
 
-    #[test] 
+    #[test]
     fn test_logging_utilities() {
         // Test that logging doesn't panic
         InfrastructureLogger::log_operation_start("Test", "operation", "details");

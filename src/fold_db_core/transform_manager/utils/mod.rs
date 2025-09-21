@@ -13,16 +13,15 @@
 //! - Plus multiple duplicate logging/helper patterns found throughout
 
 use crate::fold_db_core::infrastructure::message_bus::{
-    MessageBus,
-    schema_events::TransformExecuted,
+    schema_events::TransformExecuted, MessageBus,
 };
-use crate::schema::types::{SchemaError, Schema};
-use crate::schema::types::field::variant::FieldVariant;
 use crate::schema::types::field::common::Field;
+use crate::schema::types::field::variant::FieldVariant;
+use crate::schema::types::{Schema, SchemaError};
+use log::{error, info, warn};
 use serde_json::Value as JsonValue;
-use log::{info, error, warn};
-use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 // Re-export commonly used types to avoid import duplication
 pub use serde_json::Value;
@@ -44,24 +43,33 @@ pub use validation::*;
 
 impl TransformUtils {
     // ========== EVENT PUBLISHING UTILITIES ==========
-    
+
     /// Publish a TransformExecuted event with consistent error handling
     pub fn publish_transform_executed(
         message_bus: &Arc<MessageBus>,
         transform_id: &str,
         status: &str,
     ) -> Result<(), SchemaError> {
-        info!("� Publishing TransformExecuted {} event for: {}", status, transform_id);
-        
+        info!(
+            "� Publishing TransformExecuted {} event for: {}",
+            status, transform_id
+        );
+
         let event = TransformExecuted::new(transform_id, status);
-        
+
         match message_bus.publish(event) {
             Ok(_) => {
-                info!("✅ Published TransformExecuted {} event for transform: {}", status, transform_id);
+                info!(
+                    "✅ Published TransformExecuted {} event for transform: {}",
+                    status, transform_id
+                );
                 Ok(())
             }
             Err(e) => {
-                let error_msg = format!("Failed to publish TransformExecuted {} event for {}: {}", status, transform_id, e);
+                let error_msg = format!(
+                    "Failed to publish TransformExecuted {} event for {}: {}",
+                    status, transform_id, e
+                );
                 error!("❌ {}", error_msg);
                 Err(SchemaError::InvalidData(error_msg))
             }
@@ -76,32 +84,45 @@ impl TransformUtils {
     ) {
         match execution_result {
             Ok(value) => {
-                info!("✅ Transform {} execution completed successfully", transform_id);
+                info!(
+                    "✅ Transform {} execution completed successfully",
+                    transform_id
+                );
                 info!("� Execution result details: {:?}", value);
-                
-                if let Err(e) = Self::publish_transform_executed(message_bus, transform_id, "success") {
-                    error!("❌ Event publishing failed after successful execution: {}", e);
+
+                if let Err(e) =
+                    Self::publish_transform_executed(message_bus, transform_id, "success")
+                {
+                    error!(
+                        "❌ Event publishing failed after successful execution: {}",
+                        e
+                    );
                 }
             }
             Err(e) => {
                 error!("❌ Transform {} execution failed", transform_id);
                 error!("❌ Failure details: {:?}", e);
-                
-                if let Err(publish_err) = Self::publish_transform_executed(message_bus, transform_id, "failed") {
-                    error!("❌ Event publishing failed after execution failure: {}", publish_err);
+
+                if let Err(publish_err) =
+                    Self::publish_transform_executed(message_bus, transform_id, "failed")
+                {
+                    error!(
+                        "❌ Event publishing failed after execution failure: {}",
+                        publish_err
+                    );
                 }
             }
         }
     }
 
     // ========== FIELD RESOLUTION UTILITIES ==========
-    
+
     /// Extract simplified value from range field atom content
     /// Converts {"range_key":"2","value":"2"} to "2"
     /// Converts {"range_key":"2","value":{"value":"b"}} to "b"
     fn extract_simplified_value(content: &JsonValue) -> Result<JsonValue, SchemaError> {
         info!("🎯 Extracting simplified value from: {}", content);
-        
+
         // Try to extract the "value" field
         if let Some(value_field) = content.get("value") {
             // If the value field is itself an object with a nested "value", extract that
@@ -113,12 +134,12 @@ impl TransformUtils {
                 return Ok(value_field.clone());
             }
         }
-        
+
         // If no "value" field found, return the content as-is
         warn!("⚠️ No 'value' field found, returning content as-is");
         Ok(content.clone())
     }
-    
+
     /// Unified field value resolution from schema using database operations
     pub fn resolve_field_value(
         db_ops: &Arc<crate::db_operations::DbOperations>,
@@ -127,66 +148,101 @@ impl TransformUtils {
         range_key_filter: Option<Value>,
         hash_key_filter: Option<Value>,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🔍 FieldValueResolver: Looking up field '{}' in schema '{}'", field_name, schema.name);
-        
-        let field = schema.fields.get(field_name)
-            .ok_or_else(|| {
-                error!("❌ Field '{}' not found in schema '{}'", field_name, schema.name);
-                SchemaError::InvalidField(format!("Field '{}' not found in schema '{}'", field_name, schema.name))
-            })?;
-        
-        info!("✅ Field '{}' found in schema '{}'", field_name, schema.name);
-        
+        info!(
+            "🔍 FieldValueResolver: Looking up field '{}' in schema '{}'",
+            field_name, schema.name
+        );
+
+        let field = schema.fields.get(field_name).ok_or_else(|| {
+            error!(
+                "❌ Field '{}' not found in schema '{}'",
+                field_name, schema.name
+            );
+            SchemaError::InvalidField(format!(
+                "Field '{}' not found in schema '{}'",
+                field_name, schema.name
+            ))
+        })?;
+
+        info!(
+            "✅ Field '{}' found in schema '{}'",
+            field_name, schema.name
+        );
+
         // Check if this is a range field first
         match field {
             FieldVariant::Range(_) => {
                 info!("🔍 Detected range field, using MoleculeRange resolution");
-                
+
                 // FIXED: Search for all MoleculeRanges that match the pattern {schema}_{field}_range_*
                 let range_prefix = format!("ref:{}_{}_range_", schema.name, field_name);
-                info!("🔍 Looking for MoleculeRanges with prefix: {}", range_prefix);
-                
+                info!(
+                    "🔍 Looking for MoleculeRanges with prefix: {}",
+                    range_prefix
+                );
+
                 // Get all keys that match the pattern
-                let matching_keys = db_ops.list_items_with_prefix(&range_prefix)
-                    .map_err(|e| SchemaError::InvalidField(format!("Failed to search for MoleculeRanges: {}", e)))?;
-                
-                info!("🔍 Found {} MoleculeRange keys matching pattern", matching_keys.len());
-                
+                let matching_keys = db_ops.list_items_with_prefix(&range_prefix).map_err(|e| {
+                    SchemaError::InvalidField(format!("Failed to search for MoleculeRanges: {}", e))
+                })?;
+
+                info!(
+                    "🔍 Found {} MoleculeRange keys matching pattern",
+                    matching_keys.len()
+                );
+
                 if matching_keys.is_empty() {
-                    info!("⚠️ No MoleculeRanges found for field {}.{}", schema.name, field_name);
+                    info!(
+                        "⚠️ No MoleculeRanges found for field {}.{}",
+                        schema.name, field_name
+                    );
                     return Ok(JsonValue::Object(serde_json::Map::new()));
                 }
-                
+
                 let mut combined_data = serde_json::Map::new();
-                
+
                 // Process each MoleculeRange
                 for key in matching_keys {
                     info!("🔍 Processing MoleculeRange key: {}", key);
-                    
+
                     match db_ops.get_item::<crate::atom::MoleculeRange>(&key) {
                         Ok(Some(range_molecule)) => {
-                            info!("✅ Found MoleculeRange with {} entries", range_molecule.atom_uuids.len());
-                            
+                            info!(
+                                "✅ Found MoleculeRange with {} entries",
+                                range_molecule.atom_uuids.len()
+                            );
+
                             // Extract range key from the MoleculeRange UUID
                             // Pattern: ref:{schema}_{field}_range_{range_key}
-                            let range_key = key.strip_prefix(&range_prefix)
-                                .ok_or_else(|| SchemaError::InvalidData(format!("Invalid MoleculeRange key format: {}", key)))?;
-                            
+                            let range_key = key.strip_prefix(&range_prefix).ok_or_else(|| {
+                                SchemaError::InvalidData(format!(
+                                    "Invalid MoleculeRange key format: {}",
+                                    key
+                                ))
+                            })?;
+
                             info!("🔍 Extracted range key: '{}' from key: {}", range_key, key);
-                            
+
                             // Apply range key filter if provided
                             let should_process = if let Some(filter_value) = &range_key_filter {
                                 info!("🎯 Processing range filter: {:?}", filter_value);
-                                
+
                                 // Parse the filter into a RangeFilter enum
-                                let range_filter = match serde_json::from_value::<crate::schema::types::field::range_filter::RangeFilter>(filter_value.clone()) {
+                                let range_filter = match serde_json::from_value::<
+                                    crate::schema::types::field::range_filter::RangeFilter,
+                                >(
+                                    filter_value.clone()
+                                ) {
                                     Ok(filter) => filter,
                                     Err(e) => {
                                         error!("❌ Failed to parse range filter: {}", e);
-                                        return Err(SchemaError::InvalidData(format!("Invalid range filter format: {}", e)));
+                                        return Err(SchemaError::InvalidData(format!(
+                                            "Invalid range filter format: {}",
+                                            e
+                                        )));
                                     }
                                 };
-                                
+
                                 // Apply the filter to this specific range key
                                 match &range_filter {
                                     crate::schema::types::field::range_filter::RangeFilter::Key(key) => {
@@ -220,25 +276,39 @@ impl TransformUtils {
                                 info!("📋 Processing all range keys");
                                 true
                             };
-                            
+
                             if should_process {
                                 // Process all atoms in this MoleculeRange
                                 for (atom_key, atom_uuid) in &range_molecule.atom_uuids {
-                                    info!("🔗 Processing range key '{}' -> atom: {}", atom_key, atom_uuid);
-                                    
+                                    info!(
+                                        "🔗 Processing range key '{}' -> atom: {}",
+                                        atom_key, atom_uuid
+                                    );
+
                                     match Self::load_atom(db_ops, atom_uuid) {
                                         Ok(atom) => {
                                             let content = atom.content();
-                                            info!("📦 Range entry '{}' content: {}", atom_key, content);
-                                            
+                                            info!(
+                                                "📦 Range entry '{}' content: {}",
+                                                atom_key, content
+                                            );
+
                                             // Extract simplified value instead of full structure
-                                            let simplified_value = Self::extract_simplified_value(content)?;
-                                            info!("🎯 Simplified value for key '{}': {}", atom_key, simplified_value);
-                                            
-                                            combined_data.insert(atom_key.clone(), simplified_value);
+                                            let simplified_value =
+                                                Self::extract_simplified_value(content)?;
+                                            info!(
+                                                "🎯 Simplified value for key '{}': {}",
+                                                atom_key, simplified_value
+                                            );
+
+                                            combined_data
+                                                .insert(atom_key.clone(), simplified_value);
                                         }
                                         Err(e) => {
-                                            error!("❌ Failed to load atom {} for range key '{}': {}", atom_uuid, atom_key, e);
+                                            error!(
+                                                "❌ Failed to load atom {} for range key '{}': {}",
+                                                atom_uuid, atom_key, e
+                                            );
                                         }
                                     }
                                 }
@@ -252,9 +322,12 @@ impl TransformUtils {
                         }
                     }
                 }
-                
+
                 let result = JsonValue::Object(combined_data);
-                info!("✅ Range field resolution complete - combined result: {}", result);
+                info!(
+                    "✅ Range field resolution complete - combined result: {}",
+                    result
+                );
                 return Ok(result);
             }
             FieldVariant::Single(_) => {
@@ -262,54 +335,74 @@ impl TransformUtils {
             }
             FieldVariant::HashRange(_) => {
                 info!("🔑 Detected HashRange field, using HashRange resolution");
-                
+
                 // For HashRange schemas, we need to query using the hash key filter
                 if let Some(hash_filter) = &hash_key_filter {
                     info!("🎯 Processing HashRange hash filter: {:?}", hash_filter);
-                    
+
                     // Extract the hash key from the filter (e.g., {"Key": "DataFold"} -> "DataFold")
                     let hash_key = if let Some(key_obj) = hash_filter.as_object() {
                         if let Some(key_value) = key_obj.get("Key") {
                             if let Some(key_str) = key_value.as_str() {
                                 key_str.to_string()
                             } else {
-                                return Err(SchemaError::InvalidData("Hash filter Key must be a string".to_string()));
+                                return Err(SchemaError::InvalidData(
+                                    "Hash filter Key must be a string".to_string(),
+                                ));
                             }
                         } else {
-                            return Err(SchemaError::InvalidData("Hash filter must contain 'Key' field".to_string()));
+                            return Err(SchemaError::InvalidData(
+                                "Hash filter must contain 'Key' field".to_string(),
+                            ));
                         }
                     } else {
-                        return Err(SchemaError::InvalidData("Hash filter must be an object".to_string()));
+                        return Err(SchemaError::InvalidData(
+                            "Hash filter must be an object".to_string(),
+                        ));
                     };
-                    
+
                     info!("🔍 HashRange query for hash key: '{}'", hash_key);
-                    
+
                     // Query HashRange data using the hash key
                     // Look for atoms with the pattern: {schema_name}_{hash_key}
                     let hashrange_atom_uuid = format!("{}_{}", schema.name, hash_key);
                     println!("🔍 Looking for HashRange atom: {}", hashrange_atom_uuid);
-                    
+
                     // Debug: List all atoms in the database to see what's actually stored
                     info!("🔍 DEBUG: Listing all atoms in database...");
                     // This is a debug approach - in production we'd want a more efficient way
-                    
+
                     // Debug: Try to list what's actually in the database
-                    println!("🔍 DEBUG: Attempting to retrieve atom with key: atom:{}", hashrange_atom_uuid);
-                    
-                    match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", hashrange_atom_uuid)) {
+                    println!(
+                        "🔍 DEBUG: Attempting to retrieve atom with key: atom:{}",
+                        hashrange_atom_uuid
+                    );
+
+                    match db_ops
+                        .get_item::<crate::atom::Atom>(&format!("atom:{}", hashrange_atom_uuid))
+                    {
                         Ok(Some(atom)) => {
                             println!("✅ Found HashRange atom for key '{}'", hash_key);
                             let content = atom.content().clone();
                             println!("🔍 DEBUG: Atom content: {}", content);
-                            
+
                             // Extract the specific field value from the compound result
                             if let Some(content_obj) = content.as_object() {
                                 if let Some(field_value) = content_obj.get(field_name) {
-                                    info!("✅ Extracted field '{}' value: {}", field_name, field_value);
+                                    info!(
+                                        "✅ Extracted field '{}' value: {}",
+                                        field_name, field_value
+                                    );
                                     return Ok(field_value.clone());
                                 } else {
-                                    info!("⚠️ Field '{}' not found in HashRange atom content", field_name);
-                                    info!("🔍 DEBUG: Available fields in content: {:?}", content_obj.keys().collect::<Vec<_>>());
+                                    info!(
+                                        "⚠️ Field '{}' not found in HashRange atom content",
+                                        field_name
+                                    );
+                                    info!(
+                                        "🔍 DEBUG: Available fields in content: {:?}",
+                                        content_obj.keys().collect::<Vec<_>>()
+                                    );
                                     return Ok(JsonValue::Null);
                                 }
                             } else {
@@ -318,58 +411,88 @@ impl TransformUtils {
                             }
                         }
                         Ok(None) => {
-                            println!("⚠️ HashRange atom not found for key '{}' (UUID: {})", hash_key, hashrange_atom_uuid);
+                            println!(
+                                "⚠️ HashRange atom not found for key '{}' (UUID: {})",
+                                hash_key, hashrange_atom_uuid
+                            );
                             return Ok(JsonValue::Null);
                         }
                         Err(e) => {
-                            error!("❌ Error loading HashRange atom '{}': {}", hashrange_atom_uuid, e);
-                            return Err(SchemaError::InvalidField(format!("Error loading HashRange atom '{}': {}", hashrange_atom_uuid, e)));
+                            error!(
+                                "❌ Error loading HashRange atom '{}': {}",
+                                hashrange_atom_uuid, e
+                            );
+                            return Err(SchemaError::InvalidField(format!(
+                                "Error loading HashRange atom '{}': {}",
+                                hashrange_atom_uuid, e
+                            )));
                         }
                     }
                 } else {
                     info!("🔍 No hash_key_filter provided - returning list of available words");
-                    
+
                     // When no hash_key_filter is provided, return a list of available words
                     // This is more appropriate for HashRange schemas than aggregating all data
                     let atom_prefix = format!("atom:{}_", schema.name);
-                    info!("🔍 Scanning for all HashRange atoms with prefix: {}", atom_prefix);
-                    
+                    info!(
+                        "🔍 Scanning for all HashRange atoms with prefix: {}",
+                        atom_prefix
+                    );
+
                     // Get all atom keys with the schema prefix
                     let atom_keys = db_ops.list_items_with_prefix(&atom_prefix)?;
-                    info!("🔍 Found {} HashRange atoms for schema '{}'", atom_keys.len(), schema.name);
-                    
+                    info!(
+                        "🔍 Found {} HashRange atoms for schema '{}'",
+                        atom_keys.len(),
+                        schema.name
+                    );
+
                     let mut available_words = Vec::new();
-                    
+
                     // Extract word names from atom UUIDs
                     for atom_key in atom_keys {
                         // Remove the "atom:" prefix and schema name to get the word
-                        if let Some(word_part) = atom_key.strip_prefix(&format!("atom:{}_", schema.name)) {
+                        if let Some(word_part) =
+                            atom_key.strip_prefix(&format!("atom:{}_", schema.name))
+                        {
                             available_words.push(JsonValue::String(word_part.to_string()));
                         }
                     }
-                    
-                    info!("✅ Found {} unique words: {:?}", available_words.len(), 
-                          available_words.iter().take(10).collect::<Vec<_>>());
-                    
+
+                    info!(
+                        "✅ Found {} unique words: {:?}",
+                        available_words.len(),
+                        available_words.iter().take(10).collect::<Vec<_>>()
+                    );
+
                     // Return a simple list of available words
                     return Ok(JsonValue::Array(available_words));
                 }
             }
         }
-        
+
         // BRIDGE FIX: Primary dynamic molecule lookup with static fallback
         let dynamic_molecule_uuid = format!("{}_{}_single", schema.name, field_name);
-        info!("🔍 BRIDGE FIX: Checking dynamic Molecule UUID first: {}", dynamic_molecule_uuid);
-        
+        info!(
+            "🔍 BRIDGE FIX: Checking dynamic Molecule UUID first: {}",
+            dynamic_molecule_uuid
+        );
+
         // Try dynamic molecule system first (primary path)
         match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", dynamic_molecule_uuid)) {
             Ok(Some(dynamic_molecule)) => {
                 let dynamic_atom_uuid = dynamic_molecule.get_atom_uuid();
-                info!("✅ BRIDGE FIX: Found dynamic molecule pointing to atom: {}", dynamic_atom_uuid);
-                
+                info!(
+                    "✅ BRIDGE FIX: Found dynamic molecule pointing to atom: {}",
+                    dynamic_atom_uuid
+                );
+
                 let atom = Self::load_atom(db_ops, dynamic_atom_uuid)?;
                 let content = atom.content().clone();
-                info!("✅ Query resolved using dynamic molecule system - content: {}", content);
+                info!(
+                    "✅ Query resolved using dynamic molecule system - content: {}",
+                    content
+                );
                 return Ok(content);
             }
             Ok(None) => {
@@ -379,38 +502,53 @@ impl TransformUtils {
                 error!("🔍 BRIDGE FIX: Error checking dynamic molecule: {}", e);
             }
         }
-        
-        
+
         match Self::extract_molecule_uuid(field, field_name) {
             Ok(molecule_uuid) => {
-                info!("🔗 BRIDGE FIX: Using static schema molecule_uuid: {}", molecule_uuid);
-                
+                info!(
+                    "🔗 BRIDGE FIX: Using static schema molecule_uuid: {}",
+                    molecule_uuid
+                );
+
                 match Self::load_molecule(db_ops, &molecule_uuid) {
                     Ok(molecule) => {
                         let atom_uuid = molecule.get_atom_uuid();
                         info!("🔗 Static molecule points to atom: {}", atom_uuid);
-                        
+
                         let atom = Self::load_atom(db_ops, atom_uuid)?;
                         let content = atom.content().clone();
-                        info!("✅ Query resolved using static schema fallback - content: {}", content);
+                        info!(
+                            "✅ Query resolved using static schema fallback - content: {}",
+                            content
+                        );
                         Ok(content)
                     }
                     Err(e) => {
-                        error!("❌ Failed to load static molecule '{}': {}", molecule_uuid, e);
+                        error!(
+                            "❌ Failed to load static molecule '{}': {}",
+                            molecule_uuid, e
+                        );
                         Err(e)
                     }
                 }
             }
             Err(e) => {
-                error!("❌ BRIDGE FIX: Both dynamic and static molecule lookups failed for field '{}'", field_name);
+                error!(
+                    "❌ BRIDGE FIX: Both dynamic and static molecule lookups failed for field '{}'",
+                    field_name
+                );
                 Err(e)
             }
         }
     }
-    
+
     /// Extract molecule_uuid from field variant with consistent error handling
-    fn extract_molecule_uuid(field: &FieldVariant, field_name: &str) -> Result<String, SchemaError> {
-        let molecule_uuid = field.molecule_uuid()
+    fn extract_molecule_uuid(
+        field: &FieldVariant,
+        field_name: &str,
+    ) -> Result<String, SchemaError> {
+        let molecule_uuid = field
+            .molecule_uuid()
             .ok_or_else(|| {
                 error!("❌ Field '{}' has no molecule_uuid", field_name);
                 SchemaError::InvalidField(format!("Field '{}' has no molecule_uuid", field_name))
@@ -418,34 +556,41 @@ impl TransformUtils {
             .clone();
         Ok(molecule_uuid)
     }
-    
+
     /// Load Molecule from database with consistent error handling
     fn load_molecule(
         db_ops: &Arc<crate::db_operations::DbOperations>,
         molecule_uuid: &str,
     ) -> Result<crate::atom::Molecule, SchemaError> {
         info!("🔍 Loading Molecule from database...");
-        
+
         match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", molecule_uuid)) {
             Ok(Some(molecule)) => Ok(molecule),
             Ok(None) => {
                 error!("❌ Molecule '{}' not found", molecule_uuid);
-                Err(SchemaError::InvalidField(format!("Molecule '{}' not found", molecule_uuid)))
+                Err(SchemaError::InvalidField(format!(
+                    "Molecule '{}' not found",
+                    molecule_uuid
+                )))
             }
             Err(e) => {
                 error!("❌ Failed to load Molecule {}: {}", molecule_uuid, e);
-                Err(SchemaError::InvalidField(format!("Failed to load Molecule: {}", e)))
+                Err(SchemaError::InvalidField(format!(
+                    "Failed to load Molecule: {}",
+                    e
+                )))
             }
         }
     }
-    
+
     /// Load Atom from database with consistent error handling
     fn load_atom(
         db_ops: &Arc<crate::db_operations::DbOperations>,
         atom_uuid: &str,
     ) -> Result<crate::atom::Atom, SchemaError> {
         info!("🔍 Loading Atom from database...");
-        db_ops.get_item(&format!("atom:{}", atom_uuid))?
+        db_ops
+            .get_item(&format!("atom:{}", atom_uuid))?
             .ok_or_else(|| {
                 error!("❌ Atom '{}' not found", atom_uuid);
                 SchemaError::InvalidField(format!("Atom '{}' not found", atom_uuid))
@@ -453,15 +598,21 @@ impl TransformUtils {
     }
 
     // ========== LOGGING UTILITIES ==========
-    
+
     /// Standard logging for transform registration
     pub fn log_transform_registration(transform_id: &str, inputs: &[String], output: &str) {
-        info!("🔧 Registering transform '{}' with inputs: {:?}, output: {}", transform_id, inputs, output);
+        info!(
+            "🔧 Registering transform '{}' with inputs: {:?}, output: {}",
+            transform_id, inputs, output
+        );
     }
 
     /// Standard logging for field mapping creation
     pub fn log_field_mapping_creation(field_key: &str, transform_id: &str) {
-        info!("🔗 Created field mapping: '{}' -> transform '{}'", field_key, transform_id);
+        info!(
+            "🔗 Created field mapping: '{}' -> transform '{}'",
+            field_key, transform_id
+        );
     }
 
     /// Standard logging for verification results
@@ -474,12 +625,19 @@ impl TransformUtils {
 
     /// Standard logging for atom ref operations
     pub fn log_molecule_operation(molecule_uuid: &str, atom_uuid: &str, operation: &str) {
-        info!("🔗 Molecule {} - ref:{} -> atom:{}", operation, molecule_uuid, atom_uuid);
+        info!(
+            "🔗 Molecule {} - ref:{} -> atom:{}",
+            operation, molecule_uuid, atom_uuid
+        );
     }
 
     /// Standard logging for field mappings state
     pub fn log_field_mappings_state(mappings: &HashMap<String, HashSet<String>>, context: &str) {
-        info!("🔍 DEBUG {}: Current field mappings ({} entries):", context, mappings.len());
+        info!(
+            "🔍 DEBUG {}: Current field mappings ({} entries):",
+            context,
+            mappings.len()
+        );
         for (field_key, transforms) in mappings {
             info!("  📋 '{}' -> {:?}", field_key, transforms);
         }
@@ -494,7 +652,10 @@ impl TransformUtils {
         collection: &T,
         operation: &str,
     ) {
-        info!("🔍 DEBUG {}: {} collection state: {:?}", operation, collection_name, collection);
+        info!(
+            "🔍 DEBUG {}: {} collection state: {:?}",
+            operation, collection_name, collection
+        );
     }
 
     /// Read a persisted mapping or return a default value
@@ -514,11 +675,7 @@ impl TransformUtils {
     }
 
     /// Insert a value into a set mapping
-    pub fn insert_mapping_set(
-        map: &mut HashMap<String, HashSet<String>>,
-        key: &str,
-        value: &str,
-    ) {
+    pub fn insert_mapping_set(map: &mut HashMap<String, HashSet<String>>, key: &str, value: &str) {
         map.entry(key.to_string())
             .or_default()
             .insert(value.to_string());

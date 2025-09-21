@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use crate::security::SecurityConfig;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::security::SecurityConfig;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Configuration for a DataFoldNode instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,7 +79,12 @@ pub fn load_node_config(
                 Ok(cfg)
             }
             Err(e) => {
-                log_feature!(LogFeature::HttpServer, error, "Failed to parse node configuration: {}", e);
+                log_feature!(
+                    LogFeature::HttpServer,
+                    error,
+                    "Failed to parse node configuration: {}",
+                    e
+                );
                 Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
             }
         }

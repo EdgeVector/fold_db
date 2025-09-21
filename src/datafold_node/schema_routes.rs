@@ -1,8 +1,8 @@
 use super::http_server::AppState;
-use crate::schema::Schema;
-use actix_web::{web, HttpResponse, Responder};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::schema::Schema;
+use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 
 /// List all schemas.
@@ -58,7 +58,6 @@ pub async fn create_schema(
     }
 }
 
-
 /// Unload a schema so it is no longer active.
 pub async fn unload_schema_route(
     path: web::Path<String>,
@@ -101,16 +100,30 @@ pub async fn load_schema_route(
 
 /// List all available schemas (any state)
 pub async fn list_available_schemas(state: web::Data<AppState>) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Received request to list available schemas");
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to list available schemas"
+    );
     let node_guard = state.node.lock().await;
 
     match node_guard.list_available_schemas() {
         Ok(schemas) => {
-            log_feature!(LogFeature::Schema, info, "Successfully retrieved {} available schemas", schemas.len());
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Successfully retrieved {} available schemas",
+                schemas.len()
+            );
             HttpResponse::Ok().json(json!({"data": schemas}))
-        },
+        }
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to list available schemas: {}", e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to list available schemas: {}",
+                e
+            );
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to list available schemas: {}", e)}))
         }
@@ -123,7 +136,12 @@ pub async fn list_schemas_by_state(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let state_str = path.into_inner();
-    log_feature!(LogFeature::Schema, info, "Received request to list schemas by state: {}", state_str);
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to list schemas by state: {}",
+        state_str
+    );
 
     let schema_state = match state_str.as_str() {
         "available" => crate::schema::SchemaState::Available,
@@ -143,7 +161,13 @@ pub async fn list_schemas_by_state(
             "state": state_str
         })),
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to list schemas by state '{}': {}", state_str, e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to list schemas by state '{}': {}",
+                state_str,
+                e
+            );
             HttpResponse::InternalServerError().json(json!({
                 "error": format!("Failed to list schemas by state: {}", e)
             }))
@@ -154,12 +178,22 @@ pub async fn list_schemas_by_state(
 /// Approve a schema for queries and mutations
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    log_feature!(LogFeature::Schema, info, "Received request to approve schema: {}", schema_name);
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to approve schema: {}",
+        schema_name
+    );
 
     let mut node_guard = state.node.lock().await;
     match node_guard.approve_schema(&schema_name) {
         Ok(()) => {
-            log_feature!(LogFeature::Schema, info, "Schema '{}' approved successfully", schema_name);
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema '{}' approved successfully",
+                schema_name
+            );
             HttpResponse::Ok().json(json!({
                 "message": format!("Schema '{}' approved successfully", schema_name),
                 "schema": schema_name,
@@ -167,7 +201,13 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
             }))
         }
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to approve schema '{}': {}", schema_name, e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to approve schema '{}': {}",
+                schema_name,
+                e
+            );
             HttpResponse::BadRequest().json(json!({
                 "error": format!("Failed to approve schema: {}", e)
             }))
@@ -178,12 +218,22 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
 /// Block a schema from queries and mutations
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    log_feature!(LogFeature::Schema, info, "Received request to block schema: {}", schema_name);
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to block schema: {}",
+        schema_name
+    );
 
     let mut node_guard = state.node.lock().await;
     match node_guard.block_schema(&schema_name) {
         Ok(()) => {
-            log_feature!(LogFeature::Schema, info, "Schema '{}' blocked successfully", schema_name);
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema '{}' blocked successfully",
+                schema_name
+            );
             HttpResponse::Ok().json(json!({
                 "message": format!("Schema '{}' blocked successfully", schema_name),
                 "schema": schema_name,
@@ -191,7 +241,13 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
             }))
         }
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to block schema '{}': {}", schema_name, e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to block schema '{}': {}",
+                schema_name,
+                e
+            );
             HttpResponse::BadRequest().json(json!({
                 "error": format!("Failed to block schema: {}", e)
             }))
@@ -205,7 +261,12 @@ pub async fn get_schema_state(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let schema_name = path.into_inner();
-    log_feature!(LogFeature::Schema, info, "Received request to get state for schema: {}", schema_name);
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to get state for schema: {}",
+        schema_name
+    );
 
     let node_guard = state.node.lock().await;
     match node_guard.get_schema_state(&schema_name) {
@@ -221,7 +282,13 @@ pub async fn get_schema_state(
             }))
         }
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to get state for schema '{}': {}", schema_name, e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to get state for schema '{}': {}",
+                schema_name,
+                e
+            );
             HttpResponse::NotFound().json(json!({
                 "error": format!("Failed to get schema state: {}", e)
             }))
@@ -231,13 +298,22 @@ pub async fn get_schema_state(
 
 /// Get comprehensive schema status (NEW UNIFIED ENDPOINT)
 pub async fn get_schema_status(state: web::Data<AppState>) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Received request to get comprehensive schema status");
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to get comprehensive schema status"
+    );
     let node_guard = state.node.lock().await;
 
     match node_guard.get_schema_status() {
         Ok(report) => HttpResponse::Ok().json(json!({"data": report})),
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to get schema status: {}", e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to get schema status: {}",
+                e
+            );
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to get schema status: {}", e)}))
         }
@@ -246,12 +322,18 @@ pub async fn get_schema_status(state: web::Data<AppState>) -> impl Responder {
 
 /// Refresh schemas from all sources (NEW UNIFIED ENDPOINT)
 pub async fn refresh_schemas(state: web::Data<AppState>) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Received request to refresh schemas from all sources");
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to refresh schemas from all sources"
+    );
     let node_guard = state.node.lock().await;
 
     match node_guard.refresh_schemas() {
         Ok(report) => {
-            log_feature!(LogFeature::Schema, info, 
+            log_feature!(
+                LogFeature::Schema,
+                info,
                 "Schema refresh completed: {} discovered, {} loaded, {} failed",
                 report.discovered_schemas.len(),
                 report.loaded_schemas.len(),
@@ -260,7 +342,12 @@ pub async fn refresh_schemas(state: web::Data<AppState>) -> impl Responder {
             HttpResponse::Ok().json(json!({"data": report}))
         }
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to refresh schemas: {}", e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to refresh schemas: {}",
+                e
+            );
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to refresh schemas: {}", e)}))
         }
@@ -272,7 +359,11 @@ pub async fn add_schema_to_available(
     schema_data: web::Json<serde_json::Value>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Received request to add schema to available_schemas directory");
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Received request to add schema to available_schemas directory"
+    );
     let node_guard = state.node.lock().await;
 
     // Extract optional custom name from query parameters or JSON
@@ -294,7 +385,9 @@ pub async fn add_schema_to_available(
 
     match node_guard.add_schema_to_available_directory(&json_content, custom_name) {
         Ok(schema_name) => {
-            log_feature!(LogFeature::Schema, info, 
+            log_feature!(
+                LogFeature::Schema,
+                info,
                 "Successfully added schema '{}' to available_schemas directory",
                 schema_name
             );
@@ -305,7 +398,12 @@ pub async fn add_schema_to_available(
             }))
         }
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to add schema to available_schemas: {}", e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to add schema to available_schemas: {}",
+                e
+            );
             HttpResponse::BadRequest().json(json!({
                 "error": format!("Failed to add schema: {}", e)
             }))

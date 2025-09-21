@@ -89,12 +89,15 @@ impl TransformManager {
 
             // Get the input molecules for this transform
             let input_molecules = {
-                let mut transform_to_molecules = self.transform_to_molecules.write().map_err(|_| {
-                    SchemaError::InvalidData(
-                        "Failed to acquire transform_to_molecules lock".to_string(),
-                    )
-                })?;
-                transform_to_molecules.remove(transform_id).unwrap_or_default()
+                let mut transform_to_molecules =
+                    self.transform_to_molecules.write().map_err(|_| {
+                        SchemaError::InvalidData(
+                            "Failed to acquire transform_to_molecules lock".to_string(),
+                        )
+                    })?;
+                transform_to_molecules
+                    .remove(transform_id)
+                    .unwrap_or_default()
             };
 
             // Remove input name mapping
@@ -110,11 +113,12 @@ impl TransformManager {
 
             // Update the reverse mapping (molecule -> transforms)
             {
-                let mut molecule_to_transforms = self.molecule_to_transforms.write().map_err(|_| {
-                    SchemaError::InvalidData(
-                        "Failed to acquire molecule_to_transforms lock".to_string(),
-                    )
-                })?;
+                let mut molecule_to_transforms =
+                    self.molecule_to_transforms.write().map_err(|_| {
+                        SchemaError::InvalidData(
+                            "Failed to acquire molecule_to_transforms lock".to_string(),
+                        )
+                    })?;
 
                 for molecule_uuid in input_molecules {
                     if let Some(transform_set) = molecule_to_transforms.get_mut(&molecule_uuid) {

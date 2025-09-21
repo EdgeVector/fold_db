@@ -1,10 +1,16 @@
-use crate::schema::types::{JsonSchemaDefinition, JsonSchemaField, Schema, SchemaError, SingleField, FieldVariant, field::common::Field};
-use crate::schema::field::HashRangeField;
-use crate::schema::constants::{HASH_FIELD_NAME, RANGE_FIELD_NAME};
 use super::validator::SchemaValidator;
+use crate::schema::constants::{HASH_FIELD_NAME, RANGE_FIELD_NAME};
+use crate::schema::field::HashRangeField;
+use crate::schema::types::{
+    field::common::Field, FieldVariant, JsonSchemaDefinition, JsonSchemaField, Schema, SchemaError,
+    SingleField,
+};
 
 /// Converts a JSON schema field to a FieldVariant.
-fn convert_field(json_field: JsonSchemaField, schema_type: &crate::schema::types::schema::SchemaType) -> FieldVariant {
+fn convert_field(
+    json_field: JsonSchemaField,
+    schema_type: &crate::schema::types::schema::SchemaType,
+) -> FieldVariant {
     match schema_type {
         crate::schema::types::schema::SchemaType::HashRange => {
             // For HashRange schemas, create HashRangeField variants
@@ -74,7 +80,10 @@ pub fn interpret_schema(
     // Convert fields
     let mut fields = std::collections::HashMap::new();
     for (field_name, json_field) in json_schema.fields {
-        fields.insert(field_name, convert_field(json_field, &json_schema.schema_type));
+        fields.insert(
+            field_name,
+            convert_field(json_field, &json_schema.schema_type),
+        );
     }
 
     // Create the schema

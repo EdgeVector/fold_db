@@ -47,13 +47,21 @@ impl Interpreter {
             Expression::Literal(value) => self.evaluate_literal(value),
             Expression::Variable(name) => self.evaluate_variable(name),
             Expression::FieldAccess { object, field } => self.evaluate_field_access(object, field),
-            Expression::BinaryOp { left, operator, right } => self.evaluate_binary_op(left, operator, right),
+            Expression::BinaryOp {
+                left,
+                operator,
+                right,
+            } => self.evaluate_binary_op(left, operator, right),
             Expression::UnaryOp { operator, expr } => self.evaluate_unary_op(operator, expr),
             Expression::FunctionCall { name, args } => self.evaluate_function_call(name, args),
-            Expression::IfElse { condition, then_branch, else_branch } => {
-                self.evaluate_if_else(condition, then_branch, else_branch)
+            Expression::IfElse {
+                condition,
+                then_branch,
+                else_branch,
+            } => self.evaluate_if_else(condition, then_branch, else_branch),
+            Expression::LetBinding { name, value, body } => {
+                self.evaluate_let_binding(name, value, body)
             }
-            Expression::LetBinding { name, value, body } => self.evaluate_let_binding(name, value, body),
             Expression::Return(expr) => self.evaluate_return(expr),
         }
     }
@@ -65,13 +73,18 @@ impl Interpreter {
 
     /// Evaluates a variable reference.
     fn evaluate_variable(&self, name: &str) -> Result<Value, SchemaError> {
-        self.variables.get(name).cloned().ok_or_else(|| {
-            SchemaError::InvalidField(format!("Variable not found: {}", name))
-        })
+        self.variables
+            .get(name)
+            .cloned()
+            .ok_or_else(|| SchemaError::InvalidField(format!("Variable not found: {}", name)))
     }
 
     /// Evaluates field access expressions (object.field).
-    fn evaluate_field_access(&mut self, object: &Expression, field: &str) -> Result<Value, SchemaError> {
+    fn evaluate_field_access(
+        &mut self,
+        object: &Expression,
+        field: &str,
+    ) -> Result<Value, SchemaError> {
         // Handle schema.field references
         if let Expression::Variable(schema_name) = object {
             return self.evaluate_schema_field_access(schema_name, field);
@@ -98,7 +111,11 @@ impl Interpreter {
     }
 
     /// Evaluates schema.field access patterns.
-    fn evaluate_schema_field_access(&self, schema_name: &str, field: &str) -> Result<Value, SchemaError> {
+    fn evaluate_schema_field_access(
+        &self,
+        schema_name: &str,
+        field: &str,
+    ) -> Result<Value, SchemaError> {
         // Look up schema.field in variables
         let key = format!("{}.{}", schema_name, field);
         if let Some(value) = self.variables.get(&key) {
@@ -113,13 +130,19 @@ impl Interpreter {
         }
 
         // Fall back to looking up just the field name
-        self.variables.get(field).cloned().ok_or_else(|| {
-            SchemaError::InvalidField(format!("Field not found: {}", field))
-        })
+        self.variables
+            .get(field)
+            .cloned()
+            .ok_or_else(|| SchemaError::InvalidField(format!("Field not found: {}", field)))
     }
 
     /// Evaluates binary operations.
-    fn evaluate_binary_op(&mut self, left: &Expression, operator: &Operator, right: &Expression) -> Result<Value, SchemaError> {
+    fn evaluate_binary_op(
+        &mut self,
+        left: &Expression,
+        operator: &Operator,
+        right: &Expression,
+    ) -> Result<Value, SchemaError> {
         let left_val = self.evaluate(left)?;
         let right_val = self.evaluate(right)?;
 
@@ -141,7 +164,11 @@ impl Interpreter {
     }
 
     /// Evaluates unary operations.
-    fn evaluate_unary_op(&mut self, operator: &UnaryOperator, expr: &Expression) -> Result<Value, SchemaError> {
+    fn evaluate_unary_op(
+        &mut self,
+        operator: &UnaryOperator,
+        expr: &Expression,
+    ) -> Result<Value, SchemaError> {
         let val = self.evaluate(expr)?;
 
         match operator {
@@ -151,7 +178,11 @@ impl Interpreter {
     }
 
     /// Evaluates function calls.
-    fn evaluate_function_call(&mut self, name: &str, args: &[Expression]) -> Result<Value, SchemaError> {
+    fn evaluate_function_call(
+        &mut self,
+        name: &str,
+        args: &[Expression],
+    ) -> Result<Value, SchemaError> {
         let mut evaluated_args = Vec::new();
 
         for arg in args {
@@ -173,7 +204,7 @@ impl Interpreter {
         &mut self,
         condition: &Expression,
         then_branch: &Expression,
-        else_branch: &Option<Box<Expression>>
+        else_branch: &Option<Box<Expression>>,
     ) -> Result<Value, SchemaError> {
         let cond = self.evaluate(condition)?;
 
@@ -197,7 +228,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         value: &Expression,
-        body: &Expression
+        body: &Expression,
     ) -> Result<Value, SchemaError> {
         let val = self.evaluate(value)?;
 

@@ -51,7 +51,6 @@ impl SchemaStripper {
             // Remove permission_policy
             field_obj.remove("permission_policy");
 
-
             // For range fields, strip nested field data
             if let Some(Value::Object(range_field)) = field_obj.get_mut("field") {
                 self.strip_field_data(&mut Value::Object(range_field.clone()))?;
@@ -115,7 +114,6 @@ impl SchemaStripper {
             if let Some(field_type) = field_obj.get("field_type") {
                 simplified.insert("type".to_string(), field_type.clone());
             }
-
 
             // For range fields, include range structure
             if let Some(range_field) = field_obj.get("field") {

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition, KeyConfig};
+use datafold::schema::types::json_schema::{
+    DeclarativeSchemaDefinition, FieldDefinition, KeyConfig,
+};
 use datafold::schema::types::schema::SchemaType;
 
 fn minimal_fields() -> HashMap<String, FieldDefinition> {
@@ -29,7 +31,7 @@ fn single_schema_parsing_without_key() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert_eq!(schema.name, "SingleWithoutKey");
     assert_eq!(schema.schema_type, SchemaType::Single);
@@ -55,12 +57,12 @@ fn single_schema_parsing_with_key() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert_eq!(schema.name, "SingleWithKey");
     assert_eq!(schema.schema_type, SchemaType::Single);
     assert!(schema.key.is_some());
-    
+
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "input.map().user_id");
     assert_eq!(key.range_field, "input.map().timestamp");
@@ -85,10 +87,12 @@ fn range_schema_parsing_without_key() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert_eq!(schema.name, "RangeWithoutKey");
-    assert!(matches!(schema.schema_type, SchemaType::Range { range_key } if range_key == "timestamp"));
+    assert!(
+        matches!(schema.schema_type, SchemaType::Range { range_key } if range_key == "timestamp")
+    );
     assert!(schema.key.is_none());
     assert_eq!(schema.fields.len(), 2);
 }
@@ -116,12 +120,14 @@ fn range_schema_parsing_with_key() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert_eq!(schema.name, "RangeWithKey");
-    assert!(matches!(schema.schema_type, SchemaType::Range { range_key } if range_key == "timestamp"));
+    assert!(
+        matches!(schema.schema_type, SchemaType::Range { range_key } if range_key == "timestamp")
+    );
     assert!(schema.key.is_some());
-    
+
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "input.map().user_id");
     assert_eq!(key.range_field, "input.map().timestamp");
@@ -141,7 +147,7 @@ fn hashrange_schema_parsing_without_key() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert_eq!(schema.name, "HashRangeWithoutKey");
     assert_eq!(schema.schema_type, SchemaType::HashRange);
@@ -167,12 +173,12 @@ fn hashrange_schema_parsing_with_key() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert_eq!(schema.name, "HashRangeWithKey");
     assert_eq!(schema.schema_type, SchemaType::HashRange);
     assert!(schema.key.is_some());
-    
+
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "input.map().user_id");
     assert_eq!(key.range_field, "input.map().timestamp");
@@ -196,10 +202,10 @@ fn key_parsing_with_empty_fields() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert!(schema.key.is_some());
-    
+
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "");
     assert_eq!(key.range_field, "");
@@ -222,10 +228,10 @@ fn key_parsing_with_partial_fields() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert!(schema.key.is_some());
-    
+
     let key = schema.key.unwrap();
     assert_eq!(key.hash_field, "input.map().user_id");
     assert_eq!(key.range_field, ""); // Should default to empty string
@@ -251,10 +257,12 @@ fn backward_compatibility_range_without_key() {
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
     assert!(result.is_ok());
-    
+
     let schema = result.unwrap();
     assert_eq!(schema.name, "LegacyRange");
-    assert!(matches!(schema.schema_type, SchemaType::Range { range_key } if range_key == "created_at"));
+    assert!(
+        matches!(schema.schema_type, SchemaType::Range { range_key } if range_key == "created_at")
+    );
     assert!(schema.key.is_none()); // Legacy schemas don't have key
     assert_eq!(schema.fields.len(), 2);
 }
@@ -273,20 +281,20 @@ fn serialization_roundtrip_with_key() {
 
     // Serialize to JSON
     let json = serde_json::to_string(&original_schema).unwrap();
-    
+
     // Deserialize back
     let deserialized: DeclarativeSchemaDefinition = serde_json::from_str(&json).unwrap();
-    
+
     assert_eq!(original_schema.name, deserialized.name);
     assert_eq!(original_schema.schema_type, deserialized.schema_type);
     assert_eq!(original_schema.fields.len(), deserialized.fields.len());
-    
+
     assert!(original_schema.key.is_some());
     assert!(deserialized.key.is_some());
-    
+
     let original_key = original_schema.key.unwrap();
     let deserialized_key = deserialized.key.unwrap();
-    
+
     assert_eq!(original_key.hash_field, deserialized_key.hash_field);
     assert_eq!(original_key.range_field, deserialized_key.range_field);
 }
@@ -302,16 +310,15 @@ fn serialization_roundtrip_without_key() {
 
     // Serialize to JSON
     let json = serde_json::to_string(&original_schema).unwrap();
-    
-    
+
     // Verify key is omitted from serialization (should not contain top-level "key" field)
     // The JSON should not contain a top-level "key" property for KeyConfig
     // It may contain "key" as a field name, but not as a top-level key configuration
     assert!(!json.contains(",\"key\":{") && !json.contains("\"key\":{\"hash_field\""));
-    
+
     // Deserialize back
     let deserialized: DeclarativeSchemaDefinition = serde_json::from_str(&json).unwrap();
-    
+
     assert_eq!(original_schema.name, deserialized.name);
     assert_eq!(original_schema.schema_type, deserialized.schema_type);
     assert_eq!(original_schema.fields.len(), deserialized.fields.len());

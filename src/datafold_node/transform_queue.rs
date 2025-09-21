@@ -34,7 +34,7 @@ impl DataFoldNode {
 mod tests {
     use super::*;
     use crate::datafold_node::config::NodeConfig;
-    
+
     use tempfile::tempdir;
 
     #[test]

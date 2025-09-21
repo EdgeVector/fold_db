@@ -1,6 +1,6 @@
-use log::{info, error};
 use crate::schema::types::{SchemaError, Transform};
 use crate::validation_utils::ValidationUtils;
+use log::{error, info};
 
 use super::TransformUtils;
 
@@ -27,7 +27,10 @@ impl TransformUtils {
 
         let output = transform.get_output();
         if output.trim().is_empty() {
-            let error_msg = format!("Transform '{}' must have a valid output field", transform_id);
+            let error_msg = format!(
+                "Transform '{}' must have a valid output field",
+                transform_id
+            );
             error!("❌ {}", error_msg);
             return Err(SchemaError::InvalidData(error_msg));
         }
@@ -41,18 +44,27 @@ impl TransformUtils {
         } else if let Some(schema) = transform.get_declarative_schema() {
             ValidationUtils::require_valid_schema_name(&schema.name)?;
         } else {
-            let error_msg = format!("Transform '{}' must be either procedural or declarative", transform_id);
+            let error_msg = format!(
+                "Transform '{}' must be either procedural or declarative",
+                transform_id
+            );
             error!("❌ {}", error_msg);
             return Err(SchemaError::InvalidData(error_msg));
         }
 
-        info!("✅ Transform registration validation passed for: {}", transform_id);
+        info!(
+            "✅ Transform registration validation passed for: {}",
+            transform_id
+        );
         Ok(())
     }
 
     /// Validate field name format
     pub fn validate_field_name(field_name: &str, context: &str) -> Result<(), SchemaError> {
-        info!("🔍 Validating field name '{}' in context: {}", field_name, context);
+        info!(
+            "🔍 Validating field name '{}' in context: {}",
+            field_name, context
+        );
 
         if field_name.trim().is_empty() {
             let error_msg = format!("Field name cannot be empty in context: {}", context);
@@ -72,7 +84,10 @@ impl TransformUtils {
 
         let (schema_name, field_name_part) = (parts[0], parts[1]);
         if schema_name.trim().is_empty() || field_name_part.trim().is_empty() {
-            let error_msg = format!("Schema and field names cannot be empty in field '{}' (context: {})", field_name, context);
+            let error_msg = format!(
+                "Schema and field names cannot be empty in field '{}' (context: {})",
+                field_name, context
+            );
             error!("❌ {}", error_msg);
             return Err(SchemaError::InvalidData(error_msg));
         }

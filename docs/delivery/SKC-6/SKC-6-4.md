@@ -8,6 +8,9 @@ After all field processing paths consume the universal key snapshot, remove the 
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-21 12:15:00 | Created | N/A | Proposed | Task file created | ai-agent |
 | 2025-09-23 09:20:00 | Scope Refined | Proposed | Proposed | Converted task into cleanup and error-hardening step | ai-agent |
+| 2025-01-27 18:50:00 | Status Update | Proposed | InProgress | Began removing legacy key heuristics and aligning error handling with universal helper errors | ai-agent |
+| 2025-01-27 20:20:00 | Status Update | InProgress | Review | Legacy helpers removed, logging normalized, and tests updated for strict schema-driven failures | ai-agent |
+| 2025-01-27 21:10:00 | Status Update | Review | Done | Verified descriptive failures and logging changes after full test run | user |
 
 ## Requirements
 - Delete `extract_range_key_from_value`, `extract_hash_key_from_value`, and any other unused heuristic utilities from `field_processing.rs` and related modules.
@@ -31,6 +34,7 @@ After all field processing paths consume the universal key snapshot, remove the 
 - No references to the legacy heuristic helpers remain in the codebase.
 - Field processing errors surface descriptive messages for missing key configuration or malformed payloads.
 - Logging is consistent, structured, and free of debugging `println!` calls.
+- Requests targeting unknown schemas now return error responses rather than silently succeeding via legacy fallbacks.
 
 ## Files Modified
 - `src/fold_db_core/managers/atom/field_processing.rs`

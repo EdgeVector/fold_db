@@ -5,19 +5,14 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignedMessage {
-    pub payload: String,        // Base64 encoded JSON payload
+    pub payload: String,       // Base64 encoded JSON payload
     pub public_key_id: String, // ID of the public key
-    pub signature: String,      // Hex-encoded signature
-    pub timestamp: i64,         // Unix timestamp
+    pub signature: String,     // Hex-encoded signature
+    pub timestamp: i64,        // Unix timestamp
 }
 
 impl SignedMessage {
-    pub fn new(
-        payload: String,
-        public_key_id: String,
-        signature: String,
-        timestamp: i64,
-    ) -> Self {
+    pub fn new(payload: String, public_key_id: String, signature: String, timestamp: i64) -> Self {
         Self {
             payload,
             public_key_id,
@@ -65,12 +60,7 @@ pub struct PublicKeyInfo {
 
 impl PublicKeyInfo {
     /// Create a new public key info
-    pub fn new(
-        id: String,
-        public_key: String,
-        owner_id: String,
-        permissions: Vec<String>,
-    ) -> Self {
+    pub fn new(id: String, public_key: String, owner_id: String, permissions: Vec<String>) -> Self {
         Self {
             id,
             public_key,
@@ -82,26 +72,26 @@ impl PublicKeyInfo {
             metadata: HashMap::new(),
         }
     }
-    
+
     /// Check if this key is currently valid
     pub fn is_valid(&self) -> bool {
         if !self.is_active {
             return false;
         }
-        
+
         if let Some(expires_at) = self.expires_at {
             return chrono::Utc::now().timestamp() < expires_at;
         }
-        
+
         true
     }
-    
+
     /// Add metadata to this key
     pub fn with_metadata(mut self, key: String, value: String) -> Self {
         self.metadata.insert(key, value);
         self
     }
-    
+
     /// Set expiration time
     pub fn with_expiration(mut self, expires_at: i64) -> Self {
         self.expires_at = Some(expires_at);
@@ -188,7 +178,7 @@ impl VerificationResult {
             timestamp_valid,
         }
     }
-    
+
     /// Create a failed verification result
     pub fn failure(error: String) -> Self {
         Self {

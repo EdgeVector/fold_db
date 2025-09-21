@@ -13,7 +13,9 @@ pub fn parse_log_level(level: &str) -> Result<tracing::Level, LoggingError> {
         "INFO" => Ok(tracing::Level::INFO),
         "WARN" => Ok(tracing::Level::WARN),
         "ERROR" => Ok(tracing::Level::ERROR),
-        _ => Err(LoggingError::Config(format!("Invalid log level: {}", level))),
+        _ => Err(LoggingError::Config(format!(
+            "Invalid log level: {}",
+            level
+        ))),
     }
 }
-

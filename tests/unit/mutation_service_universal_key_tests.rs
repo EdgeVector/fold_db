@@ -1,13 +1,13 @@
 //! Unit tests for MutationService universal key configuration functionality
 
-use datafold::fold_db_core::services::mutation::MutationService;
-use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
-use datafold::schema::types::{Schema, SchemaType};
-use datafold::schema::types::field::{FieldVariant, SingleField, HashRangeField};
-use datafold::schema::types::json_schema::KeyConfig;
-use datafold::permissions::types::policy::PermissionsPolicy;
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fees::SchemaPaymentConfig;
+use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
+use datafold::fold_db_core::services::mutation::MutationService;
+use datafold::permissions::types::policy::PermissionsPolicy;
+use datafold::schema::types::field::{FieldVariant, HashRangeField, SingleField};
+use datafold::schema::types::json_schema::KeyConfig;
+use datafold::schema::types::{Schema, SchemaType};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ mod tests {
         fn new() -> Self {
             let message_bus = Arc::new(MessageBus::new());
             let mutation_service = MutationService::new(Arc::clone(&message_bus));
-            
+
             Self {
                 mutation_service,
                 message_bus,
@@ -41,7 +41,7 @@ mod tests {
             range_field: &str,
         ) -> Schema {
             let mut fields = HashMap::new();
-            
+
             // Create hash field
             let hash_field_obj = SingleField::new(
                 PermissionsPolicy::default(),
@@ -49,15 +49,18 @@ mod tests {
                 HashMap::new(),
             );
             fields.insert(hash_field.to_string(), FieldVariant::Single(hash_field_obj));
-            
+
             // Create range field
             let range_field_obj = SingleField::new(
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
                 HashMap::new(),
             );
-            fields.insert(range_field.to_string(), FieldVariant::Single(range_field_obj));
-            
+            fields.insert(
+                range_field.to_string(),
+                FieldVariant::Single(range_field_obj),
+            );
+
             // Create content field
             let content_field = HashRangeField::new(
                 PermissionsPolicy::default(),
@@ -67,8 +70,11 @@ mod tests {
                 "content".to_string(),
                 "content".to_string(),
             );
-            fields.insert("content".to_string(), FieldVariant::HashRange(Box::new(content_field)));
-            
+            fields.insert(
+                "content".to_string(),
+                FieldVariant::HashRange(Box::new(content_field)),
+            );
+
             // Create author field
             let author_field = SingleField::new(
                 PermissionsPolicy::default(),
@@ -93,21 +99,24 @@ mod tests {
         /// Create a HashRange schema without key configuration (should fail)
         fn create_hashrange_schema_without_key(&self, name: &str) -> Schema {
             let mut fields = HashMap::new();
-            
+
             let word_field = SingleField::new(
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
                 HashMap::new(),
             );
             fields.insert("word".to_string(), FieldVariant::Single(word_field));
-            
+
             let publish_date_field = SingleField::new(
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
                 HashMap::new(),
             );
-            fields.insert("publish_date".to_string(), FieldVariant::Single(publish_date_field));
-            
+            fields.insert(
+                "publish_date".to_string(),
+                FieldVariant::Single(publish_date_field),
+            );
+
             let content_field = HashRangeField::new(
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
@@ -116,7 +125,10 @@ mod tests {
                 "content".to_string(),
                 "content".to_string(),
             );
-            fields.insert("content".to_string(), FieldVariant::HashRange(Box::new(content_field)));
+            fields.insert(
+                "content".to_string(),
+                FieldVariant::HashRange(Box::new(content_field)),
+            );
 
             Schema {
                 name: name.to_string(),
@@ -131,21 +143,24 @@ mod tests {
         /// Create a HashRange schema with empty key fields (should fail)
         fn create_hashrange_schema_with_empty_key_fields(&self, name: &str) -> Schema {
             let mut fields = HashMap::new();
-            
+
             let word_field = SingleField::new(
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
                 HashMap::new(),
             );
             fields.insert("word".to_string(), FieldVariant::Single(word_field));
-            
+
             let publish_date_field = SingleField::new(
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
                 HashMap::new(),
             );
-            fields.insert("publish_date".to_string(), FieldVariant::Single(publish_date_field));
-            
+            fields.insert(
+                "publish_date".to_string(),
+                FieldVariant::Single(publish_date_field),
+            );
+
             let content_field = HashRangeField::new(
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
@@ -154,7 +169,10 @@ mod tests {
                 "content".to_string(),
                 "content".to_string(),
             );
-            fields.insert("content".to_string(), FieldVariant::HashRange(Box::new(content_field)));
+            fields.insert(
+                "content".to_string(),
+                FieldVariant::HashRange(Box::new(content_field)),
+            );
 
             Schema {
                 name: name.to_string(),
@@ -173,12 +191,12 @@ mod tests {
     #[test]
     fn test_hashrange_key_field_names_extraction() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         // Test with custom field names
         let schema = fixture.create_hashrange_schema_with_universal_key(
             "BlogPostWordIndex",
             "word",
-            "publish_date"
+            "publish_date",
         );
 
         // Test the key field extraction (this tests the private method indirectly through update_hashrange_schema_fields)
@@ -194,7 +212,7 @@ mod tests {
             &fields_and_values,
             "technology",
             "2025-01-15",
-            "test_hash"
+            "test_hash",
         );
 
         // The method should succeed (or fail for other reasons, but not key extraction)
@@ -205,7 +223,7 @@ mod tests {
     #[test]
     fn test_hashrange_schema_missing_key_configuration() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         let schema = fixture.create_hashrange_schema_without_key("BlogPostWordIndex");
 
         let mut fields_and_values = HashMap::new();
@@ -218,7 +236,7 @@ mod tests {
             &fields_and_values,
             "technology",
             "2025-01-15",
-            "test_hash"
+            "test_hash",
         );
 
         // Should fail with missing key configuration error
@@ -231,7 +249,7 @@ mod tests {
     #[test]
     fn test_hashrange_schema_empty_hash_field() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         let schema = fixture.create_hashrange_schema_with_empty_key_fields("BlogPostWordIndex");
 
         let mut fields_and_values = HashMap::new();
@@ -244,7 +262,7 @@ mod tests {
             &fields_and_values,
             "technology",
             "2025-01-15",
-            "test_hash"
+            "test_hash",
         );
 
         // Should fail with empty hash field error
@@ -257,12 +275,12 @@ mod tests {
     #[test]
     fn test_hashrange_field_skipping_with_universal_key() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         // Create schema with custom field names
         let schema = fixture.create_hashrange_schema_with_universal_key(
             "BlogPostWordIndex",
             "custom_hash_field",
-            "custom_range_field"
+            "custom_range_field",
         );
 
         let mut fields_and_values = HashMap::new();
@@ -278,7 +296,7 @@ mod tests {
             &fields_and_values,
             "technology",
             "2025-01-15",
-            "test_hash"
+            "test_hash",
         );
 
         // Should succeed (or fail for other reasons, but not field skipping)
@@ -288,12 +306,12 @@ mod tests {
     #[test]
     fn test_hashrange_mutation_with_different_field_names() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         // Test with completely different field names
         let schema = fixture.create_hashrange_schema_with_universal_key(
             "UserActivityLog",
             "user_id",
-            "timestamp"
+            "timestamp",
         );
 
         let mut fields_and_values = HashMap::new();
@@ -307,7 +325,7 @@ mod tests {
             &fields_and_values,
             "user123",
             "2025-01-15T10:30:00Z",
-            "test_hash"
+            "test_hash",
         );
 
         // Should work with different field names
@@ -317,11 +335,11 @@ mod tests {
     #[test]
     fn test_hashrange_mutation_context_creation() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         let schema = fixture.create_hashrange_schema_with_universal_key(
             "BlogPostWordIndex",
             "word",
-            "publish_date"
+            "publish_date",
         );
 
         let mut fields_and_values = HashMap::new();
@@ -335,7 +353,7 @@ mod tests {
             &fields_and_values,
             "technology",
             "2025-01-15",
-            "test_mutation_hash"
+            "test_mutation_hash",
         );
 
         // Should succeed (or fail for other reasons, but not context creation)
@@ -345,12 +363,12 @@ mod tests {
     #[test]
     fn test_hashrange_mutation_backward_compatibility() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         // Test with traditional field names to ensure backward compatibility
         let schema = fixture.create_hashrange_schema_with_universal_key(
             "BlogPostWordIndex",
             "hash_key",
-            "range_key"
+            "range_key",
         );
 
         let mut fields_and_values = HashMap::new();
@@ -363,7 +381,7 @@ mod tests {
             &fields_and_values,
             "technology",
             "2025-01-15",
-            "test_hash"
+            "test_hash",
         );
 
         // Should work with traditional field names (backward compatibility)
@@ -373,12 +391,12 @@ mod tests {
     #[test]
     fn test_hashrange_mutation_error_handling() {
         let fixture = MutationServiceTestFixture::new();
-        
+
         // Test various error scenarios
         let schema = fixture.create_hashrange_schema_with_universal_key(
             "BlogPostWordIndex",
             "word",
-            "publish_date"
+            "publish_date",
         );
 
         // Test with empty fields_and_values
@@ -388,7 +406,7 @@ mod tests {
             &empty_fields,
             "technology",
             "2025-01-15",
-            "test_hash"
+            "test_hash",
         );
 
         // Should handle empty fields gracefully

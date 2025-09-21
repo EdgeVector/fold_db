@@ -3,8 +3,8 @@
 //! Contains reducer functions, metadata extraction, and value processing
 //! utilities for field execution.
 
-use crate::transform::iterator_stack::types::IteratorStack;
 use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
+use crate::transform::iterator_stack::types::IteratorStack;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -22,8 +22,14 @@ impl ReducerHelper {
     /// Extracts metadata from the current stack state
     pub fn extract_metadata(stack: &IteratorStack) -> IteratorStackResult<HashMap<String, Value>> {
         let mut metadata = HashMap::new();
-        metadata.insert("depth".to_string(), Value::Number(serde_json::Number::from(stack.len())));
-        metadata.insert("timestamp".to_string(), Value::String(chrono::Utc::now().to_rfc3339()));
+        metadata.insert(
+            "depth".to_string(),
+            Value::Number(serde_json::Number::from(stack.len())),
+        );
+        metadata.insert(
+            "timestamp".to_string(),
+            Value::String(chrono::Utc::now().to_rfc3339()),
+        );
         Ok(metadata)
     }
 
@@ -37,13 +43,15 @@ impl ReducerHelper {
                         sum += num;
                     }
                 }
-                Ok(Value::Number(serde_json::Number::from_f64(sum).unwrap_or(serde_json::Number::from(0))))
+                Ok(Value::Number(
+                    serde_json::Number::from_f64(sum).unwrap_or(serde_json::Number::from(0)),
+                ))
             }
             "count" => Ok(Value::Number(serde_json::Number::from(values.len()))),
             "first" => Ok(values.first().cloned().unwrap_or(Value::Null)),
             "last" => Ok(values.last().cloned().unwrap_or(Value::Null)),
             _ => Err(IteratorStackError::ExecutionError {
-                message: format!("Unknown reducer: {}", reducer_name)
+                message: format!("Unknown reducer: {}", reducer_name),
             }),
         }
     }

@@ -1,8 +1,8 @@
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use crate::permissions::permission_manager::PermissionManager;
 use crate::schema::types::{Field, Mutation, Query, SchemaError};
 use crate::schema::SchemaCore;
-use crate::logging::features::LogFeature;
-use crate::log_feature;
 
 /// Provides a high-level interface for permission validation on schema operations.
 ///
@@ -76,7 +76,10 @@ impl PermissionWrapper {
             LogFeature::Permissions,
             info,
             "FIELD PERMISSION CHECK: schema={}, field={}, pub_key={}, trust_distance={}",
-            query.schema_name, field_name, query.pub_key, query.trust_distance
+            query.schema_name,
+            field_name,
+            query.pub_key,
+            query.trust_distance
         );
 
         let schema = match schema_manager.get_schema(&query.schema_name) {

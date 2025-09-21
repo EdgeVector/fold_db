@@ -1,13 +1,13 @@
 use super::types::TransformRunner;
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::schema::types::{SchemaError, Transform};
-use log::{info, error};
+use crate::fold_db_core::transform_manager::utils::*;
 use crate::logging::features::{log_feature, LogFeature};
+use crate::schema::types::{SchemaError, Transform};
+use log::{error, info};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-use crate::fold_db_core::transform_manager::utils::*;
 use std::thread;
 
 pub(super) const AREF_TO_TRANSFORMS_KEY: &str = "map_molecule_to_transforms";
@@ -64,7 +64,7 @@ impl TransformManager {
     ) -> Result<Self, SchemaError> {
         // Load any persisted transforms using direct database operations
         let mut registered_transforms = HashMap::new();
-        
+
         let transform_ids = db_ops.list_transforms()?;
 
         for transform_id in transform_ids {
@@ -73,18 +73,24 @@ impl TransformManager {
                     // Log transform information for better debugging
                     info!(
                         "📋 Loading transform '{}' with inputs: {:?}, output: {}",
-                        transform_id, transform.get_inputs(), transform.get_output()
+                        transform_id,
+                        transform.get_inputs(),
+                        transform.get_output()
                     );
                     registered_transforms.insert(transform_id, transform);
                 }
                 Ok(None) => {
-                    log_feature!(LogFeature::Transform, warn,
+                    log_feature!(
+                        LogFeature::Transform,
+                        warn,
                         "Transform '{}' not found in storage during initialization",
                         transform_id
                     );
                 }
                 Err(e) => {
-                    log_feature!(LogFeature::Transform, error,
+                    log_feature!(
+                        LogFeature::Transform,
+                        error,
                         "Failed to load transform '{}' during initialization: {}",
                         transform_id,
                         e
@@ -103,11 +109,12 @@ impl TransformManager {
             transform_to_fields,
             transform_outputs,
         ) = Self::load_persisted_mappings_direct(&db_ops)?;
-        
+
         // CRITICAL FIX: Clean up field mappings that reference non-loaded transforms
-        let loaded_transform_ids: std::collections::HashSet<String> = registered_transforms.keys().cloned().collect();
+        let loaded_transform_ids: std::collections::HashSet<String> =
+            registered_transforms.keys().cloned().collect();
         let mut cleaned_field_to_transforms = std::collections::HashMap::new();
-        
+
         for (field_key, transform_ids) in field_to_transforms {
             let valid_transforms: std::collections::HashSet<String> = transform_ids
                 .into_iter()
@@ -120,15 +127,18 @@ impl TransformManager {
                     }
                 })
                 .collect();
-            
+
             if !valid_transforms.is_empty() {
                 cleaned_field_to_transforms.insert(field_key, valid_transforms);
             }
         }
         let field_to_transforms = cleaned_field_to_transforms;
-        
+
         // DEBUG: Log cleaned field mappings during initialization
-        info!("🔍 DEBUG TransformManager::new(): Loaded field_to_transforms with {} entries:", field_to_transforms.len());
+        info!(
+            "🔍 DEBUG TransformManager::new(): Loaded field_to_transforms with {} entries:",
+            field_to_transforms.len()
+        );
         for (field_key, transforms) in &field_to_transforms {
             info!("  📋 '{}' -> {:?}", field_key, transforms);
         }
@@ -140,10 +150,7 @@ impl TransformManager {
         // which is triggered by SchemaChanged events, avoiding duplicate registration
 
         // Start the orchestration system to handle TransformTriggered events
-        Self::start_orchestration_system(
-            Arc::clone(&db_ops),
-            Arc::clone(&message_bus),
-        )?;
+        Self::start_orchestration_system(Arc::clone(&db_ops), Arc::clone(&message_bus))?;
 
         // Monitoring removed during aggressive cleanup
 
@@ -163,35 +170,54 @@ impl TransformManager {
 
     /// Returns true if a transform with the given id is registered.
     pub fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
-        let registered_transforms = self.registered_transforms.read()
+        let registered_transforms = self
+            .registered_transforms
+            .read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
         Ok(registered_transforms.contains_key(transform_id))
     }
 
     /// List all registered transforms.
     pub fn list_transforms(&self) -> Result<HashMap<String, Transform>, SchemaError> {
-        let registered_transforms = self.registered_transforms.read()
+        let registered_transforms = self
+            .registered_transforms
+            .read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
         Ok(registered_transforms.clone())
     }
 
     /// Gets all transforms that depend on the specified atom reference.
-    pub fn get_dependent_transforms(&self, molecule_uuid: &str) -> Result<HashSet<String>, SchemaError> {
-        let molecule_to_transforms = self.molecule_to_transforms.read()
+    pub fn get_dependent_transforms(
+        &self,
+        molecule_uuid: &str,
+    ) -> Result<HashSet<String>, SchemaError> {
+        let molecule_to_transforms = self
+            .molecule_to_transforms
+            .read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-        Ok(molecule_to_transforms.get(molecule_uuid).cloned().unwrap_or_default())
+        Ok(molecule_to_transforms
+            .get(molecule_uuid)
+            .cloned()
+            .unwrap_or_default())
     }
 
     /// Gets all atom references that a transform depends on.
     pub fn get_transform_inputs(&self, transform_id: &str) -> Result<HashSet<String>, SchemaError> {
-        let transform_to_molecules = self.transform_to_molecules.read()
+        let transform_to_molecules = self
+            .transform_to_molecules
+            .read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-        Ok(transform_to_molecules.get(transform_id).cloned().unwrap_or_default())
+        Ok(transform_to_molecules
+            .get(transform_id)
+            .cloned()
+            .unwrap_or_default())
     }
 
     /// Gets the output atom reference for a transform.
     pub fn get_transform_output(&self, transform_id: &str) -> Result<Option<String>, SchemaError> {
-        let transform_outputs = self.transform_outputs.read()
+        let transform_outputs = self
+            .transform_outputs
+            .read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
         Ok(transform_outputs.get(transform_id).cloned())
     }
@@ -203,22 +229,29 @@ impl TransformManager {
         field_name: &str,
     ) -> Result<HashSet<String>, SchemaError> {
         let key = format!("{}.{}", schema_name, field_name);
-        let field_to_transforms = self.field_to_transforms.read()
+        let field_to_transforms = self
+            .field_to_transforms
+            .read()
             .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-        
+
         let result = field_to_transforms.get(&key).cloned().unwrap_or_default();
-        
+
         // DEBUG: Log field mapping lookup
         info!(
             "🔍 DEBUG TransformManager: Looking up transforms for '{}' - found {} transforms: {:?}",
-            key, result.len(), result
+            key,
+            result.len(),
+            result
         );
-        
+
         // DEBUG: Log all field mappings for diagnostics
         if result.is_empty() {
-            LoggingHelper::log_field_mappings_state(&field_to_transforms, "TransformManager::get_transforms_for_field");
+            LoggingHelper::log_field_mappings_state(
+                &field_to_transforms,
+                "TransformManager::get_transforms_for_field",
+            );
         }
-        
+
         Ok(result)
     }
 
@@ -232,7 +265,10 @@ impl TransformManager {
         // Create a temporary tree for the orchestration system
         let temp_config = sled::Config::new().temporary(true);
         let temp_db = temp_config.open().map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to create temporary database for orchestration: {}", e))
+            SchemaError::InvalidData(format!(
+                "Failed to create temporary database for orchestration: {}",
+                e
+            ))
         })?;
         let _tree = temp_db.open_tree("orchestration").map_err(|e| {
             SchemaError::InvalidData(format!("Failed to create orchestration tree: {}", e))
@@ -246,7 +282,10 @@ impl TransformManager {
         }
 
         impl crate::fold_db_core::transform_manager::types::TransformRunner for SimpleTransformRunner {
-            fn execute_transform_now(&self, transform_id: &str) -> Result<serde_json::Value, SchemaError> {
+            fn execute_transform_now(
+                &self,
+                transform_id: &str,
+            ) -> Result<serde_json::Value, SchemaError> {
                 // Load and execute the transform directly
                 if let Ok(Some(transform)) = self.db_ops.get_transform(transform_id) {
                     let result = crate::fold_db_core::transform_manager::manager::TransformManager::execute_single_transform(
@@ -255,7 +294,7 @@ impl TransformManager {
                         &self.db_ops,
                         None // FoldDB not available in this context - will use fallback
                     )?;
-                    
+
                     // Store the result
                     crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
                         &self.db_ops,
@@ -263,17 +302,22 @@ impl TransformManager {
                         &result,
                         Some(&self.message_bus) // Pass the message bus for HashRange storage
                     )?;
-                    
+
                     Ok(result)
                 } else {
-                    Err(SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)))
+                    Err(SchemaError::InvalidData(format!(
+                        "Transform '{}' not found",
+                        transform_id
+                    )))
                 }
             }
 
             fn execute_transform_with_context(
-                &self, 
-                transform_id: &str, 
-                mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+                &self,
+                transform_id: &str,
+                mutation_context: &Option<
+                    crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
+                >,
             ) -> Result<serde_json::Value, SchemaError> {
                 // Load and execute the transform with context
                 if let Ok(Some(transform)) = self.db_ops.get_transform(transform_id) {
@@ -284,7 +328,7 @@ impl TransformManager {
                         mutation_context,
                         None // FoldDB not available in this context - will use fallback
                     )?;
-                    
+
                     // Store the result
                     crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
                         &self.db_ops,
@@ -292,16 +336,22 @@ impl TransformManager {
                         &result,
                         Some(&self.message_bus) // Pass the message bus for HashRange storage
                     )?;
-                    
+
                     Ok(result)
                 } else {
-                    Err(SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)))
+                    Err(SchemaError::InvalidData(format!(
+                        "Transform '{}' not found",
+                        transform_id
+                    )))
                 }
             }
 
             fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
                 let exists = self.db_ops.get_transform(transform_id)?.is_some();
-                info!("🔍 DIAGNOSTIC: SimpleTransformRunner.transform_exists('{}') = {}", transform_id, exists);
+                info!(
+                    "🔍 DIAGNOSTIC: SimpleTransformRunner.transform_exists('{}') = {}",
+                    transform_id, exists
+                );
                 Ok(exists)
             }
 
@@ -312,11 +362,17 @@ impl TransformManager {
             ) -> Result<std::collections::HashSet<String>, SchemaError> {
                 // Load field-to-transforms mapping from database
                 let field_key = format!("{}.{}", schema_name, field_name);
-                
+
                 match self.db_ops.get_transform_mapping(FIELD_TO_TRANSFORMS_KEY) {
                     Ok(Some(mapping_bytes)) => {
-                        if let Ok(field_to_transforms) = serde_json::from_slice::<std::collections::HashMap<String, std::collections::HashSet<String>>>(&mapping_bytes) {
-                            Ok(field_to_transforms.get(&field_key).cloned().unwrap_or_default())
+                        if let Ok(field_to_transforms) = serde_json::from_slice::<
+                            std::collections::HashMap<String, std::collections::HashSet<String>>,
+                        >(&mapping_bytes)
+                        {
+                            Ok(field_to_transforms
+                                .get(&field_key)
+                                .cloned()
+                                .unwrap_or_default())
                         } else {
                             info!("⚠️ Failed to deserialize field_to_transforms mapping, returning empty set");
                             Ok(std::collections::HashSet::new())
@@ -328,7 +384,10 @@ impl TransformManager {
                     }
                     Err(e) => {
                         error!("❌ Failed to load field_to_transforms mapping: {}", e);
-                        Err(SchemaError::InvalidData(format!("Failed to load field mapping: {}", e)))
+                        Err(SchemaError::InvalidData(format!(
+                            "Failed to load field mapping: {}",
+                            e
+                        )))
                     }
                 }
             }
@@ -346,54 +405,91 @@ impl TransformRunner for TransformManager {
     /// DEPRECATED: Direct execution removed - use TransformOrchestrator::add_transform() instead
     /// This method now only queues the transform for execution by the orchestrator
     fn execute_transform_now(&self, transform_id: &str) -> Result<JsonValue, SchemaError> {
-        info!("🚀 DIAGNOSTIC: TransformManager executing transform: {}", transform_id);
-        
+        info!(
+            "🚀 DIAGNOSTIC: TransformManager executing transform: {}",
+            transform_id
+        );
+
         // Load the transform from the database
         let transform = match self.db_ops.get_transform(transform_id) {
             Ok(Some(transform)) => {
-                info!("✅ DIAGNOSTIC: Transform '{}' loaded - output: {}, inputs: {:?}",
-                      transform_id, transform.get_output(), transform.get_inputs());
+                info!(
+                    "✅ DIAGNOSTIC: Transform '{}' loaded - output: {}, inputs: {:?}",
+                    transform_id,
+                    transform.get_output(),
+                    transform.get_inputs()
+                );
                 transform
             }
             Ok(None) => {
-                error!("❌ DIAGNOSTIC: Transform '{}' not found in database", transform_id);
-                return Err(SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)));
+                error!(
+                    "❌ DIAGNOSTIC: Transform '{}' not found in database",
+                    transform_id
+                );
+                return Err(SchemaError::InvalidData(format!(
+                    "Transform '{}' not found",
+                    transform_id
+                )));
             }
             Err(e) => {
-                error!("❌ DIAGNOSTIC: Failed to load transform '{}': {}", transform_id, e);
-                return Err(SchemaError::InvalidData(format!("Failed to load transform: {}", e)));
+                error!(
+                    "❌ DIAGNOSTIC: Failed to load transform '{}': {}",
+                    transform_id, e
+                );
+                return Err(SchemaError::InvalidData(format!(
+                    "Failed to load transform: {}",
+                    e
+                )));
             }
         };
-        
+
         // Schema Conflict Resolution Fix: Work with existing schemas instead of requiring new ones
         let output_parts: Vec<&str> = transform.get_output().split('.').collect();
         if output_parts.len() == 2 {
             let output_schema = output_parts[0];
             match self.db_ops.get_schema(output_schema) {
                 Ok(Some(_)) => {
-                    info!("✅ SCHEMA FIX: Output schema '{}' exists - will update field values only", output_schema);
+                    info!(
+                        "✅ SCHEMA FIX: Output schema '{}' exists - will update field values only",
+                        output_schema
+                    );
                 }
                 Ok(None) => {
-                    info!("✅ DIAGNOSTIC: Output schema '{}' does not exist yet, proceeding", output_schema);
+                    info!(
+                        "✅ DIAGNOSTIC: Output schema '{}' does not exist yet, proceeding",
+                        output_schema
+                    );
                 }
                 Err(e) => {
-                    error!("❌ DIAGNOSTIC: Error checking if output schema '{}' exists: {}", output_schema, e);
+                    error!(
+                        "❌ DIAGNOSTIC: Error checking if output schema '{}' exists: {}",
+                        output_schema, e
+                    );
                 }
             }
         }
-        
+
         // Execute the transform using the execution module (call as static method)
-        println!("🔧 About to call execute_single_transform for transform: {}", transform_id);
+        println!(
+            "🔧 About to call execute_single_transform for transform: {}",
+            transform_id
+        );
         let result = TransformManager::execute_single_transform(
             transform_id,
             &transform,
             &self.db_ops,
-            None // FoldDB not available in this context - will use fallback
+            None, // FoldDB not available in this context - will use fallback
         )?;
-        println!("🔧 execute_single_transform completed with result: {}", result);
-        
-        info!("✅ DIAGNOSTIC: Transform '{}' executed successfully, result: {}", transform_id, result);
-        
+        println!(
+            "🔧 execute_single_transform completed with result: {}",
+            result
+        );
+
+        info!(
+            "✅ DIAGNOSTIC: Transform '{}' executed successfully, result: {}",
+            transform_id, result
+        );
+
         // Store the result using message bus
         crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
             &self.db_ops,
@@ -401,54 +497,87 @@ impl TransformRunner for TransformManager {
             &result,
             Some(&self._message_bus)
         )?;
-        
-        info!("✅ Transform '{}' executed successfully: {}", transform_id, result);
+
+        info!(
+            "✅ Transform '{}' executed successfully: {}",
+            transform_id, result
+        );
         Ok(result)
     }
 
     fn execute_transform_with_context(
-        &self, 
-        transform_id: &str, 
-        mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>
+        &self,
+        transform_id: &str,
+        mutation_context: &Option<
+            crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
+        >,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🚀 DIAGNOSTIC: TransformManager executing transform with context: {}", transform_id);
-        
+        info!(
+            "🚀 DIAGNOSTIC: TransformManager executing transform with context: {}",
+            transform_id
+        );
+
         // Load the transform from the database
         let transform = match self.db_ops.get_transform(transform_id) {
             Ok(Some(transform)) => {
-                info!("✅ DIAGNOSTIC: Transform '{}' loaded - output: {}, inputs: {:?}",
-                      transform_id, transform.get_output(), transform.get_inputs());
+                info!(
+                    "✅ DIAGNOSTIC: Transform '{}' loaded - output: {}, inputs: {:?}",
+                    transform_id,
+                    transform.get_output(),
+                    transform.get_inputs()
+                );
                 transform
             }
             Ok(None) => {
-                error!("❌ DIAGNOSTIC: Transform '{}' not found in database", transform_id);
-                return Err(SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)));
+                error!(
+                    "❌ DIAGNOSTIC: Transform '{}' not found in database",
+                    transform_id
+                );
+                return Err(SchemaError::InvalidData(format!(
+                    "Transform '{}' not found",
+                    transform_id
+                )));
             }
             Err(e) => {
-                error!("❌ DIAGNOSTIC: Failed to load transform '{}': {}", transform_id, e);
-                return Err(SchemaError::InvalidData(format!("Failed to load transform: {}", e)));
+                error!(
+                    "❌ DIAGNOSTIC: Failed to load transform '{}': {}",
+                    transform_id, e
+                );
+                return Err(SchemaError::InvalidData(format!(
+                    "Failed to load transform: {}",
+                    e
+                )));
             }
         };
-        
+
         // Log mutation context if available
         if let Some(ref context) = mutation_context {
             info!("🎯 DIAGNOSTIC: Transform execution with mutation context - range_key: {:?}, hash_key: {:?}, incremental: {}", 
                   context.range_key, context.hash_key, context.incremental);
         }
-        
+
         // Execute the transform using the execution module with mutation context
-        println!("🔧 About to call execute_single_transform with context for transform: {}", transform_id);
+        println!(
+            "🔧 About to call execute_single_transform with context for transform: {}",
+            transform_id
+        );
         let result = TransformManager::execute_single_transform_with_context(
             transform_id,
             &transform,
             &self.db_ops,
             mutation_context,
-            None // FoldDB not available in this context - will use fallback
+            None, // FoldDB not available in this context - will use fallback
         )?;
-        println!("🔧 execute_single_transform with context completed with result: {}", result);
-        
-        info!("✅ DIAGNOSTIC: Transform '{}' executed successfully with context, result: {}", transform_id, result);
-        
+        println!(
+            "🔧 execute_single_transform with context completed with result: {}",
+            result
+        );
+
+        info!(
+            "✅ DIAGNOSTIC: Transform '{}' executed successfully with context, result: {}",
+            transform_id, result
+        );
+
         // Store the result using message bus
         crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
             &self.db_ops,
@@ -456,8 +585,11 @@ impl TransformRunner for TransformManager {
             &result,
             Some(&self._message_bus)
         )?;
-        
-        info!("✅ Transform '{}' executed successfully with context: {}", transform_id, result);
+
+        info!(
+            "✅ Transform '{}' executed successfully with context: {}",
+            transform_id, result
+        );
         Ok(result)
     }
 
@@ -466,18 +598,22 @@ impl TransformRunner for TransformManager {
             SchemaError::InvalidData("Failed to acquire registered_transforms lock".to_string())
         })?;
         let in_memory_exists = registered_transforms.contains_key(transform_id);
-        
+
         // Cross-check with database
         let db_exists = self.db_ops.get_transform(transform_id)?.is_some();
-        
-        info!("🔍 DIAGNOSTIC: TransformManager.transform_exists('{}') - in_memory: {}, database: {}",
-              transform_id, in_memory_exists, db_exists);
-        
+
+        info!(
+            "🔍 DIAGNOSTIC: TransformManager.transform_exists('{}') - in_memory: {}, database: {}",
+            transform_id, in_memory_exists, db_exists
+        );
+
         if in_memory_exists != db_exists {
-            error!("🚨 INCONSISTENCY DETECTED: Transform '{}' - in_memory: {}, database: {}",
-                   transform_id, in_memory_exists, db_exists);
+            error!(
+                "🚨 INCONSISTENCY DETECTED: Transform '{}' - in_memory: {}, database: {}",
+                transform_id, in_memory_exists, db_exists
+            );
         }
-        
+
         Ok(in_memory_exists)
     }
 

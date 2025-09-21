@@ -12,13 +12,15 @@ pub fn create_atom(
     source_pub_key: String,
     content: Value,
 ) -> Result<Atom, Box<dyn std::error::Error>> {
-    db_ops.create_atom(
-        schema_name,
-        source_pub_key,
-        None,
-        content,
-        Some(AtomStatus::Active),
-    ).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    db_ops
+        .create_atom(
+            schema_name,
+            source_pub_key,
+            None,
+            content,
+            Some(AtomStatus::Active),
+        )
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
 /// Update a molecule reference
@@ -28,7 +30,8 @@ pub fn update_molecule(
     atom_uuid: String,
     source_pub_key: String,
 ) -> Result<Molecule, Box<dyn std::error::Error>> {
-    db_ops.update_molecule(molecule_uuid, atom_uuid, source_pub_key)
+    db_ops
+        .update_molecule(molecule_uuid, atom_uuid, source_pub_key)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
@@ -40,7 +43,8 @@ pub fn update_molecule_range(
     key: String,
     source_pub_key: String,
 ) -> Result<MoleculeRange, Box<dyn std::error::Error>> {
-    db_ops.update_molecule_range(molecule_uuid, atom_uuid, key, source_pub_key)
+    db_ops
+        .update_molecule_range(molecule_uuid, atom_uuid, key, source_pub_key)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
@@ -51,13 +55,13 @@ pub fn get_atom_history(
 ) -> Result<Vec<Atom>, Box<dyn std::error::Error>> {
     // Load the atom ref from database
     let key = format!("ref:{}", molecule_uuid);
-    
+
     match db_ops.db().get(&key)? {
         Some(bytes) => {
             // Try to deserialize as Molecule first
             if let Ok(molecule) = serde_json::from_slice::<Molecule>(&bytes) {
                 let atom_uuid = molecule.get_atom_uuid();
-                
+
                 // Get the current atom
                 let atom_key = format!("atom:{}", atom_uuid);
                 match db_ops.db().get(&atom_key)? {
@@ -65,7 +69,7 @@ pub fn get_atom_history(
                         let atom: Atom = serde_json::from_slice(&atom_bytes)?;
                         Ok(vec![atom])
                     }
-                    None => Ok(vec![])
+                    None => Ok(vec![]),
                 }
             }
             // Try as MoleculeRange
@@ -77,6 +81,6 @@ pub fn get_atom_history(
                 Err("Failed to deserialize atom reference or molecule".into())
             }
         }
-        None => Ok(vec![])
+        None => Ok(vec![]),
     }
 }
