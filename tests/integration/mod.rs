@@ -30,6 +30,7 @@ pub mod blog_word_index_integration_test;
 
 // HashRange mutation integration test
 pub mod hashrange_mutation_integration_test;
+pub mod mutation_range_workflow_test;
 
 // HashRange end-to-end workflow test
 pub mod hashrange_end_to_end_workflow_test;

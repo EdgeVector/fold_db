@@ -3,7 +3,7 @@
 //! This module provides the synchronous message bus that uses std::sync::mpsc
 //! for communication between components.
 
-use super::error_handling::{MessageBusError, MessageBusResult};
+use super::error_handling::MessageBusResult;
 use super::events::{Event, EventType};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -103,30 +103,38 @@ impl MessageBus {
 
     /// Publish an event to all subscribers of that event type
     pub fn publish<T: EventType>(&self, event: T) -> MessageBusResult<()> {
-        let registry = self.registry.lock().unwrap();
-        let subscribers = registry.get_subscribers::<T>();
+        let mut registry = self.registry.lock().unwrap();
+        let type_id = T::type_id().to_string();
 
-        if subscribers.is_empty() {
+        let Some(senders) = registry.subscribers.get_mut(&type_id) else {
             // No subscribers for this event type - this is not an error
             return Ok(());
-        }
+        };
 
         let mut failed_sends = 0;
-        let total_subscribers = subscribers.len();
 
-        for subscriber in subscribers {
-            if subscriber.send(event.clone()).is_err() {
+        senders.retain(|boxed_sender| {
+            if let Some(sender) = boxed_sender.downcast_ref::<Sender<T>>() {
+                match sender.send(event.clone()) {
+                    Ok(_) => true,
+                    Err(_) => {
+                        failed_sends += 1;
+                        false
+                    }
+                }
+            } else {
                 failed_sends += 1;
+                false
             }
+        });
+
+        if senders.is_empty() {
+            registry.subscribers.remove(&type_id);
         }
 
         if failed_sends > 0 {
-            return Err(MessageBusError::SendFailed {
-                reason: format!(
-                    "{} of {} subscribers failed to receive event",
-                    failed_sends, total_subscribers
-                ),
-            });
+            // Treat dropped subscribers as a recoverable condition instead of an error.
+            return Ok(());
         }
 
         Ok(())

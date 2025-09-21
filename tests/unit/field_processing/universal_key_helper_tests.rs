@@ -4,7 +4,7 @@
 //! for various schema types including Single, Range (legacy + universal), HashRange,
 //! and dotted-path configurations.
 
-use crate::test_utils::TestFixture;
+use crate::test_utils::{normalized_fields, TestFixture};
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fees::SchemaPaymentConfig;
 use datafold::fold_db_core::managers::atom::field_processing::{
@@ -88,9 +88,10 @@ fn test_resolve_universal_keys_single_no_key() {
 
     assert_eq!(result.hash, None);
     assert_eq!(result.range, None);
-    assert_eq!(result.fields.len(), 2);
-    assert_eq!(result.fields.get("content"), Some(&json!("test content")));
-    assert_eq!(result.fields.get("author"), Some(&json!("test author")));
+    let normalized = normalized_fields(&result.fields);
+    assert_eq!(normalized.len(), 2);
+    assert_eq!(normalized.get("content"), Some(&json!("test content")));
+    assert_eq!(normalized.get("author"), Some(&json!("test author")));
 }
 
 /// Test resolve_universal_keys with Single schema with key configuration
@@ -135,7 +136,8 @@ fn test_resolve_universal_keys_single_with_key() {
 
     assert_eq!(result.hash, Some("user123".to_string()));
     assert_eq!(result.range, Some("2023-01-01T00:00:00Z".to_string()));
-    assert_eq!(result.fields.get("content"), Some(&json!("test content")));
+    let normalized = normalized_fields(&result.fields);
+    assert_eq!(normalized.get("content"), Some(&json!("test content")));
 }
 
 /// Test resolve_universal_keys with Range schema (legacy)
@@ -178,7 +180,8 @@ fn test_resolve_universal_keys_range_legacy() {
 
     assert_eq!(result.hash, None);
     assert_eq!(result.range, Some("2023-01-01T00:00:00Z".to_string()));
-    assert_eq!(result.fields.get("content"), Some(&json!("test content")));
+    let normalized = normalized_fields(&result.fields);
+    assert_eq!(normalized.get("content"), Some(&json!("test content")));
 }
 
 /// Test resolve_universal_keys with Range schema (universal key configuration)
@@ -229,7 +232,8 @@ fn test_resolve_universal_keys_range_universal() {
 
     assert_eq!(result.hash, Some("user123".to_string()));
     assert_eq!(result.range, Some("2023-01-01T00:00:00Z".to_string()));
-    assert_eq!(result.fields.get("content"), Some(&json!("test content")));
+    let normalized = normalized_fields(&result.fields);
+    assert_eq!(normalized.get("content"), Some(&json!("test content")));
 }
 
 /// Test resolve_universal_keys with HashRange schema
@@ -277,7 +281,8 @@ fn test_resolve_universal_keys_hashrange() {
 
     assert_eq!(result.hash, Some("user123".to_string()));
     assert_eq!(result.range, Some("2023-01-01T00:00:00Z".to_string()));
-    assert_eq!(result.fields.get("content"), Some(&json!("test content")));
+    let normalized = normalized_fields(&result.fields);
+    assert_eq!(normalized.get("content"), Some(&json!("test content")));
 }
 
 /// Test resolve_universal_keys with dotted path key configuration
@@ -328,7 +333,8 @@ fn test_resolve_universal_keys_dotted_path() {
 
     assert_eq!(result.hash, Some("user123".to_string()));
     assert_eq!(result.range, Some("2023-01-01T00:00:00Z".to_string()));
-    assert_eq!(result.fields.get("content"), Some(&json!("test content")));
+    let normalized = normalized_fields(&result.fields);
+    assert_eq!(normalized.get("content"), Some(&json!("test content")));
 }
 
 /// Test resolve_universal_keys with missing schema

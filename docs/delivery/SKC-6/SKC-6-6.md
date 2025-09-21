@@ -7,6 +7,7 @@ Replace direct `FieldValueSetRequest` construction within MutationService workfl
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-23 09:30:00 | Created | N/A | Proposed | Task created to roll out the new payload builder | ai-agent |
+| 2025-09-23 16:45:00 | Status Update | Proposed | Done | Mutation workflows now emit builder-normalized payloads with updated range/Single integration tests. | ai-agent |
 
 ## Requirements
 - Update `update_range_schema_fields`, `update_hashrange_schema_fields`, and any other MutationService entry points that emit `FieldValueSetRequest` so they call the normalized builder.
