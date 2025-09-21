@@ -59,6 +59,36 @@ pub struct NormalizedFieldValueRequest {
     pub context: NormalizedFieldContext,
 }
 
+fn summarize_normalized_context(context: &NormalizedFieldContext) -> String {
+    let hash_state = context
+        .hash
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|_| "present")
+        .unwrap_or("missing");
+    let range_state = context
+        .range
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|_| "present")
+        .unwrap_or("missing");
+    let mut field_names: Vec<&str> = context.fields.keys().map(|key| key.as_str()).collect();
+    field_names.sort_unstable();
+    let fields_summary = if field_names.is_empty() {
+        "none".to_string()
+    } else {
+        field_names.join(", ")
+    };
+
+    format!(
+        "hash:{}, range:{}, fields:[{}], count={}",
+        hash_state,
+        range_state,
+        fields_summary,
+        field_names.len()
+    )
+}
+
 fn set_value(target: &mut Map<String, Value>, key: &str, value: &Value) {
     target.insert(key.to_string(), value.clone());
 }
@@ -468,21 +498,15 @@ impl MutationService {
             ),
         );
 
-        // Create mutation context for incremental processing
-        let mutation_context =
-            crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
-                range_key: Some(range_key_value.to_string()),
-                hash_key: Some(hash_key_value.to_string()),
-                mutation_hash: Some(mutation_hash.to_string()),
-                incremental: true, // Enable incremental processing for hashrange schemas
-            };
+        let hash_value = Value::String(hash_key_value.to_string());
+        let range_value = Value::String(range_key_value.to_string());
 
         // Process each field in the HashRange schema
         for (field_name, value) in fields_and_values {
             InfrastructureLogger::log_operation_start(
                 "MutationService",
                 "Processing HashRange field",
-                &format!("{}.{} with value: {}", schema.name, field_name, value),
+                &format!("{}.{}", schema.name, field_name),
             );
 
             // Skip hash and range key fields as they are metadata for the HashRange structure
@@ -497,42 +521,43 @@ impl MutationService {
                 continue;
             }
 
-            // Create a HashRange-aware field value request that includes the actual hash and range field names
-            let hashrange_aware_value = serde_json::json!({
-                hash_field_name.clone(): hash_key_value,
-                range_field_name.clone(): range_key_value,
-                "value": value
-            });
+            let NormalizedFieldValueRequest { request, context } = self
+                .normalized_field_value_request(
+                    schema,
+                    field_name,
+                    value,
+                    Some(&hash_value),
+                    Some(&range_value),
+                    Some(mutation_hash),
+                )?;
 
-            let correlation_id = Uuid::new_v4().to_string();
-            let field_request = FieldValueSetRequest::with_context(
-                correlation_id.clone(),
-                schema.name.clone(),
-                field_name.clone(),
-                hashrange_aware_value,
-                "mutation_service".to_string(),
-                mutation_context.clone(),
+            let context_summary = summarize_normalized_context(&context);
+
+            InfrastructureLogger::log_debug_info(
+                "MutationService",
+                &format!(
+                    "Publishing HashRange field request for {}.{} [{}]",
+                    schema.name, field_name, context_summary
+                ),
             );
 
-            InfrastructureLogger::log_debug_info("MutationService", &format!("Publishing HashRange field request for {}.{} with hash_key: {} and range_key: {}", schema.name, field_name, hash_key_value, range_key_value));
-            match self.message_bus.publish(field_request) {
+            match self.message_bus.publish(request) {
                 Ok(_) => {
                     InfrastructureLogger::log_operation_success(
                         "MutationService",
                         "HashRange field update request sent",
-                        &format!(
-                            "{}.{} with hash_key: {} and range_key: {}",
-                            schema.name, field_name, hash_key_value, range_key_value
-                        ),
+                        &format!("{}.{} [{}]", schema.name, field_name, context_summary),
                     );
-                    // Add a small delay to ensure the message is processed
                     std::thread::sleep(std::time::Duration::from_millis(10));
                 }
                 Err(e) => {
                     InfrastructureLogger::log_operation_error(
                         "MutationService",
                         "Failed to send HashRange field update",
-                        &format!("{}.{}: {:?}", schema.name, field_name, e),
+                        &format!(
+                            "{}.{} [{}]: {:?}",
+                            schema.name, field_name, context_summary, e
+                        ),
                     );
                     return Err(SchemaError::InvalidData(format!(
                         "Failed to update HashRange field {}: {}",
@@ -640,14 +665,7 @@ impl MutationService {
             ),
         );
 
-        // Create mutation context for incremental processing
-        let mutation_context =
-            crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
-                range_key: Some(range_key_value.to_string()),
-                hash_key: None,
-                mutation_hash: Some(mutation_hash.to_string()),
-                incremental: true, // Enable incremental processing for range schemas
-            };
+        let normalized_range_value = Value::String(range_key_value.to_string());
 
         // DIRECT APPROACH: Since mutation service doesn't have direct DB access,
         // we need to use FieldValueSetRequest with range-specific handling
@@ -655,44 +673,45 @@ impl MutationService {
             InfrastructureLogger::log_operation_start(
                 "MutationService",
                 "Processing range field",
+                &format!("{} for range_key: {}", field_name, range_key_value),
+            );
+
+            let NormalizedFieldValueRequest { request, context } = self
+                .normalized_field_value_request(
+                    schema,
+                    field_name,
+                    value,
+                    None,
+                    Some(&normalized_range_value),
+                    Some(mutation_hash),
+                )?;
+
+            let context_summary = summarize_normalized_context(&context);
+
+            InfrastructureLogger::log_debug_info(
+                "MutationService",
                 &format!(
-                    "{} with value: {} for range_key: {}",
-                    field_name, value, range_key_value
+                    "Publishing range field request for {}.{} [{}]",
+                    schema.name, field_name, context_summary
                 ),
             );
 
-            // Create a special field value request that includes the actual range field name
-            let range_aware_value = serde_json::json!({
-                range_field_name.clone(): range_key_value,
-                "value": value
-            });
-
-            let correlation_id = Uuid::new_v4().to_string();
-            let field_request = FieldValueSetRequest::with_context(
-                correlation_id.clone(),
-                schema.name.clone(),
-                field_name.clone(),
-                range_aware_value,
-                "mutation_service".to_string(),
-                mutation_context.clone(),
-            );
-
-            match self.message_bus.publish(field_request) {
+            match self.message_bus.publish(request) {
                 Ok(_) => {
                     InfrastructureLogger::log_operation_success(
                         "MutationService",
                         "Range field update request sent",
-                        &format!(
-                            "{}.{} with range_key: {}",
-                            schema.name, field_name, range_key_value
-                        ),
+                        &format!("{}.{} [{}]", schema.name, field_name, context_summary),
                     );
                 }
                 Err(e) => {
                     InfrastructureLogger::log_operation_error(
                         "MutationService",
                         "Failed to send range field update",
-                        &format!("{}.{}: {:?}", schema.name, field_name, e),
+                        &format!(
+                            "{}.{} [{}]: {:?}",
+                            schema.name, field_name, context_summary, e
+                        ),
                     );
                     return Err(SchemaError::InvalidData(format!(
                         "Failed to update range field {}: {}",
@@ -744,7 +763,7 @@ impl MutationService {
         field_name: &str,
         _single_field: &crate::schema::types::field::single_field::SingleField,
         value: &Value,
-        _mutation_hash: &str,
+        mutation_hash: &str,
     ) -> Result<(), SchemaError> {
         InfrastructureLogger::log_operation_start(
             "MutationService",
@@ -752,21 +771,34 @@ impl MutationService {
             &format!("{}.{}", schema.name, field_name),
         );
 
-        // First, send FieldValueSetRequest to store the actual field value as an Atom
-        let value_correlation_id = Uuid::new_v4().to_string();
-        let field_value_request = FieldValueSetRequest::new(
-            value_correlation_id.clone(),
-            schema.name.clone(),
-            field_name.to_string(),
-            value.clone(),
-            "mutation_service".to_string(),
+        let NormalizedFieldValueRequest { request, context } = self
+            .normalized_field_value_request(
+                schema,
+                field_name,
+                value,
+                None,
+                None,
+                Some(mutation_hash),
+            )?;
+
+        let context_summary = summarize_normalized_context(&context);
+
+        InfrastructureLogger::log_debug_info(
+            "MutationService",
+            &format!(
+                "Publishing single field request for {}.{} [{}]",
+                schema.name, field_name, context_summary
+            ),
         );
 
-        if let Err(e) = self.message_bus.publish(field_value_request) {
+        if let Err(e) = self.message_bus.publish(request) {
             InfrastructureLogger::log_operation_error(
                 "MutationService",
                 "Failed to send field value set request",
-                &format!("{}.{}: {:?}", schema.name, field_name, e),
+                &format!(
+                    "{}.{} [{}]: {:?}",
+                    schema.name, field_name, context_summary, e
+                ),
             );
             return Err(SchemaError::InvalidData(format!(
                 "Failed to set field value: {}",
@@ -776,16 +808,7 @@ impl MutationService {
         InfrastructureLogger::log_operation_success(
             "MutationService",
             "Field value set request sent",
-            &format!("{}.{}", schema.name, field_name),
-        );
-
-        // DIAGNOSTIC LOG: Track if FieldValueSetRequest is being consumed
-        InfrastructureLogger::log_debug_info(
-            "MutationService",
-            &format!(
-                "🔍 DIAGNOSTIC: FieldValueSetRequest published for {}.{} with correlation_id: {}",
-                schema.name, field_name, value_correlation_id
-            ),
+            &format!("{}.{} [{}]", schema.name, field_name, context_summary),
         );
 
         // Transform triggers are now handled automatically by TransformOrchestrator

@@ -1,6 +1,6 @@
 //! HashRange field processing tests verifying universal key snapshot adoption
 
-use crate::test_utils::TestFixture;
+use crate::test_utils::{normalized_fields, TestFixture};
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fees::SchemaPaymentConfig;
 use datafold::fold_db_core::infrastructure::message_bus::{
@@ -87,8 +87,9 @@ fn test_hashrange_event_includes_normalized_metadata() {
         .expect("response should include key snapshot");
     assert_eq!(snapshot.hash, Some("user123".to_string()));
     assert_eq!(snapshot.range, Some("2023-01-01T00:00:00Z".to_string()));
+    let snapshot_fields = normalized_fields(&snapshot.fields);
     assert_eq!(
-        snapshot.fields.get("value"),
+        snapshot_fields.get("value"),
         Some(&json!("Normalized content"))
     );
 
@@ -104,8 +105,9 @@ fn test_hashrange_event_includes_normalized_metadata() {
         event_snapshot.range,
         Some("2023-01-01T00:00:00Z".to_string())
     );
+    let event_fields = normalized_fields(&event_snapshot.fields);
     assert_eq!(
-        event_snapshot.fields.get("value"),
+        event_fields.get("value"),
         Some(&json!("Normalized content"))
     );
     let context = event
