@@ -1,8 +1,8 @@
 //! FoldDB Core - Event-driven database system
-//! 
+//!
 //! This module contains the core components of the FoldDB system organized
 //! into logical groups for better maintainability and understanding:
-//! 
+//!
 //! - **managers/**: Core managers for different aspects of data management
 //! - **services/**: Service layer components for operations
 //! - **infrastructure/**: Foundation components (message bus, initialization, etc.)
@@ -11,52 +11,53 @@
 //! - **transform_manager/**: Transform system (already well-organized)
 
 // Organized module declarations
-pub mod managers;
-pub mod services;
 pub mod infrastructure;
+pub mod managers;
+pub mod mutation;
 pub mod orchestration;
+pub mod query;
+pub mod services;
 pub mod shared;
 pub mod transform_manager;
-pub mod query;
-pub mod mutation;
 
 // Core components
 pub mod mutation_completion_handler;
 
 // Re-export key components for backwards compatibility
+pub use infrastructure::{EventMonitor, MessageBus};
 pub use managers::AtomManager; // FieldManager removed (was dead code), CollectionManager removed - collections no longer supported
-pub use services::field_retrieval::service::FieldRetrievalService;
-pub use infrastructure::{MessageBus, EventMonitor};
-pub use orchestration::TransformOrchestrator;
-pub use transform_manager::TransformManager;
-pub use shared::*;
-pub use query::QueryExecutor;
 pub use mutation::MutationExecutor;
+pub use orchestration::TransformOrchestrator;
+pub use query::QueryExecutor;
+pub use services::field_retrieval::service::FieldRetrievalService;
+pub use shared::*;
+pub use transform_manager::TransformManager;
 
 // Re-export core components
-pub use mutation_completion_handler::{MutationCompletionHandler, MutationCompletionError, MutationCompletionResult, MutationCompletionDiagnostics, DEFAULT_COMPLETION_TIMEOUT};
+pub use mutation_completion_handler::{
+    MutationCompletionDiagnostics, MutationCompletionError, MutationCompletionHandler,
+    MutationCompletionResult, DEFAULT_COMPLETION_TIMEOUT,
+};
 
 // Import infrastructure components that are used internally
-use infrastructure::message_bus::{
-    request_events::{
-        FieldValueSetResponse, FieldUpdateResponse, SchemaLoadResponse, SchemaApprovalResponse,
-        AtomCreateResponse, MoleculeCreateResponse, MoleculeUpdateRequest, SystemInitializationRequest,
-    },
-};
 use crate::fold_db_core::transform_manager::types::TransformRunner;
 use infrastructure::init::{init_orchestrator, init_transform_manager};
+use infrastructure::message_bus::request_events::{
+    AtomCreateResponse, FieldUpdateResponse, FieldValueSetResponse, MoleculeCreateResponse,
+    MoleculeUpdateRequest, SchemaApprovalResponse, SchemaLoadResponse, SystemInitializationRequest,
+};
 
 // External dependencies
 use crate::atom::MoleculeBehavior;
 use crate::db_operations::DbOperations;
+use crate::logging::features::{log_feature, LogFeature};
 use crate::permissions::PermissionWrapper;
-use crate::schema::SchemaState;
+use crate::schema::types::{Mutation, Query};
 use crate::schema::SchemaCore;
+use crate::schema::SchemaState;
 use crate::schema::{Schema, SchemaError};
 use log::info;
-use crate::logging::features::{log_feature, LogFeature};
 use serde_json::Value;
-use crate::schema::types::{Mutation, Query};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -123,14 +124,23 @@ impl FoldDB {
 
     /// Properly close and flush the database to release all file locks
     pub fn close(&self) -> Result<(), sled::Error> {
-        log_feature!(LogFeature::Database, info, "Closing FoldDB and flushing all data to disk");
-        
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "Closing FoldDB and flushing all data to disk"
+        );
+
         // Flush the main database
         if let Err(e) = self.db_ops.db().flush() {
-            log_feature!(LogFeature::Database, error, "Failed to flush main database: {}", e);
+            log_feature!(
+                LogFeature::Database,
+                error,
+                "Failed to flush main database: {}",
+                e
+            );
             return Err(e);
         }
-        
+
         log_feature!(LogFeature::Database, info, "FoldDB closed successfully");
         Ok(())
     }
@@ -180,9 +190,15 @@ impl FoldDB {
         );
 
         // Use standard initialization but with deprecated closures that recommend events
-        let transform_manager = init_transform_manager(Arc::new(db_ops.clone()), Arc::clone(&message_bus))?;
-        let orchestrator =
-            init_orchestrator(&FieldRetrievalService::new(Arc::clone(&message_bus)), transform_manager.clone(), orchestrator_tree, Arc::clone(&message_bus), Arc::new(db_ops.clone()))?;
+        let transform_manager =
+            init_transform_manager(Arc::new(db_ops.clone()), Arc::clone(&message_bus))?;
+        let orchestrator = init_orchestrator(
+            &FieldRetrievalService::new(Arc::clone(&message_bus)),
+            transform_manager.clone(),
+            orchestrator_tree,
+            Arc::clone(&message_bus),
+            Arc::new(db_ops.clone()),
+        )?;
 
         info!("Loading schema states from disk during FoldDB initialization");
         if let Err(e) = schema_manager.discover_and_load_all_schemas() {
@@ -194,14 +210,17 @@ impl FoldDB {
                 schema_manager.list_schemas_by_state(SchemaState::Approved)
             {
                 info!("Moving {} approved schemas from 'available' to 'schemas' HashMap for field mapping", approved_schemas.len());
-                
+
                 // Move approved schemas from available to schemas HashMap
                 for schema_name in &approved_schemas {
                     if let Err(e) = schema_manager.ensure_approved_schema_in_schemas(schema_name) {
-                        info!("Failed to move approved schema '{}' to schemas HashMap: {}", schema_name, e);
+                        info!(
+                            "Failed to move approved schema '{}' to schemas HashMap: {}",
+                            schema_name, e
+                        );
                     }
                 }
-                
+
                 // Now proceed with field mapping for all approved schemas
                 for schema_name in approved_schemas {
                     if let Ok(molecules) = schema_manager.map_fields(&schema_name) {
@@ -229,13 +248,14 @@ impl FoldDB {
                             }
                         }
                     }
-                    
                 }
             }
         }
 
         // Create and start EventMonitor for system-wide observability
-        let event_monitor = Arc::new(infrastructure::event_monitor::EventMonitor::new(&message_bus));
+        let event_monitor = Arc::new(infrastructure::event_monitor::EventMonitor::new(
+            &message_bus,
+        ));
         info!("Started EventMonitor for system-wide event tracking");
 
         // Create MutationCompletionHandler for tracking async mutation completion
@@ -283,8 +303,6 @@ impl FoldDB {
 
     // ========== CONSOLIDATED SCHEMA API - DELEGATES TO SCHEMA_CORE ==========
 
-
-
     /// Load schema from JSON string (creates Available schema)
     pub fn load_schema_from_json(&mut self, json_str: &str) -> Result<(), SchemaError> {
         // Delegate to working schema_manager implementation
@@ -294,7 +312,8 @@ impl FoldDB {
     /// Load schema from file (creates Available schema)
     pub fn load_schema_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), SchemaError> {
         // Delegate to working schema_manager implementation
-        self.schema_manager.load_schema_from_file(path.as_ref().to_str().unwrap())
+        self.schema_manager
+            .load_schema_from_file(path.as_ref().to_str().unwrap())
     }
 
     /// Add a schema to available schemas (for testing compatibility)
@@ -415,31 +434,43 @@ impl FoldDB {
     ) -> Result<(), SchemaError> {
         // For now, return error since TransformRegistration is expected, not Transform
         Err(SchemaError::InvalidData(
-            "Transform registration not yet implemented - needs TransformRegistration type".to_string()
+            "Transform registration not yet implemented - needs TransformRegistration type"
+                .to_string(),
         ))
     }
 
     /// List all registered transforms
-    pub fn list_transforms(&self) -> Result<HashMap<String, crate::schema::types::Transform>, SchemaError> {
+    pub fn list_transforms(
+        &self,
+    ) -> Result<HashMap<String, crate::schema::types::Transform>, SchemaError> {
         self.transform_manager.list_transforms()
     }
 
     /// Execute a transform by ID using direct execution
     /// This executes the transform immediately and returns the result
     pub fn run_transform(&self, transform_id: &str) -> Result<Value, SchemaError> {
-        println!("🔄 run_transform called for {} - using direct execution", transform_id);
-        
+        println!(
+            "🔄 run_transform called for {} - using direct execution",
+            transform_id
+        );
+
         // Use direct execution through the transform manager
-        println!("🔄 About to call TransformRunner::execute_transform_now for transform: {}", transform_id);
+        println!(
+            "🔄 About to call TransformRunner::execute_transform_now for transform: {}",
+            transform_id
+        );
         match TransformRunner::execute_transform_now(&*self.transform_manager, transform_id) {
             Ok(result) => {
                 println!("🔄 TransformRunner::execute_transform_now completed successfully with result: {}", result);
                 Ok(result)
-            },
+            }
             Err(e) => {
-                println!("🔄 TransformRunner::execute_transform_now failed with error: {}", e);
+                println!(
+                    "🔄 TransformRunner::execute_transform_now failed with error: {}",
+                    e
+                );
                 Err(SchemaError::InvalidData(e.to_string()))
-            },
+            }
         }
     }
 

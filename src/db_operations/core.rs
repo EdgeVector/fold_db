@@ -115,8 +115,14 @@ impl DbOperations {
             self.schema_states_tree.len() as u64,
         );
         stats.insert("schemas".to_string(), self.schemas_tree.len() as u64);
-        stats.insert("public_keys".to_string(), self.public_keys_tree.len() as u64);
-        stats.insert("transform_queue".to_string(), self.transform_queue_tree.len() as u64);
+        stats.insert(
+            "public_keys".to_string(),
+            self.public_keys_tree.len() as u64,
+        );
+        stats.insert(
+            "transform_queue".to_string(),
+            self.transform_queue_tree.len() as u64,
+        );
 
         Ok(stats)
     }

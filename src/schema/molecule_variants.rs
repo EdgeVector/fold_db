@@ -1,4 +1,4 @@
-use crate::atom::{Molecule, MoleculeRange, MoleculeHashRange, MoleculeBehavior};
+use crate::atom::{Molecule, MoleculeBehavior, MoleculeHashRange, MoleculeRange};
 
 /// Enum to hold different types of molecules
 #[derive(Debug)]

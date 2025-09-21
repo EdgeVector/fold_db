@@ -5,10 +5,10 @@
 //! with a single component that can see all system activity.
 
 use super::message_bus::{
-    MessageBus, Consumer,
-    atom_events::{FieldValueSet, AtomCreated, MoleculeCreated, MoleculeUpdated, AtomUpdated},
-    schema_events::{TransformExecuted, TransformTriggered, SchemaLoaded, SchemaChanged},
-    query_events::{QueryExecuted, MutationExecuted},
+    atom_events::{AtomCreated, AtomUpdated, FieldValueSet, MoleculeCreated, MoleculeUpdated},
+    query_events::{MutationExecuted, QueryExecuted},
+    schema_events::{SchemaChanged, SchemaLoaded, TransformExecuted, TransformTriggered},
+    Consumer, MessageBus,
 };
 use log::info;
 use std::sync::{Arc, Mutex};
@@ -117,21 +117,30 @@ impl EventStatistics {
         self.total_events += 1;
     }
 
-    fn increment_transform_executions(&mut self, transform_id: &str, success: bool, execution_time_ms: u64) {
+    fn increment_transform_executions(
+        &mut self,
+        transform_id: &str,
+        success: bool,
+        execution_time_ms: u64,
+    ) {
         self.transform_executions += 1;
         self.total_events += 1;
-        
+
         if success {
             self.transform_successes += 1;
         } else {
             self.transform_failures += 1;
         }
-        
+
         // Track execution time
-        self.transform_execution_times.push((transform_id.to_string(), execution_time_ms));
-        
+        self.transform_execution_times
+            .push((transform_id.to_string(), execution_time_ms));
+
         // Update per-transform statistics
-        let stats = self.transform_stats.entry(transform_id.to_string()).or_default();
+        let stats = self
+            .transform_stats
+            .entry(transform_id.to_string())
+            .or_default();
         stats.executions += 1;
         if success {
             stats.successes += 1;
@@ -139,23 +148,31 @@ impl EventStatistics {
             stats.failures += 1;
         }
         stats.total_execution_time_ms += execution_time_ms;
-        stats.avg_execution_time_ms = stats.total_execution_time_ms as f64 / stats.executions as f64;
+        stats.avg_execution_time_ms =
+            stats.total_execution_time_ms as f64 / stats.executions as f64;
         stats.last_execution_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
     }
 
-    fn increment_query_executions(&mut self, schema: &str, query_type: &str, execution_time_ms: u64, result_count: usize) {
+    fn increment_query_executions(
+        &mut self,
+        schema: &str,
+        query_type: &str,
+        execution_time_ms: u64,
+        result_count: usize,
+    ) {
         self.query_executions += 1;
         self.total_events += 1;
-        
+
         // Update per-schema query statistics
         let key = format!("{}:{}", schema, query_type);
         let stats = self.query_stats.entry(key).or_default();
         stats.executions += 1;
         stats.total_execution_time_ms += execution_time_ms;
-        stats.avg_execution_time_ms = stats.total_execution_time_ms as f64 / stats.executions as f64;
+        stats.avg_execution_time_ms =
+            stats.total_execution_time_ms as f64 / stats.executions as f64;
         stats.total_results += result_count;
         stats.avg_result_count = stats.total_results as f64 / stats.executions as f64;
         stats.last_execution_time = SystemTime::now()
@@ -164,16 +181,23 @@ impl EventStatistics {
             .as_secs();
     }
 
-    fn increment_mutation_executions(&mut self, schema: &str, operation: &str, execution_time_ms: u64, fields_affected: usize) {
+    fn increment_mutation_executions(
+        &mut self,
+        schema: &str,
+        operation: &str,
+        execution_time_ms: u64,
+        fields_affected: usize,
+    ) {
         self.mutation_executions += 1;
         self.total_events += 1;
-        
+
         // Update per-schema mutation statistics
         let key = format!("{}:{}", schema, operation);
         let stats = self.mutation_stats.entry(key).or_default();
         stats.executions += 1;
         stats.total_execution_time_ms += execution_time_ms;
-        stats.avg_execution_time_ms = stats.total_execution_time_ms as f64 / stats.executions as f64;
+        stats.avg_execution_time_ms =
+            stats.total_execution_time_ms as f64 / stats.executions as f64;
         stats.total_fields_affected += fields_affected;
         stats.avg_fields_affected = stats.total_fields_affected as f64 / stats.executions as f64;
         stats.last_execution_time = SystemTime::now()
@@ -242,15 +266,24 @@ impl EventStatistics {
         } else {
             0.0
         };
-        
+
         let overall_avg_time = if !self.transform_execution_times.is_empty() {
-            let total_time: u64 = self.transform_execution_times.iter().map(|(_, time)| *time).sum();
+            let total_time: u64 = self
+                .transform_execution_times
+                .iter()
+                .map(|(_, time)| *time)
+                .sum();
             total_time as f64 / self.transform_execution_times.len() as f64
         } else {
             0.0
         };
-        
-        (overall_success_rate, overall_avg_time, self.transform_successes, self.transform_failures)
+
+        (
+            overall_success_rate,
+            overall_avg_time,
+            self.transform_successes,
+            self.transform_failures,
+        )
     }
 }
 
@@ -334,7 +367,10 @@ impl EventMonitor {
 
         let stats_clone = statistics.clone();
         let transform_triggered_thread = thread::spawn(move || {
-            Self::monitor_transform_triggered_events(&mut transform_triggered_consumer, stats_clone);
+            Self::monitor_transform_triggered_events(
+                &mut transform_triggered_consumer,
+                stats_clone,
+            );
         });
 
         let stats_clone = statistics.clone();
@@ -395,15 +431,20 @@ impl EventMonitor {
         info!("  🔍 Query Executions: {}", stats.query_executions);
         info!("  🔧 Mutation Executions: {}", stats.mutation_executions);
         info!("  📈 Total Events: {}", stats.total_events);
-        
+
         // Transform Performance Metrics
         if stats.transform_executions > 0 {
-            let (success_rate, avg_time, successes, failures) = stats.get_transform_performance_summary();
+            let (success_rate, avg_time, successes, failures) =
+                stats.get_transform_performance_summary();
             info!("  🎯 Transform Performance:");
-            info!("    ✅ Successes: {} ({:.1}%)", successes, success_rate * 100.0);
+            info!(
+                "    ✅ Successes: {} ({:.1}%)",
+                successes,
+                success_rate * 100.0
+            );
             info!("    ❌ Failures: {}", failures);
             info!("    ⏱️  Avg Execution Time: {:.2}ms", avg_time);
-            
+
             // Individual transform statistics
             if !stats.transform_stats.is_empty() {
                 info!("  📊 Per-Transform Statistics:");
@@ -450,10 +491,7 @@ impl EventMonitor {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
                 Ok(event) => {
-                    info!(
-                        "🔍 EventMonitor: AtomCreated - atom_id: {}",
-                        event.atom_id
-                    );
+                    info!("🔍 EventMonitor: AtomCreated - atom_id: {}", event.atom_id);
                     statistics.lock().unwrap().increment_atom_creations();
                 }
                 Err(_) => continue,
@@ -468,10 +506,7 @@ impl EventMonitor {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
                 Ok(event) => {
-                    info!(
-                        "🔍 EventMonitor: AtomUpdated - atom_id: {}",
-                        event.atom_id
-                    );
+                    info!("🔍 EventMonitor: AtomUpdated - atom_id: {}", event.atom_id);
                     statistics.lock().unwrap().increment_atom_updates();
                 }
                 Err(_) => continue,
@@ -540,10 +575,7 @@ impl EventMonitor {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
                 Ok(event) => {
-                    info!(
-                        "🔍 EventMonitor: SchemaChanged - schema: {}",
-                        event.schema
-                    );
+                    info!("🔍 EventMonitor: SchemaChanged - schema: {}", event.schema);
                     statistics.lock().unwrap().increment_schema_changes();
                 }
                 Err(_) => continue,
@@ -580,14 +612,14 @@ impl EventMonitor {
                         "🔍 EventMonitor: TransformExecuted - transform_id: {}, result: {}",
                         event.transform_id, event.result
                     );
-                    
+
                     // Determine success from result field
                     let success = event.result == "success";
-                    
+
                     // For now, use a default execution time since the event doesn't contain timing info
                     // In a production system, this could be enhanced to track actual execution times
                     let execution_time_ms = 10; // Default placeholder value
-                    
+
                     statistics.lock().unwrap().increment_transform_executions(
                         &event.transform_id,
                         success,
@@ -660,10 +692,18 @@ mod tests {
         let monitor = EventMonitor::new(&bus);
 
         // Publish various events
-        bus.publish(FieldValueSet::new("test.field", json!("value"), "test")).unwrap();
-        bus.publish(AtomCreated::new("atom-123", json!({"test": "data"}))).unwrap();
-        bus.publish(MoleculeCreated::new("molecule-456", "Collection", "schema.field")).unwrap();
-        bus.publish(SchemaLoaded::new("TestSchema", "success")).unwrap();
+        bus.publish(FieldValueSet::new("test.field", json!("value"), "test"))
+            .unwrap();
+        bus.publish(AtomCreated::new("atom-123", json!({"test": "data"})))
+            .unwrap();
+        bus.publish(MoleculeCreated::new(
+            "molecule-456",
+            "Collection",
+            "schema.field",
+        ))
+        .unwrap();
+        bus.publish(SchemaLoaded::new("TestSchema", "success"))
+            .unwrap();
 
         // Allow time for event processing
         thread::sleep(Duration::from_millis(200));
@@ -681,7 +721,7 @@ mod tests {
     #[test]
     fn test_event_monitor_statistics() {
         let mut stats = EventStatistics::default();
-        
+
         stats.increment_field_value_sets();
         stats.increment_atom_creations();
         stats.increment_schema_loads();

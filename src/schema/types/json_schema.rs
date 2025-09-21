@@ -7,8 +7,8 @@ use crate::schema::types::field::FieldType;
 use crate::schema::types::SchemaError;
 use crate::schema::types::Transform;
 use crate::transform::parser::TransformParser;
-use serde::{Deserialize, Deserializer, Serialize};
 use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -86,7 +86,6 @@ impl<'de> serde::Deserialize<'de> for JsonTransform {
     }
 }
 
-
 impl JsonTransform {
     /// Validates the complete JSON transform structure.
     pub fn validate(&self) -> Result<(), SchemaError> {
@@ -98,17 +97,21 @@ impl JsonTransform {
         // Validate output field format (should be schema.field)
         if !self.output.contains('.') {
             return Err(SchemaError::InvalidField(
-                "Transform output field must be in format 'schema.field'".to_string()
+                "Transform output field must be in format 'schema.field'".to_string(),
             ));
         }
 
         // Validate input fields
         for (i, input) in self.inputs.iter().enumerate() {
-            ValidationUtils::require_non_empty_string(input, &format!("Transform input field {}", i))?;
-            
+            ValidationUtils::require_non_empty_string(
+                input,
+                &format!("Transform input field {}", i),
+            )?;
+
             if !input.contains('.') {
                 return Err(SchemaError::InvalidField(format!(
-                    "Transform input field '{}' must be in format 'schema.field'", input
+                    "Transform input field '{}' must be in format 'schema.field'",
+                    input
                 )));
             }
         }
@@ -128,15 +131,19 @@ impl JsonTransform {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KeyConfig {
     /// Hash field expression for the key (optional for Single/Range; required for HashRange)
-    #[serde(default = "empty_string", skip_serializing_if = "is_empty_string")] 
+    #[serde(default = "empty_string", skip_serializing_if = "is_empty_string")]
     pub hash_field: String,
     /// Range field expression for the key (optional for Single; required for Range/HashRange when key present)
-    #[serde(default = "empty_string", skip_serializing_if = "is_empty_string")] 
+    #[serde(default = "empty_string", skip_serializing_if = "is_empty_string")]
     pub range_field: String,
 }
 
-fn empty_string() -> String { String::new() }
-fn is_empty_string(s: &str) -> bool { s.trim().is_empty() }
+fn empty_string() -> String {
+    String::new()
+}
+fn is_empty_string(s: &str) -> bool {
+    s.trim().is_empty()
+}
 
 impl KeyConfig {
     /// Validates the key configuration for HashRange schemas where both fields are required.
@@ -146,14 +153,14 @@ impl KeyConfig {
         // Validate hash field is not empty or whitespace-only
         if self.hash_field.trim().is_empty() {
             return Err(SchemaError::InvalidField(
-                "HashRange hash_field cannot be empty".to_string()
+                "HashRange hash_field cannot be empty".to_string(),
             ));
         }
 
         // Validate range field is not empty or whitespace-only
         if self.range_field.trim().is_empty() {
             return Err(SchemaError::InvalidField(
-                "HashRange range_field cannot be empty".to_string()
+                "HashRange range_field cannot be empty".to_string(),
             ));
         }
 
@@ -164,7 +171,7 @@ impl KeyConfig {
         // Ensure hash and range fields are different
         if self.hash_field.trim() == self.range_field.trim() {
             return Err(SchemaError::InvalidField(
-                "HashRange hash_field and range_field must be different".to_string()
+                "HashRange hash_field and range_field must be different".to_string(),
             ));
         }
 
@@ -172,13 +179,17 @@ impl KeyConfig {
     }
 
     /// Validates basic field expression syntax
-    fn validate_field_expression(&self, expression: &str, field_name: &str) -> Result<(), SchemaError> {
+    fn validate_field_expression(
+        &self,
+        expression: &str,
+        field_name: &str,
+    ) -> Result<(), SchemaError> {
         let expr = expression.trim();
-        
+
         // Basic validation - must not start or end with dots
         if expr.starts_with('.') || expr.ends_with('.') {
             return Err(SchemaError::InvalidField(format!(
-                "Field expression '{}' in {} cannot start or end with a dot", 
+                "Field expression '{}' in {} cannot start or end with a dot",
                 expr, field_name
             )));
         }
@@ -186,7 +197,7 @@ impl KeyConfig {
         // Must not contain double dots
         if expr.contains("..") {
             return Err(SchemaError::InvalidField(format!(
-                "Field expression '{}' in {} cannot contain consecutive dots", 
+                "Field expression '{}' in {} cannot contain consecutive dots",
                 expr, field_name
             )));
         }
@@ -194,7 +205,7 @@ impl KeyConfig {
         // Must contain at least one character that isn't a dot
         if expr.chars().all(|c| c == '.' || c.is_whitespace()) {
             return Err(SchemaError::InvalidField(format!(
-                "Field expression '{}' in {} must contain valid field references", 
+                "Field expression '{}' in {} must contain valid field references",
                 expr, field_name
             )));
         }
@@ -239,26 +250,31 @@ impl FieldDefinition {
     }
 
     /// Validates atom_uuid expression syntax
-    fn validate_atom_uuid_expression(&self, atom_uuid: &str, field_name: &str) -> Result<(), SchemaError> {
+    fn validate_atom_uuid_expression(
+        &self,
+        atom_uuid: &str,
+        field_name: &str,
+    ) -> Result<(), SchemaError> {
         let expr = atom_uuid.trim();
-        
+
         if expr.is_empty() {
             return Err(SchemaError::InvalidField(format!(
-                "Field '{}' atom_uuid cannot be empty", field_name
+                "Field '{}' atom_uuid cannot be empty",
+                field_name
             )));
         }
 
         // Basic expression validation
         if expr.starts_with('.') || expr.ends_with('.') {
             return Err(SchemaError::InvalidField(format!(
-                "Field '{}' atom_uuid expression '{}' cannot start or end with a dot", 
+                "Field '{}' atom_uuid expression '{}' cannot start or end with a dot",
                 field_name, expr
             )));
         }
 
         if expr.contains("..") {
             return Err(SchemaError::InvalidField(format!(
-                "Field '{}' atom_uuid expression '{}' cannot contain consecutive dots", 
+                "Field '{}' atom_uuid expression '{}' cannot contain consecutive dots",
                 field_name, expr
             )));
         }
@@ -277,22 +293,26 @@ impl FieldDefinition {
         // Check for empty after trimming whitespace, but preserve original string for other checks
         if field_type.trim().is_empty() {
             return Err(SchemaError::InvalidField(format!(
-                "Field '{}' field_type cannot be empty", field_name
+                "Field '{}' field_type cannot be empty",
+                field_name
             )));
         }
 
         // Basic type validation - ensure it's a reasonable type name
         if field_type.len() > 100 {
             return Err(SchemaError::InvalidField(format!(
-                "Field '{}' field_type '{}' is too long (max 100 characters)", 
+                "Field '{}' field_type '{}' is too long (max 100 characters)",
                 field_name, field_type
             )));
         }
 
         // Ensure type doesn't contain invalid characters (check the original string, not trimmed)
-        if field_type.chars().any(|c| c.is_control() || c == '\n' || c == '\r') {
+        if field_type
+            .chars()
+            .any(|c| c.is_control() || c == '\n' || c == '\r')
+        {
             return Err(SchemaError::InvalidField(format!(
-                "Field '{}' field_type '{}' contains invalid characters", 
+                "Field '{}' field_type '{}' contains invalid characters",
                 field_name, field_type
             )));
         }
@@ -323,11 +343,11 @@ impl DeclarativeSchemaDefinition {
 
         // Validate required fields with restrictive schema name validation
         ValidationUtils::require_valid_schema_name(&self.name)?;
-        
+
         // Validate fields map is not empty
         if self.fields.is_empty() {
             return Err(SchemaError::InvalidField(
-                "Schema must have at least one field defined".to_string()
+                "Schema must have at least one field defined".to_string(),
             ));
         }
 
@@ -359,16 +379,19 @@ impl DeclarativeSchemaDefinition {
     /// This provides comprehensive validation using field alignment and chain parsing.
     fn validate_with_iterator_stack(&self) -> Result<(), SchemaError> {
         use crate::transform::iterator_stack::chain_parser::ChainParser;
-        use crate::transform::iterator_stack::field_alignment::FieldAlignmentValidator;
         use crate::transform::iterator_stack::errors::IteratorStackError;
+        use crate::transform::iterator_stack::field_alignment::FieldAlignmentValidator;
         use log::info;
 
-        info!("🔍 Performing iterator stack validation for schema: {}", self.name);
+        info!(
+            "🔍 Performing iterator stack validation for schema: {}",
+            self.name
+        );
 
         // Parse all field expressions to validate syntax
         let mut parsed_chains = Vec::new();
         let mut parsing_errors = Vec::new();
-        
+
         for (field_name, field_def) in &self.fields {
             if let Some(atom_uuid_expr) = &field_def.atom_uuid {
                 let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
@@ -377,7 +400,11 @@ impl DeclarativeSchemaDefinition {
                         parsed_chains.push(parsed_chain);
                     }
                     Err(parse_error) => {
-                        parsing_errors.push((field_name.clone(), atom_uuid_expr.clone(), parse_error));
+                        parsing_errors.push((
+                            field_name.clone(),
+                            atom_uuid_expr.clone(),
+                            parse_error,
+                        ));
                     }
                 }
             }
@@ -385,12 +412,20 @@ impl DeclarativeSchemaDefinition {
 
         // Report any parsing errors
         if !parsing_errors.is_empty() {
-            let error_details: Vec<String> = parsing_errors.iter()
-                .map(|(field, expr, error)| format!("Field '{}' expression '{}': {}", field, expr, self.convert_iterator_error_to_schema_error(error)))
+            let error_details: Vec<String> = parsing_errors
+                .iter()
+                .map(|(field, expr, error)| {
+                    format!(
+                        "Field '{}' expression '{}': {}",
+                        field,
+                        expr,
+                        self.convert_iterator_error_to_schema_error(error)
+                    )
+                })
                 .collect();
-            
+
             return Err(SchemaError::InvalidField(format!(
-                "Expression parsing failed: {}", 
+                "Expression parsing failed: {}",
                 error_details.join("; ")
             )));
         }
@@ -401,23 +436,29 @@ impl DeclarativeSchemaDefinition {
             match validator.validate_alignment(&parsed_chains) {
                 Ok(alignment_result) => {
                     if !alignment_result.valid {
-                        let error_messages: Vec<String> = alignment_result.errors.iter()
+                        let error_messages: Vec<String> = alignment_result
+                            .errors
+                            .iter()
                             .map(|err| format!("{:?}: {}", err.error_type, err.message))
                             .collect();
                         return Err(SchemaError::InvalidField(format!(
-                            "Field alignment validation failed: {}", 
+                            "Field alignment validation failed: {}",
                             error_messages.join("; ")
                         )));
                     }
 
                     // Log warnings for user guidance
                     for warning in &alignment_result.warnings {
-                        log::warn!("Schema validation warning: {:?}: {}", warning.warning_type, warning.message);
+                        log::warn!(
+                            "Schema validation warning: {:?}: {}",
+                            warning.warning_type,
+                            warning.message
+                        );
                     }
                 }
                 Err(iterator_error) => {
                     return Err(SchemaError::InvalidField(format!(
-                        "Field alignment validation error: {}", 
+                        "Field alignment validation error: {}",
                         self.convert_iterator_error_to_schema_error(&iterator_error)
                     )));
                 }
@@ -437,29 +478,51 @@ impl DeclarativeSchemaDefinition {
             }
         }
 
-        info!("✅ Iterator stack validation completed successfully for schema: {}", self.name);
+        info!(
+            "✅ Iterator stack validation completed successfully for schema: {}",
+            self.name
+        );
         Ok(())
     }
 
     /// Converts iterator stack errors to schema errors for consistent error handling
-    fn convert_iterator_error_to_schema_error(&self, error: &crate::transform::iterator_stack::errors::IteratorStackError) -> String {
+    fn convert_iterator_error_to_schema_error(
+        &self,
+        error: &crate::transform::iterator_stack::errors::IteratorStackError,
+    ) -> String {
         use crate::transform::iterator_stack::errors::IteratorStackError;
-        
+
         match error {
             IteratorStackError::InvalidChainSyntax { expression, reason } => {
                 format!("Invalid expression syntax '{}': {}", expression, reason)
             }
-            IteratorStackError::IncompatibleFanoutDepths { field1, depth1, field2, depth2 } => {
+            IteratorStackError::IncompatibleFanoutDepths {
+                field1,
+                depth1,
+                field2,
+                depth2,
+            } => {
                 format!("Incompatible depths: field '{}' (depth {}) conflicts with field '{}' (depth {})", 
                        field1, depth1, field2, depth2)
             }
-            IteratorStackError::CartesianFanoutError { field1, branch1, field2, branch2 } => {
+            IteratorStackError::CartesianFanoutError {
+                field1,
+                branch1,
+                field2,
+                branch2,
+            } => {
                 format!("Cartesian product detected: field '{}' (branch '{}') conflicts with field '{}' (branch '{}')", 
                        field1, branch1, field2, branch2)
             }
-            IteratorStackError::ReducerRequired { field, current_depth, max_depth } => {
-                format!("Field '{}' at depth {} requires a reducer (max depth: {})", 
-                       field, current_depth, max_depth)
+            IteratorStackError::ReducerRequired {
+                field,
+                current_depth,
+                max_depth,
+            } => {
+                format!(
+                    "Field '{}' at depth {} requires a reducer (max depth: {})",
+                    field, current_depth, max_depth
+                )
             }
             IteratorStackError::InvalidIteratorChain { chain, reason } => {
                 format!("Invalid iterator chain '{}': {}", chain, reason)
@@ -467,7 +530,10 @@ impl DeclarativeSchemaDefinition {
             IteratorStackError::AmbiguousFanoutDifferentBranches { branches } => {
                 format!("Ambiguous fan-out across branches: {}", branches.join(", "))
             }
-            IteratorStackError::MaxDepthExceeded { current_depth, max_depth } => {
+            IteratorStackError::MaxDepthExceeded {
+                current_depth,
+                max_depth,
+            } => {
                 format!("Maximum depth exceeded: {} > {}", current_depth, max_depth)
             }
             IteratorStackError::FieldAlignmentError { field, reason } => {
@@ -487,18 +553,20 @@ impl DeclarativeSchemaDefinition {
 
         // Validate that hash_field and range_field expressions can be parsed
         let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-        
-        parser.parse(&key_config.hash_field)
-            .map_err(|e| SchemaError::InvalidField(format!(
-                "HashRange hash_field expression invalid: {}", 
+
+        parser.parse(&key_config.hash_field).map_err(|e| {
+            SchemaError::InvalidField(format!(
+                "HashRange hash_field expression invalid: {}",
                 self.convert_iterator_error_to_schema_error(&e)
-            )))?;
-            
-        parser.parse(&key_config.range_field)
-            .map_err(|e| SchemaError::InvalidField(format!(
-                "HashRange range_field expression invalid: {}", 
+            ))
+        })?;
+
+        parser.parse(&key_config.range_field).map_err(|e| {
+            SchemaError::InvalidField(format!(
+                "HashRange range_field expression invalid: {}",
                 self.convert_iterator_error_to_schema_error(&e)
-            )))?;
+            ))
+        })?;
 
         Ok(())
     }
@@ -508,21 +576,23 @@ impl DeclarativeSchemaDefinition {
         // Ensure the range_key field exists and has a valid expression
         let range_field = self.fields.get(range_key).ok_or_else(|| {
             SchemaError::InvalidField(format!(
-                "Range schema range_key '{}' not found in schema fields", 
+                "Range schema range_key '{}' not found in schema fields",
                 range_key
             ))
         })?;
 
         if let Some(atom_uuid_expr) = &range_field.atom_uuid {
             let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-            parser.parse(atom_uuid_expr)
-                .map_err(|e| SchemaError::InvalidField(format!(
-                    "Range schema range_key field '{}' expression invalid: {}", 
-                    range_key, self.convert_iterator_error_to_schema_error(&e)
-                )))?;
+            parser.parse(atom_uuid_expr).map_err(|e| {
+                SchemaError::InvalidField(format!(
+                    "Range schema range_key field '{}' expression invalid: {}",
+                    range_key,
+                    self.convert_iterator_error_to_schema_error(&e)
+                ))
+            })?;
         } else {
             return Err(SchemaError::InvalidField(format!(
-                "Range schema range_key field '{}' must have an atom_uuid expression", 
+                "Range schema range_key field '{}' must have an atom_uuid expression",
                 range_key
             )));
         }
@@ -535,12 +605,14 @@ impl DeclarativeSchemaDefinition {
         // For Single schemas, all fields should be at compatible depths
         // This is already handled by the general field alignment validation
         // but we can add specific Single schema checks here if needed
-        
+
         // Single schemas should prefer simple expressions for optimal performance
         let mut complex_expressions = Vec::new();
         for (field_name, field_def) in &self.fields {
             if let Some(atom_uuid_expr) = &field_def.atom_uuid {
-                if atom_uuid_expr.contains(".map().") && atom_uuid_expr.matches(".map().").count() > 1 {
+                if atom_uuid_expr.contains(".map().")
+                    && atom_uuid_expr.matches(".map().").count() > 1
+                {
                     complex_expressions.push(field_name.clone());
                 }
             }
@@ -602,7 +674,12 @@ impl DeclarativeSchemaDefinition {
     }
 
     /// Helper to validate key expressions consistently
-    fn validate_key_expression(&self, schema_label: &str, field_name: &str, expr: &str) -> Result<(), SchemaError> {
+    fn validate_key_expression(
+        &self,
+        schema_label: &str,
+        field_name: &str,
+        expr: &str,
+    ) -> Result<(), SchemaError> {
         let trimmed = expr.trim();
         if trimmed.is_empty() {
             return Err(SchemaError::InvalidField(format!(
@@ -611,7 +688,10 @@ impl DeclarativeSchemaDefinition {
             )));
         }
         // Reuse existing basic validator from KeyConfig
-        let temp = KeyConfig { hash_field: String::new(), range_field: String::new() };
+        let temp = KeyConfig {
+            hash_field: String::new(),
+            range_field: String::new(),
+        };
         temp.validate_field_expression(trimmed, field_name)
     }
 }
@@ -630,7 +710,9 @@ where
         type Value = HashMap<String, FieldDefinition>;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map of field names to either string expressions or FieldDefinition objects")
+            formatter.write_str(
+                "a map of field names to either string expressions or FieldDefinition objects",
+            )
         }
 
         fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
@@ -639,7 +721,9 @@ where
         {
             let mut fields = HashMap::new();
 
-            while let Some((field_name, field_value)) = map.next_entry::<String, serde_json::Value>()? {
+            while let Some((field_name, field_value)) =
+                map.next_entry::<String, serde_json::Value>()?
+            {
                 let field_definition = match field_value {
                     serde_json::Value::String(expression) => {
                         // Convert string expression to FieldDefinition with atom_uuid
@@ -650,8 +734,9 @@ where
                     }
                     serde_json::Value::Object(_) => {
                         // Deserialize as FieldDefinition object
-                        serde_json::from_value(field_value)
-                            .map_err(|e| de::Error::custom(format!("Invalid FieldDefinition: {}", e)))?
+                        serde_json::from_value(field_value).map_err(|e| {
+                            de::Error::custom(format!("Invalid FieldDefinition: {}", e))
+                        })?
                     }
                     _ => {
                         return Err(de::Error::custom(format!(
@@ -764,7 +849,6 @@ fn default_payment_config() -> JsonFieldPaymentConfig {
         min_payment: None,
     }
 }
-
 
 impl JsonSchemaDefinition {
     /// Validates the schema definition according to the rules.

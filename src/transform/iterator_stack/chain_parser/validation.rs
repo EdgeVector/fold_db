@@ -3,21 +3,28 @@
 //! Contains validation algorithms and compatibility analysis for
 //! chain expressions and multiple chain coordination.
 
-use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
-use crate::transform::iterator_stack::chain_parser::types::{
-    ChainOperation, ParsedChain, CompatibilityAnalysis, FieldAlignment, FieldAlignmentRequirement,
-};
 use crate::transform::iterator_stack::chain_parser::parser::ChainParser;
+use crate::transform::iterator_stack::chain_parser::types::{
+    ChainOperation, CompatibilityAnalysis, FieldAlignment, FieldAlignmentRequirement, ParsedChain,
+};
+use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use std::collections::HashMap;
 
 impl ChainParser {
     /// Checks if a chain contains any reducer operations
     fn contains_reducer_operation(&self, chain: &ParsedChain) -> bool {
-        chain.operations.iter().any(|op| matches!(op, ChainOperation::Reducer(_)))
+        chain
+            .operations
+            .iter()
+            .any(|op| matches!(op, ChainOperation::Reducer(_)))
     }
 
     /// Extracts the branch identifier up to a specific depth for fan-out detection
-    pub fn extract_branch_up_to_depth(&self, operations: &[ChainOperation], target_depth: usize) -> IteratorStackResult<String> {
+    pub fn extract_branch_up_to_depth(
+        &self,
+        operations: &[ChainOperation],
+        target_depth: usize,
+    ) -> IteratorStackResult<String> {
         let mut branch_parts = Vec::new();
         let mut current_depth = 0;
 
@@ -43,7 +50,11 @@ impl ChainParser {
 
         if branch_parts.is_empty() {
             return Err(IteratorStackError::InvalidIteratorChain {
-                chain: operations.iter().map(|op| format!("{:?}", op)).collect::<Vec<_>>().join("."),
+                chain: operations
+                    .iter()
+                    .map(|op| format!("{:?}", op))
+                    .collect::<Vec<_>>()
+                    .join("."),
                 reason: "No field access found for branch extraction".to_string(),
             });
         }
@@ -98,13 +109,11 @@ impl ChainParser {
             }
 
             if branch_paths_at_depth.len() > 1 {
-                let unique_paths: std::collections::HashSet<_> = branch_paths_at_depth.iter().collect();
+                let unique_paths: std::collections::HashSet<_> =
+                    branch_paths_at_depth.iter().collect();
                 if unique_paths.len() > 1 {
                     return Err(IteratorStackError::AmbiguousFanoutDifferentBranches {
-                        branches: unique_paths
-                            .into_iter()
-                            .cloned()
-                            .collect(),
+                        branches: unique_paths.into_iter().cloned().collect(),
                     });
                 }
             }

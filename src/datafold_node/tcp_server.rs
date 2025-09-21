@@ -99,7 +99,12 @@ impl TcpServer {
     pub async fn new(node: DataFoldNode, port: u16) -> FoldDbResult<Self> {
         let addr = format!("127.0.0.1:{}", port);
         let listener = TcpListener::bind(&addr).await?;
-        log_feature!(LogFeature::TcpServer, info, "TCP server listening on {}", addr);
+        log_feature!(
+            LogFeature::TcpServer,
+            info,
+            "TCP server listening on {}",
+            addr
+        );
 
         // Register this node's address with the network if available
         if let Ok(mut net) = node.get_network_mut().await {
@@ -163,7 +168,12 @@ impl TcpServer {
             // Spawn a new task to handle the connection
             tokio::spawn(async move {
                 if let Err(e) = Self::handle_connection(socket, node_clone).await {
-                    log_feature!(LogFeature::TcpServer, error, "Error handling connection: {}", e);
+                    log_feature!(
+                        LogFeature::TcpServer,
+                        error,
+                        "Error handling connection: {}",
+                        e
+                    );
                 }
             });
         }

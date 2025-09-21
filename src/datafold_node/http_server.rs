@@ -5,11 +5,11 @@ use crate::error::{FoldDbError, FoldDbResult};
 use crate::error_handling::http_errors;
 use crate::ingestion::routes as ingestion_routes;
 
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use actix_cors::Cors;
 use actix_files::Files;
 use actix_web::{web, App, HttpServer as ActixHttpServer};
-use crate::log_feature;
-use crate::logging::features::LogFeature;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -113,10 +113,10 @@ impl DataFoldHttpServer {
                 .allow_any_method()
                 .allow_any_header()
                 .max_age(3600);
-            
+
             // Configure custom JSON error handler
-            let json_config = web::JsonConfig::default()
-                .error_handler(http_errors::json_error_handler);
+            let json_config =
+                web::JsonConfig::default().error_handler(http_errors::json_error_handler);
 
             App::new()
                 .wrap(cors)
@@ -250,15 +250,35 @@ impl DataFoldHttpServer {
                             web::scope("/security")
                                 .service(
                                     web::resource("/system-key")
-                                        .route(web::post().to(security_routes::register_system_public_key))
-                                        .route(web::get().to(security_routes::get_system_public_key))
-                                        .route(web::delete().to(security_routes::remove_system_public_key))
+                                        .route(
+                                            web::post()
+                                                .to(security_routes::register_system_public_key),
+                                        )
+                                        .route(
+                                            web::get().to(security_routes::get_system_public_key),
+                                        )
+                                        .route(
+                                            web::delete()
+                                                .to(security_routes::remove_system_public_key),
+                                        ),
                                 )
                                 .route("/verify", web::post().to(security_routes::verify_message))
-                                .route("/status", web::get().to(security_routes::get_security_status))
-                                .route("/examples", web::get().to(security_routes::get_client_examples))
-                                .route("/demo-keypair", web::get().to(security_routes::generate_demo_keypair))
-                                .route("/protected", web::post().to(security_routes::protected_endpoint))
+                                .route(
+                                    "/status",
+                                    web::get().to(security_routes::get_security_status),
+                                )
+                                .route(
+                                    "/examples",
+                                    web::get().to(security_routes::get_client_examples),
+                                )
+                                .route(
+                                    "/demo-keypair",
+                                    web::get().to(security_routes::generate_demo_keypair),
+                                )
+                                .route(
+                                    "/protected",
+                                    web::post().to(security_routes::protected_endpoint),
+                                ),
                         )
                         // Network endpoints
                         .service(

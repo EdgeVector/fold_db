@@ -1,11 +1,12 @@
 use super::{schema_lock_error, validator::SchemaValidator};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::schema::types::{
-    Field, FieldVariant, Schema, SchemaError,
-};
-use crate::schema::{MoleculeVariant, SchemaState, map_fields, interpret_schema, load_schema_from_json, load_schema_from_file};
-use log::{info, error};
 use crate::logging::features::{log_feature, LogFeature};
+use crate::schema::types::{Field, FieldVariant, Schema, SchemaError};
+use crate::schema::{
+    interpret_schema, load_schema_from_file, load_schema_from_json, map_fields, MoleculeVariant,
+    SchemaState,
+};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -53,10 +54,7 @@ impl SchemaCore {
             schema_name, field_name, molecule_uuid
         );
 
-        let mut schemas = self
-            .schemas
-            .lock()
-            .map_err(|_| schema_lock_error())?;
+        let mut schemas = self.schemas.lock().map_err(|_| schema_lock_error())?;
 
         if let Some(schema) = schemas.get_mut(schema_name) {
             if let Some(field) = schema.fields.get_mut(field_name) {
@@ -110,20 +108,16 @@ impl SchemaCore {
     /// Available schemas show fields but with molecule_uuid: None as expected.
     pub fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
         // First check the available collection which contains all schemas regardless of state
-        let available = self
-            .available
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire available schema lock".to_string()))?;
-        
+        let available = self.available.lock().map_err(|_| {
+            SchemaError::InvalidData("Failed to acquire available schema lock".to_string())
+        })?;
+
         if let Some((schema, _state)) = available.get(schema_name) {
             return Ok(Some(schema.clone()));
         }
-        
+
         // Fallback to approved schemas collection for backward compatibility
-        let schemas = self
-            .schemas
-            .lock()
-            .map_err(|_| schema_lock_error())?;
+        let schemas = self.schemas.lock().map_err(|_| schema_lock_error())?;
         Ok(schemas.get(schema_name).cloned())
     }
 }

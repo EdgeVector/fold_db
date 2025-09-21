@@ -66,17 +66,11 @@ pub enum FoldDbCoreError {
 
     /// Schema validation failed
     #[error("Schema validation failed for {schema_name}: {reason}")]
-    SchemaValidationFailed {
-        schema_name: String,
-        reason: String,
-    },
+    SchemaValidationFailed { schema_name: String, reason: String },
 
     /// Range schema specific error
     #[error("Range schema error for {schema_name}: {reason}")]
-    RangeSchemaError {
-        schema_name: String,
-        reason: String,
-    },
+    RangeSchemaError { schema_name: String, reason: String },
 
     // ========== Database Operation Errors ==========
     /// Database operation failed
@@ -156,10 +150,7 @@ impl FoldDbCoreError {
     }
 
     /// Create a GhostUuidDetected error
-    pub fn ghost_uuid_detected(
-        field_name: impl Into<String>,
-        uuid: impl Into<String>,
-    ) -> Self {
+    pub fn ghost_uuid_detected(field_name: impl Into<String>, uuid: impl Into<String>) -> Self {
         Self::GhostUuidDetected {
             field_name: field_name.into(),
             uuid: uuid.into(),
@@ -167,10 +158,7 @@ impl FoldDbCoreError {
     }
 
     /// Create a FieldNotFound error
-    pub fn field_not_found(
-        field_name: impl Into<String>,
-        schema_name: impl Into<String>,
-    ) -> Self {
+    pub fn field_not_found(field_name: impl Into<String>, schema_name: impl Into<String>) -> Self {
         Self::FieldNotFound {
             field_name: field_name.into(),
             schema_name: schema_name.into(),
@@ -220,10 +208,7 @@ impl FoldDbCoreError {
     }
 
     /// Create a RangeSchemaError
-    pub fn range_schema_error(
-        schema_name: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn range_schema_error(schema_name: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::RangeSchemaError {
             schema_name: schema_name.into(),
             reason: reason.into(),
@@ -231,10 +216,7 @@ impl FoldDbCoreError {
     }
 
     /// Create a DatabaseError
-    pub fn database_error(
-        operation: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn database_error(operation: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::DatabaseError {
             operation: operation.into(),
             reason: reason.into(),
@@ -242,10 +224,7 @@ impl FoldDbCoreError {
     }
 
     /// Create a SerializationError
-    pub fn serialization_error(
-        context: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn serialization_error(context: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::SerializationError {
             context: context.into(),
             reason: reason.into(),
@@ -253,10 +232,7 @@ impl FoldDbCoreError {
     }
 
     /// Create a DeserializationError
-    pub fn deserialization_error(
-        context: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn deserialization_error(context: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::DeserializationError {
             context: context.into(),
             reason: reason.into(),
@@ -272,10 +248,7 @@ impl FoldDbCoreError {
     }
 
     /// Create a ConcurrencyError
-    pub fn concurrency_error(
-        operation: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn concurrency_error(operation: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::ConcurrencyError {
             operation: operation.into(),
             reason: reason.into(),
@@ -314,10 +287,7 @@ impl FoldDbCoreError {
     }
 
     /// Create an OperationFailed error
-    pub fn operation_failed(
-        operation: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn operation_failed(operation: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::OperationFailed {
             operation: operation.into(),
             reason: reason.into(),
@@ -439,8 +409,11 @@ impl FoldDbCoreError {
     ) -> Self {
         Self::range_schema_error(
             schema_name,
-            format!("Range key validation failed for field {}: {}", 
-                field_name.into(), issue.into()),
+            format!(
+                "Range key validation failed for field {}: {}",
+                field_name.into(),
+                issue.into()
+            ),
         )
     }
 

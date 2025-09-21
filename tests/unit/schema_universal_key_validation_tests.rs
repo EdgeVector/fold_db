@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition, KeyConfig};
+use datafold::schema::types::json_schema::{
+    DeclarativeSchemaDefinition, FieldDefinition, KeyConfig,
+};
 use datafold::schema::types::schema::SchemaType;
 
 fn minimal_fields() -> HashMap<String, FieldDefinition> {
@@ -35,7 +37,9 @@ fn range_schema_allows_optional_key_and_validates_when_present() {
     // With both fields present
     let schema_with_both = DeclarativeSchemaDefinition {
         name: "RangeWithKeyBoth".to_string(),
-        schema_type: SchemaType::Range { range_key: "key".to_string() },
+        schema_type: SchemaType::Range {
+            range_key: "key".to_string(),
+        },
         key: Some(KeyConfig {
             hash_field: "input.map().user_id".to_string(),
             range_field: "input.map().timestamp".to_string(),
@@ -47,7 +51,9 @@ fn range_schema_allows_optional_key_and_validates_when_present() {
     // With only hash_field present
     let schema_with_hash_only = DeclarativeSchemaDefinition {
         name: "RangeWithHashOnly".to_string(),
-        schema_type: SchemaType::Range { range_key: "key".to_string() },
+        schema_type: SchemaType::Range {
+            range_key: "key".to_string(),
+        },
         key: Some(KeyConfig {
             hash_field: "input.map().user_id".to_string(),
             range_field: String::new(),
@@ -95,5 +101,3 @@ fn hashrange_schema_requires_both_key_fields() {
     };
     assert!(missing_hash.validate().is_err());
 }
-
-

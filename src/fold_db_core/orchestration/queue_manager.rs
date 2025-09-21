@@ -1,13 +1,13 @@
 //! Queue management component for the Transform Orchestrator
-//! 
+//!
 //! Handles thread-safe queue operations with proper locking, extracted from
 //! the main TransformOrchestrator to improve separation of concerns.
 
+use crate::schema::SchemaError;
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
-use log::{error, info};
-use crate::schema::SchemaError;
 
 /// Represents a single item in the transform queue
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -46,7 +46,10 @@ impl QueueManager {
     pub fn add_item(&self, transform_id: &str, mutation_hash: &str) -> Result<bool, SchemaError> {
         info!("🔒 Acquiring queue lock to add item: {}", transform_id);
         let mut state = self.state.lock().map_err(|e| {
-            error!("❌ Failed to acquire queue lock for adding {}: {}", transform_id, e);
+            error!(
+                "❌ Failed to acquire queue lock for adding {}: {}",
+                transform_id, e
+            );
             SchemaError::InvalidData("Failed to acquire queue lock".to_string())
         })?;
 
@@ -58,10 +61,16 @@ impl QueueManager {
                 id: transform_id.to_string(),
                 mutation_hash: mutation_hash.to_string(),
             });
-            info!("✅ Successfully added item {} to queue with key: {}", transform_id, key);
+            info!(
+                "✅ Successfully added item {} to queue with key: {}",
+                transform_id, key
+            );
             Ok(true)
         } else {
-            info!("ℹ️ Item {} with key {} already in queue, skipping", transform_id, key);
+            info!(
+                "ℹ️ Item {} with key {} already in queue, skipping",
+                transform_id, key
+            );
             Ok(false)
         }
     }
@@ -84,13 +93,13 @@ impl QueueManager {
             Some(item) => {
                 let key = format!("{}|{}", item.id, item.mutation_hash);
                 let was_in_queued = state.queued.remove(&key);
-                
+
                 info!(
                     "📤 Popped item from queue: {} (mutation_hash: {}, was_in_queued_set: {})",
                     item.id, item.mutation_hash, was_in_queued
                 );
                 info!("🔑 Processing key: {}", key);
-                
+
                 Ok(Some(item))
             }
             None => {
@@ -121,22 +130,36 @@ impl QueueManager {
     }
 
     /// Mark an item as processed
-    pub fn mark_processed(&self, transform_id: &str, mutation_hash: &str) -> Result<(), SchemaError> {
+    pub fn mark_processed(
+        &self,
+        transform_id: &str,
+        mutation_hash: &str,
+    ) -> Result<(), SchemaError> {
         info!("📝 Marking item as processed: {}", transform_id);
         let mut state = self.state.lock().map_err(|e| {
-            error!("❌ Failed to acquire queue lock for marking processed: {}", e);
+            error!(
+                "❌ Failed to acquire queue lock for marking processed: {}",
+                e
+            );
             SchemaError::InvalidData("Failed to acquire queue lock".to_string())
         })?;
 
         let key = format!("{}|{}", transform_id, mutation_hash);
         state.processed.insert(key.clone());
-        info!("✅ Item {} marked as processed with key: {}", transform_id, key);
+        info!(
+            "✅ Item {} marked as processed with key: {}",
+            transform_id, key
+        );
         info!("📋 Updated processed set: {:?}", state.processed);
         Ok(())
     }
 
     /// Check if an item has been processed
-    pub fn is_processed(&self, transform_id: &str, mutation_hash: &str) -> Result<bool, SchemaError> {
+    pub fn is_processed(
+        &self,
+        transform_id: &str,
+        mutation_hash: &str,
+    ) -> Result<bool, SchemaError> {
         let state = self.state.lock().map_err(|e| {
             error!("❌ Failed to acquire queue lock for processed check: {}", e);
             SchemaError::InvalidData("Failed to acquire queue lock".to_string())
@@ -151,10 +174,13 @@ impl QueueManager {
     /// List all queued transform IDs without dequeuing
     pub fn list_queued_transforms(&self) -> Result<Vec<String>, SchemaError> {
         let state = self.state.lock().map_err(|e| {
-            error!("❌ Failed to acquire queue lock for listing transforms: {}", e);
+            error!(
+                "❌ Failed to acquire queue lock for listing transforms: {}",
+                e
+            );
             SchemaError::InvalidData("Failed to acquire queue lock".to_string())
         })?;
-        
+
         let transform_ids: Vec<String> = state.queue.iter().map(|item| item.id.clone()).collect();
         Ok(transform_ids)
     }
@@ -193,10 +219,12 @@ impl QueueManager {
         state.queue.retain(|item| !predicate(item));
         let items_after = state.queue.len();
         let removed_count = items_before - items_after;
-        
-        info!("📋 Removed {} items from queue ({} -> {})",
-            removed_count, items_before, items_after);
-        
+
+        info!(
+            "📋 Removed {} items from queue ({} -> {})",
+            removed_count, items_before, items_after
+        );
+
         Ok(removed_count)
     }
 }

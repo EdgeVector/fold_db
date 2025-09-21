@@ -6,8 +6,8 @@
 //! - Standard initialization patterns
 //! - Unified configuration management
 
+use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
-use serde_json::{Value as JsonValue, json};
 
 /// Factory for creating standardized configuration objects
 /// Eliminates 82+ HashMap::new() initialization patterns
@@ -78,7 +78,10 @@ impl ConfigFactory {
         let mut fields = HashMap::new();
         fields.insert("name".to_string(), json!("Test User"));
         fields.insert("email".to_string(), json!("test@example.com"));
-        fields.insert("created_at".to_string(), json!(chrono::Utc::now().to_rfc3339()));
+        fields.insert(
+            "created_at".to_string(),
+            json!(chrono::Utc::now().to_rfc3339()),
+        );
         fields
     }
 }
@@ -170,11 +173,14 @@ impl StandardInitializers {
     /// Initialize schema with standard test fields
     pub fn test_schema(name: &str) -> crate::schema::types::Schema {
         let mut schema = Self::empty_schema(name);
-        
+
         // Add standard test fields
         let field = crate::schema::field_factory::FieldFactory::create_single_field();
-        schema.fields.insert("test_field".to_string(), crate::schema::types::field::variant::FieldVariant::Single(field));
-        
+        schema.fields.insert(
+            "test_field".to_string(),
+            crate::schema::types::field::variant::FieldVariant::Single(field),
+        );
+
         schema
     }
 
@@ -183,14 +189,14 @@ impl StandardInitializers {
         use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
         use crate::schema::types::schema::SchemaType;
         use std::collections::HashMap;
-        
+
         let schema = DeclarativeSchemaDefinition {
             name: "test_transform".to_string(),
             schema_type: SchemaType::Single,
             fields: HashMap::new(),
             key: None,
         };
-        
+
         crate::schema::types::Transform::new(schema, output_expr.to_string())
     }
 
@@ -219,11 +225,7 @@ impl StandardInitializers {
 
     /// Initialize atom with standard test configuration
     pub fn test_atom(schema_name: &str, content: JsonValue) -> crate::atom::Atom {
-        crate::atom::Atom::new(
-            schema_name.to_string(),
-            "test_user".to_string(),
-            content,
-        )
+        crate::atom::Atom::new(schema_name.to_string(), "test_user".to_string(), content)
     }
 
     /// Initialize molecule with standard test configuration
@@ -289,10 +291,13 @@ pub struct EnvironmentConfiguration {
 
 impl EnvironmentConfiguration {
     /// Apply this configuration to create a test environment
-    pub fn create_test_environment(&self) -> Result<crate::schema::field_factory::TestEnvironment, Box<dyn std::error::Error>> {
+    pub fn create_test_environment(
+        &self,
+    ) -> Result<crate::schema::field_factory::TestEnvironment, Box<dyn std::error::Error>> {
         if self.test_mode {
             // Use the new consolidated testing utilities
-            let (db_ops, message_bus) = crate::testing_utils::TestDatabaseFactory::create_test_environment()?;
+            let (db_ops, message_bus) =
+                crate::testing_utils::TestDatabaseFactory::create_test_environment()?;
             let temp_dir = tempfile::tempdir()?;
             Ok(crate::schema::field_factory::TestEnvironment {
                 db_ops,
@@ -320,7 +325,10 @@ impl PendingOperationsInit {
     }
 
     /// Create standard pending operation entry
-    pub fn create_pending_operation(operation_type: &str, correlation_id: String) -> PendingOperation {
+    pub fn create_pending_operation(
+        operation_type: &str,
+        correlation_id: String,
+    ) -> PendingOperation {
         PendingOperation {
             operation_type: operation_type.to_string(),
             correlation_id,
@@ -430,7 +438,10 @@ mod tests {
 
     #[test]
     fn test_pending_operations() {
-        let pending = PendingOperationsInit::create_pending_operation("test_op", "correlation_123".to_string());
+        let pending = PendingOperationsInit::create_pending_operation(
+            "test_op",
+            "correlation_123".to_string(),
+        );
         assert_eq!(pending.operation_type, "test_op");
         assert_eq!(pending.correlation_id, "correlation_123");
         assert!(!pending.is_timed_out(std::time::Duration::from_secs(1)));

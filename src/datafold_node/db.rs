@@ -2,10 +2,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::error::{FoldDbError, FoldDbResult};
-use crate::schema::types::{Mutation, Operation, Query, Transform};
-use crate::schema::SchemaError;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::schema::types::{Mutation, Operation, Query, Transform};
+use crate::schema::SchemaError;
 
 use super::DataFoldNode;
 
@@ -62,7 +62,10 @@ impl DataFoldNode {
 
     /// Executes a query against the database.
     pub fn query(&mut self, query: Query) -> FoldDbResult<Vec<Result<Value, SchemaError>>> {
-        println!("🔍 DEBUG: datafold_node::db::query called for schema: {}", query.schema_name);
+        println!(
+            "🔍 DEBUG: datafold_node::db::query called for schema: {}",
+            query.schema_name
+        );
         // Check if schema exists first
         let schema_exists = {
             let db = self

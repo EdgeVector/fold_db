@@ -2,17 +2,14 @@
 
 use crate::fold_db_core::FoldDB;
 use crate::ingestion::{
-    config::AIProvider,
-    mutation_generator::MutationGenerator,
-    ollama_service::OllamaService,
-    openrouter_service::OpenRouterService,
-    schema_stripper::SchemaStripper,
-    AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
+    config::AIProvider, mutation_generator::MutationGenerator, ollama_service::OllamaService,
+    openrouter_service::OpenRouterService, schema_stripper::SchemaStripper, AISchemaResponse,
+    IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
 };
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use crate::schema::types::{JsonSchemaDefinition, Mutation};
 use crate::schema::{Schema, SchemaCore};
-use crate::logging::features::LogFeature;
-use crate::log_feature;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -86,7 +83,11 @@ impl IngestionCore {
         &self,
         request: IngestionRequest,
     ) -> IngestionResult<IngestionResponse> {
-        log_feature!(LogFeature::Ingestion, info, "Starting JSON ingestion process");
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Starting JSON ingestion process"
+        );
 
         // Step 1: Validate configuration
         self.validate_configuration()?;
@@ -95,7 +96,9 @@ impl IngestionCore {
         let available_schemas = self.prepare_schemas().await?;
 
         // Step 3: Get AI recommendation
-        let ai_response = self.get_ai_recommendation(&request.data, &available_schemas).await?;
+        let ai_response = self
+            .get_ai_recommendation(&request.data, &available_schemas)
+            .await?;
 
         // Step 4: Determine and setup schema
         let (schema_name, new_schema_created) = self.setup_schema(&ai_response).await?;
@@ -104,7 +107,9 @@ impl IngestionCore {
         let mutations = self.generate_mutations(&schema_name, &request, &ai_response)?;
 
         // Step 6: Execute mutations if requested
-        let mutations_executed = self.execute_mutations_if_requested(&request, &mutations).await?;
+        let mutations_executed = self
+            .execute_mutations_if_requested(&request, &mutations)
+            .await?;
 
         self.log_completion(&schema_name, mutations.len(), mutations_executed);
 
@@ -120,7 +125,7 @@ impl IngestionCore {
     fn validate_configuration(&self) -> IngestionResult<()> {
         if !self.config.is_ready() {
             return Err(IngestionError::configuration_error(
-                "Ingestion module is not properly configured or disabled"
+                "Ingestion module is not properly configured or disabled",
             ));
         }
         Ok(())
@@ -134,7 +139,12 @@ impl IngestionCore {
         } else {
             0
         };
-        log_feature!(LogFeature::Ingestion, info, "Retrieved {} available schemas", schema_count);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Retrieved {} available schemas",
+            schema_count
+        );
         Ok(available_schemas)
     }
 
@@ -144,7 +154,9 @@ impl IngestionCore {
         data: &Value,
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
-        let ai_response = self.get_ai_schema_recommendation(data, available_schemas).await?;
+        let ai_response = self
+            .get_ai_schema_recommendation(data, available_schemas)
+            .await?;
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -156,7 +168,10 @@ impl IngestionCore {
     }
 
     /// Sets up the schema to use (existing or newly created).
-    async fn setup_schema(&self, ai_response: &AISchemaResponse) -> IngestionResult<(String, bool)> {
+    async fn setup_schema(
+        &self,
+        ai_response: &AISchemaResponse,
+    ) -> IngestionResult<(String, bool)> {
         let schema_name = self.determine_schema_to_use(ai_response).await?;
         let new_schema_created = ai_response.new_schemas.is_some();
         Ok((schema_name, new_schema_created))
@@ -173,11 +188,21 @@ impl IngestionCore {
             schema_name,
             &request.data,
             &ai_response.mutation_mappers,
-            request.trust_distance.unwrap_or(self.config.default_trust_distance),
-            request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+            request
+                .trust_distance
+                .unwrap_or(self.config.default_trust_distance),
+            request
+                .pub_key
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
         )?;
 
-        log_feature!(LogFeature::Ingestion, info, "Generated {} mutations", mutations.len());
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Generated {} mutations",
+            mutations.len()
+        );
         Ok(mutations)
     }
 
@@ -187,7 +212,10 @@ impl IngestionCore {
         request: &IngestionRequest,
         mutations: &[Mutation],
     ) -> IngestionResult<usize> {
-        if request.auto_execute.unwrap_or(self.config.auto_execute_mutations) {
+        if request
+            .auto_execute
+            .unwrap_or(self.config.auto_execute_mutations)
+        {
             self.execute_mutations(mutations).await
         } else {
             Ok(0)
@@ -200,7 +228,9 @@ impl IngestionCore {
             LogFeature::Ingestion,
             info,
             "Ingestion completed successfully: schema '{}', {} mutations generated, {} executed",
-            schema_name, mutations_count, mutations_executed
+            schema_name,
+            mutations_count,
+            mutations_executed
         );
     }
 
@@ -231,18 +261,24 @@ impl IngestionCore {
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
         match self.config.provider {
-            AIProvider::OpenRouter => self
-                .openrouter_service
-                .as_ref()
-                .ok_or_else(|| IngestionError::configuration_error("OpenRouter service not initialized"))?
-                .get_schema_recommendation(json_data, available_schemas)
-                .await,
-            AIProvider::Ollama => self
-                .ollama_service
-                .as_ref()
-                .ok_or_else(|| IngestionError::configuration_error("Ollama service not initialized"))?
-                .get_schema_recommendation(json_data, available_schemas)
-                .await,
+            AIProvider::OpenRouter => {
+                self.openrouter_service
+                    .as_ref()
+                    .ok_or_else(|| {
+                        IngestionError::configuration_error("OpenRouter service not initialized")
+                    })?
+                    .get_schema_recommendation(json_data, available_schemas)
+                    .await
+            }
+            AIProvider::Ollama => {
+                self.ollama_service
+                    .as_ref()
+                    .ok_or_else(|| {
+                        IngestionError::configuration_error("Ollama service not initialized")
+                    })?
+                    .get_schema_recommendation(json_data, available_schemas)
+                    .await
+            }
         }
     }
 
@@ -254,14 +290,24 @@ impl IngestionCore {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
             let schema_name = &ai_response.existing_schemas[0];
-            log_feature!(LogFeature::Ingestion, info, "Using existing schema: {}", schema_name);
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Using existing schema: {}",
+                schema_name
+            );
             return Ok(schema_name.clone());
         }
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
             let schema_name = self.create_new_schema(new_schema_def).await?;
-            log_feature!(LogFeature::Ingestion, info, "Created new schema: {}", schema_name);
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Created new schema: {}",
+                schema_name
+            );
             return Ok(schema_name);
         }
 
@@ -272,7 +318,11 @@ impl IngestionCore {
 
     /// Create a new schema from AI response
     async fn create_new_schema(&self, schema_def: &Value) -> IngestionResult<String> {
-        log_feature!(LogFeature::Ingestion, info, "Creating new schema from AI definition");
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Creating new schema from AI definition"
+        );
 
         // Parse the schema definition
         let schema = self.parse_schema_definition(schema_def)?;
@@ -288,7 +338,12 @@ impl IngestionCore {
             .approve_schema(&schema_name)
             .map_err(IngestionError::SchemaSystemError)?;
 
-        log_feature!(LogFeature::Ingestion, info, "New schema '{}' created and approved", schema_name);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "New schema '{}' created and approved",
+            schema_name
+        );
         Ok(schema_name)
     }
 
@@ -457,8 +512,8 @@ mod tests {
     use crate::fold_db_core::FoldDB;
     use crate::ingestion::config::AIProvider;
     use crate::schema::SchemaCore;
-    use std::sync::{Arc, Mutex};
     use std::fs;
+    use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
     // REMOVED: create_test_ingestion_core - dead code marked with #[allow(dead_code)]
@@ -471,15 +526,16 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
-        
+
         // Create separate subdirectories to avoid conflicts
         let schema_path = temp_path.join("schema");
         let db_path = temp_path.join("db");
-        
+
         fs::create_dir_all(&schema_path).unwrap();
         fs::create_dir_all(&db_path).unwrap();
 
-        let schema_core = Arc::new(SchemaCore::new_for_testing(schema_path.to_str().unwrap()).unwrap());
+        let schema_core =
+            Arc::new(SchemaCore::new_for_testing(schema_path.to_str().unwrap()).unwrap());
         let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).unwrap()));
 
         let ingestion_core = IngestionCore::new(config, schema_core, fold_db).unwrap();

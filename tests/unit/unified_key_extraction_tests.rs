@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
+use datafold::schema::schema_operations::{extract_unified_keys, shape_unified_result};
 use datafold::schema::types::json_schema::KeyConfig;
 use datafold::schema::types::schema::{Schema, SchemaType};
-use datafold::schema::schema_operations::{extract_unified_keys, shape_unified_result};
 
 fn create_single_schema_with_key() -> Schema {
     Schema {
         name: "TestSingle".to_string(),
         schema_type: SchemaType::Single,
-        key: Some(KeyConfig { hash_field: "user_id".to_string(), range_field: "timestamp".to_string() }),
+        key: Some(KeyConfig {
+            hash_field: "user_id".to_string(),
+            range_field: "timestamp".to_string(),
+        }),
         fields: HashMap::new(),
         payment_config: Default::default(),
         hash: None,
@@ -29,7 +32,9 @@ fn create_single_schema_without_key() -> Schema {
 fn create_range_schema_legacy() -> Schema {
     Schema {
         name: "TestRangeLegacy".to_string(),
-        schema_type: SchemaType::Range { range_key: "created_at".to_string() },
+        schema_type: SchemaType::Range {
+            range_key: "created_at".to_string(),
+        },
         key: None,
         fields: HashMap::new(),
         payment_config: Default::default(),
@@ -40,8 +45,13 @@ fn create_range_schema_legacy() -> Schema {
 fn create_range_schema_universal() -> Schema {
     Schema {
         name: "TestRangeUniversal".to_string(),
-        schema_type: SchemaType::Range { range_key: "created_at".to_string() },
-        key: Some(KeyConfig { hash_field: "user_id".to_string(), range_field: "timestamp".to_string() }),
+        schema_type: SchemaType::Range {
+            range_key: "created_at".to_string(),
+        },
+        key: Some(KeyConfig {
+            hash_field: "user_id".to_string(),
+            range_field: "timestamp".to_string(),
+        }),
         fields: HashMap::new(),
         payment_config: Default::default(),
         hash: None,
@@ -52,7 +62,10 @@ fn create_hashrange_schema() -> Schema {
     Schema {
         name: "TestHashRange".to_string(),
         schema_type: SchemaType::HashRange,
-        key: Some(KeyConfig { hash_field: "category".to_string(), range_field: "timestamp".to_string() }),
+        key: Some(KeyConfig {
+            hash_field: "category".to_string(),
+            range_field: "timestamp".to_string(),
+        }),
         fields: HashMap::new(),
         payment_config: Default::default(),
         hash: None,
@@ -157,7 +170,10 @@ fn test_extract_unified_keys_dotted_path() {
     let schema = Schema {
         name: "TestDotted".to_string(),
         schema_type: SchemaType::Single,
-        key: Some(KeyConfig { hash_field: "data.user.id".to_string(), range_field: "metadata.timestamp".to_string() }),
+        key: Some(KeyConfig {
+            hash_field: "data.user.id".to_string(),
+            range_field: "metadata.timestamp".to_string(),
+        }),
         fields: HashMap::new(),
         payment_config: Default::default(),
         hash: None,
@@ -189,7 +205,7 @@ fn test_shape_unified_result_single() {
     });
 
     let result = shape_unified_result(&schema, &data, None, None).unwrap();
-    
+
     let expected = serde_json::json!({
         "hash": "",
         "range": "",
@@ -198,7 +214,7 @@ fn test_shape_unified_result_single() {
             "author": "test author"
         }
     });
-    
+
     assert_eq!(result, expected);
 }
 
@@ -210,8 +226,14 @@ fn test_shape_unified_result_range() {
         "content": "test content"
     });
 
-    let result = shape_unified_result(&schema, &data, None, Some("2023-01-01T00:00:00Z".to_string())).unwrap();
-    
+    let result = shape_unified_result(
+        &schema,
+        &data,
+        None,
+        Some("2023-01-01T00:00:00Z".to_string()),
+    )
+    .unwrap();
+
     let expected = serde_json::json!({
         "hash": "",
         "range": "2023-01-01T00:00:00Z",
@@ -219,7 +241,7 @@ fn test_shape_unified_result_range() {
             "content": "test content"
         }
     });
-    
+
     assert_eq!(result, expected);
 }
 
@@ -233,12 +255,13 @@ fn test_shape_unified_result_hashrange() {
     });
 
     let result = shape_unified_result(
-        &schema, 
-        &data, 
-        Some("tech".to_string()), 
-        Some("2023-01-01T00:00:00Z".to_string())
-    ).unwrap();
-    
+        &schema,
+        &data,
+        Some("tech".to_string()),
+        Some("2023-01-01T00:00:00Z".to_string()),
+    )
+    .unwrap();
+
     let expected = serde_json::json!({
         "hash": "tech",
         "range": "2023-01-01T00:00:00Z",
@@ -246,7 +269,7 @@ fn test_shape_unified_result_hashrange() {
             "content": "test content"
         }
     });
-    
+
     assert_eq!(result, expected);
 }
 
@@ -261,12 +284,13 @@ fn test_shape_unified_result_excludes_key_fields() {
     });
 
     let result = shape_unified_result(
-        &schema, 
-        &data, 
-        Some("user123".to_string()), 
-        Some("2023-01-01T00:00:00Z".to_string())
-    ).unwrap();
-    
+        &schema,
+        &data,
+        Some("user123".to_string()),
+        Some("2023-01-01T00:00:00Z".to_string()),
+    )
+    .unwrap();
+
     // Key fields should be excluded from the fields section
     let expected = serde_json::json!({
         "hash": "user123",
@@ -276,6 +300,6 @@ fn test_shape_unified_result_excludes_key_fields() {
             "author": "test author"
         }
     });
-    
+
     assert_eq!(result, expected);
 }

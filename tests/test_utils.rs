@@ -9,17 +9,17 @@
 //!
 //! UPDATED: Now uses root test_db folder for consistent test database location
 
-use datafold::db_operations::DbOperations;
-use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
-use datafold::fold_db_core::transform_manager::TransformManager;
-use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::datafold_node::config::NodeConfig;
 use datafold::datafold_node::DataFoldNode;
-use datafold::schema::types::{Transform, TransformRegistration, SchemaError};
+use datafold::db_operations::DbOperations;
+use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
+use datafold::fold_db_core::managers::atom::AtomManager;
+use datafold::fold_db_core::transform_manager::TransformManager;
+use datafold::schema::types::{SchemaError, Transform, TransformRegistration};
+use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
 use uuid::Uuid;
-use std::path::Path;
 
 /// Default wait duration for asynchronous test operations
 pub const TEST_WAIT_MS: u64 = 100;
@@ -58,7 +58,8 @@ pub struct CommonTestFixture {
 #[allow(dead_code)]
 pub struct DirectEventTestFixture {
     pub transform_manager: Arc<TransformManager>,
-    pub transform_orchestrator: datafold::fold_db_core::orchestration::transform_orchestrator::TransformOrchestrator,
+    pub transform_orchestrator:
+        datafold::fold_db_core::orchestration::transform_orchestrator::TransformOrchestrator,
     pub message_bus: Arc<MessageBus>,
     pub db_ops: Arc<DbOperations>,
     pub _temp_dir: TempDir,
@@ -67,7 +68,7 @@ pub struct DirectEventTestFixture {
 #[allow(dead_code)]
 impl TestDbFixture {
     /// Create a test fixture using the root test_db folder
-    /// 
+    ///
     /// This fixture uses a consistent database location for all tests,
     /// making it easier to debug and inspect test data.
     pub fn new() -> Result<Self, SchemaError> {
@@ -78,14 +79,11 @@ impl TestDbFixture {
                 SchemaError::InvalidData(format!("Failed to create test_db directory: {}", e))
             })?;
         }
-        
+
         // Open database using the test_db folder
-        let db = sled::Config::new()
-            .path(test_db_path)
-            .open()
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to open test database: {}", e))
-            })?;
+        let db = sled::Config::new().path(test_db_path).open().map_err(|e| {
+            SchemaError::InvalidData(format!("Failed to open test database: {}", e))
+        })?;
 
         let db_ops = Arc::new(DbOperations::new(db).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to create DbOperations: {}", e))
@@ -93,17 +91,12 @@ impl TestDbFixture {
 
         // Unified MessageBus creation
         let message_bus = Arc::new(MessageBus::new());
-        
-        let transform_manager = TransformManager::new(
-            Arc::clone(&db_ops),
-            Arc::clone(&message_bus),
-        )?;
+
+        let transform_manager =
+            TransformManager::new(Arc::clone(&db_ops), Arc::clone(&message_bus))?;
 
         // Create AtomManager to handle FieldValueSetRequest events
-        let atom_manager = AtomManager::new(
-            (*db_ops).clone(),
-            Arc::clone(&message_bus),
-        );
+        let atom_manager = AtomManager::new((*db_ops).clone(), Arc::clone(&message_bus));
 
         Ok(Self {
             transform_manager: Arc::new(transform_manager),
@@ -112,9 +105,9 @@ impl TestDbFixture {
             atom_manager,
         })
     }
-    
+
     /// Clean up the test database by clearing all data
-    /// 
+    ///
     /// This is useful for tests that need a clean state.
     pub fn cleanup(&self) -> Result<(), SchemaError> {
         // Clear all trees in the database
@@ -122,14 +115,17 @@ impl TestDbFixture {
         for tree_name in db.tree_names() {
             if let Ok(tree) = db.open_tree(&tree_name) {
                 tree.clear().map_err(|e| {
-                    SchemaError::InvalidData(format!("Failed to clear tree {}: {}", 
-                        String::from_utf8_lossy(&tree_name), e))
+                    SchemaError::InvalidData(format!(
+                        "Failed to clear tree {}: {}",
+                        String::from_utf8_lossy(&tree_name),
+                        e
+                    ))
                 })?;
             }
         }
         Ok(())
     }
-    
+
     /// Get the path to the test database
     pub fn db_path(&self) -> &Path {
         Path::new(TEST_DB_PATH)
@@ -144,7 +140,7 @@ impl TestFixture {
         let temp_dir = tempfile::tempdir().map_err(|e| {
             SchemaError::InvalidData(format!("Failed to create temp directory: {}", e))
         })?;
-        
+
         // Unified database setup - consolidates 7+ sled::Config patterns
         let db = sled::Config::new()
             .path(temp_dir.path())
@@ -160,17 +156,12 @@ impl TestFixture {
 
         // Unified MessageBus creation - consolidates 18+ duplicate patterns
         let message_bus = Arc::new(MessageBus::new());
-        
-        let transform_manager = TransformManager::new(
-            Arc::clone(&db_ops),
-            Arc::clone(&message_bus),
-        )?;
+
+        let transform_manager =
+            TransformManager::new(Arc::clone(&db_ops), Arc::clone(&message_bus))?;
 
         // Create AtomManager to handle FieldValueSetRequest events
-        let atom_manager = AtomManager::new(
-            (*db_ops).clone(),
-            Arc::clone(&message_bus),
-        );
+        let atom_manager = AtomManager::new((*db_ops).clone(), Arc::clone(&message_bus));
 
         Ok(Self {
             transform_manager: Arc::new(transform_manager),
@@ -186,23 +177,24 @@ impl TestFixture {
         use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
         use datafold::schema::types::schema::SchemaType;
         use std::collections::HashMap;
-        
+
         let schema = DeclarativeSchemaDefinition {
             name: "test_schema".to_string(),
             schema_type: SchemaType::Single,
-            fields: HashMap::from([
-                ("output".to_string(), FieldDefinition {
+            fields: HashMap::from([(
+                "output".to_string(),
+                FieldDefinition {
                     field_type: Some("String".to_string()),
                     atom_uuid: Some("input1".to_string()),
-                }),
-            ]),
+                },
+            )]),
             key: None,
         };
-        
+
         Transform::from_declarative_schema(
             schema,
             vec!["test.input1".to_string()],
-            "test.output".to_string()
+            "test.output".to_string(),
         )
     }
 
@@ -225,23 +217,24 @@ impl TestFixture {
         use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
         use datafold::schema::types::schema::SchemaType;
         use std::collections::HashMap;
-        
+
         let schema = DeclarativeSchemaDefinition {
             name: format!("test_schema_{}", transform_id),
             schema_type: SchemaType::Single,
-            fields: HashMap::from([
-                (transform_id.to_string(), FieldDefinition {
+            fields: HashMap::from([(
+                transform_id.to_string(),
+                FieldDefinition {
                     field_type: Some("String".to_string()),
                     atom_uuid: Some("input1".to_string()),
-                }),
-            ]),
+                },
+            )]),
             key: None,
         };
-        
+
         Transform::from_declarative_schema(
             schema,
             vec!["test.input1".to_string()],
-            format!("test.{}", transform_id)
+            format!("test.{}", transform_id),
         )
     }
 
@@ -262,20 +255,20 @@ impl TestFixture {
     /// Unified orchestrator fixture creation
     pub fn new_with_orchestrator() -> Result<DirectEventTestFixture, Box<dyn std::error::Error>> {
         let temp_dir = tempfile::tempdir()?;
-        
+
         let db = sled::Config::new()
             .path(temp_dir.path())
             .temporary(true)
             .open()?;
-            
+
         let db_ops = Arc::new(DbOperations::new(db)?);
         let message_bus = Arc::new(MessageBus::new());
-        
+
         let transform_manager = Arc::new(TransformManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&message_bus),
         )?);
-        
+
         let orchestrator_tree = {
             let orchestrator_db = sled::Config::new()
                 .path(temp_dir.path().join("orchestrator"))
@@ -283,14 +276,14 @@ impl TestFixture {
                 .open()?;
             orchestrator_db.open_tree("transform_orchestrator")?
         };
-        
+
         let transform_orchestrator = datafold::fold_db_core::orchestration::transform_orchestrator::TransformOrchestrator::new(
             Arc::clone(&transform_manager) as Arc<dyn datafold::fold_db_core::transform_manager::types::TransformRunner>,
             orchestrator_tree,
             Arc::clone(&message_bus),
             Arc::clone(&db_ops),
         );
-        
+
         Ok(DirectEventTestFixture {
             transform_manager,
             transform_orchestrator,
@@ -322,29 +315,51 @@ impl CommonTestFixture {
 
         // Unified NodeConfig setup - consolidates 7+ duplicate patterns
         let config = NodeConfig::new(temp_dir.path().to_path_buf());
-        let mut node = DataFoldNode::load(config).await.map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to load DataFoldNode: {}", e))
-        })?;
+        let mut node = DataFoldNode::load(config)
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to load DataFoldNode: {}", e)))?;
 
         // Explicitly load transform schemas from available_schemas
         node.load_schema_from_file("available_schemas/TransformBase.json")
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to load TransformBase schema: {}", e)))?;
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to load TransformBase schema: {}", e))
+            })?;
         node.load_schema_from_file("available_schemas/TransformSchema.json")
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to load TransformSchema schema: {}", e)))?;
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to load TransformSchema schema: {}", e))
+            })?;
 
         let node_clone = node.clone();
         {
-            let fold_db = node_clone.get_fold_db().map_err(|e|
+            let fold_db = node_clone.get_fold_db().map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to get FoldDB from node: {}", e))
-            )?;
+            })?;
 
-            fold_db.schema_manager().approve_schema("TransformBase")
-                .map_err(|e| SchemaError::InvalidData(format!("Failed to approve TransformBase schema: {}", e)))?;
-            fold_db.schema_manager().approve_schema("TransformSchema")
-                .map_err(|e| SchemaError::InvalidData(format!("Failed to approve TransformSchema schema: {}", e)))?;
+            fold_db
+                .schema_manager()
+                .approve_schema("TransformBase")
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!(
+                        "Failed to approve TransformBase schema: {}",
+                        e
+                    ))
+                })?;
+            fold_db
+                .schema_manager()
+                .approve_schema("TransformSchema")
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!(
+                        "Failed to approve TransformSchema schema: {}",
+                        e
+                    ))
+                })?;
 
-            fold_db.transform_manager().reload_transforms()
-                .map_err(|e| SchemaError::InvalidData(format!("Failed to reload transforms: {}", e)))?;
+            fold_db
+                .transform_manager()
+                .reload_transforms()
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!("Failed to reload transforms: {}", e))
+                })?;
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -357,9 +372,9 @@ impl CommonTestFixture {
         let temp_dir = tempfile::tempdir().map_err(|e| {
             SchemaError::InvalidData(format!("Failed to create temp directory: {}", e))
         })?;
-        
+
         let basic_fixture = TestFixture::new()?;
-        
+
         let config = NodeConfig::new(temp_dir.path().to_path_buf());
         let node = DataFoldNode::new(config).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to create DataFoldNode: {}", e))
@@ -401,5 +416,4 @@ impl CommonTestFixture {
     pub fn create_sample_registration() -> TransformRegistration {
         TestFixture::create_sample_registration()
     }
-
 }

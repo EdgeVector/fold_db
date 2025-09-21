@@ -1,5 +1,5 @@
 //! Centralized error creation to eliminate 145+ instances of duplicate error handling patterns
-//! 
+//!
 //! This module consolidates `SchemaError::InvalidData(format!(...))` patterns found throughout the codebase
 
 use crate::schema::types::SchemaError;
@@ -25,7 +25,10 @@ impl ErrorFactory {
 
     /// File operation errors - consolidates 10+ duplicate patterns
     pub fn file_error(operation: &str, path: &str, error: impl std::fmt::Display) -> SchemaError {
-        SchemaError::InvalidData(format!("File {} failed for '{}': {}", operation, path, error))
+        SchemaError::InvalidData(format!(
+            "File {} failed for '{}': {}",
+            operation, path, error
+        ))
     }
 
     /// Lock acquisition errors - consolidates 8+ duplicate patterns
@@ -34,8 +37,15 @@ impl ErrorFactory {
     }
 
     /// Tree operation errors - consolidates 12+ duplicate patterns
-    pub fn tree_error(operation: &str, tree_name: &str, error: impl std::fmt::Display) -> SchemaError {
-        SchemaError::InvalidData(format!("Tree {} operation on '{}' failed: {}", operation, tree_name, error))
+    pub fn tree_error(
+        operation: &str,
+        tree_name: &str,
+        error: impl std::fmt::Display,
+    ) -> SchemaError {
+        SchemaError::InvalidData(format!(
+            "Tree {} operation on '{}' failed: {}",
+            operation, tree_name, error
+        ))
     }
 
     /// Schema not found errors - consolidates 8+ duplicate patterns
@@ -45,7 +55,10 @@ impl ErrorFactory {
 
     /// Field not found errors - consolidates 10+ duplicate patterns
     pub fn field_not_found(schema_name: &str, field_name: &str) -> SchemaError {
-        SchemaError::InvalidData(format!("Field '{}' not found in schema '{}'", field_name, schema_name))
+        SchemaError::InvalidData(format!(
+            "Field '{}' not found in schema '{}'",
+            field_name, schema_name
+        ))
     }
 
     /// Transform not found errors - consolidates 5+ duplicate patterns
@@ -75,7 +88,10 @@ impl ErrorFactory {
 
     /// Conversion errors - consolidates 10+ duplicate patterns
     pub fn conversion_error(from_type: &str, to_type: &str, value: &str) -> SchemaError {
-        SchemaError::InvalidData(format!("Cannot convert {} '{}' to {}", from_type, value, to_type))
+        SchemaError::InvalidData(format!(
+            "Cannot convert {} '{}' to {}",
+            from_type, value, to_type
+        ))
     }
 
     /// Range schema validation errors - consolidates 6+ duplicate patterns

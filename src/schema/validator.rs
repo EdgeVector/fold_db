@@ -40,7 +40,10 @@ impl<'a> SchemaValidator<'a> {
             self.validate_range_field_consistency(schema, range_key)?;
         }
 
-        ValidationUtils::require_positive(schema.payment_config.base_multiplier, "Schema base_multiplier")?;
+        ValidationUtils::require_positive(
+            schema.payment_config.base_multiplier,
+            "Schema base_multiplier",
+        )?;
 
         for (field_name, field) in &schema.fields {
             if field.payment_config().base_multiplier <= 0.0 {

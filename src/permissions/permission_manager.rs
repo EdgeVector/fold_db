@@ -1,6 +1,6 @@
-use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
-use crate::logging::features::LogFeature;
 use crate::log_feature;
+use crate::logging::features::LogFeature;
+use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
 
 /// Manages and enforces access control policies in the database.
 ///
@@ -177,24 +177,27 @@ impl PermissionManager {
         }
 
         // If trust distance check fails, check explicit permissions
-        permissions_policy.explicit_write_policy.as_ref().map_or_else(
-            || {
-                log_feature!(
-                    LogFeature::Permissions,
-                    warn,
-                    "Trust distance failed and no explicit permissions for {pub_key}"
-                );
-                false
-            },
-            |explicit_policy| {
-                let allowed = explicit_policy.counts_by_pub_key.contains_key(pub_key);
-                log_feature!(
+        permissions_policy
+            .explicit_write_policy
+            .as_ref()
+            .map_or_else(
+                || {
+                    log_feature!(
+                        LogFeature::Permissions,
+                        warn,
+                        "Trust distance failed and no explicit permissions for {pub_key}"
+                    );
+                    false
+                },
+                |explicit_policy| {
+                    let allowed = explicit_policy.counts_by_pub_key.contains_key(pub_key);
+                    log_feature!(
                     LogFeature::Permissions,
                     warn,
                     "Trust distance failed checking explicit permission for {pub_key}: {allowed}"
                 );
-                allowed
-            }
-        )
+                    allowed
+                },
+            )
     }
 }

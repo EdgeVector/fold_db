@@ -32,4 +32,4 @@ pub fn json_error_handler(err: JsonPayloadError, req: &HttpRequest) -> actix_web
     };
 
     actix_web::error::InternalError::from_response(err, response).into()
-} 
+}

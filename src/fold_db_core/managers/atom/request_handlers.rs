@@ -6,8 +6,8 @@ use crate::fold_db_core::infrastructure::message_bus::{
     atom_events::{AtomCreated, AtomUpdated, MoleculeCreated, MoleculeUpdated},
     request_events::{
         AtomCreateRequest, AtomCreateResponse, AtomUpdateRequest, AtomUpdateResponse,
-        MoleculeCreateRequest, MoleculeCreateResponse, MoleculeUpdateRequest, MoleculeUpdateResponse,
-        FieldValueSetRequest,
+        FieldValueSetRequest, MoleculeCreateRequest, MoleculeCreateResponse, MoleculeUpdateRequest,
+        MoleculeUpdateResponse,
     },
 };
 use log::{info, warn};
@@ -15,9 +15,15 @@ use std::time::Instant;
 
 impl AtomManager {
     /// Handle AtomCreateRequest by creating atom and publishing response
-    pub(super) fn handle_atom_create_request(&self, request: AtomCreateRequest) -> Result<(), Box<dyn std::error::Error>> {
-        info!("🔧 Processing AtomCreateRequest for schema: {}", request.schema_name);
-        
+    pub(super) fn handle_atom_create_request(
+        &self,
+        request: AtomCreateRequest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!(
+            "🔧 Processing AtomCreateRequest for schema: {}",
+            request.schema_name
+        );
+
         let mut stats = self.stats.lock().unwrap();
         stats.requests_processed += 1;
         stats.last_activity = Some(Instant::now());
@@ -38,18 +44,22 @@ impl AtomManager {
         let response = match result {
             Ok(atom) => {
                 // Store in memory cache
-                self.atoms.lock().unwrap().insert(atom.uuid().to_string(), atom.clone());
-                
+                self.atoms
+                    .lock()
+                    .unwrap()
+                    .insert(atom.uuid().to_string(), atom.clone());
+
                 // Publish AtomCreated event
-                let atom_created = AtomCreated::new(atom.uuid().to_string(), request.content.clone());
+                let atom_created =
+                    AtomCreated::new(atom.uuid().to_string(), request.content.clone());
                 if let Err(e) = self.message_bus.publish(atom_created) {
                     warn!("Failed to publish AtomCreated event: {}", e);
                 }
-                
+
                 let mut stats = self.stats.lock().unwrap();
                 stats.atoms_created += 1;
                 drop(stats);
-                
+
                 AtomCreateResponse::new(
                     request.correlation_id,
                     true,
@@ -62,7 +72,7 @@ impl AtomManager {
                 let mut stats = self.stats.lock().unwrap();
                 stats.requests_failed += 1;
                 drop(stats);
-                
+
                 AtomCreateResponse::new(
                     request.correlation_id,
                     false,
@@ -75,15 +85,24 @@ impl AtomManager {
 
         // Publish response - Don't fail the operation if response publishing fails
         if let Err(e) = self.message_bus.publish(response) {
-            warn!("⚠️ Failed to publish AtomCreateResponse: {}. Operation completed successfully.", e);
+            warn!(
+                "⚠️ Failed to publish AtomCreateResponse: {}. Operation completed successfully.",
+                e
+            );
         }
         Ok(())
     }
 
     /// Handle AtomUpdateRequest by updating atom and publishing response
-    pub(super) fn handle_atom_update_request(&self, request: AtomUpdateRequest) -> Result<(), Box<dyn std::error::Error>> {
-        info!("🔄 Processing AtomUpdateRequest for atom: {}", request.atom_uuid);
-        
+    pub(super) fn handle_atom_update_request(
+        &self,
+        request: AtomUpdateRequest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!(
+            "🔄 Processing AtomUpdateRequest for atom: {}",
+            request.atom_uuid
+        );
+
         let mut stats = self.stats.lock().unwrap();
         stats.requests_processed += 1;
         stats.last_activity = Some(Instant::now());
@@ -98,48 +117,57 @@ impl AtomManager {
         );
         let atom_uuid = atom.uuid().to_string();
 
-        let result = self.db_ops.db().insert(
-            format!("atom:{}", atom_uuid),
-            serde_json::to_vec(&atom)?,
-        );
+        let result = self
+            .db_ops
+            .db()
+            .insert(format!("atom:{}", atom_uuid), serde_json::to_vec(&atom)?);
 
         let response = match result {
             Ok(_) => {
                 // Store in memory cache
                 self.atoms.lock().unwrap().insert(atom_uuid.clone(), atom);
-                
+
                 // Publish AtomUpdated event
                 let atom_updated = AtomUpdated::new(atom_uuid, request.content);
                 if let Err(e) = self.message_bus.publish(atom_updated) {
                     warn!("Failed to publish AtomUpdated event: {}", e);
                 }
-                
+
                 let mut stats = self.stats.lock().unwrap();
                 stats.atoms_updated += 1;
                 drop(stats);
-                
+
                 AtomUpdateResponse::new(request.correlation_id, true, None)
             }
             Err(e) => {
                 let mut stats = self.stats.lock().unwrap();
                 stats.requests_failed += 1;
                 drop(stats);
-                
+
                 AtomUpdateResponse::new(request.correlation_id, false, Some(e.to_string()))
             }
         };
 
         // Publish response - Don't fail the operation if response publishing fails
         if let Err(e) = self.message_bus.publish(response) {
-            warn!("⚠️ Failed to publish AtomUpdateResponse: {}. Operation completed successfully.", e);
+            warn!(
+                "⚠️ Failed to publish AtomUpdateResponse: {}. Operation completed successfully.",
+                e
+            );
         }
         Ok(())
     }
 
     /// Handle MoleculeCreateRequest by creating Molecule and publishing response
-    pub(super) fn handle_molecule_create_request(&self, request: MoleculeCreateRequest) -> Result<(), Box<dyn std::error::Error>> {
-        info!("🔗 Processing MoleculeCreateRequest for type: {}", request.molecule_type);
-        
+    pub(super) fn handle_molecule_create_request(
+        &self,
+        request: MoleculeCreateRequest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!(
+            "🔗 Processing MoleculeCreateRequest for type: {}",
+            request.molecule_type
+        );
+
         let mut stats = self.stats.lock().unwrap();
         stats.requests_processed += 1;
         stats.last_activity = Some(Instant::now());
@@ -152,7 +180,10 @@ impl AtomManager {
                     request.atom_uuid.clone(),
                     request.source_pub_key.clone(),
                 )?;
-                self.molecules.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
+                self.molecules
+                    .lock()
+                    .unwrap()
+                    .insert(request.molecule_uuid.clone(), molecule);
                 Ok(())
             }
             "Range" => {
@@ -162,10 +193,13 @@ impl AtomManager {
                     "default".to_string(), // Default key
                     request.source_pub_key.clone(),
                 )?;
-                self.molecule_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
+                self.molecule_ranges
+                    .lock()
+                    .unwrap()
+                    .insert(request.molecule_uuid.clone(), range);
                 Ok(())
             }
-            _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into())
+            _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into()),
         };
 
         let response = match result {
@@ -174,23 +208,27 @@ impl AtomManager {
                 let molecule_created = MoleculeCreated::new(
                     &request.molecule_uuid,
                     &request.molecule_type,
-                    format!("{}:{}", request.molecule_type.to_lowercase(), request.molecule_uuid),
+                    format!(
+                        "{}:{}",
+                        request.molecule_type.to_lowercase(),
+                        request.molecule_uuid
+                    ),
                 );
                 if let Err(e) = self.message_bus.publish(molecule_created) {
                     warn!("Failed to publish MoleculeCreated event: {}", e);
                 }
-                
+
                 let mut stats = self.stats.lock().unwrap();
                 stats.molecules_created += 1;
                 drop(stats);
-                
+
                 MoleculeCreateResponse::new(request.correlation_id, true, None)
             }
             Err(e) => {
                 let mut stats = self.stats.lock().unwrap();
                 stats.requests_failed += 1;
                 drop(stats);
-                
+
                 MoleculeCreateResponse::new(request.correlation_id, false, Some(e.to_string()))
             }
         };
@@ -203,9 +241,15 @@ impl AtomManager {
     }
 
     /// Handle MoleculeUpdateRequest by updating Molecule and publishing response
-    pub(super) fn handle_molecule_update_request(&self, request: MoleculeUpdateRequest) -> Result<(), Box<dyn std::error::Error>> {
-        info!("🔄 Processing MoleculeUpdateRequest for: {}", request.molecule_uuid);
-        
+    pub(super) fn handle_molecule_update_request(
+        &self,
+        request: MoleculeUpdateRequest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        info!(
+            "🔄 Processing MoleculeUpdateRequest for: {}",
+            request.molecule_uuid
+        );
+
         let mut stats = self.stats.lock().unwrap();
         stats.requests_processed += 1;
         stats.last_activity = Some(Instant::now());
@@ -218,11 +262,15 @@ impl AtomManager {
                     request.atom_uuid.clone(),
                     request.source_pub_key.clone(),
                 )?;
-                self.molecules.lock().unwrap().insert(request.molecule_uuid.clone(), molecule);
+                self.molecules
+                    .lock()
+                    .unwrap()
+                    .insert(request.molecule_uuid.clone(), molecule);
                 Ok(())
             }
             "Range" => {
-                let key = request.additional_data
+                let key = request
+                    .additional_data
                     .as_ref()
                     .and_then(|d| d.get("key"))
                     .and_then(|v| v.as_str())
@@ -233,10 +281,13 @@ impl AtomManager {
                     key.to_string(),
                     request.source_pub_key.clone(),
                 )?;
-                self.molecule_ranges.lock().unwrap().insert(request.molecule_uuid.clone(), range);
+                self.molecule_ranges
+                    .lock()
+                    .unwrap()
+                    .insert(request.molecule_uuid.clone(), range);
                 Ok(())
             }
-            _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into())
+            _ => Err(format!("Unknown Molecule type: {}", request.molecule_type).into()),
         };
 
         let response = match result {
@@ -244,24 +295,28 @@ impl AtomManager {
                 // Publish MoleculeUpdated event
                 let molecule_updated = MoleculeUpdated::new(
                     &request.molecule_uuid,
-                    format!("{}:{}", request.molecule_type.to_lowercase(), request.molecule_uuid),
+                    format!(
+                        "{}:{}",
+                        request.molecule_type.to_lowercase(),
+                        request.molecule_uuid
+                    ),
                     "update",
                 );
                 if let Err(e) = self.message_bus.publish(molecule_updated) {
                     warn!("Failed to publish MoleculeUpdated event: {}", e);
                 }
-                
+
                 let mut stats = self.stats.lock().unwrap();
                 stats.molecules_updated += 1;
                 drop(stats);
-                
+
                 MoleculeUpdateResponse::new(request.correlation_id, true, None)
             }
             Err(e) => {
                 let mut stats = self.stats.lock().unwrap();
                 stats.requests_failed += 1;
                 drop(stats);
-                
+
                 MoleculeUpdateResponse::new(request.correlation_id, false, Some(e.to_string()))
             }
         };
@@ -274,7 +329,10 @@ impl AtomManager {
     }
 
     /// Handle FieldValueSetRequest by creating atom and appropriate Molecule - CRITICAL MUTATION BUG FIX
-    pub(super) fn handle_fieldvalueset_request(&self, request: FieldValueSetRequest) -> Result<(), Box<dyn std::error::Error>> {
+    pub(super) fn handle_fieldvalueset_request(
+        &self,
+        request: FieldValueSetRequest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Delegate to field processing module
         super::field_processing::handle_fieldvalueset_request(self, request)
     }

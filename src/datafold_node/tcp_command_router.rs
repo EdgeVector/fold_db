@@ -1,10 +1,10 @@
 use super::{DataFoldNode, TcpServer};
 use crate::error::{FoldDbError, FoldDbResult};
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use crate::schema::types::operations::MutationType;
 use crate::schema::Schema;
 use libp2p::PeerId;
-use crate::log_feature;
-use crate::logging::features::LogFeature;
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;

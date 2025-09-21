@@ -2,8 +2,8 @@
 
 use crate::ingestion::config::OllamaConfig;
 use crate::ingestion::{AISchemaResponse, IngestionError, IngestionResult};
-use crate::logging::features::LogFeature;
 use crate::log_feature;
+use crate::logging::features::LogFeature;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -75,7 +75,11 @@ impl OllamaService {
                 IngestionError::ollama_error(format!("Failed to create HTTP client: {}", e))
             })?;
 
-        Ok(Self { client, config, max_retries })
+        Ok(Self {
+            client,
+            config,
+            max_retries,
+        })
     }
 
     /// Get schema recommendation from AI
@@ -111,8 +115,11 @@ impl OllamaService {
             "AI Request Prompt (length: {} chars): {}",
             prompt.len(),
             if prompt.len() > 1000 {
-                format!("{}
-...[truncated]", &prompt[..1000])
+                format!(
+                    "{}
+...[truncated]",
+                    &prompt[..1000]
+                )
             } else {
                 prompt.clone()
             }
@@ -192,8 +199,7 @@ impl OllamaService {
             }
         }
 
-        Err(last_error
-            .unwrap_or_else(|| IngestionError::ollama_error("All API attempts failed")))
+        Err(last_error.unwrap_or_else(|| IngestionError::ollama_error("All API attempts failed")))
     }
 
     /// Make a single API request
@@ -228,11 +234,21 @@ impl OllamaService {
     /// Parse the AI response
     fn parse_ai_response(&self, response_text: &str) -> IngestionResult<AISchemaResponse> {
         log_feature!(LogFeature::Ingestion, info, "=== PARSING AI RESPONSE ===");
-        log_feature!(LogFeature::Ingestion, info, "Raw AI response text: {}", response_text);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Raw AI response text: {}",
+            response_text
+        );
 
         // Try to extract JSON from the response
         let json_str = self.extract_json_from_response(response_text)?;
-        log_feature!(LogFeature::Ingestion, info, "Extracted JSON string: {}", json_str);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Extracted JSON string: {}",
+            json_str
+        );
 
         // Parse the JSON
         let parsed: Value = serde_json::from_str(&json_str).map_err(|e| {
@@ -252,8 +268,17 @@ impl OllamaService {
         // Validate and convert to AISchemaResponse
         let result = self.validate_and_convert_response(parsed)?;
 
-        log_feature!(LogFeature::Ingestion, info, "=== FINAL PARSED AI RESPONSE ===");
-        log_feature!(LogFeature::Ingestion, info, "Existing schemas: {:?}", result.existing_schemas);
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "=== FINAL PARSED AI RESPONSE ==="
+        );
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Existing schemas: {:?}",
+            result.existing_schemas
+        );
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -264,8 +289,17 @@ impl OllamaService {
                 .map(pretty_json)
                 .unwrap_or_else(|| "None".to_string())
         );
-        log_feature!(LogFeature::Ingestion, info, "Mutation mappers: {:?}", result.mutation_mappers);
-        log_feature!(LogFeature::Ingestion, info, "=== END PARSED AI RESPONSE ===");
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Mutation mappers: {:?}",
+            result.mutation_mappers
+        );
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "=== END PARSED AI RESPONSE ==="
+        );
 
         Ok(result)
     }

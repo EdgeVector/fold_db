@@ -1,5 +1,5 @@
 //! Consolidated testing utilities for database setup and common test patterns
-//! 
+//!
 //! This module eliminates duplicate database setup code found across 11+ files
 
 use crate::db_operations::DbOperations;
@@ -15,21 +15,22 @@ impl TestDatabaseFactory {
     pub fn create_temp_sled_db() -> Result<Db, sled::Error> {
         sled::Config::new().temporary(true).open()
     }
-    
+
     /// Create temporary DbOperations for testing - consolidates pattern from multiple files
     pub fn create_temp_db_ops() -> Result<DbOperations, Box<dyn std::error::Error>> {
         let db = Self::create_temp_sled_db()?;
         Ok(DbOperations::new(db)?)
     }
-    
+
     /// Create temporary tree for testing - consolidates pattern from orchestration files  
     pub fn create_temp_tree() -> Result<Tree, sled::Error> {
         let db = Self::create_temp_sled_db()?;
         db.open_tree("test_tree")
     }
-    
+
     /// Create complete test environment with db_ops and message bus
-    pub fn create_test_environment() -> Result<(Arc<DbOperations>, Arc<MessageBus>), Box<dyn std::error::Error>> {
+    pub fn create_test_environment(
+    ) -> Result<(Arc<DbOperations>, Arc<MessageBus>), Box<dyn std::error::Error>> {
         let db_ops = Arc::new(Self::create_temp_db_ops()?);
         let message_bus = Arc::new(MessageBus::new());
         Ok((db_ops, message_bus))

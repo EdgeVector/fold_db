@@ -1,7 +1,5 @@
 use datafold::transform::iterator_stack::chain_parser::parser::ChainParser;
-use datafold::transform::iterator_stack::chain_parser::types::{
-    ChainOperation, FieldAlignment,
-};
+use datafold::transform::iterator_stack::chain_parser::types::{ChainOperation, FieldAlignment};
 use datafold::transform::iterator_stack::errors::IteratorStackError;
 
 #[test]
@@ -62,9 +60,7 @@ fn test_compatibility_analysis() {
         .unwrap();
     let chain2 = parser.parse("blogpost.map().publish_date").unwrap();
 
-    let analysis = parser
-        .analyze_compatibility(&[chain1, chain2])
-        .unwrap();
+    let analysis = parser.analyze_compatibility(&[chain1, chain2]).unwrap();
 
     assert_eq!(analysis.max_depth, 2);
     assert!(analysis.compatible);
@@ -74,7 +70,9 @@ fn test_compatibility_analysis() {
 #[test]
 fn test_cartesian_fanout_detection() {
     let parser = ChainParser::new();
-    let chain1 = parser.parse("blogpost.map().tags.split_array().map()").unwrap();
+    let chain1 = parser
+        .parse("blogpost.map().tags.split_array().map()")
+        .unwrap();
     let chain2 = parser.parse("blogpost.map().comments.map()").unwrap();
 
     let result = parser.analyze_compatibility(&[chain1, chain2]);
@@ -90,12 +88,12 @@ fn test_cartesian_fanout_detection() {
 #[test]
 fn test_reducer_operation_alignment() {
     let parser = ChainParser::new();
-    let chain1 = parser.parse("blogpost.map().content.map().first()").unwrap();
+    let chain1 = parser
+        .parse("blogpost.map().content.map().first()")
+        .unwrap();
     let chain2 = parser.parse("blogpost.map().content.map().title").unwrap();
 
-    let analysis = parser
-        .analyze_compatibility(&[chain1, chain2])
-        .unwrap();
+    let analysis = parser.analyze_compatibility(&[chain1, chain2]).unwrap();
 
     assert_eq!(analysis.max_depth, 2);
     assert!(analysis.compatible);

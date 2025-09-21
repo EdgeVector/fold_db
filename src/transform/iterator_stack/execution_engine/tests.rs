@@ -1,23 +1,19 @@
 //! Tests for the execution engine
 
 #[allow(unused_imports)]
-use crate::transform::iterator_stack::{
-    ExecutionEngine, ExecutionWarningType
-};
-#[allow(unused_imports)]
-use crate::transform::iterator_stack::chain_parser::{
-    ParsedChain, ChainOperation
-};
+use crate::transform::iterator_stack::chain_parser::{ChainOperation, ParsedChain};
 #[allow(unused_imports)]
 use crate::transform::iterator_stack::field_alignment::{
-    FieldAlignmentInfo, AlignmentValidationResult
+    AlignmentValidationResult, FieldAlignmentInfo,
 };
+#[allow(unused_imports)]
+use crate::transform::iterator_stack::{ExecutionEngine, ExecutionWarningType};
+#[allow(unused_imports)]
+use log::debug;
 #[allow(unused_imports)]
 use serde_json::json;
 #[allow(unused_imports)]
 use std::collections::HashMap;
-#[allow(unused_imports)]
-use log::debug;
 
 #[cfg(test)]
 mod tests {
@@ -26,7 +22,7 @@ mod tests {
     #[test]
     fn test_simple_field_execution() {
         let mut engine = ExecutionEngine::new();
-        
+
         // Create a simple chain
         let chain = ParsedChain {
             expression: "user.name".to_string(),
@@ -41,14 +37,17 @@ mod tests {
 
         // Create alignment result
         let mut field_alignments = HashMap::new();
-        field_alignments.insert("user.name".to_string(), FieldAlignmentInfo {
-            expression: "user.name".to_string(),
-            depth: 0,
-            alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
-            branch: "main".to_string(),
-            requires_reducer: false,
-            suggested_reducer: None,
-        });
+        field_alignments.insert(
+            "user.name".to_string(),
+            FieldAlignmentInfo {
+                expression: "user.name".to_string(),
+                depth: 0,
+                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
+                branch: "main".to_string(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
 
         let alignment_result = AlignmentValidationResult {
             valid: true,
@@ -66,7 +65,9 @@ mod tests {
             }
         });
 
-        let result = engine.execute_fields(&[chain], &alignment_result, input_data).unwrap();
+        let result = engine
+            .execute_fields(&[chain], &alignment_result, input_data)
+            .unwrap();
 
         assert!(!result.index_entries.is_empty());
         assert_eq!(result.index_entries[0].hash_value, json!("John Doe"));
@@ -75,7 +76,7 @@ mod tests {
     #[test]
     fn test_broadcast_execution() {
         let mut engine = ExecutionEngine::new();
-        
+
         // Create a chain that will broadcast across an array
         let chain1 = ParsedChain {
             expression: "users.name".to_string(),
@@ -101,22 +102,30 @@ mod tests {
 
         // Create alignment result
         let mut field_alignments = HashMap::new();
-        field_alignments.insert("users.name".to_string(), FieldAlignmentInfo {
-            expression: "users.name".to_string(),
-            depth: 1,
-            alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-            branch: "main".to_string(),
-            requires_reducer: false,
-            suggested_reducer: None,
-        });
-        field_alignments.insert("users.email".to_string(), FieldAlignmentInfo {
-            expression: "users.email".to_string(),
-            depth: 1,
-            alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-            branch: "main".to_string(),
-            requires_reducer: false,
-            suggested_reducer: None,
-        });
+        field_alignments.insert(
+            "users.name".to_string(),
+            FieldAlignmentInfo {
+                expression: "users.name".to_string(),
+                depth: 1,
+                alignment:
+                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
+                branch: "main".to_string(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
+        field_alignments.insert(
+            "users.email".to_string(),
+            FieldAlignmentInfo {
+                expression: "users.email".to_string(),
+                depth: 1,
+                alignment:
+                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
+                branch: "main".to_string(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
 
         let alignment_result = AlignmentValidationResult {
             valid: true,
@@ -140,11 +149,22 @@ mod tests {
             ]
         });
 
-        let result = engine.execute_fields(&[chain1, chain2], &alignment_result, input_data).unwrap();
+        let result = engine
+            .execute_fields(&[chain1, chain2], &alignment_result, input_data)
+            .unwrap();
 
-        debug!("Broadcast test - Index entries count: {}", result.index_entries.len());
-        debug!("Broadcast test - Items per depth: {:?}", result.statistics.items_per_depth);
-        debug!("Broadcast test - Alignment result valid: {}", alignment_result.valid);
+        debug!(
+            "Broadcast test - Index entries count: {}",
+            result.index_entries.len()
+        );
+        debug!(
+            "Broadcast test - Items per depth: {:?}",
+            result.statistics.items_per_depth
+        );
+        debug!(
+            "Broadcast test - Alignment result valid: {}",
+            alignment_result.valid
+        );
         debug!("Broadcast test - Max depth: {}", alignment_result.max_depth);
 
         assert!(!result.index_entries.is_empty());
@@ -154,21 +174,25 @@ mod tests {
     #[test]
     fn test_execution_warnings() {
         let mut engine = ExecutionEngine::new();
-        
+
         // Use the chain parser to create the chain properly
         let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
         let chain = parser.parse("items.value").unwrap();
 
         // Create alignment result
         let mut field_alignments = HashMap::new();
-        field_alignments.insert("items.value".to_string(), FieldAlignmentInfo {
-            expression: "items.value".to_string(),
-            depth: 1,
-            alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-            branch: "main".to_string(),
-            requires_reducer: false,
-            suggested_reducer: None,
-        });
+        field_alignments.insert(
+            "items.value".to_string(),
+            FieldAlignmentInfo {
+                expression: "items.value".to_string(),
+                depth: 1,
+                alignment:
+                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
+                branch: "main".to_string(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
 
         let alignment_result = AlignmentValidationResult {
             valid: true,
@@ -191,43 +215,60 @@ mod tests {
             "items": items
         });
 
-        let result = engine.execute_fields(&[chain], &alignment_result, input_data).unwrap();
+        let result = engine
+            .execute_fields(&[chain], &alignment_result, input_data)
+            .unwrap();
 
-        debug!("Warnings test - Index entries count: {}", result.index_entries.len());
+        debug!(
+            "Warnings test - Index entries count: {}",
+            result.index_entries.len()
+        );
         debug!("Warnings test - Warnings count: {}", result.warnings.len());
-        debug!("Warnings test - Items per depth: {:?}", result.statistics.items_per_depth);
+        debug!(
+            "Warnings test - Items per depth: {:?}",
+            result.statistics.items_per_depth
+        );
 
         // Should have warnings due to high entry count
         // Temporarily check entry count first
-        assert!(result.index_entries.len() > 1000, "Expected more than 1000 entries, got {}", result.index_entries.len());
+        assert!(
+            result.index_entries.len() > 1000,
+            "Expected more than 1000 entries, got {}",
+            result.index_entries.len()
+        );
         assert!(!result.warnings.is_empty());
-        assert!(result.warnings.iter().any(|w| 
-            matches!(w.warning_type, ExecutionWarningType::PerformanceDegradation)
-        ));
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| matches!(w.warning_type, ExecutionWarningType::PerformanceDegradation)));
     }
 
     #[test]
     fn test_simple_array_iteration() {
         let mut engine = ExecutionEngine::new();
-        
+
         // Use the chain parser to create the chain properly
         let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
         let chain = parser.parse("items.value").unwrap();
-        
+
         debug!("Chain scopes: {:?}", chain.scopes);
         debug!("Chain depth: {}", chain.depth);
         debug!("Chain operations: {:?}", chain.operations);
 
         // Create alignment result
         let mut field_alignments = HashMap::new();
-        field_alignments.insert("items.value".to_string(), FieldAlignmentInfo {
-            expression: "items.value".to_string(),
-            depth: 1,
-            alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-            branch: "main".to_string(),
-            requires_reducer: false,
-            suggested_reducer: None,
-        });
+        field_alignments.insert(
+            "items.value".to_string(),
+            FieldAlignmentInfo {
+                expression: "items.value".to_string(),
+                depth: 1,
+                alignment:
+                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
+                branch: "main".to_string(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
 
         let alignment_result = AlignmentValidationResult {
             valid: true,
@@ -246,10 +287,18 @@ mod tests {
             ]
         });
 
-        let result = engine.execute_fields(&[chain], &alignment_result, input_data).unwrap();
+        let result = engine
+            .execute_fields(&[chain], &alignment_result, input_data)
+            .unwrap();
 
-        debug!("Simple array test - Index entries count: {}", result.index_entries.len());
-        debug!("Simple array test - Items per depth: {:?}", result.statistics.items_per_depth);
+        debug!(
+            "Simple array test - Index entries count: {}",
+            result.index_entries.len()
+        );
+        debug!(
+            "Simple array test - Items per depth: {:?}",
+            result.statistics.items_per_depth
+        );
 
         // Should have 3 entries (one for each item)
         assert_eq!(result.index_entries.len(), 3);

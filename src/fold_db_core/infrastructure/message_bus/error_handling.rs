@@ -8,11 +8,11 @@ pub enum MessageBusError {
     /// Failed to send a message to subscribers
     #[error("Failed to send message: {reason}")]
     SendFailed { reason: String },
-    
+
     /// Failed to register a consumer
     #[error("Failed to register consumer for event type: {event_type}")]
     RegistrationFailed { event_type: String },
-    
+
     /// Channel is disconnected
     #[error("Channel disconnected for event type: {event_type}")]
     ChannelDisconnected { event_type: String },

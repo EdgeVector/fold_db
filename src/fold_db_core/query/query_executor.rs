@@ -1,15 +1,15 @@
 //! Query Executor
-//! 
+//!
 //! Main query execution logic extracted from FoldDB core, handling all query types
 //! including HashRange schemas with proper delegation to specialized processors.
 
-use crate::schema::{Schema, SchemaError};
-use crate::schema::types::Query;
 use crate::db_operations::DbOperations;
 use crate::permissions::PermissionWrapper;
+use crate::schema::types::Query;
 use crate::schema::SchemaCore;
-use serde_json::Value;
+use crate::schema::{Schema, SchemaError};
 use log::info;
+use serde_json::Value;
 use std::sync::Arc;
 
 use super::hash_range_query::HashRangeQueryProcessor;
@@ -30,7 +30,7 @@ impl QueryExecutor {
         permission_wrapper: PermissionWrapper,
     ) -> Self {
         let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops));
-        
+
         Self {
             db_ops,
             schema_manager,
@@ -42,7 +42,7 @@ impl QueryExecutor {
     /// Query multiple fields from a schema
     pub fn query(&self, query: Query) -> Result<Value, SchemaError> {
         info!("🔍 EVENT-DRIVEN query for schema: {}", query.schema_name);
-        
+
         // Get schema first
         let schema = match self.schema_manager.get_schema(&query.schema_name)? {
             Some(schema) => schema,
@@ -53,7 +53,7 @@ impl QueryExecutor {
                 )));
             }
         };
-        
+
         // Check field-level permissions for each field in the query
         for field_name in &query.fields {
             let permission_result = self.permission_wrapper.check_query_field_permission(
@@ -61,7 +61,7 @@ impl QueryExecutor {
                 field_name,
                 &self.schema_manager,
             );
-            
+
             if !permission_result.allowed {
                 return Err(permission_result.error.unwrap_or_else(|| {
                     SchemaError::InvalidData(format!(
@@ -71,24 +71,28 @@ impl QueryExecutor {
                 }));
             }
         }
-        
+
         // Extract range key filter if this is a range schema with a filter
-        let range_key_filter: Option<Value> = if let (Some(range_key), Some(filter)) = (schema.range_key(), &query.filter) {
-            if let Some(range_filter_obj) = filter.get("range_filter") {
-                if let Some(range_filter_map) = range_filter_obj.as_object() {
-                    range_filter_map.get(range_key).cloned()
+        let range_key_filter: Option<Value> =
+            if let (Some(range_key), Some(filter)) = (schema.range_key(), &query.filter) {
+                if let Some(range_filter_obj) = filter.get("range_filter") {
+                    if let Some(range_filter_map) = range_filter_obj.as_object() {
+                        range_filter_map.get(range_key).cloned()
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
         // Extract hash key filter if this is a HashRange schema with a filter
-        let hash_key_filter: Option<Value> = if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
+        let hash_key_filter: Option<Value> = if matches!(
+            schema.schema_type,
+            crate::schema::types::SchemaType::HashRange
+        ) {
             if let Some(filter) = &query.filter {
                 // Check for hash_filter format (preferred)
                 if let Some(hash_filter_obj) = filter.get("hash_filter") {
@@ -106,18 +110,36 @@ impl QueryExecutor {
         };
 
         // Handle HashRange schema grouping
-        if matches!(schema.schema_type, crate::schema::types::SchemaType::HashRange) {
-            return self.hash_range_processor.query_hashrange_schema(&schema, &query.fields, hash_key_filter);
+        if matches!(
+            schema.schema_type,
+            crate::schema::types::SchemaType::HashRange
+        ) {
+            return self.hash_range_processor.query_hashrange_schema(
+                &schema,
+                &query.fields,
+                hash_key_filter,
+            );
         }
-        
+
         // Retrieve actual field values by accessing database directly
         let mut field_values = serde_json::Map::new();
-        
+
         for field_name in &query.fields {
-            println!("🔍 DEBUG: Retrieving field '{}' for schema '{}'", field_name, schema.name);
-            match self.get_field_value_from_db(&schema, field_name, range_key_filter.clone(), hash_key_filter.clone()) {
+            println!(
+                "🔍 DEBUG: Retrieving field '{}' for schema '{}'",
+                field_name, schema.name
+            );
+            match self.get_field_value_from_db(
+                &schema,
+                field_name,
+                range_key_filter.clone(),
+                hash_key_filter.clone(),
+            ) {
                 Ok(value) => {
-                    println!("✅ DEBUG: Retrieved field '{}' value: {}", field_name, value);
+                    println!(
+                        "✅ DEBUG: Retrieved field '{}' value: {}",
+                        field_name, value
+                    );
                     field_values.insert(field_name.clone(), value);
                 }
                 Err(e) => {
@@ -126,22 +148,36 @@ impl QueryExecutor {
                 }
             }
         }
-        
+
         // Return actual field values
         Ok(serde_json::Value::Object(field_values))
     }
 
     /// Query schema (compatibility method)
     pub fn query_schema(&self, query: Query) -> Vec<Result<Value, SchemaError>> {
-        println!("🔍 DEBUG: query_schema called for schema: {}", query.schema_name);
+        println!(
+            "🔍 DEBUG: query_schema called for schema: {}",
+            query.schema_name
+        );
         // Delegate to the main query method and wrap in Vec
         vec![self.query(query)]
     }
 
-
     /// Get field value directly from database using unified resolver
-    fn get_field_value_from_db(&self, schema: &Schema, field_name: &str, range_key_filter: Option<Value>, hash_key_filter: Option<Value>) -> Result<Value, SchemaError> {
+    fn get_field_value_from_db(
+        &self,
+        schema: &Schema,
+        field_name: &str,
+        range_key_filter: Option<Value>,
+        hash_key_filter: Option<Value>,
+    ) -> Result<Value, SchemaError> {
         // Use the unified FieldValueResolver to eliminate duplicate code
-        crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(&self.db_ops, schema, field_name, range_key_filter, hash_key_filter)
+        crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(
+            &self.db_ops,
+            schema,
+            field_name,
+            range_key_filter,
+            hash_key_filter,
+        )
     }
 }

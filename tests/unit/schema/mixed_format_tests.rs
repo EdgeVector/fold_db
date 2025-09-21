@@ -38,20 +38,32 @@ fn test_mixed_format_schema_with_strings_and_objects() {
 
     // Verify string expression fields are converted to FieldDefinition with atom_uuid
     let word_field = schema.fields.get("word").unwrap();
-    assert_eq!(word_field.atom_uuid, Some("BlogPost.map().content.split_by_word().map()".to_string()));
+    assert_eq!(
+        word_field.atom_uuid,
+        Some("BlogPost.map().content.split_by_word().map()".to_string())
+    );
     assert_eq!(word_field.field_type, None);
 
     let publish_date_field = schema.fields.get("publish_date").unwrap();
-    assert_eq!(publish_date_field.atom_uuid, Some("BlogPost.map().publish_date".to_string()));
+    assert_eq!(
+        publish_date_field.atom_uuid,
+        Some("BlogPost.map().publish_date".to_string())
+    );
     assert_eq!(publish_date_field.field_type, None);
 
     // Verify FieldDefinition object fields are preserved
     let blogpost_id_field = schema.fields.get("blogpost_id").unwrap();
-    assert_eq!(blogpost_id_field.atom_uuid, Some("BlogPost.map().id".to_string()));
+    assert_eq!(
+        blogpost_id_field.atom_uuid,
+        Some("BlogPost.map().id".to_string())
+    );
     assert_eq!(blogpost_id_field.field_type, Some("Single".to_string()));
 
     let author_field = schema.fields.get("author").unwrap();
-    assert_eq!(author_field.atom_uuid, Some("BlogPost.map().author".to_string()));
+    assert_eq!(
+        author_field.atom_uuid,
+        Some("BlogPost.map().author".to_string())
+    );
     assert_eq!(author_field.field_type, None);
 
     // Verify schema_type
@@ -64,7 +76,10 @@ fn test_mixed_format_schema_with_strings_and_objects() {
 
     // Verify key configuration
     let key_config = schema.key.unwrap();
-    assert_eq!(key_config.hash_field, "BlogPost.map().content.split_by_word().map()");
+    assert_eq!(
+        key_config.hash_field,
+        "BlogPost.map().content.split_by_word().map()"
+    );
     assert_eq!(key_config.range_field, "BlogPost.map().publish_date");
 }
 
@@ -146,11 +161,17 @@ fn test_all_object_format_schema() {
     assert_eq!(id_field.field_type, Some("Single".to_string()));
 
     let timestamp_field = schema.fields.get("timestamp").unwrap();
-    assert_eq!(timestamp_field.atom_uuid, Some("Source.map().timestamp".to_string()));
+    assert_eq!(
+        timestamp_field.atom_uuid,
+        Some("Source.map().timestamp".to_string())
+    );
     assert_eq!(timestamp_field.field_type, None);
 
     let metadata_field = schema.fields.get("metadata").unwrap();
-    assert_eq!(metadata_field.atom_uuid, Some("Source.map().metadata".to_string()));
+    assert_eq!(
+        metadata_field.atom_uuid,
+        Some("Source.map().metadata".to_string())
+    );
     assert_eq!(metadata_field.field_type, Some("Single".to_string()));
 
     // Verify schema_type
@@ -173,7 +194,7 @@ fn test_empty_fields_schema() {
     "#;
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
-    
+
     // Empty fields should be allowed during deserialization
     // but validation should catch it later
     let schema = result.unwrap();
@@ -195,7 +216,7 @@ fn test_invalid_field_type() {
     "#;
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
-    
+
     // Should fail with clear error message
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -221,14 +242,17 @@ fn test_field_definition_with_unknown_fields() {
     "#;
 
     let result: Result<DeclarativeSchemaDefinition, _> = serde_json::from_str(json);
-    
+
     // Should succeed - unknown fields are ignored for backward compatibility
     let schema = result.unwrap();
     assert_eq!(schema.name, "UnknownFieldsIndex");
     assert_eq!(schema.fields.len(), 2);
 
     let field_with_unknown = schema.fields.get("field_with_unknown_property").unwrap();
-    assert_eq!(field_with_unknown.atom_uuid, Some("Source.map().id".to_string()));
+    assert_eq!(
+        field_with_unknown.atom_uuid,
+        Some("Source.map().id".to_string())
+    );
     assert_eq!(field_with_unknown.field_type, None);
 }
 
@@ -236,14 +260,20 @@ fn test_field_definition_with_unknown_fields() {
 fn test_serialization_preserves_structure() {
     // Create a schema programmatically
     let mut fields = HashMap::new();
-    fields.insert("word".to_string(), FieldDefinition {
-        atom_uuid: Some("BlogPost.map().content.split_by_word().map()".to_string()),
-        field_type: None,
-    });
-    fields.insert("blogpost_id".to_string(), FieldDefinition {
-        atom_uuid: Some("BlogPost.map().id".to_string()),
-        field_type: Some("Single".to_string()),
-    });
+    fields.insert(
+        "word".to_string(),
+        FieldDefinition {
+            atom_uuid: Some("BlogPost.map().content.split_by_word().map()".to_string()),
+            field_type: None,
+        },
+    );
+    fields.insert(
+        "blogpost_id".to_string(),
+        FieldDefinition {
+            atom_uuid: Some("BlogPost.map().id".to_string()),
+            field_type: Some("Single".to_string()),
+        },
+    );
 
     let schema = DeclarativeSchemaDefinition {
         name: "TestIndex".to_string(),
@@ -261,11 +291,17 @@ fn test_serialization_preserves_structure() {
     assert_eq!(deserialized.fields.len(), 2);
 
     let word_field = deserialized.fields.get("word").unwrap();
-    assert_eq!(word_field.atom_uuid, Some("BlogPost.map().content.split_by_word().map()".to_string()));
+    assert_eq!(
+        word_field.atom_uuid,
+        Some("BlogPost.map().content.split_by_word().map()".to_string())
+    );
     assert_eq!(word_field.field_type, None);
 
     let blogpost_id_field = deserialized.fields.get("blogpost_id").unwrap();
-    assert_eq!(blogpost_id_field.atom_uuid, Some("BlogPost.map().id".to_string()));
+    assert_eq!(
+        blogpost_id_field.atom_uuid,
+        Some("BlogPost.map().id".to_string())
+    );
     assert_eq!(blogpost_id_field.field_type, Some("Single".to_string()));
 }
 

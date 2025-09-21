@@ -1,15 +1,12 @@
 //! Security-related HTTP routes for key management and authentication
 
 use super::http_server::AppState;
-use crate::security::{
-    SecurityManager, KeyRegistrationRequest,
-    ClientSecurity,
-};
+use crate::log_feature;
+use crate::logging::features::LogFeature;
+use crate::security::{ClientSecurity, KeyRegistrationRequest, SecurityManager};
 use actix_web::{web, HttpResponse, Result as ActixResult};
 use serde_json::json;
 use std::sync::Arc;
-use crate::log_feature;
-use crate::logging::features::LogFeature;
 
 /// Get the security manager from the node
 async fn get_security_manager(data: &web::Data<AppState>) -> Arc<SecurityManager> {
@@ -23,11 +20,16 @@ pub async fn register_system_public_key(
     data: web::Data<AppState>,
 ) -> ActixResult<HttpResponse> {
     let security_manager = get_security_manager(&data).await;
-    
+
     match security_manager.register_system_public_key(request.into_inner()) {
         Ok(response) => Ok(HttpResponse::Ok().json(response)),
         Err(e) => {
-            log_feature!(LogFeature::HttpServer, error, "Failed to register public key: {}", e);
+            log_feature!(
+                LogFeature::HttpServer,
+                error,
+                "Failed to register public key: {}",
+                e
+            );
             // Let the framework handle the error response
             Err(actix_web::error::ErrorBadRequest(e.to_string()))
         }
@@ -37,7 +39,7 @@ pub async fn register_system_public_key(
 /// Remove the system public key
 pub async fn remove_system_public_key(data: web::Data<AppState>) -> ActixResult<HttpResponse> {
     let security_manager = get_security_manager(&data).await;
-    
+
     match security_manager.remove_system_public_key() {
         Ok(_) => Ok(HttpResponse::Ok().json(json!({
             "success": true,
@@ -53,7 +55,7 @@ pub async fn remove_system_public_key(data: web::Data<AppState>) -> ActixResult<
 /// Get the system public key information
 pub async fn get_system_public_key(data: web::Data<AppState>) -> ActixResult<HttpResponse> {
     let security_manager = get_security_manager(&data).await;
-    
+
     match security_manager.get_system_public_key() {
         Ok(Some(key_info)) => Ok(HttpResponse::Ok().json(json!({
             "success": true,
@@ -94,7 +96,7 @@ pub async fn generate_demo_keypair(_data: web::Data<AppState>) -> ActixResult<Ht
         Ok(keypair) => {
             let public_key_base64 = keypair.public_key_base64();
             let secret_key_base64 = keypair.secret_key_base64();
-            
+
             Ok(HttpResponse::Ok().json(json!({
                 "success": true,
                 "warning": "This is for development/testing only. Never expose secret keys in production!",
@@ -103,7 +105,7 @@ pub async fn generate_demo_keypair(_data: web::Data<AppState>) -> ActixResult<Ht
                     "secret_key": secret_key_base64
                 }
             })))
-        },
+        }
         Err(e) => Ok(HttpResponse::InternalServerError().json(json!({
             "success": false,
             "error": e.to_string()
@@ -114,8 +116,11 @@ pub async fn generate_demo_keypair(_data: web::Data<AppState>) -> ActixResult<Ht
 /// Get security configuration status
 pub async fn get_security_status(data: web::Data<AppState>) -> ActixResult<HttpResponse> {
     let security_manager = get_security_manager(&data).await;
-    let key_present = security_manager.get_system_public_key().unwrap_or(None).is_some();
-    
+    let key_present = security_manager
+        .get_system_public_key()
+        .unwrap_or(None)
+        .is_some();
+
     Ok(HttpResponse::Ok().json(json!({
         "success": true,
         "status": {
@@ -203,7 +208,7 @@ class DataFoldSecurityClient:
         return response.json()
 "#
     });
-    
+
     Ok(HttpResponse::Ok().json(json!({
         "success": true,
         "examples": examples
@@ -228,13 +233,13 @@ pub async fn protected_endpoint(
 mod tests {
     use super::*;
     use crate::security::{ClientSecurity, Ed25519PublicKey};
-    
+
     #[test]
     fn test_security_integration() {
         // Generate a test keypair
         let keypair = ClientSecurity::generate_client_keypair().unwrap();
         let public_key = Ed25519PublicKey::from_bytes(&keypair.public_key_bytes()).unwrap();
-        
+
         // Create registration request
         let registration_request = KeyRegistrationRequest {
             public_key: public_key.to_base64(),
@@ -243,7 +248,7 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             expires_at: None,
         };
-        
+
         // Just test that the request structure is valid
         assert_eq!(registration_request.owner_id, "test_user");
         assert_eq!(registration_request.permissions.len(), 2);

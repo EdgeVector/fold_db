@@ -5,9 +5,9 @@ use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::IngestionResponse;
-use actix_web::{web, HttpResponse, Responder};
-use crate::logging::features::LogFeature;
 use crate::log_feature;
+use crate::logging::features::LogFeature;
+use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
@@ -17,13 +17,22 @@ pub async fn process_json(
     request: web::Json<IngestionRequest>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    log_feature!(LogFeature::Ingestion, info, "Received JSON ingestion request");
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Received JSON ingestion request"
+    );
 
     // Try to create a simple ingestion service
     let service = match create_simple_ingestion_service().await {
         Ok(service) => service,
         Err(e) => {
-            log_feature!(LogFeature::Ingestion, error, "Failed to initialize ingestion service: {}", e);
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Failed to initialize ingestion service: {}",
+                e
+            );
             return HttpResponse::ServiceUnavailable().json(IngestionResponse::failure(vec![
                 format!("Ingestion service not available: {}", e),
             ]));
@@ -40,15 +49,29 @@ pub async fn process_json(
     {
         Ok(response) => {
             if response.success {
-                log_feature!(LogFeature::Ingestion, info, "Ingestion completed successfully");
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Ingestion completed successfully"
+                );
                 HttpResponse::Ok().json(response)
             } else {
-                log_feature!(LogFeature::Ingestion, error, "Ingestion failed: {:?}", response.errors);
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Ingestion failed: {:?}",
+                    response.errors
+                );
                 HttpResponse::InternalServerError().json(response)
             }
         }
         Err(e) => {
-            log_feature!(LogFeature::Ingestion, error, "Ingestion processing failed: {}", e);
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Ingestion processing failed: {}",
+                e
+            );
             HttpResponse::InternalServerError().json(IngestionResponse::failure(vec![format!(
                 "Processing failed: {}",
                 e
@@ -59,7 +82,11 @@ pub async fn process_json(
 
 /// Get ingestion status
 pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
-    log_feature!(LogFeature::Ingestion, info, "Received ingestion status request");
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Received ingestion status request"
+    );
 
     match create_simple_ingestion_service().await {
         Ok(service) => match service.get_status() {
@@ -68,14 +95,24 @@ pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
                 HttpResponse::Ok().json(status)
             }
             Err(e) => {
-                log_feature!(LogFeature::Ingestion, error, "Failed to get ingestion status: {}", e);
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Failed to get ingestion status: {}",
+                    e
+                );
                 HttpResponse::InternalServerError().json(json!({
                     "error": format!("Failed to get status: {}", e)
                 }))
             }
         },
         Err(e) => {
-            log_feature!(LogFeature::Ingestion, warn, "Ingestion service not available: {}", e);
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "Ingestion service not available: {}",
+                e
+            );
             HttpResponse::ServiceUnavailable().json(json!({
                 "error": format!("Ingestion service not available: {}", e),
                 "enabled": false,
@@ -132,7 +169,11 @@ pub async fn validate_json(
     request: web::Json<serde_json::Value>,
     _state: web::Data<AppState>,
 ) -> impl Responder {
-    log_feature!(LogFeature::Ingestion, info, "Received JSON validation request");
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Received JSON validation request"
+    );
 
     match create_simple_ingestion_service().await {
         Ok(service) => match service.validate_input(&request.into_inner()) {

@@ -10,9 +10,9 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.schema_manager
-            .get_schema_status()
-            .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to get schema status: {}", e)))
+        db.schema_manager.get_schema_status().map_err(|e| {
+            crate::error::FoldDbError::Config(format!("Failed to get schema status: {}", e))
+        })
     }
 
     /// Refresh schemas from all sources
@@ -23,11 +23,16 @@ impl DataFoldNode {
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
         db.schema_manager
             .discover_and_load_all_schemas()
-            .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to refresh schemas: {}", e)))
+            .map_err(|e| {
+                crate::error::FoldDbError::Config(format!("Failed to refresh schemas: {}", e))
+            })
     }
 
     /// Add a schema to the available schemas list
-    pub fn add_schema_available(&mut self, schema: schema::Schema) -> crate::error::FoldDbResult<()> {
+    pub fn add_schema_available(
+        &mut self,
+        schema: schema::Schema,
+    ) -> crate::error::FoldDbResult<()> {
         let db = self
             .db
             .lock()
@@ -45,24 +50,27 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        
+
         // Get persisted states from database
         let mut states = db.schema_manager.load_states();
-        
+
         // Add available schemas with their current states
         let available = db.schema_manager.available.lock().map_err(|_| {
             crate::error::FoldDbError::Config("Cannot lock available schemas mutex".into())
         })?;
-        
+
         for (schema_name, (_, state)) in available.iter() {
             states.insert(schema_name.clone(), *state);
         }
-        
+
         Ok(states)
     }
 
     /// Get a schema by name
-    pub fn get_schema(&self, schema_name: &str) -> crate::error::FoldDbResult<Option<schema::Schema>> {
+    pub fn get_schema(
+        &self,
+        schema_name: &str,
+    ) -> crate::error::FoldDbResult<Option<schema::Schema>> {
         let db = self
             .db
             .lock()
@@ -80,10 +88,9 @@ impl DataFoldNode {
     /// Approve a schema for queries and mutations
     pub fn approve_schema(&mut self, schema_name: &str) -> crate::error::FoldDbResult<()> {
         {
-            let db = self
-                .db
-                .lock()
-                .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
+            let db = self.db.lock().map_err(|_| {
+                crate::error::FoldDbError::Config("Cannot lock database mutex".into())
+            })?;
             db.schema_manager.approve_schema(schema_name).map_err(|e| {
                 crate::error::FoldDbError::Config(format!("Failed to approve schema: {}", e))
             })?;
@@ -98,16 +105,25 @@ impl DataFoldNode {
         if !current_perms.contains(&schema_name.to_string()) {
             current_perms.push(schema_name.to_string());
             db.set_schema_permissions(&self.node_id, &current_perms)
-                .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to set permissions: {}", e)))?;
+                .map_err(|e| {
+                    crate::error::FoldDbError::Config(format!("Failed to set permissions: {}", e))
+                })?;
         }
 
         // CRITICAL: Reload transforms after schema approval to load any newly registered declarative transforms
         // This ensures that declarative transforms become immediately visible without manual reload
         if let Err(e) = db.reload_transforms() {
-            log::warn!("Failed to reload transforms after schema approval for '{}': {}", schema_name, e);
+            log::warn!(
+                "Failed to reload transforms after schema approval for '{}': {}",
+                schema_name,
+                e
+            );
             // Don't fail the schema approval if transform reload fails - this is a non-critical operation
         } else {
-            log::info!("✅ Successfully reloaded transforms after schema approval for '{}'", schema_name);
+            log::info!(
+                "✅ Successfully reloaded transforms after schema approval for '{}'",
+                schema_name
+            );
         }
 
         Ok(())
@@ -119,8 +135,9 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.unload_schema(schema_name)
-            .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to unload schema: {}", e)))
+        db.unload_schema(schema_name).map_err(|e| {
+            crate::error::FoldDbError::Config(format!("Failed to unload schema: {}", e))
+        })
     }
 
     /// List all loaded (approved) schemas
@@ -129,9 +146,9 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.schema_manager
-            .list_loaded_schemas()
-            .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to list schemas: {}", e)))
+        db.schema_manager.list_loaded_schemas().map_err(|e| {
+            crate::error::FoldDbError::Config(format!("Failed to list schemas: {}", e))
+        })
     }
 
     /// List all available schemas (any state)
@@ -175,9 +192,9 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.schema_manager
-            .list_schemas_by_state(state)
-            .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to list schemas by state: {}", e)))
+        db.schema_manager.list_schemas_by_state(state).map_err(|e| {
+            crate::error::FoldDbError::Config(format!("Failed to list schemas by state: {}", e))
+        })
     }
 
     /// Block a schema from queries and mutations
@@ -193,13 +210,16 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.schema_manager
-            .block_schema(schema_name)
-            .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to block schema: {}", e)))
+        db.schema_manager.block_schema(schema_name).map_err(|e| {
+            crate::error::FoldDbError::Config(format!("Failed to block schema: {}", e))
+        })
     }
 
     /// Get the current state of a schema
-    pub fn get_schema_state(&self, schema_name: &str) -> crate::error::FoldDbResult<schema::SchemaState> {
+    pub fn get_schema_state(
+        &self,
+        schema_name: &str,
+    ) -> crate::error::FoldDbResult<schema::SchemaState> {
         let db = self
             .db
             .lock()
@@ -225,13 +245,18 @@ impl DataFoldNode {
     }
 
     /// Set schema permissions for a node (for testing)
-    pub fn set_schema_permissions(&self, node_id: &str, schemas: &[String]) -> crate::error::FoldDbResult<()> {
+    pub fn set_schema_permissions(
+        &self,
+        node_id: &str,
+        schemas: &[String],
+    ) -> crate::error::FoldDbResult<()> {
         let db = self
             .db
             .lock()
             .map_err(|_| crate::error::FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.set_schema_permissions(node_id, schemas)
-            .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to set schema permissions: {}", e)))
+        db.set_schema_permissions(node_id, schemas).map_err(|e| {
+            crate::error::FoldDbError::Config(format!("Failed to set schema permissions: {}", e))
+        })
     }
 
     /// Add a new schema from JSON content to the available_schemas directory with validation
@@ -250,4 +275,3 @@ impl DataFoldNode {
             .map_err(|e| crate::error::FoldDbError::Config(format!("Failed to add schema: {}", e)))
     }
 }
-

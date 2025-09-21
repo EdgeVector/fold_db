@@ -141,9 +141,9 @@ impl<'a> PaymentOps<'a> {
 
         let states = self.states.read().await;
         match states.get(&invoice.payment_hash) {
-            Some(state) if matches!(state.status, PaymentStatus::PartiallyPaid(_)) => {
-                Err(Error::PaymentVerification("Partial payment received".to_string()))
-            }
+            Some(state) if matches!(state.status, PaymentStatus::PartiallyPaid(_)) => Err(
+                Error::PaymentVerification("Partial payment received".to_string()),
+            ),
             _ => Err(Error::PaymentTimeout),
         }
     }
@@ -155,11 +155,12 @@ impl<'a> PaymentOps<'a> {
             .ok_or_else(|| Error::InvalidInvoice("Invoice not found".to_string()))?;
 
         if state.is_final() {
-            return Err(Error::InvalidInvoice("Payment already finalized".to_string()));
+            return Err(Error::InvalidInvoice(
+                "Payment already finalized".to_string(),
+            ));
         }
 
-        self
-            .client
+        self.client
             .cancel_invoice(&format!("mock_invoice_{payment_hash}"))
             .await?;
         state.status = PaymentStatus::Cancelled;
@@ -498,11 +499,10 @@ mod tests {
             .create_invoice(100, "wait".to_string(), false)
             .await
             .unwrap();
-        assert!(
-            ops.wait_for_payment(&invoice, Duration::from_millis(10))
-                .await
-                .is_ok()
-        );
+        assert!(ops
+            .wait_for_payment(&invoice, Duration::from_millis(10))
+            .await
+            .is_ok());
     }
 
     #[tokio::test]

@@ -29,7 +29,6 @@ mod tests {
         assert!(updated_ref.updated_at() >= molecule.updated_at());
     }
 
-
     #[test]
     fn test_molecule_range() {
         let atoms: Vec<_> = (0..3)

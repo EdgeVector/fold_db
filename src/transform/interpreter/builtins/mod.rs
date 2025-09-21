@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use super::super::ast::Value;
 
+mod conversions;
 mod math;
 mod strings;
-mod conversions;
 
+pub use conversions::conversion_functions;
 pub use math::math_functions;
 pub use strings::string_functions;
-pub use conversions::conversion_functions;
 
 /// Type for function implementations in the interpreter
 pub type TransformFunction = Box<dyn Fn(Vec<Value>) -> Result<Value, String>>;
@@ -21,4 +21,3 @@ pub fn builtin_functions() -> HashMap<String, TransformFunction> {
     functions.extend(conversions::conversion_functions());
     functions
 }
-

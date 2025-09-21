@@ -1,4 +1,6 @@
 use super::http_server::AppState;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use crate::schema::types::{
     operations::{Mutation, Query},
     Operation,
@@ -7,8 +9,6 @@ use crate::security::VerificationResult;
 use actix_web::{web, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use crate::log_feature;
-use crate::logging::features::LogFeature;
 use std::collections::HashMap;
 
 /// Execute an operation (query or mutation).
@@ -134,10 +134,11 @@ pub async fn execute_mutation(
         timestamp_valid: true,
     };
 
-    let internal_mutation = match build_internal_mutation(mutation_data.into_inner(), &verification_data).await {
-        Ok(m) => m,
-        Err(resp) => return resp,
-    };
+    let internal_mutation =
+        match build_internal_mutation(mutation_data.into_inner(), &verification_data).await {
+            Ok(m) => m,
+            Err(resp) => return resp,
+        };
 
     match node_guard.mutate(internal_mutation) {
         Ok(_) => {
@@ -145,7 +146,12 @@ pub async fn execute_mutation(
             HttpResponse::Ok().json(json!({"success": true}))
         }
         Err(e) => {
-            log_feature!(LogFeature::Mutation, error, "Mutation execution failed: {}", e);
+            log_feature!(
+                LogFeature::Mutation,
+                error,
+                "Mutation execution failed: {}",
+                e
+            );
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to execute mutation: {}", e)}))
         }
@@ -160,12 +166,13 @@ async fn build_internal_mutation(
         Ok(op) => match op {
             Operation::Mutation { .. } => op,
             _ => {
-                return Err(HttpResponse::BadRequest().json(json!({"error": "Expected a mutation operation"})));}
+                return Err(HttpResponse::BadRequest()
+                    .json(json!({"error": "Expected a mutation operation"})));
+            }
         },
         Err(e) => {
-            return Err(
-                HttpResponse::BadRequest().json(json!({"error": format!("Failed to parse mutation: {}", e)})),
-            );
+            return Err(HttpResponse::BadRequest()
+                .json(json!({"error": format!("Failed to parse mutation: {}", e)})));
         }
     };
 
@@ -178,9 +185,8 @@ async fn build_internal_mutation(
             let fields_and_values = match data {
                 Value::Object(map) => map.into_iter().collect(),
                 _ => {
-                    return Err(
-                        HttpResponse::BadRequest().json(json!({"error": "Mutation data must be an object"})),
-                    );
+                    return Err(HttpResponse::BadRequest()
+                        .json(json!({"error": "Mutation data must be an object"})));
                 }
             };
 
@@ -197,7 +203,9 @@ async fn build_internal_mutation(
                 synchronous: None,
             })
         }
-        _ => Err(HttpResponse::BadRequest().json(json!({"error": "Expected a mutation operation"}))),
+        _ => {
+            Err(HttpResponse::BadRequest().json(json!({"error": "Expected a mutation operation"})))
+        }
     }
 }
 
@@ -257,17 +265,12 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
 pub async fn reload_transforms(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
     match node.reload_transforms() {
-        Ok(_) => HttpResponse::Ok().json(json!({ "success": true, "message": "Transforms reloaded successfully" })),
+        Ok(_) => HttpResponse::Ok()
+            .json(json!({ "success": true, "message": "Transforms reloaded successfully" })),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({ "error": format!("Failed to reload transforms: {}", e) })),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    
-    
-    
-    
-
-}
+mod tests {}

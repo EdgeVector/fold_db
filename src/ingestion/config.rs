@@ -82,7 +82,6 @@ impl OllamaConfig {
     }
 }
 
-
 /// Configuration for the ingestion module.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestionConfig {
@@ -214,8 +213,7 @@ impl IngestionConfig {
         use std::fs;
         use std::path::Path;
 
-        let config_dir =
-            env::var("DATAFOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
+        let config_dir = env::var("DATAFOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
         let config_path = Path::new(&config_dir).join("ingestion_config.json");
 
         if !config_path.exists() {
@@ -248,7 +246,6 @@ pub struct SavedConfig {
     pub openrouter: OpenRouterConfig,
     pub ollama: OllamaConfig,
 }
-
 
 #[cfg(test)]
 mod tests {

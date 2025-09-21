@@ -6,15 +6,15 @@
 //! - Common database initialization for examples
 //! - Unified field configuration builders
 
-use crate::schema::types::field::{
-    single_field::SingleField,
-    range_field::RangeField,
-    variant::FieldVariant,
-    common::{Field, FieldCommon},
-};
-use crate::permissions::types::policy::PermissionsPolicy;
-use crate::fees::types::config::FieldPaymentConfig;
 use crate::atom::{Atom, Molecule, MoleculeBehavior};
+use crate::fees::types::config::FieldPaymentConfig;
+use crate::permissions::types::policy::PermissionsPolicy;
+use crate::schema::types::field::{
+    common::{Field, FieldCommon},
+    range_field::RangeField,
+    single_field::SingleField,
+    variant::FieldVariant,
+};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -31,29 +31,21 @@ impl FieldFactory {
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
                 HashMap::new(),
-            )
+            ),
         }
     }
 
     /// Create a SingleField with custom permissions policy
     pub fn create_single_field_with_permissions(permissions: PermissionsPolicy) -> SingleField {
         SingleField {
-            inner: FieldCommon::new(
-                permissions,
-                FieldPaymentConfig::default(),
-                HashMap::new(),
-            )
+            inner: FieldCommon::new(permissions, FieldPaymentConfig::default(), HashMap::new()),
         }
     }
 
     /// Create a SingleField with custom payment configuration
     pub fn create_single_field_with_payment(payment_config: FieldPaymentConfig) -> SingleField {
         SingleField {
-            inner: FieldCommon::new(
-                PermissionsPolicy::default(),
-                payment_config,
-                HashMap::new(),
-            )
+            inner: FieldCommon::new(PermissionsPolicy::default(), payment_config, HashMap::new()),
         }
     }
 
@@ -64,7 +56,7 @@ impl FieldFactory {
                 PermissionsPolicy::default(),
                 FieldPaymentConfig::default(),
                 metadata,
-            )
+            ),
         }
     }
 
@@ -72,13 +64,12 @@ impl FieldFactory {
     pub fn create_single_field_full(
         permissions: PermissionsPolicy,
         payment_config: FieldPaymentConfig,
-        metadata: HashMap<String, String>
+        metadata: HashMap<String, String>,
     ) -> SingleField {
         SingleField {
-            inner: FieldCommon::new(permissions, payment_config, metadata)
+            inner: FieldCommon::new(permissions, payment_config, metadata),
         }
     }
-
 
     /// Create a RangeField with default configuration
     pub fn create_range_field() -> RangeField {
@@ -96,7 +87,6 @@ impl FieldFactory {
     pub fn create_single_variant() -> FieldVariant {
         FieldVariant::Single(Self::create_single_field())
     }
-
 
     /// Create a FieldVariant::Range with default configuration
     pub fn create_range_variant() -> FieldVariant {
@@ -136,12 +126,8 @@ impl FieldFactory {
         value: JsonValue,
         db_ops: &crate::db_operations::DbOperations,
     ) -> Result<(String, FieldVariant), Box<dyn std::error::Error>> {
-        let field = Self::create_single_field_with_molecule(
-            schema_name,
-            "test_user",
-            value,
-            db_ops,
-        )?;
+        let field =
+            Self::create_single_field_with_molecule(schema_name, "test_user", value, db_ops)?;
 
         Ok((field_name.to_string(), FieldVariant::Single(field)))
     }
@@ -191,10 +177,9 @@ impl FieldBuilder {
     /// Build a SingleField
     pub fn build_single(self) -> SingleField {
         SingleField {
-            inner: FieldCommon::new(self.permissions, self.payment_config, self.metadata)
+            inner: FieldCommon::new(self.permissions, self.payment_config, self.metadata),
         }
     }
-
 
     /// Build a RangeField
     pub fn build_range(self) -> RangeField {
@@ -228,12 +213,8 @@ impl TransformSetupHelper {
         let mut schema = Schema::new(schema_name.to_string());
 
         for (field_name, value) in fields {
-            let (name, field_variant) = FieldFactory::create_transform_test_field(
-                field_name,
-                schema_name,
-                value,
-                db_ops,
-            )?;
+            let (name, field_variant) =
+                FieldFactory::create_transform_test_field(field_name, schema_name, value, db_ops)?;
             schema.fields.insert(name, field_variant);
         }
 
@@ -261,9 +242,7 @@ impl TransformSetupHelper {
         // Create TransformSchema with result field
         Self::create_transform_test_schema(
             "TransformSchema",
-            vec![
-                ("result", serde_json::json!(null)),
-            ],
+            vec![("result", serde_json::json!(null))],
             db_ops,
         )?;
 
@@ -276,14 +255,14 @@ impl TransformSetupHelper {
         use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
         use crate::schema::types::schema::SchemaType;
         use std::collections::HashMap;
-        
+
         let schema = DeclarativeSchemaDefinition {
             name: "standard_test_transform".to_string(),
             schema_type: SchemaType::Single,
             fields: HashMap::new(),
             key: None,
         };
-        
+
         crate::schema::types::Transform::new(schema, "TransformSchema.result".to_string())
     }
 
@@ -313,7 +292,8 @@ pub struct DatabaseInitHelper;
 
 impl DatabaseInitHelper {
     /// Create a temporary database for testing
-    pub fn create_temp_database() -> Result<(sled::Db, tempfile::TempDir), Box<dyn std::error::Error>> {
+    pub fn create_temp_database(
+    ) -> Result<(sled::Db, tempfile::TempDir), Box<dyn std::error::Error>> {
         let temp_dir = tempfile::tempdir()?;
         let db = sled::Config::new()
             .path(temp_dir.path().join("test_db"))
@@ -323,7 +303,8 @@ impl DatabaseInitHelper {
     }
 
     /// Create a test environment with database operations
-    pub fn create_test_environment() -> Result<crate::db_operations::DbOperations, Box<dyn std::error::Error>> {
+    pub fn create_test_environment(
+    ) -> Result<crate::db_operations::DbOperations, Box<dyn std::error::Error>> {
         let (db, _temp_dir) = Self::create_temp_database()?;
         Ok(crate::db_operations::DbOperations::new(db)?)
     }
@@ -338,7 +319,12 @@ pub struct TestEnvironment {
 
 impl TestEnvironment {
     /// Create TransformManager with this environment
-    pub fn create_transform_manager(&self) -> Result<crate::fold_db_core::transform_manager::TransformManager, crate::schema::types::SchemaError> {
+    pub fn create_transform_manager(
+        &self,
+    ) -> Result<
+        crate::fold_db_core::transform_manager::TransformManager,
+        crate::schema::types::SchemaError,
+    > {
         crate::fold_db_core::transform_manager::TransformManager::new(
             std::sync::Arc::clone(&self.db_ops),
             std::sync::Arc::clone(&self.message_bus),
@@ -367,7 +353,7 @@ mod tests {
         let field = FieldBuilder::new()
             .with_metadata_entry("test_key".to_string(), "test_value".to_string())
             .build_single();
-        
+
         // Test that metadata was set correctly
         // The field no longer has metadata, test a different property
         // The test field now has field mappers, so let's test they exist
@@ -378,7 +364,7 @@ mod tests {
     fn test_database_init_helper() {
         let result = DatabaseInitHelper::create_temp_database();
         assert!(result.is_ok());
-        
+
         let (db, _temp_dir) = result.unwrap();
         // Test that database is functional
         assert!(db.insert(b"test_key", b"test_value").is_ok());
@@ -388,7 +374,7 @@ mod tests {
     fn test_test_environment_creation() {
         let env = DatabaseInitHelper::create_test_environment();
         assert!(env.is_ok());
-        
+
         let _environment = env.unwrap();
         // Test that we can access basic database operations
         // Transform manager creation is now handled by the system infrastructure
