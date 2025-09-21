@@ -12,10 +12,13 @@
 use datafold::datafold_node::config::NodeConfig;
 use datafold::datafold_node::DataFoldNode;
 use datafold::db_operations::DbOperations;
-use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
+use datafold::fold_db_core::infrastructure::message_bus::{
+    request_events::FieldValueSetRequest, MessageBus, NormalizedRequestParts,
+};
 use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::fold_db_core::transform_manager::TransformManager;
 use datafold::schema::types::{SchemaError, Transform, TransformRegistration};
+use serde_json::Value as JsonValue;
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -29,13 +32,64 @@ pub const TEST_DB_PATH: &str = "test_db";
 
 /// Extract the nested normalized fields map from universal key snapshots.
 #[allow(dead_code)]
-pub fn normalized_fields<'a>(
-    fields: &'a serde_json::Map<String, serde_json::Value>,
-) -> &'a serde_json::Map<String, serde_json::Value> {
+pub fn normalized_fields(
+    fields: &serde_json::Map<String, serde_json::Value>,
+) -> &serde_json::Map<String, serde_json::Value> {
     fields
         .get("fields")
         .and_then(|value| value.as_object())
         .unwrap_or(fields)
+}
+
+/// Build a normalized FieldValueSetRequest for tests without hash/range keys.
+#[allow(dead_code)]
+pub fn normalized_field_value_request(
+    correlation_id: impl Into<String>,
+    schema_name: impl Into<String>,
+    field_name: impl Into<String>,
+    field_value: JsonValue,
+    source_pub_key: impl Into<String>,
+) -> FieldValueSetRequest {
+    normalized_field_value_request_with_keys(
+        correlation_id,
+        schema_name,
+        field_name,
+        field_value,
+        None,
+        None,
+        source_pub_key,
+    )
+}
+
+/// Build a normalized FieldValueSetRequest for tests with optional hash/range keys.
+#[allow(dead_code)]
+pub fn normalized_field_value_request_with_keys(
+    correlation_id: impl Into<String>,
+    schema_name: impl Into<String>,
+    field_name: impl Into<String>,
+    field_value: JsonValue,
+    hash: Option<&str>,
+    range: Option<&str>,
+    source_pub_key: impl Into<String>,
+) -> FieldValueSetRequest {
+    let correlation_id = correlation_id.into();
+    let schema_name = schema_name.into();
+    let field_name = field_name.into();
+    let source_pub_key = source_pub_key.into();
+
+    let mut fields = serde_json::Map::new();
+    fields.insert(field_name.clone(), field_value);
+
+    FieldValueSetRequest::from_normalized_parts(NormalizedRequestParts {
+        correlation_id,
+        schema_name,
+        field_name,
+        fields,
+        hash: hash.map(|value| value.to_string()),
+        range: range.map(|value| value.to_string()),
+        source_pub_key,
+        mutation_hash: None,
+    })
 }
 
 /// Single unified test fixture eliminating all duplication
