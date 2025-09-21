@@ -29,7 +29,7 @@
 
 use crate::fold_db_core::infrastructure::factory::InfrastructureLogger;
 use crate::fold_db_core::infrastructure::message_bus::{
-    request_events::FieldValueSetRequest, MessageBus,
+    request_events::FieldValueSetRequest, MessageBus, NormalizedRequestParts,
 };
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::schema_operations::{extract_unified_keys, shape_unified_result};
@@ -287,51 +287,17 @@ impl MutationService {
             .unwrap_or_default();
         let sorted_fields = sort_fields(&fields_object);
 
-        let mut normalized_payload = Map::new();
-        normalized_payload.insert(
-            "hash".to_string(),
-            Value::String(normalized_hash.clone().unwrap_or_default()),
-        );
-        normalized_payload.insert(
-            "range".to_string(),
-            Value::String(normalized_range.clone().unwrap_or_default()),
-        );
-        normalized_payload.insert("fields".to_string(), Value::Object(sorted_fields.clone()));
-
-        let incremental = normalized_hash.is_some() || normalized_range.is_some();
-        let mutation_context = if incremental || mutation_hash.is_some() {
-            Some(
-                crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
-                    range_key: normalized_range.clone(),
-                    hash_key: normalized_hash.clone(),
-                    mutation_hash: mutation_hash.map(|value| value.to_string()),
-                    incremental,
-                },
-            )
-        } else {
-            None
-        };
-
-        let request_value = Value::Object(normalized_payload);
         let correlation_id = Uuid::new_v4().to_string();
-        let request = if let Some(context) = mutation_context {
-            FieldValueSetRequest::with_context(
-                correlation_id,
-                schema.name.clone(),
-                field_name.to_string(),
-                request_value,
-                MUTATION_SERVICE_SOURCE.to_string(),
-                context,
-            )
-        } else {
-            FieldValueSetRequest::new(
-                correlation_id,
-                schema.name.clone(),
-                field_name.to_string(),
-                request_value,
-                MUTATION_SERVICE_SOURCE.to_string(),
-            )
-        };
+        let request = FieldValueSetRequest::from_normalized_parts(NormalizedRequestParts {
+            correlation_id,
+            schema_name: schema.name.clone(),
+            field_name: field_name.to_string(),
+            fields: sorted_fields.clone(),
+            hash: normalized_hash.clone(),
+            range: normalized_range.clone(),
+            source_pub_key: MUTATION_SERVICE_SOURCE.to_string(),
+            mutation_hash: mutation_hash.map(|value| value.to_string()),
+        });
 
         InfrastructureLogger::log_debug_info(
             "MutationService",

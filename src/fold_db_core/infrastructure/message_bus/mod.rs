@@ -110,6 +110,7 @@
 
 // Re-export all public types and event modules
 pub use async_bus::{AsyncConsumer, AsyncEventHandler, AsyncMessageBus};
+pub use constructors::NormalizedRequestParts;
 pub use error_handling::{
     AsyncRecvError, AsyncTryRecvError, DeadLetterEvent, EventHistoryEntry, MessageBusError,
     MessageBusResult, RetryableEvent,

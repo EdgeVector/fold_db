@@ -1,10 +1,10 @@
+use crate::fold_db_core::services::mutation::MutationService;
 use crate::schema::constants::TRANSFORM_SYSTEM_ID;
 use crate::schema::types::{Mutation, MutationType, SchemaError};
 use log::{debug, info};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::sync::Arc;
-use uuid;
 
 /// Data structure for HashRange transform results
 #[derive(Debug, Clone)]
@@ -41,7 +41,13 @@ impl HashRangeProcessor {
             field_names.len()
         );
 
-        Self::process_hashrange_data(schema_name, &transform_data, &field_names, message_bus)
+        Self::process_hashrange_data(
+            &schema,
+            schema_name,
+            &transform_data,
+            &field_names,
+            message_bus,
+        )
     }
 
     /// Get HashRange schema and validate it exists
@@ -156,6 +162,7 @@ impl HashRangeProcessor {
 
     /// Process HashRange data and submit through message bus
     fn process_hashrange_data(
+        schema: &crate::schema::types::Schema,
         schema_name: &str,
         transform_data: &HashRangeTransformData,
         field_names: &[String],
@@ -205,6 +212,7 @@ impl HashRangeProcessor {
                 );
 
                 Self::submit_word_mutations(
+                    schema,
                     schema_name,
                     &words_from_transform,
                     &field_values,
@@ -232,6 +240,7 @@ impl HashRangeProcessor {
 
                 if !word_from_transform.is_empty() {
                     Self::submit_word_mutations(
+                        schema,
                         schema_name,
                         &[word_from_transform],
                         &field_values,
@@ -286,6 +295,7 @@ impl HashRangeProcessor {
 
     /// Submit mutations for all words in a data entry
     fn submit_word_mutations(
+        schema: &crate::schema::types::Schema,
         schema_name: &str,
         words: &[String],
         field_values: &HashMap<String, JsonValue>,
@@ -294,7 +304,7 @@ impl HashRangeProcessor {
     ) -> Result<(), SchemaError> {
         for word in words {
             let mutation = Self::create_hashrange_mutation(schema_name, word, field_values, range)?;
-            Self::submit_mutation_through_message_bus(schema_name, &mutation, message_bus)?;
+            Self::submit_mutation_through_message_bus(schema, schema_name, &mutation, message_bus)?;
         }
         Ok(())
     }
@@ -328,6 +338,7 @@ impl HashRangeProcessor {
 
     /// Submit a mutation through the message bus
     fn submit_mutation_through_message_bus(
+        schema: &crate::schema::types::Schema,
         schema_name: &str,
         mutation: &Mutation,
         message_bus: &Arc<crate::fold_db_core::infrastructure::MessageBus>,
@@ -340,13 +351,17 @@ impl HashRangeProcessor {
                 SchemaError::InvalidData("HashRange mutation missing hash_key".to_string())
             })?;
 
-        let range_key = mutation
+        let _range_key = mutation
             .fields_and_values
             .get("range_key")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
                 SchemaError::InvalidData("HashRange mutation missing range_key".to_string())
             })?;
+
+        let hash_value = mutation.fields_and_values.get("hash_key").cloned();
+        let range_value = mutation.fields_and_values.get("range_key").cloned();
+        let mutation_service = MutationService::new(Arc::clone(message_bus));
 
         // Submit each field value through the message bus
         for (field_name, value) in &mutation.fields_and_values {
@@ -356,22 +371,24 @@ impl HashRangeProcessor {
                     field_name, hash_key
                 );
 
-                let hashrange_aware_value = serde_json::json!({
-                    "hash_key": hash_key,
-                    "range_key": range_key,
-                    "value": value
-                });
+                let normalized_request = mutation_service.normalized_field_value_request(
+                    schema,
+                    field_name,
+                    value,
+                    hash_value.as_ref(),
+                    range_value.as_ref(),
+                    None,
+                )?;
 
-                let correlation_id = uuid::Uuid::new_v4().to_string();
-                let field_value_request = crate::fold_db_core::infrastructure::message_bus::request_events::FieldValueSetRequest::new(
-                    correlation_id,
-                    schema_name.to_string(),
-                    field_name.clone(),
-                    hashrange_aware_value,
-                    TRANSFORM_SYSTEM_ID.to_string(),
-                );
+                let mut request = normalized_request.request;
+                let context = normalized_request.context;
+                let hash_state = context.hash.as_deref().unwrap_or("∅");
+                let range_state = context.range.as_deref().unwrap_or("∅");
 
-                message_bus.publish(field_value_request).map_err(|e| {
+                request.source_pub_key = TRANSFORM_SYSTEM_ID.to_string();
+                let correlation_id = request.correlation_id.clone();
+
+                message_bus.publish(request).map_err(|e| {
                     SchemaError::InvalidData(format!(
                         "Failed to submit field value for {}.{}: {}",
                         schema_name, field_name, e
@@ -379,8 +396,13 @@ impl HashRangeProcessor {
                 })?;
 
                 debug!(
-                    "✅ HashRange field value submitted successfully for {}.{} with word '{}'",
-                    schema_name, field_name, hash_key
+                    "✅ HashRange field value submitted successfully for {}.{} with word '{}' [correlation_id: {}, hash: {}, range: {}]",
+                    schema_name,
+                    field_name,
+                    hash_key,
+                    correlation_id,
+                    hash_state,
+                    range_state
                 );
             }
         }

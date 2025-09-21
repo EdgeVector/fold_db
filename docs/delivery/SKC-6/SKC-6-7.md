@@ -7,6 +7,7 @@ Update downstream components that fabricate `FieldValueSetRequest` messages—su
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-23 09:35:00 | Created | N/A | Proposed | Task created for downstream alignment | ai-agent |
+| 2025-09-23 18:30:00 | Status Update | Proposed | In Review | Transform manager processors and constructors emit normalized requests via shared helpers. | ai-agent |
 
 ## Requirements
 - Identify all non-MutationService producers of `FieldValueSetRequest`, including `transform_manager::hashrange_processor`, `transform_manager::result_storage`, and message bus constructors.
@@ -16,7 +17,7 @@ Update downstream components that fabricate `FieldValueSetRequest` messages—su
 - Keep the code DRY by extracting shared helpers when multiple downstream modules require similar normalization logic.
 
 ## Implementation Plan
-1. Catalog all call sites generating `FieldValueSetRequest` outside MutationService using `rg` and document them in the task notes.
+1. Catalog all call sites generating `FieldValueSetRequest` outside MutationService using `rg` and document them in the task notes. Identified producers include `transform_manager::result_storage`, `transform_manager::hashrange_processor`, and the message bus constructors.
 2. For each call site, replace bespoke payload construction with a call to the shared builder or helper, adjusting signatures to accept the normalized context where needed.
 3. Update supporting test fixtures and helper constructors to use the normalized structure, preventing brittle test expectations.
 4. Remove redundant helper functions in downstream modules after the alignment is complete.
