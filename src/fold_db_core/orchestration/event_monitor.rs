@@ -395,12 +395,11 @@ mod tests {
         let tree = create_test_tree();
         let manager: Arc<dyn TransformRunner> = Arc::new(MockTransformRunner::new(vec!["transform1"]));
         
-        let event = FieldValueSet {
-            field: "test_schema.test_field".to_string(),
-            value: serde_json::json!("test_value"),
-            source: "test_source".to_string(),
-            mutation_context: None,
-        };
+        let event = FieldValueSet::new(
+            "test_schema.test_field",
+            serde_json::json!("test_value"),
+            "test_source",
+        );
         
         let message_bus = Arc::new(MessageBus::new());
         let result = EventMonitor::handle_field_value_event(&event, &manager, &tree, &message_bus);
@@ -412,12 +411,11 @@ mod tests {
         let tree = create_test_tree();
         let manager: Arc<dyn TransformRunner> = Arc::new(MockTransformRunner::new(vec![]));
         
-        let event = FieldValueSet {
-            field: "invalid_field_format".to_string(),
-            value: serde_json::json!("test_value"),
-            source: "test_source".to_string(),
-            mutation_context: None,
-        };
+        let event = FieldValueSet::new(
+            "invalid_field_format",
+            serde_json::json!("test_value"),
+            "test_source",
+        );
         
         let message_bus = Arc::new(MessageBus::new());
         let result = EventMonitor::handle_field_value_event(&event, &manager, &tree, &message_bus);

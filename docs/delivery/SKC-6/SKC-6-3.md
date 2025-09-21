@@ -8,6 +8,9 @@ Extend the universal key snapshot adoption to the HashRange molecule flow, inclu
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-21 12:10:00 | Created | N/A | Proposed | Task file created | ai-agent |
 | 2025-09-23 09:15:00 | Scope Refined | Proposed | Proposed | Task retargeted to HashRange-specific adoption of the universal snapshot | ai-agent |
+| 2025-09-23 10:20:00 | Status Update | Proposed | InProgress | Started refactoring HashRange pipeline to consume universal key snapshot and normalized metadata | ai-agent |
+| 2025-09-23 11:10:00 | Status Update | InProgress | Review | HashRange molecule persistence and events now rely on universal key snapshot; added regression coverage. | ai-agent |
+| 2025-09-23 11:20:00 | Status Update | Review | Done | Verified normalized metadata propagation through tests and completed task implementation. | ai-agent |
 
 ## Requirements
 - Update `create_hashrange_molecule` to consume the universal key snapshot, storing hash/range values based on schema-derived field names rather than hardcoded `hash_key`/`range_key` JSON lookups.
