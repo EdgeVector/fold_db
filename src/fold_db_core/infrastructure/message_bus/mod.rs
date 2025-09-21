@@ -26,6 +26,7 @@
 //!     value: json!("Alice"),
 //!     source: "mutation_engine".to_string(),
 //!     mutation_context: None,
+//!     key_snapshot: None,
 //! });
 //!
 //! // Receive the event
@@ -49,7 +50,7 @@
 //! ## Main Components
 //!
 //! ### Synchronous Message Bus
-//! 
+//!
 //! The [`MessageBus`] provides synchronous pub/sub messaging:
 //!
 //! ```rust
@@ -58,10 +59,10 @@
 //!
 //! let bus = MessageBus::new();
 //! let mut consumer = bus.subscribe::<FieldValueSet>();
-//! 
+//!
 //! let event = FieldValueSet::new("user.email", json!("alice@example.com"), "user_service");
 //! bus.publish(event).unwrap();
-//! 
+//!
 //! let received_event = consumer.try_recv().unwrap();
 //! ```
 //!
@@ -76,10 +77,10 @@
 //! # async fn example() {
 //! let bus = AsyncMessageBus::new();
 //! let mut consumer = bus.subscribe("AtomCreated").await;
-//! 
+//!
 //! let event = AtomCreated::new("atom-123", json!({"name": "Alice"}));
 //! bus.publish_atom_created(event).await.unwrap();
-//! 
+//!
 //! let received_event = consumer.recv().await;
 //! # }
 //! ```
@@ -108,22 +109,22 @@
 //! ```
 
 // Re-export all public types and event modules
-pub use events::{atom_events, query_events, request_events, schema_events, Event, EventType};
+pub use async_bus::{AsyncConsumer, AsyncEventHandler, AsyncMessageBus};
 pub use error_handling::{
     AsyncRecvError, AsyncTryRecvError, DeadLetterEvent, EventHistoryEntry, MessageBusError,
     MessageBusResult, RetryableEvent,
 };
+pub use events::{atom_events, query_events, request_events, schema_events, Event, EventType};
 pub use sync_bus::{Consumer, MessageBus};
-pub use async_bus::{AsyncConsumer, AsyncEventHandler, AsyncMessageBus};
 
 // Import constructor implementations (these add methods to the event types)
 
 // Internal modules
-pub mod events;
-mod error_handling;
-mod sync_bus;
 mod async_bus;
 mod constructors;
+mod error_handling;
+pub mod events;
+mod sync_bus;
 
 #[cfg(test)]
 mod integration_tests {
@@ -137,7 +138,8 @@ mod integration_tests {
         let mut atom_consumer = bus.subscribe::<atom_events::AtomCreated>();
 
         // Test that different event types work correctly
-        let field_event = atom_events::FieldValueSet::new("integration.test", json!("success"), "test");
+        let field_event =
+            atom_events::FieldValueSet::new("integration.test", json!("success"), "test");
         let atom_event = atom_events::AtomCreated::new("integration-atom", json!({"test": true}));
 
         bus.publish(field_event.clone()).unwrap();
@@ -157,7 +159,8 @@ mod integration_tests {
         let bus = MessageBus::new();
         let mut consumer = bus.subscribe::<query_events::QueryExecuted>();
 
-        let query_event = query_events::QueryExecuted::new("integration_query", "TestSchema", 100, 5);
+        let query_event =
+            query_events::QueryExecuted::new("integration_query", "TestSchema", 100, 5);
         let unified_event = Event::QueryExecuted(query_event.clone());
 
         bus.publish_event(unified_event).unwrap();
@@ -176,7 +179,6 @@ mod integration_tests {
         let received = consumer.recv().await;
         assert!(received.is_some());
     }
-
 
     #[test]
     fn test_event_constructors() {
@@ -218,20 +220,47 @@ mod integration_tests {
         assert_eq!(atom_events::MoleculeCreated::type_id(), "MoleculeCreated");
         assert_eq!(atom_events::MoleculeUpdated::type_id(), "MoleculeUpdated");
         assert_eq!(schema_events::SchemaLoaded::type_id(), "SchemaLoaded");
-        assert_eq!(schema_events::TransformExecuted::type_id(), "TransformExecuted");
+        assert_eq!(
+            schema_events::TransformExecuted::type_id(),
+            "TransformExecuted"
+        );
         assert_eq!(schema_events::SchemaChanged::type_id(), "SchemaChanged");
-        assert_eq!(schema_events::TransformTriggered::type_id(), "TransformTriggered");
+        assert_eq!(
+            schema_events::TransformTriggered::type_id(),
+            "TransformTriggered"
+        );
         assert_eq!(query_events::QueryExecuted::type_id(), "QueryExecuted");
-        assert_eq!(query_events::MutationExecuted::type_id(), "MutationExecuted");
+        assert_eq!(
+            query_events::MutationExecuted::type_id(),
+            "MutationExecuted"
+        );
         assert_eq!(Event::type_id(), "Event");
 
         // Test request/response types
-        assert_eq!(request_events::AtomCreateRequest::type_id(), "AtomCreateRequest");
-        assert_eq!(request_events::AtomCreateResponse::type_id(), "AtomCreateResponse");
-        assert_eq!(request_events::FieldValueSetRequest::type_id(), "FieldValueSetRequest");
-        assert_eq!(request_events::FieldValueSetResponse::type_id(), "FieldValueSetResponse");
-        assert_eq!(request_events::SystemInitializationRequest::type_id(), "SystemInitializationRequest");
-        assert_eq!(request_events::SystemInitializationResponse::type_id(), "SystemInitializationResponse");
+        assert_eq!(
+            request_events::AtomCreateRequest::type_id(),
+            "AtomCreateRequest"
+        );
+        assert_eq!(
+            request_events::AtomCreateResponse::type_id(),
+            "AtomCreateResponse"
+        );
+        assert_eq!(
+            request_events::FieldValueSetRequest::type_id(),
+            "FieldValueSetRequest"
+        );
+        assert_eq!(
+            request_events::FieldValueSetResponse::type_id(),
+            "FieldValueSetResponse"
+        );
+        assert_eq!(
+            request_events::SystemInitializationRequest::type_id(),
+            "SystemInitializationRequest"
+        );
+        assert_eq!(
+            request_events::SystemInitializationResponse::type_id(),
+            "SystemInitializationResponse"
+        );
     }
 
     #[test]
@@ -244,11 +273,15 @@ mod integration_tests {
         let reg_error = MessageBusError::RegistrationFailed {
             event_type: "TestEvent".to_string(),
         };
-        assert!(reg_error.to_string().contains("Failed to register consumer"));
+        assert!(reg_error
+            .to_string()
+            .contains("Failed to register consumer"));
 
         let disconnected_error = MessageBusError::ChannelDisconnected {
             event_type: "TestEvent".to_string(),
         };
-        assert!(disconnected_error.to_string().contains("Channel disconnected"));
+        assert!(disconnected_error
+            .to_string()
+            .contains("Channel disconnected"));
     }
 }

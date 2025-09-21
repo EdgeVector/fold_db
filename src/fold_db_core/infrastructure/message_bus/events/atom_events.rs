@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::super::request_events::KeySnapshot;
 use super::EventType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -10,6 +11,8 @@ pub struct FieldValueSet {
     pub source: String,
     /// Context information about the mutation that triggered this event
     pub mutation_context: Option<MutationContext>,
+    /// Normalized key snapshot emitted with the event
+    pub key_snapshot: Option<KeySnapshot>,
 }
 
 /// Context information about a mutation for smarter transform execution
@@ -24,7 +27,6 @@ pub struct MutationContext {
     /// Whether this mutation should trigger incremental processing
     pub incremental: bool,
 }
-
 
 impl EventType for FieldValueSet {
     fn type_id() -> &'static str {
@@ -82,4 +84,3 @@ impl EventType for MoleculeUpdated {
         "MoleculeUpdated"
     }
 }
-
