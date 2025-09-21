@@ -1,9 +1,103 @@
 //! Iterator stack management and item extraction
 
 use crate::transform::iterator_stack::errors::IteratorStackResult;
-use crate::transform::iterator_stack::types::{IteratorStack, IteratorState, IteratorType};
+use crate::transform::iterator_stack::types::{
+    ActiveScope, IteratorStack, IteratorState, IteratorType,
+};
 use log::debug;
 use serde_json::Value;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+
+#[derive(Default)]
+pub struct IteratorDatasetCache {
+    entries: HashMap<String, Vec<Value>>,
+    hits: usize,
+    misses: usize,
+}
+
+impl IteratorDatasetCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn fetch_or_store<F>(
+        &mut self,
+        scope: &ActiveScope,
+        parent_hash: Option<&str>,
+        generator: F,
+    ) -> IteratorStackResult<(Vec<Value>, String)>
+    where
+        F: FnOnce() -> IteratorStackResult<Vec<Value>>,
+    {
+        let cache_key = Self::compute_key(scope, parent_hash);
+
+        if let Some(cached) = self.entries.get(&cache_key) {
+            debug!(
+                "IteratorDatasetCache hit for branch '{}' (key: {})",
+                scope.branch_path, cache_key
+            );
+            self.hits += 1;
+            return Ok((cached.clone(), cache_key));
+        }
+
+        debug!(
+            "IteratorDatasetCache miss for branch '{}' (key: {})",
+            scope.branch_path, cache_key
+        );
+        let items = generator()?;
+        self.misses += 1;
+        self.entries.insert(cache_key.clone(), items.clone());
+        Ok((items, cache_key))
+    }
+
+    pub fn stats(&self) -> (usize, usize) {
+        (self.hits, self.misses)
+    }
+
+    fn compute_key(scope: &ActiveScope, parent_hash: Option<&str>) -> String {
+        let normalized_branch = normalize_branch_path(&scope.branch_path);
+        let iterator_signature = iterator_signature(&scope.iterator_type);
+        let parent_component = parent_hash.unwrap_or("root");
+        let key_input = format!(
+            "{}|{}|{}",
+            parent_component, normalized_branch, iterator_signature
+        );
+        format!("{:x}", hash_string(&key_input))
+    }
+}
+
+fn normalize_branch_path(branch_path: &str) -> String {
+    if branch_path.is_empty() {
+        return "_root".to_string();
+    }
+
+    branch_path
+        .split('.')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+fn iterator_signature(iterator_type: &IteratorType) -> String {
+    match iterator_type {
+        IteratorType::Schema { field_name } => format!("schema:{}", field_name),
+        IteratorType::ArraySplit { field_name } => format!("array_split:{}", field_name),
+        IteratorType::WordSplit { field_name } => format!("word_split:{}", field_name),
+        IteratorType::Custom { name, config } => {
+            let serialized =
+                serde_json::to_string(config).unwrap_or_else(|_| format!("{:?}", config));
+            format!("custom:{}:{}", name, serialized)
+        }
+    }
+}
+
+fn hash_string(value: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// Manager for iterator stack operations
 pub struct IteratorManager;
@@ -19,6 +113,7 @@ impl IteratorManager {
         &mut self,
         stack: &mut IteratorStack,
         input_data: &Value,
+        cache: &mut IteratorDatasetCache,
     ) -> IteratorStackResult<()> {
         debug!("Initializing iterator stack with {} scopes", stack.len());
         debug!("Input data structure: {}", input_data);
@@ -33,6 +128,7 @@ impl IteratorManager {
         // Single-pass initialization: process scopes in depth order
         let scopes = stack.len();
         let mut parent_data = input_data.clone();
+        let mut scope_parent_hashes: HashMap<usize, String> = HashMap::new();
 
         for depth in 0..scopes {
             if let Some(scope) = stack.scope_at_depth(depth) {
@@ -42,14 +138,23 @@ impl IteratorManager {
                 );
                 debug!("Parent data at depth {}: {}", depth, parent_data);
 
-                // Extract items for this scope using the appropriate parent data
-                let items = self.extract_items_for_iterator(&scope.iterator_type, &parent_data)?;
+                let parent_hash = scope
+                    .parent_depth
+                    .and_then(|parent_depth| scope_parent_hashes.get(&parent_depth));
+
+                let (items, cache_key) =
+                    cache.fetch_or_store(scope, parent_hash.map(|hash| hash.as_str()), || {
+                        self.extract_items_for_iterator(&scope.iterator_type, &parent_data)
+                    })?;
+
                 debug!(
-                    "Extracted {} items for depth {}: {:?}",
+                    "Using {} items for depth {} (cache key: {})",
                     items.len(),
                     depth,
-                    items
+                    cache_key
                 );
+
+                scope_parent_hashes.insert(depth, cache_key);
 
                 // Create iterator state
                 let iterator_state = IteratorState {

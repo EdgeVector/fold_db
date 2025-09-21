@@ -17,7 +17,9 @@ use super::types::{ExecutionContext, ExecutionResult, ExecutionStatistics};
 use crate::transform::iterator_stack::execution_engine::field_execution::{
     DefaultFieldExecutor, FieldExecutionResult, FieldExecutor,
 };
-use crate::transform::iterator_stack::execution_engine::iterator_management::IteratorManager;
+use crate::transform::iterator_stack::execution_engine::iterator_management::{
+    IteratorDatasetCache, IteratorManager,
+};
 
 /// Runtime execution engine for iterator stack operations
 pub struct ExecutionEngine {
@@ -55,8 +57,7 @@ impl ExecutionEngine {
 
         let mut index_entries = Vec::new();
         let mut warnings = Vec::new();
-        let cache_hits = 0;
-        let cache_misses = 0;
+        let mut dataset_cache = IteratorDatasetCache::new();
 
         // Group chains by expression to avoid duplicate execution
         let mut expression_groups: HashMap<String, Vec<&ParsedChain>> = HashMap::new();
@@ -102,7 +103,8 @@ impl ExecutionEngine {
                 info!("🔍 Chain depth: {}", representative_chain.depth);
             }
 
-            let field_result = self.execute_single_field(representative_chain, &context)?;
+            let field_result =
+                self.execute_single_field(representative_chain, &context, &mut dataset_cache)?;
             info!(
                 "Expression '{}' produced {} entries",
                 expression,
@@ -115,6 +117,8 @@ impl ExecutionEngine {
         }
 
         // Generate execution statistics
+        let (cache_hits, cache_misses) = dataset_cache.stats();
+
         let statistics = ExecutionStatistics {
             total_entries: index_entries.len(),
             items_per_depth: StatisticsHelper::calculate_items_per_depth(&index_entries),
@@ -135,6 +139,7 @@ impl ExecutionEngine {
         &mut self,
         chain: &ParsedChain,
         context: &ExecutionContext,
+        cache: &mut IteratorDatasetCache,
     ) -> IteratorStackResult<FieldExecutionResult> {
         debug!("🚀 Executing single field: {}", chain.expression);
 
@@ -178,7 +183,7 @@ impl ExecutionEngine {
 
         // Initialize the iterator stack with input data
         self.iterator_manager
-            .initialize_stack(&mut stack, &context.input_data)?;
+            .initialize_stack(&mut stack, &context.input_data, cache)?;
 
         // Execute based on alignment type
         debug!(

@@ -18,6 +18,7 @@ This document contains the most up-to-date and condensed information about the p
 | INGESTION-001 | Large file ingestion must use streaming architecture with configurable batch processing to handle files of any size without memory constraints. | ingestion/core, ingestion/large_file | 2025-01-27 15:30:00 | None |
 | TRANSFORM-001 | Transform system must support both procedural and declarative transform types seamlessly while maintaining backward compatibility. | transform/, schema/types, fold_db_core/transform_manager, fold_db_core/orchestration | 2025-01-27 12:00:00 | None |
 | TRANSFORM-003 | DeclarativeSchemaDefinition requires KeyConfig with hash_field and range_field for HashRange schemas and FieldDefinition metadata for optional atom_uuid and field_type. | schema/types/json_schema.rs | 2025-08-26 19:00:00 | None |
+| TRANSFORM-004 | Iterator dataset cache deduplicates shared declarative chain prefixes using hashed branch-path signatures. | transform/iterator_stack | 2025-09-30 09:00:00 | None |
 | SCHEMA-KEY-001 | Universal KeyConfig is supported across Single, Range, and HashRange. Single: key optional; Range: range_field required, hash_field optional; HashRange: both required. Backward compatibility for legacy Range { range_key } retained. | schema/types/json_schema.rs, schema/types/schema.rs, transform/executor.rs, schema/schema_operations.rs, ui utils | 2025-09-19 12:05:00 | None |
 | SCHEMA-KEY-002 | Backend exposes unified helpers: extract_unified_keys(schema, data) and shape_unified_result(schema, data, hash, range) to standardize key extraction and result shape {hash, range, fields} across all schema types. KeyConfig fields are Strings; empty string denotes absence. | schema/schema_operations.rs | 2025-09-19 13:10:00 | None |
 | SCHEMA-KEY-003 | Universal key configuration implementation completed. All schema types use consistent KeyConfig structure. Legacy code paths removed, UI helpers consolidated, comprehensive documentation created, E2E tests validate functionality. Backward compatibility maintained for existing schemas. | schema/, transform/, ui/, docs/ | 2025-09-19 17:25:00 | None |
@@ -276,6 +277,14 @@ This document contains the most up-to-date and condensed information about the p
     - Execution must use `ExecutionEngine::execute_chains()` method
     - Field alignment validation must use existing validation logic
     - Performance optimizations must leverage existing iterator stack optimizations
+
+### TRANSFORM-004: Iterator Dataset Cache Deduplication
+- **Description**: Shared declarative iterator prefixes (e.g., `blogpost.map()`) are executed once and cached using hashed branch-path signatures so dependent fields reuse the same dataset.
+- **Rationale**: Prevents redundant iterator initialization across fields that share dataset scopes, improving performance and ensuring fan-out executes consistently for all consumers.
+- **Implementation Notes**:
+  - `IteratorDatasetCache` computes cache keys from dot-separated branch paths, iterator type, and parent scope hashes.
+  - `IteratorManager::initialize_stack` consults the cache before extracting items, recording cache hits/misses.
+  - `ExecutionEngine` reports cache metrics via `ExecutionStatistics` to expose dedup efficiency for monitoring and tests.
 
 ### Migration and Breaking Changes (API-STD-1)
 - **Description**: Documents the comprehensive migration from direct fetch() usage to unified API clients
