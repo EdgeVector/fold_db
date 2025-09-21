@@ -125,6 +125,16 @@ pub struct FieldValueSetResponse {
     pub success: bool,
     pub molecule_uuid: Option<String>,
     pub error: Option<String>,
+    /// Normalized key snapshot with hash, range, and fields data
+    pub key_snapshot: Option<KeySnapshot>,
+}
+
+/// Normalized key snapshot for field processing responses
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KeySnapshot {
+    pub hash: Option<String>,
+    pub range: Option<String>,
+    pub fields: serde_json::Map<String, serde_json::Value>,
 }
 
 impl EventType for FieldValueSetResponse {

@@ -4,6 +4,7 @@
 //! to make event creation more ergonomic.
 
 use super::events::*;
+use super::request_events::KeySnapshot;
 use serde_json::Value;
 
 // ========== Core Event Constructors ==========
@@ -345,6 +346,24 @@ impl FieldValueSetResponse {
             success,
             molecule_uuid,
             error,
+            key_snapshot: None,
+        }
+    }
+
+    /// Create a new FieldValueSetResponse with key snapshot
+    pub fn with_key_snapshot(
+        correlation_id: String,
+        success: bool,
+        molecule_uuid: Option<String>,
+        error: Option<String>,
+        key_snapshot: Option<KeySnapshot>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            success,
+            molecule_uuid,
+            error,
+            key_snapshot,
         }
     }
 }

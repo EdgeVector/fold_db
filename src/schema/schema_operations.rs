@@ -995,7 +995,13 @@ pub fn extract_unified_keys(schema: &Schema, data: &serde_json::Value) -> Result
                 }
             } else {
                 // Legacy range_key support - this maintains backward compatibility
-                extract_field_value(data, range_key)?
+                // First try to extract using the schema's range_key field name
+                if let Some(value) = extract_field_value(data, range_key)? {
+                    Some(value)
+                } else {
+                    // If that fails, try the legacy "range_key" field name
+                    extract_field_value(data, "range_key")?
+                }
             };
             
             let hash_value = if let Some(key_config) = &schema.key {
