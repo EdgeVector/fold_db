@@ -772,9 +772,10 @@ fn test_mutation_service_normalized_request_emits_key_snapshot() {
         .as_ref()
         .expect("Responses should include key snapshot metadata");
     assert_eq!(snapshot.hash, None);
-    assert!(
-        snapshot.range.is_none(),
-        "Normalized snapshot should omit range metadata when not persisted separately"
+    assert_eq!(
+        snapshot.range.as_deref(),
+        Some("session-123"),
+        "Normalized snapshot should retain range metadata for downstream consumers"
     );
     assert_eq!(snapshot.fields.get("range"), Some(&json!("session-123")));
 

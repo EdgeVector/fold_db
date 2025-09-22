@@ -1,10 +1,41 @@
 # Universal Key Migration Guide
 
-This guide helps you migrate existing schemas to use the new universal `key` configuration format introduced in SKC-1.
+This guide helps you migrate existing schemas to use the new universal `key` configuration format introduced in SKC-1 and documents how the normalized `{ hash, range, fields }` payload now flows through the system.
 
 ## Overview
 
-The universal key configuration provides a consistent way to define keys across all schema types (Single, Range, and HashRange), simplifying your codebase and enabling better performance.
+The universal key configuration provides a consistent way to define keys across all schema types (Single, Range, and HashRange), simplifying your codebase and enabling better performance. The same configuration now powers runtime helpers in `MutationService` and `AtomManager`, ensuring every mutation produces a deterministic payload.
+
+## Universal Key Processing Workflow
+
+The diagram below shows how schema metadata and helper utilities collaborate when a client issues a mutation:
+
+```text
+Client mutation
+      │
+      ▼
+MutationService::normalized_field_value_request
+      │  (loads schema → resolves keys → assembles payload)
+      ▼
+FieldValueSetRequest { hash, range, fields }
+      │
+      ▼
+AtomManager::handle_fieldvalueset_request
+      │  (persists atom → stores KeySnapshot → emits FieldValueSet event)
+      ▼
+Downstream consumers (transforms, analytics, message bus)
+```
+
+Key responsibilities:
+
+- **`MutationService`** loads the schema, runs the universal key helpers, and returns both the serialized `FieldValueSetRequest` and a `NormalizedFieldContext` summary for logging or reuse.
+- **`AtomManager`** receives the request, stores a `KeySnapshot` containing the normalized fields map, and publishes `FieldValueSet` events without recomputing keys.
+- **Downstream services** (transform manager, message bus constructors, and analytics workers) rely on the normalized payload to avoid schema-specific conditionals.
+
+See the reference documentation for deeper implementation details:
+
+- [MutationService reference](../../reference/fold_db_core/mutation_service.md)
+- [Field processing reference](../../reference/fold_db_core/field_processing.md)
 
 ## Quick Reference
 
@@ -172,19 +203,40 @@ let range_key = match schema.schema_type {
 let (hash_key, range_key) = extract_unified_keys(&schema);
 ```
 
-### Step 4: Test Your Changes
+### Step 4: Update Mutation Pipelines
 
-1. **Verify Schema Loading**: Ensure schemas load without errors
-2. **Test Key Operations**: Verify key-based queries work correctly
-3. **Check Performance**: Monitor query performance improvements
-4. **Validate Results**: Ensure query results maintain expected format
+Adopt the normalized payload builder in every service that issues `FieldValueSetRequest` messages. Each payload must contain:
 
-### Step 5: Deploy Gradually
+```json
+{
+  "schema_name": "BlogPost",
+  "field_name": "content",
+  "fields": {
+    "content": "..."
+  },
+  "hash": "optional-hash-value",
+  "range": "optional-range-value",
+  "context": {
+    "mutation_hash": "trace id or correlation value"
+  }
+}
+```
 
-1. **Deploy Schema Updates**: Update schemas in non-production first
-2. **Update Application Code**: Deploy code changes that use universal keys
-3. **Monitor Performance**: Watch for improvements in key-based operations
-4. **Complete Migration**: Migrate remaining schemas
+The `fields` object is always present, even when the key fields are populated separately. The helper also normalizes empty strings to `null` so downstream systems never see blank hashes or ranges.
+
+### Step 5: Test Your Changes
+
+1. **Verify Schema Loading**: Ensure schemas load without errors.
+2. **Test Key Operations**: Verify key-based queries work correctly.
+3. **Mutation Regression Tests**: Use the universal key regression suite (`tests/unit/field_processing/*`, `tests/integration/mutation_range_workflow_test.rs`) to confirm normalized payloads are emitted.
+4. **Validate Results**: Ensure query results maintain expected format.
+
+### Step 6: Deploy Gradually
+
+1. **Deploy Schema Updates**: Update schemas in non-production first.
+2. **Update Application Code**: Deploy code changes that use universal keys.
+3. **Monitor Performance**: Watch for improvements in key-based operations.
+4. **Complete Migration**: Migrate remaining schemas.
 
 ## Backward Compatibility
 
@@ -198,6 +250,19 @@ let (hash_key, range_key) = extract_unified_keys(&schema);
 ### Migration Timeline
 
 - **Phase 1**: Universal key support added (current)
+- **Phase 2**: Normalized payload adoption across MutationService and AtomManager (SKC-6).
+- **Phase 3**: Documentation and troubleshooting coverage (this task).
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|------------|
+| `SchemaError::InvalidData("Schema 'X' not found")` surfaced by MutationService | Schema name typo or schema not approved/loaded | Confirm the schema exists and is approved before issuing mutations. |
+| `Missing hash key value for normalized request` log from MutationService | HashRange schema mutation omitted the configured hash key | Include the configured `key.hash_field` in the mutation payload or supply it via the helper parameters. |
+| `Failed to extract keys` error during AtomManager processing | Dotted path key configuration does not match payload structure | Verify dotted path expressions using the examples in [Field processing reference](../../reference/fold_db_core/field_processing.md#dotted-path-resolution). |
+| Downstream consumer receives empty string for `hash`/`range` | Callers manually constructed payloads without helper normalization | Refactor callers to use `MutationService::normalized_field_value_request` or `FieldValueSetRequest::from_normalized_parts`. |
+
+When in doubt, enable debug logging for `MutationService` and `AtomManager` to trace the normalized context summary emitted with every request. The summary mirrors the `{ hash, range, fields }` triplet used by downstream services.
 - **Phase 2**: Legacy formats deprecated (future)
 - **Phase 3**: Legacy formats removed (future)
 
