@@ -8,7 +8,7 @@ This document lists all tasks associated with PBI NTS-1.
 
 | Task ID | Name | Status | Description |
 | :------ | :--------------------------------------- | :------- | :--------------------------------- |
-| NTS-1-1 | [Implement FieldValue and FieldType enums](./NTS-1-1.md) | Proposed | Create core native data types to replace JsonValue |
+| NTS-1-1 | [Implement FieldValue and FieldType enums](./NTS-1-1.md) | In Progress | Create core native data types to replace JsonValue |
 | NTS-1-2 | [Implement FieldDefinition struct with validation](./NTS-1-2.md) | Proposed | Add typed field definitions with validation methods |
 | NTS-1-3 | [Implement TransformSpec with native types](./NTS-1-3.md) | Proposed | Create transform specifications using native types |
 | NTS-1-4 | [Add comprehensive unit tests](./NTS-1-4.md) | Proposed | Test all type operations and edge cases |
