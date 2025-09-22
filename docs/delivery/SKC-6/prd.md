@@ -47,6 +47,9 @@ The current field processing utilities (`src/fold_db_core/managers/atom/field_pr
 - All existing tests pass
 - New tests validate universal key functionality
 - Field processing handles dotted path expressions correctly
+- Documentation links to the [migration workflow](../../universal-key-migration-guide.md#field-processing-and-mutation-workflow)
+  and the reference pages for the [MutationService](../../reference/fold_db_core/mutation_service.md) and
+  [AtomManager field processing](../../reference/fold_db_core/field_processing.md)
 
 ## Dependencies
 

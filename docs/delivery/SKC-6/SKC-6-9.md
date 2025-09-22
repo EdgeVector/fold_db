@@ -7,10 +7,11 @@ Update developer-facing documentation so the universal key field processing flow
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-23 09:45:00 | Created | N/A | Proposed | Documentation task created alongside the SKC-6 task split | ai-agent |
+| 2025-09-24 14:30:00 | Status Update | Proposed | Done | Published normalized workflow docs and cross-links. | ai-agent |
 
 ## Requirements
-- Document the universal key snapshot helper workflow in `docs/guides/operations/universal-key-migration-guide.md`, including how `{hash, range, fields}` travel through AtomManager and MutationService.
-- Update API/reference docs describing `FieldValueSetRequest`, `MutationService`, and field processing so they reference the normalized payload structure and helper utilities.
+- Document the universal key snapshot helper workflow in `docs/universal-key-migration-guide.md`, including how `{hash, range, fields}` travel through AtomManager and MutationService.
+- Update API/reference docs describing `FieldValueSetRequest`, `MutationService`, and field processing so they reference the normalized payload structure and helper utilities in `docs/reference/fold_db_core/`.
 - Add troubleshooting notes for common error scenarios (missing key configuration, dotted-path resolution failures, inconsistent payloads).
 - Ensure documentation cross-links from the SKC-6 PRD and task list to the updated sections for discoverability.
 - Maintain consistency with existing terminology and style guides; remove obsolete references to legacy heuristic helpers.
@@ -33,11 +34,12 @@ Update developer-facing documentation so the universal key field processing flow
 - Links from PRD and task documents resolve to the new sections.
 
 ## Files Modified
-- `docs/guides/operations/universal-key-migration-guide.md`
+- `docs/universal-key-migration-guide.md`
 - `docs/reference/fold_db_core/mutation_service.md`
 - `docs/reference/fold_db_core/field_processing.md`
 - `src/fold_db_core/managers/atom/field_processing.rs`
 - `src/fold_db_core/services/mutation.rs`
 - `docs/delivery/SKC-6/prd.md`
+- `docs/delivery/SKC-6/tasks.md`
 
 [Back to task list](../tasks.md)

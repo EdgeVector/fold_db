@@ -2,7 +2,7 @@
 //!
 //! This module handles ONLY mutation-specific domain logic:
 //! - Field value updates
-//! - Atom modifications  
+//! - Atom modifications
 //! - Collection updates
 //! - Universal key configuration support for HashRange schemas
 //!
@@ -14,6 +14,9 @@
 //! - Dynamic field name extraction from schema key configuration
 //! - Automatic skipping of key fields during mutation processing
 //! - Support for both new universal key format and legacy range_key patterns
+//!
+//! See `docs/reference/fold_db_core/mutation_service.md` for normalized payload
+//! anatomy, error modes, and the message bus workflow shared with AtomManager.
 //!
 //! ## Schema Type Support
 //!

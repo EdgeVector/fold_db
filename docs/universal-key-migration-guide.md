@@ -186,6 +186,55 @@ let (hash_key, range_key) = extract_unified_keys(&schema);
 3. **Monitor Performance**: Watch for improvements in key-based operations
 4. **Complete Migration**: Migrate remaining schemas
 
+## Field Processing and Mutation Workflow
+
+Universal key adoption is only complete when the normalized payload travels cleanly from mutation entrypoints through
+AtomManager. The pipeline now relies on two reusable helpers:
+
+- **MutationService builder** – constructs a `FieldValueSetRequest` whose `value` body always contains `{ hash, range, fields }`
+  populated via schema metadata. See the [MutationService reference](reference/fold_db_core/mutation_service.md).
+- **AtomManager resolver** – ingests the request, resolves universal keys with `resolve_universal_keys`, and publishes a
+  `FieldValueSetResponse` that echoes the normalized snapshot. See the
+  [Field Processing reference](reference/fold_db_core/field_processing.md).
+
+### Sequence Overview
+
+```text
+Mutation caller
+   │
+   │ normalized_field_value_request (hash, range, fields)
+   ▼
+MutationService ── FieldValueSetRequest ──▶ Message Bus ──▶ AtomManager
+                                                        │
+                                                        ├─ resolve_universal_keys → KeySnapshot
+                                                        └─ FieldValueSetResponse (hash, range, fields)
+```
+
+1. `MutationService::normalized_field_value_request` resolves schema keys, sorts payload fields, and attaches a
+   `MutationContext` when incremental metadata is present.
+2. The message bus transports the serialized `FieldValueSetRequest` with a correlation identifier and signer metadata.
+3. `AtomManager::handle_fieldvalueset_request` reuses the normalized snapshot when creating molecules and when emitting the
+   `FieldValueSetResponse` so downstream consumers never see divergent key data.
+
+### Normalized Payload Anatomy
+
+Every `FieldValueSetRequest` now carries the same JSON structure inside `value`:
+
+```json
+{
+  "hash": "technology",
+  "range": "2025-01-15",
+  "fields": {
+    "word": "technology",
+    "publish_date": "2025-01-15",
+    "content": "AI updates"
+  }
+}
+```
+
+The `fields` object mirrors the output of `shape_unified_result`, so dotted-path extractions are already flattened and safe for
+AtomManager, transform pipelines, and analytics subscribers.
+
 ## Backward Compatibility
 
 ### Legacy Support
@@ -485,37 +534,28 @@ Legacy mutations continue to work without changes:
 
 ### Common Issues
 
-**Issue**: Schema validation errors after adding `key`
-```json
-{
-  "error": "Range schema requires range_field in key configuration"
-}
-```
+#### Missing Key Configuration
 
-**Solution**: Ensure Range schemas include `range_field`:
-```json
-{
-  "schema_type": "Range",
-  "key": {
-    "range_field": "timestamp"  // Required for Range schemas
-  }
-}
-```
+- **Symptom**: Errors such as `HashRange schema 'BlogPostWordIndex' requires hash key value` appear when constructing the
+  normalized payload.
+- **Resolution**: Ensure the schema's universal key configuration lists both `hash_field` and `range_field` for HashRange
+  schemas, and that the mutation payload provides the required values. See the
+  [MutationService reference](reference/fold_db_core/mutation_service.md#failure-modes) for validation details.
 
-**Issue**: Legacy `range_key` not working
-```json
-{
-  "error": "Unknown field: range_key"
-}
-```
+#### Dotted-Path Resolution Failures
 
-**Solution**: Legacy `range_key` is still supported. Check schema parsing:
-```json
-{
-  "schema_type": "Range",
-  "range_key": "timestamp"  // Still works
-}
-```
+- **Symptom**: AtomManager logs report `Failed to extract keys for schema 'UserActivity': activities.0.timestamp missing` or
+  similar dotted-path errors.
+- **Resolution**: Verify that the mutation payload includes the nested structure referenced by the dotted path. The
+  [Field Processing reference](reference/fold_db_core/field_processing.md#troubleshooting-signals) explains how
+  `resolve_universal_keys` identifies the failing segment and how to inspect the published request.
+
+#### Inconsistent Payload Snapshots
+
+- **Symptom**: Downstream processors observe mismatched hash/range metadata compared to stored atoms.
+- **Resolution**: Confirm every mutation entry point uses `MutationService::normalized_field_value_request` (or
+  `FieldValueSetRequest::from_normalized_parts`) instead of manual JSON assembly. Cross-check the event body with the
+  [normalized payload anatomy](#normalized-payload-anatomy) section above.
 
 ### Getting Help
 

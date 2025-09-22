@@ -2,7 +2,9 @@
 //!
 //! The module exclusively relies on the schema-driven universal key helper to
 //! derive hash/range metadata and normalized field payloads. All ad-hoc
-//! heuristics have been removed in favor of descriptive error propagation.
+//! heuristics have been removed in favor of descriptive error propagation. See
+//! `docs/reference/fold_db_core/field_processing.md` for a step-by-step
+//! description of how normalized snapshots move through AtomManager.
 
 use super::AtomManager;
 use crate::atom::{Atom, AtomStatus};
