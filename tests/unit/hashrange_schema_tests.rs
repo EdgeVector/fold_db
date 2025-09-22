@@ -423,19 +423,33 @@ fn test_blogpost_word_index_transform_population() {
         "Result should contain tags field"
     );
 
-    // Check that hash_key currently emits placeholder values
+    // Check that hash_key emits the expected word tokens
     let hash_key = result_obj.get("hash_key").expect("hash_key should exist");
     let hash_key_array = hash_key.as_array().expect("hash_key should be an array");
 
     println!("🔍 Hash key words: {:?}", hash_key_array);
 
-    // TODO: split_by_word() does not emit tokens in this unit test context yet.
-    // When BlogPost mutations populate normalized word tokens, update this assertion
-    // to validate the expected set of words instead of allowing an empty array.
     assert!(
-        hash_key_array.is_empty(),
-        "Expected empty hash_key placeholder in unit test"
+        !hash_key_array.is_empty(),
+        "hash_key should contain the split words from blog content"
     );
+
+    let expected_words: Vec<&str> =
+        "This is the first blog post content with some interesting words"
+            .split_whitespace()
+            .collect();
+    let actual_words: Vec<String> = hash_key_array
+        .iter()
+        .filter_map(|value| value.as_str().map(|word| word.to_string()))
+        .collect();
+
+    for word in expected_words {
+        assert!(
+            actual_words.contains(&word.to_string()),
+            "Expected hash_key to contain word '{}'",
+            word
+        );
+    }
 
     // Check that range_key contains the publish dates
     let range_key = result_obj.get("range_key").expect("range_key should exist");

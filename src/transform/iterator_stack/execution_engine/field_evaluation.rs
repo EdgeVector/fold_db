@@ -239,68 +239,33 @@ impl FieldEvaluator for DefaultFieldEvaluator {
             depth, operations
         );
 
-        // The iterator has already applied operations up to the current depth
-        // We need to skip the operations that correspond to the iterator scopes
+        let map_indices: Vec<usize> = operations
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, op)| matches!(op, ChainOperation::Map).then_some(idx))
+            .collect();
 
-        let mut remaining_operations = Vec::new();
-        let mut operation_index = 0;
-
-        // Count how many scopes we have (this corresponds to how many operations the iterator has applied)
-        // For now, we'll use a simple heuristic: each depth level corresponds to one scope
-        // In a more sophisticated implementation, we would track exactly which operations were applied
-
-        if depth == 0 {
-            // At depth 0, the iterator has applied the first FieldAccess and Map operations
-            // Skip the first FieldAccess and Map operations
-            if operations.len() >= 2 {
-                if let (ChainOperation::FieldAccess(_), ChainOperation::Map) =
-                    (&operations[0], &operations[1])
-                {
-                    operation_index = 2; // Skip FieldAccess and Map
-                }
-            }
-        } else if depth == 1 {
-            // At depth 1, the iterator has already applied operations up to the current scope
-            // We need to check what type of operation was applied at depth 1
-
-            if operations.len() >= 4 {
-                // Check if it's a SplitByWord operation pattern
-                if let (
-                    ChainOperation::FieldAccess(_),
-                    ChainOperation::Map,
-                    ChainOperation::FieldAccess(_),
-                    ChainOperation::SplitByWord,
-                ) = (
-                    &operations[0],
-                    &operations[1],
-                    &operations[2],
-                    &operations[3],
-                ) {
-                    operation_index = 4; // Skip FieldAccess, Map, FieldAccess, SplitByWord
-                }
-                // Check if it's a SplitArray operation pattern
-                else if let (
-                    ChainOperation::FieldAccess(_),
-                    ChainOperation::Map,
-                    ChainOperation::FieldAccess(_),
-                    ChainOperation::SplitArray,
-                ) = (
-                    &operations[0],
-                    &operations[1],
-                    &operations[2],
-                    &operations[3],
-                ) {
-                    operation_index = 4; // Skip FieldAccess, Map, FieldAccess, SplitArray
-                }
-            }
+        if map_indices.is_empty() {
+            debug!(
+                "No map operations found for chain at depth {}, returning original operations",
+                depth
+            );
+            return operations.to_vec();
         }
 
-        // Add the remaining operations
-        for operation in operations.iter().skip(operation_index) {
-            remaining_operations.push(operation.clone());
-        }
+        let skip_index = if depth < map_indices.len() {
+            map_indices[depth] + 1
+        } else {
+            operations.len()
+        };
 
-        debug!("Filtered operations: {:?}", remaining_operations);
+        let remaining_operations: Vec<ChainOperation> =
+            operations.iter().skip(skip_index).cloned().collect();
+
+        debug!(
+            "Filtered operations (skip_index={}): {:?}",
+            skip_index, remaining_operations
+        );
         remaining_operations
     }
 

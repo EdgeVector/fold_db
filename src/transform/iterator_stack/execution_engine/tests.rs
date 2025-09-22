@@ -240,6 +240,129 @@ mod tests {
     }
 
     #[test]
+    fn test_word_split_with_fields_wrapper() {
+        let mut engine = ExecutionEngine::new();
+        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
+
+        let chain = parser
+            .parse("BlogPost.map().fields.content.split_by_word().map()")
+            .expect("Failed to parse chain expression");
+
+        let mut field_alignments = HashMap::new();
+        field_alignments.insert(
+            chain.expression.clone(),
+            FieldAlignmentInfo {
+                expression: chain.expression.clone(),
+                depth: chain.depth,
+                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
+                branch: chain.branch.clone(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
+
+        let alignment_result = AlignmentValidationResult {
+            valid: true,
+            max_depth: chain.depth,
+            field_alignments,
+            errors: vec![],
+            warnings: vec![],
+        };
+
+        let input_data = json!({
+            "BlogPost": [
+                {
+                    "fields": {
+                        "content": "Split these words correctly",
+                        "publish_date": "2025-01-01T00:00:00Z"
+                    },
+                    "hash": null,
+                    "range": null
+                }
+            ]
+        });
+
+        let result = engine
+            .execute_fields(&[chain], &alignment_result, input_data)
+            .expect("Execution engine should produce word entries");
+
+        assert_eq!(result.index_entries.len(), 4, "Expected four word entries");
+        let words: Vec<_> = result
+            .index_entries
+            .iter()
+            .map(|entry| entry.hash_value.as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(words, vec!["Split", "these", "words", "correctly"]);
+    }
+
+    #[test]
+    fn test_word_split_with_input_wrapper() {
+        let mut engine = ExecutionEngine::new();
+        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
+
+        let chain = parser
+            .parse("input.BlogPost.map().fields.content.split_by_word().map()")
+            .expect("Failed to parse chain expression with input prefix");
+
+        let mut field_alignments = HashMap::new();
+        field_alignments.insert(
+            chain.expression.clone(),
+            FieldAlignmentInfo {
+                expression: chain.expression.clone(),
+                depth: chain.depth,
+                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
+                branch: chain.branch.clone(),
+                requires_reducer: false,
+                suggested_reducer: None,
+            },
+        );
+
+        let alignment_result = AlignmentValidationResult {
+            valid: true,
+            max_depth: chain.depth,
+            field_alignments,
+            errors: vec![],
+            warnings: vec![],
+        };
+
+        let input_data = json!({
+            "input": {
+                "BlogPost": [
+                    {
+                        "fields": {
+                            "content": "Handle words from nested input",
+                            "publish_date": "2025-01-01T00:00:00Z"
+                        },
+                        "hash": null,
+                        "range": null
+                    }
+                ]
+            }
+        });
+
+        let result = engine
+            .execute_fields(&[chain], &alignment_result, input_data)
+            .expect("Execution engine should produce word entries with input wrapper");
+
+        assert_eq!(result.index_entries.len(), 5, "Expected five word entries");
+        let words: Vec<_> = result
+            .index_entries
+            .iter()
+            .map(|entry| entry.hash_value.as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(
+            words,
+            vec![
+                "Handle".to_string(),
+                "words".to_string(),
+                "from".to_string(),
+                "nested".to_string(),
+                "input".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn test_execution_warnings() {
         let mut engine = ExecutionEngine::new();
 
