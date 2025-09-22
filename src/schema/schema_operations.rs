@@ -5,7 +5,9 @@ use crate::schema::constants::{
     DEFAULT_OUTPUT_FIELD_NAME, DEFAULT_TRANSFORM_ID_SUFFIX, KEY_CONFIG_HASH_FIELD,
     KEY_CONFIG_RANGE_FIELD, KEY_FIELD_NAME,
 };
-use crate::schema::types::{Field, FieldVariant, Schema, SchemaError};
+use crate::schema::types::{
+    json_schema::DeclarativeSchemaDefinition, Field, FieldVariant, Schema, SchemaError,
+};
 use crate::schema::{
     interpret_schema, load_schema_from_file, load_schema_from_json, map_fields, MoleculeVariant,
     SchemaState,
@@ -1203,15 +1205,52 @@ impl SchemaCore {
 /// For Single schemas, both will be None unless key is provided.
 /// For Range schemas, hash_value may be None, range_value will be extracted.
 /// For HashRange schemas, both will be extracted from key configuration.
-pub fn extract_unified_keys(
-    schema: &Schema,
+pub trait SchemaKeyContext {
+    fn schema_name(&self) -> &str;
+    fn schema_type(&self) -> &crate::schema::types::schema::SchemaType;
+    fn key_config(&self) -> Option<&crate::schema::types::json_schema::KeyConfig>;
+}
+
+impl SchemaKeyContext for Schema {
+    fn schema_name(&self) -> &str {
+        &self.name
+    }
+
+    fn schema_type(&self) -> &crate::schema::types::schema::SchemaType {
+        &self.schema_type
+    }
+
+    fn key_config(&self) -> Option<&crate::schema::types::json_schema::KeyConfig> {
+        self.key.as_ref()
+    }
+}
+
+impl SchemaKeyContext for DeclarativeSchemaDefinition {
+    fn schema_name(&self) -> &str {
+        &self.name
+    }
+
+    fn schema_type(&self) -> &crate::schema::types::schema::SchemaType {
+        &self.schema_type
+    }
+
+    fn key_config(&self) -> Option<&crate::schema::types::json_schema::KeyConfig> {
+        self.key.as_ref()
+    }
+}
+
+pub fn extract_unified_keys<S>(
+    schema: &S,
     data: &serde_json::Value,
-) -> Result<(Option<String>, Option<String>), SchemaError> {
-    match &schema.schema_type {
+) -> Result<(Option<String>, Option<String>), SchemaError>
+where
+    S: SchemaKeyContext,
+{
+    match schema.schema_type() {
         crate::schema::types::schema::SchemaType::Single => {
             // For Single schemas, keys are optional and used for indexing hints
             // Check if schema has a key configuration
-            if let Some(key_config) = &schema.key {
+            if let Some(key_config) = schema.key_config() {
                 let hash_value = if !key_config.hash_field.trim().is_empty() {
                     extract_field_value(data, &key_config.hash_field)?
                 } else {
@@ -1232,7 +1271,7 @@ pub fn extract_unified_keys(
         }
         crate::schema::types::schema::SchemaType::Range { range_key } => {
             // For Range schemas, use universal key configuration if available, otherwise fall back to legacy range_key
-            let range_value = if let Some(key_config) = &schema.key {
+            let range_value = if let Some(key_config) = schema.key_config() {
                 // Universal key configuration takes precedence
                 let trimmed_field = key_config.range_field.trim();
                 if trimmed_field.is_empty() {
@@ -1251,7 +1290,7 @@ pub fn extract_unified_keys(
                         } else {
                             return Err(SchemaError::InvalidData(format!(
                                 "Range schema '{}' requires key.range_field '{}' in payload or normalized range value",
-                                schema.name, trimmed_field
+                                schema.schema_name(), trimmed_field
                             )));
                         }
                     }
@@ -1263,7 +1302,7 @@ pub fn extract_unified_keys(
                 if trimmed_range_key.is_empty() {
                     return Err(SchemaError::InvalidData(format!(
                         "Range schema '{}' is missing range_key configuration",
-                        schema.name
+                        schema.schema_name()
                     )));
                 }
 
@@ -1276,12 +1315,12 @@ pub fn extract_unified_keys(
                 } else {
                     return Err(SchemaError::InvalidData(format!(
                         "Range schema '{}' requires range key field '{}' or normalized range value in payload",
-                        schema.name, trimmed_range_key
+                        schema.schema_name(), trimmed_range_key
                     )));
                 }
             };
 
-            let hash_value = if let Some(key_config) = &schema.key {
+            let hash_value = if let Some(key_config) = schema.key_config() {
                 if !key_config.hash_field.trim().is_empty() {
                     extract_field_value(data, &key_config.hash_field)?
                 } else {
@@ -1295,7 +1334,7 @@ pub fn extract_unified_keys(
         }
         crate::schema::types::schema::SchemaType::HashRange => {
             // For HashRange schemas, both hash and range are required
-            let key_config = schema.key.as_ref().ok_or_else(|| {
+            let key_config = schema.key_config().ok_or_else(|| {
                 SchemaError::InvalidData("HashRange schema requires key configuration".to_string())
             })?;
 
@@ -1405,12 +1444,15 @@ fn last_segment(expression: &str) -> &str {
 /// Standardized result shaping helper for all schema types.
 ///
 /// Shapes query/mutation results into a consistent { hash, range, fields } object.
-pub fn shape_unified_result(
-    schema: &Schema,
+pub fn shape_unified_result<S>(
+    schema: &S,
     data: &serde_json::Value,
     hash_value: Option<String>,
     range_value: Option<String>,
-) -> Result<serde_json::Value, SchemaError> {
+) -> Result<serde_json::Value, SchemaError>
+where
+    S: SchemaKeyContext,
+{
     let mut result = serde_json::Map::new();
     result.insert(
         "hash".to_string(),
@@ -1423,9 +1465,9 @@ pub fn shape_unified_result(
 
     // Determine key field names (last segment of expressions)
     let mut key_field_names: Vec<String> = Vec::new();
-    match &schema.schema_type {
+    match schema.schema_type() {
         crate::schema::types::schema::SchemaType::Single => {
-            if let Some(key) = &schema.key {
+            if let Some(key) = schema.key_config() {
                 if !key.hash_field.trim().is_empty() {
                     key_field_names.push(last_segment(&key.hash_field).to_string());
                 }
@@ -1436,7 +1478,7 @@ pub fn shape_unified_result(
         }
         crate::schema::types::schema::SchemaType::Range { range_key } => {
             key_field_names.push(range_key.clone());
-            if let Some(key) = &schema.key {
+            if let Some(key) = schema.key_config() {
                 if !key.hash_field.trim().is_empty() {
                     key_field_names.push(last_segment(&key.hash_field).to_string());
                 }
@@ -1446,7 +1488,7 @@ pub fn shape_unified_result(
             }
         }
         crate::schema::types::schema::SchemaType::HashRange => {
-            if let Some(key) = &schema.key {
+            if let Some(key) = schema.key_config() {
                 if key.hash_field.trim().is_empty() || key.range_field.trim().is_empty() {
                     return Err(SchemaError::InvalidData(
                         "HashRange schema requires key.hash_field and key.range_field".to_string(),
