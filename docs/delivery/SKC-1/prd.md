@@ -55,7 +55,7 @@ Unify the schema-level key configuration by introducing a universal `key` config
 
 ## Documentation
 - **Schema Management Guide**: Updated with universal key configuration examples and migration guidance
-- **Migration Guide**: Comprehensive [Universal Key Migration Guide](../../universal-key-migration-guide.md) with step-by-step instructions
+- **Migration Guide**: Comprehensive [Universal Key Migration Guide](../../guides/operations/universal-key-migration-guide.md) with step-by-step instructions
 - **Migration Examples**: See [Schema Management Documentation](../../schema-management.md#universal-key-configuration) for detailed examples and best practices
 
 ## Related Tasks

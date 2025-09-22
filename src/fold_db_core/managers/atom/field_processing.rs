@@ -3,6 +3,11 @@
 //! The module exclusively relies on the schema-driven universal key helper to
 //! derive hash/range metadata and normalized field payloads. All ad-hoc
 //! heuristics have been removed in favor of descriptive error propagation.
+//!
+//! Reference documentation lives in
+//! `docs/reference/fold_db_core/field_processing.md` and the
+//! universal key workflow guide at
+//! `docs/guides/operations/universal-key-migration-guide.md`.
 
 use super::AtomManager;
 use crate::atom::{Atom, AtomStatus};
@@ -62,7 +67,9 @@ impl ResolvedAtomKeys {
 /// This helper centralizes key extraction logic and provides a normalized
 /// snapshot of hash, range, and fields data for any schema type. Errors are
 /// surfaced directly when schema lookup or key extraction fails, removing the
-/// need for ad-hoc heuristics or silent fallbacks.
+/// need for ad-hoc heuristics or silent fallbacks. See the "Dotted-Path
+/// Resolution" section in `docs/reference/fold_db_core/field_processing.md`
+/// for guidance on dotted key expressions.
 pub fn resolve_universal_keys(
     manager: &AtomManager,
     schema_name: &str,

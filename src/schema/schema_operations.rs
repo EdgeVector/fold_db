@@ -1234,21 +1234,50 @@ pub fn extract_unified_keys(
             // For Range schemas, use universal key configuration if available, otherwise fall back to legacy range_key
             let range_value = if let Some(key_config) = &schema.key {
                 // Universal key configuration takes precedence
-                if !key_config.range_field.trim().is_empty() {
-                    extract_field_value(data, &key_config.range_field)?
-                } else {
+                let trimmed_field = key_config.range_field.trim();
+                if trimmed_field.is_empty() {
                     return Err(SchemaError::InvalidData(
                         "Range schema with key configuration must have range_field".to_string(),
                     ));
                 }
+
+                match extract_field_value(data, trimmed_field)? {
+                    Some(value) => Some(value),
+                    None => {
+                        if let Some(value) = extract_field_value(data, "range_key")? {
+                            Some(value)
+                        } else if let Some(value) = extract_field_value(data, "range")? {
+                            Some(value)
+                        } else {
+                            return Err(SchemaError::InvalidData(format!(
+                                "Range schema '{}' requires key.range_field '{}' in payload or normalized range value",
+                                schema.name, trimmed_field
+                            )));
+                        }
+                    }
+                }
             } else {
                 // Legacy range_key support - this maintains backward compatibility
                 // First try to extract using the schema's range_key field name
-                if let Some(value) = extract_field_value(data, range_key)? {
+                let trimmed_range_key = range_key.trim();
+                if trimmed_range_key.is_empty() {
+                    return Err(SchemaError::InvalidData(format!(
+                        "Range schema '{}' is missing range_key configuration",
+                        schema.name
+                    )));
+                }
+
+                if let Some(value) = extract_field_value(data, trimmed_range_key)? {
+                    Some(value)
+                } else if let Some(value) = extract_field_value(data, "range_key")? {
+                    Some(value)
+                } else if let Some(value) = extract_field_value(data, "range")? {
                     Some(value)
                 } else {
-                    // If that fails, try the legacy "range_key" field name
-                    extract_field_value(data, "range_key")?
+                    return Err(SchemaError::InvalidData(format!(
+                        "Range schema '{}' requires range key field '{}' or normalized range value in payload",
+                        schema.name, trimmed_range_key
+                    )));
                 }
             };
 

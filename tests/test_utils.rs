@@ -12,13 +12,19 @@
 use datafold::datafold_node::config::NodeConfig;
 use datafold::datafold_node::DataFoldNode;
 use datafold::db_operations::DbOperations;
+use datafold::fees::types::config::FieldPaymentConfig;
+use datafold::fees::SchemaPaymentConfig;
 use datafold::fold_db_core::infrastructure::message_bus::{
     request_events::FieldValueSetRequest, MessageBus, NormalizedRequestParts,
 };
 use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::fold_db_core::transform_manager::TransformManager;
-use datafold::schema::types::{SchemaError, Transform, TransformRegistration};
+use datafold::permissions::types::policy::PermissionsPolicy;
+use datafold::schema::types::field::{FieldVariant, RangeField, SingleField};
+use datafold::schema::types::json_schema::KeyConfig;
+use datafold::schema::types::{Schema, SchemaError, SchemaType, Transform, TransformRegistration};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -90,6 +96,81 @@ pub fn normalized_field_value_request_with_keys(
         source_pub_key,
         mutation_hash: None,
     })
+}
+
+/// Build a Single schema with optional universal key configuration for tests.
+#[allow(dead_code)]
+pub fn single_schema_with_key(
+    name: &str,
+    field_name: &str,
+    hash_field: Option<&str>,
+    range_field: Option<&str>,
+) -> Schema {
+    let mut fields = HashMap::new();
+    fields.insert(
+        field_name.to_string(),
+        FieldVariant::Single(SingleField::new(
+            PermissionsPolicy::default(),
+            FieldPaymentConfig::default(),
+            HashMap::new(),
+        )),
+    );
+
+    let key = match (hash_field, range_field) {
+        (None, None) => None,
+        _ => Some(KeyConfig {
+            hash_field: hash_field.unwrap_or("").to_string(),
+            range_field: range_field.unwrap_or("").to_string(),
+        }),
+    };
+
+    Schema {
+        name: name.to_string(),
+        schema_type: SchemaType::Single,
+        key,
+        fields,
+        payment_config: SchemaPaymentConfig::default(),
+        hash: None,
+    }
+}
+
+/// Build a Range schema configured for either legacy or universal key scenarios.
+#[allow(dead_code)]
+pub fn range_schema_with_key(
+    name: &str,
+    field_name: &str,
+    legacy_range_key: &str,
+    hash_field: Option<&str>,
+    range_field: Option<&str>,
+) -> Schema {
+    let mut fields = HashMap::new();
+    fields.insert(
+        field_name.to_string(),
+        FieldVariant::Range(RangeField::new(
+            PermissionsPolicy::default(),
+            FieldPaymentConfig::default(),
+            HashMap::new(),
+        )),
+    );
+
+    let key = match (hash_field, range_field) {
+        (None, None) => None,
+        _ => Some(KeyConfig {
+            hash_field: hash_field.unwrap_or("").to_string(),
+            range_field: range_field.unwrap_or(legacy_range_key).to_string(),
+        }),
+    };
+
+    Schema {
+        name: name.to_string(),
+        schema_type: SchemaType::Range {
+            range_key: legacy_range_key.to_string(),
+        },
+        key,
+        fields,
+        payment_config: SchemaPaymentConfig::default(),
+        hash: None,
+    }
 }
 
 /// Single unified test fixture eliminating all duplication

@@ -14,11 +14,12 @@
 //! static schema references, causing "Atom not found" errors. This test ensures
 //! the fix is working correctly.
 
-use crate::test_utils::TEST_WAIT_MS;
+use crate::test_utils::{normalized_fields, range_schema_with_key, TestFixture, TEST_WAIT_MS};
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fold_db_core::infrastructure::message_bus::request_events::{
     FieldValueSetRequest, FieldValueSetResponse,
 };
+use datafold::fold_db_core::services::mutation::MutationService;
 use datafold::fold_db_core::transform_manager::utils::TransformUtils;
 use datafold::permissions::types::policy::PermissionsPolicy;
 use datafold::schema::types::field::{Field, SingleField};
@@ -28,8 +29,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-
-use crate::test_utils::TestFixture;
 
 /// Create a realistic test schema based on TransformBase
 fn create_transform_base_schema() -> Schema {
@@ -700,4 +699,95 @@ fn test_complete_mutation_query_integration_workflow() {
     println!("   📊 Final state:");
     println!("     value1: {}", final_value1);
     println!("     value2: {}", final_value2);
+}
+
+#[test]
+#[serial_test::serial]
+fn test_mutation_service_normalized_request_emits_key_snapshot() {
+    println!("🧪 TEST: MutationService normalized payload emits key snapshot metadata");
+
+    let fixture = TestFixture::new().expect("Failed to create test fixture");
+
+    let schema = range_schema_with_key(
+        "SessionState",
+        "status",
+        "legacy_range",
+        None,
+        Some("session_id"),
+    );
+    fixture
+        .db_ops
+        .store_schema(&schema.name, &schema)
+        .expect("Failed to store schema");
+
+    let mutation_service = MutationService::new(Arc::clone(&fixture.message_bus));
+    let expected_value = json!({ "state": "warm" });
+    let range_value = json!("session-123");
+    let mutation_hash = "normalized-range-mutation";
+
+    let normalized = mutation_service
+        .normalized_field_value_request(
+            &schema,
+            "status",
+            &expected_value,
+            None,
+            Some(&range_value),
+            Some(mutation_hash),
+        )
+        .expect("Builder should produce normalized request");
+
+    assert_eq!(normalized.context.range.as_deref(), Some("session-123"));
+    assert_eq!(normalized.context.hash, None);
+    assert_eq!(
+        normalized.context.fields.get("status"),
+        Some(&expected_value)
+    );
+
+    let mut response_consumer = fixture.message_bus.subscribe::<FieldValueSetResponse>();
+
+    let request_to_publish = normalized.request.clone();
+    let request_context = request_to_publish
+        .mutation_context
+        .as_ref()
+        .expect("Normalized request should include mutation context");
+    assert_eq!(request_context.range_key.as_deref(), Some("session-123"));
+    assert_eq!(request_context.hash_key, None);
+    assert_eq!(
+        request_context.mutation_hash.as_deref(),
+        Some(mutation_hash)
+    );
+    assert!(request_context.incremental);
+
+    fixture
+        .message_bus
+        .publish(request_to_publish)
+        .expect("Publish should succeed");
+
+    let response = response_consumer
+        .recv_timeout(Duration::from_millis(1000))
+        .expect("AtomManager should emit a response");
+    assert!(response.success);
+    let snapshot = response
+        .key_snapshot
+        .as_ref()
+        .expect("Responses should include key snapshot metadata");
+    assert_eq!(snapshot.hash, None);
+    assert_eq!(
+        snapshot.range.as_deref(),
+        Some("session-123"),
+        "Normalized snapshot should retain range metadata for downstream consumers"
+    );
+    assert_eq!(snapshot.fields.get("range"), Some(&json!("session-123")));
+
+    let snapshot_fields = normalized_fields(&snapshot.fields);
+    assert_eq!(snapshot_fields.get("range_key"), Some(&json!("session-123")));
+    assert_eq!(snapshot_fields.get("status"), Some(&expected_value));
+    let range_key_str = snapshot_fields
+        .get("range_key")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    println!(
+        "✅ MutationService normalized payload emitted key snapshot for range {}",
+        range_key_str
+    );
 }
