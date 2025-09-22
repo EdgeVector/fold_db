@@ -98,23 +98,28 @@ fn test_hashrange_compound_key_structure() {
             // Verify the result is an object (not an array)
             let result_obj = json_result.as_object().expect("Result should be an object");
 
+            let fields = result_obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("Result should contain fields map");
+
             // Verify that hash_key and range_key fields are present
             assert!(
-                result_obj.contains_key("hash_key"),
+                fields.contains_key("hash_key"),
                 "Result should contain hash_key field"
             );
             assert!(
-                result_obj.contains_key("range_key"),
+                fields.contains_key("range_key"),
                 "Result should contain range_key field"
             );
 
             // Verify that regular fields are present
             assert!(
-                result_obj.contains_key("title"),
+                fields.contains_key("title"),
                 "Result should contain title field"
             );
             assert!(
-                result_obj.contains_key("content"),
+                fields.contains_key("content"),
                 "Result should contain content field"
             );
 
@@ -129,10 +134,10 @@ fn test_hashrange_compound_key_structure() {
             );
 
             // Verify the values are correct (should be from the first item due to fan-out)
-            let hash_key = result_obj.get("hash_key").expect("hash_key should exist");
-            let range_key = result_obj.get("range_key").expect("range_key should exist");
-            let title = result_obj.get("title").expect("title should exist");
-            let content = result_obj.get("content").expect("content should exist");
+            let hash_key = fields.get("hash_key").expect("hash_key should exist");
+            let range_key = fields.get("range_key").expect("range_key should exist");
+            let title = fields.get("title").expect("title should exist");
+            let content = fields.get("content").expect("content should exist");
 
             // The values should be arrays since the ExecutionEngine produces multiple entries
             // We expect the first value from each array
@@ -320,32 +325,40 @@ fn test_hashrange_vs_regular_schema_distinction() {
         (Ok(hashrange_json), Ok(regular_json)) => {
             let hashrange_obj = hashrange_json.as_object().unwrap();
             let regular_obj = regular_json.as_object().unwrap();
+            let hashrange_fields = hashrange_obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("HashRange result should have fields map");
+            let regular_fields = regular_obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("Regular result should have fields map");
 
             // HashRange schema should have compound key structure
             assert!(
-                hashrange_obj.contains_key("hash_key"),
+                hashrange_fields.contains_key("hash_key"),
                 "HashRange should have hash_key"
             );
             assert!(
-                hashrange_obj.contains_key("range_key"),
+                hashrange_fields.contains_key("range_key"),
                 "HashRange should have range_key"
             );
             assert!(
-                hashrange_obj.contains_key("content"),
+                hashrange_fields.contains_key("content"),
                 "HashRange should have content"
             );
 
             // Regular schema should have individual fields
             assert!(
-                regular_obj.contains_key("content"),
+                regular_fields.contains_key("content"),
                 "Regular should have content"
             );
             assert!(
-                regular_obj.contains_key("hash_key"),
+                regular_fields.contains_key("hash_key"),
                 "Regular should have hash_key"
             );
             assert!(
-                regular_obj.contains_key("range_key"),
+                regular_fields.contains_key("range_key"),
                 "Regular should have range_key"
             );
 

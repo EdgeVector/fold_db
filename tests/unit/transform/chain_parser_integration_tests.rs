@@ -157,19 +157,23 @@ fn test_complex_chain_expression() {
     match result {
         Ok(json_result) => {
             let obj = json_result.as_object().unwrap();
+            let fields = obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("HashRange result should contain fields map");
 
             // HashRange results should have hash_key and range_key arrays
             assert!(
-                obj.contains_key("hash_key"),
+                fields.contains_key("hash_key"),
                 "HashRange result should contain hash_key array"
             );
             assert!(
-                obj.contains_key("range_key"),
+                fields.contains_key("range_key"),
                 "HashRange result should contain range_key array"
             );
 
             // The word_content should be in the hash_key array
-            let hash_key = obj.get("hash_key").unwrap();
+            let hash_key = fields.get("hash_key").unwrap();
             assert!(hash_key.is_array(), "hash_key should be an array");
 
             let word_array = hash_key.as_array().unwrap();
@@ -515,19 +519,23 @@ fn test_multiple_chain_expressions_in_single_schema() {
 
     let json_result = result.unwrap();
     let obj = json_result.as_object().unwrap();
+    let fields = obj
+        .get("fields")
+        .and_then(|value| value.as_object())
+        .expect("HashRange result should contain fields map");
 
     // HashRange results should have hash_key and range_key arrays
     assert!(
-        obj.contains_key("hash_key"),
+        fields.contains_key("hash_key"),
         "HashRange result should contain hash_key array"
     );
     assert!(
-        obj.contains_key("range_key"),
+        fields.contains_key("range_key"),
         "HashRange result should contain range_key array"
     );
 
     // The tag_field should be in the hash_key array
-    let hash_key = obj.get("hash_key").unwrap();
+    let hash_key = fields.get("hash_key").unwrap();
     assert!(hash_key.is_array(), "hash_key should be an array");
 
     let tags = hash_key.as_array().unwrap();

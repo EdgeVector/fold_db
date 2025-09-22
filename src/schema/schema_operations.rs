@@ -1379,17 +1379,17 @@ fn last_segment(expression: &str) -> &str {
 pub fn shape_unified_result(
     schema: &Schema,
     data: &serde_json::Value,
-    hash_value: Option<String>,
-    range_value: Option<String>,
+    hash_value: Option<serde_json::Value>,
+    range_value: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, SchemaError> {
     let mut result = serde_json::Map::new();
     result.insert(
         "hash".to_string(),
-        serde_json::Value::String(hash_value.unwrap_or_default()),
+        hash_value.unwrap_or_else(|| serde_json::Value::String(String::new())),
     );
     result.insert(
         "range".to_string(),
-        serde_json::Value::String(range_value.unwrap_or_default()),
+        range_value.unwrap_or_else(|| serde_json::Value::String(String::new())),
     );
 
     // Determine key field names (last segment of expressions)

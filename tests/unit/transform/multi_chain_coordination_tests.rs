@@ -79,14 +79,18 @@ fn test_basic_hashrange_schema_execution() {
 
     let json_result = result.unwrap();
     let obj = json_result.as_object().unwrap();
+    let fields = obj
+        .get("fields")
+        .and_then(|value| value.as_object())
+        .expect("Result should contain fields map");
 
     // Should contain the regular fields (not key fields)
     assert!(
-        obj.contains_key("title"),
+        fields.contains_key("title"),
         "Result should contain title field"
     );
     assert!(
-        obj.contains_key("content"),
+        fields.contains_key("content"),
         "Result should contain content field"
     );
 

@@ -269,8 +269,8 @@ impl MutationService {
         let shaped_value = shape_unified_result(
             schema,
             &payload_value,
-            normalized_hash.clone(),
-            normalized_range.clone(),
+            normalized_hash.clone().map(Value::String),
+            normalized_range.clone().map(Value::String),
         )?;
 
         let shaped_object = shaped_value.as_object().ok_or_else(|| {

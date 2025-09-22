@@ -76,22 +76,25 @@ fn test_basic_range_schema_execution() {
     match result {
         Ok(json_result) => {
             let obj = json_result.as_object().unwrap();
+            let fields = obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("Range result should contain fields map");
 
             // Should contain the regular fields (not the internal _range_key)
             assert!(
-                obj.contains_key("title"),
+                fields.contains_key("title"),
                 "Result should contain title field"
             );
             assert!(
-                obj.contains_key("content"),
+                fields.contains_key("content"),
                 "Result should contain content field"
             );
 
             // Range key should be included since it's a regular field, not internal
-            // Note: May be present or fallback to simple resolution
-            if obj.contains_key("timestamp") {
+            if fields.contains_key("timestamp") {
                 assert!(
-                    obj.contains_key("timestamp"),
+                    fields.contains_key("timestamp"),
                     "Result should contain timestamp field"
                 );
             }
@@ -184,21 +187,25 @@ fn test_range_schema_with_universal_key_configuration() {
     match result {
         Ok(json_result) => {
             let obj = json_result.as_object().unwrap();
+            let fields = obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("Range result should contain fields map");
 
             // Should contain the regular fields
             assert!(
-                obj.contains_key("title"),
+                fields.contains_key("title"),
                 "Result should contain title field"
             );
             assert!(
-                obj.contains_key("content"),
+                fields.contains_key("content"),
                 "Result should contain content field"
             );
 
             // Range key should be included since it's a regular field
-            if obj.contains_key("timestamp") {
+            if fields.contains_key("timestamp") {
                 assert!(
-                    obj.contains_key("timestamp"),
+                    fields.contains_key("timestamp"),
                     "Result should contain timestamp field"
                 );
             }
@@ -767,12 +774,20 @@ fn test_range_vs_hashrange_distinction() {
         (Ok(range_json), Ok(hashrange_json)) => {
             let range_obj = range_json.as_object().unwrap();
             let hashrange_obj = hashrange_json.as_object().unwrap();
+            let range_fields = range_obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("Range result should contain fields map");
+            let hashrange_fields = hashrange_obj
+                .get("fields")
+                .and_then(|value| value.as_object())
+                .expect("HashRange result should contain fields map");
 
             // Range schema should include the range_key field in output
-            assert!(range_obj.contains_key("created_at"));
+            assert!(range_fields.contains_key("created_at"));
 
             // HashRange schema should include regular fields but not key fields
-            assert!(hashrange_obj.contains_key("content"));
+            assert!(hashrange_fields.contains_key("content"));
             assert!(!hashrange_obj.contains_key("_hash_field"));
             assert!(!hashrange_obj.contains_key("_range_field"));
         }

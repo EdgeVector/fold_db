@@ -8,9 +8,7 @@
 use crate::schema::types::{
     json_schema::DeclarativeSchemaDefinition, schema::SchemaType, SchemaError, Transform,
 };
-use crate::transform::aggregation::{
-    aggregate_results_unified, SchemaType as AggregationSchemaType,
-};
+use crate::transform::aggregation::aggregate_results_unified;
 use crate::transform::coordination::execute_multi_chain_coordination_with_monitoring;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
@@ -138,21 +136,33 @@ impl TransformExecutor {
                 );
 
                 // Collect all expressions for execution using unified function
-                let all_expressions = collect_expressions_from_schema(schema);
+                let base_expressions = collect_expressions_from_schema(schema);
+                let mut combined_expressions = Vec::new();
+                if let Some(key_config) = &schema.key {
+                    if !key_config.hash_field.trim().is_empty() {
+                        combined_expressions
+                            .push(("_hash_field".to_string(), key_config.hash_field.clone()));
+                    }
+                    if !key_config.range_field.trim().is_empty() {
+                        combined_expressions
+                            .push(("_range_field".to_string(), key_config.range_field.clone()));
+                    }
+                }
+                combined_expressions.extend(base_expressions);
 
-                if all_expressions.is_empty() {
+                if combined_expressions.is_empty() {
                     info!("⚠️ No expressions found for Single schema execution");
                     return Ok(JsonValue::Object(serde_json::Map::new()));
                 }
 
                 info!(
                     "📊 Executing {} expressions for Single schema",
-                    all_expressions.len()
+                    combined_expressions.len()
                 );
 
                 // Modify expressions to add "input." prefix if needed using unified function
                 let modified_expressions =
-                    modify_expressions_with_input_prefix(&all_expressions, true);
+                    modify_expressions_with_input_prefix(&combined_expressions, true);
 
                 // Parse all modified expressions using unified batch parsing
                 let modified_chains = parse_expressions_batch(&modified_expressions)?;
@@ -184,11 +194,11 @@ impl TransformExecutor {
 
                 // Aggregate results into final output format using unified aggregation
                 aggregate_results_unified(
+                    schema,
                     &modified_chains,
                     &execution_result,
                     input_values,
                     &modified_expressions,
-                    AggregationSchemaType::Single,
                 )
             },
         )
@@ -281,6 +291,7 @@ impl TransformExecutor {
 
                 // Execute using the same multi-chain engine as HashRange
                 Self::execute_multi_chain_with_engine(
+                    schema,
                     &parsed_chains,
                     input_values,
                     &alignment_result,
@@ -392,6 +403,7 @@ impl TransformExecutor {
 
     /// Executes multi-chain coordination with ExecutionEngine for Range schemas.
     fn execute_multi_chain_with_engine(
+        schema: &DeclarativeSchemaDefinition,
         parsed_chains: &[(String, ParsedChain)],
         input_values: &HashMap<String, JsonValue>,
         alignment_result: &AlignmentValidationResult,
@@ -410,11 +422,11 @@ impl TransformExecutor {
             .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
             .collect();
         aggregate_results_unified(
+            schema,
             parsed_chains,
             &execution_result,
             input_values,
             &all_expressions,
-            AggregationSchemaType::Range,
         )
     }
 
@@ -533,7 +545,14 @@ mod tests {
                 // For Single schemas, the result should be an object with the field
                 assert!(json_result.is_object());
                 let obj = json_result.as_object().unwrap();
-                assert_eq!(obj.get("title").unwrap(), "Hello World");
+                assert_eq!(obj.get("hash").unwrap(), "");
+                assert_eq!(obj.get("range").unwrap(), "");
+
+                let fields = obj
+                    .get("fields")
+                    .and_then(|value| value.as_object())
+                    .expect("fields map to exist");
+                assert_eq!(fields.get("title").unwrap(), "Hello World");
             }
             Err(err) => {
                 panic!("Declarative transform execution failed: {}", err);

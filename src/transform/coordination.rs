@@ -3,8 +3,8 @@
 //! This module handles the complex coordination logic for executing multiple
 //! transform chains together, particularly for HashRange and Range schemas.
 
-use crate::schema::types::SchemaError;
-use crate::transform::aggregation::{aggregate_results_unified, SchemaType};
+use crate::schema::types::{json_schema::DeclarativeSchemaDefinition, SchemaError};
+use crate::transform::aggregation::aggregate_results_unified;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
 use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
@@ -30,7 +30,7 @@ use std::time::Instant;
 ///
 /// The result of the multi-chain execution with enhanced monitoring
 pub fn execute_multi_chain_coordination_with_monitoring(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
     input_values: &HashMap<String, JsonValue>,
     key_config: &crate::schema::types::json_schema::KeyConfig,
 ) -> Result<JsonValue, SchemaError> {
@@ -48,7 +48,8 @@ pub fn execute_multi_chain_coordination_with_monitoring(
         .map(|(_, chain)| chain.clone())
         .collect();
     let alignment_result = validate_field_alignment_unified(None, Some(&chains_only))?;
-    let result = execute_coordination_with_engine(&parsed_chains, input_values, &alignment_result)?;
+    let result =
+        execute_coordination_with_engine(schema, &parsed_chains, input_values, &alignment_result)?;
 
     let total_duration = start_time.elapsed();
     info!(
@@ -108,13 +109,18 @@ fn parse_expressions_with_monitoring(
 ///
 /// Execution result
 fn execute_coordination_with_engine(
+    schema: &DeclarativeSchemaDefinition,
     parsed_chains: &[(String, ParsedChain)],
     input_values: &HashMap<String, JsonValue>,
     alignment_result: &AlignmentValidationResult,
 ) -> Result<JsonValue, SchemaError> {
     let execution_start = Instant::now();
-    let result =
-        execute_multi_chain_with_engine_enhanced(parsed_chains, input_values, alignment_result)?;
+    let result = execute_multi_chain_with_engine_enhanced(
+        schema,
+        parsed_chains,
+        input_values,
+        alignment_result,
+    )?;
     let execution_duration = execution_start.elapsed();
     info!("⏱️ Enhanced execution took: {:?}", execution_duration);
     Ok(result)
@@ -132,6 +138,7 @@ fn execute_coordination_with_engine(
 ///
 /// The enhanced execution result
 fn execute_multi_chain_with_engine_enhanced(
+    schema: &DeclarativeSchemaDefinition,
     parsed_chains: &[(String, ParsedChain)],
     input_values: &HashMap<String, JsonValue>,
     alignment_result: &AlignmentValidationResult,
@@ -148,11 +155,11 @@ fn execute_multi_chain_with_engine_enhanced(
         .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
         .collect();
     let result = aggregate_results_unified(
+        schema,
         parsed_chains,
         &execution_result,
         input_values,
         &all_expressions,
-        SchemaType::HashRange,
     )?;
 
     let total_duration = start_time.elapsed();

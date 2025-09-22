@@ -396,35 +396,39 @@ fn test_blogpost_word_index_transform_population() {
 
     // Parse the result
     let result_obj = result.as_object().expect("Result should be an object");
+    let fields = result_obj
+        .get("fields")
+        .and_then(|value| value.as_object())
+        .expect("Result should contain fields map");
 
     // Verify that the result contains the expected fields
     assert!(
-        result_obj.contains_key("hash_key"),
+        fields.contains_key("hash_key"),
         "Result should contain hash_key"
     );
     assert!(
-        result_obj.contains_key("range_key"),
+        fields.contains_key("range_key"),
         "Result should contain range_key"
     );
     assert!(
-        result_obj.contains_key("content"),
+        fields.contains_key("content"),
         "Result should contain content field"
     );
     assert!(
-        result_obj.contains_key("author"),
+        fields.contains_key("author"),
         "Result should contain author field"
     );
     assert!(
-        result_obj.contains_key("title"),
+        fields.contains_key("title"),
         "Result should contain title field"
     );
     assert!(
-        result_obj.contains_key("tags"),
+        fields.contains_key("tags"),
         "Result should contain tags field"
     );
 
     // Check that hash_key currently emits placeholder values
-    let hash_key = result_obj.get("hash_key").expect("hash_key should exist");
+    let hash_key = fields.get("hash_key").expect("hash_key should exist");
     let hash_key_array = hash_key.as_array().expect("hash_key should be an array");
 
     println!("🔍 Hash key words: {:?}", hash_key_array);

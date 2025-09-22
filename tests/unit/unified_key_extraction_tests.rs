@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use datafold::schema::schema_operations::{extract_unified_keys, shape_unified_result};
 use datafold::schema::types::json_schema::KeyConfig;
 use datafold::schema::types::schema::{Schema, SchemaType};
+use serde_json::json;
 
 fn create_single_schema_with_key() -> Schema {
     Schema {
@@ -226,13 +227,8 @@ fn test_shape_unified_result_range() {
         "content": "test content"
     });
 
-    let result = shape_unified_result(
-        &schema,
-        &data,
-        None,
-        Some("2023-01-01T00:00:00Z".to_string()),
-    )
-    .unwrap();
+    let result =
+        shape_unified_result(&schema, &data, None, Some(json!("2023-01-01T00:00:00Z"))).unwrap();
 
     let expected = serde_json::json!({
         "hash": "",
@@ -257,8 +253,8 @@ fn test_shape_unified_result_hashrange() {
     let result = shape_unified_result(
         &schema,
         &data,
-        Some("tech".to_string()),
-        Some("2023-01-01T00:00:00Z".to_string()),
+        Some(json!("tech")),
+        Some(json!("2023-01-01T00:00:00Z")),
     )
     .unwrap();
 
@@ -286,8 +282,8 @@ fn test_shape_unified_result_excludes_key_fields() {
     let result = shape_unified_result(
         &schema,
         &data,
-        Some("user123".to_string()),
-        Some("2023-01-01T00:00:00Z".to_string()),
+        Some(json!("user123")),
+        Some(json!("2023-01-01T00:00:00Z")),
     )
     .unwrap();
 

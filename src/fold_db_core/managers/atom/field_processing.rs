@@ -107,8 +107,8 @@ pub fn resolve_universal_keys(
     let shaped_result = shape_unified_result(
         &schema,
         request_payload,
-        hash_value.clone(),
-        range_value.clone(),
+        hash_value.clone().map(serde_json::Value::String),
+        range_value.clone().map(serde_json::Value::String),
     )
     .map_err(|e| {
         let error_msg = format!("Failed to shape result for schema '{}': {}", schema_name, e);

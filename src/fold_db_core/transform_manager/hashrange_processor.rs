@@ -99,24 +99,39 @@ impl HashRangeProcessor {
             result_obj.len()
         );
 
-        // Extract hash_key and range_key arrays
-        let hash_keys = result_obj
-            .get("hash_key")
-            .and_then(|h| h.as_array())
+        let fields_section = result_obj.get("fields").and_then(|value| value.as_object());
+
+        let hash_key_value = fields_section
+            .and_then(|fields| fields.get("hash_key"))
+            .or_else(|| result_obj.get("hash_key"));
+
+        let hash_keys = hash_key_value
+            .map(|value| {
+                value
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_else(|| vec![value.clone()])
+            })
             .ok_or_else(|| {
                 SchemaError::InvalidData("HashRange result must contain hash_key array".to_string())
-            })?
-            .clone();
+            })?;
 
-        let range_keys = result_obj
-            .get("range_key")
-            .and_then(|r| r.as_array())
+        let range_key_value = fields_section
+            .and_then(|fields| fields.get("range_key"))
+            .or_else(|| result_obj.get("range_key"));
+
+        let range_keys = range_key_value
+            .map(|value| {
+                value
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_else(|| vec![value.clone()])
+            })
             .ok_or_else(|| {
                 SchemaError::InvalidData(
                     "HashRange result must contain range_key array".to_string(),
                 )
-            })?
-            .clone();
+            })?;
 
         // Note: Array lengths may not match in flattened structures
         // This will be handled in process_hashrange_data
@@ -130,8 +145,11 @@ impl HashRangeProcessor {
         let mut field_arrays: HashMap<String, Vec<JsonValue>> = HashMap::new();
 
         for field_name in field_names {
-            let field_values = result_obj
-                .get(field_name)
+            let field_source = fields_section
+                .and_then(|fields| fields.get(field_name))
+                .or_else(|| result_obj.get(field_name));
+
+            let field_values = field_source
                 .map(|f| {
                     if f.is_array() {
                         f.clone()
