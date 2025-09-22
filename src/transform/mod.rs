@@ -73,7 +73,8 @@ pub use mutation_examples::{
 };
 pub use native::{
     FieldDefinition as NativeFieldDefinition, FieldDefinitionError as NativeFieldDefinitionError,
-    FieldType as NativeFieldType, FieldValue,
+    FieldType as NativeFieldType, FieldValue, NativeDataPipeline, NativeTransformExecutor,
+    PipelineError, ProcessingContext,
 };
 pub use parser::TransformParser;
 pub use restricted_access::{
