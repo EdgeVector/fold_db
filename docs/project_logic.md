@@ -20,6 +20,7 @@ This document contains the most up-to-date and condensed information about the p
 | TRANSFORM-003 | DeclarativeSchemaDefinition requires KeyConfig with hash_field and range_field for HashRange schemas and FieldDefinition metadata for optional atom_uuid and field_type. | schema/types/json_schema.rs | 2025-08-26 19:00:00 | None |
 | TRANSFORM-004 | Native transform data flow must use FieldValue/FieldType enums internally with JSON conversion limited to boundary layers. | transform/native, transform/mod.rs | 2025-09-22 19:14:37 | None |
 | TRANSFORM-005 | Native FieldDefinition must validate names, default types, and generate typed defaults for optional fields. | transform/native | 2025-09-22 19:16:45 | None |
+| TRANSFORM-006 | Native TransformSpec definitions must validate structure, references, and constants using native types. | transform/native/transform_spec.rs, transform/mod.rs | 2025-09-22 19:19:30 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management
@@ -285,3 +286,17 @@ This document contains the most up-to-date and condensed information about the p
 - **Implementation Notes**:
   - Validation surfaces `FieldDefinitionError` variants for name issues or default mismatches.
   - `FieldType::default_value()` produces recursive defaults for nested object schemas used by optional fields.
+
+### TRANSFORM-006: Native TransformSpec Validation Rules
+- **Description**: Guarantees that native transform specifications are structurally valid and reference only declared inputs/outputs.
+- **Rationale**: Prevents invalid transform wiring from reaching the execution layer and delivers precise validation errors during authoring.
+- **Validation Rules**:
+  - Transform names reuse the shared identifier validation exposed by `FieldDefinition`.
+  - Map transforms require object-typed outputs and mappings must target declared fields while referencing known inputs or compatible constants/functions.
+  - Filter condition fields must exist on the declared inputs and grouped conditions (`and`/`or`) cannot be empty.
+  - Reduce transforms validate reducer field references, ensure group-by fields are declared, and reject duplicates.
+  - Chain transforms must contain at least one nested spec and bubble nested validation failures with context.
+- **Implementation Notes**:
+  - Implemented in `transform/native/transform_spec.rs` via `TransformSpec::validate` and the `TransformSpecError` enum.
+  - Types are re-exported through `transform::native` and `transform::` for downstream modules and future execution work.
+  - Unit coverage lives in `tests/unit/native_transform_spec_tests.rs`, exercising both success and failure scenarios.

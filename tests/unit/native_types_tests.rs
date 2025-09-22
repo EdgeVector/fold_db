@@ -12,10 +12,7 @@ fn field_type_infers_scalar_and_collection_variants() {
         FieldValue::Integer(42).field_type(),
         NativeFieldType::Integer
     );
-    assert_eq!(
-        FieldValue::Number(PI).field_type(),
-        NativeFieldType::Number
-    );
+    assert_eq!(FieldValue::Number(PI).field_type(), NativeFieldType::Number);
     assert_eq!(
         FieldValue::Boolean(true).field_type(),
         NativeFieldType::Boolean

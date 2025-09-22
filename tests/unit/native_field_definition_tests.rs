@@ -3,6 +3,13 @@ use datafold::transform::{
 };
 use std::collections::HashMap;
 
+const MAX_IDENTIFIER_LENGTH: usize = 64;
+const OVERLONG_IDENTIFIER_LENGTH: usize = MAX_IDENTIFIER_LENGTH + 1;
+
+fn overlong_identifier() -> String {
+    "a".repeat(OVERLONG_IDENTIFIER_LENGTH)
+}
+
 #[test]
 fn validate_rejects_empty_field_name() {
     let definition = NativeFieldDefinition::new("", NativeFieldType::String);
@@ -24,6 +31,53 @@ fn validate_rejects_invalid_field_name_characters() {
         error,
         NativeFieldDefinitionError::InvalidNameCharacters {
             name: "bad-name".to_string(),
+        },
+    );
+}
+
+#[test]
+fn validate_rejects_field_name_starting_with_digit() {
+    let definition = NativeFieldDefinition::new("1field", NativeFieldType::String);
+
+    let error = definition
+        .validate()
+        .expect_err("names starting with digits should be rejected");
+    assert_eq!(
+        error,
+        NativeFieldDefinitionError::InvalidNameStart {
+            name: "1field".to_string(),
+        },
+    );
+}
+
+#[test]
+fn validate_rejects_field_name_with_whitespace() {
+    let definition = NativeFieldDefinition::new(" bad", NativeFieldType::String);
+
+    let error = definition
+        .validate()
+        .expect_err("names containing surrounding whitespace should be rejected");
+    assert_eq!(
+        error,
+        NativeFieldDefinitionError::InvalidNameCharacters {
+            name: " bad".to_string(),
+        },
+    );
+}
+
+#[test]
+fn validate_rejects_field_name_exceeding_length_limit() {
+    let long_name = overlong_identifier();
+    let definition = NativeFieldDefinition::new(long_name.clone(), NativeFieldType::String);
+
+    let error = definition
+        .validate()
+        .expect_err("field names beyond the maximum length should be rejected");
+    assert_eq!(
+        error,
+        NativeFieldDefinitionError::NameTooLong {
+            name: long_name,
+            max: MAX_IDENTIFIER_LENGTH,
         },
     );
 }
@@ -67,6 +121,13 @@ fn effective_default_prefers_explicit_defaults() {
         definition.effective_default(),
         Some(FieldValue::Boolean(true))
     );
+}
+
+#[test]
+fn effective_default_returns_none_for_required_field_without_default() {
+    let definition = NativeFieldDefinition::new("count", NativeFieldType::Integer);
+
+    assert_eq!(definition.effective_default(), None);
 }
 
 #[test]

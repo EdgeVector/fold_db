@@ -73,7 +73,11 @@ pub use mutation_examples::{
 };
 pub use native::{
     FieldDefinition as NativeFieldDefinition, FieldDefinitionError as NativeFieldDefinitionError,
-    FieldType as NativeFieldType, FieldValue,
+    FieldMapping as NativeFieldMapping, FieldType as NativeFieldType, FieldValue,
+    FilterCondition as NativeFilterCondition, FilterTransform as NativeFilterTransform,
+    MapTransform as NativeMapTransform, ReduceTransform as NativeReduceTransform,
+    Reducer as NativeReducer, TransformSpec as NativeTransformSpec,
+    TransformSpecError as NativeTransformSpecError, TransformType as NativeTransformType,
 };
 pub use parser::TransformParser;
 pub use restricted_access::{
