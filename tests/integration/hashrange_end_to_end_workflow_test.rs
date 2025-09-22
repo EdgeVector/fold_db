@@ -161,13 +161,11 @@ impl HashRangeEndToEndTestFixture {
             );
             uuid.clone()
         } else {
-            return Err(
-                format!(
-                    "Range entry '{}' missing atom reference in molecule {}",
-                    range_value, storage_key
-                )
-                .into(),
-            );
+            return Err(format!(
+                "Range entry '{}' missing atom reference in molecule {}",
+                range_value, storage_key
+            )
+            .into());
         };
 
         let atom_key = format!("atom:{}", atom_uuid);

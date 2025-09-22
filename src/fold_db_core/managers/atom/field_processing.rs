@@ -13,6 +13,7 @@ use crate::fold_db_core::infrastructure::message_bus::{
 use crate::schema::schema_operations::{extract_unified_keys, shape_unified_result};
 use crate::schema::SchemaError;
 use log::{debug, error, info, warn};
+use serde_json::Value;
 use std::time::Instant;
 
 /// Resolved key data structure produced by `resolve_universal_keys`.
@@ -49,9 +50,25 @@ impl ResolvedAtomKeys {
 
     /// Convert the resolved keys into a reusable snapshot structure
     pub fn to_snapshot(&self) -> KeySnapshot {
+        let has_nested_fields = matches!(self.fields.get("fields"), Some(Value::Object(_)));
+        let duplicate_range = if has_nested_fields {
+            match (self.range.as_ref(), self.fields.get("range")) {
+                (Some(resolved_range), Some(Value::String(inline_range))) => {
+                    inline_range == resolved_range && self.hash.is_none()
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
+
         KeySnapshot {
             hash: self.hash.clone(),
-            range: self.range.clone(),
+            range: if duplicate_range {
+                None
+            } else {
+                self.range.clone()
+            },
             fields: self.fields.clone(),
         }
     }
