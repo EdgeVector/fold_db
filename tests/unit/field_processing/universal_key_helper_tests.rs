@@ -236,6 +236,100 @@ fn test_resolve_universal_keys_range_universal() {
     assert_eq!(normalized.get("content"), Some(&json!("test content")));
 }
 
+/// Test resolve_universal_keys errors when Range schema payload is missing configured range field
+#[test]
+fn test_resolve_universal_keys_range_missing_configured_field() {
+    let fixture = TestFixture::new().unwrap();
+
+    let schema = Schema {
+        name: "TestRangeMissingConfigured".to_string(),
+        schema_type: SchemaType::Range {
+            range_key: "created_at".to_string(),
+        },
+        key: Some(KeyConfig {
+            hash_field: String::new(),
+            range_field: "created_at".to_string(),
+        }),
+        fields: {
+            let mut fields = HashMap::new();
+            fields.insert(
+                "content".to_string(),
+                FieldVariant::Range(RangeField::new(
+                    PermissionsPolicy::default(),
+                    FieldPaymentConfig::default(),
+                    HashMap::new(),
+                )),
+            );
+            fields
+        },
+        payment_config: SchemaPaymentConfig::default(),
+        hash: None,
+    };
+
+    fixture.db_ops.store_schema(&schema.name, &schema).unwrap();
+
+    let request_payload = json!({
+        "content": "test content"
+    });
+
+    let result = resolve_universal_keys(
+        &fixture.atom_manager,
+        "TestRangeMissingConfigured",
+        &request_payload,
+    );
+
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    assert!(error_msg.contains("Failed to extract keys"));
+    assert!(error_msg.contains("requires key.range_field 'created_at'"));
+}
+
+/// Test resolve_universal_keys errors when Range schema payload is missing legacy range field
+#[test]
+fn test_resolve_universal_keys_range_missing_legacy_field() {
+    let fixture = TestFixture::new().unwrap();
+
+    let schema = Schema {
+        name: "TestRangeMissingLegacy".to_string(),
+        schema_type: SchemaType::Range {
+            range_key: "legacy_created_at".to_string(),
+        },
+        key: None,
+        fields: {
+            let mut fields = HashMap::new();
+            fields.insert(
+                "content".to_string(),
+                FieldVariant::Range(RangeField::new(
+                    PermissionsPolicy::default(),
+                    FieldPaymentConfig::default(),
+                    HashMap::new(),
+                )),
+            );
+            fields
+        },
+        payment_config: SchemaPaymentConfig::default(),
+        hash: None,
+    };
+
+    fixture.db_ops.store_schema(&schema.name, &schema).unwrap();
+
+    let request_payload = json!({
+        "content": "test content"
+    });
+
+    let result = resolve_universal_keys(
+        &fixture.atom_manager,
+        "TestRangeMissingLegacy",
+        &request_payload,
+    );
+
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    assert!(error_msg.contains("Failed to extract keys"));
+    assert!(error_msg.contains("requires range key field 'legacy_created_at'"));
+    assert!(error_msg.contains("normalized range value"));
+}
+
 /// Test resolve_universal_keys with HashRange schema
 #[test]
 fn test_resolve_universal_keys_hashrange() {

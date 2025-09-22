@@ -229,6 +229,76 @@ fn test_error_when_schema_not_found() {
     assert!(error_msg.contains("Schema 'NonExistentSchema' not found"));
 }
 
+/// Test Range molecule creation fails when required range field is missing
+#[test]
+fn test_range_molecule_creation_missing_range_field() {
+    let fixture = TestFixture::new().unwrap();
+
+    let schema = Schema {
+        name: "TestRangeMissingField".to_string(),
+        schema_type: SchemaType::Range {
+            range_key: "created_at".to_string(),
+        },
+        key: Some(KeyConfig {
+            hash_field: String::new(),
+            range_field: "created_at".to_string(),
+        }),
+        fields: {
+            let mut fields = HashMap::new();
+            fields.insert(
+                "score".to_string(),
+                FieldVariant::Range(RangeField::new(
+                    PermissionsPolicy::default(),
+                    FieldPaymentConfig::default(),
+                    HashMap::new(),
+                )),
+            );
+            fields
+        },
+        payment_config: SchemaPaymentConfig::default(),
+        hash: None,
+    };
+
+    fixture.db_ops.store_schema(&schema.name, &schema).unwrap();
+
+    let request = FieldValueSetRequest::new(
+        "test_range_missing_field".to_string(),
+        "TestRangeMissingField".to_string(),
+        "score".to_string(),
+        json!({
+            "score": 42
+        }),
+        "test_pubkey".to_string(),
+    );
+
+    let result = resolve_universal_keys(
+        &fixture.atom_manager,
+        "TestRangeMissingField",
+        &request.value,
+    );
+    assert!(result.is_err());
+
+    let message_bus = Arc::new(MessageBus::new());
+    let atom_manager = AtomManager::new((*fixture.db_ops).clone(), Arc::clone(&message_bus));
+
+    let mut response_consumer = message_bus.subscribe::<FieldValueSetResponse>();
+
+    message_bus.publish(request).unwrap();
+    thread::sleep(Duration::from_millis(100));
+
+    let response = response_consumer
+        .recv_timeout(Duration::from_millis(500))
+        .unwrap();
+
+    assert!(!response.success);
+    assert!(response.molecule_uuid.is_none());
+    assert!(response.key_snapshot.is_none());
+
+    let error_msg = response.error.unwrap_or_default();
+    assert!(error_msg.contains("Failed to resolve keys for TestRangeMissingField.score"));
+    assert!(error_msg.contains("requires key.range_field 'created_at'"));
+}
+
 /// Test Single molecule creation without key configuration
 #[test]
 fn test_single_molecule_creation_without_keys() {
