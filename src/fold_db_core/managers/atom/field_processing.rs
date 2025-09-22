@@ -52,7 +52,9 @@ impl ResolvedAtomKeys {
     pub fn to_snapshot(&self) -> KeySnapshot {
         // Check if the normalized field map already contains the range key
         // This avoids redundant range metadata when the range is already represented in the fields
-        let duplicate_range = if let Some(Value::Object(normalized_fields)) = self.fields.get("fields") {
+        let duplicate_range = if let Some(Value::Object(normalized_fields)) =
+            self.fields.get("fields")
+        {
             // If both conditions are met, we have redundant range metadata:
             // 1. The normalized fields contain a range_key
             // 2. We have a range value at the top level
@@ -603,25 +605,7 @@ fn publish_field_value_set_event(
 ) {
     let field_key = format!("{}.{}", request.schema_name, request.field_name);
     let snapshot = resolved_keys.to_snapshot();
-    let normalized_context = match request.mutation_context.clone() {
-        Some(mut context) => {
-            context.hash_key = snapshot.hash.clone();
-            context.range_key = snapshot.range.clone();
-            Some(context)
-        }
-        None => {
-            if snapshot.hash.is_some() || snapshot.range.is_some() {
-                Some(MutationContext {
-                    range_key: snapshot.range.clone(),
-                    hash_key: snapshot.hash.clone(),
-                    mutation_hash: None,
-                    incremental: false,
-                })
-            } else {
-                None
-            }
-        }
-    };
+    let normalized_context = merge_mutation_context(request.mutation_context.clone(), &snapshot);
 
     let field_value_event = if let Some(ref context) = normalized_context {
         FieldValueSet::with_context_and_keys(
@@ -666,6 +650,37 @@ fn publish_field_value_set_event(
                 field_key, e
             );
             // Continue processing even if event publication fails
+        }
+    }
+}
+
+fn merge_mutation_context(
+    existing: Option<MutationContext>,
+    snapshot: &KeySnapshot,
+) -> Option<MutationContext> {
+    match existing {
+        Some(mut context) => {
+            if let Some(hash) = snapshot.hash.clone() {
+                context.hash_key = Some(hash);
+            }
+
+            if let Some(range) = snapshot.range.clone() {
+                context.range_key = Some(range);
+            }
+
+            Some(context)
+        }
+        None => {
+            if snapshot.hash.is_some() || snapshot.range.is_some() {
+                Some(MutationContext {
+                    range_key: snapshot.range.clone(),
+                    hash_key: snapshot.hash.clone(),
+                    mutation_hash: None,
+                    incremental: false,
+                })
+            } else {
+                None
+            }
         }
     }
 }
@@ -772,5 +787,78 @@ fn determine_field_type(manager: &AtomManager, schema_name: &str, field_name: &s
             );
             "Single".to_string()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Map;
+
+    fn build_snapshot(hash: Option<&str>, range: Option<&str>) -> KeySnapshot {
+        KeySnapshot {
+            hash: hash.map(|value| value.to_string()),
+            range: range.map(|value| value.to_string()),
+            fields: Map::new(),
+        }
+    }
+
+    #[test]
+    fn merge_context_preserves_existing_range_when_snapshot_omits_range() {
+        let existing = MutationContext {
+            range_key: Some("existing-range".to_string()),
+            hash_key: Some("existing-hash".to_string()),
+            mutation_hash: Some("mutation-123".to_string()),
+            incremental: true,
+        };
+
+        let snapshot = build_snapshot(Some("snapshot-hash"), None);
+
+        let merged =
+            merge_mutation_context(Some(existing.clone()), &snapshot).expect("context expected");
+
+        assert_eq!(merged.range_key, existing.range_key);
+        assert_eq!(merged.hash_key, Some("snapshot-hash".to_string()));
+        assert_eq!(merged.mutation_hash, existing.mutation_hash);
+        assert_eq!(merged.incremental, existing.incremental);
+    }
+
+    #[test]
+    fn merge_context_overwrites_when_snapshot_provides_values() {
+        let existing = MutationContext {
+            range_key: Some("original-range".to_string()),
+            hash_key: Some("original-hash".to_string()),
+            mutation_hash: Some("mutation-456".to_string()),
+            incremental: false,
+        };
+
+        let snapshot = build_snapshot(Some("new-hash"), Some("new-range"));
+
+        let merged =
+            merge_mutation_context(Some(existing), &snapshot).expect("context should exist");
+
+        assert_eq!(merged.range_key, Some("new-range".to_string()));
+        assert_eq!(merged.hash_key, Some("new-hash".to_string()));
+        assert_eq!(merged.mutation_hash, Some("mutation-456".to_string()));
+        assert!(!merged.incremental);
+    }
+
+    #[test]
+    fn merge_context_creates_context_from_snapshot_when_missing() {
+        let snapshot = build_snapshot(Some("hash-only"), None);
+
+        let merged = merge_mutation_context(None, &snapshot).expect("context should be built");
+
+        assert_eq!(merged.hash_key, Some("hash-only".to_string()));
+        assert_eq!(merged.range_key, None);
+        assert!(merged.mutation_hash.is_none());
+        assert!(!merged.incremental);
+    }
+
+    #[test]
+    fn merge_context_returns_none_when_snapshot_lacks_keys() {
+        let snapshot = build_snapshot(None, None);
+
+        assert!(merge_mutation_context(None, &snapshot).is_none());
     }
 }
