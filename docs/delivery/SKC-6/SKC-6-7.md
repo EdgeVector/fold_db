@@ -8,6 +8,7 @@ Update downstream components that fabricate `FieldValueSetRequest` messages—su
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-23 09:35:00 | Created | N/A | Proposed | Task created for downstream alignment | ai-agent |
 | 2025-09-23 18:30:00 | Status Update | Proposed | In Review | Transform manager processors and constructors emit normalized requests via shared helpers. | ai-agent |
+| 2025-01-27 15:45:00 | Status Update | In Review | Done | Task completed successfully. All downstream producers now use normalized payloads via MutationService. All tests pass. | ai-agent |
 
 ## Requirements
 - Identify all non-MutationService producers of `FieldValueSetRequest`, including `transform_manager::hashrange_processor`, `transform_manager::result_storage`, and message bus constructors.
