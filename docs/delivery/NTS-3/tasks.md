@@ -8,7 +8,7 @@ This document lists all tasks associated with PBI NTS-3.
 
 | Task ID | Name | Status | Description |
 | :------ | :--------------------------------------- | :------- | :--------------------------------- |
-| NTS-3-1 | [Implement NativeTransformExecutor](./NTS-3-1.md) | Proposed | Create core execution engine with native types |
+| NTS-3-1 | [Implement NativeTransformExecutor](./NTS-3-1.md) | Review | Create core execution engine with native types |
 | NTS-3-2 | [Implement Function Registry](./NTS-3-2.md) | Proposed | Add extensible function system with built-in functions |
 | NTS-3-3 | [Add map/filter/reduce transform support](./NTS-3-3.md) | Proposed | Implement all transform types with native operations |
 | NTS-3-4 | [Implement expression evaluation](./NTS-3-4.md) | Proposed | Add native type expression parsing and evaluation |

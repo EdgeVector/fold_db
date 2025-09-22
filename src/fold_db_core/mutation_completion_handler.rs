@@ -56,18 +56,18 @@
 //!
 //! ```rust
 //! use datafold::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
-//! 
+//!
 //! # async fn event_example() {
 //! // The handler can listen for MutationExecuted events
 //! // and automatically signal completion for tracked mutations
 //! # }
 //! ```
 
+use log::{debug, error, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::{timeout, Duration};
-use log::{debug, warn, error};
 
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 
@@ -83,15 +83,15 @@ pub enum MutationCompletionError {
     /// The mutation ID was not found in the tracking system
     #[error("Mutation ID '{0}' not found in tracking system")]
     MutationNotFound(String),
-    
+
     /// Failed to send completion signal
     #[error("Failed to send completion signal for mutation '{0}': {1}")]
     SignalFailed(String, String),
-    
+
     /// Timeout waiting for mutation completion
     #[error("Timeout waiting for completion of mutation '{0}' after {1:?}")]
     Timeout(String, Duration),
-    
+
     /// Lock acquisition failed
     #[error("Failed to acquire lock for mutation tracking: {0}")]
     LockFailed(String),
@@ -121,7 +121,7 @@ pub struct MutationCompletionHandler {
     /// Each mutation ID can have multiple receivers waiting for completion
     /// The bool indicates whether the mutation has completed
     pending_mutations: Arc<RwLock<HashMap<String, PendingMutationData>>>,
-    
+
     /// Reference to the message bus for event handling integration
     message_bus: Arc<MessageBus>,
 }
@@ -145,7 +145,7 @@ impl MutationCompletionHandler {
     /// ```
     pub fn new(message_bus: Arc<MessageBus>) -> Self {
         debug!("Creating new MutationCompletionHandler");
-        
+
         Self {
             pending_mutations: Arc::new(RwLock::new(HashMap::new())),
             message_bus,
@@ -184,34 +184,51 @@ impl MutationCompletionHandler {
     /// # }
     /// ```
     pub async fn register_mutation(&self, mutation_id: String) -> oneshot::Receiver<()> {
-        debug!("Registering mutation for completion tracking: {}", mutation_id);
-        
+        debug!(
+            "Registering mutation for completion tracking: {}",
+            mutation_id
+        );
+
         let (sender, receiver) = oneshot::channel();
-        
+
         // Acquire write lock and add the sender to the list
         let mut pending = self.pending_mutations.write().await;
-        
+
         // Add the sender to the existing list or create a new list
-        let entry = pending.entry(mutation_id.clone()).or_insert_with(|| (Vec::new(), false));
+        let entry = pending
+            .entry(mutation_id.clone())
+            .or_insert_with(|| (Vec::new(), false));
         entry.0.push(sender);
-        
+
         let count = entry.0.len();
         let is_completed = entry.1;
-        debug!("Mutation '{}' registered. Total receivers: {}, Completed: {}", mutation_id, count, is_completed);
-        
+        debug!(
+            "Mutation '{}' registered. Total receivers: {}, Completed: {}",
+            mutation_id, count, is_completed
+        );
+
         // If the mutation has already completed, send the signal immediately
         if is_completed {
-            debug!("Mutation '{}' already completed, sending immediate signal", mutation_id);
+            debug!(
+                "Mutation '{}' already completed, sending immediate signal",
+                mutation_id
+            );
             // Send signal immediately to the new receiver
             if let Some(sender) = entry.0.pop() {
                 if sender.send(()).is_err() {
-                    debug!("Failed to send immediate signal for completed mutation {}", mutation_id);
+                    debug!(
+                        "Failed to send immediate signal for completed mutation {}",
+                        mutation_id
+                    );
                 } else {
-                    debug!("Successfully sent immediate signal for completed mutation {}", mutation_id);
+                    debug!(
+                        "Successfully sent immediate signal for completed mutation {}",
+                        mutation_id
+                    );
                 }
             }
         }
-        
+
         receiver
     }
 
@@ -234,35 +251,46 @@ impl MutationCompletionHandler {
     /// This method should only be used when an async context is not available.
     /// Prefer the async version when possible.
     pub fn register_mutation_sync(&self, mutation_id: String) -> oneshot::Receiver<()> {
-        debug!("Registering mutation for completion tracking (sync): {}", mutation_id);
-        
+        debug!(
+            "Registering mutation for completion tracking (sync): {}",
+            mutation_id
+        );
+
         let (sender, receiver) = oneshot::channel();
-        
+
         // Use try_write to avoid blocking indefinitely
         let pending_mutations = Arc::clone(&self.pending_mutations);
         let mutation_id_clone = mutation_id.clone();
-        
+
         // Spawn a task to handle the registration
         tokio::spawn(async move {
             let mut pending = pending_mutations.write().await;
-            
+
             // Add the sender to the existing list or create a new list
-            let entry = pending.entry(mutation_id_clone.clone()).or_insert_with(|| (Vec::new(), false));
+            let entry = pending
+                .entry(mutation_id_clone.clone())
+                .or_insert_with(|| (Vec::new(), false));
             entry.0.push(sender);
-            
+
             let count = entry.0.len();
             let is_completed = entry.1;
-            debug!("Mutation '{}' registered (sync). Total receivers: {}, Completed: {}", mutation_id_clone, count, is_completed);
-            
+            debug!(
+                "Mutation '{}' registered (sync). Total receivers: {}, Completed: {}",
+                mutation_id_clone, count, is_completed
+            );
+
             // If the mutation has already completed, send the signal immediately
             if is_completed {
-                debug!("Mutation '{}' already completed, sending immediate signal (sync)", mutation_id_clone);
+                debug!(
+                    "Mutation '{}' already completed, sending immediate signal (sync)",
+                    mutation_id_clone
+                );
                 if let Some(sender) = entry.0.pop() {
                     let _ = sender.send(());
                 }
             }
         });
-        
+
         receiver
     }
 
@@ -292,17 +320,20 @@ impl MutationCompletionHandler {
     /// ```
     pub async fn signal_completion(&self, mutation_id: &str) {
         debug!("Signaling completion for mutation: {}", mutation_id);
-        
+
         // Acquire write lock and get all senders for this mutation
         let mut pending = self.pending_mutations.write().await;
-        
+
         if let Some((senders, completed)) = pending.get_mut(mutation_id) {
             let sender_count = senders.len();
-            debug!("Signaling completion to {} receivers for mutation '{}'", sender_count, mutation_id);
-            
+            debug!(
+                "Signaling completion to {} receivers for mutation '{}'",
+                sender_count, mutation_id
+            );
+
             // Mark as completed
             *completed = true;
-            
+
             // Send completion signal to all registered receivers
             let mut success_count = 0;
             while let Some(sender) = senders.pop() {
@@ -312,14 +343,17 @@ impl MutationCompletionHandler {
                     success_count += 1;
                 }
             }
-            
+
             // Don't remove the entry - keep it marked as completed for future wait_for_mutation calls
             // The entry will be cleaned up later by cleanup_mutation
-            
-            debug!("Successfully signaled completion to {}/{} receivers for mutation '{}'. Remaining pending: {}", 
+
+            debug!("Successfully signaled completion to {}/{} receivers for mutation '{}'. Remaining pending: {}",
                    success_count, sender_count, mutation_id, pending.len());
         } else {
-            warn!("Attempted to signal completion for untracked mutation: {}", mutation_id);
+            warn!(
+                "Attempted to signal completion for untracked mutation: {}",
+                mutation_id
+            );
         }
     }
 
@@ -344,23 +378,23 @@ impl MutationCompletionHandler {
     /// Prefer the async version when possible.
     pub fn signal_completion_sync(&self, mutation_id: &str) -> MutationCompletionResult<()> {
         debug!("Signaling completion for mutation (sync): {}", mutation_id);
-        
+
         // Clone the mutation_id for the async block
         let mutation_id_owned = mutation_id.to_string();
         let pending_mutations = Arc::clone(&self.pending_mutations);
-        
+
         // Use tokio's blocking mechanism to handle the async operation
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             let mut pending = pending_mutations.write().await;
-            
+
             if let Some((senders, completed)) = pending.get_mut(&mutation_id_owned) {
                 let sender_count = senders.len();
                 debug!("Signaling completion to {} receivers for mutation '{}' (sync)", sender_count, mutation_id_owned);
-                
+
                 // Mark as completed
                 *completed = true;
-                
+
                 // Send completion signal to all registered receivers
                 let mut success_count = 0;
                 while let Some(sender) = senders.pop() {
@@ -370,9 +404,14 @@ impl MutationCompletionHandler {
                         success_count += 1;
                     }
                 }
-                
-                debug!("Successfully signaled completion to {}/{} receivers for mutation '{}'. Remaining pending: {}", 
-                       success_count, sender_count, mutation_id_owned, pending.len());
+
+                debug!(
+                    "Successfully signaled completion to {}/{} receivers for mutation '{}'. Remaining pending: {}",
+                    success_count,
+                    sender_count,
+                    mutation_id_owned,
+                    pending.len()
+                );
                 Ok(())
             } else {
                 warn!("Attempted to signal completion for untracked mutation: {}", mutation_id_owned);
@@ -407,13 +446,20 @@ impl MutationCompletionHandler {
     /// ```
     pub async fn cleanup_mutation(&self, mutation_id: &str) {
         debug!("Cleaning up mutation tracking: {}", mutation_id);
-        
+
         let mut pending = self.pending_mutations.write().await;
-        
+
         if pending.remove(mutation_id).is_some() {
-            debug!("Cleaned up mutation '{}'. Remaining pending: {}", mutation_id, pending.len());
+            debug!(
+                "Cleaned up mutation '{}'. Remaining pending: {}",
+                mutation_id,
+                pending.len()
+            );
         } else {
-            debug!("Mutation '{}' was not in tracking system (may have already been cleaned up)", mutation_id);
+            debug!(
+                "Mutation '{}' was not in tracking system (may have already been cleaned up)",
+                mutation_id
+            );
         }
     }
 
@@ -442,7 +488,10 @@ impl MutationCompletionHandler {
     /// ```
     pub async fn pending_count(&self) -> usize {
         let pending = self.pending_mutations.read().await;
-        pending.values().filter(|(_, is_completed)| !*is_completed).count()
+        pending
+            .values()
+            .filter(|(_, is_completed)| !*is_completed)
+            .count()
     }
 
     /// Waits for a mutation to complete with the default timeout.
@@ -476,7 +525,8 @@ impl MutationCompletionHandler {
     /// # }
     /// ```
     pub async fn wait_for_completion(&self, mutation_id: &str) -> MutationCompletionResult<()> {
-        self.wait_for_completion_with_timeout(mutation_id, DEFAULT_COMPLETION_TIMEOUT).await
+        self.wait_for_completion_with_timeout(mutation_id, DEFAULT_COMPLETION_TIMEOUT)
+            .await
     }
 
     /// Waits for a mutation to complete with a custom timeout.
@@ -515,23 +565,32 @@ impl MutationCompletionHandler {
         mutation_id: &str,
         timeout_duration: Duration,
     ) -> MutationCompletionResult<()> {
-        debug!("Waiting for completion of mutation '{}' with timeout {:?}", mutation_id, timeout_duration);
-        
+        debug!(
+            "Waiting for completion of mutation '{}' with timeout {:?}",
+            mutation_id, timeout_duration
+        );
+
         // Check if mutation is already being tracked
         let receiver = {
             let pending = self.pending_mutations.read().await;
             if pending.contains_key(mutation_id) {
-                debug!("Mutation '{}' is already being tracked, creating new receiver for wait", mutation_id);
+                debug!(
+                    "Mutation '{}' is already being tracked, creating new receiver for wait",
+                    mutation_id
+                );
                 drop(pending);
                 // Create a new receiver for this specific wait operation
                 self.register_mutation(mutation_id.to_string()).await
             } else {
-                debug!("Mutation '{}' not found in tracking, creating new registration", mutation_id);
+                debug!(
+                    "Mutation '{}' not found in tracking, creating new registration",
+                    mutation_id
+                );
                 drop(pending);
                 self.register_mutation(mutation_id.to_string()).await
             }
         };
-        
+
         // Wait for completion with timeout
         let result = match timeout(timeout_duration, receiver).await {
             Ok(Ok(())) => {
@@ -539,31 +598,46 @@ impl MutationCompletionHandler {
                 Ok(())
             }
             Ok(Err(_)) => {
-                error!("Completion channel closed unexpectedly for mutation '{}'", mutation_id);
+                error!(
+                    "Completion channel closed unexpectedly for mutation '{}'",
+                    mutation_id
+                );
                 Err(MutationCompletionError::SignalFailed(
                     mutation_id.to_string(),
                     "Completion channel closed".to_string(),
                 ))
             }
             Err(_) => {
-                warn!("Timeout waiting for completion of mutation '{}' after {:?}", mutation_id, timeout_duration);
-                Err(MutationCompletionError::Timeout(mutation_id.to_string(), timeout_duration))
+                warn!(
+                    "Timeout waiting for completion of mutation '{}' after {:?}",
+                    mutation_id, timeout_duration
+                );
+                Err(MutationCompletionError::Timeout(
+                    mutation_id.to_string(),
+                    timeout_duration,
+                ))
             }
         };
-        
+
         // Only clean up if the mutation was not completed successfully
         // Completed mutations should be kept around for future wait_for_mutation calls
         match &result {
             Ok(()) => {
-                debug!("Mutation '{}' completed successfully, keeping entry for future wait calls", mutation_id);
+                debug!(
+                    "Mutation '{}' completed successfully, keeping entry for future wait calls",
+                    mutation_id
+                );
                 // Don't clean up - keep the completed mutation for future wait calls
             }
             Err(_) => {
-                debug!("Mutation '{}' failed or timed out, cleaning up entry", mutation_id);
+                debug!(
+                    "Mutation '{}' failed or timed out, cleaning up entry",
+                    mutation_id
+                );
                 self.cleanup_mutation(mutation_id).await;
             }
         }
-        
+
         result
     }
 
@@ -605,7 +679,7 @@ impl MutationCompletionHandler {
     /// ```
     pub async fn get_diagnostics(&self) -> MutationCompletionDiagnostics {
         let pending_count = self.pending_count().await;
-        
+
         MutationCompletionDiagnostics {
             pending_mutations_count: pending_count,
             // Additional diagnostic fields can be added here as needed
@@ -622,7 +696,11 @@ pub struct MutationCompletionDiagnostics {
 
 impl std::fmt::Display for MutationCompletionDiagnostics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MutationCompletionHandler(pending: {})", self.pending_mutations_count)
+        write!(
+            f,
+            "MutationCompletionHandler(pending: {})",
+            self.pending_mutations_count
+        )
     }
 }
 
@@ -647,7 +725,7 @@ mod tests {
     async fn test_register_mutation() {
         let handler = create_test_handler().await;
         let mutation_id = "test-mutation-1".to_string();
-        
+
         let _receiver = handler.register_mutation(mutation_id).await;
         assert_eq!(handler.pending_count().await, 1);
     }
@@ -656,13 +734,13 @@ mod tests {
     async fn test_signal_completion() {
         let handler = create_test_handler().await;
         let mutation_id = "test-mutation-2".to_string();
-        
+
         let receiver = handler.register_mutation(mutation_id.clone()).await;
         assert_eq!(handler.pending_count().await, 1);
-        
+
         // Signal completion
         handler.signal_completion(&mutation_id).await;
-        
+
         // Receiver should get the signal
         assert!(receiver.await.is_ok());
         assert_eq!(handler.pending_count().await, 0);
@@ -672,10 +750,10 @@ mod tests {
     async fn test_cleanup_mutation() {
         let handler = create_test_handler().await;
         let mutation_id = "test-mutation-3".to_string();
-        
+
         let _receiver = handler.register_mutation(mutation_id.clone()).await;
         assert_eq!(handler.pending_count().await, 1);
-        
+
         handler.cleanup_mutation(&mutation_id).await;
         assert_eq!(handler.pending_count().await, 0);
     }
@@ -683,7 +761,7 @@ mod tests {
     #[tokio::test]
     async fn test_signal_completion_for_untracked_mutation() {
         let handler = create_test_handler().await;
-        
+
         // This should not panic or fail
         handler.signal_completion("nonexistent-mutation").await;
         assert_eq!(handler.pending_count().await, 0);
@@ -692,7 +770,7 @@ mod tests {
     #[tokio::test]
     async fn test_cleanup_untracked_mutation() {
         let handler = create_test_handler().await;
-        
+
         // This should not panic or fail
         handler.cleanup_mutation("nonexistent-mutation").await;
         assert_eq!(handler.pending_count().await, 0);
@@ -702,7 +780,7 @@ mod tests {
     async fn test_concurrent_registrations() {
         let handler = Arc::new(create_test_handler().await);
         let mut handles = vec![];
-        
+
         // Register multiple mutations concurrently
         for i in 0..10 {
             let handler_clone = Arc::clone(&handler);
@@ -712,12 +790,12 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         // Wait for all registrations to complete
         for handle in handles {
             handle.await.unwrap();
         }
-        
+
         assert_eq!(handler.pending_count().await, 10);
     }
 
@@ -725,22 +803,23 @@ mod tests {
     async fn test_wait_for_completion_success() {
         let handler = Arc::new(create_test_handler().await);
         let mutation_id = "test-wait-success";
-        
+
         // Clone handler for the completion task
         let handler_clone = Arc::clone(&handler);
         let mutation_id_clone = mutation_id.to_string();
-        
+
         // Start waiting for completion
-        let wait_handle = tokio::spawn(async move {
-            handler_clone.wait_for_completion(&mutation_id_clone).await
-        });
-        
+        let wait_handle =
+            tokio::spawn(
+                async move { handler_clone.wait_for_completion(&mutation_id_clone).await },
+            );
+
         // Give a small delay to ensure registration happens first
         sleep(Duration::from_millis(10)).await;
-        
+
         // Signal completion
         handler.signal_completion(mutation_id).await;
-        
+
         // Wait should complete successfully
         let result = wait_handle.await.unwrap();
         assert!(result.is_ok());
@@ -750,15 +829,18 @@ mod tests {
     async fn test_wait_for_completion_timeout() {
         let handler = create_test_handler().await;
         let mutation_id = "test-wait-timeout";
-        
+
         // Wait with a very short timeout
         let result = handler
             .wait_for_completion_with_timeout(mutation_id, Duration::from_millis(10))
             .await;
-        
+
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), MutationCompletionError::Timeout(_, _)));
-        
+        assert!(matches!(
+            result.unwrap_err(),
+            MutationCompletionError::Timeout(_, _)
+        ));
+
         // Mutation should be cleaned up after timeout
         assert_eq!(handler.pending_count().await, 0);
     }
@@ -766,13 +848,13 @@ mod tests {
     #[tokio::test]
     async fn test_diagnostics() {
         let handler = create_test_handler().await;
-        
+
         let diagnostics = handler.get_diagnostics().await;
         assert_eq!(diagnostics.pending_mutations_count, 0);
-        
+
         // Register a mutation
         let _receiver = handler.register_mutation("diag-test".to_string()).await;
-        
+
         let diagnostics = handler.get_diagnostics().await;
         assert_eq!(diagnostics.pending_mutations_count, 1);
     }
@@ -781,15 +863,15 @@ mod tests {
     async fn test_replace_existing_mutation() {
         let handler = create_test_handler().await;
         let mutation_id = "duplicate-mutation".to_string();
-        
+
         // Register first mutation
         let _receiver1 = handler.register_mutation(mutation_id.clone()).await;
         assert_eq!(handler.pending_count().await, 1);
-        
+
         // Register second mutation with same ID (should replace)
         let receiver2 = handler.register_mutation(mutation_id.clone()).await;
         assert_eq!(handler.pending_count().await, 1);
-        
+
         // Signal completion should work with the second receiver
         handler.signal_completion(&mutation_id).await;
         assert!(receiver2.await.is_ok());

@@ -20,6 +20,7 @@ This document contains the most up-to-date and condensed information about the p
 | TRANSFORM-003 | DeclarativeSchemaDefinition requires KeyConfig with hash_field and range_field for HashRange schemas and FieldDefinition metadata for optional atom_uuid and field_type. | schema/types/json_schema.rs | 2025-08-26 19:00:00 | None |
 | TRANSFORM-004 | Native transform data flow must use FieldValue/FieldType enums internally with JSON conversion limited to boundary layers. | transform/native, transform/mod.rs | 2025-09-22 19:14:37 | None |
 | TRANSFORM-005 | Native FieldDefinition must validate names, default types, and generate typed defaults for optional fields. | transform/native | 2025-09-22 19:16:45 | None |
+| TRANSFORM-006 | NativeTransformExecutor must enforce typed map execution with strict validation and error reporting. | transform/engine, transform/native | 2025-09-22 22:30:00 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management
@@ -285,3 +286,20 @@ This document contains the most up-to-date and condensed information about the p
 - **Implementation Notes**:
   - Validation surfaces `FieldDefinitionError` variants for name issues or default mismatches.
   - `FieldType::default_value()` produces recursive defaults for nested object schemas used by optional fields.
+
+### TRANSFORM-006: Native Transform Execution Rules
+- **Description**: Defines how `NativeTransformExecutor` evaluates map-style transforms using strongly typed field metadata and native values.
+- **Rationale**: Guarantees map execution is deterministic, type-safe, and provides actionable errors so additional transform kinds can build upon a consistent execution core.
+- **Execution Guarantees**:
+  - Each output field must declare a `FieldDefinition` that is validated before computation.
+  - Computations may copy input fields or emit constants; unsupported expression/function variants must raise explicit errors until implemented.
+  - Missing required inputs fall back to `FieldDefinition::effective_default()` only when the field is optional or declares an explicit default.
+- **Error Handling Rules**:
+  - Invalid field definitions surface `NativeTransformError::InvalidFieldDefinition` with the underlying validation error.
+  - Missing inputs for required fields raise `NativeTransformError::MissingInput` identifying both input and output fields.
+  - Type mismatches produce `NativeTransformError::TypeMismatch` and include expected/actual `FieldType` metadata.
+  - Unsupported computation variants respond with `NativeTransformError::UnsupportedComputation` until later tasks implement them.
+- **Implementation Notes**:
+  - Execution operates purely on `FieldValue`/`FieldType` without converting to JSON mid-pipeline.
+  - `NativeTransformExecutor::execute` dispatches by transform kind, enabling future expansion beyond map transforms.
+  - Unit tests must cover successful mappings, constant emission, defaults, and each error variant to guard regression.

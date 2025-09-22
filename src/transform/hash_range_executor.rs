@@ -4,8 +4,8 @@
 //! validation, key configuration extraction, and coordination.
 
 use crate::schema::types::SchemaError;
-use crate::transform::validation::ValidationTimings;
 use crate::transform::coordination::execute_multi_chain_coordination_with_monitoring;
+use crate::transform::validation::ValidationTimings;
 use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -34,19 +34,19 @@ pub fn execute_hashrange_schema(
 ) -> Result<JsonValue, SchemaError> {
     let start_time = Instant::now();
     info!("🔧 Executing HashRange schema: {}", schema.name);
-    
+
     // Validate schema structure and field alignment
     let validation_timings = crate::transform::validation::validate_hashrange_schema(schema)?;
-    
+
     // Extract key configuration
     let key_config = extract_hashrange_key_config(schema)?;
-    
+
     // Execute multi-chain coordination
     let execution_timing = execute_hashrange_coordination(schema, &input_values, key_config)?;
-    
+
     // Log performance summary
     log_hashrange_performance_summary(start_time, validation_timings, &execution_timing);
-    
+
     Ok(execution_timing.result)
 }
 
@@ -64,14 +64,16 @@ pub fn extract_hashrange_key_config(
 ) -> Result<&crate::schema::types::json_schema::KeyConfig, SchemaError> {
     let key_config = schema.key.as_ref().ok_or_else(|| {
         SchemaError::InvalidTransform(format!(
-            "HashRange schema '{}' must have key configuration with hash_field and range_field", 
+            "HashRange schema '{}' must have key configuration with hash_field and range_field",
             schema.name
         ))
     })?;
-    
-    info!("📊 HashRange key config - hash_field: {}, range_field: {}", 
-          key_config.hash_field, key_config.range_field);
-    
+
+    info!(
+        "📊 HashRange key config - hash_field: {}, range_field: {}",
+        key_config.hash_field, key_config.range_field
+    );
+
     Ok(key_config)
 }
 
@@ -92,9 +94,10 @@ pub fn execute_hashrange_coordination(
     key_config: &crate::schema::types::json_schema::KeyConfig,
 ) -> Result<ExecutionTiming, SchemaError> {
     let execution_start = Instant::now();
-    let result = execute_multi_chain_coordination_with_monitoring(schema, input_values, key_config)?;
+    let result =
+        execute_multi_chain_coordination_with_monitoring(schema, input_values, key_config)?;
     let execution_duration = execution_start.elapsed();
-    
+
     Ok(ExecutionTiming {
         execution_duration,
         result,
@@ -114,9 +117,11 @@ pub fn log_hashrange_performance_summary(
     execution_timing: &ExecutionTiming,
 ) {
     let total_duration = start_time.elapsed();
-    info!("⏱️ HashRange execution completed in {:?} (execution: {:?}, validation: {:?}, alignment: {:?})", 
-          total_duration, 
-          execution_timing.execution_duration, 
-          validation_timings.validation_duration, 
-          validation_timings.alignment_duration);
+    info!(
+        "⏱️ HashRange execution completed in {:?} (execution: {:?}, validation: {:?}, alignment: {:?})",
+        total_duration,
+        execution_timing.execution_duration,
+        validation_timings.validation_duration,
+        validation_timings.alignment_duration,
+    );
 }

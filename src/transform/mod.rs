@@ -41,6 +41,7 @@
 //! implementation for all data persistence needs.
 
 pub mod ast;
+pub mod engine;
 pub mod executor;
 pub mod interpreter;
 pub mod mutation_examples;
@@ -65,6 +66,7 @@ pub mod validation;
 // Public re-exports
 pub use crate::schema::types::Transform;
 pub use ast::{Expression, Operator, TransformDeclaration, UnaryOperator, Value};
+pub use engine::{NativeTransformError, NativeTransformExecutor};
 pub use executor::TransformExecutor;
 pub use interpreter::Interpreter;
 pub use mutation_examples::{
