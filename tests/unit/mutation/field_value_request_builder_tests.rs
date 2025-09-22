@@ -363,6 +363,33 @@ fn errors_when_range_key_missing_for_range_schema() {
 }
 
 #[test]
+fn errors_when_range_key_is_whitespace_for_range_schema() {
+    let fixture = TestFixture::new().expect("fixture");
+    let service = MutationService::new(Arc::clone(&fixture.message_bus));
+    let schema = build_range_schema_with_universal_key();
+    let value = json!(77);
+    let whitespace_range = json!("   ");
+
+    let result = service.normalized_field_value_request(
+        &schema,
+        "status",
+        &value,
+        None,
+        Some(&whitespace_range),
+        Some("mutation-whitespace-range"),
+    );
+
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+    match error {
+        SchemaError::InvalidData(message) => {
+            assert!(message.contains("requires range key value"));
+        }
+        other => panic!("expected InvalidData error, got {:?}", other),
+    }
+}
+
+#[test]
 fn errors_when_hashrange_range_value_missing() {
     let fixture = TestFixture::new().expect("fixture");
     let service = MutationService::new(Arc::clone(&fixture.message_bus));
