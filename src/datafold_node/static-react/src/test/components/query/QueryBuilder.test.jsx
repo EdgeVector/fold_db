@@ -71,7 +71,7 @@ describe('QueryBuilder Component', () => {
       expect(screen.getByTestId('query-builder-content')).toBeInTheDocument();
     });
 
-    it('should call useQueryBuilder hook with correct props', () => {
+    it('should call useQueryBuilder hook with resolved schema data', () => {
       const mockRenderFunction = vi.fn(() => <div>Content</div>);
 
       render(
@@ -80,7 +80,14 @@ describe('QueryBuilder Component', () => {
         </QueryBuilder>
       );
 
-      expect(useQueryBuilder).toHaveBeenCalledWith(mockProps);
+      expect(useQueryBuilder).toHaveBeenCalledWith(expect.objectContaining({
+        schema: 'TestSchema',
+        queryState: mockProps.queryState,
+        schemas: { TestSchema: mockProps.selectedSchemaObj },
+        selectedSchemaObj: mockProps.selectedSchemaObj,
+        isRangeSchema: false,
+        rangeKey: null
+      }));
     });
 
     it('should return null when children is not a function', () => {
@@ -267,22 +274,95 @@ describe('QueryBuilder Component', () => {
         </QueryBuilder>
       );
 
-      expect(useQueryBuilder).toHaveBeenCalledWith(complexProps);
+      expect(useQueryBuilder).toHaveBeenCalledWith(expect.objectContaining({
+        schema: 'ComplexSchema',
+        queryState: complexProps.queryState,
+        schemas: { ComplexSchema: complexProps.selectedSchemaObj },
+        selectedSchemaObj: complexProps.selectedSchemaObj,
+        isRangeSchema: true,
+        rangeKey: 'field3'
+      }));
     });
 
     it('should not pass children prop to useQueryBuilder hook', () => {
       const propsWithoutChildren = { ...mockProps };
-      
+
       render(
         <QueryBuilder {...mockProps}>
           {() => <div>Content</div>}
         </QueryBuilder>
       );
 
-      expect(useQueryBuilder).toHaveBeenCalledWith(propsWithoutChildren);
+      expect(useQueryBuilder).toHaveBeenCalledWith(expect.objectContaining({
+        schema: 'TestSchema',
+        queryState: propsWithoutChildren.queryState,
+        selectedSchemaObj: propsWithoutChildren.selectedSchemaObj
+      }));
       expect(useQueryBuilder).not.toHaveBeenCalledWith(
         expect.objectContaining({ children: expect.any(Function) })
       );
+    });
+  });
+
+  describe('schema resolution', () => {
+    it('derives schema name from query state when not provided', () => {
+      const props = {
+        queryState: {
+          selectedSchema: 'DerivedSchema',
+          queryFields: [],
+          fieldValues: {}
+        },
+        selectedSchemaObj: {
+          name: 'DerivedSchema',
+          fields: {
+            id: { field_type: 'String' }
+          }
+        }
+      };
+
+      render(
+        <QueryBuilder {...props}>
+          {() => <div>Content</div>}
+        </QueryBuilder>
+      );
+
+      expect(useQueryBuilder).toHaveBeenCalledWith(expect.objectContaining({
+        schema: 'DerivedSchema',
+        selectedSchemaObj: props.selectedSchemaObj,
+        schemas: { DerivedSchema: props.selectedSchemaObj }
+      }));
+    });
+
+    it('derives schema details from provided schemas map when object not given', () => {
+      const props = {
+        queryState: {
+          selectedSchema: 'MappedSchema',
+          queryFields: [],
+          fieldValues: {}
+        },
+        schemas: {
+          MappedSchema: {
+            name: 'MappedSchema',
+            fields: {
+              range_field: { field_type: 'Range' }
+            }
+          }
+        }
+      };
+
+      render(
+        <QueryBuilder {...props}>
+          {() => <div>Content</div>}
+        </QueryBuilder>
+      );
+
+      expect(useQueryBuilder).toHaveBeenCalledWith(expect.objectContaining({
+        schema: 'MappedSchema',
+        selectedSchemaObj: props.schemas.MappedSchema,
+        schemas: props.schemas,
+        isRangeSchema: true,
+        rangeKey: 'range_field'
+      }));
     });
   });
 });
