@@ -12,6 +12,7 @@ Establish the initial JSON boundary layer that keeps existing HTTP APIs compatib
 | 2025-09-23 09:05:00 | Status Change | Proposed | Agreed | Scope confirmed and work authorised for boundary implementation | AI Agent |
 | 2025-09-23 09:10:00 | Status Change | Agreed | InProgress | Began implementing schema registration and conversion logic | AI Agent |
 | 2025-09-23 15:30:00 | Status Change | InProgress | Review | Implementation complete with tests and documentation awaiting review | AI Agent |
+| 2025-09-23 16:00:00 | Status Change | Review | Done | Task completed and approved - all tests passing | AI Agent |
 
 ## Requirements
 - Provide a reusable `JsonBoundaryLayer` that registers schemas and enforces typed conversions.
