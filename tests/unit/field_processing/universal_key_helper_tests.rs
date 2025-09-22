@@ -4,7 +4,7 @@
 //! for various schema types including Single, Range (legacy + universal), HashRange,
 //! and dotted-path configurations.
 
-use crate::test_utils::{normalized_fields, TestFixture};
+use crate::test_utils::{normalized_fields, single_schema_with_key, TestFixture};
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fees::SchemaPaymentConfig;
 use datafold::fold_db_core::managers::atom::field_processing::{
@@ -385,28 +385,12 @@ fn test_resolve_universal_keys_dotted_path() {
     let fixture = TestFixture::new().unwrap();
 
     // Create a schema with dotted path key configuration
-    let schema = Schema {
-        name: "TestDottedPath".to_string(),
-        schema_type: SchemaType::Single,
-        key: Some(KeyConfig {
-            hash_field: "data.user.id".to_string(),
-            range_field: "metadata.timestamp".to_string(),
-        }),
-        fields: {
-            let mut fields = HashMap::new();
-            fields.insert(
-                "content".to_string(),
-                FieldVariant::Single(SingleField::new(
-                    PermissionsPolicy::default(),
-                    FieldPaymentConfig::default(),
-                    HashMap::new(),
-                )),
-            );
-            fields
-        },
-        payment_config: SchemaPaymentConfig::default(),
-        hash: None,
-    };
+    let schema = single_schema_with_key(
+        "TestDottedPath",
+        "content",
+        Some("data.user.id"),
+        Some("metadata.timestamp"),
+    );
 
     fixture.db_ops.store_schema(&schema.name, &schema).unwrap();
 
@@ -429,6 +413,88 @@ fn test_resolve_universal_keys_dotted_path() {
     assert_eq!(result.range, Some("2023-01-01T00:00:00Z".to_string()));
     let normalized = normalized_fields(&result.fields);
     assert_eq!(normalized.get("content"), Some(&json!("test content")));
+}
+
+/// Test that ResolvedAtomKeys::to_snapshot clones metadata without sharing references
+#[test]
+fn test_resolved_atom_keys_to_snapshot_clones_fields() {
+    let mut fields = serde_json::Map::new();
+    fields.insert("content".to_string(), json!("snapshot content"));
+    fields.insert("author".to_string(), json!("snapshot author"));
+
+    let mut resolved_keys = ResolvedAtomKeys::new(
+        Some("hash-123".to_string()),
+        Some("range-456".to_string()),
+        fields,
+    );
+
+    let snapshot = resolved_keys.to_snapshot();
+    assert_eq!(snapshot.hash, Some("hash-123".to_string()));
+    assert_eq!(snapshot.range, Some("range-456".to_string()));
+    assert_eq!(
+        snapshot.fields.get("content"),
+        Some(&json!("snapshot content"))
+    );
+
+    // Mutate the original fields map and ensure the snapshot remains unchanged
+    resolved_keys
+        .fields
+        .insert("extra".to_string(), json!("mutated value"));
+    assert_eq!(snapshot.fields.len(), 2);
+    assert!(!snapshot.fields.contains_key("extra"));
+}
+
+/// HashRange dotted-path keys must surface descriptive errors when data is incomplete
+#[test]
+fn test_resolve_universal_keys_hashrange_dotted_path_missing_segments() {
+    let fixture = TestFixture::new().unwrap();
+
+    let mut fields = HashMap::new();
+    fields.insert(
+        "content".to_string(),
+        FieldVariant::HashRange(Box::new(HashRangeField::new(
+            PermissionsPolicy::default(),
+            FieldPaymentConfig::default(),
+            HashMap::new(),
+            "payload.user.id".to_string(),
+            "payload.event.timestamp".to_string(),
+            "atom_uuid".to_string(),
+        ))),
+    );
+
+    let schema = Schema {
+        name: "HashRangeDottedPath".to_string(),
+        schema_type: SchemaType::HashRange,
+        key: Some(KeyConfig {
+            hash_field: "payload.user.id".to_string(),
+            range_field: "payload.event.timestamp".to_string(),
+        }),
+        fields,
+        payment_config: SchemaPaymentConfig::default(),
+        hash: None,
+    };
+
+    fixture
+        .db_ops
+        .store_schema(&schema.name, &schema)
+        .expect("schema stored");
+
+    // Payload intentionally omits the nested event timestamp to trigger failure
+    let request_payload = json!({
+        "content": {"body": "test"},
+        "payload": {"user": {"id": "user-42"}}
+    });
+
+    let error = resolve_universal_keys(
+        &fixture.atom_manager,
+        "HashRangeDottedPath",
+        &request_payload,
+    )
+    .expect_err("missing dotted path segments should error");
+
+    let message = error.to_string();
+    assert!(message.contains("Failed to extract keys for schema 'HashRangeDottedPath'"));
+    assert!(message.contains("HashRange range_field 'payload.event.timestamp' not found in data"));
 }
 
 /// Test resolve_universal_keys with missing schema
