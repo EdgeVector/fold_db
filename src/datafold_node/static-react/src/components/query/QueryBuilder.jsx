@@ -6,7 +6,6 @@
  */
 
 import { useMemo } from 'react';
-import { SCHEMA_STATES, SCHEMA_ERROR_MESSAGES } from '../../constants/redux.js';
 import { useQueryBuilder } from '../../hooks/useQueryBuilder.js';
 
 /**
@@ -29,13 +28,20 @@ import { useQueryBuilder } from '../../hooks/useQueryBuilder.js';
 /**
  * Range schema utility functions
  */
-const isRangeSchema = (schema) => {
-  return schema?.fields && Object.values(schema.fields).some(field => field.field_type === 'Range');
+const detectRangeSchema = (schema) => {
+  if (!schema?.fields) {
+    return false;
+  }
+
+  return Object.values(schema.fields).some(field => field?.field_type === 'Range');
 };
 
-const getRangeKey = (schema) => {
-  if (!schema?.fields) return null;
-  const rangeField = Object.entries(schema.fields).find(([, field]) => field.field_type === 'Range');
+const extractRangeKey = (schema) => {
+  if (!schema?.fields) {
+    return null;
+  }
+
+  const rangeField = Object.entries(schema.fields).find(([, field]) => field?.field_type === 'Range');
   return rangeField ? rangeField[0] : null;
 };
 
@@ -45,9 +51,80 @@ const getRangeKey = (schema) => {
  * @param {QueryBuilderProps & { children: function }} props
  * @returns {JSX.Element}
  */
-function QueryBuilder({ children, ...props }) {
-  const queryBuilder = useQueryBuilder(props);
-  
+function QueryBuilder({
+  children,
+  queryState,
+  schemas,
+  selectedSchemaObj,
+  isRangeSchema,
+  rangeKey,
+  schema,
+  ...rest
+}) {
+  const resolvedSchema = useMemo(() => {
+    if (schema) {
+      return schema;
+    }
+
+    if (queryState?.selectedSchema) {
+      return queryState.selectedSchema;
+    }
+
+    return selectedSchemaObj?.name ?? null;
+  }, [schema, queryState?.selectedSchema, selectedSchemaObj?.name]);
+
+  const resolvedSchemaObj = useMemo(() => {
+    if (selectedSchemaObj) {
+      return selectedSchemaObj;
+    }
+
+    if (resolvedSchema && schemas && schemas[resolvedSchema]) {
+      return schemas[resolvedSchema];
+    }
+
+    return null;
+  }, [resolvedSchema, schemas, selectedSchemaObj]);
+
+  const resolvedSchemas = useMemo(() => {
+    if (schemas) {
+      return schemas;
+    }
+
+    if (resolvedSchema && resolvedSchemaObj) {
+      return { [resolvedSchema]: resolvedSchemaObj };
+    }
+
+    return undefined;
+  }, [schemas, resolvedSchema, resolvedSchemaObj]);
+
+  const resolvedIsRangeSchema = useMemo(() => {
+    if (typeof isRangeSchema === 'boolean') {
+      return isRangeSchema;
+    }
+
+    return detectRangeSchema(resolvedSchemaObj);
+  }, [isRangeSchema, resolvedSchemaObj]);
+
+  const resolvedRangeKey = useMemo(() => {
+    if (rangeKey) {
+      return rangeKey;
+    }
+
+    return extractRangeKey(resolvedSchemaObj);
+  }, [rangeKey, resolvedSchemaObj]);
+
+  const hookArguments = useMemo(() => ({
+    ...rest,
+    schema: resolvedSchema,
+    queryState,
+    schemas: resolvedSchemas,
+    selectedSchemaObj: resolvedSchemaObj,
+    isRangeSchema: resolvedIsRangeSchema,
+    rangeKey: resolvedRangeKey
+  }), [rest, resolvedSchema, queryState, resolvedSchemas, resolvedSchemaObj, resolvedIsRangeSchema, resolvedRangeKey]);
+
+  const queryBuilder = useQueryBuilder(hookArguments);
+
   if (typeof children === 'function') {
     return children(queryBuilder);
   }

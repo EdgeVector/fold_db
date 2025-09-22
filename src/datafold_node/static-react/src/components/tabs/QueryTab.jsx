@@ -18,10 +18,12 @@ import { useQueryBuilder } from '../../hooks/useQueryBuilder';
 import QueryForm from '../query/QueryForm';
 import QueryActions from '../query/QueryActions';
 import QueryPreview from '../query/QueryPreview';
+import { useAppSelector } from '../../store/hooks';
 
 function QueryTab({ onResult }) {
   // UCR-1-7: Refactored to use extracted components and hooks
   // Use the extracted query state management hook
+  const isAuthenticated = useAppSelector(state => state.auth?.isAuthenticated ?? false);
   const {
     state: queryState,
     handleSchemaChange,
@@ -133,6 +135,19 @@ function QueryTab({ onResult }) {
       console.error('Failed to save query:', error);
     }
   }, [isValid]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="p-6">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h2 className="text-lg font-semibold text-yellow-800">Authentication Required</h2>
+          <p className="text-sm text-yellow-700 mt-2">
+            Please authenticate using the Keys tab before accessing query functionality.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">

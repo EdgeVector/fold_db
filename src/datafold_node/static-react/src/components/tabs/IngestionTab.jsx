@@ -305,7 +305,7 @@ function IngestionTab({ onResult }) {
       {/* AI Provider Configuration Section */}
       <div className="bg-white p-4 rounded-lg shadow">
         <h3 className="text-lg font-medium text-gray-900 mb-3">AI Provider Configuration</h3>
-        
+
         <div className="space-y-4">
           <div>
             <label htmlFor="aiProvider" className="block text-sm font-medium text-gray-700 mb-1">
@@ -324,6 +324,7 @@ function IngestionTab({ onResult }) {
 
           {aiProvider === 'OpenRouter' && (
             <div className="space-y-4">
+              <h4 className="text-md font-medium text-gray-900">OpenRouter AI Configuration</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="openrouterApiKey" className="block text-sm font-medium text-gray-700 mb-1">

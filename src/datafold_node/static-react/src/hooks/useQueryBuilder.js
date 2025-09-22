@@ -7,7 +7,7 @@
 import { useMemo, useCallback } from 'react';
 import { useAppSelector } from '../store/hooks';
 import { selectApprovedSchemas } from '../store/schemaSlice';
-import { isHashRangeSchema, formatHashRangeQuery } from '../utils/rangeSchemaHelpers.js';
+import { isHashRangeSchema, isRangeSchema as detectRangeSchema } from '../utils/rangeSchemaHelpers.js';
 
 /**
  * Query builder hook that handles query construction and validation
@@ -23,12 +23,23 @@ import { isHashRangeSchema, formatHashRangeQuery } from '../utils/rangeSchemaHel
  * @param {Object} options.schemas - Available schemas
  * @returns {Object} Query builder state and methods
  */
-export function useQueryBuilder({ schema, queryState, schemas }) {
+export function useQueryBuilder({
+  schema,
+  queryState,
+  schemas,
+  selectedSchemaObj: providedSelectedSchema,
+  isRangeSchema: providedIsRangeSchema,
+  rangeKey: providedRangeKey
+}) {
   const approvedSchemas = useAppSelector(selectApprovedSchemas);
-  
+
   // Get the selected schema object
   const selectedSchemaObj = useMemo(() => {
-    if (schemas && schemas[schema]) {
+    if (providedSelectedSchema) {
+      return providedSelectedSchema;
+    }
+
+    if (schemas && schema && schemas[schema]) {
       return schemas[schema];
     }
     // approvedSchemas is now an array, not an object
@@ -36,7 +47,31 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
       return approvedSchemas.find(s => s.name === schema) || null;
     }
     return null;
-  }, [schema, schemas, approvedSchemas]);
+  }, [providedSelectedSchema, schema, schemas, approvedSchemas]);
+
+  const schemaIsRange = useMemo(() => {
+    if (typeof providedIsRangeSchema === 'boolean') {
+      return providedIsRangeSchema;
+    }
+
+    if (!selectedSchemaObj) {
+      return false;
+    }
+
+    if (selectedSchemaObj.schema_type === 'Range') {
+      return true;
+    }
+
+    if (detectRangeSchema(selectedSchemaObj)) {
+      return true;
+    }
+
+    if (selectedSchemaObj.fields && typeof selectedSchemaObj.fields === 'object') {
+      return Object.values(selectedSchemaObj.fields).some(field => field?.field_type === 'Range');
+    }
+
+    return false;
+  }, [selectedSchemaObj, providedIsRangeSchema]);
 
   // Validation logic
   const validationErrors = useMemo(() => {
@@ -57,7 +92,7 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
       return errors;
     }
 
-    const { queryFields = [], fieldValues = {}, rangeFilters = {}, filters = [] } = queryState;
+    const { queryFields = [], fieldValues = {}, rangeFilters = {}, filters = [], rangeSchemaFilter = {} } = queryState;
 
     // If no fields are selected, only validate basic schema requirements
     if (queryFields.length === 0) {
@@ -66,7 +101,7 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
         return errors;
       }
       // For range schemas with no fields selected, this is also valid (no range key required)
-      if (selectedSchemaObj.schema_type === 'Range') {
+      if (schemaIsRange) {
         return errors;
       }
       // Otherwise require at least one field
@@ -103,9 +138,10 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
     }
 
     // Validate range schema requirements
-    if (selectedSchemaObj.schema_type === 'Range' && queryFields.length > 0) {
-      const hasRangeKey = rangeFilters && Object.keys(rangeFilters).some(key =>
-        rangeFilters[key]?.key
+    if (schemaIsRange && queryFields.length > 0) {
+      const hasRangeKey = (
+        (rangeFilters && Object.keys(rangeFilters).some(key => rangeFilters[key]?.key)) ||
+        Boolean(rangeSchemaFilter?.key)
       );
       if (!hasRangeKey) {
         errors.push('Range key missing for range schema');
@@ -132,7 +168,14 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
       return {};
     }
 
-    const { queryFields = [], fieldValues = {}, rangeFilters = {}, filters = [], orderBy } = queryState;
+    const {
+      queryFields = [],
+      fieldValues = {},
+      rangeFilters = {},
+      rangeSchemaFilter = {},
+      filters = [],
+      orderBy
+    } = queryState;
     
     // Build query with selected fields and their values
     const builtQuery = {
@@ -169,30 +212,42 @@ export function useQueryBuilder({ schema, queryState, schemas }) {
     }
 
     // Add range schema filter for range schemas (this is the correct one for Range schemas)
-    if (selectedSchemaObj.schema_type?.Range?.range_key && queryState.rangeSchemaFilter) {
-      const rangeSchemaFilter = queryState.rangeSchemaFilter;
-      const rangeKey = selectedSchemaObj.schema_type.Range.range_key;
-      
-      if (rangeKey) {
-        // Determine which filter type to use based on what's filled in
+    if (schemaIsRange) {
+      const possibleRangeKey = providedRangeKey
+        || selectedSchemaObj?.schema_type?.Range?.range_key
+        || selectedSchemaObj?.range_key
+        || (selectedSchemaObj?.fields
+          ? Object.entries(selectedSchemaObj.fields).find(([, field]) => field?.field_type === 'Range')?.[0]
+          : null);
+      const activeRangeFilter = rangeSchemaFilter && Object.keys(rangeSchemaFilter).length > 0
+        ? rangeSchemaFilter
+        : Object.values(rangeFilters).find(filter => filter && typeof filter === 'object' && (filter.key || filter.keyPrefix || (filter.start && filter.end))) || {};
+
+      if (activeRangeFilter.key) {
+        builtQuery.rangeKey = activeRangeFilter.key;
+      } else if (activeRangeFilter.keyPrefix) {
+        builtQuery.rangeKey = activeRangeFilter.keyPrefix;
+      }
+
+      if (possibleRangeKey) {
         let filterType = null;
         let filterValue = null;
-        
-        if (rangeSchemaFilter.key) {
+
+        if (activeRangeFilter.key) {
           filterType = 'Key';
-          filterValue = rangeSchemaFilter.key;
-        } else if (rangeSchemaFilter.keyPrefix) {
+          filterValue = activeRangeFilter.key;
+        } else if (activeRangeFilter.keyPrefix) {
           filterType = 'KeyPrefix';
-          filterValue = rangeSchemaFilter.keyPrefix;
-        } else if (rangeSchemaFilter.start && rangeSchemaFilter.end) {
+          filterValue = activeRangeFilter.keyPrefix;
+        } else if (activeRangeFilter.start && activeRangeFilter.end) {
           filterType = 'KeyRange';
-          filterValue = { start: rangeSchemaFilter.start, end: rangeSchemaFilter.end };
+          filterValue = { start: activeRangeFilter.start, end: activeRangeFilter.end };
         }
-        
+
         if (filterType && filterValue) {
           builtQuery.filter = {
             range_filter: {
-              [rangeKey]: {
+              [possibleRangeKey]: {
                 [filterType]: filterValue
               }
             }
