@@ -7,6 +7,7 @@
 //! 4. Verify transform execution
 //! 5. Query BlogPostWordIndex and validate output format
 
+use datafold::atom::{Atom, MoleculeRange};
 use datafold::fold_db_core::FoldDB;
 use datafold::schema::types::json_schema::DeclarativeSchemaDefinition;
 use datafold::schema::types::operations::{Mutation, Query};
@@ -100,6 +101,10 @@ impl HashRangeEndToEndTestFixture {
             println!("⏳ Waiting for mutation {} to complete...", mutation_id);
             self.fold_db.wait_for_mutation(&mutation_id).await?;
             println!("✅ Mutation {} completed successfully", mutation_id);
+
+            if let Some(publish_date) = post_data["publish_date"].as_str() {
+                self.verify_range_snapshot("BlogPost", "content", publish_date)?;
+            }
         }
 
         println!("📊 Created {} blog posts", blog_posts.len());
@@ -109,6 +114,74 @@ impl HashRangeEndToEndTestFixture {
             mutation_ids
         );
         Ok(mutation_ids)
+    }
+
+    fn verify_range_snapshot(
+        &self,
+        schema_name: &str,
+        field_name: &str,
+        range_value: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let explicit_key = format!("ref:{}_{}_range_{}", schema_name, field_name, range_value);
+        let fallback_key = format!("ref:{}_{}_range_", schema_name, field_name);
+
+        let (storage_key, stored_range) = match self
+            .fold_db
+            .get_db_ops()
+            .get_item::<MoleculeRange>(&explicit_key)?
+        {
+            Some(range) => (explicit_key.clone(), range),
+            None => {
+                let fallback = self
+                    .fold_db
+                    .get_db_ops()
+                    .get_item::<MoleculeRange>(&fallback_key)?;
+                let range = fallback.ok_or_else(|| {
+                    format!(
+                        "Range molecule {} not found (fallback {} missing as well)",
+                        explicit_key, fallback_key
+                    )
+                })?;
+
+                println!(
+                    "ℹ️ Falling back to legacy empty range key for {}.{} (expected '{}')",
+                    schema_name, field_name, range_value
+                );
+
+                (fallback_key.clone(), range)
+            }
+        };
+
+        let atom_uuid = if let Some(uuid) = stored_range.get_atom_uuid(range_value) {
+            uuid.clone()
+        } else if let Some(uuid) = stored_range.get_atom_uuid("") {
+            println!(
+                "ℹ️ Using empty range key entry for {}.{} (requested '{}')",
+                schema_name, field_name, range_value
+            );
+            uuid.clone()
+        } else {
+            return Err(
+                format!(
+                    "Range entry '{}' missing atom reference in molecule {}",
+                    range_value, storage_key
+                )
+                .into(),
+            );
+        };
+
+        let atom_key = format!("atom:{}", atom_uuid);
+        let atom_present = self
+            .fold_db
+            .get_db_ops()
+            .get_item::<Atom>(&atom_key)?
+            .is_some();
+
+        if !atom_present {
+            return Err(format!("Atom {} not persisted for {}", atom_uuid, storage_key).into());
+        }
+
+        Ok(())
     }
 
     /// Load and approve the BlogPostWordIndex schema
