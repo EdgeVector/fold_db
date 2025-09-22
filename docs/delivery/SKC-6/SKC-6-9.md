@@ -7,6 +7,8 @@ Update developer-facing documentation so the universal key field processing flow
 | Timestamp | Event Type | From Status | To Status | Details | User |
 |-----------|------------|-------------|-----------|---------|------|
 | 2025-09-23 09:45:00 | Created | N/A | Proposed | Documentation task created alongside the SKC-6 task split | ai-agent |
+| 2025-09-23 10:05:00 | Status Update | Proposed | InProgress | Began drafting workflow documentation and reference guides | ai-agent |
+| 2025-09-23 17:20:00 | Status Update | InProgress | Review | Documentation updates completed and ready for review | ai-agent |
 
 ## Requirements
 - Document the universal key snapshot helper workflow in `docs/guides/operations/universal-key-migration-guide.md`, including how `{hash, range, fields}` travel through AtomManager and MutationService.

@@ -15,6 +15,11 @@
 //! - Automatic skipping of key fields during mutation processing
 //! - Support for both new universal key format and legacy range_key patterns
 //!
+//! Detailed architecture notes live in
+//! `docs/reference/fold_db_core/mutation_service.md` alongside the
+//! normalized payload contract documented in
+//! `docs/guides/operations/universal-key-migration-guide.md`.
+//!
 //! ## Schema Type Support
 //!
 //! - **Single**: Direct field value updates
@@ -122,6 +127,9 @@ impl MutationService {
     }
 
     /// Construct a normalized FieldValueSetRequest payload using schema-driven key resolution.
+    ///
+    /// The normalized payload contract is documented in
+    /// `docs/reference/fold_db_core/mutation_service.md`.
     pub fn normalized_field_value_request(
         &self,
         schema: &Schema,
