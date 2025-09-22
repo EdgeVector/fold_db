@@ -6,7 +6,12 @@
 //! definitions and transform specifications.
 
 pub mod field_definition;
+pub mod transform_spec;
 pub mod types;
 
 pub use field_definition::{FieldDefinition, FieldDefinitionError};
+pub use transform_spec::{
+    FieldMapping, FilterCondition, FilterTransform, MapTransform, ReduceTransform, ReducerType,
+    TransformSpec, TransformSpecError, TransformType,
+};
 pub use types::{FieldType, FieldValue};
