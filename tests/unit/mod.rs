@@ -10,6 +10,7 @@ pub mod hashrange_mutation_core_test;
 pub mod hashrange_schema_tests;
 pub mod iterator_stack_tests;
 pub mod mutation_completion_tests;
+pub mod native_field_definition_tests;
 pub mod native_types_tests;
 pub mod range_filter_tests;
 pub mod schema;
