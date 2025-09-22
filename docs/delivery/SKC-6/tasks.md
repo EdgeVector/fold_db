@@ -16,5 +16,5 @@ This document lists all tasks associated with PBI SKC-6.
 | SKC-6-6 | [Adopt normalized payload builder in mutation workflows](./SKC-6-6.md) | Done | Update MutationService flows to publish normalized payloads. |
 | SKC-6-7 | [Align downstream producers with normalized mutation payloads](./SKC-6-7.md) | Done | Refactor transform/message bus producers to use the shared payload shape. |
 | SKC-6-8 | [Expand universal key regression test coverage](./SKC-6-8.md) | Done | Add comprehensive unit and integration tests for universal key workflows. |
-| SKC-6-9 | [Document universal key field processing behavior](./SKC-6-9.md) | Done | Refresh documentation to describe the new helpers and payload structure. |
-| SKC-6-10 | [Remove legacy fallback logic from universal key resolution](./SKC-6-10.md) | Done | Remove create_legacy_resolved_keys fallback introduced in SKC-6-2 to enforce strict schema-driven key extraction. |
+| SKC-6-9 | [Document universal key field processing behavior](./SKC-6-9.md) | Done | Refresh documentation to describe the new helpers and payload structure. See [migration workflow](../../universal-key-migration-guide.md#field-processing-and-mutation-workflow). |
+| SKC-6-10 | [Remove legacy fallback logic from universal key resolution](./SKC-6-10.md) | Review | Remove create_legacy_resolved_keys fallback introduced in SKC-6-2 to enforce strict schema-driven key extraction. |
