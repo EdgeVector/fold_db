@@ -197,13 +197,56 @@ use crate::transform::aggregation::aggregate_results_unified;
 
 // Aggregate results from iterator stack execution
 let final_result = aggregate_results_unified(
+    &schema,
     &parsed_chains,
     &execution_result,
     &input_values,
     &all_expressions,
-    schema_type
 )?;
 ```
+
+#### Universal key workflow
+- `aggregate_results_unified` expects a `DeclarativeSchemaDefinition` whose
+  [`KeyConfig`](../schema-management.md#key-configuration) describes the
+  schema's universal key fields.
+- The aggregator hydrates key metadata via
+  `schema_operations::shape_unified_result`, which always returns a
+  `{ "hash": <value>, "range": <value>, "fields": { ... } }` envelope.
+- HashRange schemas also receive compatibility arrays for `hash_key` and
+  `range_key` so existing consumers keep working while migrating to the
+  normalized output.
+
+```rust
+let shaped = aggregate_results_unified(
+    &schema,
+    &parsed_chains,
+    &execution_result,
+    &input_values,
+    &all_expressions,
+)?;
+
+assert_eq!(shaped["fields"]["value"], json!(42));
+assert_eq!(shaped["hash"], json!("hash-1"));
+```
+
+- Legacy range-only schemas continue to surface a `range_key` property alongside
+  the universal `range` field to preserve response compatibility.
+- Universal key adoption policy is documented in
+  [SCHEMA-KEY-004](../project_logic.md#logic-table) and cross-referenced by the
+  [SKC-7 PBI delivery notes](../delivery/SKC-7/prd.md#notes).
+
+#### Troubleshooting universal key aggregation
+- **Missing range field**: HashRange schemas must configure both
+  `key.hash_field` and `key.range_field`. The aggregator surfaces the underlying
+  `SchemaError` message from `shape_unified_result`, e.g. `HashRange schema
+  requires key.hash_field and key.range_field`.
+- **Mismatched dotted paths**: Ensure iterator expressions populate the same
+  dotted field paths defined in the schema's `KeyConfig`. When execution output
+  omits a dotted segment the aggregator falls back to
+  `resolve_dotted_path`, which returns `null` instead of failing hard.
+- **Unexpected null hash/range**: Check that universal key tests in
+  [SKC-7-2](../delivery/SKC-7/SKC-7-2.md) cover the scenario and that the
+  iterator stack emits `_hash_field`/`_range_field` chains for the schema.
 
 ## Testing
 
