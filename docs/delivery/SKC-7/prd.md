@@ -58,6 +58,20 @@ The current aggregation utilities (`src/transform/aggregation.rs` and related fi
 - Should we validate key configuration during aggregation?
 - Are there performance implications of dynamic key extraction?
 
+## Notes
+
+- [`docs/design/iterator_stack_quick_reference.md`](../../design/iterator_stack_quick_reference.md) now explains how
+  `aggregate_results_unified` consumes universal key metadata and shapes the
+  `{ hash, range, fields }` response via `shape_unified_result`, including
+  compatibility arrays for legacy range schemas.
+- Troubleshooting guidance documents the `SchemaError` surfaced when HashRange
+  schemas omit `key.range_field`, aligning with the protections introduced in
+  [SKC-1](../SKC-1/prd.md) and exercised by the [SKC-7-2](./SKC-7-2.md) universal
+  key test suite.
+- Cross-reference [`docs/project_logic.md`](../../project_logic.md) entry
+  `SCHEMA-KEY-004` for the enforcement policy covering query, mutation, and
+  aggregation components.
+
 ## Related Tasks
 
 - Update aggregation utilities implementation
