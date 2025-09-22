@@ -71,7 +71,10 @@ pub use mutation_examples::{
     BatchMutationExecutor, ConditionalMutationExecutor, MutationBasedDataStorage,
     TransformWithMutationStorage,
 };
-pub use native::{FieldType as NativeFieldType, FieldValue};
+pub use native::{
+    FieldDefinition as NativeFieldDefinition, FieldDefinitionError as NativeFieldDefinitionError,
+    FieldType as NativeFieldType, FieldValue,
+};
 pub use parser::TransformParser;
 pub use restricted_access::{
     MutationBasedPersistence, TransformAccessError, TransformAccessValidator,

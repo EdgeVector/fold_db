@@ -19,6 +19,7 @@ This document contains the most up-to-date and condensed information about the p
 | TRANSFORM-001 | Transform system must support both procedural and declarative transform types seamlessly while maintaining backward compatibility. | transform/, schema/types, fold_db_core/transform_manager, fold_db_core/orchestration | 2025-01-27 12:00:00 | None |
 | TRANSFORM-003 | DeclarativeSchemaDefinition requires KeyConfig with hash_field and range_field for HashRange schemas and FieldDefinition metadata for optional atom_uuid and field_type. | schema/types/json_schema.rs | 2025-08-26 19:00:00 | None |
 | TRANSFORM-004 | Native transform data flow must use FieldValue/FieldType enums internally with JSON conversion limited to boundary layers. | transform/native, transform/mod.rs | 2025-09-22 19:14:37 | None |
+| TRANSFORM-005 | Native FieldDefinition must validate names, default types, and generate typed defaults for optional fields. | transform/native | 2025-09-22 19:16:45 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management
@@ -272,3 +273,15 @@ This document contains the most up-to-date and condensed information about the p
   - Full migration details in [`docs/delivery/API-STD-1/migration-reference.md`](delivery/API-STD-1/migration-reference.md)
   - Architecture documentation in [`docs/delivery/API-STD-1/api-client-architecture.md`](delivery/API-STD-1/api-client-architecture.md)
   - Developer guide in [`docs/delivery/API-STD-1/developer-guide.md`](delivery/API-STD-1/developer-guide.md)
+### TRANSFORM-005: Native Field Definition Validation Rules
+- **Description**: Establishes validation and defaulting guarantees for native transform field definitions built on top of `FieldValue`/`FieldType`.
+- **Rationale**: Ensures native transforms operate on well-formed field metadata without relying on ad-hoc JSON validation, preventing subtle runtime bugs.
+- **Validation Rules**:
+  - Field names must be trimmed, non-empty, and contain only ASCII letters, digits, or underscores while starting with a letter or underscore.
+  - Default values must satisfy the declared `FieldType`; mismatches raise typed validation errors.
+- **Defaulting Behavior**:
+  - Explicit defaults are preserved exactly as declared.
+  - Optional fields without explicit defaults inherit deterministic defaults generated from their `FieldType` (e.g., empty arrays/objects, zero-valued scalars, `null`).
+- **Implementation Notes**:
+  - Validation surfaces `FieldDefinitionError` variants for name issues or default mismatches.
+  - `FieldType::default_value()` produces recursive defaults for nested object schemas used by optional fields.

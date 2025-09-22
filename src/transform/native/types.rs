@@ -162,4 +162,23 @@ impl FieldType {
             },
         }
     }
+
+    /// Produce a deterministic default value for the declared type.
+    #[must_use]
+    pub fn default_value(&self) -> FieldValue {
+        match self {
+            FieldType::String => FieldValue::String(String::new()),
+            FieldType::Number => FieldValue::Number(0.0),
+            FieldType::Integer => FieldValue::Integer(0),
+            FieldType::Boolean => FieldValue::Boolean(false),
+            FieldType::Null => FieldValue::Null,
+            FieldType::Array { .. } => FieldValue::Array(Vec::new()),
+            FieldType::Object { fields } => FieldValue::Object(
+                fields
+                    .iter()
+                    .map(|(name, field_type)| (name.clone(), field_type.default_value()))
+                    .collect(),
+            ),
+        }
+    }
 }
