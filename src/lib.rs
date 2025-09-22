@@ -27,6 +27,7 @@
 
 pub mod atom;
 pub mod config_utils;
+pub mod constants;
 pub mod datafold_node;
 pub mod db_operations;
 pub mod error;
@@ -37,13 +38,13 @@ pub mod ingestion;
 pub mod logging;
 pub mod network;
 pub mod permissions;
+pub mod persistence;
 pub mod schema;
 pub mod security;
 pub mod testing_utils;
 pub mod transform;
 pub mod validation_utils;
 pub mod web_logger;
-pub mod constants;
 
 // Re-export main types for convenience
 pub use datafold_node::config::load_node_config;
@@ -54,24 +55,22 @@ pub use fold_db_core::FoldDB;
 pub use network::{NetworkConfig, NetworkCore, NetworkError, NetworkResult, PeerId, SchemaService};
 
 // Re-export schema types needed for CLI
-pub use schema::SchemaState;
 pub use schema::types::operation::Operation;
 pub use schema::types::operations::MutationType;
 pub use schema::Schema;
+pub use schema::SchemaState;
 
 // Re-export security types
 pub use security::{
-    SecurityConfig, SecurityManager, SecurityError, SecurityResult,
-    SignedMessage, PublicKeyInfo, VerificationResult, EncryptedData,
-    KeyRegistrationRequest, KeyRegistrationResponse,
-    Ed25519KeyPair, Ed25519PublicKey, MessageSigner, MessageVerifier,
-    EncryptionManager, ConditionalEncryption,
-    ClientSecurity, SecurityMiddleware, SecurityConfigBuilder,
-    KeyUtils, SigningUtils, EncryptionUtils,
+    ClientSecurity, ConditionalEncryption, Ed25519KeyPair, Ed25519PublicKey, EncryptedData,
+    EncryptionManager, EncryptionUtils, KeyRegistrationRequest, KeyRegistrationResponse, KeyUtils,
+    MessageSigner, MessageVerifier, PublicKeyInfo, SecurityConfig, SecurityConfigBuilder,
+    SecurityError, SecurityManager, SecurityMiddleware, SecurityResult, SignedMessage,
+    SigningUtils, VerificationResult,
 };
 
 // Re-export ingestion types
 pub use ingestion::{IngestionConfig, IngestionCore, IngestionError, IngestionResponse};
 
 // Re-export commonly used constants
-pub use constants::{DEFAULT_P2P_PORT, DEFAULT_HTTP_PORT};
+pub use constants::{DEFAULT_HTTP_PORT, DEFAULT_P2P_PORT};
