@@ -356,7 +356,7 @@ fn errors_when_range_key_missing_for_range_schema() {
     let error = result.unwrap_err();
     match error {
         SchemaError::InvalidData(message) => {
-            assert!(message.contains("requires range key value"));
+            assert!(message.contains("requires key.range_field 'session_id'"));
         }
         other => panic!("expected InvalidData error, got {:?}", other),
     }
