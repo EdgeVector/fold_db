@@ -23,6 +23,7 @@ This document contains the most up-to-date and condensed information about the p
 | TRANSFORM-006 | Native TransformSpec definitions must validate field references and use typed inputs/outputs with FieldDefinition metadata. | transform/native/transform_spec.rs | 2025-09-23 11:45:00 | None |
 | TRANSFORM-007 | Native transform primitives must maintain exhaustive unit coverage across conversions and validation errors before integration layers consume them. | transform/native, tests/unit/native_* | 2025-09-24 11:45:00 | None |
 | BOUNDARY-001 | JsonBoundaryLayer converts between JSON payloads and native FieldValue maps using registered schema definitions, rejecting unknown fields unless explicitly allowed. | api/json_boundary.rs | 2025-09-23 15:30:00 | None |
+| BOUNDARY-002 | Conversion utilities provide type-safe individual field conversion, validation, and schema introspection for fine-grained control over JSON/native conversions. | api/json_boundary.rs | 2025-01-27 10:30:00 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management
@@ -299,3 +300,26 @@ This document contains the most up-to-date and condensed information about the p
 - **Maintenance Notes**:
   - Add new test cases whenever additional validation logic or data structures are introduced in `transform/native`.
   - Keep tests deterministic and localized to the unit layer to preserve rapid feedback during development.
+
+### BOUNDARY-002: Conversion Utilities Architecture
+- **Description**: Provides type-safe conversion utilities for fine-grained control over JSON/native conversions
+- **Rationale**: Enables developers to perform individual field conversions, validation, and schema introspection without full object conversion overhead
+- **Utility Functions**:
+  - `convert_json_value()`: Converts individual JSON values to native FieldValue with type validation
+  - `convert_native_value()`: Converts individual native FieldValue to JSON with type validation
+  - `get_field_default()`: Retrieves default values for optional fields in schemas
+  - `validate_json_payload()`: Validates JSON objects against schemas without conversion
+  - `json_to_native_partial()`: Converts only present fields without applying defaults
+  - `registered_schemas()`: Lists all registered schema names
+  - `has_schema()`: Checks if a schema is registered
+  - `schema_info()`: Returns metadata about registered schemas
+- **Use Cases**:
+  - Individual field validation and conversion
+  - Schema introspection and discovery
+  - Partial object conversion for performance optimization
+  - Early validation before expensive conversion operations
+- **Implementation Notes**:
+  - All utilities maintain the same type safety and validation as full conversion methods
+  - Error handling provides consistent JsonBoundaryError types
+  - Schema information is exposed through SchemaInfo struct without internal structure exposure
+  - Partial conversion respects additional field permissions and type validation
