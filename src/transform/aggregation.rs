@@ -3,13 +3,16 @@
 //! This module handles the aggregation of execution results from the ExecutionEngine
 //! into the final output format for different schema types.
 
+use crate::schema::schema_operations::shape_unified_result;
+use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+use crate::schema::types::schema::SchemaType;
 use crate::schema::types::SchemaError;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
 use crate::transform::shared_utilities::resolve_field_value_from_chain;
 use log::info;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 /// Extracts optimal field value from execution engine entry.
@@ -45,81 +48,152 @@ fn extract_optimal_field_value(
 /// # Returns
 ///
 /// The aggregated result object
+struct AggregationAccumulator<'a> {
+    schema: &'a DeclarativeSchemaDefinition,
+    expressions: HashMap<String, String>,
+    raw_fields: HashMap<String, Vec<JsonValue>>,
+    legacy_fields: serde_json::Map<String, JsonValue>,
+}
+
+impl<'a> AggregationAccumulator<'a> {
+    fn new(schema: &'a DeclarativeSchemaDefinition, expressions: &[(String, String)]) -> Self {
+        let expression_map = expressions
+            .iter()
+            .map(|(field, expr)| (field.clone(), expr.clone()))
+            .collect();
+
+        Self {
+            schema,
+            expressions: expression_map,
+            raw_fields: HashMap::new(),
+            legacy_fields: serde_json::Map::new(),
+        }
+    }
+
+    fn insert_values(&mut self, field_name: &str, values: Vec<JsonValue>, treat_as_array: bool) {
+        self.raw_fields
+            .insert(field_name.to_string(), values.clone());
+
+        let compat_key = match (&self.schema.schema_type, field_name) {
+            (SchemaType::HashRange, "_hash_field") => Some("hash_key"),
+            (SchemaType::HashRange, "_range_field") => Some("range_key"),
+            (_, name) if !name.starts_with('_') => Some(name),
+            _ => None,
+        };
+
+        if let Some(key) = compat_key {
+            let compat_value = if treat_as_array {
+                JsonValue::Array(values)
+            } else {
+                values.into_iter().next().unwrap_or(JsonValue::Null)
+            };
+            self.legacy_fields.insert(key.to_string(), compat_value);
+        }
+    }
+
+    fn finalize(self) -> Result<JsonValue, SchemaError> {
+        let mut shape_payload = serde_json::Map::new();
+        let mut used_names: HashSet<String> = HashSet::new();
+
+        for (field_name, values) in &self.raw_fields {
+            let mut candidate = self
+                .expressions
+                .get(field_name)
+                .and_then(|expr| expression_final_segment(expr))
+                .unwrap_or_else(|| sanitize_field_name(field_name));
+
+            if candidate.is_empty() {
+                candidate = sanitize_field_name(field_name);
+            }
+
+            let unique_name = ensure_unique_name(&candidate, &used_names);
+            used_names.insert(unique_name.clone());
+
+            let value = if values.len() == 1 {
+                values[0].clone()
+            } else {
+                JsonValue::Array(values.clone())
+            };
+
+            shape_payload.insert(unique_name, value);
+        }
+
+        let hash_value = self.derive_key_value("_hash_field");
+        let range_value = self.derive_key_value("_range_field");
+
+        let shaped_input = JsonValue::Object(shape_payload);
+        let shaped_result =
+            shape_unified_result(self.schema, &shaped_input, hash_value, range_value)?;
+
+        let mut final_object = shaped_result
+            .as_object()
+            .cloned()
+            .unwrap_or_else(serde_json::Map::new);
+
+        for (key, value) in self.legacy_fields {
+            final_object.entry(key).or_insert(value);
+        }
+
+        Ok(JsonValue::Object(final_object))
+    }
+
+    fn derive_key_value(&self, field_name: &str) -> Option<String> {
+        self.raw_fields
+            .get(field_name)
+            .and_then(|values| values.iter().find_map(json_value_to_string))
+    }
+}
+
 pub fn aggregate_results_unified(
+    schema: &DeclarativeSchemaDefinition,
     parsed_chains: &[(String, ParsedChain)],
     execution_result: &ExecutionResult,
     input_values: &HashMap<String, JsonValue>,
     all_expressions: &[(String, String)],
-    schema_type: SchemaType,
 ) -> Result<JsonValue, SchemaError> {
     let start_time = Instant::now();
-    info!("🔄 Unified aggregation for {:?} schema", schema_type);
+    info!("🔄 Unified aggregation for {:?} schema", schema.schema_type);
 
-    let mut result_object = serde_json::Map::new();
+    let mut accumulator = AggregationAccumulator::new(schema, all_expressions);
 
     if execution_result.index_entries.is_empty() {
         info!("⚠️ ExecutionEngine produced empty results, using direct value resolution");
         process_direct_value_resolution(
+            schema,
             parsed_chains,
             input_values,
             all_expressions,
-            &mut result_object,
-            schema_type,
+            &mut accumulator,
         )?;
     } else {
         info!("✅ Using ExecutionEngine results with aggregation processing");
         process_execution_result_aggregation(
+            schema,
             parsed_chains,
             execution_result,
             input_values,
             all_expressions,
-            &mut result_object,
-            schema_type,
+            &mut accumulator,
         )?;
     }
 
-    let result = JsonValue::Object(result_object);
+    let result = accumulator.finalize()?;
     let duration = start_time.elapsed();
     info!("⏱️ Unified aggregation completed in {:?}", duration);
     Ok(result)
 }
 
-/// Schema type for unified aggregation
-#[derive(Debug, Clone, Copy)]
-pub enum SchemaType {
-    Single,
-    Range,
-    HashRange,
-}
-
-/// Unified direct value resolution for empty execution results.
-///
-/// When the ExecutionEngine produces no results, this function directly resolves
-/// field values from input data using chain parsing or dotted path resolution.
-///
-/// # Arguments
-///
-/// * `parsed_chains` - The parsed chains with their field names
-/// * `input_values` - The original input values for direct resolution
-/// * `all_expressions` - All expressions (including failed parsing attempts)
-/// * `result_object` - The result object to populate
-/// * `schema_type` - The type of schema being processed
-///
-/// # Returns
-///
-/// Result indicating success or failure
 fn process_direct_value_resolution(
+    _schema: &DeclarativeSchemaDefinition,
     parsed_chains: &[(String, ParsedChain)],
     input_values: &HashMap<String, JsonValue>,
     all_expressions: &[(String, String)],
-    result_object: &mut serde_json::Map<String, JsonValue>,
-    schema_type: SchemaType,
+    accumulator: &mut AggregationAccumulator,
 ) -> Result<(), SchemaError> {
     for (field_name, expression) in all_expressions {
         let field_value = if let Some((_, parsed_chain)) =
             parsed_chains.iter().find(|(name, _)| name == field_name)
         {
-            // Field was successfully parsed, use chain resolution
             match resolve_field_value_from_chain(parsed_chain, input_values, field_name) {
                 Ok(value) => value,
                 Err(err) => {
@@ -131,7 +205,6 @@ fn process_direct_value_resolution(
                 }
             }
         } else {
-            // Field failed to parse, try direct dotted path resolution
             match crate::transform::shared_utilities::resolve_dotted_path(expression, input_values)
             {
                 Ok(value) => value,
@@ -145,73 +218,27 @@ fn process_direct_value_resolution(
             }
         };
 
-        // Handle field inclusion based on schema type
-        match schema_type {
-            SchemaType::HashRange => {
-                // For HashRange schemas, convert internal fields to public fields
-                // Note: For direct resolution, we create single values, not arrays
-                // Arrays are only created when ExecutionEngine produces multiple IndexEntry objects
-                match field_name.as_str() {
-                    "_hash_field" => {
-                        result_object.insert("hash_key".to_string(), field_value);
-                    }
-                    "_range_field" => {
-                        result_object.insert("range_key".to_string(), field_value);
-                    }
-                    _ => {
-                        // Regular fields are included as-is
-                        result_object.insert(field_name.clone(), field_value);
-                    }
-                }
-            }
-            _ => {
-                // For other schema types, filter out internal fields
-                if !field_name.starts_with('_') {
-                    result_object.insert(field_name.clone(), field_value);
-                }
-            }
-        }
+        accumulator.insert_values(field_name, vec![field_value], false);
     }
+
     Ok(())
 }
 
-/// Unified execution result aggregation for successful execution results.
-///
-/// When the ExecutionEngine produces IndexEntry results, this function aggregates
-/// them into the final result object, handling schema-specific field mapping and
-/// array creation for HashRange schemas.
-///
-/// # Arguments
-///
-/// * `parsed_chains` - The parsed chains with their field names
-/// * `execution_result` - The execution result from ExecutionEngine
-/// * `input_values` - The original input values for fallback resolution
-/// * `all_expressions` - All expressions (including failed parsing attempts)
-/// * `result_object` - The result object to populate
-/// * `schema_type` - The type of schema being processed
-///
-/// # Returns
-///
-/// Result indicating success or failure
 fn process_execution_result_aggregation(
+    schema: &DeclarativeSchemaDefinition,
     parsed_chains: &[(String, ParsedChain)],
     execution_result: &ExecutionResult,
     input_values: &HashMap<String, JsonValue>,
     all_expressions: &[(String, String)],
-    result_object: &mut serde_json::Map<String, JsonValue>,
-    schema_type: SchemaType,
+    accumulator: &mut AggregationAccumulator,
 ) -> Result<(), SchemaError> {
-    match schema_type {
+    match &schema.schema_type {
         SchemaType::HashRange => {
-            // For HashRange schemas, we need to collect all values into arrays
             let mut field_arrays: HashMap<String, Vec<JsonValue>> = HashMap::new();
-
-            // Initialize arrays for all fields
             for (field_name, _) in parsed_chains.iter() {
                 field_arrays.insert(field_name.clone(), Vec::new());
             }
 
-            // Collect all entries by expression (multiple entries per expression)
             let mut entries_by_expression: HashMap<String, Vec<&IndexEntry>> = HashMap::new();
             for entry in &execution_result.index_entries {
                 entries_by_expression
@@ -220,64 +247,33 @@ fn process_execution_result_aggregation(
                     .push(entry);
             }
 
-            // Extract values from ExecutionEngine index entries for each field
             for (field_name, parsed_chain) in parsed_chains.iter() {
                 if let Some(entries) = entries_by_expression.get(&parsed_chain.expression) {
-                    for entry in entries {
-                        let field_value = extract_optimal_field_value(entry);
-
-                        // Handle hash and range fields by storing them with their internal names
-                        // for later conversion to public names
-                        if field_name == "_hash_field" {
-                            field_arrays
-                                .entry("_hash_field".to_string())
-                                .or_default()
-                                .push(field_value);
-                        } else if field_name == "_range_field" {
-                            field_arrays
-                                .entry("_range_field".to_string())
-                                .or_default()
-                                .push(field_value);
-                        } else {
-                            // Regular fields
-                            field_arrays
-                                .entry(field_name.clone())
-                                .or_default()
-                                .push(field_value);
+                    if let Some(values) = field_arrays.get_mut(field_name) {
+                        for entry in entries {
+                            values.push(extract_optimal_field_value(entry));
                         }
                     }
                 }
             }
 
-            // Create compound key structure with arrays
-            let hash_key_array = field_arrays.remove("_hash_field").unwrap_or_default();
-            let range_key_array = field_arrays.remove("_range_field").unwrap_or_default();
-
-            result_object.insert("hash_key".to_string(), JsonValue::Array(hash_key_array));
-            result_object.insert("range_key".to_string(), JsonValue::Array(range_key_array));
-
-            // Add regular fields as arrays
-            for (field_name, field_array) in field_arrays {
-                result_object.insert(field_name, JsonValue::Array(field_array));
+            for (field_name, values) in field_arrays {
+                accumulator.insert_values(&field_name, values, true);
             }
         }
         _ => {
-            // For Single and Range schemas, use single values
             let mut entries_by_expression: HashMap<String, &IndexEntry> = HashMap::new();
             for entry in &execution_result.index_entries {
                 entries_by_expression.insert(entry.expression.clone(), entry);
             }
 
-            // Process all fields, including those that failed to parse
             for (field_name, expression) in all_expressions {
                 let field_value = if let Some((_, parsed_chain)) =
                     parsed_chains.iter().find(|(name, _)| name == field_name)
                 {
-                    // Field was successfully parsed, check if it was executed
                     if let Some(entry) = entries_by_expression.get(&parsed_chain.expression) {
                         extract_optimal_field_value(entry)
                     } else {
-                        // Parsed but not executed, use fallback
                         match resolve_field_value_from_chain(parsed_chain, input_values, field_name)
                         {
                             Ok(value) => value,
@@ -291,7 +287,6 @@ fn process_execution_result_aggregation(
                         }
                     }
                 } else {
-                    // Field failed to parse, try direct dotted path resolution
                     match crate::transform::shared_utilities::resolve_dotted_path(
                         expression,
                         input_values,
@@ -307,9 +302,8 @@ fn process_execution_result_aggregation(
                     }
                 };
 
-                // For other schema types, filter out internal fields
                 if !field_name.starts_with('_') {
-                    result_object.insert(field_name.clone(), field_value);
+                    accumulator.insert_values(field_name, vec![field_value], false);
                 }
             }
         }
@@ -318,15 +312,81 @@ fn process_execution_result_aggregation(
     Ok(())
 }
 
+fn expression_final_segment(expression: &str) -> Option<String> {
+    expression.split('.').rev().find_map(|segment| {
+        let trimmed = segment.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("input") || trimmed.ends_with("()") {
+            None
+        } else {
+            Some(trimmed.trim_matches(|c| "\"'".contains(c)).to_string())
+        }
+    })
+}
+
+fn sanitize_field_name(field_name: &str) -> String {
+    let sanitized = field_name.trim_start_matches('_');
+    if sanitized.is_empty() {
+        field_name.to_string()
+    } else {
+        sanitized.to_string()
+    }
+}
+
+fn ensure_unique_name(base: &str, used_names: &HashSet<String>) -> String {
+    if !used_names.contains(base) {
+        return base.to_string();
+    }
+
+    let mut index = 1;
+    loop {
+        let candidate = format!("{}_{}", base, index);
+        if !used_names.contains(&candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+fn json_value_to_string(value: &JsonValue) -> Option<String> {
+    match value {
+        JsonValue::String(s) => Some(s.clone()),
+        JsonValue::Number(n) => Some(n.to_string()),
+        JsonValue::Bool(b) => Some(b.to_string()),
+        JsonValue::Null => None,
+        JsonValue::Array(arr) => arr.first().and_then(json_value_to_string),
+        JsonValue::Object(_) => Some(value.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::types::json_schema::{
+        DeclarativeSchemaDefinition, FieldDefinition, KeyConfig,
+    };
+    use crate::schema::types::schema::SchemaType;
     use crate::transform::iterator_stack::chain_parser::ParsedChain;
     use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
     use serde_json::json;
 
     #[test]
     fn test_aggregate_results_unified_empty_execution() {
+        let mut fields = HashMap::new();
+        fields.insert(
+            "field1".to_string(),
+            FieldDefinition {
+                atom_uuid: Some("input.field1".to_string()),
+                field_type: Some("String".to_string()),
+            },
+        );
+
+        let schema = DeclarativeSchemaDefinition {
+            name: "single_schema".to_string(),
+            schema_type: SchemaType::Single,
+            key: None,
+            fields,
+        };
+
         let parsed_chains = vec![(
             "field1".to_string(),
             ParsedChain {
@@ -368,20 +428,39 @@ mod tests {
         let all_expressions = vec![("field1".to_string(), "input.field1".to_string())];
 
         let result = aggregate_results_unified(
+            &schema,
             &parsed_chains,
             &execution_result,
             &input_values,
             &all_expressions,
-            SchemaType::Single,
         );
 
         assert!(result.is_ok());
         let result_value = result.unwrap();
         assert_eq!(result_value["field1"], json!("value1"));
+        assert_eq!(result_value["hash"], json!(""));
+        assert_eq!(result_value["range"], json!(""));
+        assert_eq!(result_value["fields"]["field1"], json!("value1"));
     }
 
     #[test]
     fn test_aggregate_results_unified_with_execution() {
+        let mut fields = HashMap::new();
+        fields.insert(
+            "field1".to_string(),
+            FieldDefinition {
+                atom_uuid: Some("input.field1".to_string()),
+                field_type: Some("String".to_string()),
+            },
+        );
+
+        let schema = DeclarativeSchemaDefinition {
+            name: "single_schema".to_string(),
+            schema_type: SchemaType::Single,
+            key: None,
+            fields,
+        };
+
         let parsed_chains = vec![(
             "field1".to_string(),
             ParsedChain {
@@ -429,20 +508,42 @@ mod tests {
         let all_expressions = vec![("field1".to_string(), "input.field1".to_string())];
 
         let result = aggregate_results_unified(
+            &schema,
             &parsed_chains,
             &execution_result,
             &input_values,
             &all_expressions,
-            SchemaType::Single,
         );
 
         assert!(result.is_ok());
         let result_value = result.unwrap();
         assert_eq!(result_value["field1"], json!("executed_value1"));
+        assert_eq!(result_value["hash"], json!(""));
+        assert_eq!(result_value["range"], json!(""));
+        assert_eq!(result_value["fields"]["field1"], json!("executed_value1"));
     }
 
     #[test]
     fn test_aggregate_results_unified_key_field_filtering() {
+        let mut fields = HashMap::new();
+        fields.insert(
+            "field1".to_string(),
+            FieldDefinition {
+                atom_uuid: Some("input.field1".to_string()),
+                field_type: Some("String".to_string()),
+            },
+        );
+
+        let schema = DeclarativeSchemaDefinition {
+            name: "hashrange_schema".to_string(),
+            schema_type: SchemaType::HashRange,
+            key: Some(KeyConfig {
+                hash_field: "input.hash".to_string(),
+                range_field: "input.range".to_string(),
+            }),
+            fields,
+        };
+
         let parsed_chains = vec![
             (
                 "_hash_field".to_string(),
@@ -507,11 +608,11 @@ mod tests {
         ];
 
         let result = aggregate_results_unified(
+            &schema,
             &parsed_chains,
             &execution_result,
             &input_values,
             &all_expressions,
-            SchemaType::HashRange,
         );
 
         assert!(result.is_ok());
@@ -524,12 +625,8 @@ mod tests {
             .contains_key("_hash_field"));
         assert!(result_value.as_object().unwrap().contains_key("field1"));
         assert_eq!(result_value["field1"], json!("value1"));
-    }
-
-    #[test]
-    fn test_schema_type_enum() {
-        assert_eq!(format!("{:?}", SchemaType::Single), "Single");
-        assert_eq!(format!("{:?}", SchemaType::Range), "Range");
-        assert_eq!(format!("{:?}", SchemaType::HashRange), "HashRange");
+        assert_eq!(result_value["hash"], json!("hash_value"));
+        assert_eq!(result_value["range"], json!(""));
+        assert_eq!(result_value["fields"]["field1"], json!("value1"));
     }
 }

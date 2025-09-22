@@ -780,7 +780,10 @@ fn test_mutation_service_normalized_request_emits_key_snapshot() {
     assert_eq!(snapshot.fields.get("range"), Some(&json!("session-123")));
 
     let snapshot_fields = normalized_fields(&snapshot.fields);
-    assert_eq!(snapshot_fields.get("range_key"), Some(&json!("session-123")));
+    assert_eq!(
+        snapshot_fields.get("range_key"),
+        Some(&json!("session-123"))
+    );
     assert_eq!(snapshot_fields.get("status"), Some(&expected_value));
     let range_key_str = snapshot_fields
         .get("range_key")

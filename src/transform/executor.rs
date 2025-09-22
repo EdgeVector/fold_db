@@ -8,9 +8,7 @@
 use crate::schema::types::{
     json_schema::DeclarativeSchemaDefinition, schema::SchemaType, SchemaError, Transform,
 };
-use crate::transform::aggregation::{
-    aggregate_results_unified, SchemaType as AggregationSchemaType,
-};
+use crate::transform::aggregation::aggregate_results_unified;
 use crate::transform::coordination::execute_multi_chain_coordination_with_monitoring;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
@@ -184,11 +182,11 @@ impl TransformExecutor {
 
                 // Aggregate results into final output format using unified aggregation
                 aggregate_results_unified(
+                    schema,
                     &modified_chains,
                     &execution_result,
                     input_values,
                     &modified_expressions,
-                    AggregationSchemaType::Single,
                 )
             },
         )
@@ -281,6 +279,7 @@ impl TransformExecutor {
 
                 // Execute using the same multi-chain engine as HashRange
                 Self::execute_multi_chain_with_engine(
+                    schema,
                     &parsed_chains,
                     input_values,
                     &alignment_result,
@@ -392,6 +391,7 @@ impl TransformExecutor {
 
     /// Executes multi-chain coordination with ExecutionEngine for Range schemas.
     fn execute_multi_chain_with_engine(
+        schema: &DeclarativeSchemaDefinition,
         parsed_chains: &[(String, ParsedChain)],
         input_values: &HashMap<String, JsonValue>,
         alignment_result: &AlignmentValidationResult,
@@ -410,11 +410,11 @@ impl TransformExecutor {
             .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
             .collect();
         aggregate_results_unified(
+            schema,
             parsed_chains,
             &execution_result,
             input_values,
             &all_expressions,
-            AggregationSchemaType::Range,
         )
     }
 
