@@ -50,13 +50,21 @@ impl ResolvedAtomKeys {
 
     /// Convert the resolved keys into a reusable snapshot structure
     pub fn to_snapshot(&self) -> KeySnapshot {
-        let has_nested_fields = matches!(self.fields.get("fields"), Some(Value::Object(_)));
-        let duplicate_range = if has_nested_fields {
-            match (self.range.as_ref(), self.fields.get("range")) {
-                (Some(resolved_range), Some(Value::String(inline_range))) => {
-                    inline_range == resolved_range && self.hash.is_none()
-                }
-                _ => false,
+        // Check if the normalized field map already contains the range key
+        // This avoids redundant range metadata when the range is already represented in the fields
+        let duplicate_range = if let Some(Value::Object(normalized_fields)) = self.fields.get("fields") {
+            // If both conditions are met, we have redundant range metadata:
+            // 1. The normalized fields contain a range_key
+            // 2. We have a range value at the top level
+            // 3. There's also a "range" field in the top-level fields that matches our range
+            if self.range.is_some() && normalized_fields.contains_key("range_key") {
+                // Also check if there's a matching "range" field in top-level fields
+                matches!(
+                    (self.range.as_ref(), self.fields.get("range")),
+                    (Some(range_val), Some(Value::String(field_range))) if range_val == field_range
+                )
+            } else {
+                false
             }
         } else {
             false
