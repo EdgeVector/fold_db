@@ -39,6 +39,7 @@ pub mod hasher;
 pub mod types;
 pub mod validator;
 pub mod molecule_variants;
+pub mod native;
 pub mod schema_types;
 pub mod schema_field_mapping;
 pub mod schema_interpretation;
@@ -58,6 +59,10 @@ pub use file_operations::SchemaFileOperations;
 pub use hasher::SchemaHasher;
 pub use validator::SchemaValidator;
 pub use molecule_variants::MoleculeVariant;
+pub use native::{
+    KeyConfig as NativeKeyConfig, KeyConfigError, NativeSchema, NativeSchemaError,
+    NativeSchemaRegistry, RegistryError as NativeRegistryError, SchemaValidationError,
+};
 pub use schema_types::{SchemaLoadingReport, SchemaSource, SchemaState};
 pub use schema_field_mapping::map_fields;
 pub use schema_interpretation::{interpret_schema, load_schema_from_json, load_schema_from_file};
