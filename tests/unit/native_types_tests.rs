@@ -1,5 +1,6 @@
 use datafold::transform::{FieldValue, NativeFieldType};
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
 #[test]
 fn field_type_infers_scalar_and_collection_variants() {
@@ -12,7 +13,7 @@ fn field_type_infers_scalar_and_collection_variants() {
         NativeFieldType::Integer
     );
     assert_eq!(
-        FieldValue::Number(3.14).field_type(),
+        FieldValue::Number(PI).field_type(),
         NativeFieldType::Number
     );
     assert_eq!(
