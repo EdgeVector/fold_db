@@ -29,6 +29,8 @@ This document contains the most up-to-date and condensed information about the p
 | SCHEMA-KEY-008 | MutationService mutation workflows publish FieldValueSet requests exclusively through the normalized builder, and integration tests verify normalized key snapshots for Single and Range flows. | fold_db_core/services/mutation.rs, tests/integration | 2025-09-23 16:45:00 | None |
 | SCHEMA-KEY-009 | Transform managers and downstream message bus constructors must publish FieldValueSet requests using normalized helpers so payloads include schema-derived hash/range metadata. | fold_db_core/transform_manager, fold_db_core/infrastructure/message_bus | 2025-09-23 18:30:00 | None |
 | SCHEMA-KEY-010 | Range schema requests must supply the configured key.range_field or a normalized range value; missing configuration or payload values return SchemaError without legacy fallback. | schema/schema_operations.rs, tests/unit/field_processing, tests/unit/mutation | 2025-01-27 22:05:00 | None |
+| SCHEMA-KEY-011 | FieldValueSet mutation context retains caller-provided hash/range keys when normalized snapshots omit deduplicated metadata. | fold_db_core/managers/atom/field_processing.rs | 2025-09-30 10:30:00 | None |
+| SCHEMA-KEY-012 | BlogPostWordIndex schema must expose content, author, title, and tags fields via `BlogPost.map().fields.*` expressions so hash/range transforms hydrate index queries. | available_schemas/BlogPostWordIndex.json, tests/integration/blog_word_index_integration_test.rs | 2025-09-30 12:45:00 | None |
 | AUTH-DEV-001 | All endpoints currently operate in development mode with authentication disabled. All requests use "web-ui" identity automatically. | query_routes, http_server, api/clients | 2025-01-27 16:00:00 | None |
 
 ### AUTH-DEV-001: Development Mode Authentication
@@ -286,6 +288,18 @@ This document contains the most up-to-date and condensed information about the p
   - `IteratorDatasetCache` computes cache keys from dot-separated branch paths, iterator type, and parent scope hashes.
   - `IteratorManager::initialize_stack` consults the cache before extracting items, recording cache hits/misses.
   - `ExecutionEngine` reports cache metrics via `ExecutionStatistics` to expose dedup efficiency for monitoring and tests.
+
+### SCHEMA-KEY-012: BlogPostWordIndex Field Mapping Consistency
+- **Description**: BlogPostWordIndex's declarative schema must reference BlogPost fields using the `BlogPost.map().fields.*`
+  accessor pattern for both KeyConfig and atom UUID definitions.
+- **Rationale**: Integration and E2E tests rely on the BlogPostWordIndex schema exposing `content`, `author`, `title`, and `tags`
+  so hash/range transforms can materialize the word index and answer queries.
+- **Implementation Notes**:
+  - `hash_field` should be `BlogPost.map().fields.content.split_by_word().map()`.
+  - `range_field` should be `BlogPost.map().fields.publish_date`.
+  - Include field definitions for `content`, `author`, `title`, and `tags` mapped to the corresponding BlogPost field accessors.
+  - Integration tests (`tests/integration/blog_word_index_integration_test.rs`, `tests/integration/simplified_format_e2e_tests.rs`)
+    confirm schema availability and BlogWordIndex query behavior.
 
 ### Migration and Breaking Changes (API-STD-1)
 - **Description**: Documents the comprehensive migration from direct fetch() usage to unified API clients
