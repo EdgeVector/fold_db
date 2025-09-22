@@ -37,50 +37,52 @@
 //! - Data integrity
 //! - Security compliance
 //!
-//! Use the `TransformDataPersistence` trait and `MutationBasedPersistence` 
+//! Use the `TransformDataPersistence` trait and `MutationBasedPersistence`
 //! implementation for all data persistence needs.
 
 pub mod ast;
 pub mod executor;
 pub mod interpreter;
-pub mod parser;
-pub mod standardized_executor;
 pub mod mutation_examples;
+pub mod parser;
 pub mod restricted_access;
-pub mod safe_access;
 pub mod restricted_access_example;
 pub mod restricted_access_integration_test;
+pub mod safe_access;
+pub mod standardized_executor;
 
 // New modular components
-pub mod validation;
-pub mod coordination;
-pub mod shared_utilities;
 pub mod aggregation;
+pub mod coordination;
 pub mod hash_range_executor;
-pub mod range_executor;
-pub mod single_executor;
 pub mod iterator_stack;
+pub mod native;
+pub mod range_executor;
+pub mod shared_utilities;
+pub mod single_executor;
+pub mod validation;
 
 // Public re-exports
 pub use crate::schema::types::Transform;
 pub use ast::{Expression, Operator, TransformDeclaration, UnaryOperator, Value};
 pub use executor::TransformExecutor;
 pub use interpreter::Interpreter;
-pub use parser::TransformParser;
-pub use standardized_executor::{
-    StandardizedTransformExecutor, StandardizedExecutionResult, ExecutionMetadata,
-    InputProvider, MutationExecutor, DatabaseInputProvider, MutationServiceExecutor,
-    EventDrivenInputProvider, OrchestratedTransformExecutor,
-};
 pub use mutation_examples::{
-    MutationBasedDataStorage, TransformWithMutationStorage, BatchMutationExecutor,
-    ConditionalMutationExecutor,
+    BatchMutationExecutor, ConditionalMutationExecutor, MutationBasedDataStorage,
+    TransformWithMutationStorage,
 };
+pub use native::{FieldType as NativeFieldType, FieldValue};
+pub use parser::TransformParser;
 pub use restricted_access::{
-    TransformDataPersistence, MutationBasedPersistence, TransformAccessValidator,
-    TransformAccessError,
+    MutationBasedPersistence, TransformAccessError, TransformAccessValidator,
+    TransformDataPersistence,
 };
 pub use safe_access::{
-    ReadOnlyAtom, ReadOnlyMolecule, ReadOnlyMoleculeRange, TransformSafeDataAccess,
-    DatabaseTransformDataAccess,
+    DatabaseTransformDataAccess, ReadOnlyAtom, ReadOnlyMolecule, ReadOnlyMoleculeRange,
+    TransformSafeDataAccess,
+};
+pub use standardized_executor::{
+    DatabaseInputProvider, EventDrivenInputProvider, ExecutionMetadata, InputProvider,
+    MutationExecutor, MutationServiceExecutor, OrchestratedTransformExecutor,
+    StandardizedExecutionResult, StandardizedTransformExecutor,
 };
