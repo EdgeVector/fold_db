@@ -14,17 +14,20 @@ null = @{ "null" }
 
 // Operators with clear precedence
 add_op = { "+" | "-" }
-mul_op = { "*" | "/" }
+mul_op = { "*" | "/" | "%" }
 pow_op = { "^" }
 comp_op = { "==" | "!=" | "<=" | ">=" | "<" | ">" }
 logic_op = { "&&" | "||" }
 unary_op = { "-" | "!" }
 
-// Field access (obj.field)
-field_access = { identifier ~ ("." ~ identifier)+ }
+// Field access (obj.field or array[index])
+field_access = { identifier ~ ("." ~ (identifier | number))+ }
 
 // Function call with arguments
 function_call = { identifier ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }
+
+// Array literal
+array = { "[" ~ (expr ~ ("," ~ expr)*)? ~ "]" }
 
 // Atoms (basic values)
 atom = {
@@ -32,6 +35,7 @@ atom = {
     string |
     boolean |
     null |
+    array |
     function_call |
     field_access |
     identifier |

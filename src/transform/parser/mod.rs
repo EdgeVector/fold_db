@@ -216,7 +216,7 @@ impl TransformParser {
         Ok(expr)
     }
 
-    /// Parses a multiplication expression (*, /).
+    /// Parses a multiplication expression (*, /, %).
     fn parse_mul_expr(&self, pair: Pair<Rule>) -> Result<Expression, SchemaError> {
         let mut pairs = pair.into_inner();
 
@@ -233,6 +233,7 @@ impl TransformParser {
                 let op = match op_str {
                     "*" => Operator::Multiply,
                     "/" => Operator::Divide,
+                    "%" => Operator::Modulo,
                     _ => {
                         return Err(SchemaError::InvalidField(format!(
                             "Unknown multiplication operator: {}",
@@ -373,6 +374,7 @@ impl TransformParser {
                 ))),
             },
             Rule::null => Ok(Expression::Literal(Value::Null)),
+            Rule::array => self.parse_array(inner),
             Rule::function_call => self.parse_function_call(inner),
             Rule::field_access => self.parse_field_access(inner),
             Rule::identifier => Ok(Expression::Variable(inner.as_str().to_string())),
@@ -382,6 +384,27 @@ impl TransformParser {
                 inner.as_rule()
             ))),
         }
+    }
+
+    /// Parses an array literal [expr1, expr2, ...]
+    fn parse_array(&self, pair: Pair<Rule>) -> Result<Expression, SchemaError> {
+        let mut elements = Vec::new();
+
+        for inner_pair in pair.into_inner() {
+            if inner_pair.as_rule() == Rule::expr {
+                let element = self.build_ast(inner_pair)?;
+                elements.push(element);
+            }
+        }
+
+        Ok(Expression::Literal(Value::Array(
+            elements.into_iter().map(|expr| {
+                match expr {
+                    Expression::Literal(value) => value.into(),
+                    _ => serde_json::Value::Null, // Fallback for non-literal expressions in array
+                }
+            }).collect()
+        )))
     }
 }
 

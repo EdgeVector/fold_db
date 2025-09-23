@@ -89,6 +89,8 @@ pub enum Operator {
     Multiply,
     /// Division (/)
     Divide,
+    /// Modulo (%)
+    Modulo,
     /// Power (^)
     Power,
     /// Equality (==)
@@ -116,6 +118,7 @@ impl fmt::Display for Operator {
             Operator::Subtract => write!(f, "-"),
             Operator::Multiply => write!(f, "*"),
             Operator::Divide => write!(f, "/"),
+            Operator::Modulo => write!(f, "%"),
             Operator::Power => write!(f, "^"),
             Operator::Equal => write!(f, "=="),
             Operator::NotEqual => write!(f, "!="),
