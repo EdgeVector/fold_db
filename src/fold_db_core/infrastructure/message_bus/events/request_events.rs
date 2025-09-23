@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::EventType;
+use crate::field_value::{FieldType as ValueFieldType, TypedFieldValue};
+use crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext;
+use crate::schema::types::SchemaError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AtomCreateRequest {
@@ -131,6 +134,42 @@ pub struct FieldValueSetRequest {
         Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
 }
 
+impl FieldValueSetRequest {
+    /// Returns the field value wrapped in a [`TypedFieldValue`] without validation.
+    pub fn typed_value(&self) -> TypedFieldValue {
+        TypedFieldValue::from(&self.value)
+    }
+
+    /// Returns the typed value after validating it against the expected [`FieldType`].
+    pub fn typed_value_with_validation(
+        &self,
+        expected: ValueFieldType,
+    ) -> Result<TypedFieldValue, SchemaError> {
+        let typed = self.typed_value();
+        typed.ensure_type_with_context(expected, Some(self.field_name.as_str()))?;
+        Ok(typed)
+    }
+
+    /// Constructs a [`FieldValueSetRequest`] directly from a [`TypedFieldValue`].
+    pub fn from_typed_value(
+        correlation_id: String,
+        schema_name: String,
+        field_name: String,
+        typed_value: TypedFieldValue,
+        source_pub_key: String,
+        mutation_context: Option<MutationContext>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            schema_name,
+            field_name,
+            value: typed_value.into_inner(),
+            source_pub_key,
+            mutation_context,
+        }
+    }
+}
+
 impl EventType for FieldValueSetRequest {
     fn type_id() -> &'static str {
         "FieldValueSetRequest"
@@ -168,6 +207,40 @@ pub struct FieldUpdateRequest {
     pub field_name: String,
     pub value: Value,
     pub source_pub_key: String,
+}
+
+impl FieldUpdateRequest {
+    /// Returns the field value wrapped in a [`TypedFieldValue`] without validation.
+    pub fn typed_value(&self) -> TypedFieldValue {
+        TypedFieldValue::from(&self.value)
+    }
+
+    /// Returns the typed value after validating it against the expected [`FieldType`].
+    pub fn typed_value_with_validation(
+        &self,
+        expected: ValueFieldType,
+    ) -> Result<TypedFieldValue, SchemaError> {
+        let typed = self.typed_value();
+        typed.ensure_type_with_context(expected, Some(self.field_name.as_str()))?;
+        Ok(typed)
+    }
+
+    /// Constructs a [`FieldUpdateRequest`] directly from a [`TypedFieldValue`].
+    pub fn from_typed_value(
+        correlation_id: String,
+        schema_name: String,
+        field_name: String,
+        typed_value: TypedFieldValue,
+        source_pub_key: String,
+    ) -> Self {
+        Self {
+            correlation_id,
+            schema_name,
+            field_name,
+            value: typed_value.into_inner(),
+            source_pub_key,
+        }
+    }
 }
 
 impl EventType for FieldUpdateRequest {
@@ -448,5 +521,89 @@ pub struct SystemInitializationResponse {
 impl EventType for SystemInitializationResponse {
     fn type_id() -> &'static str {
         "SystemInitializationResponse"
+    }
+}
+
+#[cfg(test)]
+mod typed_value_request_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn field_value_set_request_enforces_expected_type() {
+        let request = FieldValueSetRequest {
+            correlation_id: "corr".into(),
+            schema_name: "schema".into(),
+            field_name: "schema.field".into(),
+            value: json!("value"),
+            source_pub_key: "pubkey".into(),
+            mutation_context: None,
+        };
+
+        let typed = request
+            .typed_value_with_validation(ValueFieldType::String)
+            .expect("string value should be accepted");
+        assert_eq!(typed.as_string().unwrap(), "value");
+
+        let error = request
+            .typed_value_with_validation(ValueFieldType::Integer)
+            .expect_err("integer validation should fail");
+        match error {
+            SchemaError::InvalidData(message) => {
+                assert!(message.contains("schema.field"));
+                assert!(message.contains("integer"));
+            }
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn field_value_set_request_from_typed_value_preserves_payload() {
+        let typed = TypedFieldValue::from("payload");
+        let request = FieldValueSetRequest::from_typed_value(
+            "corr".into(),
+            "schema".into(),
+            "schema.field".into(),
+            typed,
+            "pub".into(),
+            None,
+        );
+        assert_eq!(request.value, json!("payload"));
+    }
+
+    #[test]
+    fn field_update_request_enforces_expected_type() {
+        let request = FieldUpdateRequest {
+            correlation_id: "corr".into(),
+            schema_name: "schema".into(),
+            field_name: "schema.field".into(),
+            value: json!(42),
+            source_pub_key: "pubkey".into(),
+        };
+
+        request
+            .typed_value_with_validation(ValueFieldType::Integer)
+            .expect("integer value should be accepted");
+
+        let error = request
+            .typed_value_with_validation(ValueFieldType::String)
+            .expect_err("string validation should fail");
+        match error {
+            SchemaError::InvalidData(message) => assert!(message.contains("string")),
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn field_update_request_from_typed_value_preserves_payload() {
+        let typed = TypedFieldValue::from(99_i64);
+        let request = FieldUpdateRequest::from_typed_value(
+            "corr".into(),
+            "schema".into(),
+            "schema.field".into(),
+            typed,
+            "pub".into(),
+        );
+        assert_eq!(request.value, json!(99));
     }
 }

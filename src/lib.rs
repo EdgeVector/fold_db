@@ -33,6 +33,7 @@ pub mod db_operations;
 pub mod error;
 pub mod error_handling;
 pub mod fees;
+pub mod field_value;
 pub mod fold_db_core;
 pub mod ingestion;
 pub mod logging;
@@ -52,6 +53,8 @@ pub use datafold_node::DataFoldNode;
 pub use error::{FoldDbError, FoldDbResult};
 pub use fold_db_core::FoldDB;
 pub use network::{NetworkConfig, NetworkCore, NetworkError, NetworkResult, PeerId, SchemaService};
+
+pub use field_value::{FieldType as ValueFieldType, TypedFieldValue};
 
 // Re-export schema types needed for CLI
 pub use schema::types::operation::Operation;
