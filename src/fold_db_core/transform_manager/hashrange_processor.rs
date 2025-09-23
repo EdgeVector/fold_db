@@ -252,6 +252,20 @@ impl HashRangeProcessor {
         }
 
         info!("🎯 All HashRange field values submitted successfully through message bus");
+        
+        // Fire DataPersisted event for the output schema after all mutations are submitted
+        let data_persisted = crate::fold_db_core::infrastructure::message_bus::events::schema_events::DataPersisted::with_transform(
+            schema_name.to_string(),
+            format!("transform_result_{}", schema_name), // Use a descriptive correlation ID
+            "HashRangeTransformResult".to_string(),
+        );
+        
+        if let Err(e) = message_bus.publish(data_persisted) {
+            log::warn!("⚠️ Failed to publish DataPersisted event for HashRange schema '{}': {}", schema_name, e);
+        } else {
+            info!("📊 DataPersisted event fired for HashRange schema '{}' after transform result processing", schema_name);
+        }
+        
         Ok(())
     }
 

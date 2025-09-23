@@ -565,6 +565,18 @@ fn handle_successful_field_value_processing(
     // Publish FieldValueSet event to trigger transform chain
     publish_field_value_set_event(manager, request, resolved_keys);
 
+    // Fire DataPersisted event to signal that data is now queryable
+    let data_persisted = crate::fold_db_core::infrastructure::message_bus::events::schema_events::DataPersisted::new(
+        request.schema_name.clone(),
+        request.correlation_id.clone(),
+    );
+    if let Err(e) = manager.message_bus.publish(data_persisted) {
+        warn!("⚠️ Failed to publish DataPersisted event: {}", e);
+    } else {
+        info!("📊 DataPersisted event fired for schema '{}' with correlation_id '{}'", 
+              request.schema_name, request.correlation_id);
+    }
+
     // Create key snapshot for response
     let key_snapshot = resolved_keys.to_snapshot();
 

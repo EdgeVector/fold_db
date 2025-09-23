@@ -32,6 +32,7 @@ pub enum Event {
     TransformExecuted(TransformExecuted),
     SchemaChanged(SchemaChanged),
     TransformTriggered(TransformTriggered),
+    DataPersisted(DataPersisted),
     // Query/mutation events
     QueryExecuted(QueryExecuted),
     MutationExecuted(MutationExecuted),
@@ -86,6 +87,7 @@ impl Event {
             Event::TransformExecuted(_) => "TransformExecuted",
             Event::SchemaChanged(_) => "SchemaChanged",
             Event::TransformTriggered(_) => "TransformTriggered",
+            Event::DataPersisted(_) => "DataPersisted",
             Event::QueryExecuted(_) => "QueryExecuted",
             Event::MutationExecuted(_) => "MutationExecuted",
             Event::AtomCreateRequest(_) => "AtomCreateRequest",

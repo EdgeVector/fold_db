@@ -141,6 +141,7 @@ impl AsyncMessageBus {
             "TransformExecuted",
             "SchemaChanged",
             "TransformTriggered",
+            "DataPersisted",
             "QueryExecuted",
             "MutationExecuted",
         ];

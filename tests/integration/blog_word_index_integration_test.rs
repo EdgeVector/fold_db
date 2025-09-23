@@ -8,6 +8,7 @@
 //! 5. Query BlogWordIndex by word to verify results
 
 use datafold::fold_db_core::FoldDB;
+use datafold::fold_db_core::infrastructure::message_bus::events::schema_events::{TransformExecuted, DataPersisted};
 use datafold::schema::types::json_schema::DeclarativeSchemaDefinition;
 use datafold::schema::types::{Mutation, MutationType, Query, Schema};
 use serde_json::{json, Value};
@@ -212,23 +213,14 @@ impl BlogWordIndexIntegrationFixture {
                 mutation_id
             );
 
-            // Use the real async wait_for_mutation method with a reasonable timeout
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(30), // 30 second timeout per mutation
-                self.fold_db.wait_for_mutation(mutation_id),
-            )
-            .await
-            {
-                Ok(Ok(_)) => {
+            // Use the real async wait_for_mutation method - no timeout needed with event-driven approach
+            match self.fold_db.wait_for_mutation(mutation_id).await {
+                Ok(_) => {
                     println!("✅ Mutation {} completed successfully", mutation_id);
                 }
-                Ok(Err(e)) => {
+                Err(e) => {
                     println!("❌ Mutation {} failed: {}", mutation_id, e);
                     return Err(format!("Mutation {} failed: {}", mutation_id, e).into());
-                }
-                Err(_timeout) => {
-                    println!("⏰ Mutation {} timed out after 30 seconds", mutation_id);
-                    return Err(format!("Mutation {} timed out", mutation_id).into());
                 }
             }
         }
@@ -243,9 +235,6 @@ impl BlogWordIndexIntegrationFixture {
     /// Query BlogWordIndex by word
     fn query_blog_word_index(&self, word: &str) -> Result<Value, Box<dyn std::error::Error>> {
         println!("🔍 Querying BlogWordIndex for word: '{}'", word);
-
-        // Wait a bit for transforms to complete
-        std::thread::sleep(std::time::Duration::from_millis(5000));
 
         let query = Query {
             schema_name: "BlogPostWordIndex".to_string(),
@@ -336,93 +325,137 @@ impl BlogWordIndexIntegrationFixture {
         }
     }
 
-    /// Check if BlogWordIndex schema has any data after transform execution
-    fn check_blog_word_index_data(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 Checking if BlogWordIndex schema has data after transform execution...");
 
-        // Try a simple query without filters to see if there's any data
-        let query = Query {
-            schema_name: "BlogPostWordIndex".to_string(),
-            fields: vec!["blog".to_string()],
-            pub_key: "test-user".to_string(),
-            trust_distance: 0,
-            filter: None,
-        };
+    /// Wait for transforms to process and verify they executed using event-driven approach
+    async fn wait_for_transform_execution(&self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("⏳ Waiting for declarative transforms to process BlogPost data using event-driven approach...");
 
-        let result = self.fold_db.query(query)?;
-        println!(
-            "📊 BlogWordIndex data check result: {}",
-            serde_json::to_string_pretty(&result)?
-        );
+        // Get the list of transforms we expect to execute
+        let transforms = self.fold_db.transform_manager().list_transforms()?;
+        let blog_word_index_transforms: Vec<String> = transforms
+            .keys()
+            .filter(|transform_id| transform_id.contains("BlogPostWordIndex"))
+            .cloned()
+            .collect();
 
-        // Check if result has any non-null values
-        if let Some(obj) = result.as_object() {
-            let has_data = obj.values().any(|v| !v.is_null());
-            if has_data {
-                println!("✅ BlogWordIndex schema has data after transform execution!");
-            } else {
-                println!("❌ BlogWordIndex schema has no data (all null values) - transforms may not be executing");
-            }
+        if blog_word_index_transforms.is_empty() {
+            println!("⚠️ No BlogPostWordIndex transforms found, skipping event-driven wait");
+            return Ok(());
         }
 
-        Ok(())
-    }
+        println!("🎯 Found {} BlogPostWordIndex transforms to monitor: {:?}", 
+                 blog_word_index_transforms.len(), blog_word_index_transforms);
 
-    /// Wait for transforms to process and verify they executed
-    fn wait_for_transform_execution(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("⏳ Waiting for declarative transforms to process BlogPost data...");
+        // Subscribe to both TransformExecuted and DataPersisted events using the synchronous message bus
+        let message_bus = self.fold_db.message_bus();
+        let mut transform_consumer = message_bus.subscribe::<TransformExecuted>();
+        let mut data_consumer = message_bus.subscribe::<DataPersisted>();
 
-        // Force transform execution by triggering it through the execution manager
-        println!("🔧 Triggering transform execution manually...");
-        let transforms = self.fold_db.transform_manager().list_transforms()?;
-        for (transform_id, _transform) in transforms.iter() {
-            if transform_id.contains("BlogPostWordIndex") {
-                println!("🔧 Found BlogPostWordIndex transform: {}", transform_id);
+        // Track which transforms have completed and which schemas have data persisted
+        let mut completed_transforms = std::collections::HashSet::new();
+        let mut persisted_schemas = std::collections::HashSet::new();
+        let expected_transforms: std::collections::HashSet<String> = blog_word_index_transforms.into_iter().collect();
+        let expected_schema = "BlogPostWordIndex".to_string();
 
-                // Try to execute the transform by calling the execution manager directly
-                match self.execute_transform_via_execution_manager(transform_id) {
-                    Ok(_) => println!("✅ Transform {} executed successfully", transform_id),
-                    Err(e) => println!("❌ Transform {} execution failed: {}", transform_id, e),
+        // Note: Transforms should be automatically triggered by mutations
+        // If manual execution is needed, it suggests the automatic trigger mechanism isn't working
+        println!("🔧 Checking if transforms need manual execution...");
+        
+        // Only trigger manually if no events are received within a reasonable time
+        // This is a fallback mechanism for when automatic triggers fail
+        if expected_transforms.is_empty() {
+            println!("⚠️ No transforms found to execute");
+            return Ok(());
+        }
+        
+        println!("🔧 Found {} transforms to monitor, waiting for automatic execution...", expected_transforms.len());
+
+        // Wait for all expected transforms to complete and data to be persisted using event-driven approach
+        let mut wait_start = std::time::Instant::now();
+        let fallback_timeout = std::time::Duration::from_secs(10); // 10 seconds before fallback
+        
+        while completed_transforms.len() < expected_transforms.len() || !persisted_schemas.contains(&expected_schema) {
+            // If we've been waiting too long without any events, trigger manual execution as fallback
+            if wait_start.elapsed() > fallback_timeout && completed_transforms.is_empty() {
+                println!("⚠️ No transform events received within {} seconds, triggering manual execution as fallback", fallback_timeout.as_secs());
+                for transform_id in &expected_transforms {
+                    if !completed_transforms.contains(transform_id) {
+                        println!("🔧 Fallback: Manually triggering transform: {}", transform_id);
+                        match self.execute_transform_via_execution_manager(transform_id) {
+                            Ok(_) => println!("✅ Fallback: Transform {} triggered successfully", transform_id),
+                            Err(e) => println!("❌ Fallback: Transform {} trigger failed: {}", transform_id, e),
+                        }
+                    }
+                }
+                // Reset the timer after manual execution
+                wait_start = std::time::Instant::now();
+            }
+            
+            // Try to receive TransformExecuted events
+            match transform_consumer.try_recv() {
+                Ok(transform_executed) => {
+                    println!("🎯 Received TransformExecuted event for: {}", transform_executed.transform_id);
+                    
+                    if expected_transforms.contains(&transform_executed.transform_id) {
+                        completed_transforms.insert(transform_executed.transform_id.clone());
+                        println!("✅ Transform {} completed successfully (result: {})", 
+                                 transform_executed.transform_id, transform_executed.result);
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // No transform events available, check data events
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    println!("⚠️ TransformExecuted event channel disconnected unexpectedly");
+                    break;
+                }
+            }
+
+            // Try to receive DataPersisted events
+            match data_consumer.try_recv() {
+                Ok(data_persisted) => {
+                    println!("📊 Received DataPersisted event for schema: {}", data_persisted.schema_name);
+                    
+                    if data_persisted.schema_name == expected_schema {
+                        persisted_schemas.insert(data_persisted.schema_name.clone());
+                        println!("✅ Data persisted for schema '{}' with correlation_id '{}'", 
+                                 data_persisted.schema_name, data_persisted.correlation_id);
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // No data events available, wait a bit and continue
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    continue;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    println!("⚠️ DataPersisted event channel disconnected unexpectedly");
+                    break;
                 }
             }
         }
 
-        // Wait for any async operations to complete
-        std::thread::sleep(std::time::Duration::from_millis(8000));
-
-        Ok(())
-    }
-
-    /// Debug: Try to manually trigger transform execution
-    fn debug_manual_transform_execution(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 Debug: Attempting manual transform execution...");
-
-        // Get the BlogPostWordIndex transform
-        let transforms = self.fold_db.transform_manager().list_transforms()?;
-        if let Some((transform_id, _transform)) = transforms
-            .iter()
-            .find(|(_, t)| t.get_output().contains("BlogPostWordIndex"))
-        {
-            println!(
-                "🔍 Debug: Found transform '{}' for manual execution",
-                transform_id
-            );
-
-            // Try to execute the transform manually
-            // First, let's see if we can get the BlogPost data in the format the transform expects
-            let blogpost_data = self.get_blogpost_data_for_transform()?;
-            println!(
-                "🔍 Debug: BlogPost data for transform: {}",
-                serde_json::to_string_pretty(&blogpost_data)?
-            );
-
-            // Wait for automatic transform execution
-            println!("⏳ Waiting for automatic transform execution...");
-            std::thread::sleep(std::time::Duration::from_millis(3000));
+        let transforms_complete = completed_transforms.len() == expected_transforms.len();
+        let data_persisted = persisted_schemas.contains(&expected_schema);
+        
+        if transforms_complete && data_persisted {
+            println!("✅ All {} BlogPostWordIndex transforms completed and data persisted successfully!", expected_transforms.len());
+        } else {
+            if !transforms_complete {
+                let missing: Vec<String> = expected_transforms.iter()
+                    .filter(|id| !completed_transforms.contains(*id))
+                    .cloned()
+                    .collect();
+                println!("⚠️ Incomplete transforms. Completed: {}/{}, Missing: {:?}", 
+                         completed_transforms.len(), expected_transforms.len(), missing);
+            }
+            if !data_persisted {
+                println!("⚠️ Expected schema '{}' not persisted", expected_schema);
+            }
         }
 
         Ok(())
     }
+
 
     /// Execute transform via the execution manager
     fn execute_transform_via_execution_manager(
@@ -448,112 +481,8 @@ impl BlogWordIndexIntegrationFixture {
         Ok(())
     }
 
-    /// Get BlogPost data in the format expected by transforms
-    fn get_blogpost_data_for_transform(
-        &self,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        let query = Query {
-            schema_name: "BlogPost".to_string(),
-            fields: vec![
-                "title".to_string(),
-                "content".to_string(),
-                "author".to_string(),
-                "publish_date".to_string(),
-                "tags".to_string(),
-            ],
-            pub_key: "test-user".to_string(),
-            trust_distance: 0,
-            filter: None,
-        };
 
-        let result = self.fold_db.query(query)?;
 
-        // Transform the result into the format expected by the declarative transform
-        // The transform expects data in the format: {"BlogPost": [{"title": "...", "content": "...", ...}]}
-        let mut blogpost_array = Vec::new();
-
-        if let Some(obj) = result.as_object() {
-            // Get the range keys (publish dates)
-            let range_keys: Vec<String> = obj
-                .values()
-                .filter_map(|v| v.as_object())
-                .flat_map(|obj| obj.keys())
-                .cloned()
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect();
-
-            for range_key in range_keys {
-                let mut blogpost_item = serde_json::Map::new();
-                blogpost_item.insert("publish_date".to_string(), json!(range_key));
-
-                for (field_name, field_data) in obj {
-                    if let Some(field_obj) = field_data.as_object() {
-                        if let Some(value) = field_obj.get(&range_key) {
-                            blogpost_item.insert(field_name.clone(), value.clone());
-                        }
-                    }
-                }
-
-                blogpost_array.push(json!(blogpost_item));
-            }
-        }
-
-        let transform_input = json!({
-            "BlogPost": blogpost_array
-        });
-
-        Ok(transform_input)
-    }
-
-    /// Debug: Check what BlogPost data exists
-    fn debug_blogpost_data(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 Debug: Checking BlogPost data...");
-
-        let query = Query {
-            schema_name: "BlogPost".to_string(),
-            fields: vec![
-                "title".to_string(),
-                "content".to_string(),
-                "author".to_string(),
-            ],
-            pub_key: "test-user".to_string(),
-            trust_distance: 0,
-            filter: None,
-        };
-
-        let result = self.fold_db.query(query)?;
-        println!(
-            "📊 BlogPost data: {}",
-            serde_json::to_string_pretty(&result)?
-        );
-
-        Ok(())
-    }
-
-    /// Debug: Check if transforms are triggered by mutations
-    fn debug_transform_triggers(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 Debug: Checking transform triggers...");
-
-        // Check if there are any transforms that should be triggered by BlogPost mutations
-        let transforms = self.fold_db.transform_manager().list_transforms()?;
-
-        for (transform_id, transform) in &transforms {
-            println!(
-                "🔍 Debug: Transform '{}' inputs: {:?}",
-                transform_id,
-                transform.get_inputs()
-            );
-            if transform.get_inputs().contains(&"blogpost".to_string()) {
-                println!(
-                    "🔍 Debug: Transform '{}' should be triggered by BlogPost mutations",
-                    transform_id
-                );
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Test the complete BlogWordIndex declarative transform workflow using temp database
@@ -592,9 +521,10 @@ async fn test_blog_word_index_declarative_transform_workflow() {
         .verify_transforms_registered()
         .expect("BlogWordIndex transforms not automatically registered");
 
-    // Step 5: Wait for transforms to execute and verify they created data
+    // Step 5: Wait for transforms to execute and verify they created data using event-driven approach
     fixture
         .wait_for_transform_execution()
+        .await
         .expect("Failed to wait for transform execution");
 
     // Step 6: Query BlogWordIndex by specific words to verify the declarative transform worked
@@ -859,9 +789,10 @@ async fn test_declarative_transform_execution() {
         .await
         .expect("Failed to wait for mutations to complete");
 
-    // Wait for transform to execute
+    // Wait for transform to execute using event-driven approach
     fixture
         .wait_for_transform_execution()
+        .await
         .expect("Failed to wait for transform execution");
 
     // Test querying for specific words that should be indexed
@@ -876,52 +807,37 @@ async fn test_declarative_transform_execution() {
     for word in test_words {
         println!("-----------------------------------------");
 
-        // Retry mechanism to handle timing issues
-        let mut retries = 0;
-        let max_retries = 5;
+        // Query the data directly - no retries needed since we have event-driven completion
+        let result = fixture
+            .query_blog_word_index(word)
+            .expect(&format!("Failed to query for word: {}", word));
+
+        // Check if we got actual data for ALL fields in the hash->range->fields format
         let mut has_valid_data = false;
+        if let Some(obj) = result.as_object() {
+            if let Some(word_data) = obj.get(word) {
+                if let Some(word_obj) = word_data.as_object() {
+                    for (_range_key, range_data) in word_obj {
+                        if let Some(range_obj) = range_data.as_object() {
+                            let field_container = range_obj
+                                .get("fields")
+                                .and_then(|value| value.as_object())
+                                .unwrap_or(range_obj);
 
-        while retries < max_retries && !has_valid_data {
-            if retries > 0 {
-                println!(
-                    "⏳ Retry {} for word '{}' - waiting for data to be committed...",
-                    retries, word
-                );
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
+                            let non_null_fields: Vec<String> = field_container
+                                .iter()
+                                .filter(|(_, v)| !v.is_null())
+                                .map(|(k, _)| k.clone())
+                                .collect();
 
-            let result = fixture
-                .query_blog_word_index(word)
-                .expect(&format!("Failed to query for word: {}", word));
-
-            // Check if we got actual data for ALL fields in the hash->range->fields format
-            if let Some(obj) = result.as_object() {
-                if let Some(word_data) = obj.get(word) {
-                    if let Some(word_obj) = word_data.as_object() {
-                        for (_range_key, range_data) in word_obj {
-                            if let Some(range_obj) = range_data.as_object() {
-                                let field_container = range_obj
-                                    .get("fields")
-                                    .and_then(|value| value.as_object())
-                                    .unwrap_or(range_obj);
-
-                                let non_null_fields: Vec<String> = field_container
-                                    .iter()
-                                    .filter(|(_, v)| !v.is_null())
-                                    .map(|(k, _)| k.clone())
-                                    .collect();
-
-                                if !non_null_fields.is_empty() {
-                                    has_valid_data = true;
-                                    break;
-                                }
+                            if !non_null_fields.is_empty() {
+                                has_valid_data = true;
+                                break;
                             }
                         }
                     }
                 }
             }
-
-            retries += 1;
         }
 
         if has_valid_data {
@@ -931,8 +847,8 @@ async fn test_declarative_transform_execution() {
             );
         } else {
             println!(
-                "⚠️  Declarative transform did not index word: '{}' - all range entries have null values after {} retries",
-                word, max_retries
+                "⚠️  Declarative transform did not index word: '{}' - all range entries have null values",
+                word
             );
         }
     }

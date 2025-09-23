@@ -131,6 +131,20 @@ impl ResultStorage {
                 hash_state,
                 range_state
             );
+
+            // Fire DataPersisted event for the output schema after mutation is submitted
+            let data_persisted = crate::fold_db_core::infrastructure::message_bus::events::schema_events::DataPersisted::with_transform(
+                schema_name.to_string(),
+                correlation_id,
+                "TransformResult".to_string(),
+            );
+            
+            if let Err(e) = message_bus.publish(data_persisted) {
+                warn!("⚠️ Failed to publish DataPersisted event for schema '{}': {}", schema_name, e);
+            } else {
+                info!("📊 DataPersisted event fired for schema '{}' after transform result storage", schema_name);
+            }
+            
             Ok(())
         } else {
             warn!(

@@ -205,6 +205,49 @@ impl MutationExecuted {
     }
 }
 
+impl DataPersisted {
+    /// Create a new DataPersisted event
+    pub fn new(
+        schema_name: impl Into<String>,
+        correlation_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            schema_name: schema_name.into(),
+            correlation_id: correlation_id.into(),
+            transform_id: None,
+            context: None,
+        }
+    }
+
+    /// Create a new DataPersisted event with transform context
+    pub fn with_transform(
+        schema_name: impl Into<String>,
+        correlation_id: impl Into<String>,
+        transform_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            schema_name: schema_name.into(),
+            correlation_id: correlation_id.into(),
+            transform_id: Some(transform_id.into()),
+            context: None,
+        }
+    }
+
+    /// Create a new DataPersisted event with additional context
+    pub fn with_context(
+        schema_name: impl Into<String>,
+        correlation_id: impl Into<String>,
+        context: impl Into<String>,
+    ) -> Self {
+        Self {
+            schema_name: schema_name.into(),
+            correlation_id: correlation_id.into(),
+            transform_id: None,
+            context: Some(context.into()),
+        }
+    }
+}
+
 // ========== Request/Response Event Constructors ==========
 
 impl AtomCreateRequest {

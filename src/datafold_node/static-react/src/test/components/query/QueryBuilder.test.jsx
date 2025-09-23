@@ -212,7 +212,7 @@ describe('QueryBuilder Component', () => {
   });
 
   describe('error handling', () => {
-        it('should handle hook throwing errors gracefully', () => {
+    it('should handle hook throwing errors gracefully', () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       useQueryBuilder.mockImplementation(() => {
         throw new Error('Hook error');
@@ -242,6 +242,20 @@ describe('QueryBuilder Component', () => {
       );
 
       expect(mockRenderFunction).toHaveBeenCalledWith(undefined);
+    });
+
+    it('should handle hook returning null gracefully', () => {
+      useQueryBuilder.mockReturnValue(null);
+
+      const mockRenderFunction = vi.fn(() => <div>Content</div>);
+
+      render(
+        <QueryBuilder {...mockProps}>
+          {mockRenderFunction}
+        </QueryBuilder>
+      );
+
+      expect(mockRenderFunction).toHaveBeenCalledWith(null);
     });
   });
 

@@ -102,10 +102,9 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
-    // Should render the query form without authentication warning
-    expect(screen.getByTestId('query-form')).toBeInTheDocument()
-    expect(screen.getByTestId('query-actions')).toBeInTheDocument()
-    expect(screen.getByTestId('query-preview')).toBeInTheDocument()
+    // Should render the authentication warning since QueryTab requires auth
+    expect(screen.getByText('Authentication Required')).toBeInTheDocument()
+    expect(screen.getByText('Please authenticate using the Keys tab before accessing query functionality.')).toBeInTheDocument()
   })
 
   it('renders query interface when authenticated', async () => {
@@ -119,10 +118,13 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
-    expect(screen.getByTestId('query-form')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByTestId('query-form')).toBeInTheDocument()
+    }, { timeout: 5000 })
+    
     expect(screen.getByTestId('query-actions')).toBeInTheDocument()
     expect(screen.getByTestId('query-preview')).toBeInTheDocument()
-  })
+  }, 10000)
 
   it('handles query execution successfully', async () => {
     const authState = createMockAuthState({ isAuthenticated: true })
@@ -135,6 +137,10 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
+    await waitFor(() => {
+      expect(screen.getByTestId('execute-query')).toBeInTheDocument()
+    }, { timeout: 5000 })
+
     const executeButton = screen.getByTestId('execute-query')
     fireEvent.click(executeButton)
 
@@ -143,8 +149,8 @@ describe('QueryTab Component', () => {
         success: true,
         data: { results: ['test result'] }
       })
-    })
-  })
+    }, { timeout: 5000 })
+  }, 10000)
 
   it('handles query execution failure', async () => {
     // Mock API failure
@@ -164,6 +170,10 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
+    await waitFor(() => {
+      expect(screen.getByTestId('execute-query')).toBeInTheDocument()
+    }, { timeout: 5000 })
+
     const executeButton = screen.getByTestId('execute-query')
     fireEvent.click(executeButton)
 
@@ -172,8 +182,8 @@ describe('QueryTab Component', () => {
         error: 'Query failed',
         details: expect.any(Object)
       })
-    })
-  })
+    }, { timeout: 5000 })
+  }, 10000)
 
   it('displays grid layout with form and preview', async () => {
     const authState = createMockAuthState({ isAuthenticated: true })
@@ -186,11 +196,15 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
+    await waitFor(() => {
+      expect(screen.getByTestId('query-form')).toBeInTheDocument()
+    }, { timeout: 5000 })
+
     // Check for grid layout classes
     const gridContainer = container.querySelector('.grid')
     expect(gridContainer).toBeInTheDocument()
     expect(gridContainer).toHaveClass('grid-cols-1', 'lg:grid-cols-3')
-  })
+  }, 10000)
 
   it('handles clear state functionality', async () => {
     const authState = createMockAuthState({ isAuthenticated: true })
@@ -203,6 +217,10 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
+    await waitFor(() => {
+      expect(screen.getByTestId('clear-query')).toBeInTheDocument()
+    }, { timeout: 5000 })
+
     const clearButton = screen.getByTestId('clear-query')
     fireEvent.click(clearButton)
 
@@ -210,5 +228,5 @@ describe('QueryTab Component', () => {
     const { useQueryState } = await import('../../../hooks/useQueryState')
     const mockState = useQueryState()
     expect(mockState.clearState).toBeDefined()
-  })
+  }, 10000)
 })

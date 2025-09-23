@@ -152,6 +152,7 @@ impl MessageBus {
             Event::TransformExecuted(e) => self.publish(e),
             Event::SchemaChanged(e) => self.publish(e),
             Event::TransformTriggered(e) => self.publish(e),
+            Event::DataPersisted(e) => self.publish(e),
             Event::QueryExecuted(e) => self.publish(e),
             Event::MutationExecuted(e) => self.publish(e),
             Event::AtomCreateRequest(e) => self.publish(e),
