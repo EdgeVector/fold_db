@@ -74,7 +74,7 @@ pub fn resolve_universal_keys(
     manager: &AtomManager,
     schema_name: &str,
     request_payload: &serde_json::Value,
-) -> Result<ResolvedAtomKeys, Box<dyn std::error::Error>> {
+) -> Result<ResolvedAtomKeys, SchemaError> {
     debug!("🔑 Resolving universal keys for schema: {}", schema_name);
 
     // Load schema from database
@@ -84,12 +84,12 @@ pub fn resolve_universal_keys(
         .map_err(|e| {
             let error_msg = format!("Failed to load schema '{}': {}", schema_name, e);
             error!("❌ {}", error_msg);
-            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+            SchemaError::InvalidData(error_msg)
         })?
         .ok_or_else(|| {
             let error_msg = format!("Schema '{}' not found", schema_name);
             error!("❌ {}", error_msg);
-            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+            SchemaError::InvalidData(error_msg)
         })?;
 
     debug!(
@@ -102,7 +102,7 @@ pub fn resolve_universal_keys(
         extract_unified_keys(&schema, request_payload).map_err(|e| {
             let error_msg = format!("Failed to extract keys for schema '{}': {}", schema_name, e);
             error!("❌ {}", error_msg);
-            Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+            SchemaError::InvalidData(error_msg)
         })?;
 
     debug!(
@@ -120,7 +120,7 @@ pub fn resolve_universal_keys(
     .map_err(|e| {
         let error_msg = format!("Failed to shape result for schema '{}': {}", schema_name, e);
         error!("❌ {}", error_msg);
-        Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>
+        SchemaError::InvalidData(error_msg)
     })?;
 
     // Extract fields from the shaped result
@@ -420,23 +420,12 @@ fn create_hashrange_molecule(
         Ok(Some(data)) => data,
         Ok(None) => serde_json::Map::new(),
         Err(e) => {
-            warn!(
-                "⚠️ Failed to load HashRange map for key {}: {}. Attempting legacy string fallback.",
+            let error_msg = format!(
+                "Failed to load HashRange map for key {}: {}",
                 storage_key, e
             );
-            match manager.db_ops.get_item::<String>(&storage_key) {
-                Ok(Some(raw)) => {
-                    serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::Map::new())
-                }
-                Ok(None) => serde_json::Map::new(),
-                Err(inner) => {
-                    warn!(
-                        "⚠️ Legacy fallback for key {} also failed: {}. Using empty map.",
-                        storage_key, inner
-                    );
-                    serde_json::Map::new()
-                }
-            }
+            error!("❌ {}", error_msg);
+            return Err(Box::new(SchemaError::InvalidData(error_msg)) as Box<dyn std::error::Error>);
         }
     };
 
@@ -566,15 +555,18 @@ fn handle_successful_field_value_processing(
     publish_field_value_set_event(manager, request, resolved_keys);
 
     // Fire DataPersisted event to signal that data is now queryable
-    let data_persisted = crate::fold_db_core::infrastructure::message_bus::events::schema_events::DataPersisted::new(
-        request.schema_name.clone(),
-        request.correlation_id.clone(),
-    );
+    let data_persisted =
+        crate::fold_db_core::infrastructure::message_bus::events::schema_events::DataPersisted::new(
+            request.schema_name.clone(),
+            request.correlation_id.clone(),
+        );
     if let Err(e) = manager.message_bus.publish(data_persisted) {
         warn!("⚠️ Failed to publish DataPersisted event: {}", e);
     } else {
-        info!("📊 DataPersisted event fired for schema '{}' with correlation_id '{}'", 
-              request.schema_name, request.correlation_id);
+        info!(
+            "📊 DataPersisted event fired for schema '{}' with correlation_id '{}'",
+            request.schema_name, request.correlation_id
+        );
     }
 
     // Create key snapshot for response

@@ -31,6 +31,7 @@ This document contains the most up-to-date and condensed information about the p
 | SCHEMA-KEY-009 | Transform managers and downstream message bus constructors must publish FieldValueSet requests using normalized helpers so payloads include schema-derived hash/range metadata. | fold_db_core/transform_manager, fold_db_core/infrastructure/message_bus | 2025-09-23 18:30:00 | None |
 | SCHEMA-KEY-010 | Range schema requests must supply the configured key.range_field or a normalized range value; missing configuration or payload values return SchemaError without legacy fallback. | schema/schema_operations.rs, tests/unit/field_processing, tests/unit/mutation | 2025-01-27 22:05:00 | None |
 | SCHEMA-KEY-011 | Transform aggregation pipeline shapes outputs via shape_unified_result to return {hash, range, fields} while preserving legacy top-level keys for compatibility. | transform/aggregation.rs, transform/executor.rs, transform/coordination.rs | 2025-09-20 12:30:00 | None |
+| SCHEMA-KEY-012 | AtomManager universal key resolution surfaces SchemaError failures directly and HashRange molecule storage no longer parses legacy string snapshots; all callers must rely on schema-driven normalized data. | fold_db_core/managers/atom/field_processing.rs | 2025-01-28 11:45:00 | None |
 | AUTH-DEV-001 | All endpoints currently operate in development mode with authentication disabled. All requests use "web-ui" identity automatically. | query_routes, http_server, api/clients | 2025-01-27 16:00:00 | None |
 
 ### AUTH-DEV-001: Development Mode Authentication
