@@ -42,8 +42,11 @@
 
 pub mod ast;
 pub mod executor;
+pub mod expression_evaluator;
+pub mod function_registry;
 pub mod interpreter;
 pub mod mutation_examples;
+pub mod native_executor;
 pub mod parser;
 pub mod restricted_access;
 pub mod restricted_access_example;
@@ -57,6 +60,7 @@ pub mod coordination;
 pub mod hash_range_executor;
 pub mod iterator_stack;
 pub mod native;
+pub mod native_schema_registry;
 pub mod range_executor;
 pub mod shared_utilities;
 pub mod single_executor;
@@ -66,7 +70,10 @@ pub mod validation;
 pub use crate::schema::types::Transform;
 pub use ast::{Expression, Operator, TransformDeclaration, UnaryOperator, Value};
 pub use executor::TransformExecutor;
+pub use expression_evaluator::{ExpressionEvaluator, ExpressionEvaluationError};
+pub use function_registry::{FunctionRegistry, FunctionRegistryError};
 pub use interpreter::Interpreter;
+pub use native_executor::NativeTransformExecutor;
 pub use mutation_examples::{
     BatchMutationExecutor, ConditionalMutationExecutor, MutationBasedDataStorage,
     TransformWithMutationStorage,

@@ -299,3 +299,235 @@ impl JsonBoundaryLayer {
             })
     }
 }
+
+/// Utility functions for common conversion patterns.
+impl JsonBoundaryLayer {
+    /// Convert a single JSON value to a native FieldValue with type validation.
+    /// 
+    /// This utility is useful for converting individual fields or values
+    /// when you need fine-grained control over the conversion process.
+    pub fn convert_json_value(
+        &self,
+        schema_name: &str,
+        field_name: &str,
+        value: JsonValue,
+    ) -> Result<FieldValue, JsonBoundaryError> {
+        let schema = self.fetch_schema(schema_name)?;
+        let definition = schema
+            .fields()
+            .get(field_name)
+            .ok_or_else(|| JsonBoundaryError::UnknownField {
+                schema: schema_name.to_string(),
+                field: field_name.to_string(),
+            })?;
+
+        let native_value = FieldValue::from_json_value(value);
+        
+        if !definition.field_type.matches(&native_value) {
+            return Err(JsonBoundaryError::TypeMismatch {
+                schema: schema_name.to_string(),
+                field: field_name.to_string(),
+                expected: Box::new(definition.field_type.clone()),
+                actual: Box::new(native_value.field_type()),
+            });
+        }
+
+        Ok(native_value)
+    }
+
+    /// Convert a native FieldValue back to JSON with type validation.
+    /// 
+    /// This utility ensures that the native value matches the expected
+    /// field type before conversion to JSON.
+    pub fn convert_native_value(
+        &self,
+        schema_name: &str,
+        field_name: &str,
+        value: &FieldValue,
+    ) -> Result<JsonValue, JsonBoundaryError> {
+        let schema = self.fetch_schema(schema_name)?;
+        let definition = schema
+            .fields()
+            .get(field_name)
+            .ok_or_else(|| JsonBoundaryError::UnknownField {
+                schema: schema_name.to_string(),
+                field: field_name.to_string(),
+            })?;
+
+        if !definition.field_type.matches(value) {
+            return Err(JsonBoundaryError::TypeMismatch {
+                schema: schema_name.to_string(),
+                field: field_name.to_string(),
+                expected: Box::new(definition.field_type.clone()),
+                actual: Box::new(value.field_type()),
+            });
+        }
+
+        Ok(value.to_json_value())
+    }
+
+    /// Get the default value for an optional field in a schema.
+    /// 
+    /// Returns None if the field is required or doesn't exist.
+    pub fn get_field_default(
+        &self,
+        schema_name: &str,
+        field_name: &str,
+    ) -> Result<Option<FieldValue>, JsonBoundaryError> {
+        let schema = self.fetch_schema(schema_name)?;
+        let definition = schema
+            .fields()
+            .get(field_name)
+            .ok_or_else(|| JsonBoundaryError::UnknownField {
+                schema: schema_name.to_string(),
+                field: field_name.to_string(),
+            })?;
+
+        if definition.required {
+            Ok(None)
+        } else {
+            Ok(definition.effective_default())
+        }
+    }
+
+    /// Validate that a JSON object conforms to a schema without converting it.
+    /// 
+    /// This is useful for early validation before attempting conversion,
+    /// especially for large payloads where you want to fail fast.
+    pub fn validate_json_payload(
+        &self,
+        schema_name: &str,
+        json_data: &JsonValue,
+    ) -> Result<(), JsonBoundaryError> {
+        let schema = self.fetch_schema(schema_name)?;
+        let object = json_data
+            .as_object()
+            .ok_or_else(|| JsonBoundaryError::InvalidPayloadStructure {
+                schema: schema_name.to_string(),
+            })?;
+
+        // Check for unknown fields if not allowed
+        if !schema.allows_additional_fields() {
+            for key in object.keys() {
+                if !schema.fields().contains_key(key) {
+                    return Err(JsonBoundaryError::UnknownField {
+                        schema: schema_name.to_string(),
+                        field: key.clone(),
+                    });
+                }
+            }
+        }
+
+        // Check for missing required fields and validate field types
+        for (field_name, definition) in schema.fields() {
+            match object.get(field_name) {
+                Some(value) => {
+                    let native_value = FieldValue::from_json_value(value.clone());
+                    if !definition.field_type.matches(&native_value) {
+                        return Err(JsonBoundaryError::TypeMismatch {
+                            schema: schema_name.to_string(),
+                            field: field_name.clone(),
+                            expected: Box::new(definition.field_type.clone()),
+                            actual: Box::new(native_value.field_type()),
+                        });
+                    }
+                }
+                None => {
+                    if definition.required {
+                        return Err(JsonBoundaryError::MissingRequiredField {
+                            schema: schema_name.to_string(),
+                            field: field_name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Convert a partial JSON object to native values, applying defaults for missing fields.
+    /// 
+    /// This is useful when you have a JSON object that may not contain all fields,
+    /// and you want to convert it with defaults applied for missing optional fields.
+    pub fn json_to_native_partial(
+        &self,
+        schema_name: &str,
+        json_data: &JsonValue,
+    ) -> Result<HashMap<String, FieldValue>, JsonBoundaryError> {
+        let schema = self.fetch_schema(schema_name)?;
+        let object = json_data
+            .as_object()
+            .ok_or_else(|| JsonBoundaryError::InvalidPayloadStructure {
+                schema: schema_name.to_string(),
+            })?;
+
+        let mut native_data = HashMap::with_capacity(schema.fields().len());
+
+        // Process only the fields that are present in the JSON object
+        for (field_name, value) in object {
+            if let Some(definition) = schema.fields().get(field_name) {
+                // This is a known field, validate and convert it
+                let native_value = FieldValue::from_json_value(value.clone());
+                if !definition.field_type.matches(&native_value) {
+                    return Err(JsonBoundaryError::TypeMismatch {
+                        schema: schema_name.to_string(),
+                        field: field_name.clone(),
+                        expected: Box::new(definition.field_type.clone()),
+                        actual: Box::new(native_value.field_type()),
+                    });
+                }
+                native_data.insert(field_name.clone(), native_value);
+            } else if schema.allows_additional_fields() {
+                // This is an additional field and we allow them
+                native_data.insert(
+                    field_name.clone(),
+                    FieldValue::from_json_value(value.clone()),
+                );
+            } else {
+                // This is an unknown field and we don't allow additional fields
+                return Err(JsonBoundaryError::UnknownField {
+                    schema: schema_name.to_string(),
+                    field: field_name.clone(),
+                });
+            }
+        }
+
+        Ok(native_data)
+    }
+
+    /// Get all registered schema names.
+    pub fn registered_schemas(&self) -> Vec<&String> {
+        self.schemas.keys().collect()
+    }
+
+    /// Check if a schema is registered.
+    pub fn has_schema(&self, schema_name: &str) -> bool {
+        self.schemas.contains_key(schema_name)
+    }
+
+    /// Get schema information without exposing internal structure.
+    pub fn schema_info(&self, schema_name: &str) -> Result<SchemaInfo, JsonBoundaryError> {
+        let schema = self.fetch_schema(schema_name)?;
+        Ok(SchemaInfo {
+            name: schema.name.clone(),
+            field_count: schema.fields.len(),
+            allows_additional_fields: schema.allow_additional_fields,
+            required_fields: schema
+                .fields
+                .values()
+                .filter(|def| def.required)
+                .map(|def| def.name.clone())
+                .collect(),
+        })
+    }
+}
+
+/// Information about a registered schema.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SchemaInfo {
+    pub name: String,
+    pub field_count: usize,
+    pub allows_additional_fields: bool,
+    pub required_fields: Vec<String>,
+}

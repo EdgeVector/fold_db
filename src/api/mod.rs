@@ -2,4 +2,4 @@
 
 pub mod json_boundary;
 
-pub use json_boundary::{JsonBoundaryError, JsonBoundaryLayer, JsonBoundarySchema};
+pub use json_boundary::{JsonBoundaryError, JsonBoundaryLayer, JsonBoundarySchema, SchemaInfo};

@@ -49,6 +49,7 @@ pub mod schema_operations;
 pub mod schema_persistence;
 pub mod schema_state_management;
 pub mod schema_validation;
+pub mod native_integration;
 
 // Public re-exports
 pub use core::*;

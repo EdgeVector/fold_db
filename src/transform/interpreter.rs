@@ -128,6 +128,7 @@ impl Interpreter {
             Operator::Subtract => self.subtract(&left_val, &right_val),
             Operator::Multiply => self.multiply(&left_val, &right_val),
             Operator::Divide => self.divide(&left_val, &right_val),
+            Operator::Modulo => self.modulo(&left_val, &right_val),
             Operator::Power => self.power(&left_val, &right_val),
             Operator::Equal => self.equal(&left_val, &right_val),
             Operator::NotEqual => self.not_equal(&left_val, &right_val),
@@ -290,6 +291,21 @@ impl Interpreter {
             }
             _ => Err(SchemaError::InvalidField(
                 "Cannot divide non-numeric values".to_string(),
+            )),
+        }
+    }
+
+    fn modulo(&self, left: &Value, right: &Value) -> Result<Value, SchemaError> {
+        match (left, right) {
+            (Value::Number(a), Value::Number(b)) => {
+                if *b == 0.0 {
+                    Err(SchemaError::InvalidField("Modulo by zero".to_string()))
+                } else {
+                    Ok(Value::Number(a % b))
+                }
+            }
+            _ => Err(SchemaError::InvalidField(
+                "Cannot compute modulo for non-numeric values".to_string(),
             )),
         }
     }

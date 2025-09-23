@@ -29,6 +29,53 @@ fn validate_rejects_invalid_field_name_characters() {
 }
 
 #[test]
+fn validate_rejects_field_name_starting_with_digit() {
+    let definition = NativeFieldDefinition::new("1invalid", NativeFieldType::String);
+
+    let error = definition
+        .validate()
+        .expect_err("field names starting with digits should be rejected");
+    assert_eq!(
+        error,
+        NativeFieldDefinitionError::InvalidNameStart {
+            name: "1invalid".to_string(),
+        },
+    );
+}
+
+#[test]
+fn validate_rejects_field_name_with_whitespace() {
+    let definition = NativeFieldDefinition::new(" spaced ", NativeFieldType::String);
+
+    let error = definition
+        .validate()
+        .expect_err("whitespace-padded field name should be rejected");
+    assert_eq!(
+        error,
+        NativeFieldDefinitionError::InvalidNameCharacters {
+            name: " spaced ".to_string(),
+        },
+    );
+}
+
+#[test]
+fn validate_rejects_field_name_exceeding_max_length() {
+    let long_name = "a".repeat(65);
+    let definition = NativeFieldDefinition::new(long_name.as_str(), NativeFieldType::String);
+
+    let error = definition
+        .validate()
+        .expect_err("over-length field name should be rejected");
+    assert_eq!(
+        error,
+        NativeFieldDefinitionError::NameTooLong {
+            name: long_name,
+            max: 64,
+        },
+    );
+}
+
+#[test]
 fn validate_rejects_mismatched_default_value() {
     let definition = NativeFieldDefinition::new("count", NativeFieldType::Integer)
         .with_default(FieldValue::String("oops".to_string()));
@@ -96,4 +143,11 @@ fn effective_default_generates_nested_defaults_for_optional_fields() {
             ("tags".to_string(), FieldValue::Array(Vec::new())),
         ])),
     );
+}
+
+#[test]
+fn effective_default_is_none_for_required_fields_without_explicit_default() {
+    let definition = NativeFieldDefinition::new("count", NativeFieldType::Integer);
+
+    assert_eq!(definition.effective_default(), None);
 }

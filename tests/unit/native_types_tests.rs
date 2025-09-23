@@ -1,4 +1,5 @@
 use datafold::transform::{FieldValue, NativeFieldType};
+use serde_json::{Number, Value as JsonValue};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
@@ -12,10 +13,7 @@ fn field_type_infers_scalar_and_collection_variants() {
         FieldValue::Integer(42).field_type(),
         NativeFieldType::Integer
     );
-    assert_eq!(
-        FieldValue::Number(PI).field_type(),
-        NativeFieldType::Number
-    );
+    assert_eq!(FieldValue::Number(PI).field_type(), NativeFieldType::Number);
     assert_eq!(
         FieldValue::Boolean(true).field_type(),
         NativeFieldType::Boolean
@@ -129,4 +127,28 @@ fn field_type_matching_validates_values() {
     let null_type = NativeFieldType::Null;
     assert!(null_type.matches(&FieldValue::Null));
     assert!(!null_type.matches(&FieldValue::Boolean(true)));
+}
+
+#[test]
+fn json_conversion_falls_back_for_non_finite_numbers() {
+    let json_value = FieldValue::Number(f64::NAN).to_json_value();
+
+    match json_value {
+        JsonValue::Number(number) => {
+            assert_eq!(number, Number::from(0));
+        }
+        other => panic!("expected JSON number fallback, got {other:?}"),
+    }
+}
+
+#[test]
+fn array_of_nulls_infers_null_type() {
+    let null_array = FieldValue::Array(vec![FieldValue::Null, FieldValue::Null]);
+
+    assert_eq!(
+        null_array.field_type(),
+        NativeFieldType::Array {
+            element_type: Box::new(NativeFieldType::Null),
+        }
+    );
 }
