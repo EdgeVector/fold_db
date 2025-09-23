@@ -22,6 +22,7 @@ This document contains the most up-to-date and condensed information about the p
 | TRANSFORM-005 | Native FieldDefinition must validate names, default types, and generate typed defaults for optional fields. | transform/native | 2025-09-22 19:16:45 | None |
 | TRANSFORM-006 | Native TransformSpec definitions must validate field references and use typed inputs/outputs with FieldDefinition metadata. | transform/native/transform_spec.rs | 2025-09-23 11:45:00 | None |
 | BOUNDARY-001 | JsonBoundaryLayer converts between JSON payloads and native FieldValue maps using registered schema definitions, rejecting unknown fields unless explicitly allowed. | api/json_boundary.rs | 2025-09-23 15:30:00 | None |
+| NATIVE-SCHEMA-001 | Native schemas must register key fields present in the definition map, mark them as required, and forbid null-only key types. | schema/native/schema.rs | 2025-09-24 12:40:00 | None |
 
 ### SCHEMA-001: Schema State Transition Rules
 - **Description**: Enforces valid state transitions for schema lifecycle management
