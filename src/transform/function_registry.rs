@@ -406,6 +406,35 @@ impl FunctionRegistry {
             },
         );
 
+        // if function (conditional)
+        let _ = self.register(
+            FunctionSignature {
+                name: "if".to_string(),
+                parameters: vec![
+                    ("condition".to_string(), FieldType::Boolean),
+                    ("true_value".to_string(), FieldType::Any),
+                    ("false_value".to_string(), FieldType::Any),
+                ],
+                return_type: FieldType::Any,
+                is_async: false,
+                description: "Return true_value if condition is true, otherwise false_value".to_string(),
+            },
+            |args| {
+                Box::pin(async move {
+                    match &args[0] {
+                        FieldValue::Boolean(true) => Ok(args[1].clone()),
+                        FieldValue::Boolean(false) => Ok(args[2].clone()),
+                        other => Err(FunctionRegistryError::ParameterTypeMismatch {
+                            name: "if".to_string(),
+                            parameter: "condition".to_string(),
+                            expected: FieldType::Boolean,
+                            actual: other.clone(),
+                        }),
+                    }
+                })
+            },
+        );
+
         // substring function
         let _ = self.register(
             FunctionSignature {
@@ -940,5 +969,54 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), FieldValue::Integer(10));
+    }
+
+    #[tokio::test]
+    async fn test_if_function() {
+        let registry = create_test_registry();
+
+        // Test true condition
+        let result = registry
+            .execute_function(
+                "if",
+                vec![
+                    FieldValue::Boolean(true),
+                    FieldValue::String("yes".to_string()),
+                    FieldValue::String("no".to_string()),
+                ],
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FieldValue::String("yes".to_string()));
+
+        // Test false condition
+        let result = registry
+            .execute_function(
+                "if",
+                vec![
+                    FieldValue::Boolean(false),
+                    FieldValue::String("yes".to_string()),
+                    FieldValue::String("no".to_string()),
+                ],
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FieldValue::String("no".to_string()));
+
+        // Test invalid condition type
+        let result = registry
+            .execute_function(
+                "if",
+                vec![
+                    FieldValue::Integer(1),
+                    FieldValue::String("yes".to_string()),
+                    FieldValue::String("no".to_string()),
+                ],
+            )
+            .await;
+
+        assert!(result.is_err());
     }
 }
