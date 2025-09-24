@@ -11,7 +11,8 @@ pub mod schema_handlers;
 
 // Re-export the main types and functions for backward compatibility
 pub use types::{NormalizedFieldContext, NormalizedFieldValueRequest, MUTATION_SERVICE_SOURCE};
-pub use validation::{validate_field_value, validate_range_schema_mutation_format};
+pub use validation::{validate_range_schema_mutation_format};
+use crate::validation::validate_field_value;
 
 // Main MutationService implementation
 use crate::fold_db_core::infrastructure::factory::InfrastructureLogger;

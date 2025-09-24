@@ -5,6 +5,9 @@ use super::{
 use crate::schema::types::field::FieldType;
 use crate::transform::TransformExecutor;
 use crate::validation_utils::ValidationUtils;
+use crate::validation::{
+    validate_range_field_consistency_unified, validate_payment_config, validate_field_mappers
+};
 
 /// Validates a [`Schema`] before it is loaded into the database.
 ///
@@ -42,7 +45,11 @@ impl<'a> SchemaValidator<'a> {
         // CRITICAL: For RangeSchema, ensure ALL Range fields use the SAME range_key
         // This is a fundamental constraint that ensures data consistency across the schema
         if let Some(range_key) = schema.range_key() {
-            self.validate_range_field_consistency(schema, range_key)?;
+            validate_range_field_consistency_unified(
+                &schema.name,
+                range_key,
+                schema.fields.iter().map(|(name, variant)| (name.clone(), variant.clone())),
+            )?;
         }
 
         ValidationUtils::require_positive(
@@ -51,19 +58,11 @@ impl<'a> SchemaValidator<'a> {
         )?;
 
         for (field_name, field) in &schema.fields {
-            if field.payment_config().base_multiplier <= 0.0 {
-                return Err(SchemaError::InvalidField(format!(
-                    "Field {field_name} base_multiplier must be positive",
-                )));
-            }
-
-            if let Some(min) = field.payment_config().min_payment {
-                if min == 0 {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Field {field_name} min_payment cannot be zero",
-                    )));
-                }
-            }
+            validate_payment_config(
+                field_name,
+                field.payment_config().base_multiplier,
+                field.payment_config().min_payment,
+            )?;
 
             if let Some(transform) = field.transform() {
                 // Basic syntax validation
@@ -139,145 +138,6 @@ impl<'a> SchemaValidator<'a> {
         Ok(())
     }
 
-    /// Validates that all fields in a RangeSchema are Range fields and maintain consistency.
-    ///
-    /// This is a critical DB-level constraint that ensures:
-    /// 1. All fields in a RangeSchema MUST be Range fields (no Single or Collection fields)
-    /// 2. The schema's range_key field exists and is a Range field
-    /// 3. Consistent field structure across the entire RangeSchema
-    ///
-    /// This validation prevents data corruption and ensures proper range semantics.
-    fn validate_range_field_consistency(
-        &self,
-        schema: &Schema,
-        range_key: &str,
-    ) -> Result<(), SchemaError> {
-        // First ensure the range_key field itself is a Range field
-        match schema.fields.get(range_key) {
-            Some(crate::schema::types::field::FieldVariant::Range(_)) => {
-                // Good - range_key field is a Range field
-            }
-            Some(field_variant) => {
-                let field_type = match field_variant {
-                    crate::schema::types::field::FieldVariant::Single(_) => "Single",
-                    crate::schema::types::field::FieldVariant::Range(_) => "Range", // Should not reach here
-                    crate::schema::types::field::FieldVariant::HashRange(_) => "HashRange", // Should not reach here
-                };
-                return Err(SchemaError::InvalidField(format!(
-                    "RangeSchema '{}' has range_key field '{}' that is a {} field, but range_key must be a Range field",
-                    schema.name, range_key, field_type
-                )));
-            }
-            None => {
-                // This should already be caught by earlier validation, but being defensive
-                return Err(SchemaError::InvalidField(format!(
-                    "RangeSchema '{}' range_key field '{}' does not exist in the schema",
-                    schema.name, range_key
-                )));
-            }
-        }
-
-        // Validate that ALL fields in the RangeSchema are Range fields
-        // This ensures schema consistency and prevents mixing of field types
-        for (field_name, field_variant) in &schema.fields {
-            match field_variant {
-                crate::schema::types::field::FieldVariant::Range(_) => {
-                    // Correct - this is a Range field
-                    continue;
-                }
-                crate::schema::types::field::FieldVariant::Single(_) => {
-                    return Err(SchemaError::InvalidField(format!(
-                        "RangeSchema '{}' contains Single field '{}', but ALL fields must be Range fields. \
-                        Consider using a regular Schema (not RangeSchema) if you need Single fields, \
-                        or convert '{}' to a Range field to maintain RangeSchema consistency.",
-                        schema.name, field_name, field_name
-                    )));
-                }
-                crate::schema::types::field::FieldVariant::HashRange(_) => {
-                    return Err(SchemaError::InvalidField(format!(
-                        "RangeSchema '{}' contains HashRange field '{}', but ALL fields must be Range fields. \
-                        Consider using a regular Schema (not RangeSchema) if you need HashRange fields, \
-                        or convert '{}' to a Range field to maintain RangeSchema consistency.",
-                        schema.name, field_name, field_name
-                    )));
-                }
-            }
-        }
-
-        // Additional validation: Ensure at least one field exists (the range_key field)
-        if schema.fields.is_empty() {
-            return Err(SchemaError::InvalidField(format!(
-                "RangeSchema '{}' must contain at least the range_key field '{}'",
-                schema.name, range_key
-            )));
-        }
-
-        Ok(())
-    }
-
-    /// Validates JSON RangeSchema field consistency to ensure all fields are Range type.
-    ///
-    /// This method validates JSON schema definitions at creation time to enforce:
-    /// 1. All fields in a JSON RangeSchema must be Range fields
-    /// 2. The range_key field must exist and be a Range field
-    /// 3. No mixing of field types within a RangeSchema
-    ///
-    /// This prevents invalid schemas from being created via JSON definitions.
-    fn validate_json_range_field_consistency(
-        &self,
-        schema: &JsonSchemaDefinition,
-        range_key: &str,
-    ) -> Result<(), SchemaError> {
-        // Ensure the range_key field exists in the schema
-        let range_key_field = schema.fields.get(range_key)
-            .ok_or_else(|| SchemaError::InvalidField(format!(
-                "JSON RangeSchema '{}' is missing the range_key field '{}'. The range_key must be defined as a field in the schema.",
-                schema.name, range_key
-            )))?;
-
-        // Ensure the range_key field is a Range field
-        if !matches!(range_key_field.field_type, FieldType::Range) {
-            return Err(SchemaError::InvalidField(format!(
-                "JSON RangeSchema '{}' has range_key field '{}' defined as {:?} field, but it must be a Range field",
-                schema.name, range_key, range_key_field.field_type
-            )));
-        }
-
-        // Validate ALL fields in the JSON RangeSchema are Range fields
-        for (field_name, field_def) in &schema.fields {
-            if !matches!(field_def.field_type, FieldType::Range) {
-                return Err(SchemaError::InvalidField(format!(
-                    "JSON RangeSchema '{}' contains {} field '{}', but ALL fields must be Range fields. \
-                    Consider using a regular Schema (not RangeSchema) if you need {} fields, \
-                    or change '{}' to field_type: \"Range\" to maintain RangeSchema consistency.",
-                    schema.name,
-                    match field_def.field_type {
-                        FieldType::Single => "Single",
-                        FieldType::Range => "Range", // shouldn't reach here
-                        FieldType::HashRange => "HashRange", // shouldn't reach here
-                    },
-                    field_name,
-                    match field_def.field_type {
-                        FieldType::Single => "Single",
-                        FieldType::Range => "Range",
-                        FieldType::HashRange => "HashRange",
-                    },
-                    field_name
-                )));
-            }
-        }
-
-        // Ensure at least one field exists (the range_key field)
-        if schema.fields.is_empty() {
-            return Err(SchemaError::InvalidField(format!(
-                "JSON RangeSchema '{}' must contain at least the range_key field '{}'",
-                schema.name, range_key
-            )));
-        }
-
-        Ok(())
-    }
-
     /// Validate a [`JsonSchemaDefinition`] before interpretation
     pub fn validate_json_schema(&self, schema: &JsonSchemaDefinition) -> Result<(), SchemaError> {
         ValidationUtils::require_valid_schema_name(&schema.name)?;
@@ -285,7 +145,11 @@ impl<'a> SchemaValidator<'a> {
         // CRITICAL: For JSON RangeSchema definitions, validate range key consistency
         // This ensures that JSON-defined schemas also follow the same constraints as programmatically created ones
         if let crate::schema::types::schema::SchemaType::Range { range_key } = &schema.schema_type {
-            self.validate_json_range_field_consistency(schema, range_key)?;
+            validate_range_field_consistency_unified(
+                &schema.name,
+                range_key,
+                schema.fields.iter().map(|(name, field_def)| (name.clone(), field_def.field_type.clone())),
+            )?;
         }
 
         for (field_name, field) in &schema.fields {
@@ -295,27 +159,13 @@ impl<'a> SchemaValidator<'a> {
                 ));
             }
 
-            if field.payment_config.base_multiplier <= 0.0 {
-                return Err(SchemaError::InvalidField(format!(
-                    "Field {field_name} base_multiplier must be positive",
-                )));
-            }
+            validate_payment_config(
+                field_name,
+                field.payment_config.base_multiplier,
+                field.payment_config.min_payment,
+            )?;
 
-            for (mapper_key, mapper_value) in &field.field_mappers {
-                if mapper_key.is_empty() || mapper_value.is_empty() {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Field {field_name} has invalid field mapper: empty key or value",
-                    )));
-                }
-            }
-
-            if let Some(min_payment) = field.payment_config.min_payment {
-                if min_payment == 0 {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Field {field_name} min_payment cannot be zero",
-                    )));
-                }
-            }
+            validate_field_mappers(field_name, field.field_mappers.iter().map(|(k, v)| (k.clone(), v.clone())))?;
         }
 
         Ok(())
