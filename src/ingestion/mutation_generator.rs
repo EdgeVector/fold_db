@@ -20,7 +20,8 @@ impl MutationGenerator {
     pub fn generate_mutations(
         &self,
         schema_name: &str,
-        json_data: &Value,
+        keys_and_values: &HashMap<String, String>,
+        fields_and_values: &HashMap<String, Value>,
         mutation_mappers: &HashMap<String, String>,
         trust_distance: u32,
         pub_key: String,
@@ -34,7 +35,6 @@ impl MutationGenerator {
         );
 
         let mut mutations = Vec::new();
-        let mut fields_and_values = HashMap::new();
 
         // Process each mutation mapper
         for (json_path, schema_path) in mutation_mappers {
@@ -45,47 +45,14 @@ impl MutationGenerator {
                 json_path,
                 schema_path
             );
-
-            // Extract value from JSON using the path
-            match self.extract_value_from_json_path(json_data, json_path) {
-                Ok(Some(value)) => {
-                    // Parse the schema path to get the field name
-                    let field_name = self.parse_schema_field_path(schema_path)?;
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Mapped {} = {:?} to field {}",
-                        json_path,
-                        value,
-                        field_name
-                    );
-                    fields_and_values.insert(field_name, value);
-                }
-                Ok(None) => {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        warn,
-                        "No value found at JSON path: {}",
-                        json_path
-                    );
-                }
-                Err(e) => {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        warn,
-                        "Failed to extract value from path '{}': {}",
-                        json_path,
-                        e
-                    );
-                }
-            }
         }
 
         // If we have fields to mutate, create a mutation
         if !fields_and_values.is_empty() {
             let mutation = Mutation {
                 schema_name: schema_name.to_string(),
-                fields_and_values,
+                fields_and_values: fields_and_values.clone(),
+                keys_and_values: keys_and_values.clone(),
                 pub_key,
                 trust_distance,
                 mutation_type: MutationType::Create,
@@ -307,10 +274,12 @@ mod tests {
     #[test]
     fn test_generate_mutations() {
         let generator = MutationGenerator::new();
-        let json_data = json!({
-            "name": "John",
-            "age": 30
-        });
+
+        let mut keys_and_values = HashMap::new();
+        let mut fields_and_values = HashMap::new();
+        fields_and_values.insert("name".to_string(), json!("John"));
+        fields_and_values.insert("age".to_string(), json!(30));
+        keys_and_values.insert("range_key".to_string(), "123".to_string());
 
         let mut mappers = HashMap::new();
         mappers.insert("name".to_string(), "UserSchema.name".to_string());
@@ -319,7 +288,8 @@ mod tests {
         let result = generator
             .generate_mutations(
                 "UserSchema",
-                &json_data,
+                &keys_and_values,
+                &fields_and_values,
                 &mappers,
                 0,
                 "test-key".to_string(),

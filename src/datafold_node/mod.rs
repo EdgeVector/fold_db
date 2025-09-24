@@ -12,6 +12,7 @@
 pub mod config;
 mod db;
 pub mod error;
+mod operation_processor;
 pub mod http_server;
 pub mod log_routes;
 mod network;
@@ -35,4 +36,5 @@ pub use config::load_node_config;
 pub use config::NodeConfig;
 pub use http_server::DataFoldHttpServer;
 pub use node::DataFoldNode;
+pub use operation_processor::OperationProcessor;
 pub use tcp_server::TcpServer;

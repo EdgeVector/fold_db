@@ -110,6 +110,10 @@ pub struct DeclarativeSchemaDefinition {
         /// Field definitions with their mapping expressions
         pub fields: HashMap<String, FieldDefinition>,
 
+        // getter
+        #[serde(skip)]
+        inputs_schema_fields: Vec<String>,
+
         // Key to hash code.  Used for unique resolution of keys.
         #[serde(skip)]
         key_to_hash_code: HashMap<String, String>,
@@ -148,6 +152,7 @@ impl DeclarativeSchemaDefinition {
             schema_type,
             key,
             fields,
+            inputs_schema_fields: Vec::new(),
             key_to_hash_code: HashMap::new(),
             field_to_hash_code: HashMap::new(),
             hash_to_code: HashMap::new(),
@@ -155,7 +160,33 @@ impl DeclarativeSchemaDefinition {
         
         // Generate all mappings after creation
         schema.generate_hash_to_code_mappings();
+        schema.generate_inputs();
         schema
+    }
+
+    fn generate_inputs(&mut self) {
+        let mut inputs_schema_fields = Vec::new();
+        for code_def in self.hash_to_code.keys() {
+            // get the schema.field from the code_def, will be the first two elements of the split
+            let mut dot_iterator = self.hash_to_code.get(code_def).unwrap().split(".");
+            inputs_schema_fields.push(
+                self.hash_to_code.get(code_def).unwrap().split(".").take(2).collect::<Vec<&str>>().join(".")
+            );
+        }
+        self.inputs_schema_fields = inputs_schema_fields;
+
+    }
+
+    pub fn get_inputs(&self) -> Vec<String> {
+        self.inputs_schema_fields.clone()
+    }
+
+    pub fn get_field_to_hash_code(&self) -> HashMap<String, String> {
+        self.field_to_hash_code.clone()
+    }
+
+    pub fn get_key_to_hash_code(&self) -> HashMap<String, String> {
+        self.key_to_hash_code.clone()
     }
 
     /// Generates hash-to-code mappings for all keys and fields in the declarative schema.

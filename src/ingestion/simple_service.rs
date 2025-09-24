@@ -1,6 +1,6 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
 
-use crate::datafold_node::DataFoldNode;
+use crate::datafold_node::{DataFoldNode, OperationProcessor};
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;
@@ -14,6 +14,8 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::{Mutation, Operation};
 use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Simplified ingestion service that works with DataFoldNode
 pub struct SimpleIngestionService {
@@ -63,7 +65,7 @@ impl SimpleIngestionService {
     pub async fn process_json_with_node(
         &self,
         request: IngestionRequest,
-        node: &mut DataFoldNode,
+        node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<IngestionResponse> {
         log_feature!(
             LogFeature::Ingestion,
@@ -81,7 +83,7 @@ impl SimpleIngestionService {
         self.validate_input(&request.data)?;
 
         // Step 2: Get available schemas and strip them
-        let available_schemas = self.get_stripped_available_schemas_from_node(node)?;
+        let available_schemas = self.get_stripped_available_schemas_from_node(node.clone()).await?;
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -103,11 +105,11 @@ impl SimpleIngestionService {
         );
 
         // Step 4: Determine schema to use
-        let schema_name = self.determine_schema_to_use(&ai_response, node)?;
+        let schema_name = self.determine_schema_to_use(&ai_response, node.clone()).await?;
         let new_schema_created = ai_response.new_schemas.is_some();
 
         // Step 5: Generate mutations
-        let mutations = self.generate_mutations_for_data(
+        let mutations = self.mutation_generator.generate_mutations(
             &schema_name,
             &request.data,
             &ai_response.mutation_mappers,
@@ -129,7 +131,7 @@ impl SimpleIngestionService {
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
         {
-            self.execute_mutations_with_node(&mutations, node)?
+            self.execute_mutations_with_node(&mutations, node.clone())?
         } else {
             0
         };
@@ -212,12 +214,13 @@ impl SimpleIngestionService {
     }
 
     /// Get available schemas stripped of payment and permission data
-    fn get_stripped_available_schemas_from_node(
+    async fn get_stripped_available_schemas_from_node(
         &self,
-        node: &DataFoldNode,
+        node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<Value> {
         // Get all available schemas from the node
-        let schema_states = node.list_schemas_with_state().map_err(|e| {
+        let node_guard = node.lock().await;
+        let schema_states = node_guard.list_schemas_with_state().map_err(|e| {
             IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
                 e.to_string(),
             ))
@@ -225,7 +228,7 @@ impl SimpleIngestionService {
 
         let mut schemas = Vec::new();
         for schema_name in schema_states.keys() {
-            if let Ok(Some(schema)) = node.get_schema(schema_name) {
+            if let Ok(Some(schema)) = node_guard.get_schema(schema_name) {
                 schemas.push(schema);
             }
         }
@@ -236,10 +239,10 @@ impl SimpleIngestionService {
     }
 
     /// Determine which schema to use based on AI response
-    fn determine_schema_to_use(
+    async fn determine_schema_to_use(
         &self,
         ai_response: &AISchemaResponse,
-        node: &mut DataFoldNode,
+        node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<String> {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
@@ -255,7 +258,7 @@ impl SimpleIngestionService {
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
-            let schema_name = self.create_new_schema_with_node(new_schema_def, node)?;
+            let schema_name = self.create_new_schema_with_node(new_schema_def, node.clone()).await?;
             log_feature!(
                 LogFeature::Ingestion,
                 info,
@@ -271,10 +274,10 @@ impl SimpleIngestionService {
     }
 
     /// Create a new schema using the DataFoldNode
-    fn create_new_schema_with_node(
+    async fn create_new_schema_with_node(
         &self,
         schema_def: &Value,
-        node: &mut DataFoldNode,
+        node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<String> {
         log_feature!(
             LogFeature::Ingestion,
@@ -287,7 +290,8 @@ impl SimpleIngestionService {
         let schema_name = schema.name.clone();
 
         // Load the schema using the node (this adds it as available and approves it)
-        node.load_schema(schema)
+        let mut node_guard = node.lock().await;
+        node_guard.load_schema(schema)
             .map_err(|e| IngestionError::SchemaCreationError(e.to_string()))?;
 
         log_feature!(
@@ -452,42 +456,26 @@ impl SimpleIngestionService {
         Ok(FieldVariant::Single(field))
     }
 
-    /// Generate mutations for the data
-    fn generate_mutations_for_data(
-        &self,
-        schema_name: &str,
-        json_data: &Value,
-        mutation_mappers: &std::collections::HashMap<String, String>,
-        trust_distance: u32,
-        pub_key: String,
-    ) -> IngestionResult<Vec<Mutation>> {
-        self.mutation_generator.generate_mutations(
-            schema_name,
-            json_data,
-            mutation_mappers,
-            trust_distance,
-            pub_key,
-        )
-    }
 
-    /// Execute mutations using the DataFoldNode
+    /// Execute mutations using the OperationProcessor
     fn execute_mutations_with_node(
         &self,
         mutations: &[Mutation],
-        node: &mut DataFoldNode,
+        node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<usize> {
         let mut executed_count = 0;
+        let processor = OperationProcessor::new(node);
 
         for mutation in mutations {
-            // Convert mutation to operation
+            // Convert mutation to operation with correct structure
             let operation = Operation::Mutation {
                 schema: mutation.schema_name.clone(),
-                data: serde_json::to_value(&mutation.fields_and_values)
-                    .map_err(|e| IngestionError::MutationGenerationError(e.to_string()))?,
+                fields_and_values: mutation.fields_and_values.clone(),
+                keys_and_values: mutation.keys_and_values.clone(),
                 mutation_type: mutation.mutation_type.clone(),
             };
 
-            match node.execute_operation(operation) {
+            match processor.execute_sync(operation) {
                 Ok(_) => {
                     executed_count += 1;
                     log_feature!(

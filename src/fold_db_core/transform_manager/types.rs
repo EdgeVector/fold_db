@@ -5,7 +5,6 @@ use std::collections::HashSet;
 /// Trait abstraction over transform execution for easier testing.
 /// All execution is now event-driven through the message bus.
 pub trait TransformRunner: Send + Sync {
-    fn execute_transform_now(&self, transform_id: &str) -> Result<JsonValue, SchemaError>;
     fn execute_transform_with_context(
         &self,
         transform_id: &str,

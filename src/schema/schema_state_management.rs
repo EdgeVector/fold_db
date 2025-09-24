@@ -59,22 +59,7 @@ impl SchemaCore {
             schema.fields.len(),
             schema.fields.keys().collect::<Vec<_>>()
         );
-
-        // Ensure any transforms on fields have the correct output schema
-        self.fix_transform_outputs(&mut schema);
-
-        // Validate the schema after fixing transform outputs
-        let validator = super::validator::SchemaValidator::new(self);
-        validator.validate(&schema)?;
-        info!("Schema '{}' validation passed", schema.name);
-
-        info!(
-            "After fix_transform_outputs, schema '{}' has {} fields: {:?}",
-            schema.name,
-            schema.fields.len(),
-            schema.fields.keys().collect::<Vec<_>>()
-        );
-
+        
         // Persist the updated schema
         self.persist_schema(&schema)?;
 

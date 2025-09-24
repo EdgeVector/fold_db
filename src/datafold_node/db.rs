@@ -4,62 +4,12 @@ use std::collections::HashMap;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::{Mutation, Operation, Query, Transform};
+use crate::schema::types::{Mutation, Query, Transform};
 use crate::schema::SchemaError;
 
 use super::DataFoldNode;
 
 impl DataFoldNode {
-    /// Executes an operation (query or mutation) on the database.
-    pub fn execute_operation(&mut self, operation: Operation) -> FoldDbResult<Value> {
-        match operation {
-            Operation::Query {
-                schema,
-                fields,
-                filter,
-            } => {
-                let query = Query {
-                    schema_name: schema,
-                    fields,
-                    pub_key: String::new(),
-                    trust_distance: 0,
-                    filter,
-                };
-                let results = self.query(query)?;
-                let unwrapped: Vec<Value> = results
-                    .into_iter()
-                    .map(|r| r.unwrap_or_else(|e| serde_json::json!({"error": e.to_string()})))
-                    .collect();
-                Ok(serde_json::to_value(&unwrapped)?)
-            }
-            Operation::Mutation {
-                schema,
-                data,
-                mutation_type,
-            } => {
-                let fields_and_values = match data {
-                    Value::Object(map) => map.into_iter().collect(),
-                    _ => {
-                        return Err(FoldDbError::Config(
-                            "Mutation data must be an object".into(),
-                        ))
-                    }
-                };
-
-                let mutation = Mutation {
-                    schema_name: schema,
-                    fields_and_values,
-                    pub_key: String::new(),
-                    trust_distance: 0,
-                    mutation_type,
-                    synchronous: None,
-                };
-                self.mutate(mutation)?;
-                Ok(Value::Null)
-            }
-        }
-    }
-
     /// Executes a query against the database.
     pub fn query(&mut self, query: Query) -> FoldDbResult<Vec<Result<Value, SchemaError>>> {
         println!(
@@ -203,16 +153,6 @@ impl DataFoldNode {
             .lock()
             .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
         db.process_transform_queue();
-        Ok(())
-    }
-
-    /// Reload transforms from the database.
-    pub fn reload_transforms(&self) -> FoldDbResult<()> {
-        let db = self
-            .db
-            .lock()
-            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.reload_transforms()?;
         Ok(())
     }
 

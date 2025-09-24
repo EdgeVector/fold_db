@@ -36,6 +36,7 @@ pub enum Event {
     // Query/mutation events
     QueryExecuted(QueryExecuted),
     MutationExecuted(MutationExecuted),
+    MutationRequest(MutationRequest),
     // Request/Response events
     AtomCreateRequest(AtomCreateRequest),
     AtomCreateResponse(AtomCreateResponse),
@@ -90,6 +91,7 @@ impl Event {
             Event::DataPersisted(_) => "DataPersisted",
             Event::QueryExecuted(_) => "QueryExecuted",
             Event::MutationExecuted(_) => "MutationExecuted",
+            Event::MutationRequest(_) => "MutationRequest",
             Event::AtomCreateRequest(_) => "AtomCreateRequest",
             Event::AtomCreateResponse(_) => "AtomCreateResponse",
             Event::AtomUpdateRequest(_) => "AtomUpdateRequest",

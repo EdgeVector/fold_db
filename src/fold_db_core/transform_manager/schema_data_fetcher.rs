@@ -296,17 +296,12 @@ impl SchemaDataFetcher {
             Ok(Some(hashrange_molecule)) => {
                 println!("✅ Found MoleculeHashRange for field '{}' with hash_key '{}' and range_key '{}'", field_name, hash_key, range_key);
 
-                // Check if the hash and range values match
-                if hashrange_molecule.hash_value == hash_key
-                    && hashrange_molecule.range_value == range_key
-                {
-                    // Process each atom in the hashrange
-                    for atom_uuid in &hashrange_molecule.atom_uuids {
-                        Self::process_atom_for_field(db_ops, atom_uuid, field_name, record)?;
-                    }
+                // Get the atom UUID for the specific hash and range combination
+                if let Some(atom_uuid) = hashrange_molecule.get_atom_uuid(hash_key, range_key) {
+                    Self::process_atom_for_field(db_ops, atom_uuid, field_name, record)?;
                 } else {
-                    println!("⚠️ MoleculeHashRange hash/range values don't match - expected hash_key '{}' range_key '{}', got hash_value '{}' range_value '{}'", 
-                             hash_key, range_key, hashrange_molecule.hash_value, hashrange_molecule.range_value);
+                    println!("⚠️ MoleculeHashRange doesn't contain atom for hash_key '{}' and range_key '{}'", 
+                             hash_key, range_key);
                 }
             }
             Ok(None) => {
@@ -667,22 +662,17 @@ impl SchemaDataFetcher {
                     Ok(Some(hashrange_molecule)) => {
                         println!("✅ Found MoleculeHashRange for field '{}' with hash_key '{}' and range_key '{}'", field_name, hash_key, range_key);
 
-                        // Check if the hash and range values match
-                        if hashrange_molecule.hash_value == hash_key
-                            && hashrange_molecule.range_value == range_key
-                        {
+                        // Get the atom UUID for the specific hash and range combination
+                        if let Some(atom_uuid) = hashrange_molecule.get_atom_uuid(hash_key, range_key) {
                             let key_tuple = (hash_key.to_string(), range_key.to_string());
                             let record = records_by_keys.entry(key_tuple).or_default();
 
-                            // Process each atom in the hashrange
-                            for atom_uuid in &hashrange_molecule.atom_uuids {
-                                Self::process_atom_for_field(
-                                    db_ops, atom_uuid, field_name, record,
-                                )?;
-                            }
+                            Self::process_atom_for_field(
+                                db_ops, atom_uuid, field_name, record,
+                            )?;
                         } else {
-                            println!("⚠️ MoleculeHashRange hash/range values don't match - expected hash_key '{}' range_key '{}', got hash_value '{}' range_value '{}'", 
-                                     hash_key, range_key, hashrange_molecule.hash_value, hashrange_molecule.range_value);
+                            println!("⚠️ MoleculeHashRange doesn't contain atom for hash_key '{}' and range_key '{}'", 
+                                     hash_key, range_key);
                         }
                     }
                     Ok(None) => {

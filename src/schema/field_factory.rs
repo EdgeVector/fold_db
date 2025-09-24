@@ -263,7 +263,7 @@ impl TransformSetupHelper {
             HashMap::new(),
         );
 
-        crate::schema::types::Transform::new(schema, "TransformSchema.result".to_string())
+        crate::schema::types::Transform::new(schema)
     }
 
     /// Create and store complete transform setup
@@ -275,11 +275,7 @@ impl TransformSetupHelper {
         Self::create_standard_transform_schemas(db_ops)?;
 
         // Create and store transform
-        let mut transform = Self::create_standard_test_transform();
-        transform.set_inputs(vec![
-            "TransformBase.value1".to_string(),
-            "TransformBase.value2".to_string(),
-        ]);
+        let transform = Self::create_standard_test_transform();
         db_ops.store_transform("test_transform", &transform)?;
 
         Ok(())

@@ -248,7 +248,7 @@ impl From<JsonFieldPaymentConfig> for FieldPaymentConfig {
 
 impl From<JsonTransform> for Transform {
     fn from(json: JsonTransform) -> Self {
-        Transform::from_declarative_schema(json.schema, json.inputs, json.output)
+        Transform::from_declarative_schema(json.schema)
     }
 }
 

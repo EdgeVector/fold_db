@@ -171,6 +171,7 @@ impl MessageBus {
             Event::FieldValueSetResponse(e) => self.publish(e),
             Event::FieldUpdateRequest(e) => self.publish(e),
             Event::FieldUpdateResponse(e) => self.publish(e),
+            Event::MutationRequest(e) => self.publish(e),
             Event::SchemaLoadRequest(e) => self.publish(e),
             Event::SchemaLoadResponse(e) => self.publish(e),
             Event::SchemaApprovalRequest(e) => self.publish(e),

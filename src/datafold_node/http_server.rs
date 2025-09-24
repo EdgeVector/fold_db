@@ -211,10 +211,6 @@ impl DataFoldHttpServer {
                             "/transforms/queue/{id}",
                             web::post().to(query_routes::add_to_transform_queue),
                         )
-                        .route(
-                            "/transforms/reload",
-                            web::post().to(query_routes::reload_transforms),
-                        )
                         // Log endpoints
                         .route("/logs", web::get().to(log_routes::list_logs))
                         .route("/logs/stream", web::get().to(log_routes::stream_logs))

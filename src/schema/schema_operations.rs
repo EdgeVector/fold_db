@@ -37,9 +37,6 @@ impl SchemaCore {
 
         self.log_field_refs(&schema);
 
-        self.fix_transform_outputs(&mut schema);
-        self.register_schema_transforms(&schema)?;
-
         self.persist_if_needed(&schema)?;
 
         self.update_state_and_memory(schema)?;
@@ -228,11 +225,11 @@ impl SchemaCore {
         // Persist the state change immediately
         self.persist_states()?;
 
-        // Ensure fields have proper ARefs assigned (persistence happens in map_fields)
+        // Ensure fields have proper molecules assigned (persistence happens in map_fields)
         match self.map_fields(schema_name) {
             Ok(molecules) => {
                 info!(
-                    "Schema '{}' field mapping successful: created {} atom references with proper types",
+                    "Schema '{}' field mapping successful: created {} molecules with proper types",
                     schema_name, molecules.len()
                 );
 
@@ -334,23 +331,6 @@ impl SchemaCore {
                     e
                 );
             }
-        }
-
-        // CRITICAL: Re-register transforms that target this newly approved schema
-        // When a schema is approved, transforms in OTHER schemas that were previously
-        // skipped due to target schema state validation should now be registered
-        info!(
-            "🔄 Re-registering transforms that target newly approved schema '{}'",
-            schema_name
-        );
-        if let Err(e) = self.reregister_transforms_for_approved_schema(schema_name) {
-            log_feature!(
-                LogFeature::Schema,
-                warn,
-                "Failed to re-register transforms for approved schema '{}': {}",
-                schema_name,
-                e
-            );
         }
 
         // Publish SchemaLoaded event for approval
@@ -473,58 +453,31 @@ impl SchemaCore {
         // Create a declarative transform from the schema
         let transform = Transform::from_declarative_schema(
             self.convert_schema_to_declarative_definition(schema)?,
-            input_molecules.clone(),
-            format!("{}.{}", schema.name, output_field),
         );
 
         // Create the registration
         let registration = TransformRegistration {
             transform_id: transform_id.clone(),
             transform,
-            input_molecules,
-            input_names,
             trigger_fields,
-            output_molecule: format!("{}.{}", schema.name, output_field),
-            schema_name: schema.name.clone(),
-            field_name: output_field,
         };
 
-        // Store the transform in the database
-        if let Err(e) = self
-            .db_ops
-            .store_transform(&transform_id, &registration.transform)
-        {
+        // Use the event orchestrator to register the transform
+        // This publishes a TransformRegistrationRequest event that will be handled by the orchestrator
+        use crate::fold_db_core::infrastructure::message_bus::events::schema_events::TransformRegistrationRequest;
+        use uuid::Uuid;
+        
+        let correlation_id = Uuid::new_v4().to_string();
+        let registration_request = TransformRegistrationRequest {
+            correlation_id,
+            registration: registration.clone(),
+        };
+        
+        if let Err(e) = self.message_bus.publish(registration_request) {
             return Err(SchemaError::InvalidData(format!(
-                "Failed to store transform {}: {}",
+                "Failed to publish transform registration request for {}: {}",
                 transform_id, e
             )));
-        }
-
-        // Store the transform registration in the database
-        if let Err(e) = self.db_ops.store_transform_registration(&registration) {
-            return Err(SchemaError::InvalidData(format!(
-                "Failed to store transform registration {}: {}",
-                transform_id, e
-            )));
-        }
-
-        // Create field-to-transform mappings using trigger_fields (individual field names)
-        for trigger_field in &registration.trigger_fields {
-            if let Err(e) = self.store_field_to_transform_mapping(trigger_field, &transform_id) {
-                log_feature!(
-                    LogFeature::Schema,
-                    error,
-                    "Failed to store field mapping '{}' → '{}': {}",
-                    trigger_field,
-                    transform_id,
-                    e
-                );
-            } else {
-                info!(
-                    "✅ Stored field mapping: '{}' → '{}' transform",
-                    trigger_field, transform_id
-                );
-            }
         }
 
         info!(
@@ -780,120 +733,6 @@ impl SchemaCore {
         }
     }
 
-    /// Re-register transforms that target a newly approved schema
-    /// This method is called when a schema is approved to ensure that transforms
-    /// in OTHER schemas that were previously skipped due to target schema state
-    /// validation are now registered
-    fn reregister_transforms_for_approved_schema(
-        &self,
-        target_schema_name: &str,
-    ) -> Result<(), SchemaError> {
-        info!(
-            "🔍 Checking all schemas for transforms targeting newly approved schema '{}'",
-            target_schema_name
-        );
-
-        let available_schemas = {
-            let available = self.available.lock().map_err(|_| schema_lock_error())?;
-            available.clone()
-        };
-
-        let mut transforms_registered = 0;
-
-        for (schema_name, (schema, _)) in available_schemas {
-            info!(
-                "🔍 Checking schema '{}' for transforms targeting '{}'",
-                schema_name, target_schema_name
-            );
-
-            for (field_name, field) in &schema.fields {
-                if let Some(transform) = field.transform() {
-                    // Parse the transform output to get the target schema
-                    let output_parts: Vec<&str> = transform.get_output().split('.').collect();
-                    if output_parts.len() == 2 && output_parts[0] == target_schema_name {
-                        let transform_id = format!("{}.{}", schema_name, field_name);
-
-                        info!(
-                            "🎯 Found transform '{}' targeting newly approved schema '{}'",
-                            transform_id, target_schema_name
-                        );
-
-                        // Check if this transform is already registered
-                        match self.db_ops.get_transform(&transform_id) {
-                            Ok(Some(_)) => {
-                                info!(
-                                    "✅ Transform '{}' already registered, skipping",
-                                    transform_id
-                                );
-                                continue;
-                            }
-                            Ok(None) => {
-                                info!(
-                                    "📋 Registering previously skipped transform '{}'",
-                                    transform_id
-                                );
-
-                                // Store the transform in the database
-                                if let Err(e) =
-                                    self.db_ops.store_transform(&transform_id, transform)
-                                {
-                                    log_feature!(
-                                        LogFeature::Schema,
-                                        error,
-                                        "Failed to store transform {}: {}",
-                                        transform_id,
-                                        e
-                                    );
-                                    continue;
-                                }
-
-                                // Create field-to-transform mappings
-                                for input_field in transform.get_inputs() {
-                                    if let Err(e) = self.store_field_to_transform_mapping(
-                                        input_field,
-                                        &transform_id,
-                                    ) {
-                                        log_feature!(
-                                            LogFeature::Schema,
-                                            error,
-                                            "Failed to store field mapping '{}' → '{}': {}",
-                                            input_field,
-                                            transform_id,
-                                            e
-                                        );
-                                    } else {
-                                        info!(
-                                            "✅ Stored field mapping: '{}' → '{}' transform",
-                                            input_field, transform_id
-                                        );
-                                    }
-                                }
-
-                                transforms_registered += 1;
-                                info!("✅ Registered transform '{}' for newly approved target schema '{}'", transform_id, target_schema_name);
-                            }
-                            Err(e) => {
-                                log_feature!(
-                                    LogFeature::Schema,
-                                    error,
-                                    "Error checking if transform '{}' exists: {}",
-                                    transform_id,
-                                    e
-                                );
-                                continue;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        info!(
-            "🎉 Re-registered {} transforms targeting newly approved schema '{}'",
-            transforms_registered, target_schema_name
-        );
-        Ok(())
-    }
 
     /// Ensures an approved schema is present in the schemas HashMap for field mapping
     /// This is used during initialization to fix the issue where approved schemas

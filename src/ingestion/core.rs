@@ -423,7 +423,8 @@ impl IngestionCore {
     ) -> IngestionResult<Vec<Mutation>> {
         self.mutation_generator.generate_mutations(
             schema_name,
-            json_data,
+            &HashMap::new(),
+            &json_data,
             mutation_mappers,
             trust_distance,
             pub_key,

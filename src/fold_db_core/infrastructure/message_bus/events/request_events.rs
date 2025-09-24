@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use crate::schema::types::Mutation;
 
 use super::EventType;
 
@@ -448,5 +449,17 @@ pub struct SystemInitializationResponse {
 impl EventType for SystemInitializationResponse {
     fn type_id() -> &'static str {
         "SystemInitializationResponse"
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MutationRequest {
+    pub correlation_id: String,
+    pub mutation: Mutation,
+}
+
+impl EventType for MutationRequest {
+    fn type_id() -> &'static str {
+        "MutationRequest"
     }
 }

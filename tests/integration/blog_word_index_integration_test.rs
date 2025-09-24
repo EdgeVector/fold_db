@@ -58,9 +58,6 @@ impl BlogWordIndexIntegrationFixture {
     fn load_blog_word_index_declarative_schema(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         SchemaLoader::load_declarative_schema_from_available_schemas(&mut self.fold_db, "BlogPostWordIndex")?;
         
-        // Manually reload transforms to ensure the declarative transform is loaded into memory
-        self.fold_db.reload_transforms()?;
-        
         Ok(())
     }
 
@@ -593,6 +590,7 @@ async fn test_declarative_transform_execution() {
                         } else {
                             println!("❌ Query for '{}' returned empty result - word not found in any blogs", word);
                             failed_queries += 1;
+                            assert!(false, "Query for '{}' returned empty result - word not found in any blogs", word);
                         }
                     } else {
                         println!("❌ Query for '{}' returned invalid structure - missing word key", word);

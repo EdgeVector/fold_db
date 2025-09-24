@@ -1,4 +1,4 @@
-use super::{DataFoldNode, TcpServer};
+use super::{DataFoldNode, TcpServer, OperationProcessor};
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -6,6 +6,7 @@ use crate::schema::types::operations::MutationType;
 use crate::schema::Schema;
 use libp2p::PeerId;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -135,8 +136,9 @@ impl TcpServer {
                     filter,
                 };
 
-                let mut node_guard = node.lock().await;
-                let result = node_guard.execute_operation(operation)?;
+                // Create processor with the node
+                let processor = OperationProcessor::new(node.clone());
+                let result = processor.execute(operation).await?;
 
                 Ok(serde_json::json!({
                     "results": result,
@@ -152,13 +154,28 @@ impl TcpServer {
                         crate::error::FoldDbError::Config("Missing schema parameter".to_string())
                     })?;
 
-                let data = request
+                // TOOD: MAKE SURE UI PASSES IN KEYS AS A HASHMAP OF STRING, STRING and FIELDS AS A HASHMAP OF STRING, VALUE.  THIS IS A MAJOR CHANGE.
+                let fields_and_values: HashMap<String, Value> = request
                     .get("params")
-                    .and_then(|v| v.get("data"))
-                    .cloned()
+                    .and_then(|v| v.get("fields_and_values"))
+                    .and_then(|v| v.as_object())
                     .ok_or_else(|| {
-                        crate::error::FoldDbError::Config("Missing data parameter".to_string())
-                    })?;
+                        crate::error::FoldDbError::Config("Fields_and_values must be an object".to_string())
+                    })?
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect();
+
+                let keys_and_values = request
+                    .get("params")
+                    .and_then(|v| v.get("keys_and_values"))
+                    .and_then(|v| v.as_object())
+                    .ok_or_else(|| {
+                        crate::error::FoldDbError::Config("Keys_and_values must be an object".to_string())
+                    })?
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.as_str().unwrap_or("").to_string()))
+                    .collect();
 
                 let mutation_type_str = request
                     .get("params")
@@ -184,12 +201,14 @@ impl TcpServer {
 
                 let operation = crate::schema::types::Operation::Mutation {
                     schema: schema.to_string(),
-                    data,
+                    fields_and_values,
+                    keys_and_values,
                     mutation_type,
                 };
 
-                let mut node_guard = node.lock().await;
-                let _ = node_guard.execute_operation(operation)?;
+                // Create processor with the node
+                let processor = OperationProcessor::new(node.clone());
+                let _ = processor.execute(operation).await?;
 
                 Ok(serde_json::json!({ "success": true }))
             }

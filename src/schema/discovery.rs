@@ -13,7 +13,6 @@ impl SchemaCore {
         info!("Discovering schemas from {}", self.schemas_dir.display());
         for path in Self::iter_schema_files(&self.schemas_dir)? {
             if let Some(mut schema) = self.parse_schema_file(&path)? {
-                self.fix_transform_outputs(&mut schema);
                 let schema_name = schema.name.clone();
                 discovered_schemas.push(schema);
                 info!("Discovered schema '{}' from file", schema_name);
@@ -35,7 +34,6 @@ impl SchemaCore {
         );
         for path in Self::iter_schema_files(&available_schemas_dir)? {
             if let Some(mut schema) = self.parse_schema_file(&path)? {
-                self.fix_transform_outputs(&mut schema);
                 let schema_name = schema.name.clone();
                 discovered_schemas.push(schema);
                 info!("Discovered available schema '{}' from file", schema_name);

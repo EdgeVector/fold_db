@@ -7,7 +7,7 @@ use uuid::Uuid;
 /// A reference to a single atom version.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Molecule {
-    uuid: String,
+    molecule_uuid: String,
     atom_uuid: String,
     updated_at: DateTime<Utc>,
     status: MoleculeStatus,
@@ -19,7 +19,7 @@ impl Molecule {
     #[must_use]
     pub fn new(atom_uuid: String, source_pub_key: String) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            molecule_uuid: Uuid::new_v4().to_string(),
             atom_uuid,
             updated_at: Utc::now(),
             status: MoleculeStatus::Active,
@@ -46,7 +46,7 @@ impl Molecule {
 
 impl MoleculeBehavior for Molecule {
     fn uuid(&self) -> &str {
-        &self.uuid
+        &self.molecule_uuid
     }
 
     fn updated_at(&self) -> DateTime<Utc> {

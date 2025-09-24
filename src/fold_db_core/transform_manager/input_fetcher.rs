@@ -1,12 +1,14 @@
 use crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext;
-use crate::fold_db_core::transform_manager::utils::DefaultValueHelper;
+use crate::fold_db_core::transform_manager::utils::{DefaultValueHelper, TransformUtils};
+use crate::schema::key_config;
 use crate::schema::types::Transform;
 use crate::schema::types::{Schema, SchemaError};
 use crate::transform::executor::TransformExecutor;
 use log::info;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{json, Value as JsonValue, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::schema::types::key_config::KeyConfig;
 
 /// Handles fetching input data for transform execution
 pub struct InputFetcher;
@@ -22,11 +24,15 @@ impl InputFetcher {
         let mut input_values = HashMap::new();
         let inputs_to_process = Self::get_inputs_to_process(transform);
 
-        for input_field in inputs_to_process {
-            info!("🔍 TransformManager: Processing input: {}", input_field);
+        for schema_field_path in inputs_to_process {
+            let value = Self::fetch_field_value(
+                db_ops, 
+                schema_field_path.split(".").next().unwrap(),
+                schema_field_path.split(".").nth(1).unwrap(),
+                None
+            )?;
 
-            let value = Self::fetch_input_value(db_ops, &input_field)?;
-            input_values.insert(input_field.clone(), value);
+            input_values.insert(schema_field_path.clone(), value);
         }
 
         info!(
@@ -65,47 +71,7 @@ impl InputFetcher {
 
     /// Get the list of inputs to process for a transform
     fn get_inputs_to_process(transform: &Transform) -> Vec<String> {
-        if transform.get_inputs().is_empty() {
-            transform
-                .analyze_dependencies()
-                .into_iter()
-                .collect::<Vec<_>>()
-        } else {
-            transform.get_inputs().to_vec()
-        }
-    }
-
-    /// Fetch input value for a single input field
-    fn fetch_input_value(
-        db_ops: &Arc<crate::db_operations::DbOperations>,
-        input_field: &str,
-    ) -> Result<JsonValue, SchemaError> {
-        if let Some(dot_pos) = input_field.find('.') {
-            // Input is in format "schema.field" - fetch specific field
-            let input_schema = &input_field[..dot_pos];
-            let input_field_name = &input_field[dot_pos + 1..];
-            let value = Self::fetch_field_value(db_ops, input_schema, input_field_name)
-                .unwrap_or_else(|_| {
-                    DefaultValueHelper::get_default_value_for_field(input_field_name)
-                });
-            info!(
-                "✅ TransformManager: Fetched field value for {}.{}",
-                input_schema, input_field_name
-            );
-            Ok(value)
-        } else {
-            // Input is just a schema name - fetch entire schema data for declarative transforms
-            println!(
-                "🔍 TransformManager: Input '{}' is schema name, fetching entire schema data",
-                input_field
-            );
-            let schema_data = Self::fetch_entire_schema_data(db_ops, input_field)?;
-            println!(
-                "✅ TransformManager: Fetched entire schema data for {}",
-                input_field
-            );
-            Ok(schema_data)
-        }
+        transform.get_declarative_schema().unwrap().get_inputs()
     }
 
     /// Fetch input value with mutation context for incremental processing
@@ -118,7 +84,7 @@ impl InputFetcher {
             // Input is in format "schema.field" - fetch specific field
             let input_schema = &input_field[..dot_pos];
             let input_field_name = &input_field[dot_pos + 1..];
-            let value = Self::fetch_field_value(db_ops, input_schema, input_field_name)
+            let value = Self::fetch_field_value(db_ops, input_schema, input_field_name, None)
                 .unwrap_or_else(|_| {
                     DefaultValueHelper::get_default_value_for_field(input_field_name)
                 });
@@ -148,11 +114,18 @@ impl InputFetcher {
         db_ops: &Arc<crate::db_operations::DbOperations>,
         schema_name: &str,
         field_name: &str,
+        key_config: Option<KeyConfig>,
     ) -> Result<JsonValue, SchemaError> {
         let schema = db_ops.get_schema(schema_name)?.ok_or_else(|| {
             SchemaError::InvalidData(format!("Schema '{}' not found", schema_name))
         })?;
-        Self::get_field_value_from_schema(db_ops, &schema, field_name)
+
+        let range_key = Value::from(key_config.clone().map(|k| k.range_field));
+        let hash_key = Value::from(key_config.clone().map(|k| k.hash_field));
+
+        TransformUtils::resolve_field_value(
+            db_ops, &schema, field_name, Option::from(range_key), Option::from(hash_key),
+        )
     }
 
     /// Fetch entire schema data for declarative transforms
@@ -351,17 +324,5 @@ impl InputFetcher {
         range_key: &str,
     ) -> Result<JsonValue, SchemaError> {
         crate::fold_db_core::transform_manager::schema_data_fetcher::SchemaDataFetcher::fetch_schema_data_for_hashrange_key(db_ops, schema_name, hash_key, range_key)
-    }
-
-    /// Get field value from a schema using database operations (consolidated implementation)
-    fn get_field_value_from_schema(
-        db_ops: &Arc<crate::db_operations::DbOperations>,
-        schema: &Schema,
-        field_name: &str,
-    ) -> Result<JsonValue, SchemaError> {
-        // Use the unified FieldValueResolver instead of duplicate implementation
-        crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(
-            db_ops, schema, field_name, None, None,
-        )
     }
 }

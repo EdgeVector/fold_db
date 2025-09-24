@@ -11,6 +11,7 @@ use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Process JSON ingestion request
 pub async fn process_json(
@@ -39,12 +40,9 @@ pub async fn process_json(
         }
     };
 
-    // Get a mutable reference to the node
-    let mut node = state.node.lock().await;
-
     // Process the ingestion request
     match service
-        .process_json_with_node(request.into_inner(), &mut node)
+        .process_json_with_node(request.into_inner(), Arc::clone(&state.node))
         .await
     {
         Ok(response) => {

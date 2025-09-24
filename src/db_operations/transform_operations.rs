@@ -1,5 +1,6 @@
 use super::core::DbOperations;
 use crate::logging::features::{log_feature, LogFeature};
+use crate::fold_db_core::transform_manager::manager::SCHEMA_FIELD_TO_TRANSFORMS_KEY;
 use crate::schema::types::transform::{Transform, TransformRegistration};
 use crate::schema::SchemaError;
 
@@ -10,15 +11,6 @@ impl DbOperations {
         transform_id: &str,
         transform: &Transform,
     ) -> Result<(), SchemaError> {
-        // Log transform information for better debugging
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "💾 Storing transform '{}' with output: {}",
-            transform_id,
-            transform.output
-        );
-
         self.store_in_tree(&self.transforms_tree, transform_id, transform)
     }
 
@@ -26,41 +18,11 @@ impl DbOperations {
     pub fn get_transform(&self, transform_id: &str) -> Result<Option<Transform>, SchemaError> {
         match self.get_from_tree::<Transform>(&self.transforms_tree, transform_id) {
             Ok(Some(transform)) => {
-                // Log transform information for better debugging
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "📖 Retrieved transform '{}' with output: {}",
-                    transform_id,
-                    transform.output
-                );
                 Ok(Some(transform))
             }
             Ok(None) => Ok(None),
             Err(e) => {
-                // Enhanced error logging for transform deserialization issues
-                if let Ok(Some(bytes)) = self.transforms_tree.get(transform_id.as_bytes()) {
-                    let raw_data = String::from_utf8_lossy(&bytes);
-                    log_feature!(
-                        LogFeature::Database,
-                        error,
-                        "Failed to deserialize transform '{}': {}",
-                        transform_id,
-                        e
-                    );
-                    log_feature!(
-                        LogFeature::Database,
-                        error,
-                        "Raw transform data: {}",
-                        raw_data
-                    );
-                    Err(SchemaError::InvalidData(format!(
-                        "Failed to deserialize transform '{}': {}. Raw data: {}",
-                        transform_id, e, raw_data
-                    )))
-                } else {
-                    Err(e)
-                }
+                Err(e)
             }
         }
     }
@@ -71,15 +33,8 @@ impl DbOperations {
 
         // Metadata keys that should be excluded from transform listing
         let metadata_keys = [
-            "map_molecule_to_transforms",
-            "map_transform_to_molecules",
-            "map_transform_input_names",
-            "map_field_to_transforms",
-            "map_transform_to_fields",
-            "map_transform_outputs",
+            SCHEMA_FIELD_TO_TRANSFORMS_KEY,
         ];
-
-        log::info!("🔍 DEBUG: Listing transforms from database...");
 
         for result in self.transforms_tree.iter() {
             let (key, _) = result.map_err(|e| {
@@ -89,15 +44,12 @@ impl DbOperations {
 
             // Skip metadata keys
             if metadata_keys.contains(&transform_id.as_str()) {
-                log::info!("🔍 DEBUG: Skipping metadata key: {}", transform_id);
                 continue;
             }
 
-            log::info!("🔍 DEBUG: Found transform ID: {}", transform_id);
             transforms.push(transform_id);
         }
 
-        log::info!("🔍 DEBUG: Total transforms found: {}", transforms.len());
         Ok(transforms)
     }
 
@@ -146,5 +98,33 @@ impl DbOperations {
         } else {
             Ok(None)
         }
+    }
+
+    /// Load persisted field-to-transforms mappings from database
+    pub fn load_field_to_transforms_mapping(
+        &self,
+        key: &str,
+    ) -> Result<std::collections::BTreeMap<String, std::collections::HashSet<String>>, SchemaError> {
+        use crate::fold_db_core::transform_manager::utils::SerializationHelper;
+        use log::info;
+
+        // Load field_to_transforms with special debug logging
+        let schema_field_to_transforms = match self.get_transform_mapping(key)? {
+            Some(data) => {
+                let loaded_map: std::collections::BTreeMap<String, std::collections::HashSet<String>> =
+                    SerializationHelper::deserialize_mapping(&data, "field_to_transforms")?;
+                info!(
+                    "🔍 DEBUG: Loaded field_to_transforms mapping from database with {} entries:",
+                    loaded_map.len()
+                );
+                for (field_key, transforms) in &loaded_map {
+                    info!("  📋 Loaded '{}' -> {:?}", field_key, transforms);
+                }
+                loaded_map
+            }
+            None => std::collections::BTreeMap::new(),
+        };
+
+        Ok(schema_field_to_transforms)
     }
 }

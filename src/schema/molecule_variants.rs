@@ -1,7 +1,8 @@
 use crate::atom::{Molecule, MoleculeBehavior, MoleculeHashRange, MoleculeRange};
+use serde::{Deserialize, Serialize};
 
 /// Enum to hold different types of molecules
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MoleculeVariant {
     Single(Molecule),
     Range(MoleculeRange),

@@ -4,215 +4,195 @@
 //! for efficient indexing with complex fan-out operations.
 
 use crate::atom::molecule_behavior::MoleculeBehavior;
+use crate::atom::molecule_types::{apply_status_update, MoleculeStatus, MoleculeUpdate};
+use crate::schema::types::key_config::KeyConfig;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use uuid::Uuid;
 
-/// Molecule type for HashRange fields that combines hash and range functionality
+/// A hash-range-based collection of atom references stored in a nested HashMap<BTreeMap> structure.
+/// 
+/// This molecule type supports complex indexing where atoms are organized by:
+/// - Hash field: Groups related atoms together
+/// - Range field: Provides ordered access within each hash group
+/// 
+/// Structure: HashMap<hash_value, BTreeMap<range_value, atom_uuid>>
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoleculeHashRange {
     /// Unique identifier for this molecule
-    pub id: String,
-    /// Hash field value used for indexing
-    pub hash_value: String,
-    /// Range field value used for sorting/filtering
-    pub range_value: String,
-    /// Atom UUIDs associated with this hash-range combination
-    pub atom_uuids: Vec<String>,
-    /// Metadata for the hash-range relationship
-    pub metadata: HashMap<String, String>,
-    /// Timestamp when this molecule was created
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    uuid: String,
+    /// Atom UUIDs organized by hash and range values
+    /// Structure: HashMap<hash_value, BTreeMap<range_value, atom_uuid>>
+    atom_uuids: HashMap<String, BTreeMap<String, String>>,
     /// Timestamp when this molecule was last updated
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    updated_at: DateTime<Utc>,
+    /// Current status of this molecule
+    status: MoleculeStatus,
+    /// History of status updates
+    update_history: Vec<MoleculeUpdate>,
 }
 
 impl MoleculeHashRange {
-    /// Creates a new MoleculeHashRange with the given ID
-    pub fn new(id: String) -> Self {
-        let now = chrono::Utc::now();
+    /// Creates a new empty MoleculeHashRange.
+    #[must_use]
+    pub fn new(source_pub_key: String) -> Self {
         Self {
-            id,
-            hash_value: String::new(),
-            range_value: String::new(),
-            atom_uuids: Vec::new(),
-            metadata: HashMap::new(),
-            created_at: now,
-            updated_at: now,
+            uuid: Uuid::new_v4().to_string(),
+            atom_uuids: HashMap::new(),
+            updated_at: Utc::now(),
+            status: MoleculeStatus::Active,
+            update_history: vec![MoleculeUpdate {
+                timestamp: Utc::now(),
+                status: MoleculeStatus::Active,
+                source_pub_key,
+            }],
         }
     }
 
-    /// Creates a new MoleculeHashRange with hash and range values
-    pub fn with_values(id: String, hash_value: String, range_value: String) -> Self {
-        let now = chrono::Utc::now();
+    /// Creates a new MoleculeHashRange with existing atom UUIDs.
+    #[must_use]
+    pub fn with_atoms(
+        source_pub_key: String,
+        atom_uuids: HashMap<String, BTreeMap<String, String>>,
+    ) -> Self {
         Self {
-            id,
+            uuid: Uuid::new_v4().to_string(),
+            atom_uuids,
+            updated_at: Utc::now(),
+            status: MoleculeStatus::Active,
+            update_history: vec![MoleculeUpdate {
+                timestamp: Utc::now(),
+                status: MoleculeStatus::Active,
+                source_pub_key,
+            }],
+        }
+    }
+
+    /// Adds or updates an atom UUID for the given hash and range values.
+    /// 
+    /// # Arguments
+    /// * `hash_value` - The hash field value
+    /// * `range_value` - The range field value  
+    /// * `atom_uuid` - The UUID of the atom to store
+    pub fn set_atom_uuid(&mut self, hash_value: String, range_value: String, atom_uuid: String) {
+        log::debug!(
+            "Setting atom_uuid for molecule_uuid: {} -> hash: {} -> range: {} -> atom: {}",
+            self.uuid,
             hash_value,
             range_value,
-            atom_uuids: Vec::new(),
-            metadata: HashMap::new(),
-            created_at: now,
-            updated_at: now,
-        }
+            atom_uuid
+        );
+        
+        self.atom_uuids
+            .entry(hash_value)
+            .or_insert_with(BTreeMap::new)
+            .insert(range_value, atom_uuid);
+        self.updated_at = Utc::now();
     }
 
-    /// Sets the hash value
-    pub fn set_hash_value(&mut self, hash_value: String) {
-        self.hash_value = hash_value;
-        self.updated_at = chrono::Utc::now();
+    /// Adds an atom UUID using a KeyConfig for field mapping.
+    /// 
+    /// # Arguments
+    /// * `atom_uuid` - The UUID of the atom to store
+    /// * `key_config` - Configuration specifying which fields to use as hash and range
+    pub fn add_atom_uuid(&mut self, atom_uuid: String, key_config: &KeyConfig) {
+        self.set_atom_uuid(
+            key_config.hash_field.clone(),
+            key_config.range_field.clone(),
+            atom_uuid,
+        );
     }
 
-    /// Sets the range value
-    pub fn set_range_value(&mut self, range_value: String) {
-        self.range_value = range_value;
-        self.updated_at = chrono::Utc::now();
+    /// Returns the UUID of the Atom referenced by the specified hash and range values.
+    #[must_use]
+    pub fn get_atom_uuid(&self, hash_value: &str, range_value: &str) -> Option<&String> {
+        self.atom_uuids
+            .get(hash_value)
+            .and_then(|range_map| range_map.get(range_value))
     }
 
-    /// Adds an atom UUID to this molecule
-    pub fn add_atom_uuid(&mut self, atom_uuid: String) {
-        if !self.atom_uuids.contains(&atom_uuid) {
-            self.atom_uuids.push(atom_uuid);
-            self.updated_at = chrono::Utc::now();
-        }
+    /// Returns all atom UUIDs for a given hash value.
+    #[must_use]
+    pub fn get_atoms_for_hash(&self, hash_value: &str) -> Option<&BTreeMap<String, String>> {
+        self.atom_uuids.get(hash_value)
     }
 
-    /// Removes an atom UUID from this molecule
-    pub fn remove_atom_uuid(&mut self, atom_uuid: &str) -> bool {
-        if let Some(pos) = self.atom_uuids.iter().position(|x| x == atom_uuid) {
-            self.atom_uuids.remove(pos);
-            self.updated_at = chrono::Utc::now();
-            true
+    /// Removes the reference at the specified hash and range values.
+    pub fn remove_atom_uuid(&mut self, hash_value: &str, range_value: &str) -> Option<String> {
+        if let Some(range_map) = self.atom_uuids.get_mut(hash_value) {
+            let result = range_map.remove(range_value);
+            if result.is_some() {
+                self.updated_at = Utc::now();
+            }
+            // Clean up empty hash entries
+            if range_map.is_empty() {
+                self.atom_uuids.remove(hash_value);
+            }
+            result
         } else {
-            false
+            None
         }
     }
 
-    /// Sets metadata for this molecule
-    pub fn set_metadata(&mut self, key: String, value: String) {
-        self.metadata.insert(key, value);
-        self.updated_at = chrono::Utc::now();
-    }
-
-    /// Gets metadata value
-    pub fn get_metadata(&self, key: &str) -> Option<&String> {
-        self.metadata.get(key)
-    }
-
-    /// Returns the number of atoms in this molecule
+    /// Returns the total number of atoms in this molecule.
+    #[must_use]
     pub fn atom_count(&self) -> usize {
+        self.atom_uuids
+            .values()
+            .map(|range_map| range_map.len())
+            .sum()
+    }
+
+    /// Returns the number of hash groups in this molecule.
+    #[must_use]
+    pub fn hash_count(&self) -> usize {
         self.atom_uuids.len()
     }
 
-    /// Checks if this molecule is empty (no atoms)
+    /// Checks if this molecule is empty (no atoms).
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.atom_uuids.is_empty()
     }
 
-    /// Clears all atom UUIDs from this molecule
-    pub fn clear_atoms(&mut self) {
-        self.atom_uuids.clear();
-        self.updated_at = chrono::Utc::now();
+    /// Returns an iterator over all hash values in this molecule.
+    pub fn hash_values(&self) -> impl Iterator<Item = &String> {
+        self.atom_uuids.keys()
+    }
+
+    /// Returns an iterator over all range values for a given hash.
+    pub fn range_values_for_hash(&self, hash_value: &str) -> Option<impl Iterator<Item = &String>> {
+        self.atom_uuids
+            .get(hash_value)
+            .map(|range_map| range_map.keys())
     }
 }
 
 impl MoleculeBehavior for MoleculeHashRange {
     fn uuid(&self) -> &str {
-        &self.id
+        &self.uuid
     }
 
-    fn updated_at(&self) -> chrono::DateTime<chrono::Utc> {
+    fn updated_at(&self) -> DateTime<Utc> {
         self.updated_at
     }
 
-    fn status(&self) -> &crate::atom::molecule_types::MoleculeStatus {
-        &crate::atom::molecule_types::MoleculeStatus::Active
+    fn status(&self) -> &MoleculeStatus {
+        &self.status
     }
 
-    fn set_status(
-        &mut self,
-        _status: &crate::atom::molecule_types::MoleculeStatus,
-        _source_pub_key: String,
-    ) {
-        // HashRange molecules don't support status changes, but we need to implement the trait
-        self.updated_at = chrono::Utc::now();
-    }
-
-    fn update_history(&self) -> &Vec<crate::atom::molecule_types::MoleculeUpdate> {
-        // HashRange molecules don't have update history, return empty vector
-        static EMPTY_HISTORY: Vec<crate::atom::molecule_types::MoleculeUpdate> = Vec::new();
-        &EMPTY_HISTORY
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_molecule_hash_range_creation() {
-        let molecule = MoleculeHashRange::new("test_id".to_string());
-        assert_eq!(molecule.id, "test_id");
-        assert!(molecule.hash_value.is_empty());
-        assert!(molecule.range_value.is_empty());
-        assert!(molecule.atom_uuids.is_empty());
-        assert!(molecule.metadata.is_empty());
-    }
-
-    #[test]
-    fn test_molecule_hash_range_with_values() {
-        let molecule = MoleculeHashRange::with_values(
-            "test_id".to_string(),
-            "hash123".to_string(),
-            "range456".to_string(),
+    fn set_status(&mut self, status: &MoleculeStatus, source_pub_key: String) {
+        apply_status_update(
+            &mut self.status,
+            &mut self.updated_at,
+            &mut self.update_history,
+            status,
+            source_pub_key,
         );
-        assert_eq!(molecule.id, "test_id");
-        assert_eq!(molecule.hash_value, "hash123");
-        assert_eq!(molecule.range_value, "range456");
     }
 
-    #[test]
-    fn test_add_and_remove_atom_uuid() {
-        let mut molecule = MoleculeHashRange::new("test_id".to_string());
-
-        molecule.add_atom_uuid("atom1".to_string());
-        assert_eq!(molecule.atom_count(), 1);
-        assert!(molecule.atom_uuids.contains(&"atom1".to_string()));
-
-        molecule.add_atom_uuid("atom2".to_string());
-        assert_eq!(molecule.atom_count(), 2);
-
-        // Adding duplicate should not increase count
-        molecule.add_atom_uuid("atom1".to_string());
-        assert_eq!(molecule.atom_count(), 2);
-
-        // Remove atom
-        assert!(molecule.remove_atom_uuid("atom1"));
-        assert_eq!(molecule.atom_count(), 1);
-        assert!(!molecule.atom_uuids.contains(&"atom1".to_string()));
-
-        // Remove non-existent atom
-        assert!(!molecule.remove_atom_uuid("nonexistent"));
-        assert_eq!(molecule.atom_count(), 1);
-    }
-
-    #[test]
-    fn test_metadata_operations() {
-        let mut molecule = MoleculeHashRange::new("test_id".to_string());
-
-        molecule.set_metadata("key1".to_string(), "value1".to_string());
-        assert_eq!(molecule.get_metadata("key1"), Some(&"value1".to_string()));
-        assert_eq!(molecule.get_metadata("nonexistent"), None);
-    }
-
-    #[test]
-    fn test_clear_atoms() {
-        let mut molecule = MoleculeHashRange::new("test_id".to_string());
-
-        molecule.add_atom_uuid("atom1".to_string());
-        molecule.add_atom_uuid("atom2".to_string());
-        assert_eq!(molecule.atom_count(), 2);
-
-        molecule.clear_atoms();
-        assert_eq!(molecule.atom_count(), 0);
-        assert!(molecule.is_empty());
+    fn update_history(&self) -> &Vec<MoleculeUpdate> {
+        &self.update_history
     }
 }

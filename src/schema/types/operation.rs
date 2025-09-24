@@ -1,6 +1,7 @@
 use crate::schema::types::MutationType;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Represents an operation that can be performed on the database
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,7 +16,8 @@ pub enum Operation {
     #[serde(rename = "mutation")]
     Mutation {
         schema: String,
-        data: Value,
+        fields_and_values: HashMap<String, Value>,
+        keys_and_values: HashMap<String, String>,
         mutation_type: MutationType,
     },
 }

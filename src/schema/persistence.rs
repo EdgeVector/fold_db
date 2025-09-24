@@ -7,6 +7,11 @@ use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
 use log::info;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use crate::schema::types::schema::SchemaType;
+use crate::schema::types::field::RangeField;
+use crate::schema::types::field::HashRangeField;
+use crate::schema::types::field::SingleField;
+use crate::schema::types::field::FieldVariant;
 
 impl SchemaCore {
     /// Persist all schema load states using DbOperations
@@ -122,7 +127,6 @@ impl SchemaCore {
 
         // Discover available schemas without loading them
         for mut schema in self.discover_available_schemas()? {
-            self.fix_transform_outputs(&mut schema);
             let name = schema.name.clone();
             let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
             let mut available = self.available.lock().map_err(|_| schema_lock_error())?;
@@ -147,7 +151,6 @@ impl SchemaCore {
     ) -> Result<(), SchemaError> {
         for path in Self::iter_schema_files(dir)? {
             if let Some(mut schema) = self.parse_schema_file(&path)? {
-                self.fix_transform_outputs(&mut schema);
                 let name = schema.name.clone();
                 let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
                 {
@@ -183,59 +186,48 @@ impl SchemaCore {
         use crate::schema::field::HashRangeField;
         use crate::schema::types::{field::common::Field, FieldVariant, SingleField};
 
+        let default_permissions_policy = PermissionsPolicy::new(
+            TrustDistance::Distance(0),
+            TrustDistance::Distance(1),
+        );
+        let default_payment_config = FieldPaymentConfig {
+            base_multiplier: 1.0,
+            trust_distance_scaling: TrustDistanceScaling::None,
+            min_payment: None,
+        };
+        let default_field_mappers = std::collections::HashMap::new();
+        let default_inner_field = crate::schema::types::field::common::FieldCommon::new(
+            default_permissions_policy.clone(),
+            default_payment_config.clone(),
+            default_field_mappers.clone(),
+        );
+
         // Convert fields from FieldDefinition to FieldVariant
         let mut fields = std::collections::HashMap::new();
         for (field_name, field_def) in declarative_schema.fields.clone() {
             match &declarative_schema.schema_type {
-                crate::schema::types::schema::SchemaType::HashRange => {
-                    // For HashRange schemas, create HashRangeField variants
-                    let key_config = declarative_schema.key.as_ref().ok_or_else(|| {
-                        SchemaError::InvalidField(
-                            "HashRange schema must have key configuration".to_string(),
-                        )
-                    })?;
+                SchemaType::HashRange => {
 
                     let mut hashrange_field = HashRangeField {
-                        inner: crate::schema::types::field::common::FieldCommon::new(
-                            PermissionsPolicy::new(
-                                TrustDistance::Distance(0),
-                                TrustDistance::Distance(1),
-                            ),
-                            FieldPaymentConfig {
-                                base_multiplier: 1.0,
-                                trust_distance_scaling: TrustDistanceScaling::None,
-                                min_payment: None,
-                            },
-                            std::collections::HashMap::new(),
-                        ),
-                        hash_field: key_config.hash_field.clone(),
-                        range_field: key_config.range_field.clone(),
-                        atom_uuid: field_def.field_expression.unwrap_or_default(),
-                        cached_chains: None,
+                        inner: default_inner_field.clone(),
+                        molecule_hash_range: None,
                     };
 
-                    // Fields from declarative schemas are derived and should not be writable
-                    hashrange_field.set_writable(false);
-
-                    fields.insert(
-                        field_name,
-                        FieldVariant::HashRange(Box::new(hashrange_field)),
-                    );
+                    fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
+                }
+                SchemaType::Range { range_key } => {
+                    let mut range_field = RangeField {
+                        inner: default_inner_field.clone(),
+                        molecule_range: None,
+                    };
+                    
+                    fields.insert(field_name, FieldVariant::Range(range_field));
                 }
                 _ => {
                     // For other schema types, create SingleField variants
-                    let mut single_field = SingleField::new(
-                        PermissionsPolicy::new(
-                            TrustDistance::Distance(0),
-                            TrustDistance::Distance(1),
-                        ),
-                        FieldPaymentConfig {
-                            base_multiplier: 1.0,
-                            trust_distance_scaling: TrustDistanceScaling::None,
-                            min_payment: None,
-                        },
-                        std::collections::HashMap::new(),
-                    );
+                    let mut single_field = SingleField {
+                        inner: default_inner_field.clone(),
+                    };
 
                     // Set molecule UUID if provided
                     if let Some(atom_uuid) = field_def.field_expression {
@@ -365,8 +357,6 @@ impl SchemaCore {
         // Create a transform from the declarative schema
         let transform = Transform::from_declarative_schema(
             declarative_schema.clone(),
-            input_molecules.clone(), // Use extracted input dependencies
-            format!("{}.{}", declarative_schema.name, output_field), // Output field
         );
 
         // Generate transform ID using configurable suffix
@@ -398,12 +388,7 @@ impl SchemaCore {
         let registration = TransformRegistration {
             transform_id: transform_id.clone(),
             transform,
-            input_molecules,
-            input_names,
             trigger_fields,
-            output_molecule: format!("{}.{}", declarative_schema.name, output_field),
-            schema_name: declarative_schema.name.clone(),
-            field_name: KEY_FIELD_NAME.to_string(),
         };
 
         // Store the transform registration in the database for later processing

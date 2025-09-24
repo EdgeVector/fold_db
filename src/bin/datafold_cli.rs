@@ -1,10 +1,13 @@
 use clap::{Parser, Subcommand};
 use datafold::schema::SchemaHasher;
-use datafold::{load_node_config, DataFoldNode, MutationType, Operation, SchemaState};
+use datafold::{load_node_config, DataFoldNode, MutationType, Operation, OperationProcessor, SchemaState};
 use log::info;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -111,7 +114,11 @@ enum Commands {
 
         /// Data in JSON format
         #[arg(short, long, required = true)]
-        data: String,
+        fields_and_values: HashMap<String, Value>,
+
+        /// Keys and values in JSON format
+        #[arg(short, long, required = true)]
+        keys_and_values: HashMap<String, String>,
     },
     /// Load an operation from a JSON file
     Execute {
@@ -315,7 +322,7 @@ fn handle_list_schemas_by_state(
 }
 
 fn handle_query(
-    node: &mut DataFoldNode,
+    node: Arc<Mutex<DataFoldNode>>,
     schema: String,
     fields: Vec<String>,
     filter: Option<String>,
@@ -335,7 +342,8 @@ fn handle_query(
         filter: filter_value,
     };
 
-    let result = node.execute_operation(operation)?;
+    let processor = OperationProcessor::new(node);
+    let result = processor.execute_sync(operation)?;
 
     if output == "json" {
         info!("{}", result);
@@ -347,22 +355,23 @@ fn handle_query(
 }
 
 fn handle_mutate(
-    node: &mut DataFoldNode,
+    node: Arc<Mutex<DataFoldNode>>,
     schema: String,
     mutation_type: MutationType,
-    data: String,
+    fields_and_values: HashMap<String, Value>,
+    keys_and_values: HashMap<String, String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Executing mutation on schema: {}", schema);
 
-    let data_value: Value = serde_json::from_str(&data)?;
-
     let operation = Operation::Mutation {
         schema,
-        data: data_value,
+        fields_and_values,
+        keys_and_values,
         mutation_type,
     };
 
-    node.execute_operation(operation)?;
+    let processor = OperationProcessor::new(node);
+    processor.execute_sync(operation)?;
     info!("Mutation executed successfully");
 
     Ok(())
@@ -370,13 +379,14 @@ fn handle_mutate(
 
 fn handle_execute(
     path: PathBuf,
-    node: &mut DataFoldNode,
+    node: Arc<Mutex<DataFoldNode>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Executing operation from file: {}", path.display());
     let operation_str = fs::read_to_string(path)?;
     let operation: Operation = serde_json::from_str(&operation_str)?;
 
-    let result = node.execute_operation(operation)?;
+    let processor = OperationProcessor::new(node);
+    let result = processor.execute_sync(operation)?;
 
     if !result.is_null() {
         info!("Result:");
@@ -435,31 +445,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = DataFoldNode::load(config).await?;
     info!("Node initialized with ID: {}", node.get_node_id());
 
+    // Convert to Arc<Mutex<DataFoldNode>> for OperationProcessor
+    let node_arc = Arc::new(Mutex::new(node));
+
     // Process command
     match cli.command {
-        Commands::LoadSchema { path } => handle_load_schema(path, &mut node)?,
-        Commands::AddSchema { path, name } => handle_add_schema(path, name, &mut node)?,
+        Commands::LoadSchema { path } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_load_schema(path, &mut node_guard)?;
+        }
+        Commands::AddSchema { path, name } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_add_schema(path, name, &mut node_guard)?;
+        }
         Commands::HashSchemas { .. } => unreachable!(), // Already handled above
-        Commands::ListSchemas {} => handle_list_schemas(&mut node)?,
-        Commands::ListAvailableSchemas {} => handle_list_available_schemas(&mut node)?,
-        Commands::AllowSchema { name } => handle_allow_schema(name, &mut node)?,
+        Commands::ListSchemas {} => {
+            let mut node_guard = node_arc.lock().await;
+            handle_list_schemas(&mut node_guard)?;
+        }
+        Commands::ListAvailableSchemas {} => {
+            let mut node_guard = node_arc.lock().await;
+            handle_list_available_schemas(&mut node_guard)?;
+        }
+        Commands::AllowSchema { name } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_allow_schema(name, &mut node_guard)?;
+        }
         Commands::Query {
             schema,
             fields,
             filter,
             output,
-        } => handle_query(&mut node, schema, fields, filter, output)?,
+        } => handle_query(node_arc.clone(), schema, fields, filter, output)?,
         Commands::Mutate {
             schema,
             mutation_type,
-            data,
-        } => handle_mutate(&mut node, schema, mutation_type, data)?,
-        Commands::UnloadSchema { name } => handle_unload_schema(name, &mut node)?,
-        Commands::ApproveSchema { name } => handle_approve_schema(name, &mut node)?,
-        Commands::BlockSchema { name } => handle_block_schema(name, &mut node)?,
-        Commands::GetSchemaState { name } => handle_get_schema_state(name, &mut node)?,
-        Commands::ListSchemasByState { state } => handle_list_schemas_by_state(state, &mut node)?,
-        Commands::Execute { path } => handle_execute(path, &mut node)?,
+            fields_and_values,
+            keys_and_values,
+        } => handle_mutate(node_arc.clone(), schema, mutation_type, fields_and_values, keys_and_values)?,
+        Commands::UnloadSchema { name } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_unload_schema(name, &mut node_guard)?;
+        }
+        Commands::ApproveSchema { name } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_approve_schema(name, &mut node_guard)?;
+        }
+        Commands::BlockSchema { name } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_block_schema(name, &mut node_guard)?;
+        }
+        Commands::GetSchemaState { name } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_get_schema_state(name, &mut node_guard)?;
+        }
+        Commands::ListSchemasByState { state } => {
+            let mut node_guard = node_arc.lock().await;
+            handle_list_schemas_by_state(state, &mut node_guard)?;
+        }
+        Commands::Execute { path } => handle_execute(path, node_arc.clone())?,
     }
 
     Ok(())

@@ -1,4 +1,5 @@
-use super::validator::SchemaValidator;
+use std::collections::HashMap;
+
 use crate::schema::constants::{HASH_FIELD_NAME, RANGE_FIELD_NAME};
 use crate::schema::field::HashRangeField;
 use crate::schema::types::{
@@ -20,14 +21,9 @@ fn convert_field(
                     json_field.payment_config.into(),
                     json_field.field_mappers,
                 ),
-                // For HashRange schemas, these fields are set from the schema's key configuration
-                // Individual fields don't have hash_field/range_field - they inherit from schema
-                hash_field: HASH_FIELD_NAME.to_string(), // Will be set from schema key config
-                range_field: RANGE_FIELD_NAME.to_string(), // Will be set from schema key config
-                atom_uuid: json_field.molecule_uuid.unwrap_or_default(),
-                cached_chains: None,
+                molecule_hash_range: None,
             };
-            FieldVariant::HashRange(Box::new(hashrange_field))
+            FieldVariant::HashRange(hashrange_field)
         }
         crate::schema::types::schema::SchemaType::Range { .. } => {
             // For Range schemas, create RangeField variants
@@ -71,11 +67,8 @@ fn convert_field(
 
 /// Interprets a JSON schema definition and converts it to a Schema.
 pub fn interpret_schema(
-    validator: &SchemaValidator,
     json_schema: JsonSchemaDefinition,
 ) -> Result<Schema, SchemaError> {
-    // First validate the JSON schema
-    validator.validate_json_schema(&json_schema)?;
 
     // Convert fields
     let mut fields = std::collections::HashMap::new();
@@ -99,7 +92,6 @@ pub fn interpret_schema(
 
 /// Interprets a JSON schema from a string and loads it as Available.
 pub fn load_schema_from_json(
-    validator: &SchemaValidator,
     json_str: &str,
 ) -> Result<Schema, SchemaError> {
     log::info!(
@@ -114,33 +106,11 @@ pub fn load_schema_from_json(
         json_schema.name,
         json_schema.fields.keys().collect::<Vec<_>>()
     );
-    let schema = interpret_schema(validator, json_schema)?;
+    let schema = interpret_schema(json_schema)?;
     log::info!(
         "Schema interpreted successfully, name: {}, fields: {:?}",
         schema.name,
         schema.fields.keys().collect::<Vec<_>>()
     );
     Ok(schema)
-}
-
-/// Interprets a JSON schema from a file and loads it as Available.
-pub fn load_schema_from_file(
-    validator: &SchemaValidator,
-    path: &str,
-) -> Result<Schema, SchemaError> {
-    log::info!("Loading schema from file: {}", path);
-    
-    // Use the SchemaCore's parse_schema_file method which handles both regular and declarative schemas
-    let schema_core = validator.schema_core();
-    let path_buf = std::path::PathBuf::from(path);
-    
-    match schema_core.parse_schema_file(&path_buf)? {
-        Some(schema) => {
-            log::info!("Successfully parsed schema from file: {}", path);
-            Ok(schema)
-        }
-        None => {
-            Err(SchemaError::InvalidField(format!("Could not parse schema file: {}", path)))
-        }
-    }
 }
