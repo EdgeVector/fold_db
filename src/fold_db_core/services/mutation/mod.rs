@@ -68,9 +68,9 @@ impl MutationService {
         schema: &Schema,
         field_name: &str,
         field_value: &Value,
-        _hash_key_value: Option<&Value>,
-        _range_key_value: Option<&Value>,
-        _mutation_hash: Option<&str>,
+        hash_key_value: Option<&Value>,
+        range_key_value: Option<&Value>,
+        mutation_hash: Option<&str>,
     ) -> Result<NormalizedFieldValueRequest, SchemaError> {
         InfrastructureLogger::log_debug_info(
             "MutationService",
@@ -125,6 +125,18 @@ impl MutationService {
             },
         };
 
+        // Create mutation context if we have key values
+        let mutation_context = if hash_key_value.is_some() || range_key_value.is_some() {
+            Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+                range_key: range_key_value.map(|v| v.to_string().trim_matches('"').to_string()),
+                hash_key: hash_key_value.map(|v| v.to_string().trim_matches('"').to_string()),
+                mutation_hash: mutation_hash.map(|s| s.to_string()),
+                incremental: true,
+            })
+        } else {
+            None
+        };
+
         // Create the request payload using the correct structure
         let request = FieldValueSetRequest {
             correlation_id: Uuid::new_v4().to_string(),
@@ -132,7 +144,7 @@ impl MutationService {
             field_name: field_name.to_string(),
             value: field_value.clone(),
             source_pub_key: "mutation_service".to_string(),
-            mutation_context: None, // TODO: Add proper mutation context if needed
+            mutation_context,
         };
 
         Ok(NormalizedFieldValueRequest { request, context })

@@ -73,9 +73,11 @@ impl ResolvedAtomKeys {
 pub fn resolve_universal_keys(
     manager: &AtomManager,
     schema_name: &str,
+    field_name: &str,
     request_payload: &serde_json::Value,
+    mutation_context: Option<&crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
 ) -> Result<ResolvedAtomKeys, SchemaError> {
-    debug!("🔑 Resolving universal keys for schema: {}", schema_name);
+    debug!("🔑 Resolving universal keys for schema: {}, field: {}", schema_name, field_name);
 
     // Load schema from database
     let schema = manager
@@ -97,13 +99,29 @@ pub fn resolve_universal_keys(
         schema_name, schema.schema_type
     );
 
-    // Extract hash and range keys using universal key configuration
-    let (hash_value, range_value) =
+    // Special handling for range key fields: if the field being processed IS the range key field,
+    // then the field value IS the range key value
+    let (hash_value, range_value) = if is_range_key_field(&schema, field_name) {
+        debug!("🎯 Field '{}' is the range key field, using field value as range key", field_name);
+        
+        // For range key fields, the request_payload IS the range key value
+        let range_key_value = request_payload.to_string().trim_matches('"').to_string();
+        debug!("🎯 Range key value from field: '{}'", range_key_value);
+        
+        (None, Some(range_key_value))
+    } else if let Some(context) = mutation_context {
+        // Use mutation context if available (for non-range-key fields)
+        debug!("🎯 Using mutation context for field '{}' - range: {:?}, hash: {:?}", 
+               field_name, context.range_key, context.hash_key);
+        (context.hash_key.clone(), context.range_key.clone())
+    } else {
+        // Extract hash and range keys using universal key configuration
         extract_unified_keys(&schema, request_payload).map_err(|e| {
             let error_msg = format!("Failed to extract keys for schema '{}': {}", schema_name, e);
             error!("❌ {}", error_msg);
             SchemaError::InvalidData(error_msg)
-        })?;
+        })?
+    };
 
     debug!(
         "🔑 Extracted keys - hash: {:?}, range: {:?}",
@@ -134,6 +152,31 @@ pub fn resolve_universal_keys(
     debug!("✅ Successfully resolved keys for schema '{}'", schema_name);
 
     Ok(ResolvedAtomKeys::new(hash_value, range_value, fields))
+}
+
+/// Check if a field is the range key field for a schema
+fn is_range_key_field(schema: &crate::schema::types::Schema, field_name: &str) -> bool {
+    match &schema.schema_type {
+        crate::schema::types::SchemaType::Range { range_key } => {
+            // Check if this field is the range key field
+            if let Some(key_config) = &schema.key {
+                // Use universal key configuration if available
+                !key_config.range_field.trim().is_empty() && key_config.range_field == field_name
+            } else {
+                // Legacy range_key support
+                range_key == field_name
+            }
+        }
+        crate::schema::types::SchemaType::HashRange => {
+            // For HashRange schemas, check if this is the range field
+            if let Some(key_config) = &schema.key {
+                !key_config.range_field.trim().is_empty() && key_config.range_field == field_name
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
 }
 
 /// Handle FieldValueSetRequest by creating atom and appropriate Molecule - CRITICAL MUTATION BUG FIX
@@ -264,7 +307,7 @@ fn create_molecule_for_field(
     );
 
     // Resolve universal keys or surface descriptive error context
-    let resolved_keys = resolve_universal_keys(manager, &request.schema_name, &request.value)
+    let resolved_keys = resolve_universal_keys(manager, &request.schema_name, &request.field_name, &request.value, request.mutation_context.as_ref())
         .map_err(|e| {
             let error_msg = format!(
                 "Failed to resolve keys for {}.{}: {}",

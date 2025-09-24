@@ -205,10 +205,18 @@ impl ComprehensiveFilterTestFixture {
         );
 
         let exact_result = self.fold_db.query(exact_key_query)?;
+        let exact_obj = exact_result.as_object().unwrap();
         info!(
             "✅ Exact key filter result: {} items",
-            exact_result.as_object().unwrap().len()
+            exact_obj.len()
         );
+        
+        // Verify we get the expected user data
+        assert!(exact_obj.contains_key("profile_data"));
+        let profile_data = exact_obj["profile_data"].as_object().unwrap();
+        assert!(profile_data.contains_key("user_001"));
+        assert_eq!(profile_data["user_001"]["name"], "Alice Johnson");
+        assert_eq!(profile_data["user_001"]["role"], "admin");
 
         // Test 2: Key prefix filter
         let prefix_query = Query::new_with_filter(
@@ -220,10 +228,21 @@ impl ComprehensiveFilterTestFixture {
         );
 
         let prefix_result = self.fold_db.query(prefix_query)?;
+        let prefix_obj = prefix_result.as_object().unwrap();
         info!(
             "✅ Key prefix filter result: {} items",
-            prefix_result.as_object().unwrap().len()
+            prefix_obj.len()
         );
+        
+        // Verify we get users with prefix "user_00"
+        assert!(prefix_obj.contains_key("profile_data"));
+        let profile_data = prefix_obj["profile_data"].as_object().unwrap();
+        assert!(profile_data.contains_key("user_001"));
+        assert!(profile_data.contains_key("user_002"));
+        assert!(profile_data.contains_key("user_003"));
+        // Should not contain user_100 or user_200
+        assert!(!profile_data.contains_key("user_100"));
+        assert!(!profile_data.contains_key("user_200"));
 
         // Test 3: Key pattern filter
         let pattern_query = Query::new_with_filter(
@@ -235,10 +254,21 @@ impl ComprehensiveFilterTestFixture {
         );
 
         let pattern_result = self.fold_db.query(pattern_query)?;
+        let pattern_obj = pattern_result.as_object().unwrap();
         info!(
             "✅ Key pattern filter result: {} items",
-            pattern_result.as_object().unwrap().len()
+            pattern_obj.len()
         );
+        
+        // Verify we get all users (pattern "user_*" should match all)
+        assert!(pattern_obj.contains_key("profile_data"));
+        let profile_data = pattern_obj["profile_data"].as_object().unwrap();
+        assert_eq!(profile_data.len(), 5); // All 5 users should be present
+        assert!(profile_data.contains_key("user_001"));
+        assert!(profile_data.contains_key("user_002"));
+        assert!(profile_data.contains_key("user_003"));
+        assert!(profile_data.contains_key("user_100"));
+        assert!(profile_data.contains_key("user_200"));
 
         // Test 4: Multiple keys filter
         let multi_key_query = Query::new_with_filter(
@@ -252,10 +282,22 @@ impl ComprehensiveFilterTestFixture {
         );
 
         let multi_result = self.fold_db.query(multi_key_query)?;
+        let multi_obj = multi_result.as_object().unwrap();
         info!(
             "✅ Multiple keys filter result: {} items",
-            multi_result.as_object().unwrap().len()
+            multi_obj.len()
         );
+        
+        // Verify we get only the specified users
+        assert!(multi_obj.contains_key("profile_data"));
+        let profile_data = multi_obj["profile_data"].as_object().unwrap();
+        assert_eq!(profile_data.len(), 3); // Should have exactly 3 users
+        assert!(profile_data.contains_key("user_001"));
+        assert!(profile_data.contains_key("user_002"));
+        assert!(profile_data.contains_key("user_100"));
+        // Should not contain the others
+        assert!(!profile_data.contains_key("user_003"));
+        assert!(!profile_data.contains_key("user_200"));
 
         Ok(())
     }
@@ -298,10 +340,16 @@ impl ComprehensiveFilterTestFixture {
         );
 
         let nonexistent_result = self.fold_db.query(nonexistent_query)?;
+        let nonexistent_obj = nonexistent_result.as_object().unwrap();
         info!(
             "✅ Non-existent key filter result: {} items",
-            nonexistent_result.as_object().unwrap().len()
+            nonexistent_obj.len()
         );
+        
+        // Verify we get empty result for non-existent key
+        assert!(nonexistent_obj.contains_key("profile_data"));
+        let profile_data = nonexistent_obj["profile_data"].as_object().unwrap();
+        assert_eq!(profile_data.len(), 0); // Should be empty
 
         // Test 2: Empty filter
         let empty_filter_query = Query::new_with_filter(

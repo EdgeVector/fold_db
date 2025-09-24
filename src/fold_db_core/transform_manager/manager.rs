@@ -9,6 +9,7 @@ use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::thread;
+use std::time::Duration;
 
 pub(super) const AREF_TO_TRANSFORMS_KEY: &str = "map_molecule_to_transforms";
 pub(super) const TRANSFORM_TO_AREFS_KEY: &str = "map_transform_to_molecules";
@@ -51,7 +52,9 @@ pub struct TransformManager {
     /// Maps transform IDs to their output atom reference UUIDs
     pub(super) transform_outputs: RwLock<HashMap<String, String>>,
     /// Message bus for event-driven communication
-    pub(super) _message_bus: Arc<MessageBus>,
+    pub(super) message_bus: Arc<MessageBus>,
+    /// Thread handle for monitoring MutationExecuted events to trigger transforms
+    pub(super) _mutation_executed_consumer_thread: Option<thread::JoinHandle<()>>,
     /// Thread handle for monitoring SchemaChanged events to reload transforms
     pub(super) _schema_changed_consumer_thread: Option<thread::JoinHandle<()>>,
 }
@@ -152,9 +155,8 @@ impl TransformManager {
         // Start the orchestration system to handle TransformTriggered events
         Self::start_orchestration_system(Arc::clone(&db_ops), Arc::clone(&message_bus))?;
 
-        // Monitoring removed during aggressive cleanup
-
-        Ok(Self {
+        // Create the TransformManager instance first
+        let mut manager = Self {
             db_ops,
             registered_transforms: RwLock::new(registered_transforms),
             molecule_to_transforms: RwLock::new(molecule_to_transforms),
@@ -163,9 +165,15 @@ impl TransformManager {
             field_to_transforms: RwLock::new(field_to_transforms),
             transform_to_fields: RwLock::new(transform_to_fields),
             transform_outputs: RwLock::new(transform_outputs),
-            _message_bus: message_bus,
+            message_bus,
+            _mutation_executed_consumer_thread: None,
             _schema_changed_consumer_thread: None,
-        })
+        };
+
+        // Start listening for MutationExecuted events to trigger transforms
+        manager.start_mutation_executed_monitoring();
+
+        Ok(manager)
     }
 
     /// Returns true if a transform with the given id is registered.
@@ -253,6 +261,143 @@ impl TransformManager {
         }
 
         Ok(result)
+    }
+
+    /// Gets all transforms that should run when the specified schema is updated.
+    pub fn get_transforms_for_schema(&self, schema_name: &str) -> Result<HashSet<String>, SchemaError> {
+        let field_to_transforms = self
+            .field_to_transforms
+            .read()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
+
+        // Find all transforms that depend on any field of this schema
+        let mut result = HashSet::new();
+        for (field_key, transform_ids) in field_to_transforms.iter() {
+            if field_key.starts_with(&format!("{}.", schema_name)) {
+                result.extend(transform_ids.iter().cloned());
+            }
+        }
+
+        // DEBUG: Log schema mapping lookup
+        info!(
+            "🔍 DEBUG TransformManager: Looking up transforms for schema '{}' - found {} transforms: {:?}",
+            schema_name,
+            result.len(),
+            result
+        );
+
+        // DEBUG: Log all field mappings for diagnostics if no transforms found
+        if result.is_empty() {
+            LoggingHelper::log_field_mappings_state(
+                &field_to_transforms,
+                "TransformManager::get_transforms_for_schema",
+            );
+        }
+
+        Ok(result)
+    }
+
+    /// Start monitoring MutationExecuted events to trigger transforms directly
+    fn start_mutation_executed_monitoring(&mut self) {
+        let message_bus = Arc::clone(&self.message_bus);
+        let db_ops = Arc::clone(&self.db_ops);
+        let field_to_transforms = Arc::new(RwLock::new(self.field_to_transforms.write().unwrap().clone()));
+        
+        let mutation_executed_thread = thread::spawn(move || {
+            info!("🔍 TransformManager: Starting MutationExecuted event monitoring");
+            
+            let mut mutation_executed_consumer = message_bus.subscribe::<crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted>();
+            
+            loop {
+                if let Ok(event) = mutation_executed_consumer.try_recv() {
+                    info!("🔔 TransformManager: Received MutationExecuted event - schema: {}, operation: {}", event.schema, event.operation);
+                    
+                    // Get transforms for this schema
+                    let transform_ids = {
+                        let field_to_transforms = field_to_transforms.read().unwrap();
+                        let mut result = HashSet::new();
+                        for (field_key, transforms) in field_to_transforms.iter() {
+                            if field_key.starts_with(&format!("{}.", event.schema)) {
+                                result.extend(transforms.iter().cloned());
+                            }
+                        }
+                        result
+                    };
+                    
+                    if !transform_ids.is_empty() {
+                        info!("🔍 TransformManager: Found {} transforms for schema {}: {:?}", transform_ids.len(), event.schema, transform_ids);
+                        
+                        // Execute each transform directly
+                        for transform_id in transform_ids {
+                            info!("🚀 TransformManager: Executing transform {} after mutation completion", transform_id);
+                            
+                            // Load and execute the transform
+                            match db_ops.get_transform(&transform_id) {
+                                Ok(Some(transform)) => {
+                                    match crate::fold_db_core::transform_manager::manager::TransformManager::execute_single_transform(
+                                        &transform_id,
+                                        &transform,
+                                        &db_ops,
+                                        None // FoldDB not available in this context
+                                    ) {
+                                        Ok(result) => {
+                                            info!("✅ TransformManager: Transform {} executed successfully: {}", transform_id, result);
+                                            
+                                            // Store the result
+                                            if let Err(e) = crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
+                                                &db_ops,
+                                                &transform,
+                                                &result,
+                                                Some(&message_bus)
+                                            ) {
+                                                error!("❌ Failed to store transform result for {}: {}", transform_id, e);
+                                            }
+                                            
+                                            // Publish TransformExecuted event
+                                            let executed_event = crate::fold_db_core::infrastructure::message_bus::schema_events::TransformExecuted {
+                                                transform_id: transform_id.clone(),
+                                                result: result.to_string(),
+                                            };
+                                            
+                                            if let Err(e) = message_bus.publish(executed_event) {
+                                                error!("❌ Failed to publish TransformExecuted event for {}: {}", transform_id, e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!("❌ TransformManager: Transform {} execution failed: {}", transform_id, e);
+                                            
+                                            // Publish TransformExecuted event with error
+                                            let executed_event = crate::fold_db_core::infrastructure::message_bus::schema_events::TransformExecuted {
+                                                transform_id: transform_id.clone(),
+                                                result: format!("error: {}", e),
+                                            };
+                                            
+                                            if let Err(e) = message_bus.publish(executed_event) {
+                                                error!("❌ Failed to publish TransformExecuted event for {}: {}", transform_id, e);
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    error!("❌ TransformManager: Transform '{}' not found in database", transform_id);
+                                }
+                                Err(e) => {
+                                    error!("❌ TransformManager: Failed to load transform '{}': {}", transform_id, e);
+                                }
+                            }
+                        }
+                    } else {
+                        info!("ℹ️ TransformManager: No transforms found for schema {}", event.schema);
+                    }
+                }
+                
+                // Small sleep to prevent busy waiting
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+        
+        self._mutation_executed_consumer_thread = Some(mutation_executed_thread);
+        info!("✅ TransformManager: MutationExecuted event monitoring started");
     }
 
     /// Start the orchestration system to handle TransformTriggered events
@@ -391,6 +536,41 @@ impl TransformManager {
                     }
                 }
             }
+
+            fn get_transforms_for_schema(&self, schema_name: &str) -> Result<std::collections::HashSet<String>, SchemaError> {
+                // Load field-to-transforms mapping from database
+                match self.db_ops.get_transform_mapping(FIELD_TO_TRANSFORMS_KEY) {
+                    Ok(Some(mapping_bytes)) => {
+                        if let Ok(field_to_transforms) = serde_json::from_slice::<
+                            std::collections::HashMap<String, std::collections::HashSet<String>>,
+                        >(&mapping_bytes)
+                        {
+                            // Find all transforms that depend on any field of this schema
+                            let mut result = std::collections::HashSet::new();
+                            for (field_key, transform_ids) in field_to_transforms.iter() {
+                                if field_key.starts_with(&format!("{}.", schema_name)) {
+                                    result.extend(transform_ids.iter().cloned());
+                                }
+                            }
+                            Ok(result)
+                        } else {
+                            info!("⚠️ Failed to deserialize field_to_transforms mapping, returning empty set");
+                            Ok(std::collections::HashSet::new())
+                        }
+                    }
+                    Ok(None) => {
+                        info!("ℹ️ No field_to_transforms mapping found in database");
+                        Ok(std::collections::HashSet::new())
+                    }
+                    Err(e) => {
+                        error!("❌ Failed to load field_to_transforms mapping: {}", e);
+                        Err(SchemaError::InvalidData(format!(
+                            "Failed to load field mapping: {}",
+                            e
+                        )))
+                    }
+                }
+            }
         }
 
         // Note: EventMonitor is now created by TransformOrchestrator with proper manager access
@@ -495,7 +675,7 @@ impl TransformRunner for TransformManager {
             &self.db_ops,
             &transform,
             &result,
-            Some(&self._message_bus)
+            Some(&self.message_bus)
         )?;
 
         info!(
@@ -583,7 +763,7 @@ impl TransformRunner for TransformManager {
             &self.db_ops,
             &transform,
             &result,
-            Some(&self._message_bus)
+            Some(&self.message_bus)
         ) {
             Ok(_) => {
             }
@@ -633,5 +813,10 @@ impl TransformRunner for TransformManager {
             SchemaError::InvalidData("Failed to acquire field_to_transforms lock".to_string())
         })?;
         Ok(field_to_transforms.get(&key).cloned().unwrap_or_default())
+    }
+
+    fn get_transforms_for_schema(&self, schema_name: &str) -> Result<HashSet<String>, SchemaError> {
+        // Delegate to the public method implementation
+        TransformManager::get_transforms_for_schema(self, schema_name)
     }
 }

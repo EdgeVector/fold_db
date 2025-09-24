@@ -448,6 +448,10 @@ mod tests {
         ) -> Result<HashSet<String>, SchemaError> {
             Ok(HashSet::new())
         }
+
+        fn get_transforms_for_schema(&self, _schema_name: &str) -> Result<HashSet<String>, SchemaError> {
+            Ok(HashSet::new())
+        }
     }
 
     #[test]

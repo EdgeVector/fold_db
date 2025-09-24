@@ -397,6 +397,12 @@ mod tests {
             transforms.insert("test_transform".to_string());
             Ok(transforms)
         }
+
+        fn get_transforms_for_schema(&self, _schema_name: &str) -> Result<HashSet<String>, SchemaError> {
+            let mut transforms = HashSet::new();
+            transforms.insert("test_transform".to_string());
+            Ok(transforms)
+        }
     }
 
     fn create_test_orchestrator() -> TransformOrchestrator {

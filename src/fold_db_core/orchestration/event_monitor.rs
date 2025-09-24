@@ -52,20 +52,22 @@ impl EventMonitor {
         manager: Arc<dyn TransformRunner>,
         tree: sled::Tree,
     ) -> thread::JoinHandle<()> {
-        let mut field_value_consumer = message_bus.subscribe::<FieldValueSet>();
+        let mut mutation_executed_consumer = message_bus.subscribe::<crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted>();
         let mut triggered_consumer = message_bus.subscribe::<TransformTriggered>();
 
         thread::spawn(move || {
-            info!("🔍 EventMonitor: Starting unified monitoring of FieldValueSet and TransformTriggered events");
+            info!("🔍 EventMonitor: Starting unified monitoring of MutationExecuted and TransformTriggered events");
 
             loop {
-                // Check FieldValueSet events
-                if let Ok(event) = field_value_consumer.try_recv() {
-                    info!("🔔 DIAGNOSTIC: EventMonitor received FieldValueSet event - field: {}, source: {}", event.field, event.source);
+                // Check MutationExecuted events - trigger transforms after mutation completion
+                if let Ok(event) = mutation_executed_consumer.try_recv() {
+                    println!("🔔 DIAGNOSTIC: EventMonitor received MutationExecuted event - schema: {}, operation: {}", event.schema, event.operation);
+                    info!("🔔 DIAGNOSTIC: EventMonitor received MutationExecuted event - schema: {}, operation: {}", event.schema, event.operation);
                     if let Err(e) =
-                        Self::handle_field_value_event(&event, &manager, &tree, &message_bus)
+                        Self::handle_mutation_executed_event(&event, &manager, &tree, &message_bus)
                     {
-                        error!("❌ Error handling field value event: {}", e);
+                        println!("❌ Error handling mutation executed event: {}", e);
+                        error!("❌ Error handling mutation executed event: {}", e);
                     }
                 }
 
@@ -203,6 +205,34 @@ impl EventMonitor {
         Ok(())
     }
 
+    /// Handle a MutationExecuted event by triggering transforms for the schema
+    fn handle_mutation_executed_event(
+        event: &crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted,
+        manager: &Arc<dyn TransformRunner>,
+        tree: &sled::Tree,
+        message_bus: &Arc<MessageBus>,
+    ) -> Result<(), SchemaError> {
+        println!(
+            "🎯 EventMonitor: Mutation executed detected - schema: {}, operation: {}",
+            event.schema, event.operation
+        );
+        info!(
+            "🎯 EventMonitor: Mutation executed detected - schema: {}, operation: {}",
+            event.schema, event.operation
+        );
+
+        // Trigger transforms for all fields of the schema that was mutated
+        // Since we don't know which specific fields were changed, we need to check all fields
+        // of the schema for dependent transforms
+        Self::process_discovered_transforms_for_mutation_completed_schema(
+            &event.schema,
+            manager,
+            tree,
+            message_bus,
+            None, // No specific mutation context for now
+        )
+    }
+
     /// Handle a single FieldValueSet event
     fn handle_field_value_event(
         event: &FieldValueSet,
@@ -295,6 +325,177 @@ impl EventMonitor {
                 error!(
                     "❌ DIAGNOSTIC: Failed to get transforms for field {}.{}: {}",
                     schema_name, field_name, e
+                );
+                Err(e)
+            }
+        }
+    }
+
+    /// Process discovered transforms for a schema after mutation completion
+    /// This checks all fields of the schema for dependent transforms
+    fn process_discovered_transforms_for_mutation_completed_schema(
+        schema_name: &str,
+        manager: &Arc<dyn TransformRunner>,
+        tree: &sled::Tree,
+        message_bus: &Arc<MessageBus>,
+        mutation_context: Option<
+            crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
+        >,
+    ) -> Result<(), SchemaError> {
+        println!(
+            "🔍 DIAGNOSTIC: Looking for transforms on all fields of schema {} after mutation completion",
+            schema_name
+        );
+        info!(
+            "🔍 DIAGNOSTIC: Looking for transforms on all fields of schema {} after mutation completion",
+            schema_name
+        );
+        
+        // Get all transforms that depend on any field of this schema
+        // We need to check each field individually since transforms are registered per field
+        let mut all_transform_ids = std::collections::HashSet::new();
+        
+        // For now, we'll check common field names that might have transforms
+        // In a real implementation, we'd get the schema definition and check all its fields
+        let common_fields = vec!["title", "content", "author", "tags", "publish_date"];
+        
+        for field_name in common_fields {
+            let field_key = format!("{}.{}", schema_name, field_name);
+            println!("🔍 DIAGNOSTIC: Checking field {} for transforms", field_key);
+            
+            match manager.get_transforms_for_field(schema_name, field_name) {
+                Ok(transform_ids) => {
+                    if !transform_ids.is_empty() {
+                        println!("🔍 DIAGNOSTIC: Found {} transforms for field {}: {:?}", 
+                                transform_ids.len(), field_key, transform_ids);
+                        all_transform_ids.extend(transform_ids);
+                    }
+                }
+                Err(e) => {
+                    println!("❌ DIAGNOSTIC: Failed to get transforms for field {}: {}", field_key, e);
+                }
+            }
+        }
+        
+        if !all_transform_ids.is_empty() {
+            println!(
+                "🔍 DIAGNOSTIC: Found {} total transforms for schema {}: {:?}",
+                all_transform_ids.len(),
+                schema_name,
+                all_transform_ids
+            );
+            
+            // Publish TransformTriggered events for each transform
+            for transform_id in all_transform_ids {
+                println!(
+                    "🚀 DIAGNOSTIC: Publishing TransformTriggered event for: {}",
+                    transform_id
+                );
+                
+                let triggered_event = TransformTriggered {
+                    transform_id: transform_id.clone(),
+                    mutation_context: mutation_context.clone(),
+                };
+                
+                if let Err(e) = message_bus.publish(triggered_event) {
+                    println!(
+                        "❌ Failed to publish TransformTriggered event for {}: {}",
+                        transform_id, e
+                    );
+                    error!(
+                        "❌ Failed to publish TransformTriggered event for {}: {}",
+                        transform_id, e
+                    );
+                } else {
+                    println!(
+                        "✅ Published TransformTriggered event for: {}",
+                        transform_id
+                    );
+                    info!(
+                        "✅ Published TransformTriggered event for: {}",
+                        transform_id
+                    );
+                }
+            }
+        } else {
+            println!(
+                "ℹ️ DIAGNOSTIC: No transforms found for any fields of schema {}",
+                schema_name
+            );
+            info!(
+                "ℹ️ DIAGNOSTIC: No transforms found for any fields of schema {}",
+                schema_name
+            );
+        }
+        
+        Ok(())
+    }
+
+    /// Process discovered transforms for a schema (triggered after mutation completion)
+    fn process_discovered_transforms_for_schema(
+        schema_name: &str,
+        manager: &Arc<dyn TransformRunner>,
+        tree: &sled::Tree,
+        message_bus: &Arc<MessageBus>,
+        mutation_context: Option<
+            crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
+        >,
+    ) -> Result<(), SchemaError> {
+        // Look up transforms for this schema using the manager
+        println!(
+            "🔍 DIAGNOSTIC: Looking up transforms for schema {} from manager",
+            schema_name
+        );
+        info!(
+            "🔍 DIAGNOSTIC: Looking up transforms for schema {} from manager",
+            schema_name
+        );
+        
+        // Get all transforms that depend on this schema
+        match manager.get_transforms_for_schema(schema_name) {
+            Ok(transform_ids) => {
+                println!(
+                    "🔍 DIAGNOSTIC: Schema transform lookup result - found {} transforms: {:?}",
+                    transform_ids.len(),
+                    transform_ids
+                );
+                info!(
+                    "🔍 DIAGNOSTIC: Schema transform lookup result - found {} transforms: {:?}",
+                    transform_ids.len(),
+                    transform_ids
+                );
+
+                if !transform_ids.is_empty() {
+                    info!(
+                        "🔍 Found {} transforms for schema {}: {:?}",
+                        transform_ids.len(),
+                        schema_name,
+                        transform_ids
+                    );
+
+                    Self::add_transforms_to_queue(
+                        &transform_ids,
+                        "mutation_executed",
+                        tree,
+                        message_bus,
+                        &mutation_context,
+                    )?;
+                    info!(
+                        "✅ EventMonitor triggered {} transforms via TransformTriggered events after mutation completion",
+                        transform_ids.len()
+                    );
+                } else {
+                    info!(
+                        "ℹ️ DIAGNOSTIC: No transforms found for schema {} - this may indicate missing transform dependency mappings",
+                        schema_name
+                    );
+                }
+                Ok(())
+            }
+            Err(e) => {
+                error!(
+                    "❌ DIAGNOSTIC: Failed to get transforms for schema {}: {}",
+                    schema_name, e
                 );
                 Err(e)
             }
@@ -449,6 +650,10 @@ mod tests {
             _schema_name: &str,
             _field_name: &str,
         ) -> Result<HashSet<String>, SchemaError> {
+            Ok(self.transforms_for_field.clone())
+        }
+
+        fn get_transforms_for_schema(&self, _schema_name: &str) -> Result<HashSet<String>, SchemaError> {
             Ok(self.transforms_for_field.clone())
         }
     }

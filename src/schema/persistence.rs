@@ -376,18 +376,21 @@ impl SchemaCore {
         );
 
         // Create trigger fields based on input dependencies
-        // For declarative transforms, we need to trigger on ALL fields of the input schema
+        // For declarative transforms, we need to trigger on individual fields
+        // so the EventMonitor can find the transforms when mutations complete
         let mut trigger_fields = Vec::new();
         for input_schema in &input_molecules {
-            // Get the schema to find all its fields
+            // Get the schema definition to find all its fields
             if let Ok(Some(schema)) = self.db_ops.get_schema(input_schema) {
                 for field_name in schema.fields.keys() {
                     let field_key = format!("{}.{}", input_schema, field_name);
-                    trigger_fields.push(field_key);
+                    trigger_fields.push(field_key.clone());
+                    info!("📋 Added trigger field: {}", field_key);
                 }
             } else {
                 // Fallback: if we can't get the schema, just use the schema name
                 trigger_fields.push(input_schema.clone());
+                info!("📋 Added fallback trigger field: {}", input_schema);
             }
         }
 

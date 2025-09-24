@@ -23,6 +23,7 @@ pub struct JsonSchemaDefinition {
     #[serde(default = "crate::schema::types::schema::default_schema_type")]
     pub schema_type: crate::schema::types::schema::SchemaType,
     pub fields: HashMap<String, JsonSchemaField>,
+    #[serde(default = "default_schema_payment_config")]
     pub payment_config: SchemaPaymentConfig,
     /// SHA256 hash of the schema content for integrity verification
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -269,6 +270,13 @@ fn default_payment_config() -> JsonFieldPaymentConfig {
         base_multiplier: 1.0,
         trust_distance_scaling: TrustDistanceScaling::None,
         min_payment: None,
+    }
+}
+
+fn default_schema_payment_config() -> SchemaPaymentConfig {
+    SchemaPaymentConfig {
+        base_multiplier: 1.0,
+        min_payment_threshold: 0,
     }
 }
 

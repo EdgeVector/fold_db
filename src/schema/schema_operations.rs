@@ -50,7 +50,7 @@ impl SchemaCore {
     fn resolve_persisted_schema(&self, schema: Schema) -> Result<Schema, SchemaError> {
         if let Ok(Some(persisted_schema)) = self.db_ops.get_schema(&schema.name) {
             info!(
-                "📂 Found persisted schema for '{}' in database, using persisted version with field assignments",
+                "📂 Found persisted schema for '{}' in database, checking field assignments",
                 schema.name
             );
 
@@ -66,10 +66,19 @@ impl SchemaCore {
                   schema.name, assigned_fields, total_fields);
 
             if assigned_fields == 0 && total_fields > 0 {
-                log_feature!(LogFeature::Schema, error, "🚨 CRITICAL: Persisted schema '{}' has NO field assignments! This will break transforms!", schema.name);
+                log_feature!(LogFeature::Schema, warn, "🚨 CRITICAL: Persisted schema '{}' has NO field assignments! Falling back to JSON version to regenerate molecule UUIDs.", schema.name);
+                info!(
+                    "📋 Using JSON version for '{}' to regenerate molecule UUIDs",
+                    schema.name
+                );
+                Ok(schema)
+            } else {
+                info!(
+                    "📂 Using persisted schema for '{}' with {} field assignments",
+                    schema.name, assigned_fields
+                );
+                Ok(persisted_schema)
             }
-
-            Ok(persisted_schema)
         } else {
             info!(
                 "📋 No persisted schema found for '{}', using JSON version",
@@ -429,18 +438,21 @@ impl SchemaCore {
         }
 
         // Create trigger fields based on input dependencies
-        // For declarative transforms, we need to trigger on ALL fields of the input schema
+        // For declarative transforms, we need to trigger on individual fields
+        // so the EventMonitor can find the transforms when mutations complete
         let mut trigger_fields = Vec::new();
         for input_schema in &input_molecules {
-            // Get the schema to find all its fields
+            // Get the schema definition to find all its fields
             if let Ok(Some(schema)) = self.db_ops.get_schema(input_schema) {
                 for field_name in schema.fields.keys() {
                     let field_key = format!("{}.{}", input_schema, field_name);
-                    trigger_fields.push(field_key);
+                    trigger_fields.push(field_key.clone());
+                    info!("📋 Added trigger field: {}", field_key);
                 }
             } else {
                 // Fallback: if we can't get the schema, just use the schema name
-                trigger_fields.push(input_schema.to_string());
+                trigger_fields.push(input_schema.clone());
+                info!("📋 Added fallback trigger field: {}", input_schema);
             }
         }
 

@@ -14,7 +14,7 @@ use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::types::Mutation;
 use crate::schema::SchemaCore;
 use crate::schema::SchemaError;
-use log::warn;
+use log::{info, warn};
 use std::sync::Arc;
 use std::time::Instant;
 use uuid;
@@ -119,10 +119,16 @@ impl MutationExecutor {
         // 3. Publish MutationExecuted event
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
         let mutation_event =
-            MutationExecuted::new(operation_type, schema_name, execution_time_ms, fields_count);
+            MutationExecuted::new(operation_type.clone(), schema_name.clone(), execution_time_ms, fields_count);
 
+        println!("🔔 MutationExecutor: Publishing MutationExecuted event - schema: {}, operation: {}", schema_name, operation_type);
+        info!("🔔 MutationExecutor: Publishing MutationExecuted event - schema: {}, operation: {}", schema_name, operation_type);
         if let Err(e) = self.message_bus.publish(mutation_event) {
+            println!("❌ Failed to publish MutationExecuted event: {}", e);
             warn!("Failed to publish MutationExecuted event: {}", e);
+        } else {
+            println!("✅ MutationExecutor: MutationExecuted event published successfully");
+            info!("✅ MutationExecutor: MutationExecuted event published successfully");
         }
 
         // 4. Signal completion for mutation tracking AFTER database operations are complete

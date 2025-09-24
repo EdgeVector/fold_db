@@ -19,4 +19,5 @@ pub trait TransformRunner: Send + Sync {
         schema_name: &str,
         field_name: &str,
     ) -> Result<HashSet<String>, SchemaError>;
+    fn get_transforms_for_schema(&self, schema_name: &str) -> Result<HashSet<String>, SchemaError>;
 }

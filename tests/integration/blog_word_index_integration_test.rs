@@ -315,6 +315,84 @@ impl BlogWordIndexIntegrationFixture {
 
 }
 
+/// Extract all unique words from all blog posts defined in the test
+fn extract_all_words_from_blog_posts() -> Vec<String> {
+    let test_posts = vec![
+        (
+            "Getting Started with DataFold",
+            "DataFold is a powerful distributed database system that enables efficient data storage and retrieval. This post will guide you through the basics of getting started with DataFold.",
+            "Alice Johnson",
+            "2025-01-01T10:00:00Z",
+            vec!["tutorial", "beginners", "datafold"]
+        ),
+        (
+            "Understanding Range Schemas",
+            "Range schemas are a key feature of DataFold that allow you to organize data based on a specific field. This post explores how range schemas work and their benefits.",
+            "Bob Smith",
+            "2025-01-02T11:00:00Z",
+            vec!["schema", "range", "datafold"]
+        ),
+        (
+            "Advanced Query Patterns",
+            "DataFold supports various query patterns that can help you retrieve data efficiently. This post demonstrates advanced query patterns including filtering and aggregation.",
+            "Carol Davis",
+            "2025-01-03T12:00:00Z",
+            vec!["query", "advanced", "patterns"]
+        ),
+        (
+            "Test Blog Post",
+            "This is a test blog post with specific words for testing the declarative transform.",
+            "Test Author",
+            "2025-01-04T13:00:00Z",
+            vec!["test", "declarative"]
+        ),
+    ];
+
+    let mut all_words = std::collections::HashSet::new();
+
+    for (title, content, author, _publish_date, tags) in test_posts {
+        // Add words from title
+        for word in tokenize_text(&title) {
+            all_words.insert(word);
+        }
+        
+        // Add words from content
+        for word in tokenize_text(&content) {
+            all_words.insert(word);
+        }
+        
+        // Add words from author
+        for word in tokenize_text(&author) {
+            all_words.insert(word);
+        }
+        
+        // Add words from tags
+        for tag in tags {
+            for word in tokenize_text(&tag) {
+                all_words.insert(word);
+            }
+        }
+    }
+
+    let mut words: Vec<String> = all_words.into_iter().collect();
+    words.sort();
+    words
+}
+
+/// Tokenize text into words, converting to lowercase and filtering out empty strings
+fn tokenize_text(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|word| {
+            // Remove punctuation and convert to lowercase
+            word.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+                .to_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
 /// Test the complete BlogWordIndex declarative transform workflow using temp database
 #[tokio::test]
 async fn test_blog_word_index_declarative_transform_workflow() {
@@ -489,20 +567,67 @@ async fn test_declarative_transform_execution() {
         .await
         .expect("Failed to wait for transform execution");
 
-    // Test a simple query to verify the system is working
-    println!("🔍 Testing basic query functionality...");
-    let result = fixture
-        .query_blog_word_index("test")
-        .expect("Failed to query BlogWordIndex");
-
-    // Just verify we get a valid JSON response
-    if result.is_object() {
-        println!("✅ Query returned valid JSON object");
-    } else {
-        println!("⚠️ Query did not return a valid JSON object: {}", result);
+    // Test querying for every single word in every single blog that was added
+    println!("🔍 Testing comprehensive word query functionality...");
+    
+    // Extract all unique words from all blog posts
+    let all_blog_words = extract_all_words_from_blog_posts();
+    println!("📝 Found {} unique words across all blog posts", all_blog_words.len());
+    
+    let mut successful_queries = 0;
+    let mut failed_queries = 0;
+    
+    for word in &all_blog_words {
+        println!("🔍 Querying for word: '{}'", word);
+        match fixture.query_blog_word_index(word) {
+            Ok(result) => {
+                if result.is_object() {
+                    // Check if the result contains actual blog data (not just an empty object)
+                    if let Some(word_obj) = result.get(word) {
+                        if word_obj.is_object() && !word_obj.as_object().unwrap().is_empty() {
+                            println!("✅ Query for '{}' returned blog data with {} entries", 
+                                word, 
+                                word_obj.as_object().unwrap().len()
+                            );
+                            successful_queries += 1;
+                        } else {
+                            println!("❌ Query for '{}' returned empty result - word not found in any blogs", word);
+                            failed_queries += 1;
+                        }
+                    } else {
+                        println!("❌ Query for '{}' returned invalid structure - missing word key", word);
+                        failed_queries += 1;
+                    }
+                } else {
+                    println!("⚠️ Query for '{}' did not return a valid JSON object: {}", word, result);
+                    failed_queries += 1;
+                }
+            }
+            Err(e) => {
+                println!("❌ Query for '{}' failed: {}", word, e);
+                failed_queries += 1;
+            }
+        }
     }
-
-    println!("✅ Declarative transform execution test completed successfully!");
+    
+    println!("📊 Query Summary:");
+    println!("   ✅ Successful queries: {}", successful_queries);
+    println!("   ❌ Failed queries: {}", failed_queries);
+    println!("   📝 Total words tested: {}", all_blog_words.len());
+    
+    // Calculate success rate
+    let success_rate = (successful_queries as f64 / all_blog_words.len() as f64) * 100.0;
+    println!("📈 Success rate: {:.1}%", success_rate);
+    
+    // Expect at least 80% of words to return actual blog data
+    let minimum_success_rate = 80.0;
+    if success_rate >= minimum_success_rate {
+        println!("✅ Comprehensive word query test completed successfully!");
+        println!("✅ Success rate {}% meets minimum requirement of {}%", success_rate, minimum_success_rate);
+    } else {
+        panic!("❌ Success rate {}% is below minimum requirement of {}% - indexing system may not be working correctly", 
+            success_rate, minimum_success_rate);
+    }
 }
 
 /// Example test demonstrating how to use the generic helper methods with different schemas
