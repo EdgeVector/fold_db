@@ -6,8 +6,10 @@ use crate::schema::types::field::FieldType;
 use crate::transform::TransformExecutor;
 use crate::validation_utils::ValidationUtils;
 use crate::validation::{
-    validate_range_field_consistency_unified, validate_payment_config, validate_field_mappers
+    validate_range_field_consistency_unified, validate_payment_config, validate_field_mappers,
+    templates
 };
+use crate::{invalid_field_fmt, invalid_field};
 
 /// Validates a [`Schema`] before it is loaded into the database.
 ///
@@ -35,10 +37,7 @@ impl<'a> SchemaValidator<'a> {
         // For RangeSchema, ensure the range_key is a field in the schema
         if let Some(range_key) = schema.range_key() {
             if !schema.fields.contains_key(range_key) {
-                return Err(SchemaError::InvalidField(format!(
-                    "RangeSchema range_key '{}' must be one of the schema's fields.",
-                    range_key
-                )));
+                return Err(invalid_field_fmt!(templates::range::RANGE_KEY_NOT_FOUND, range_key));
             }
         }
 
@@ -154,9 +153,7 @@ impl<'a> SchemaValidator<'a> {
 
         for (field_name, field) in &schema.fields {
             if field_name.is_empty() {
-                return Err(SchemaError::InvalidField(
-                    "Field name cannot be empty".to_string(),
-                ));
+                return Err(invalid_field!(templates::field::EMPTY_FIELD_NAME));
             }
 
             validate_payment_config(

@@ -6,6 +6,8 @@
 use crate::schema::types::{DeclarativeSchemaDefinition, SchemaError};
 use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
 use crate::transform::iterator_stack::errors::IteratorStackError;
+use crate::validation::{templates};
+use crate::{invalid_field_fmt};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -24,10 +26,7 @@ use std::collections::HashMap;
 pub fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, SchemaError> {
     let parser = ChainParser::new();
     parser.parse(expression).map_err(|err| {
-        SchemaError::InvalidField(format!(
-            "Failed to parse expression '{}': {}",
-            expression, err
-        ))
+        invalid_field_fmt!(templates::transform::PARSE_FAILED, expression, err)
     })
 }
 
@@ -44,7 +43,7 @@ pub fn parse_atom_uuid_expression(expression: &str) -> Result<ParsedChain, Schem
 ///
 /// Converted schema error
 pub fn convert_iterator_stack_error(error: IteratorStackError) -> SchemaError {
-    SchemaError::InvalidField(format!("Iterator stack error: {}", error))
+    invalid_field_fmt!(templates::transform::ITERATOR_STACK_ERROR, error)
 }
 
 /// Formats validation errors with standardized message format.

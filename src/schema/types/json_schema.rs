@@ -8,6 +8,9 @@ use crate::schema::types::field::FieldType;
 use crate::schema::types::SchemaError;
 use crate::schema::types::Transform;
 use crate::transform::parser::TransformParser;
+use crate::validation::{templates};
+use crate::validation_utils::ValidationUtils;
+use crate::{invalid_field_fmt, invalid_field};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
@@ -90,16 +93,12 @@ impl<'de> serde::Deserialize<'de> for JsonTransform {
 impl JsonTransform {
     /// Validates the complete JSON transform structure.
     pub fn validate(&self) -> Result<(), SchemaError> {
-        use crate::validation_utils::ValidationUtils;
-
         // Validate output field
         ValidationUtils::require_non_empty_string(&self.output, "Transform output field")?;
 
         // Validate output field format (should be schema.field)
         if !self.output.contains('.') {
-            return Err(SchemaError::InvalidField(
-                "Transform output field must be in format 'schema.field'".to_string(),
-            ));
+            return Err(invalid_field!(templates::transform::INVALID_OUTPUT_FORMAT));
         }
 
         // Validate input fields
@@ -110,10 +109,7 @@ impl JsonTransform {
             )?;
 
             if !input.contains('.') {
-                return Err(SchemaError::InvalidField(format!(
-                    "Transform input field '{}' must be in format 'schema.field'",
-                    input
-                )));
+                return Err(invalid_field_fmt!(templates::transform::INVALID_INPUT_FORMAT, input));
             }
         }
 
@@ -137,10 +133,7 @@ impl FieldDefinition {
     pub fn validate(&self, field_name: &str) -> Result<(), SchemaError> {
         // Validate at least one property is defined
         if self.atom_uuid.is_none() && self.field_type.is_none() {
-            return Err(SchemaError::InvalidField(format!(
-                "Field '{}' must have at least one property defined (atom_uuid or field_type)",
-                field_name
-            )));
+            return Err(invalid_field_fmt!(templates::field::MISSING_PROPERTY, field_name));
         }
 
         // Validate atom_uuid if present
@@ -165,25 +158,16 @@ impl FieldDefinition {
         let expr = atom_uuid.trim();
 
         if expr.is_empty() {
-            return Err(SchemaError::InvalidField(format!(
-                "Field '{}' atom_uuid cannot be empty",
-                field_name
-            )));
+            return Err(invalid_field_fmt!(templates::field::EMPTY_ATOM_UUID, field_name));
         }
 
         // Basic expression validation
         if expr.starts_with('.') || expr.ends_with('.') {
-            return Err(SchemaError::InvalidField(format!(
-                "Field '{}' atom_uuid expression '{}' cannot start or end with a dot",
-                field_name, expr
-            )));
+            return Err(invalid_field_fmt!(templates::field::INVALID_ATOM_UUID_FORMAT, field_name, expr));
         }
 
         if expr.contains("..") {
-            return Err(SchemaError::InvalidField(format!(
-                "Field '{}' atom_uuid expression '{}' cannot contain consecutive dots",
-                field_name, expr
-            )));
+            return Err(invalid_field_fmt!(templates::field::CONSECUTIVE_DOTS, field_name, expr));
         }
 
         // Should typically end with $atom_uuid for reference fields
@@ -199,18 +183,12 @@ impl FieldDefinition {
     fn validate_field_type(&self, field_type: &str, field_name: &str) -> Result<(), SchemaError> {
         // Check for empty after trimming whitespace, but preserve original string for other checks
         if field_type.trim().is_empty() {
-            return Err(SchemaError::InvalidField(format!(
-                "Field '{}' field_type cannot be empty",
-                field_name
-            )));
+            return Err(invalid_field_fmt!(templates::field::EMPTY_FIELD_TYPE, field_name));
         }
 
         // Basic type validation - ensure it's a reasonable type name
         if field_type.len() > 100 {
-            return Err(SchemaError::InvalidField(format!(
-                "Field '{}' field_type '{}' is too long (max 100 characters)",
-                field_name, field_type
-            )));
+            return Err(invalid_field_fmt!(templates::field::FIELD_TYPE_TOO_LONG, field_name, field_type));
         }
 
         // Ensure type doesn't contain invalid characters (check the original string, not trimmed)
@@ -218,10 +196,7 @@ impl FieldDefinition {
             .chars()
             .any(|c| c.is_control() || c == '\n' || c == '\r')
         {
-            return Err(SchemaError::InvalidField(format!(
-                "Field '{}' field_type '{}' contains invalid characters",
-                field_name, field_type
-            )));
+            return Err(invalid_field_fmt!(templates::field::INVALID_FIELD_TYPE_CHARS, field_name, field_type));
         }
 
         Ok(())
