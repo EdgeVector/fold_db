@@ -1,4 +1,4 @@
-use crate::schema::types::{Schema, SchemaError};
+use crate::schema::types::{Schema, SchemaError, KeyConfig};
 use log::info;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
@@ -343,12 +343,19 @@ impl SchemaDataFetcher {
                 );
 
                 // Extract the value from the atom content
-                if let Some(value) = content.get("value") {
-                    record.insert(field_name.to_string(), value.clone());
-                    println!(
-                        "🔍 TransformManager: Added field '{}' = {} to record",
-                        field_name, value
-                    );
+                // The atom content structure is: {"fields": {"field_name": value, ...}, "hash": "...", "range": "..."}
+                if let Some(fields) = content.get("fields").and_then(|f| f.as_object()) {
+                    if let Some(value) = fields.get(field_name) {
+                        record.insert(field_name.to_string(), value.clone());
+                        println!(
+                            "🔍 TransformManager: Added field '{}' = {} to record",
+                            field_name, value
+                        );
+                    } else {
+                        println!("⚠️ Field '{}' not found in atom fields", field_name);
+                    }
+                } else {
+                    println!("⚠️ No 'fields' object found in atom content");
                 }
             }
             Ok(None) => {
@@ -465,9 +472,16 @@ impl SchemaDataFetcher {
                             );
 
                             // Extract the value from the atom content
-                            if let Some(value) = content.get("value") {
-                                record.insert(field_name.to_string(), value.clone());
-                                println!("🔍 TransformManager: Added field '{}' = {} to record with range_key '{}'", field_name, value, molecule_range_key);
+                            // The atom content structure is: {"fields": {"field_name": value, "range_key": "...", ...}, "hash": "...", "range": "..."}
+                            if let Some(fields) = content.get("fields").and_then(|f| f.as_object()) {
+                                if let Some(value) = fields.get(field_name) {
+                                    record.insert(field_name.to_string(), value.clone());
+                                    println!("🔍 TransformManager: Added field '{}' = {} to record with range_key '{}'", field_name, value, molecule_range_key);
+                                } else {
+                                    println!("⚠️ Field '{}' not found in atom fields for range_key '{}'", field_name, molecule_range_key);
+                                }
+                            } else {
+                                println!("⚠️ No 'fields' object found in atom content for range_key '{}'", molecule_range_key);
                             }
                         }
                         Ok(None) => {
@@ -543,13 +557,20 @@ impl SchemaDataFetcher {
                         );
 
                         // Extract the value from the atom content
-                        if let Some(value) = content.get("value") {
-                            // For single molecules, use a default range key
-                            let record = records_by_range_key
-                                .entry(DEFAULT_RANGE_KEY.to_string())
-                                .or_default();
-                            record.insert(field_name.to_string(), value.clone());
-                            println!("🔍 TransformManager: Added field '{}' = {} to record with default range_key", field_name, value);
+                        // The atom content structure is: {"fields": {"field_name": value, ...}, "hash": "...", "range": "..."}
+                        if let Some(fields) = content.get("fields").and_then(|f| f.as_object()) {
+                            if let Some(value) = fields.get(field_name) {
+                                // For single molecules, use a default range key
+                                let record = records_by_range_key
+                                    .entry(DEFAULT_RANGE_KEY.to_string())
+                                    .or_default();
+                                record.insert(field_name.to_string(), value.clone());
+                                println!("🔍 TransformManager: Added field '{}' = {} to record with default range_key", field_name, value);
+                            } else {
+                                println!("⚠️ Field '{}' not found in atom fields for single molecule", field_name);
+                            }
+                        } else {
+                            println!("⚠️ No 'fields' object found in atom content for single molecule");
                         }
                     }
                     Ok(None) => {
@@ -811,11 +832,11 @@ impl SchemaDataFetcher {
     /// without requiring a SchemaCore instance.
     fn get_universal_key_config_from_json(
         schema_name: &str,
-    ) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
+    ) -> Result<Option<KeyConfig>, SchemaError> {
         use crate::schema::constants::{
             KEY_CONFIG_HASH_FIELD, KEY_CONFIG_RANGE_FIELD, KEY_FIELD_NAME,
         };
-        use crate::schema::types::json_schema::KeyConfig;
+        use KeyConfig;
         use serde_json::Value;
 
         let schema_file_path = format!("available_schemas/{}.json", schema_name);

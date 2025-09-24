@@ -82,9 +82,13 @@ fn test_memory_usage_with_large_schemas() {
         schema_type: SchemaType::Single,
         fields: large_fields,
         key: None,
-    };
-    
-    let large_transform = Transform::from_declarative_schema(
+                key_to_hash_code: HashMap::new(),
+            field_to_hash_code: HashMap::new(),
+            hash_to_code: HashMap::new(),
+        };
+        
+        // Generate hash-to-code mappings
+        schema.hash_to_code = schema.generate_hash_to_code_mappings();let large_transform = Transform::from_declarative_schema(
         large_schema,
         vec!["large_schema.data".to_string()],
         "large_schema.field_0".to_string()

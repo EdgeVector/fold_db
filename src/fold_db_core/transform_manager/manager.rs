@@ -579,12 +579,18 @@ impl TransformRunner for TransformManager {
         );
 
         // Store the result using message bus
-        crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
+        match crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
             &self.db_ops,
             &transform,
             &result,
             Some(&self._message_bus)
-        )?;
+        ) {
+            Ok(_) => {
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
 
         info!(
             "✅ Transform '{}' executed successfully with context: {}",

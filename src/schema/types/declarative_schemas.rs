@@ -1,0 +1,231 @@
+
+
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use sha2::{Sha256, Digest};
+use crate::schema::types::key_config::KeyConfig;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FieldDefinition {
+    pub field_expression: Option<String>,
+}
+
+// Custom deserializer for DeclarativeSchemaDefinition that uses the constructor
+impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Define a temporary struct for deserialization
+        #[derive(serde::Deserialize)]
+        struct DeclarativeSchemaDefinitionHelper {
+            name: String,
+            schema_type: crate::schema::types::schema::SchemaType,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            key: Option<KeyConfig>,
+            #[serde(deserialize_with = "deserialize_mixed_format_fields")]
+            fields: HashMap<String, FieldDefinition>,
+        }
+
+        // Deserialize into the helper struct
+        let helper = DeclarativeSchemaDefinitionHelper::deserialize(deserializer)?;
+        
+        // Use the constructor to create the actual struct with generated mappings
+        Ok(DeclarativeSchemaDefinition::new(
+            helper.name,
+            helper.schema_type,
+            helper.key,
+            helper.fields,
+        ))
+    }
+}
+
+// Custom deserializer for fields that can be either strings or FieldDefinition objects
+fn deserialize_mixed_format_fields<'de, D>(deserializer: D) -> Result<HashMap<String, FieldDefinition>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, MapAccess, Visitor};
+    use std::fmt;
+
+    struct FieldsVisitor;
+
+    impl<'de> Visitor<'de> for FieldsVisitor {
+        type Value = HashMap<String, FieldDefinition>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map of field names to field definitions")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            let mut fields = HashMap::new();
+
+            while let Some((key, value)) = map.next_entry::<String, serde_json::Value>()? {
+                let field_def = match value {
+                    serde_json::Value::String(expression) => {
+                        // Simple string format: "field_name": "expression"
+                        FieldDefinition {
+                            field_expression: Some(expression),
+                        }
+                    }
+                    serde_json::Value::Object(obj) => {
+                        // Object format: "field_name": {"field_expression": "expression"}
+                        FieldDefinition {
+                            field_expression: obj.get("field_expression")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                        }
+                    }
+                    _ => {
+                        return Err(de::Error::invalid_type(
+                            de::Unexpected::Other("neither string nor object"),
+                            &self,
+                        ));
+                    }
+                };
+
+                fields.insert(key, field_def);
+            }
+
+            Ok(fields)
+        }
+    }
+
+    deserializer.deserialize_map(FieldsVisitor)
+}
+
+/// Declarative schema definition used by declarative transforms.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct DeclarativeSchemaDefinition {
+        /// Schema name (same as transform name)
+        pub name: String,
+        /// Schema type ("Single" | "HashRange")
+        pub schema_type: crate::schema::types::schema::SchemaType,
+        /// Key configuration (required when schema_type == "HashRange")
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub key: Option<KeyConfig>,
+        /// Field definitions with their mapping expressions
+        pub fields: HashMap<String, FieldDefinition>,
+
+        // Key to hash code.  Used for unique resolution of keys.
+        #[serde(skip)]
+        key_to_hash_code: HashMap<String, String>,
+
+        // Field to hash code.  Used for unique resolution of fields.
+        #[serde(skip)]
+        field_to_hash_code: HashMap<String, String>,
+
+        // Hash of the code to the code itself.  Used for unique resolution of transforms.
+        #[serde(skip)]
+        hash_to_code: HashMap<String, String>,
+    }
+
+impl DeclarativeSchemaDefinition {
+
+    /// Creates a new DeclarativeSchemaDefinition and generates all hash mappings.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `name` - The schema name (same as transform name)
+    /// * `schema_type` - The schema type ("Single" | "HashRange")
+    /// * `key` - Optional key configuration (required when schema_type == "HashRange")
+    /// * `fields` - Field definitions with their mapping expressions
+    /// 
+    /// # Returns
+    /// 
+    /// A new DeclarativeSchemaDefinition with all hash mappings populated
+    pub fn new(
+        name: String,
+        schema_type: crate::schema::types::schema::SchemaType,
+        key: Option<KeyConfig>,
+        fields: HashMap<String, FieldDefinition>,
+    ) -> Self {
+        let mut schema = Self {
+            name,
+            schema_type,
+            key,
+            fields,
+            key_to_hash_code: HashMap::new(),
+            field_to_hash_code: HashMap::new(),
+            hash_to_code: HashMap::new(),
+        };
+        
+        // Generate all mappings after creation
+        schema.generate_hash_to_code_mappings();
+        schema
+    }
+
+    /// Generates hash-to-code mappings for all keys and fields in the declarative schema.
+    /// 
+    /// This function hashes every line from the keys (hash_field and range_field) and every 
+    /// field expression (atom_uuid expressions) and stores them in the hash_to_code HashMap.
+    /// 
+    /// # Adds mappings to key_to_hash_code, field_to_hash_code, and hash_to_code.
+    fn generate_hash_to_code_mappings(&mut self) {
+        let mut hash_to_code = HashMap::new();
+        
+        // Hash key expressions if present
+        if let Some(key_config) = &self.key {
+            // Hash hash_field expression
+            if !key_config.hash_field.trim().is_empty() {
+                let hash = Self::hash_expression(&key_config.hash_field);
+                hash_to_code.insert(hash.clone(), key_config.hash_field.clone());
+                self.key_to_hash_code.insert(key_config.hash_field.clone(), hash);
+            }
+            
+            // Hash range_field expression
+            if !key_config.range_field.trim().is_empty() {
+                let hash = Self::hash_expression(&key_config.range_field);
+                hash_to_code.insert(hash.clone(), key_config.range_field.clone());
+                self.key_to_hash_code.insert(key_config.range_field.clone(), hash);
+            }
+        }
+        
+        // Hash field expressions
+        for field_def in self.fields.values() {
+            if let Some(field_expression) = &field_def.field_expression {
+                let hash = Self::hash_expression(field_expression);
+                hash_to_code.insert(hash.clone(), field_expression.clone());
+                self.field_to_hash_code.insert(field_expression.clone(), hash);
+            }
+        }
+        
+        self.hash_to_code = hash_to_code;
+    }
+    
+    /// Generates a SHA256 hash for a given expression.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `expression` - The expression string to hash
+    /// 
+    /// # Returns
+    /// 
+    /// A hex-encoded SHA256 hash of the expression
+    fn hash_expression(expression: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(expression.as_bytes());
+        let hash_bytes = hasher.finalize();
+        format!("{:x}", hash_bytes)
+    }
+
+    /// Gets a reference to the key-to-hash-code mapping.
+    pub fn key_to_hash_code(&self) -> &HashMap<String, String> {
+        &self.key_to_hash_code
+    }
+
+    /// Gets a reference to the field-to-hash-code mapping.
+    pub fn field_to_hash_code(&self) -> &HashMap<String, String> {
+        &self.field_to_hash_code
+    }
+
+    /// Gets a reference to the hash-to-code mapping.
+    pub fn hash_to_code(&self) -> &HashMap<String, String> {
+        &self.hash_to_code
+    }
+
+    
+}

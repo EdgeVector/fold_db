@@ -58,7 +58,7 @@ impl ExampleTransformExecutor {
         // Get transform code for validation (only declarative transforms supported)
         let mut code_parts = Vec::new();
         for field_def in transform.schema.fields.values() {
-            if let Some(atom_uuid) = &field_def.atom_uuid {
+            if let Some(atom_uuid) = &field_def.field_expression {
                 code_parts.push(atom_uuid.clone());
             }
         }

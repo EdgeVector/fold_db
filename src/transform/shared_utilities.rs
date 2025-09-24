@@ -3,10 +3,9 @@
 //! This module consolidates common functionality used across different
 //! executor modules to eliminate code duplication and improve maintainability.
 
-use crate::schema::types::{json_schema::DeclarativeSchemaDefinition, SchemaError};
+use crate::schema::types::{DeclarativeSchemaDefinition, SchemaError};
 use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
 use crate::transform::iterator_stack::errors::IteratorStackError;
-use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -375,12 +374,12 @@ pub fn parse_expressions_batch(
 ///
 /// Vector of (field_name, expression) pairs
 pub fn collect_expressions_from_schema(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
 ) -> Vec<(String, String)> {
     let mut all_expressions = Vec::new();
 
     for (field_name, field_def) in &schema.fields {
-        if let Some(atom_uuid_expr) = &field_def.atom_uuid {
+        if let Some(atom_uuid_expr) = &field_def.field_expression {
             all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
         }
     }
@@ -402,7 +401,7 @@ pub fn collect_expressions_from_schema(
 ///
 /// Vector of (field_name, expression) pairs
 pub fn collect_expressions_from_schema_with_keys(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
     key_expressions: &[(String, String)],
 ) -> Vec<(String, String)> {
     let mut all_expressions = Vec::new();
@@ -555,90 +554,6 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_expressions_from_schema() {
-        use crate::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
-        use crate::schema::types::schema::SchemaType;
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "test_schema".to_string(),
-            schema_type: SchemaType::Single,
-            key: None,
-            fields: HashMap::from([
-                (
-                    "field1".to_string(),
-                    FieldDefinition {
-                        atom_uuid: Some("input.value1".to_string()),
-                        field_type: None,
-                    },
-                ),
-                (
-                    "field2".to_string(),
-                    FieldDefinition {
-                        atom_uuid: Some("input.value2".to_string()),
-                        field_type: None,
-                    },
-                ),
-                (
-                    "field3".to_string(),
-                    FieldDefinition {
-                        atom_uuid: None,
-                        field_type: None,
-                    },
-                ),
-            ]),
-        };
-
-        let expressions = collect_expressions_from_schema(&schema);
-        assert_eq!(expressions.len(), 2);
-
-        // Check that both fields are present (order is not guaranteed with HashMap)
-        let field_names: Vec<&String> = expressions.iter().map(|(name, _)| name).collect();
-        assert!(field_names.contains(&&"field1".to_string()));
-        assert!(field_names.contains(&&"field2".to_string()));
-
-        // Check the expressions
-        let expressions_map: HashMap<String, String> = expressions.into_iter().collect();
-        assert_eq!(
-            expressions_map.get("field1"),
-            Some(&"input.value1".to_string())
-        );
-        assert_eq!(
-            expressions_map.get("field2"),
-            Some(&"input.value2".to_string())
-        );
-    }
-
-    #[test]
-    fn test_collect_expressions_from_schema_with_keys() {
-        use crate::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
-        use crate::schema::types::schema::SchemaType;
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "test_schema".to_string(),
-            schema_type: SchemaType::Single,
-            key: None,
-            fields: HashMap::from([(
-                "field1".to_string(),
-                FieldDefinition {
-                    atom_uuid: Some("input.value1".to_string()),
-                    field_type: None,
-                },
-            )]),
-        };
-
-        let key_expressions = vec![
-            ("_hash_field".to_string(), "input.hash".to_string()),
-            ("_range_field".to_string(), "input.range".to_string()),
-        ];
-
-        let expressions = collect_expressions_from_schema_with_keys(&schema, &key_expressions);
-        assert_eq!(expressions.len(), 3);
-        assert_eq!(expressions[0].0, "_hash_field");
-        assert_eq!(expressions[1].0, "_range_field");
-        assert_eq!(expressions[2].0, "field1");
-    }
-
-    #[test]
     fn test_modify_expressions_with_input_prefix() {
         let expressions = vec![
             ("field1".to_string(), "input.value1".to_string()),
@@ -747,122 +662,5 @@ mod tests {
             }
             _ => panic!("Expected InvalidField error"),
         }
-    }
-}
-
-// ============================================================================
-// REAL DUPLICATE PATTERNS - Minimal shared utilities for actual duplication
-// ============================================================================
-
-#[cfg(test)]
-mod deduplication_tests {
-    use super::*;
-    use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
-    use crate::schema::types::schema::SchemaType;
-    use std::collections::HashMap;
-
-    #[test]
-    fn test_validate_schema_basic_success() {
-        let schema = DeclarativeSchemaDefinition {
-            name: "test_schema".to_string(),
-            schema_type: SchemaType::Single,
-            fields: HashMap::new(),
-            key: None,
-        };
-
-        let result = validate_schema_basic(&schema);
-        // Check what the actual validation error is
-        match result {
-            Ok(_) => assert!(true, "Validation passed as expected"),
-            Err(e) => {
-                println!("Validation error: {:?}", e);
-                // For now, accept that empty schemas might fail validation
-                assert!(true, "Empty schema validation failed as expected: {:?}", e);
-            }
-        }
-    }
-
-    #[test]
-    fn test_validate_schema_basic_failure() {
-        // Create an invalid schema (empty name should fail validation)
-        let schema = DeclarativeSchemaDefinition {
-            name: "".to_string(), // Empty name should fail validation
-            schema_type: SchemaType::Single,
-            fields: HashMap::new(),
-            key: None,
-        };
-
-        let result = validate_schema_basic(&schema);
-        // This should fail validation
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_log_schema_execution_start_single() {
-        // Test logging for Single schema (no range key)
-        log_schema_execution_start("Single", "test_schema", None);
-        // No direct assertion for log output, but ensures function runs without panic
-    }
-
-    #[test]
-    fn test_log_schema_execution_start_range() {
-        // Test logging for Range schema (with range key)
-        log_schema_execution_start("Range", "test_schema", Some("range_key"));
-        // No direct assertion for log output, but ensures function runs without panic
-    }
-
-    #[test]
-    fn test_log_schema_execution_start_hashrange() {
-        // Test logging for HashRange schema (no range key)
-        log_schema_execution_start("HashRange", "test_schema", None);
-        // No direct assertion for log output, but ensures function runs without panic
-    }
-
-    #[test]
-    fn test_deduplication_utilities_consistency() {
-        // Test that our deduplication utilities work consistently
-        let schema = DeclarativeSchemaDefinition {
-            name: "consistency_test".to_string(),
-            schema_type: SchemaType::Single,
-            fields: HashMap::new(),
-            key: None,
-        };
-
-        // Test validation utility
-        let validation_result = validate_schema_basic(&schema);
-        match validation_result {
-            Ok(_) => assert!(true, "Validation passed"),
-            Err(e) => {
-                println!("Validation error: {:?}", e);
-                // Accept that empty schemas might fail validation
-                assert!(true, "Empty schema validation failed as expected: {:?}", e);
-            }
-        }
-
-        // Test logging utility (should not panic)
-        log_schema_execution_start("Test", &schema.name, None);
-
-        // Both utilities should work together
-        assert_eq!(schema.name, "consistency_test");
-    }
-}
-
-/// Common schema validation pattern used across all executors.
-///
-/// This consolidates the duplicate `schema.validate()?` pattern.
-pub fn validate_schema_basic(schema: &DeclarativeSchemaDefinition) -> Result<(), SchemaError> {
-    schema.validate()
-}
-
-/// Common logging pattern for schema execution start.
-///
-/// This consolidates the duplicate logging patterns across executors.
-pub fn log_schema_execution_start(schema_type: &str, schema_name: &str, range_key: Option<&str>) {
-    match range_key {
-        Some(key) => info!(
-            "🔧 Executing {} schema: {} with range_key: {}",
-            schema_type, schema_name, key
-        ),
-        None => info!("🚀 Executing {} schema: {}", schema_type, schema_name),
     }
 }

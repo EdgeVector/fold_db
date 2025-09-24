@@ -3,7 +3,7 @@
 //! This module provides validation functions for schema structure, field alignment,
 //! and other validation concerns in the transform execution framework.
 
-use crate::schema::types::SchemaError;
+use crate::schema::types::{SchemaError, DeclarativeSchemaDefinition};
 use crate::transform::iterator_stack::field_alignment::{
     AlignmentValidationResult, FieldAlignmentValidator,
 };
@@ -20,44 +20,6 @@ pub struct ValidationTimings {
     pub alignment_duration: std::time::Duration,
 }
 
-/// Validates HashRange schema structure and field alignment.
-///
-/// # Arguments
-///
-/// * `schema` - The declarative schema definition
-///
-/// # Returns
-///
-/// Validation timings and any validation errors
-pub fn validate_hashrange_schema(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
-) -> Result<ValidationTimings, SchemaError> {
-    use std::time::Instant;
-
-    // Validate schema structure
-    let validation_start = Instant::now();
-    schema.validate()?;
-    let validation_duration = validation_start.elapsed();
-    info!(
-        "⏱️ HashRange schema validation took: {:?}",
-        validation_duration
-    );
-
-    // Validate field alignment
-    let alignment_start = Instant::now();
-    validate_field_alignment(schema)?;
-    let alignment_duration = alignment_start.elapsed();
-    info!(
-        "⏱️ HashRange field alignment validation took: {:?}",
-        alignment_duration
-    );
-
-    Ok(ValidationTimings {
-        validation_duration,
-        alignment_duration,
-    })
-}
-
 /// Validates field alignment for declarative transforms.
 ///
 /// # Arguments
@@ -68,7 +30,7 @@ pub fn validate_hashrange_schema(
 ///
 /// Validation result or error
 pub fn validate_field_alignment(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
 ) -> Result<AlignmentValidationResult, SchemaError> {
     validate_field_alignment_unified(Some(schema), None)
 }
@@ -87,7 +49,7 @@ pub fn validate_field_alignment(
 ///
 /// Validation result or error
 pub fn validate_field_alignment_unified(
-    schema: Option<&crate::schema::types::json_schema::DeclarativeSchemaDefinition>,
+    schema: Option<&DeclarativeSchemaDefinition>,
     parsed_chains: Option<&[crate::transform::iterator_stack::chain_parser::ParsedChain]>,
 ) -> Result<AlignmentValidationResult, SchemaError> {
     // Handle case where parsed chains are provided directly (from executor modules)
@@ -164,7 +126,7 @@ fn validate_alignment_with_chains(
 ///
 /// Validation result or error
 fn validate_alignment_from_schema(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
 ) -> Result<AlignmentValidationResult, SchemaError> {
     // Collect all expressions for alignment validation using unified function
     let mut all_expressions = collect_expressions_from_schema(schema);

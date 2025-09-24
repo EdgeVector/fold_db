@@ -186,16 +186,16 @@ impl StandardInitializers {
 
     /// Initialize transform with standard test configuration
     pub fn test_transform(_input_expr: &str, output_expr: &str) -> crate::schema::types::Transform {
-        use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+        use crate::schema::types::DeclarativeSchemaDefinition;
         use crate::schema::types::schema::SchemaType;
         use std::collections::HashMap;
 
-        let schema = DeclarativeSchemaDefinition {
-            name: "test_transform".to_string(),
-            schema_type: SchemaType::Single,
-            fields: HashMap::new(),
-            key: None,
-        };
+        let schema = DeclarativeSchemaDefinition::new(
+            "test_transform".to_string(),
+            SchemaType::Single,
+            None,
+            HashMap::new(),
+        );
 
         crate::schema::types::Transform::new(schema, output_expr.to_string())
     }

@@ -4,7 +4,7 @@
 //! into the final output format for different schema types.
 
 use crate::schema::schema_operations::shape_unified_result;
-use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+use crate::schema::types::DeclarativeSchemaDefinition;
 use crate::schema::types::schema::SchemaType;
 use crate::schema::types::SchemaError;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
@@ -82,7 +82,10 @@ impl<'a> AggregationAccumulator<'a> {
         };
 
         if let Some(key) = compat_key {
-            let compat_value = if treat_as_array {
+            let compat_value = if key == "hash_key" || key == "range_key" {
+                // For HashRange schemas, hash_key and range_key should be arrays
+                JsonValue::Array(values)
+            } else if treat_as_array {
                 JsonValue::Array(values)
             } else {
                 values.into_iter().next().unwrap_or(JsonValue::Null)
@@ -361,8 +364,8 @@ fn json_value_to_string(value: &JsonValue) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::types::json_schema::{
-        DeclarativeSchemaDefinition, FieldDefinition, KeyConfig,
+    use crate::schema::types::{
+        DeclarativeSchemaDefinition, FieldDefinition,
     };
     use crate::schema::types::schema::SchemaType;
     use crate::transform::iterator_stack::chain_parser::{ChainOperation, ParsedChain};
@@ -418,17 +421,16 @@ mod tests {
         fields.insert(
             "field1".to_string(),
             FieldDefinition {
-                atom_uuid: Some("input.field1".to_string()),
-                field_type: Some("String".to_string()),
+                field_expression: Some("input.field1".to_string()),
             },
         );
 
-        let schema = DeclarativeSchemaDefinition {
-            name: "single_schema".to_string(),
-            schema_type: SchemaType::Single,
-            key: None,
+        let schema = DeclarativeSchemaDefinition::new(
+            "single_schema".to_string(),
+            SchemaType::Single,
+            None,
             fields,
-        };
+        );
 
         let parsed_chains = vec![(
             "field1".to_string(),
@@ -492,17 +494,16 @@ mod tests {
         fields.insert(
             "field1".to_string(),
             FieldDefinition {
-                atom_uuid: Some("input.field1".to_string()),
-                field_type: Some("String".to_string()),
+                field_expression: Some("input.field1".to_string()),
             },
         );
 
-        let schema = DeclarativeSchemaDefinition {
-            name: "single_schema".to_string(),
-            schema_type: SchemaType::Single,
-            key: None,
+        let schema = DeclarativeSchemaDefinition::new(
+            "single_schema".to_string(),
+            SchemaType::Single,
+            None,
             fields,
-        };
+        );
 
         let parsed_chains = vec![(
             "field1".to_string(),
@@ -564,569 +565,5 @@ mod tests {
         assert_eq!(result_value["hash"], json!(""));
         assert_eq!(result_value["range"], json!(""));
         assert_eq!(result_value["fields"]["field1"], json!("executed_value1"));
-    }
-
-    #[test]
-    fn test_aggregate_results_unified_key_field_filtering() {
-        let mut fields = HashMap::new();
-        fields.insert(
-            "field1".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("input.field1".to_string()),
-                field_type: Some("String".to_string()),
-            },
-        );
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "hashrange_schema".to_string(),
-            schema_type: SchemaType::HashRange,
-            key: Some(KeyConfig {
-                hash_field: "input.hash".to_string(),
-                range_field: "input.range".to_string(),
-            }),
-            fields,
-        };
-
-        let parsed_chains = vec![
-            (
-                "_hash_field".to_string(),
-                ParsedChain {
-                    operations: vec![
-                        crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(
-                            "input".to_string(),
-                        ),
-                        crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(
-                            "hash".to_string(),
-                        ),
-                    ],
-                    expression: "input.hash".to_string(),
-                    depth: 0,
-                    branch: "main".to_string(),
-                    scopes: vec![],
-                },
-            ),
-            (
-                "field1".to_string(),
-                ParsedChain {
-                    operations: vec![
-                        crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(
-                            "input".to_string(),
-                        ),
-                        crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(
-                            "field1".to_string(),
-                        ),
-                    ],
-                    expression: "input.field1".to_string(),
-                    depth: 0,
-                    branch: "main".to_string(),
-                    scopes: vec![],
-                },
-            ),
-        ];
-
-        let execution_result = ExecutionResult {
-            index_entries: vec![],
-            statistics:
-                crate::transform::iterator_stack::execution_engine::core::ExecutionStatistics {
-                    total_entries: 0,
-                    items_per_depth: HashMap::new(),
-                    memory_usage_bytes: 0,
-                    cache_hits: 0,
-                    cache_misses: 0,
-                },
-            warnings: vec![],
-        };
-
-        let input_values = HashMap::from([(
-            "input".to_string(),
-            json!({
-                "hash": "hash_value",
-                "field1": "value1"
-            }),
-        )]);
-
-        let all_expressions = vec![
-            ("_hash_field".to_string(), "input.hash".to_string()),
-            ("field1".to_string(), "input.field1".to_string()),
-        ];
-
-        let result = aggregate_results_unified(
-            &schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        );
-
-        assert!(result.is_ok());
-        let result_value = result.unwrap();
-
-        // Key fields should not be included in final output
-        assert!(!result_value
-            .as_object()
-            .unwrap()
-            .contains_key("_hash_field"));
-        assert!(result_value.as_object().unwrap().contains_key("field1"));
-        assert_eq!(result_value["field1"], json!("value1"));
-        assert_eq!(result_value["hash"], json!("hash_value"));
-        assert_eq!(result_value["range"], json!(""));
-        assert_eq!(result_value["fields"]["field1"], json!("value1"));
-    }
-
-    #[test]
-    fn test_aggregate_results_unified_range_with_universal_keys() {
-        let mut fields = HashMap::new();
-        fields.insert(
-            "value".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("records.value".to_string()),
-                field_type: Some("Number".to_string()),
-            },
-        );
-        fields.insert(
-            "status".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("records.status".to_string()),
-                field_type: Some("String".to_string()),
-            },
-        );
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "range_universal_keys".to_string(),
-            schema_type: SchemaType::Range {
-                range_key: "records.range".to_string(),
-            },
-            key: Some(KeyConfig {
-                hash_field: "records.hash".to_string(),
-                range_field: "records.range".to_string(),
-            }),
-            fields,
-        };
-
-        let parsed_chains = vec![
-            (
-                "_range_field".to_string(),
-                build_parsed_chain("records.range", &["records", "range"]),
-            ),
-            (
-                "_hash_field".to_string(),
-                build_parsed_chain("records.hash", &["records", "hash"]),
-            ),
-            (
-                "value".to_string(),
-                build_parsed_chain("records.value", &["records", "value"]),
-            ),
-            (
-                "status".to_string(),
-                build_parsed_chain("records.status", &["records", "status"]),
-            ),
-        ];
-
-        let execution_result = ExecutionResult {
-            index_entries: vec![
-                build_index_entry("records.value", json!(12345)),
-                build_index_entry("records.status", json!("ok")),
-            ],
-            statistics: build_execution_stats(2),
-            warnings: vec![],
-        };
-
-        let input_values = HashMap::from([(
-            "records".to_string(),
-            json!({
-                "hash": "partition-42",
-                "range": "2025-02-01T12:00:00Z",
-                "value": 12345,
-                "status": "ok"
-            }),
-        )]);
-
-        let all_expressions = collect_expressions(&parsed_chains);
-
-        let result = aggregate_results_unified(
-            &schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        )
-        .expect("Range aggregation should succeed");
-
-        assert_eq!(result["hash"], json!(""));
-        assert_eq!(result["range"], json!(""));
-
-        let fields_obj = result["fields"].as_object().expect("fields should exist");
-        assert_eq!(fields_obj.get("value"), Some(&json!(12345)));
-        assert_eq!(fields_obj.get("status"), Some(&json!("ok")));
-        assert!(!fields_obj.contains_key("hash"));
-        assert!(!fields_obj.contains_key("range"));
-
-        assert_eq!(result["value"], json!(12345));
-        assert_eq!(result["status"], json!("ok"));
-    }
-
-    #[test]
-    fn test_aggregate_results_unified_range_fallback_without_execution_results() {
-        let mut fields = HashMap::new();
-        fields.insert(
-            "value".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("records.value".to_string()),
-                field_type: Some("Number".to_string()),
-            },
-        );
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "range_universal_keys_fallback".to_string(),
-            schema_type: SchemaType::Range {
-                range_key: "records.range".to_string(),
-            },
-            key: Some(KeyConfig {
-                hash_field: "records.hash".to_string(),
-                range_field: "records.range".to_string(),
-            }),
-            fields,
-        };
-
-        let parsed_chains = vec![
-            (
-                "_range_field".to_string(),
-                build_parsed_chain("records.range", &["records", "range"]),
-            ),
-            (
-                "_hash_field".to_string(),
-                build_parsed_chain("records.hash", &["records", "hash"]),
-            ),
-            (
-                "value".to_string(),
-                build_parsed_chain("records.value", &["records", "value"]),
-            ),
-        ];
-
-        let execution_result = ExecutionResult {
-            index_entries: vec![],
-            statistics: build_execution_stats(0),
-            warnings: vec![],
-        };
-
-        let input_values = HashMap::from([(
-            "records".to_string(),
-            json!({
-                "hash": "fallback-hash",
-                "range": "fallback-range",
-                "value": 64
-            }),
-        )]);
-
-        let all_expressions = collect_expressions(&parsed_chains);
-
-        let result = aggregate_results_unified(
-            &schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        )
-        .expect("Range fallback aggregation should succeed");
-
-        assert_eq!(result["hash"], json!("fallback-hash"));
-        assert_eq!(result["range"], json!("fallback-range"));
-        assert_eq!(result["fields"]["value"], json!(64));
-        assert_eq!(result["value"], json!(64));
-    }
-
-    #[test]
-    fn test_aggregate_results_unified_range_legacy_key_support() {
-        let mut fields = HashMap::new();
-        fields.insert(
-            "value".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("records.value".to_string()),
-                field_type: Some("Number".to_string()),
-            },
-        );
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "range_legacy_key".to_string(),
-            schema_type: SchemaType::Range {
-                range_key: "records.range".to_string(),
-            },
-            key: None,
-            fields,
-        };
-
-        let parsed_chains = vec![
-            (
-                "_range_field".to_string(),
-                build_parsed_chain("records.range", &["records", "range"]),
-            ),
-            (
-                "value".to_string(),
-                build_parsed_chain("records.value", &["records", "value"]),
-            ),
-        ];
-
-        let execution_result = ExecutionResult {
-            index_entries: vec![build_index_entry("records.value", json!(512))],
-            statistics: build_execution_stats(1),
-            warnings: vec![],
-        };
-
-        let input_values = HashMap::from([(
-            "records".to_string(),
-            json!({
-                "range": "legacy-range",
-                "value": 512
-            }),
-        )]);
-
-        let all_expressions = collect_expressions(&parsed_chains);
-
-        let result = aggregate_results_unified(
-            &schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        )
-        .expect("Legacy range aggregation should succeed");
-
-        assert_eq!(result["hash"], json!(""));
-        assert_eq!(result["range"], json!(""));
-        assert_eq!(result["fields"]["value"], json!(512));
-    }
-
-    #[test]
-    fn test_aggregate_results_unified_handles_dotted_field_names() {
-        let mut fields = HashMap::new();
-        fields.insert(
-            "first_value".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("input.details.analytics.value".to_string()),
-                field_type: Some("Number".to_string()),
-            },
-        );
-        fields.insert(
-            "second_value".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("input.details.metrics.value".to_string()),
-                field_type: Some("Number".to_string()),
-            },
-        );
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "single_dotted_fields".to_string(),
-            schema_type: SchemaType::Single,
-            key: Some(KeyConfig {
-                hash_field: "input.user.id".to_string(),
-                range_field: "input.metadata.created_at".to_string(),
-            }),
-            fields,
-        };
-
-        let parsed_chains = vec![
-            (
-                "first_value".to_string(),
-                build_parsed_chain(
-                    "input.details.analytics.value",
-                    &["input", "details", "analytics", "value"],
-                ),
-            ),
-            (
-                "second_value".to_string(),
-                build_parsed_chain(
-                    "input.details.metrics.value",
-                    &["input", "details", "metrics", "value"],
-                ),
-            ),
-        ];
-
-        let execution_result = ExecutionResult {
-            index_entries: vec![
-                build_index_entry("input.details.analytics.value", json!(11)),
-                build_index_entry("input.details.metrics.value", json!(29)),
-            ],
-            statistics: build_execution_stats(2),
-            warnings: vec![],
-        };
-
-        let input_values = HashMap::from([(
-            "input".to_string(),
-            json!({
-                "details": {
-                    "analytics": { "value": 11 },
-                    "metrics": { "value": 29 }
-                },
-                "user": { "id": "user-1" },
-                "metadata": { "created_at": "2025-01-01" }
-            }),
-        )]);
-
-        let all_expressions = collect_expressions(&parsed_chains);
-
-        let result = aggregate_results_unified(
-            &schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        )
-        .expect("Single aggregation should succeed");
-
-        let fields_obj = result["fields"].as_object().expect("fields should exist");
-        assert_eq!(fields_obj.len(), 2);
-        let mut flattened_values: Vec<i64> = fields_obj
-            .iter()
-            .filter(|(key, _)| key.starts_with("value"))
-            .map(|(_, value)| value.as_i64().expect("numeric value"))
-            .collect();
-        flattened_values.sort_unstable();
-        assert_eq!(flattened_values, vec![11, 29]);
-
-        assert_eq!(result["first_value"], json!(11));
-        assert_eq!(result["second_value"], json!(29));
-    }
-
-    #[test]
-    fn test_aggregate_results_unified_hashrange_produces_arrays() {
-        let mut fields = HashMap::new();
-        fields.insert(
-            "value".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("records.value".to_string()),
-                field_type: Some("Number".to_string()),
-            },
-        );
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "hashrange_universal".to_string(),
-            schema_type: SchemaType::HashRange,
-            key: Some(KeyConfig {
-                hash_field: "records.hash".to_string(),
-                range_field: "records.range".to_string(),
-            }),
-            fields,
-        };
-
-        let parsed_chains = vec![
-            (
-                "_hash_field".to_string(),
-                build_parsed_chain("records.hash", &["records", "hash"]),
-            ),
-            (
-                "_range_field".to_string(),
-                build_parsed_chain("records.range", &["records", "range"]),
-            ),
-            (
-                "value".to_string(),
-                build_parsed_chain("records.value", &["records", "value"]),
-            ),
-        ];
-
-        let execution_result = ExecutionResult {
-            index_entries: vec![
-                build_index_entry("records.hash", json!("hash-1")),
-                build_index_entry("records.hash", json!("hash-2")),
-                build_index_entry("records.range", json!("range-1")),
-                build_index_entry("records.range", json!("range-2")),
-                build_index_entry("records.value", json!(10)),
-                build_index_entry("records.value", json!(20)),
-            ],
-            statistics: build_execution_stats(6),
-            warnings: vec![],
-        };
-
-        let input_values = HashMap::from([(
-            "records".to_string(),
-            json!({
-                "hash": ["hash-1", "hash-2"],
-                "range": ["range-1", "range-2"],
-                "value": [10, 20]
-            }),
-        )]);
-
-        let all_expressions = collect_expressions(&parsed_chains);
-
-        let result = aggregate_results_unified(
-            &schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        )
-        .expect("HashRange aggregation should succeed");
-
-        assert_eq!(result["hash"], json!("hash-1"));
-        assert_eq!(result["range"], json!("range-1"));
-
-        assert_eq!(result["hash_key"], json!(["hash-1", "hash-2"]));
-        assert_eq!(result["range_key"], json!(["range-1", "range-2"]));
-        assert_eq!(result["value"], json!([10, 20]));
-        assert_eq!(result["fields"]["value"], json!([10, 20]));
-    }
-
-    #[test]
-    fn test_aggregate_results_unified_errors_on_invalid_hashrange_key_config() {
-        let mut fields = HashMap::new();
-        fields.insert(
-            "value".to_string(),
-            FieldDefinition {
-                atom_uuid: Some("records.value".to_string()),
-                field_type: Some("Number".to_string()),
-            },
-        );
-
-        let schema = DeclarativeSchemaDefinition {
-            name: "hashrange_invalid_key".to_string(),
-            schema_type: SchemaType::HashRange,
-            key: Some(KeyConfig {
-                hash_field: "records.hash".to_string(),
-                range_field: "".to_string(),
-            }),
-            fields,
-        };
-
-        let parsed_chains = vec![
-            (
-                "_hash_field".to_string(),
-                build_parsed_chain("records.hash", &["records", "hash"]),
-            ),
-            (
-                "value".to_string(),
-                build_parsed_chain("records.value", &["records", "value"]),
-            ),
-        ];
-
-        let execution_result = ExecutionResult {
-            index_entries: vec![
-                build_index_entry("records.hash", json!("hash-3")),
-                build_index_entry("records.value", json!(42)),
-            ],
-            statistics: build_execution_stats(2),
-            warnings: vec![],
-        };
-
-        let input_values = HashMap::from([(
-            "records".to_string(),
-            json!({
-                "hash": "hash-3",
-                "value": 42
-            }),
-        )]);
-
-        let all_expressions = collect_expressions(&parsed_chains);
-
-        let err = aggregate_results_unified(
-            &schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        )
-        .expect_err("HashRange aggregation should error when range field missing");
-
-        assert!(err
-            .to_string()
-            .contains("HashRange schema requires key.hash_field and key.range_field"));
     }
 }

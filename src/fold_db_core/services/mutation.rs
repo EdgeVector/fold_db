@@ -401,7 +401,7 @@ impl MutationService {
     /// # use datafold::fold_db_core::services::mutation::MutationService;
     /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
-    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::key_config::KeyConfig;
     /// # use datafold::schema::types::SchemaType;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
@@ -578,7 +578,7 @@ impl MutationService {
     /// # use datafold::fold_db_core::services::mutation::MutationService;
     /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
-    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::key_config::KeyConfig;
     /// # use datafold::schema::types::SchemaType;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
@@ -879,7 +879,7 @@ impl MutationService {
 /// ```rust
 /// # use datafold::fold_db_core::services::mutation::validate_range_schema_mutation_format;
 /// # use datafold::schema::types::{Schema, Mutation, MutationType};
-/// # use datafold::schema::types::json_schema::KeyConfig;
+/// # use datafold::schema::types::key_config::KeyConfig;
 /// # use datafold::schema::types::SchemaType;
 /// # use serde_json::json;
 /// # use std::collections::HashMap;
@@ -1040,7 +1040,7 @@ impl MutationService {
     /// # use datafold::fold_db_core::services::mutation::MutationService;
     /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
-    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::key_config::KeyConfig;
     /// # use datafold::schema::types::SchemaType;
     /// # use std::collections::HashMap;
     /// # use datafold::schema::types::field::FieldVariant;
@@ -1148,7 +1148,7 @@ impl MutationService {
     /// # use datafold::fold_db_core::services::mutation::MutationService;
     /// # use datafold::fold_db_core::infrastructure::message_bus::MessageBus;
     /// # use datafold::schema::types::Schema;
-    /// # use datafold::schema::types::json_schema::KeyConfig;
+    /// # use datafold::schema::types::key_config::KeyConfig;
     /// # use datafold::schema::types::SchemaType;
     /// # use std::collections::HashMap;
     /// # use datafold::fees::SchemaPaymentConfig;

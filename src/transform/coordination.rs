@@ -3,7 +3,7 @@
 //! This module handles the complex coordination logic for executing multiple
 //! transform chains together, particularly for HashRange and Range schemas.
 
-use crate::schema::types::SchemaError;
+use crate::schema::types::{SchemaError, DeclarativeSchemaDefinition, KeyConfig};
 use crate::transform::aggregation::aggregate_results_unified;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, ExecutionResult};
@@ -18,6 +18,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::time::Instant;
 
+
 /// Executes multi-chain coordination with enhanced monitoring and error recovery.
 ///
 /// # Arguments
@@ -30,9 +31,9 @@ use std::time::Instant;
 ///
 /// The result of the multi-chain execution with enhanced monitoring
 pub fn execute_multi_chain_coordination_with_monitoring(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
     input_values: &HashMap<String, JsonValue>,
-    key_config: &crate::schema::types::json_schema::KeyConfig,
+    key_config: &KeyConfig,
 ) -> Result<JsonValue, SchemaError> {
     let start_time = Instant::now();
     info!("🔗 Starting enhanced multi-chain coordination for HashRange schema");
@@ -109,7 +110,7 @@ fn parse_expressions_with_monitoring(
 ///
 /// Execution result
 fn execute_coordination_with_engine(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
     parsed_chains: &[(String, ParsedChain)],
     input_values: &HashMap<String, JsonValue>,
     alignment_result: &AlignmentValidationResult,
@@ -138,7 +139,7 @@ fn execute_coordination_with_engine(
 ///
 /// The enhanced execution result
 fn execute_multi_chain_with_engine_enhanced(
-    schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+    schema: &DeclarativeSchemaDefinition,
     parsed_chains: &[(String, ParsedChain)],
     input_values: &HashMap<String, JsonValue>,
     alignment_result: &AlignmentValidationResult,

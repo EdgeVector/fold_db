@@ -238,7 +238,8 @@ fn test_shape_unified_result_range() {
         "hash": "",
         "range": "2023-01-01T00:00:00Z",
         "fields": {
-            "content": "test content"
+            "content": "test content",
+            "created_at": "2023-01-01T00:00:00Z"
         }
     });
 

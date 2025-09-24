@@ -11,7 +11,6 @@
 //! - Configuration utilities eliminate 82+ HashMap::new() patterns
 
 // Centralized test utilities - eliminates duplicate test code across all tests
-pub mod declarative_transform_test_utils;
 pub mod test_utils;
 
 pub mod integration;

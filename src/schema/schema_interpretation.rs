@@ -128,13 +128,19 @@ pub fn load_schema_from_file(
     validator: &SchemaValidator,
     path: &str,
 ) -> Result<Schema, SchemaError> {
-    let json_str = std::fs::read_to_string(path)
-        .map_err(|e| SchemaError::InvalidField(format!("Failed to read schema file: {e}")))?;
-
-    log::info!(
-        "Loading schema from file: {}, content length: {}",
-        path,
-        json_str.len()
-    );
-    load_schema_from_json(validator, &json_str)
+    log::info!("Loading schema from file: {}", path);
+    
+    // Use the SchemaCore's parse_schema_file method which handles both regular and declarative schemas
+    let schema_core = validator.schema_core();
+    let path_buf = std::path::PathBuf::from(path);
+    
+    match schema_core.parse_schema_file(&path_buf)? {
+        Some(schema) => {
+            log::info!("Successfully parsed schema from file: {}", path);
+            Ok(schema)
+        }
+        None => {
+            Err(SchemaError::InvalidField(format!("Could not parse schema file: {}", path)))
+        }
+    }
 }

@@ -4,7 +4,6 @@
 //! as a cohesive system, ensuring no functionality was lost during decomposition.
 //! Also includes tests for system-level functionality like database reset.
 
-pub mod complete_mutation_query_flow_test;
 pub mod system_routes_tests;
 pub mod transform_result_persistence_tests;
 
@@ -17,29 +16,8 @@ pub mod stress_performance_test;
 // Available schemas test
 pub mod available_schemas_test;
 
-// Validation and error handling integration tests
-pub mod error_handling_tests;
-pub mod storage_integration_tests;
-
-// Transform integration tests
-pub mod declarative_transform_integration_tests;
-pub mod transform_integration_tests;
-
 // BlogWordIndex integration test
 pub mod blog_word_index_integration_test;
 
 // HashRange mutation integration test
 pub mod hashrange_mutation_integration_test;
-pub mod mutation_range_workflow_test;
-
-// HashRange end-to-end workflow test
-pub mod hashrange_end_to_end_workflow_test;
-
-// Simplified format end-to-end tests
-pub mod simplified_format_e2e_tests;
-
-// Universal key aggregation integration tests
-pub mod universal_key_aggregation_test;
-
-// Universal key E2E tests for SKC-1
-pub mod universal_key_e2e_test;

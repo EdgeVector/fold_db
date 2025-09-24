@@ -252,16 +252,16 @@ impl TransformSetupHelper {
     /// Create transform with standard test pattern
     /// Consolidates the Transform::new pattern used across examples
     pub fn create_standard_test_transform() -> crate::schema::types::Transform {
-        use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+        use crate::schema::types::DeclarativeSchemaDefinition;
         use crate::schema::types::schema::SchemaType;
         use std::collections::HashMap;
 
-        let schema = DeclarativeSchemaDefinition {
-            name: "standard_test_transform".to_string(),
-            schema_type: SchemaType::Single,
-            fields: HashMap::new(),
-            key: None,
-        };
+        let schema = DeclarativeSchemaDefinition::new(
+            "standard_test_transform".to_string(),
+            SchemaType::Single,
+            None,
+            HashMap::new(),
+        );
 
         crate::schema::types::Transform::new(schema, "TransformSchema.result".to_string())
     }

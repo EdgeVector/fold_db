@@ -2,13 +2,13 @@
   "name": "BlogPostWordIndex",
   "schema_type": "HashRange",
   "key": {
-    "hash_field": "BlogPost.map().fields.content.split_by_word().map()",
-    "range_field": "BlogPost.map().fields.publish_date"
+    "hash_field": "BlogPost.map().content.split_by_word().map()",
+    "range_field": "BlogPost.map().publish_date"
   },
   "fields": {
-    "content": { "atom_uuid": "BlogPost.map().fields.content" },
-    "author": { "atom_uuid": "BlogPost.map().fields.author" },
-    "title": { "atom_uuid": "BlogPost.map().fields.title" },
-    "tags": { "atom_uuid": "BlogPost.map().fields.tags" }
+    "content": "BlogPost.map().content",
+    "author": "BlogPost.map().author",
+    "title": "BlogPost.map().title",
+    "tags": "BlogPost.map().tags"
   }
 }

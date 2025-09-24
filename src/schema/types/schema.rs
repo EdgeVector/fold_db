@@ -1,11 +1,12 @@
 use crate::fees::SchemaPaymentConfig;
 use crate::schema::types::field::FieldVariant;
-use crate::schema::types::json_schema::KeyConfig;
-use serde::{Deserialize, Serialize};
+use crate::schema::types::key_config::KeyConfig;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// Represents the schema-level type information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum SchemaType {
     /// Single schema without range semantics
     Single,
@@ -13,6 +14,46 @@ pub enum SchemaType {
     Range { range_key: String },
     /// Schema that uses hashed and ranged keys for partitioning
     HashRange,
+}
+
+impl<'de> Deserialize<'de> for SchemaType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        
+        match value {
+            Value::String(s) => {
+                match s.as_str() {
+                    "Single" => Ok(SchemaType::Single),
+                    "HashRange" => Ok(SchemaType::HashRange),
+                    _ => Err(serde::de::Error::custom(format!(
+                        "Unknown schema type string: '{}'", s
+                    ))),
+                }
+            }
+            Value::Object(obj) => {
+                if let Some(range_value) = obj.get("Range") {
+                    if let Some(range_obj) = range_value.as_object() {
+                        if let Some(range_key) = range_obj.get("range_key") {
+                            if let Some(range_key_str) = range_key.as_str() {
+                                return Ok(SchemaType::Range {
+                                    range_key: range_key_str.to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(serde::de::Error::custom(format!(
+                    "Invalid schema type object: {:?}", obj
+                )))
+            }
+            _ => Err(serde::de::Error::custom(format!(
+                "Schema type must be a string or object, got: {:?}", value
+            ))),
+        }
+    }
 }
 
 pub fn default_schema_type() -> SchemaType {

@@ -6,13 +6,13 @@ use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Data structure for HashRange transform results
+
+/// HashRange transform result data structure
 #[derive(Debug, Clone)]
-pub struct HashRangeTransformData {
-    pub hash_keys: Vec<JsonValue>,
-    pub range_keys: Vec<JsonValue>,
-    pub field_arrays: HashMap<String, Vec<JsonValue>>,
-    pub data_entries: Vec<JsonValue>, // Currently unused but kept for future extensibility
+pub struct HashRangeTransformResult {
+    pub hash_keys: Vec<String>,
+    pub range_keys: Vec<String>,
+    pub field_data: HashMap<String, Vec<JsonValue>>,
 }
 
 /// Handles HashRange-specific processing
@@ -30,21 +30,23 @@ impl HashRangeProcessor {
             "🔑 Storing HashRange transform result for schema '{}' using message bus",
             schema_name
         );
+        
 
         let schema = Self::get_hashrange_schema(db_ops, schema_name)?;
         let field_names = Self::extract_field_names(&schema);
-        let transform_data = Self::parse_transform_result(result, &field_names)?;
+        let transform_result = Self::parse_transform_result_structured(result, &field_names)?;
 
-        debug!(
-            "🔍 Processing {} data entries with {} fields",
-            transform_data.data_entries.len(),
+        info!(
+            "🔍 Processing {} hash keys, {} range keys with {} fields",
+            transform_result.hash_keys.len(),
+            transform_result.range_keys.len(),
             field_names.len()
         );
 
-        Self::process_hashrange_data(
+        Self::process_hashrange_data_structured(
             &schema,
             schema_name,
-            &transform_data,
+            &transform_result,
             &field_names,
             message_bus,
         )
@@ -82,156 +84,150 @@ impl HashRangeProcessor {
             .collect()
     }
 
-    /// Parse and validate transform result data structure
-    fn parse_transform_result(
+    /// Parse transform result into structured HashRangeTransformResult
+    fn parse_transform_result_structured(
         result: &JsonValue,
         field_names: &[String],
-    ) -> Result<HashRangeTransformData, SchemaError> {
+    ) -> Result<HashRangeTransformResult, SchemaError> {
         let result_obj = result.as_object().ok_or_else(|| {
             SchemaError::InvalidData(format!(
-                "HashRange transform result must be an object, got: {}",
+                "HashRange transform result must be a JSON object, got: {}",
                 result
             ))
         })?;
 
-        debug!(
-            "🔍 HashRange transform result structure: {} keys",
-            result_obj.len()
-        );
 
-        // Extract hash_key and range_key arrays
-        let hash_keys = result_obj
-            .get("hash_key")
-            .and_then(|h| h.as_array())
-            .ok_or_else(|| {
-                SchemaError::InvalidData("HashRange result must contain hash_key array".to_string())
-            })?
-            .clone();
+        // Extract hash_key and range_key (handle both string and array formats)
+        let hash_keys = Self::extract_string_array(result_obj, "hash_key")?;
+        let range_keys = Self::extract_string_array(result_obj, "range_key")?;
 
-        let range_keys = result_obj
-            .get("range_key")
-            .and_then(|r| r.as_array())
-            .ok_or_else(|| {
-                SchemaError::InvalidData(
-                    "HashRange result must contain range_key array".to_string(),
-                )
-            })?
-            .clone();
 
-        // Note: Array lengths may not match in flattened structures
-        // This will be handled in process_hashrange_data
-        debug!(
-            "🔍 HashRange result: {} hash keys, {} range keys",
-            hash_keys.len(),
-            range_keys.len()
-        );
-
-        // Extract field values dynamically
-        let mut field_arrays: HashMap<String, Vec<JsonValue>> = HashMap::new();
-
+        // Extract field data arrays
+        let mut field_data = HashMap::new();
         for field_name in field_names {
-            let field_values = result_obj
-                .get(field_name)
-                .map(|f| {
-                    if f.is_array() {
-                        f.clone()
-                    } else {
-                        json!([f.clone()])
+            if let Some(field_value) = result_obj.get(field_name) {
+                match field_value {
+                    JsonValue::Array(arr) => {
+                        field_data.insert(field_name.clone(), arr.clone());
                     }
-                })
-                .unwrap_or_default();
-
-            let field_array = field_values.as_array().cloned().unwrap_or_default();
-            field_arrays.insert(field_name.clone(), field_array);
+                    JsonValue::String(s) => {
+                        field_data.insert(field_name.clone(), vec![JsonValue::String(s.clone())]);
+                    }
+                    JsonValue::Null => {
+                        field_data.insert(field_name.clone(), vec![]);
+                    }
+                    _ => {
+                        field_data.insert(field_name.clone(), vec![field_value.clone()]);
+                    }
+                }
+            } else {
+                field_data.insert(field_name.clone(), vec![]);
+            }
         }
 
-        // Note: Field array lengths may not match hash_key length in flattened structures
-        // This will be handled in process_hashrange_data
-        debug!(
-            "🔍 Field arrays: {:?}",
-            field_arrays.keys().collect::<Vec<_>>()
-        );
-
-        Ok(HashRangeTransformData {
+        Ok(HashRangeTransformResult {
             hash_keys,
             range_keys,
-            field_arrays,
-            data_entries: Vec::new(), // Will be populated by process_hashrange_data
+            field_data,
         })
     }
 
-    /// Process HashRange data and submit through message bus
-    fn process_hashrange_data(
+    /// Extract string array from result, handling both string and array formats
+    fn extract_string_array(result_obj: &serde_json::Map<String, JsonValue>, key_name: &str) -> Result<Vec<String>, SchemaError> {
+        match result_obj.get(key_name) {
+            Some(value) => {
+                match value {
+                    JsonValue::Array(arr) => {
+                        let strings: Result<Vec<String>, _> = arr.iter()
+                            .map(|v| v.as_str().map(|s| s.to_string()).ok_or_else(|| {
+                                SchemaError::InvalidData(format!("{} array element must be string", key_name))
+                            }))
+                            .collect();
+                        strings
+                    }
+                    JsonValue::String(s) => {
+                        Ok(vec![s.clone()])
+                    }
+                    JsonValue::Null => {
+                        Ok(vec![])
+                    }
+                    _ => {
+                        Ok(vec![value.to_string()])
+                    }
+                }
+            }
+            None => {
+                Ok(vec![])
+            }
+        }
+    }
+
+
+    /// Process HashRange data using structured format and submit mutations
+    fn process_hashrange_data_structured(
         schema: &crate::schema::types::Schema,
         schema_name: &str,
-        transform_data: &HashRangeTransformData,
+        transform_result: &HashRangeTransformResult,
         field_names: &[String],
         message_bus: &Arc<crate::fold_db_core::infrastructure::MessageBus>,
     ) -> Result<(), SchemaError> {
         info!(
             "🚀 Processing HashRange data with {} hash keys and {} range keys",
-            transform_data.hash_keys.len(),
-            transform_data.range_keys.len()
+            transform_result.hash_keys.len(),
+            transform_result.range_keys.len()
         );
+        
 
         let _content_field_name = Self::find_content_field(field_names);
 
         // Handle the case where hash_key array contains all words from all content
         // and range_key array contains the publish dates
-        if transform_data.hash_keys.len() != transform_data.range_keys.len() {
+        if transform_result.hash_keys.len() != transform_result.range_keys.len() {
             info!(
                 "🔧 Detected flattened structure: {} hash keys vs {} range keys",
-                transform_data.hash_keys.len(),
-                transform_data.range_keys.len()
+                transform_result.hash_keys.len(),
+                transform_result.range_keys.len()
             );
 
             // Use the words already extracted by the transform execution engine
-            let words_from_transform = transform_data
-                .hash_keys
-                .iter()
-                .filter_map(|key| key.as_str())
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
+            let words_from_transform = transform_result.hash_keys.clone();
 
-            info!(
-                "🔍 Using {} words from transform execution engine: {:?}",
-                words_from_transform.len(),
-                words_from_transform
-            );
+            // Process each range entry with all words
+            for (range_index, range) in transform_result.range_keys.iter().enumerate() {
+                let field_values = Self::extract_field_values_for_entry_structured(
+                    transform_result,
+                    field_names,
+                    range_index,
+                );
 
-            // Process each range key (content entry) and create word mutations
-            for range_index in 0..transform_data.range_keys.len() {
-                let field_values =
-                    Self::extract_field_values_for_entry(transform_data, field_names, range_index);
-                let range = transform_data.range_keys[range_index].clone();
-
-                debug!(
+                info!(
                     "🔍 Processing range entry {}: using {} words from transform",
                     range_index,
                     words_from_transform.len()
                 );
 
-                Self::submit_word_mutations(
+                
+                Self::submit_word_mutations_structured(
                     schema,
                     schema_name,
                     &words_from_transform,
                     &field_values,
-                    &range,
+                    range,
                     message_bus,
                 )?;
             }
         } else {
             // Original logic for matching array lengths
-            for data_index in 0..transform_data.hash_keys.len() {
-                let field_values =
-                    Self::extract_field_values_for_entry(transform_data, field_names, data_index);
-                let range = transform_data.range_keys[data_index].clone();
+            for data_index in 0..transform_result.hash_keys.len() {
+                let field_values = Self::extract_field_values_for_entry_structured(
+                    transform_result,
+                    field_names,
+                    data_index,
+                );
+                let range = transform_result.range_keys[data_index].clone();
 
                 // Use the word from the hash_key array (already extracted by transform execution engine)
-                let word_from_transform = transform_data.hash_keys[data_index]
-                    .as_str()
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
+                let word_from_transform = transform_result.hash_keys[data_index].clone();
 
                 debug!(
                     "🔍 Processing data entry {}: using word '{}' from transform",
@@ -239,7 +235,7 @@ impl HashRangeProcessor {
                 );
 
                 if !word_from_transform.is_empty() {
-                    Self::submit_word_mutations(
+                    Self::submit_word_mutations_structured(
                         schema,
                         schema_name,
                         &[word_from_transform],
@@ -251,23 +247,9 @@ impl HashRangeProcessor {
             }
         }
 
-        info!("🎯 All HashRange field values submitted successfully through message bus");
-        
-        // Fire DataPersisted event for the output schema after all mutations are submitted
-        let data_persisted = crate::fold_db_core::infrastructure::message_bus::events::schema_events::DataPersisted::with_transform(
-            schema_name.to_string(),
-            format!("transform_result_{}", schema_name), // Use a descriptive correlation ID
-            "HashRangeTransformResult".to_string(),
-        );
-        
-        if let Err(e) = message_bus.publish(data_persisted) {
-            log::warn!("⚠️ Failed to publish DataPersisted event for HashRange schema '{}': {}", schema_name, e);
-        } else {
-            info!("📊 DataPersisted event fired for HashRange schema '{}' after transform result processing", schema_name);
-        }
-        
         Ok(())
     }
+
 
     /// Find the content field for word extraction
     fn find_content_field(field_names: &[String]) -> String {
@@ -286,17 +268,18 @@ impl HashRangeProcessor {
             .unwrap_or_else(|| field_names.first().cloned().unwrap_or_default())
     }
 
-    /// Extract field values for a specific data entry
-    fn extract_field_values_for_entry(
-        transform_data: &HashRangeTransformData,
+
+    /// Extract field values for a specific entry using structured format
+    fn extract_field_values_for_entry_structured(
+        transform_result: &HashRangeTransformResult,
         field_names: &[String],
         data_index: usize,
     ) -> HashMap<String, JsonValue> {
         let mut field_values: HashMap<String, JsonValue> = HashMap::new();
 
         for field_name in field_names {
-            let field_value = transform_data
-                .field_arrays
+            let field_value = transform_result
+                .field_data
                 .get(field_name)
                 .and_then(|arr| arr.get(data_index))
                 .cloned()
@@ -307,21 +290,23 @@ impl HashRangeProcessor {
         field_values
     }
 
-    /// Submit mutations for all words in a data entry
-    fn submit_word_mutations(
+    /// Submit mutations for all words in a data entry using structured format
+    fn submit_word_mutations_structured(
         schema: &crate::schema::types::Schema,
         schema_name: &str,
         words: &[String],
         field_values: &HashMap<String, JsonValue>,
-        range: &JsonValue,
+        range: &str,
         message_bus: &Arc<crate::fold_db_core::infrastructure::MessageBus>,
     ) -> Result<(), SchemaError> {
+        
         for word in words {
-            let mutation = Self::create_hashrange_mutation(schema_name, word, field_values, range)?;
+            let mutation = Self::create_hashrange_mutation(schema_name, word, field_values, &JsonValue::String(range.to_string()))?;
             Self::submit_mutation_through_message_bus(schema, schema_name, &mutation, message_bus)?;
         }
         Ok(())
     }
+
 
     /// Create a HashRange mutation for a specific word
     fn create_hashrange_mutation(

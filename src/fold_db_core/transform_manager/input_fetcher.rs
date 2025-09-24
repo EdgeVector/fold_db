@@ -59,6 +59,7 @@ impl InputFetcher {
             "📊 TransformManager: Final input values with context: {:?}",
             input_values.keys().collect::<Vec<_>>()
         );
+        
         TransformExecutor::execute_transform(transform, input_values)
     }
 

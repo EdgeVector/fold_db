@@ -6,7 +6,7 @@ use crate::schema::constants::{
     KEY_CONFIG_RANGE_FIELD, KEY_FIELD_NAME,
 };
 use crate::schema::types::{
-    json_schema::DeclarativeSchemaDefinition, Field, FieldVariant, Schema, SchemaError,
+    DeclarativeSchemaDefinition, Field, FieldVariant, Schema, SchemaError,
 };
 use crate::schema::{
     interpret_schema, load_schema_from_file, load_schema_from_json, map_fields, MoleculeVariant,
@@ -586,8 +586,8 @@ impl SchemaCore {
     pub fn convert_schema_to_declarative_definition(
         &self,
         schema: &Schema,
-    ) -> Result<crate::schema::types::json_schema::DeclarativeSchemaDefinition, SchemaError> {
-        use crate::schema::types::json_schema::{
+    ) -> Result<DeclarativeSchemaDefinition, SchemaError> {
+        use crate::schema::types::{
             DeclarativeSchemaDefinition, FieldDefinition, KeyConfig,
         };
         use std::collections::HashMap;
@@ -625,8 +625,7 @@ impl SchemaCore {
                     fields.insert(
                         field_name.clone(),
                         FieldDefinition {
-                            atom_uuid: Some(hashrange_field.atom_uuid.clone()),
-                            field_type: Some("single".to_string()),
+                            field_expression: Some(hashrange_field.atom_uuid.clone()),
                         },
                     );
                 } else {
@@ -643,12 +642,12 @@ impl SchemaCore {
             // since the schema fields don't contain the hash_field and range_field information
             let key_config = self.get_universal_key_config_from_json(schema.name.as_str())?;
 
-            let declarative_schema = DeclarativeSchemaDefinition {
-                name: schema.name.clone(),
-                schema_type: schema.schema_type.clone(),
-                key: key_config,
+            let declarative_schema = DeclarativeSchemaDefinition::new(
+                schema.name.clone(),
+                schema.schema_type.clone(),
+                key_config,
                 fields,
-            };
+            );
 
             info!(
                 "✅ Created declarative schema with {} fields",
@@ -675,8 +674,7 @@ impl SchemaCore {
                     fields.insert(
                         field_name.clone(),
                         FieldDefinition {
-                            atom_uuid: single_field.molecule_uuid().cloned(),
-                            field_type: Some("single".to_string()),
+                            field_expression: single_field.molecule_uuid().cloned(),
                         },
                     );
                 } else {
@@ -690,12 +688,12 @@ impl SchemaCore {
             );
 
             // Non-HashRange schemas don't need key configuration
-            let declarative_schema = DeclarativeSchemaDefinition {
-                name: schema.name.clone(),
-                schema_type: schema.schema_type.clone(),
-                key: None,
+            let declarative_schema = DeclarativeSchemaDefinition::new(
+                schema.name.clone(),
+                schema.schema_type.clone(),
+                None,
                 fields,
-            };
+            );
 
             info!(
                 "✅ Created declarative schema with {} fields",
@@ -721,8 +719,8 @@ impl SchemaCore {
     pub fn get_universal_key_config_from_json(
         &self,
         schema_name: &str,
-    ) -> Result<Option<crate::schema::types::json_schema::KeyConfig>, SchemaError> {
-        use crate::schema::types::json_schema::KeyConfig;
+    ) -> Result<Option<crate::schema::types::key_config::KeyConfig>, SchemaError> {
+        use crate::schema::types::key_config::KeyConfig;
         use serde_json::Value;
 
         let schema_file_path = format!("available_schemas/{}.json", schema_name);
@@ -1208,7 +1206,7 @@ impl SchemaCore {
 pub trait SchemaKeyContext {
     fn schema_name(&self) -> &str;
     fn schema_type(&self) -> &crate::schema::types::schema::SchemaType;
-    fn key_config(&self) -> Option<&crate::schema::types::json_schema::KeyConfig>;
+    fn key_config(&self) -> Option<&crate::schema::types::key_config::KeyConfig>;
 }
 
 impl SchemaKeyContext for Schema {
@@ -1220,7 +1218,7 @@ impl SchemaKeyContext for Schema {
         &self.schema_type
     }
 
-    fn key_config(&self) -> Option<&crate::schema::types::json_schema::KeyConfig> {
+    fn key_config(&self) -> Option<&crate::schema::types::key_config::KeyConfig> {
         self.key.as_ref()
     }
 }
@@ -1234,7 +1232,7 @@ impl SchemaKeyContext for DeclarativeSchemaDefinition {
         &self.schema_type
     }
 
-    fn key_config(&self) -> Option<&crate::schema::types::json_schema::KeyConfig> {
+    fn key_config(&self) -> Option<&crate::schema::types::key_config::KeyConfig> {
         self.key.as_ref()
     }
 }
@@ -1508,7 +1506,20 @@ where
     let mut fields_obj = serde_json::Map::new();
     if let Some(obj) = data.as_object() {
         for (k, v) in obj {
-            if !key_field_names.iter().any(|n| n == k) {
+            // CRITICAL FIX: For Range schemas, we need to include the range key field in the fields object
+            // so that transforms can access it. The range key field must be available in atom content.
+            let should_exclude = match schema.schema_type() {
+                crate::schema::types::schema::SchemaType::Range { .. } => {
+                    // For Range schemas, only exclude hash_key and range_key, but include the actual range field
+                    k == "hash_key" || k == "range_key"
+                }
+                _ => {
+                    // For other schema types, exclude all key field names
+                    key_field_names.iter().any(|n| n == k)
+                }
+            };
+            
+            if !should_exclude {
                 fields_obj.insert(k.clone(), v.clone());
             }
         }

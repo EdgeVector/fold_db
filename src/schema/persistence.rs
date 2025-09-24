@@ -75,7 +75,7 @@ impl SchemaCore {
 
         if schema_opt.is_none() {
             if let Ok(declarative_schema) = serde_json::from_str::<
-                crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+                crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
             >(&contents)
             {
                 log::info!(
@@ -174,7 +174,7 @@ impl SchemaCore {
     /// Interprets a declarative schema definition and converts it to a Schema.
     pub fn interpret_declarative_schema(
         &self,
-        declarative_schema: crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        declarative_schema: crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
         use crate::fees::payment_config::SchemaPaymentConfig;
         use crate::fees::types::config::FieldPaymentConfig;
@@ -182,9 +182,6 @@ impl SchemaCore {
         use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
         use crate::schema::field::HashRangeField;
         use crate::schema::types::{field::common::Field, FieldVariant, SingleField};
-
-        // Validate the declarative schema
-        declarative_schema.validate()?;
 
         // Convert fields from FieldDefinition to FieldVariant
         let mut fields = std::collections::HashMap::new();
@@ -213,7 +210,7 @@ impl SchemaCore {
                         ),
                         hash_field: key_config.hash_field.clone(),
                         range_field: key_config.range_field.clone(),
-                        atom_uuid: field_def.atom_uuid.unwrap_or_default(),
+                        atom_uuid: field_def.field_expression.unwrap_or_default(),
                         cached_chains: None,
                     };
 
@@ -241,7 +238,7 @@ impl SchemaCore {
                     );
 
                     // Set molecule UUID if provided
-                    if let Some(atom_uuid) = field_def.atom_uuid {
+                    if let Some(atom_uuid) = field_def.field_expression {
                         single_field.set_molecule_uuid(atom_uuid);
                     }
 
@@ -317,7 +314,7 @@ impl SchemaCore {
     /// 3. Stores the transform and registration in the database
     pub fn register_declarative_transform(
         &self,
-        declarative_schema: &crate::schema::types::json_schema::DeclarativeSchemaDefinition,
+        declarative_schema: &crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
     ) -> Result<(), SchemaError> {
         use crate::schema::types::{Transform, TransformRegistration};
         use log::info;
@@ -328,7 +325,7 @@ impl SchemaCore {
 
         // Extract schema names from field expressions
         for field_def in declarative_schema.fields.values() {
-            if let Some(atom_uuid) = &field_def.atom_uuid {
+            if let Some(atom_uuid) = &field_def.field_expression {
                 // Extract schema name from atom_uuid expression (e.g., "BlogPost.map().$atom_uuid")
                 if let Some(schema_name) = atom_uuid.split('.').next() {
                     if !input_molecules.contains(&schema_name.to_string()) {

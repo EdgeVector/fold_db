@@ -20,6 +20,11 @@ impl<'a> SchemaValidator<'a> {
         Self { core }
     }
 
+    /// Get a reference to the underlying SchemaCore
+    pub fn schema_core(&self) -> &SchemaCore {
+        self.core
+    }
+
     /// Validate the given [`Schema`].
     pub fn validate(&self, schema: &Schema) -> Result<(), SchemaError> {
         ValidationUtils::require_valid_schema_name(&schema.name)?;

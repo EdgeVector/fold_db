@@ -16,16 +16,34 @@ impl ResultStorage {
         result: &JsonValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
     ) -> Result<(), SchemaError> {
+        info!(
+            "🔍 DEBUG: ResultStorage.store_transform_result_generic called for transform output: '{}'",
+            transform.get_output()
+        );
+        
         if let Some(dot_pos) = transform.get_output().find('.') {
             let schema_name = &transform.get_output()[..dot_pos];
             let field_name = &transform.get_output()[dot_pos + 1..];
+            
+            info!(
+                "🔍 DEBUG: Parsed schema_name: '{}', field_name: '{}'",
+                schema_name, field_name
+            );
 
             // Check if this is a HashRange schema and handle it specially
-            if Self::is_hashrange_schema(db_ops, schema_name)? {
+            let is_hashrange = Self::is_hashrange_schema(db_ops, schema_name)?;
+            info!(
+                "🔍 DEBUG: Schema '{}' is HashRange: {}",
+                schema_name, is_hashrange
+            );
+            
+            if is_hashrange {
+                info!("🔍 DEBUG: Taking HashRange storage path");
                 return Self::handle_hashrange_storage(db_ops, schema_name, result, message_bus);
             }
 
             // For non-HashRange schemas, submit through message bus if available
+            info!("🔍 DEBUG: Taking regular storage path");
             Self::handle_regular_storage(db_ops, schema_name, field_name, result, message_bus)
         } else {
             Err(SchemaError::InvalidField(format!(
@@ -40,13 +58,20 @@ impl ResultStorage {
         db_ops: &Arc<crate::db_operations::DbOperations>,
         schema_name: &str,
     ) -> Result<bool, SchemaError> {
-        if let Ok(Some(schema)) = db_ops.get_schema(schema_name) {
-            Ok(matches!(
-                schema.schema_type,
-                crate::schema::types::SchemaType::HashRange
-            ))
-        } else {
-            Ok(false)
+        match db_ops.get_schema(schema_name) {
+            Ok(Some(schema)) => {
+                let is_hashrange = matches!(
+                    schema.schema_type,
+                    crate::schema::types::SchemaType::HashRange
+                );
+                Ok(is_hashrange)
+            }
+            Ok(None) => {
+                Ok(false)
+            }
+            Err(e) => {
+                Err(e)
+            }
         }
     }
 
@@ -57,6 +82,7 @@ impl ResultStorage {
         result: &JsonValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
     ) -> Result<(), SchemaError> {
+        
         info!(
             "🔑 Storing HashRange transform result for schema '{}' using message bus",
             schema_name

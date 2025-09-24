@@ -21,8 +21,8 @@ use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::fold_db_core::transform_manager::TransformManager;
 use datafold::permissions::types::policy::PermissionsPolicy;
 use datafold::schema::types::field::{FieldVariant, RangeField, SingleField};
-use datafold::schema::types::json_schema::KeyConfig;
-use datafold::schema::types::{Schema, SchemaError, SchemaType, Transform, TransformRegistration};
+use datafold::schema::types::key_config::KeyConfig;
+use datafold::schema::types::{Schema, SchemaError, SchemaType, Transform, TransformRegistration, DeclarativeSchemaDefinition};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::Path;
@@ -320,22 +320,13 @@ impl TestFixture {
 
     /// Unified transform creation - consolidates transform creation patterns
     pub fn create_sample_transform() -> Transform {
-        use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
-        use datafold::schema::types::schema::SchemaType;
-        use std::collections::HashMap;
 
-        let schema = DeclarativeSchemaDefinition {
-            name: "test_schema".to_string(),
-            schema_type: SchemaType::Single,
-            fields: HashMap::from([(
-                "output".to_string(),
-                FieldDefinition {
-                    field_type: Some("String".to_string()),
-                    atom_uuid: Some("input1".to_string()),
-                },
-            )]),
-            key: None,
-        };
+        let schema = DeclarativeSchemaDefinition::new(
+            "test_schema".to_string(),
+            SchemaType::Single,
+            None,
+            HashMap::new(),
+        );
 
         Transform::from_declarative_schema(
             schema,
@@ -360,22 +351,15 @@ impl TestFixture {
 
     /// Unified named transform creation
     pub fn create_named_transform(transform_id: &str) -> Transform {
-        use datafold::schema::types::json_schema::{DeclarativeSchemaDefinition, FieldDefinition};
         use datafold::schema::types::schema::SchemaType;
         use std::collections::HashMap;
 
-        let schema = DeclarativeSchemaDefinition {
-            name: format!("test_schema_{}", transform_id),
-            schema_type: SchemaType::Single,
-            fields: HashMap::from([(
-                transform_id.to_string(),
-                FieldDefinition {
-                    field_type: Some("String".to_string()),
-                    atom_uuid: Some("input1".to_string()),
-                },
-            )]),
-            key: None,
-        };
+        let schema = DeclarativeSchemaDefinition::new(
+            "test_schema".to_string(),
+            SchemaType::Single,
+            None,
+            HashMap::new(),
+        );
 
         Transform::from_declarative_schema(
             schema,
@@ -561,5 +545,32 @@ impl CommonTestFixture {
     /// Delegate to TestFixture methods to avoid duplication
     pub fn create_sample_registration() -> TransformRegistration {
         TestFixture::create_sample_registration()
+    }
+}
+
+/// Schema loading utilities for tests
+pub struct SchemaLoader;
+
+impl SchemaLoader {
+    /// Load a regular schema from the available_schemas directory
+    pub fn load_schema_from_available_schemas(
+        fold_db: &mut datafold::fold_db_core::FoldDB,
+        schema_name: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let schema_path = format!("available_schemas/{}.json", schema_name);
+        fold_db.load_schema_from_file(&schema_path)?;
+        fold_db.approve_schema(schema_name)?;
+        Ok(())
+    }
+
+    /// Load a declarative schema from the available_schemas directory
+    pub fn load_declarative_schema_from_available_schemas(
+        fold_db: &mut datafold::fold_db_core::FoldDB,
+        schema_name: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let schema_path = format!("available_schemas/{}.json", schema_name);
+        fold_db.load_schema_from_file(&schema_path)?;
+        fold_db.approve_schema(schema_name)?;
+        Ok(())
     }
 }

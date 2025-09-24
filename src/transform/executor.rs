@@ -6,7 +6,7 @@
 //! **Note**: This executor only supports declarative transforms. Procedural transforms are not supported.
 
 use crate::schema::types::{
-    json_schema::DeclarativeSchemaDefinition, schema::SchemaType, SchemaError, Transform,
+    DeclarativeSchemaDefinition, schema::SchemaType, SchemaError, Transform,
 };
 use crate::transform::aggregation::aggregate_results_unified;
 use crate::transform::coordination::execute_multi_chain_coordination_with_monitoring;
@@ -15,16 +15,15 @@ use crate::transform::iterator_stack::execution_engine::{ExecutionEngine, Execut
 use crate::transform::iterator_stack::field_alignment::AlignmentValidationResult;
 use crate::transform::shared_utilities::{
     collect_expressions_from_schema, collect_expressions_from_schema_with_keys,
-    convert_iterator_stack_error, log_schema_execution_start, modify_expressions_with_input_prefix,
-    parse_expressions_batch, validate_schema_basic,
+    convert_iterator_stack_error, modify_expressions_with_input_prefix,
+    parse_expressions_batch,
 };
 use crate::transform::validation::{
-    validate_field_alignment, validate_field_alignment_unified, validate_hashrange_schema,
+    validate_field_alignment, validate_field_alignment_unified,
 };
 use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use std::time::Instant;
 
 /// Executor for transforms.
 pub struct TransformExecutor;
@@ -302,27 +301,13 @@ impl TransformExecutor {
         schema: &DeclarativeSchemaDefinition,
         input_values: &HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
-        let start_time = Instant::now();
-        log_schema_execution_start("HashRange", &schema.name, None);
-
-        // Validate schema structure and field alignment
-        let validation_timings = validate_hashrange_schema(schema)?;
 
         // Extract key configuration
         let key_config = Self::extract_hashrange_key_config(schema)?;
 
         // Execute multi-chain coordination
-        let execution_start = Instant::now();
         let result =
             execute_multi_chain_coordination_with_monitoring(schema, input_values, key_config)?;
-        let _execution_duration = execution_start.elapsed();
-
-        // Log performance summary
-        Self::log_execution_performance(
-            "HashRange",
-            start_time.elapsed(),
-            Some(validation_timings.validation_duration),
-        );
 
         Ok(result)
     }
@@ -342,8 +327,6 @@ impl TransformExecutor {
             AlignmentValidationResult,
         ) -> Result<JsonValue, SchemaError>,
     {
-        log_schema_execution_start(schema_type_name, &schema.name, None);
-        validate_schema_basic(schema)?;
         let all_expressions = collect_expressions_from_schema(schema);
 
         if all_expressions.is_empty() {
@@ -421,7 +404,7 @@ impl TransformExecutor {
     /// Extracts and validates key configuration for HashRange schema.
     fn extract_hashrange_key_config(
         schema: &DeclarativeSchemaDefinition,
-    ) -> Result<&crate::schema::types::json_schema::KeyConfig, SchemaError> {
+    ) -> Result<&crate::schema::types::key_config::KeyConfig, SchemaError> {
         let key_config = schema.key.as_ref().ok_or_else(|| {
             SchemaError::InvalidTransform(format!(
                 "HashRange schema '{}' must have key configuration with hash_field and range_field",
@@ -435,25 +418,6 @@ impl TransformExecutor {
         );
 
         Ok(key_config)
-    }
-
-    /// Logs execution performance summary.
-    fn log_execution_performance(
-        schema_type: &str,
-        total_duration: std::time::Duration,
-        validation_duration: Option<std::time::Duration>,
-    ) {
-        if let Some(validation_duration) = validation_duration {
-            info!(
-                "⏱️ {} execution completed in {:?} (validation: {:?})",
-                schema_type, total_duration, validation_duration
-            );
-        } else {
-            info!(
-                "⏱️ {} execution completed in {:?}",
-                schema_type, total_duration
-            );
-        }
     }
 
     /// Validates a declarative transform for correctness.
@@ -482,9 +446,6 @@ impl TransformExecutor {
             SchemaError::InvalidTransform("Declarative transform must have schema".to_string())
         })?;
 
-        // Validate schema structure
-        schema.validate()?;
-
         // Validate field alignment
         validate_field_alignment(schema)?;
 
@@ -495,7 +456,7 @@ impl TransformExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::types::json_schema::DeclarativeSchemaDefinition;
+    use crate::schema::types::DeclarativeSchemaDefinition;
     use crate::schema::types::schema::SchemaType;
     use serde_json::json;
 
@@ -505,18 +466,17 @@ mod tests {
         let mut fields = std::collections::HashMap::new();
         fields.insert(
             "title".to_string(),
-            crate::schema::types::json_schema::FieldDefinition {
-                field_type: Some("string".to_string()),
-                atom_uuid: Some("input.title".to_string()),
+            crate::schema::types::FieldDefinition {
+                field_expression: Some("input.title".to_string()),
             },
         );
 
-        let schema = DeclarativeSchemaDefinition {
-            name: "test_schema".to_string(),
-            schema_type: SchemaType::Single,
+        let schema = DeclarativeSchemaDefinition::new(
+            "test_schema".to_string(),
+            SchemaType::Single,
+            None,
             fields,
-            key: None,
-        };
+        );
 
         let transform = Transform::from_declarative_schema(
             schema,
@@ -547,18 +507,17 @@ mod tests {
         let mut fields = std::collections::HashMap::new();
         fields.insert(
             "name".to_string(),
-            crate::schema::types::json_schema::FieldDefinition {
-                field_type: Some("string".to_string()),
-                atom_uuid: Some("input.name".to_string()),
+            crate::schema::types::FieldDefinition {
+                field_expression: Some("input.name".to_string()),
             },
         );
 
-        let schema = DeclarativeSchemaDefinition {
-            name: "test_schema".to_string(),
-            schema_type: SchemaType::Single,
+        let schema = DeclarativeSchemaDefinition::new(
+            "test_schema".to_string(),
+            SchemaType::Single,
+            None,
             fields,
-            key: None,
-        };
+        );
 
         let transform = Transform::from_declarative_schema(
             schema,
