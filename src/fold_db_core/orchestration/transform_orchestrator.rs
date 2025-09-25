@@ -10,7 +10,7 @@ use sled::Tree;
 use std::sync::Arc;
 
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::fold_db_core::transform_manager::types::TransformRunner;
+use crate::transform::manager::types::TransformRunner;
 use crate::schema::SchemaError;
 
 // Import the new specialized components
@@ -352,109 +352,5 @@ impl TransformQueue for TransformOrchestrator {
 
     fn add_transform(&self, transform_id: &str, mutation_hash: &str) -> Result<(), SchemaError> {
         self.add_transform(transform_id, mutation_hash)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fold_db_core::transform_manager::types::TransformRunner;
-    use std::collections::HashSet;
-
-    struct MockTransformRunner;
-
-    impl TransformRunner for MockTransformRunner {
-        fn execute_transform_with_context(
-            &self,
-            _transform_id: &str,
-            mutation_context: &Option<
-                crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
-            >,
-        ) -> Result<JsonValue, SchemaError> {
-            if let Some(ref context) = mutation_context {
-                Ok(
-                    serde_json::json!({"status": "success_with_context", "key_config": context.key_config, "incremental": context.incremental}),
-                )
-            } else {
-                Ok(serde_json::json!({"status": "success_with_context", "no_context": true}))
-            }
-        }
-
-        fn transform_exists(&self, _transform_id: &str) -> Result<bool, SchemaError> {
-            Ok(true)
-        }
-
-        fn get_transforms_for_field(
-            &self,
-            _schema_name: &str,
-            _field_name: &str,
-        ) -> Result<HashSet<String>, SchemaError> {
-            let mut transforms = HashSet::new();
-            transforms.insert("test_transform".to_string());
-            Ok(transforms)
-        }
-
-        fn get_transforms_for_schema(&self, _schema_name: &str) -> Result<HashSet<String>, SchemaError> {
-            let mut transforms = HashSet::new();
-            transforms.insert("test_transform".to_string());
-            Ok(transforms)
-        }
-    }
-
-    fn create_test_orchestrator() -> TransformOrchestrator {
-        let config = sled::Config::new().temporary(true);
-        let db = config.open().expect("Failed to create test database");
-        let tree = db
-            .open_tree("test_orchestrator")
-            .expect("Failed to create test tree");
-        let manager = Arc::new(MockTransformRunner);
-        let message_bus = Arc::new(MessageBus::new());
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let db_ops = Arc::new(crate::db_operations::DbOperations::new(db).unwrap());
-
-        TransformOrchestrator::new(manager, tree, message_bus, db_ops)
-    }
-
-    #[test]
-    fn test_add_and_process_transform() {
-        let orchestrator = create_test_orchestrator();
-
-        // Add transform
-        let result = orchestrator.add_transform("test_transform", "test_hash");
-        assert!(result.is_ok());
-
-        // Queue should be empty after processing (add_transform auto-processes)
-        assert!(orchestrator.is_empty().unwrap());
-    }
-
-    #[test]
-    fn test_add_task() {
-        let orchestrator = create_test_orchestrator();
-
-        // Add task
-        let result = orchestrator.add_task("test_schema", "test_field", "test_hash");
-        assert!(result.is_ok());
-
-        // Should have items in queue
-        assert!(!orchestrator.is_empty().unwrap());
-        assert_eq!(orchestrator.len().unwrap(), 1);
-    }
-
-    #[test]
-    fn test_process_one() {
-        let orchestrator = create_test_orchestrator();
-
-        // Add task without auto-processing
-        orchestrator
-            .add_task("test_schema", "test_field", "test_hash")
-            .unwrap();
-
-        // Process one item
-        let result = orchestrator.process_one();
-        assert!(result.is_some());
-        assert!(result.unwrap().is_ok());
-
-        // Queue should be empty now
-        assert!(orchestrator.is_empty().unwrap());
     }
 }

@@ -49,12 +49,6 @@
 pub mod ast;
 pub mod executor;
 pub mod interpreter;
-pub mod mutation_examples;
-pub mod parser;
-pub mod restricted_access;
-pub mod restricted_access_example;
-pub mod restricted_access_integration_test;
-pub mod safe_access;
 
 // New modular components
 pub mod coordination;
@@ -70,15 +64,6 @@ pub use crate::schema::types::Transform;
 pub use ast::{Expression, Operator, TransformDeclaration, UnaryOperator, Value};
 pub use executor::TransformExecutor;
 pub use interpreter::Interpreter;
-pub use mutation_examples::{
-    BatchMutationExecutor, ConditionalMutationExecutor, MutationBasedDataStorage,
-};
-pub use parser::TransformParser;
-pub use restricted_access::{
-    MutationBasedPersistence, TransformAccessError, TransformAccessValidator,
-    TransformDataPersistence,
-};
-pub use safe_access::{
-    DatabaseTransformDataAccess, ReadOnlyAtom, ReadOnlyMolecule, ReadOnlyMoleculeRange,
-    TransformSafeDataAccess,
-};
+
+// New modular components
+pub mod manager;

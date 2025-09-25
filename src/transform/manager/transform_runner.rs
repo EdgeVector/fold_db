@@ -5,7 +5,7 @@ use log::{error, info};
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 
-/// TransformRunner implementation for TransformManager
+/// Deprecated
 impl TransformRunner for super::TransformManager {
     fn execute_transform_with_context(
         &self,

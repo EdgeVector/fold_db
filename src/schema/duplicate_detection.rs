@@ -1,4 +1,4 @@
-use crate::schema::{types::JsonSchemaDefinition, SchemaError};
+use crate::schema::{types::DeclarativeSchemaDefinition, SchemaError};
 use log::info;
 
 /// Handles duplicate detection and conflict resolution for schemas
@@ -7,25 +7,25 @@ pub struct SchemaDuplicateDetector;
 impl SchemaDuplicateDetector {
     /// Check for schema conflicts and duplicates
     pub fn check_schema_conflicts(
-        json_schema: &JsonSchemaDefinition,
+        declarative_schema: &DeclarativeSchemaDefinition,
         final_name: &str,
         directory: &str,
         find_hash_fn: impl Fn(&str, &str) -> Result<Option<String>, SchemaError>,
     ) -> Result<(), SchemaError> {
         // Check for name conflicts
         if super::file_operations::SchemaFileOperations::schema_file_exists(final_name, directory) {
-            Self::handle_existing_schema_conflict(json_schema, final_name, directory)?;
+            Self::handle_existing_schema_conflict(declarative_schema, final_name, directory)?;
         }
 
         // Check for content-based duplicates across all schemas
-        Self::check_content_duplicates(json_schema, final_name, find_hash_fn)?;
+        Self::check_content_duplicates(declarative_schema, final_name, find_hash_fn)?;
 
         Ok(())
     }
 
     /// Handle conflicts with existing schema files
     fn handle_existing_schema_conflict(
-        json_schema: &JsonSchemaDefinition,
+        declarative_schema: &DeclarativeSchemaDefinition,
         final_name: &str,
         directory: &str,
     ) -> Result<(), SchemaError> {
@@ -35,7 +35,7 @@ impl SchemaDuplicateDetector {
         let existing_schema_json =
             super::file_operations::SchemaFileOperations::read_schema_file(&target_path)?;
 
-        let new_schema_json = serde_json::to_value(json_schema).map_err(|e| {
+        let new_schema_json = serde_json::to_value(declarative_schema).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to serialize new schema: {}", e))
         })?;
 
@@ -85,11 +85,11 @@ impl SchemaDuplicateDetector {
 
     /// Check for content-based duplicates across all schemas
     fn check_content_duplicates(
-        json_schema: &JsonSchemaDefinition,
+        declarative_schema: &DeclarativeSchemaDefinition,
         final_name: &str,
         find_hash_fn: impl Fn(&str, &str) -> Result<Option<String>, SchemaError>,
     ) -> Result<(), SchemaError> {
-        let new_schema_json = serde_json::to_value(json_schema).map_err(|e| {
+        let new_schema_json = serde_json::to_value(declarative_schema).map_err(|e| {
             SchemaError::InvalidData(format!(
                 "Failed to serialize schema for duplicate check: {}",
                 e

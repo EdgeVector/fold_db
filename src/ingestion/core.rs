@@ -8,12 +8,14 @@ use crate::ingestion::{
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::{JsonSchemaDefinition, Mutation};
-use crate::schema::{Schema, SchemaCore};
+use crate::schema::types::{Mutation};
+use crate::schema::{SchemaCore};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Core ingestion service that orchestrates the entire ingestion process
+/// TODO: Ingestion needs to be able to create new schemas and persist them to the 'available_schemas' folder.
 pub struct IngestionCore {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,
@@ -237,16 +239,14 @@ impl IngestionCore {
     /// Get available schemas stripped of payment and permission data
     async fn get_stripped_available_schemas(&self) -> IngestionResult<Value> {
         // Get all available schemas from SchemaCore
-        let available_schema_names = self
+        let available_schemas = self
             .schema_core
-            .list_available_schemas()
+            .get_schemas()
             .map_err(IngestionError::SchemaSystemError)?;
 
         let mut schemas = Vec::new();
-        for schema_name in available_schema_names {
-            if let Ok(Some(schema)) = self.schema_core.get_schema(&schema_name) {
-                schemas.push(schema);
-            }
+        for (_schema_name, schema) in available_schemas {
+            schemas.push(schema);
         }
 
         // Strip payment and permission data
@@ -324,18 +324,24 @@ impl IngestionCore {
             "Creating new schema from AI definition"
         );
 
-        // Parse the schema definition
-        let schema = self.parse_schema_definition(schema_def)?;
-        let schema_name = schema.name.clone();
+        // Convert JSON Value back to string for SchemaCore to parse
+        let json_str = serde_json::to_string(schema_def)
+            .map_err(|e| IngestionError::schema_parsing_error(format!("Failed to serialize schema definition: {}", e)))?;
 
-        // Load the schema into SchemaCore
+        // Load the schema using SchemaCore's JSON loading method
         self.schema_core
-            .load_schema_internal(schema)
+            .load_schema_from_json(&json_str)
             .map_err(IngestionError::SchemaSystemError)?;
+
+        // Extract schema name from the definition
+        let schema_name = schema_def.get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| IngestionError::schema_parsing_error("Schema definition must have a 'name' field"))?
+            .to_string();
 
         // Set the schema to approved state
         self.schema_core
-            .approve_schema(&schema_name)
+            .set_schema_state(&schema_name, crate::schema::SchemaState::Approved)
             .map_err(IngestionError::SchemaSystemError)?;
 
         log_feature!(
@@ -347,70 +353,8 @@ impl IngestionCore {
         Ok(schema_name)
     }
 
-    /// Parse schema definition from AI response
-    fn parse_schema_definition(&self, schema_def: &Value) -> IngestionResult<Schema> {
-        // Try to parse as a complete Schema first
-        if let Ok(schema) = serde_json::from_value::<Schema>(schema_def.clone()) {
-            return Ok(schema);
-        }
 
-        // Try to parse as JsonSchemaDefinition
-        if let Ok(json_schema) = serde_json::from_value::<JsonSchemaDefinition>(schema_def.clone())
-        {
-            return self
-                .schema_core
-                .interpret_schema(json_schema)
-                .map_err(IngestionError::SchemaSystemError);
-        }
 
-        // Try to create a basic schema from the definition
-        self.create_basic_schema_from_definition(schema_def)
-    }
-
-    /// Create a basic schema from a simple definition
-    fn create_basic_schema_from_definition(&self, schema_def: &Value) -> IngestionResult<Schema> {
-        let obj = schema_def.as_object().ok_or_else(|| {
-            IngestionError::schema_parsing_error("Schema definition must be an object")
-        })?;
-
-        let name = obj
-            .get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| IngestionError::schema_parsing_error("Schema must have a name"))?;
-
-        let mut schema = Schema::new(name.to_string());
-
-        // Add fields if provided
-        if let Some(Value::Object(fields)) = obj.get("fields") {
-            for (field_name, field_def) in fields {
-                // Create a basic single field for each field in the definition
-                let field = self.create_basic_field_from_definition(field_def)?;
-                schema.add_field(field_name.clone(), field);
-            }
-        }
-
-        Ok(schema)
-    }
-
-    /// Create a basic field from definition
-    fn create_basic_field_from_definition(
-        &self,
-        _field_def: &Value,
-    ) -> IngestionResult<crate::schema::types::field::FieldVariant> {
-        use crate::fees::types::FieldPaymentConfig;
-        use crate::permissions::types::policy::PermissionsPolicy;
-        use crate::schema::types::field::{FieldVariant, SingleField};
-        use std::collections::HashMap;
-
-        // Create a basic single field with default permissions and payment config
-        let field = SingleField::new(
-            PermissionsPolicy::default(),
-            FieldPaymentConfig::default(),
-            HashMap::new(),
-        );
-
-        Ok(FieldVariant::Single(field))
-    }
 
     /// Generate mutations for the data
     fn generate_mutations_for_data(
@@ -421,10 +365,17 @@ impl IngestionCore {
         trust_distance: u32,
         pub_key: String,
     ) -> IngestionResult<Vec<Mutation>> {
+        // Convert json_data to HashMap<String, Value>
+        let fields_and_values = if let Some(obj) = json_data.as_object() {
+            obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        } else {
+            HashMap::new()
+        };
+
         self.mutation_generator.generate_mutations(
             schema_name,
             &HashMap::new(),
-            &json_data,
+            &fields_and_values,
             mutation_mappers,
             trust_distance,
             pub_key,
@@ -468,7 +419,7 @@ impl IngestionCore {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 
-        db.write_schema(mutation.clone())
+        db.write_mutation(mutation.clone())
             .map_err(IngestionError::SchemaSystemError)?;
 
         Ok(())
@@ -513,7 +464,6 @@ mod tests {
     use crate::fold_db_core::FoldDB;
     use crate::ingestion::config::AIProvider;
     use crate::schema::SchemaCore;
-    use std::fs;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
@@ -526,17 +476,10 @@ mod tests {
         config.provider = AIProvider::Ollama;
 
         let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path();
-
-        // Create separate subdirectories to avoid conflicts
-        let schema_path = temp_path.join("schema");
-        let db_path = temp_path.join("db");
-
-        fs::create_dir_all(&schema_path).unwrap();
-        fs::create_dir_all(&db_path).unwrap();
+        let db_path = temp_dir.path();
 
         let schema_core =
-            Arc::new(SchemaCore::new_for_testing(schema_path.to_str().unwrap()).unwrap());
+            Arc::new(SchemaCore::new_for_testing().unwrap());
         let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).unwrap()));
 
         let ingestion_core = IngestionCore::new(config, schema_core, fold_db).unwrap();
@@ -560,7 +503,7 @@ mod tests {
             .to_string();
 
         // Try to create components with better error handling
-        let schema_core = match SchemaCore::new_for_testing(&test_path) {
+        let schema_core = match SchemaCore::new_for_testing() {
             Ok(core) => Arc::new(core),
             Err(_) => {
                 eprintln!("Skipping test_validate_input: Could not create schema core");
@@ -597,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_basic_schema_from_definition() {
+    fn test_load_schema_from_json() {
         // Create isolated test setup for this test
         let mut config = IngestionConfig::from_env_allow_empty();
         config.enabled = true;
@@ -611,10 +554,10 @@ mod tests {
             .to_string();
 
         // Try to create components with better error handling
-        let schema_core = match SchemaCore::new_for_testing(&test_path) {
+        let schema_core = match SchemaCore::new_for_testing() {
             Ok(core) => Arc::new(core),
             Err(_) => {
-                eprintln!("Skipping test_create_basic_schema_from_definition: Could not create schema core");
+                eprintln!("Skipping test_load_schema_from_json: Could not create schema core");
                 return;
             }
         };
@@ -623,7 +566,7 @@ mod tests {
             Ok(db) => Arc::new(Mutex::new(db)),
             Err(_) => {
                 eprintln!(
-                    "Skipping test_create_basic_schema_from_definition: Could not create database"
+                    "Skipping test_load_schema_from_json: Could not create database"
                 );
                 return;
             }
@@ -632,23 +575,26 @@ mod tests {
         let core = match IngestionCore::new(config, schema_core, fold_db) {
             Ok(core) => core,
             Err(_) => {
-                eprintln!("Skipping test_create_basic_schema_from_definition: Could not create ingestion core");
+                eprintln!("Skipping test_load_schema_from_json: Could not create ingestion core");
                 return;
             }
         };
 
         let schema_def = serde_json::json!({
             "name": "TestSchema",
-            "fields": {
-                "field1": {"type": "string"},
-                "field2": {"type": "number"}
-            }
+            "schema_type": "Single",
+            "fields": ["field1", "field2"]
         });
 
-        let result = core.create_basic_schema_from_definition(&schema_def);
+        // Convert to JSON string and test the new method
+        let json_str = serde_json::to_string(&schema_def).unwrap();
+        let result = core.schema_core.load_schema_from_json(&json_str);
         assert!(result.is_ok());
 
-        let schema = result.unwrap();
+        // Verify the schema was loaded
+        let loaded_schema = core.schema_core.get_schema("TestSchema").unwrap();
+        assert!(loaded_schema.is_some());
+        let schema = loaded_schema.unwrap();
         assert_eq!(schema.name, "TestSchema");
         assert_eq!(schema.fields.len(), 2);
     }

@@ -51,37 +51,17 @@ pub struct Transform {
     pub schema: Box<DeclarativeSchemaDefinition>,
 }
 
-// Custom deserialization to allow either a transform DSL string or a struct
+// Custom deserialization for declarative transforms only
 impl<'de> serde::Deserialize<'de> for Transform {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(serde::Deserialize)]
-        #[serde(untagged)]
-        enum Helper {
-            Str(String),
-            // New struct format with schema field
-            NewStruct {
-                #[serde(flatten)]
-                schema: Box<DeclarativeSchemaDefinition>,
-            },
-        }
-
-        match Helper::deserialize(deserializer)? {
-            Helper::Str(s) => {
-                let parser = crate::transform::parser::TransformParser::new();
-                let decl = parser.parse_transform(&s).map_err(|e| {
-                    serde::de::Error::custom(format!("Failed to parse transform DSL: {}", e))
-                })?;
-                Ok(Self::from_declaration(decl))
-            }
-            Helper::NewStruct {
-                schema,
-            } => Ok(Self {
-                schema,
-            }),
-        }
+        // Only support declarative schema format now
+        let schema = DeclarativeSchemaDefinition::deserialize(deserializer)?;
+        Ok(Self {
+            schema: Box::new(schema),
+        })
     }
 }
 

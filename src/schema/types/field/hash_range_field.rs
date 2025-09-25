@@ -3,9 +3,7 @@
 //! Provides a field type that combines hash and range functionality for
 //! efficient indexing with complex fan-out operations.
 
-use crate::fees::types::config::FieldPaymentConfig;
 use crate::impl_field;
-use crate::permissions::types::policy::PermissionsPolicy;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult, create_composite_key, parse_composite_key};
 use crate::schema::types::field::{FilterApplicator, HashRangeOperations, apply_hash_range_filter};

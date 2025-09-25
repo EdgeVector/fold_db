@@ -141,23 +141,29 @@ impl Default for SchemaStripper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fees::types::FieldPaymentConfig;
-    use crate::permissions::types::policy::PermissionsPolicy;
     use crate::schema::types::field::{FieldVariant, SingleField};
     use std::collections::HashMap;
 
     fn create_test_schema() -> Schema {
-        let mut schema = Schema::new("test_schema".to_string());
-
-        // Create a simple field with payment and permission data
+        use crate::schema::types::SchemaType;
+        use crate::fees::SchemaPaymentConfig;
+        
+        // Create a simple field with field mappers
         let field = FieldVariant::Single(SingleField::new(
-            PermissionsPolicy::default(),
-            FieldPaymentConfig::default(),
             HashMap::new(),
+            None,
         ));
 
-        schema.add_field("test_field".to_string(), field);
-        schema
+        let mut fields = HashMap::new();
+        fields.insert("test_field".to_string(), field);
+
+        Schema::new(
+            "test_schema".to_string(),
+            SchemaType::Single,
+            None,
+            fields,
+            None,
+        )
     }
 
     #[test]

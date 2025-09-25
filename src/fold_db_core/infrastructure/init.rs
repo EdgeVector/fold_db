@@ -1,8 +1,8 @@
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::{
-    infrastructure::message_bus::MessageBus, orchestration::TransformOrchestrator,
-    transform_manager::TransformManager,
+    infrastructure::message_bus::MessageBus, orchestration::TransformOrchestrator
 };
+use crate::transform::manager::TransformManager;
 use sled::Tree;
 use std::sync::Arc;
 

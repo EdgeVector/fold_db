@@ -3,7 +3,7 @@ use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::constants::{
     ATOM_UUID_FIELD, DEFAULT_OUTPUT_FIELD_NAME, DEFAULT_TRANSFORM_ID_SUFFIX, KEY_FIELD_NAME,
 };
-use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError, DeclarativeSchemaDefinition};
+use crate::schema::types::{Schema, SchemaError, DeclarativeSchemaDefinition};
 use log::info;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,16 +12,12 @@ use crate::schema::types::field::RangeField;
 use crate::schema::types::field::HashRangeField;
 use crate::schema::types::field::SingleField;
 use crate::schema::types::field::FieldVariant;
-use crate::fees::payment_config::SchemaPaymentConfig;
-use crate::fees::types::config::FieldPaymentConfig;
-use crate::fees::types::config::TrustDistanceScaling;
-use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
 use crate::schema::types::field::common::FieldCommon;
 
 impl SchemaCore {
 
-    /// The definitive parser.
-    pub(crate) fn parse_schema_file(&self, path: &Path) -> Result<Option<Schema>, SchemaError> {
+    /// The definitive parser for declarative schema files.
+    pub fn parse_schema_file(&self, path: &Path) -> Result<Option<Schema>, SchemaError> {
         let contents = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(e) => {
@@ -40,19 +36,9 @@ impl SchemaCore {
         declarative_schema: DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
 
-        let default_permissions_policy = PermissionsPolicy::new(
-            TrustDistance::Distance(0),
-            TrustDistance::Distance(1),
-        );
-        let default_payment_config = FieldPaymentConfig {
-            base_multiplier: 1.0,
-            trust_distance_scaling: TrustDistanceScaling::None,
-            min_payment: None,
-        };
+
         let default_field_mappers = HashMap::new();
         let default_inner_field = FieldCommon::new(
-            default_permissions_policy.clone(),
-            default_payment_config.clone(),
             default_field_mappers.clone(),
         );
 
@@ -65,7 +51,7 @@ impl SchemaCore {
 
                     let hashrange_field = HashRangeField {
                         inner: default_inner_field.clone(),
-                        molecule_hash_range: None,
+                        molecule: None,
                     };
 
                     fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
@@ -73,7 +59,7 @@ impl SchemaCore {
                 SchemaType::Range { .. } => {
                     let range_field = RangeField {
                         inner: default_inner_field.clone(),
-                        molecule_range: None,
+                        molecule: None,
                     };
                     
                     fields.insert(field_name, FieldVariant::Range(range_field));
@@ -81,6 +67,7 @@ impl SchemaCore {
                 SchemaType::Single => {
                     let single_field = SingleField {
                         inner: default_inner_field.clone(),
+                        molecule: None,
                     };
 
                     fields.insert(field_name, FieldVariant::Single(single_field));
@@ -107,10 +94,6 @@ impl SchemaCore {
             schema_type: declarative_schema.schema_type.clone(),
             key: declarative_schema.key.clone(), // Copy universal key configuration
             fields,
-            payment_config: SchemaPaymentConfig {
-                base_multiplier: 1.0,
-                min_payment_threshold: 0,
-            },
             hash: None,
         };
 

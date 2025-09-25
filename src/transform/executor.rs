@@ -43,43 +43,11 @@ impl TransformExecutor {
     /// # Errors
     ///
     /// Returns an error if the transform is not declarative or if execution fails
+    /// @tomtang main code path entry to Transforms
     pub fn execute_transform(
         transform: &Transform,
         input_values: HashMap<String, JsonValue>,
     ) -> Result<JsonValue, SchemaError> {
-        info!("🧮 TransformExecutor: Starting declarative transform computation");
-
-        info!("📊 Input values for computation:");
-        for (key, value) in &input_values {
-            info!("  - {}: {}", key, value);
-        }
-
-        // Only support declarative transforms
-        if !transform.is_declarative() {
-            return Err(SchemaError::InvalidTransform(
-                "Only declarative transforms are supported by this executor".to_string(),
-            ));
-        }
-
-        Self::execute_declarative_transform(transform, input_values)
-    }
-
-    /// Executes a declarative transform.
-    ///
-    /// # Arguments
-    ///
-    /// * `transform` - The declarative transform to execute
-    /// * `input_values` - The input values for the transform
-    ///
-    /// # Returns
-    ///
-    /// The result of the transform execution
-    fn execute_declarative_transform(
-        transform: &Transform,
-        input_values: HashMap<String, JsonValue>,
-    ) -> Result<JsonValue, SchemaError> {
-        info!("🏗️ Executing declarative transform");
-
         let schema = transform.get_declarative_schema().ok_or_else(|| {
             SchemaError::InvalidTransform("Transform is not declarative".to_string())
         })?;

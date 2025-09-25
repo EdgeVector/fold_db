@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use super::hash_range_query::HashRangeQueryProcessor;
 use crate::schema::types::field::HashRangeFilter;
-
+use crate::transform::manager::utils::TransformUtils;
 /// Main query executor that handles all query operations
 pub struct QueryExecutor {
     db_ops: Arc<DbOperations>,
@@ -152,7 +152,7 @@ impl QueryExecutor {
         unified_filter: Option<HashRangeFilter>,
     ) -> Result<Value, SchemaError> {
         // Use the unified FieldValueResolver to eliminate duplicate code
-        crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(
+        TransformUtils::resolve_field_value(
             &self.db_ops,
             schema,
             field_name,

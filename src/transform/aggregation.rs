@@ -3,7 +3,6 @@
 //! This module handles the aggregation of execution results from the ExecutionEngine
 //! into the final output format for different schema types.
 
-use crate::schema::schema_operations::shape_unified_result;
 use crate::schema::types::DeclarativeSchemaDefinition;
 use crate::schema::types::schema::SchemaType;
 use crate::schema::types::SchemaError;

@@ -2,8 +2,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::fees::types::config::FieldPaymentConfig;
-use crate::permissions::types::policy::PermissionsPolicy;
 use crate::schema::types::field::{
     Field, FieldCommon, FieldType, HashRangeField, RangeField, SingleField,
     HashRangeFilter, HashRangeFilterResult,

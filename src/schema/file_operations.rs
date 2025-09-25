@@ -1,4 +1,4 @@
-use crate::schema::{types::JsonSchemaDefinition, SchemaError};
+use crate::schema::{types::DeclarativeSchemaDefinition, SchemaError};
 use log::info;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ pub struct SchemaFileOperations;
 impl SchemaFileOperations {
     /// Write schema to file with hash
     pub fn write_schema_to_file(
-        json_schema: &JsonSchemaDefinition,
+        declarative_schema: &DeclarativeSchemaDefinition,
         final_name: &str,
         directory: &str,
     ) -> Result<(), SchemaError> {
@@ -24,7 +24,7 @@ impl SchemaFileOperations {
         }
 
         // Add hash to the schema before writing
-        let mut schema_with_hash = serde_json::to_value(json_schema)
+        let mut schema_with_hash = serde_json::to_value(declarative_schema)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to serialize schema: {}", e)))?;
 
         let hash = super::hasher::SchemaHasher::add_hash_to_schema(&mut schema_with_hash).map_err(

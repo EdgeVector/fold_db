@@ -8,7 +8,7 @@ use crate::fold_db_core::infrastructure::message_bus::{
     schema_events::{TransformExecuted, TransformTriggered},
     MessageBus,
 };
-use crate::fold_db_core::transform_manager::types::TransformRunner;
+use crate::transform::manager::types::TransformRunner;
 use crate::schema::SchemaError;
 use log::{error, info};
 use std::sync::Arc;

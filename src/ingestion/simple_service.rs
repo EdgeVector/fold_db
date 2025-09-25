@@ -1,6 +1,7 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
 
 use crate::datafold_node::{DataFoldNode, OperationProcessor};
+use crate::fees::SchemaPaymentConfig;
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;
@@ -109,9 +110,17 @@ impl SimpleIngestionService {
         let new_schema_created = ai_response.new_schemas.is_some();
 
         // Step 5: Generate mutations
+        // Convert JSON data to fields and values
+        let fields_and_values = if let Some(obj) = request.data.as_object() {
+            obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+        
         let mutations = self.mutation_generator.generate_mutations(
             &schema_name,
-            &request.data,
+            &std::collections::HashMap::new(), // Empty keys for now
+            &fields_and_values,
             &ai_response.mutation_mappers,
             request
                 .trust_distance
@@ -218,17 +227,21 @@ impl SimpleIngestionService {
         &self,
         node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<Value> {
-        // Get all available schemas from the node
+        // Get all available schemas from the node through the schema manager
         let node_guard = node.lock().await;
-        let schema_states = node_guard.list_schemas_with_state().map_err(|e| {
+        let db_guard = node_guard.get_fold_db().map_err(|e| {
             IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
                 e.to_string(),
             ))
         })?;
+        
+        let schema_states = db_guard.schema_manager.get_schema_states().map_err(|e| {
+            IngestionError::SchemaSystemError(e)
+        })?;
 
         let mut schemas = Vec::new();
         for schema_name in schema_states.keys() {
-            if let Ok(Some(schema)) = node_guard.get_schema(schema_name) {
+            if let Ok(Some(schema)) = db_guard.schema_manager.get_schema(schema_name) {
                 schemas.push(schema);
             }
         }
@@ -285,13 +298,23 @@ impl SimpleIngestionService {
             "Creating new schema from AI definition"
         );
 
-        // Parse the schema definition
-        let schema = self.parse_schema_definition(schema_def)?;
-        let schema_name = schema.name.clone();
+        // Convert JSON Value back to string for SchemaCore to parse
+        let json_str = serde_json::to_string(schema_def)
+            .map_err(|e| IngestionError::schema_parsing_error(format!("Failed to serialize schema definition: {}", e)))?;
 
-        // Load the schema using the node (this adds it as available and approves it)
-        let mut node_guard = node.lock().await;
-        node_guard.load_schema(schema)
+        // Extract schema name from the definition
+        let schema_name = schema_def.get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| IngestionError::schema_parsing_error("Schema definition must have a 'name' field"))?
+            .to_string();
+
+        // Load the schema using the node through the schema manager
+        let node_guard = node.lock().await;
+        let db_guard = node_guard.get_fold_db().map_err(|e| {
+            IngestionError::SchemaCreationError(e.to_string())
+        })?;
+        
+        db_guard.schema_manager.load_schema_from_json(&json_str)
             .map_err(|e| IngestionError::SchemaCreationError(e.to_string()))?;
 
         log_feature!(
@@ -303,158 +326,6 @@ impl SimpleIngestionService {
         Ok(schema_name)
     }
 
-    /// Parse schema definition from AI response
-    fn parse_schema_definition(
-        &self,
-        schema_def: &Value,
-    ) -> IngestionResult<crate::schema::Schema> {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Parsing schema definition: {}",
-            serde_json::to_string_pretty(schema_def).unwrap_or_else(|_| "Invalid JSON".to_string())
-        );
-
-        // Try to parse as a complete Schema first
-        if let Ok(schema) = serde_json::from_value::<crate::schema::Schema>(schema_def.clone()) {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Successfully parsed as complete Schema"
-            );
-            return Ok(schema);
-        }
-
-        // Check if the schema is wrapped in an object with schema name as key
-        if let Some(obj) = schema_def.as_object() {
-            if obj.len() == 1 {
-                let (schema_name, schema_content) = obj.iter().next().unwrap();
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "Found wrapped schema with name: {}",
-                    schema_name
-                );
-
-                // Try to parse the wrapped content
-                if let Ok(schema) =
-                    serde_json::from_value::<crate::schema::Schema>(schema_content.clone())
-                {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Successfully parsed wrapped schema"
-                    );
-                    return Ok(schema);
-                }
-
-                // If that fails, try to create a basic schema from the wrapped content
-                return self
-                    .create_basic_schema_from_wrapped_definition(schema_name, schema_content);
-            }
-        }
-
-        // Create a basic schema from the definition
-        self.create_basic_schema_from_definition(schema_def)
-    }
-
-    /// Create a basic schema from a wrapped definition (AI format: {"SchemaName": {...}})
-    fn create_basic_schema_from_wrapped_definition(
-        &self,
-        schema_name: &str,
-        schema_content: &Value,
-    ) -> IngestionResult<crate::schema::Schema> {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Creating basic schema from wrapped definition for: {}",
-            schema_name
-        );
-
-        let obj = schema_content.as_object().ok_or_else(|| {
-            IngestionError::schema_parsing_error("Wrapped schema content must be an object")
-        })?;
-
-        let mut schema = crate::schema::Schema::new(schema_name.to_string());
-
-        // Add fields if provided
-        if let Some(Value::Object(fields)) = obj.get("fields") {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Processing {} fields for schema {}",
-                fields.len(),
-                schema_name
-            );
-            for (field_name, _field_def) in fields {
-                // Create a basic field for each field in the definition
-                let field = self.create_basic_field()?;
-                schema.add_field(field_name.clone(), field);
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "Added field '{}' to schema '{}'",
-                    field_name,
-                    schema_name
-                );
-            }
-        }
-
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Successfully created schema '{}' with {} fields",
-            schema_name,
-            schema.fields.len()
-        );
-        Ok(schema)
-    }
-
-    /// Create a basic schema from a simple definition
-    fn create_basic_schema_from_definition(
-        &self,
-        schema_def: &Value,
-    ) -> IngestionResult<crate::schema::Schema> {
-        let obj = schema_def.as_object().ok_or_else(|| {
-            IngestionError::schema_parsing_error("Schema definition must be an object")
-        })?;
-
-        let name = obj
-            .get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| IngestionError::schema_parsing_error("Schema must have a name"))?;
-
-        let mut schema = crate::schema::Schema::new(name.to_string());
-
-        // Add fields if provided
-        if let Some(Value::Object(fields)) = obj.get("fields") {
-            for (field_name, _field_def) in fields {
-                // Create a basic field for each field in the definition
-                let field = self.create_basic_field()?;
-                schema.add_field(field_name.clone(), field);
-            }
-        }
-
-        Ok(schema)
-    }
-
-    /// Create a basic field
-    fn create_basic_field(&self) -> IngestionResult<crate::schema::types::field::FieldVariant> {
-        use crate::fees::types::FieldPaymentConfig;
-        use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
-        use crate::schema::types::field::{FieldVariant, SingleField};
-        use std::collections::HashMap;
-
-        // Create a basic single field with open read permissions and restricted write permissions
-        let permissions = PermissionsPolicy::new(
-            TrustDistance::NoRequirement, // Allow anyone to read
-            TrustDistance::Distance(0),   // Only trust distance 0 can write
-        );
-
-        let field = SingleField::new(permissions, FieldPaymentConfig::default(), HashMap::new());
-
-        Ok(FieldVariant::Single(field))
-    }
 
 
     /// Execute mutations using the OperationProcessor
@@ -471,7 +342,7 @@ impl SimpleIngestionService {
             let operation = Operation::Mutation {
                 schema: mutation.schema_name.clone(),
                 fields_and_values: mutation.fields_and_values.clone(),
-                keys_and_values: mutation.keys_and_values.clone(),
+                key_config: mutation.key_config.clone(),
                 mutation_type: mutation.mutation_type.clone(),
             };
 

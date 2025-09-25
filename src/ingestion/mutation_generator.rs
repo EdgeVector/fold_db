@@ -3,7 +3,8 @@
 use crate::ingestion::{IngestionError, IngestionResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::{Mutation, MutationType};
+use crate::schema::types::{Mutation, KeyConfig};
+use crate::MutationType;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -49,10 +50,16 @@ impl MutationGenerator {
 
         // If we have fields to mutate, create a mutation
         if !fields_and_values.is_empty() {
+            // Convert keys_and_values to KeyConfig
+            let key_config = KeyConfig::new(
+                keys_and_values.get("hash_field").cloned(),
+                keys_and_values.get("range_field").cloned(),
+            );
+            
             let mutation = Mutation {
                 schema_name: schema_name.to_string(),
                 fields_and_values: fields_and_values.clone(),
-                keys_and_values: keys_and_values.clone(),
+                key_config,
                 pub_key,
                 trust_distance,
                 mutation_type: MutationType::Create,
@@ -276,10 +283,12 @@ mod tests {
         let generator = MutationGenerator::new();
 
         let mut keys_and_values = HashMap::new();
+        keys_and_values.insert("hash_field".to_string(), "hash_key".to_string());
+        keys_and_values.insert("range_field".to_string(), "range_key".to_string());
+        
         let mut fields_and_values = HashMap::new();
         fields_and_values.insert("name".to_string(), json!("John"));
         fields_and_values.insert("age".to_string(), json!(30));
-        keys_and_values.insert("range_key".to_string(), "123".to_string());
 
         let mut mappers = HashMap::new();
         mappers.insert("name".to_string(), "UserSchema.name".to_string());

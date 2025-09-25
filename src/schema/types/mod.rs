@@ -1,7 +1,6 @@
 pub mod declarative_schemas;
 pub mod errors;
 pub mod field;
-pub mod json_schema;
 pub mod key_config;
 pub mod mutation;
 pub mod operation;
@@ -10,7 +9,6 @@ pub mod schema;
 pub mod transform;
 
 pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition};
-pub use json_schema::JsonSchemaDefinition;
 pub use key_config::KeyConfig;
 pub use errors::SchemaError;
 pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};

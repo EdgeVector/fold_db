@@ -15,7 +15,6 @@ pub mod infrastructure;
 pub mod orchestration;
 pub mod query;
 pub mod shared;
-pub mod transform_manager;
 
 // Core components
 pub mod mutation_completion_handler;
@@ -25,7 +24,6 @@ pub use infrastructure::{EventMonitor, MessageBus};
 pub use orchestration::TransformOrchestrator;
 pub use query::QueryExecutor;
 pub use shared::*;
-pub use transform_manager::{TransformManager, types::TransformRunner};
 
 // Re-export core components
 pub use mutation_completion_handler::{
@@ -50,6 +48,8 @@ use crate::schema::types::{Mutation, Query, key_config::KeyConfig};
 use crate::schema::types::field::Field;
 use crate::schema::{SchemaCore, SchemaError};
 use crate::atom::Atom;
+use crate::transform::manager::TransformManager;
+use crate::transform::manager::types::TransformRunner;
 
 // Infrastructure components that are used internally
 use infrastructure::init::{init_transform_manager};
@@ -237,15 +237,14 @@ impl FoldDB {
 
     /// Load schema from JSON string (creates Available schema)
     pub fn load_schema_from_json(&mut self, json_str: &str) -> Result<(), SchemaError> {
-        // Delegate to working schema_manager implementation
+        // Delegate to SchemaCore implementation
         self.schema_manager.load_schema_from_json(json_str)
     }
 
     /// Load schema from file (creates Available schema)
     pub fn load_schema_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), SchemaError> {
-        // Delegate to working schema_manager implementation
-        self.schema_manager
-            .load_schema_from_file(path.as_ref().to_str().unwrap())
+        // Delegate to SchemaCore implementation
+        self.schema_manager.load_schema_from_file(path)
     }
 
     /// Provides access to the underlying database operations

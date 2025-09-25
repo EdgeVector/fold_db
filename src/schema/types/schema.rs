@@ -48,8 +48,6 @@ pub struct Schema {
     pub key: Option<KeyConfig>,
     /// Collection of fields with their definitions and configurations
     pub fields: HashMap<String, FieldVariant>,
-    /// Payment configuration for schema-level access control
-    pub payment_config: SchemaPaymentConfig,
     /// SHA256 hash of the schema content for integrity verification
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hash: Option<String>,
@@ -71,7 +69,6 @@ impl Schema {
         schema_type: SchemaType,
         key: Option<KeyConfig>,
         fields: HashMap<String, FieldVariant>,
-        payment_config: SchemaPaymentConfig,
         hash: Option<String>,
     ) -> Self {
         Self {
@@ -79,7 +76,6 @@ impl Schema {
             schema_type,
             key,
             fields,
-            payment_config,
             hash,
         }
     }

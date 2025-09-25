@@ -1,6 +1,5 @@
 use super::core::DbOperations;
-use crate::logging::features::{log_feature, LogFeature};
-use crate::fold_db_core::transform_manager::manager::SCHEMA_FIELD_TO_TRANSFORMS_KEY;
+use crate::transform::manager::manager::SCHEMA_FIELD_TO_TRANSFORMS_KEY;
 use crate::schema::types::transform::{Transform, TransformRegistration};
 use crate::schema::SchemaError;
 
@@ -105,7 +104,7 @@ impl DbOperations {
         &self,
         key: &str,
     ) -> Result<std::collections::BTreeMap<String, std::collections::HashSet<String>>, SchemaError> {
-        use crate::fold_db_core::transform_manager::utils::SerializationHelper;
+        use crate::transform::manager::utils::SerializationHelper;
         use log::info;
 
         // Load field_to_transforms with special debug logging

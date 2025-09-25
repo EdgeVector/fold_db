@@ -29,39 +29,23 @@
 // Internal modules
 pub mod constants;
 pub mod core;
-pub mod discovery;
 pub mod duplicate_detection;
-pub mod field_factory;
 pub mod file_operations;
 pub mod hasher;
 pub mod molecule_variants;
 pub mod persistence;
-pub mod schema_field_mapping;
-pub mod schema_interpretation;
 pub mod schema_types;
 pub mod types;
 
-// New split modules from core.rs
-pub mod schema_operations;
-pub mod schema_persistence;
-pub mod schema_state_management;
 
 // Public re-exports
 pub use core::*;
 pub use duplicate_detection::SchemaDuplicateDetector;
-pub use field_factory::*;
 pub use file_operations::SchemaFileOperations;
 pub use hasher::SchemaHasher;
 pub use molecule_variants::MoleculeVariant;
-pub use schema_field_mapping::map_fields;
-pub use schema_interpretation::{interpret_schema};
 pub use schema_types::{SchemaLoadingReport, SchemaSource, SchemaState};
 pub use types::*;
-
-// Re-export functionality from split modules
-pub use schema_operations::*;
-pub use schema_persistence::*;
-pub use schema_state_management::*;
 
 /// Public prelude module containing types needed by tests and external code
 pub mod prelude {

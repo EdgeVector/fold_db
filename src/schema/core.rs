@@ -97,6 +97,35 @@ impl SchemaCore {
         Ok(())
     }
 
+    /// Load schema from JSON string (creates Available schema)
+    /// Only supports declarative schema format
+    pub fn load_schema_from_json(&self, json_str: &str) -> Result<(), SchemaError> {
+        use crate::schema::types::DeclarativeSchemaDefinition;
+        
+        // Parse JSON string to DeclarativeSchemaDefinition
+        let declarative_schema: DeclarativeSchemaDefinition = serde_json::from_str(json_str)
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to parse declarative schema: {}", e)))?;
+        
+        // Convert declarative schema to Schema
+        let schema = self.interpret_declarative_schema(declarative_schema)?;
+        
+        // Load the schema using the existing method
+        self.load_schema_internal(schema)
+    }
+
+    /// Load schema from file (creates Available schema)
+    /// Only supports declarative schema format
+    pub fn load_schema_from_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), SchemaError> {
+        use std::path::Path;
+        
+        // Use the existing parse_schema_file method which handles declarative schemas
+        if let Some(schema) = self.parse_schema_file(path.as_ref())? {
+            self.load_schema_internal(schema)
+        } else {
+            Err(SchemaError::InvalidData("No schema found in file".to_string()))
+        }
+    }
+
     /// Creates a new SchemaCore for testing purposes with a temporary database
     pub fn new_for_testing() -> Result<Self, SchemaError> {
         let db = sled::Config::new().temporary(true).open()?;

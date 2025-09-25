@@ -5,6 +5,7 @@ use crate::transform::executor::TransformExecutor;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
+// Deprecated
 impl TransformManager {
     /// Execute a single transform with mutation context for incremental processing
     pub fn execute_single_transform_with_context(
