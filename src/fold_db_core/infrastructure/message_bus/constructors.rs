@@ -193,7 +193,7 @@ impl MutationExecuted {
         operation: impl Into<String>,
         schema: impl Into<String>,
         execution_time_ms: u64,
-        fields_affected: usize,
+        fields_affected: Vec<String>,
     ) -> Self {
         Self {
             operation: operation.into(),

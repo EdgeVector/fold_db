@@ -16,21 +16,24 @@ impl ResultStorage {
     pub fn store_transform_result_generic(
         transform: &Transform,
         code_hash_to_result: HashMap<String, JsonValue>,
+        key_config: KeyConfig,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
     ) -> Result<(), SchemaError> {
         // TODO: Map Transform's declarative schema's field_to_hash_code to the result of the execution.
         let field_to_hash_code = transform.get_declarative_schema().unwrap().get_field_to_hash_code();
-        let key_to_hash_code = transform.get_declarative_schema().unwrap().get_key_to_hash_code();
 
         let mut fields_and_values = HashMap::new();
-        let mut keys_and_values = HashMap::new();
+        for (code_hash, result) in code_hash_to_result {
+            let field_name = field_to_hash_code.get(&code_hash).unwrap().clone();
+            fields_and_values.insert(field_name.clone(), result);
+        }
 
         // create a mutation through the event bus
         // TODO: add key_config to the mutation
         let mutation = Mutation::new(
             transform.get_declarative_schema().unwrap().name.clone(),
             fields_and_values,
-            KeyConfig::new(),
+            key_config,
             TRANSFORM_SYSTEM_ID.to_string(),
             0,
             MutationType::Update,

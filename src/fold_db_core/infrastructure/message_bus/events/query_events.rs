@@ -21,7 +21,7 @@ pub struct MutationExecuted {
     pub operation: String,
     pub schema: String,
     pub execution_time_ms: u64,
-    pub fields_affected: usize,
+    pub fields_affected: Vec<String>,
 }
 
 impl EventType for MutationExecuted {

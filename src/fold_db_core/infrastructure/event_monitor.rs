@@ -183,14 +183,14 @@ impl EventStatistics {
 
     fn increment_mutation_executions(
         &mut self,
-        schema: &str,
-        operation: &str,
-        execution_time_ms: u64,
-        fields_affected: usize,
+        event: &MutationExecuted,
     ) {
         self.mutation_executions += 1;
         self.total_events += 1;
-
+        let schema = event.schema.clone();
+        let operation = event.operation.clone();
+        let execution_time_ms = event.execution_time_ms;
+        let fields_affected = event.fields_affected.len();
         // Update per-schema mutation statistics
         let key = format!("{}:{}", schema, operation);
         let stats = self.mutation_stats.entry(key).or_default();
@@ -663,14 +663,9 @@ impl EventMonitor {
                 Ok(event) => {
                     info!(
                         "🔍 EventMonitor: MutationExecuted - schema: {}, operation: {}, execution_time: {}ms, fields_affected: {}",
-                        event.schema, event.operation, event.execution_time_ms, event.fields_affected
+                        event.schema, event.operation, event.execution_time_ms, event.fields_affected.join(", ")
                     );
-                    statistics.lock().unwrap().increment_mutation_executions(
-                        &event.schema,
-                        &event.operation,
-                        event.execution_time_ms,
-                        event.fields_affected,
-                    );
+                    statistics.lock().unwrap().increment_mutation_executions(&event);
                 }
                 Err(_) => continue,
             }

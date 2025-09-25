@@ -57,6 +57,7 @@ use infrastructure::message_bus::request_events::{
     AtomCreateResponse, FieldUpdateResponse, FieldValueSetResponse, MoleculeCreateResponse,
     SchemaApprovalResponse, SchemaLoadResponse, SystemInitializationRequest,
 };
+use infrastructure::message_bus::events::query_events::MutationExecuted;
 
 /// Unified response type for all operations
 #[derive(Debug, Clone)]
@@ -325,6 +326,8 @@ impl FoldDB {
 
     /// Write schema operation - main orchestration method for mutations
     pub fn write_mutation(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
+        let start_time = std::time::Instant::now();
+        
         // Get the schema definition
         let mut schema = self.schema_manager.get_schema(&mutation.schema_name)?
             .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name)))?;
@@ -350,6 +353,7 @@ impl FoldDB {
         let mutation_id = uuid::Uuid::new_v4().to_string();
         
         // Process each field in the mutation
+        let fields_affected: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
         for (field_name, value) in mutation.fields_and_values {
             if let Some(schema_field) = schema.fields.get_mut(&field_name) {
                 schema_field.refresh_from_db(&self.db_ops);
@@ -358,7 +362,21 @@ impl FoldDB {
             }
         }
 
+        // Calculate execution time
+        let execution_time_ms = start_time.elapsed().as_millis() as u64;
         
+        // Publish MutationExecuted event to trigger transforms
+        let event = MutationExecuted::new(
+            "write_mutation",
+            mutation.schema_name.clone(),
+            execution_time_ms,
+            fields_affected,
+        );
+        
+        if let Err(e) = self.message_bus.publish(event) {
+            log::warn!("Failed to publish MutationExecuted event: {}", e);
+            // Don't fail the mutation if event publishing fails
+        }
         
         // Return the mutation ID
         Ok(mutation_id)
