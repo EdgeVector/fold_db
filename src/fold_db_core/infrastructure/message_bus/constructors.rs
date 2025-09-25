@@ -5,8 +5,7 @@
 
 use super::events::*;
 use super::request_events::KeySnapshot;
-use serde_json::{Map, Value};
-use std::collections::BTreeMap;
+use serde_json::Value;
 
 // ========== Core Event Constructors ==========
 
@@ -250,199 +249,7 @@ impl DataPersisted {
 
 // ========== Request/Response Event Constructors ==========
 
-impl AtomCreateRequest {
-    /// Create a new AtomCreateRequest
-    pub fn new(
-        correlation_id: String,
-        schema_name: String,
-        source_pub_key: String,
-        prev_atom_uuid: Option<String>,
-        content: Value,
-        status: Option<String>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            schema_name,
-            source_pub_key,
-            prev_atom_uuid,
-            content,
-            status,
-        }
-    }
-}
-
-impl AtomCreateResponse {
-    /// Create a new AtomCreateResponse
-    pub fn new(
-        correlation_id: String,
-        success: bool,
-        atom_uuid: Option<String>,
-        error: Option<String>,
-        atom_data: Option<Value>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            success,
-            atom_uuid,
-            error,
-            atom_data,
-        }
-    }
-}
-
-impl AtomUpdateRequest {
-    /// Create a new AtomUpdateRequest
-    pub fn new(
-        correlation_id: String,
-        atom_uuid: String,
-        content: Value,
-        source_pub_key: String,
-    ) -> Self {
-        Self {
-            correlation_id,
-            atom_uuid,
-            content,
-            source_pub_key,
-        }
-    }
-}
-
-impl AtomUpdateResponse {
-    /// Create a new AtomUpdateResponse
-    pub fn new(correlation_id: String, success: bool, error: Option<String>) -> Self {
-        Self {
-            correlation_id,
-            success,
-            error,
-        }
-    }
-}
-
-impl MoleculeCreateRequest {
-    /// Create a new MoleculeCreateRequest
-    pub fn new(
-        correlation_id: String,
-        molecule_uuid: String,
-        atom_uuid: String,
-        source_pub_key: String,
-        molecule_type: String,
-    ) -> Self {
-        Self {
-            correlation_id,
-            molecule_uuid,
-            atom_uuid,
-            source_pub_key,
-            molecule_type,
-        }
-    }
-}
-
-impl MoleculeCreateResponse {
-    /// Create a new MoleculeCreateResponse
-    pub fn new(correlation_id: String, success: bool, error: Option<String>) -> Self {
-        Self {
-            correlation_id,
-            success,
-            error,
-        }
-    }
-}
-
-impl MoleculeUpdateRequest {
-    /// Create a new MoleculeUpdateRequest
-    pub fn new(
-        correlation_id: String,
-        molecule_uuid: String,
-        atom_uuid: String,
-        source_pub_key: String,
-        molecule_type: String,
-        additional_data: Option<Value>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            molecule_uuid,
-            atom_uuid,
-            source_pub_key,
-            molecule_type,
-            additional_data,
-        }
-    }
-}
-
-impl MoleculeUpdateResponse {
-    /// Create a new MoleculeUpdateResponse
-    pub fn new(correlation_id: String, success: bool, error: Option<String>) -> Self {
-        Self {
-            correlation_id,
-            success,
-            error,
-        }
-    }
-}
-
-/// Normalized payload data used to construct FieldValueSetRequest instances.
-pub struct NormalizedRequestParts {
-    pub correlation_id: String,
-    pub schema_name: String,
-    pub field_name: String,
-    pub fields: Map<String, Value>,
-    pub hash: Option<String>,
-    pub range: Option<String>,
-    pub source_pub_key: String,
-    pub mutation_hash: Option<String>,
-}
-
 impl FieldValueSetRequest {
-    /// Create a new FieldValueSetRequest from normalized key/value parts
-    pub fn from_normalized_parts(parts: NormalizedRequestParts) -> Self {
-        let NormalizedRequestParts {
-            correlation_id,
-            schema_name,
-            field_name,
-            fields,
-            hash,
-            range,
-            source_pub_key,
-            mutation_hash,
-        } = parts;
-
-        let normalized_hash = normalize_optional_string(hash);
-        let normalized_range = normalize_optional_string(range);
-
-        let sorted_fields = Map::from_iter(BTreeMap::from_iter(fields));
-
-        let mut normalized_payload = Map::new();
-        normalized_payload.insert(
-            "hash".to_string(),
-            Value::String(normalized_hash.clone().unwrap_or_default()),
-        );
-        normalized_payload.insert(
-            "range".to_string(),
-            Value::String(normalized_range.clone().unwrap_or_default()),
-        );
-        normalized_payload.insert("fields".to_string(), Value::Object(sorted_fields));
-
-        let incremental = normalized_hash.is_some() || normalized_range.is_some();
-        let mutation_context = if incremental || mutation_hash.is_some() {
-            Some(atom_events::MutationContext {
-                range_key: normalized_range,
-                hash_key: normalized_hash,
-                mutation_hash,
-                incremental,
-            })
-        } else {
-            None
-        };
-
-        Self {
-            correlation_id,
-            schema_name,
-            field_name,
-            value: Value::Object(normalized_payload),
-            source_pub_key,
-            mutation_context,
-        }
-    }
 
     /// Create a new FieldValueSetRequest
     pub fn new(
@@ -480,17 +287,6 @@ impl FieldValueSetRequest {
             mutation_context: Some(mutation_context),
         }
     }
-}
-
-fn normalize_optional_string(value: Option<String>) -> Option<String> {
-    value.and_then(|candidate| {
-        let trimmed = candidate.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    })
 }
 
 impl FieldValueSetResponse {

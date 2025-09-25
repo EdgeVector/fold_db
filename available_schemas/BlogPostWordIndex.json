@@ -1,11 +1,12 @@
 {
   "name": "BlogPostWordIndex",
-  "schema_type": "HashRange",
   "key": {
-    "hash_field": "BlogPost.map().content.split_by_word().map()",
-    "range_field": "BlogPost.map().publish_date"
+    "hash_field": "word",
+    "range_field": "publish_date"
   },
-  "fields": {
+  "transform_fields": {
+    "word": "BlogPost.map().content.split_by_word().map()",
+    "publish_date": "BlogPost.map().publish_date",
     "content": "BlogPost.map().content",
     "author": "BlogPost.map().author",
     "title": "BlogPost.map().title",

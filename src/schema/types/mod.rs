@@ -10,12 +10,12 @@ pub mod schema;
 pub mod transform;
 
 pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition};
+pub use json_schema::JsonSchemaDefinition;
 pub use key_config::KeyConfig;
 pub use errors::SchemaError;
 pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};
-pub use json_schema::{JsonSchemaDefinition, JsonSchemaField};
+pub use mutation::{Mutation};
 pub use operation::Operation;
-pub use mutation::Mutation;
-pub use operations::{MutationType, Query};
+pub use operations::{Query};
 pub use schema::{Schema, SchemaType};
 pub use transform::{Transform, TransformRegistration};

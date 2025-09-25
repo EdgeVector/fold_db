@@ -34,7 +34,7 @@ use std::collections::{HashSet, HashMap};
 /// let transform = Transform::new(schema, "health.risk_score".to_string());
 /// ```
 /// Parameters for registering a transform
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformRegistration {
     /// The ID of the transform
     pub transform_id: String,
@@ -44,7 +44,7 @@ pub struct TransformRegistration {
     pub trigger_fields: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Transform {
     /// The declarative schema definition
     #[serde(flatten)]
@@ -139,7 +139,8 @@ impl Transform {
                 "legacy_transform".to_string(),
                 crate::schema::types::schema::SchemaType::Single,
                 None,
-                std::collections::HashMap::new(),
+                None,
+                None,
             )),
         }
     }

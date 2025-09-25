@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::http_server::AppState;
+use super::DataFoldNode;
 
 /// Get system status information
 pub async fn get_system_status(_state: web::Data<AppState>) -> impl Responder {
@@ -97,16 +98,44 @@ pub async fn reset_database(
     // Lock the node and perform the reset
     let mut node = state.node.lock().await;
 
-    // Perform the database reset by restarting the node
-    // In test environments, we use soft_restart which is more reliable
-    let restart_result = if cfg!(test) {
-        node.soft_restart().await
-    } else {
-        node.restart().await
-    };
+    // Perform the database reset by deleting database files and creating a new node
+    let config = node.config.clone();
+    let db_path = config.storage_path.clone();
+    
+    // Close the current database
+    if let Ok(db) = node.get_fold_db() {
+        if let Err(e) = db.close() {
+            log_feature!(
+                LogFeature::HttpServer,
+                warn,
+                "Failed to close database during reset: {}",
+                e
+            );
+        }
+    }
 
-    match restart_result {
-        Ok(_) => {
+    // Delete all contents of the database folder
+    if db_path.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&db_path) {
+            log_feature!(
+                LogFeature::HttpServer,
+                error,
+                "Failed to delete database folder: {}",
+                e
+            );
+            return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
+                success: false,
+                message: format!("Failed to delete database folder: {}", e),
+            });
+        }
+    }
+
+    // Create a new node instance (this will recreate the database)
+    match DataFoldNode::new(config) {
+        Ok(new_node) => {
+            // Replace the node in the state
+            *node = new_node;
+            
             log_feature!(
                 LogFeature::HttpServer,
                 info,

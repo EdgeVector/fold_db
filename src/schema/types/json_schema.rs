@@ -35,8 +35,6 @@ pub struct JsonSchemaDefinition {
 pub struct JsonSchemaField {
     #[serde(default = "default_permission_policy")]
     pub permission_policy: JsonPermissionPolicy,
-    #[serde(default)]
-    pub molecule_uuid: Option<String>,
     #[serde(default = "default_payment_config")]
     pub payment_config: JsonFieldPaymentConfig,
     #[serde(default)]

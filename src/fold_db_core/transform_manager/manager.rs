@@ -1,4 +1,5 @@
 use super::types::TransformRunner;
+use super::result_storage::ResultStorage;
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{SchemaError, Transform};
@@ -57,11 +58,14 @@ impl TransformManager {
 
         // Create the TransformManager instance first
         let manager = Self {
-            db_ops,
+            db_ops: Arc::clone(&db_ops),
             registered_transforms: RwLock::new(registered_transforms),
             schema_field_to_transforms: RwLock::new(schema_field_to_transforms),
-            message_bus,
+            message_bus: Arc::clone(&message_bus),
         };
+
+        // Start the transform registration listener
+        Self::start_transform_registration_listener(Arc::clone(&db_ops), Arc::clone(&message_bus))?;
 
         Ok(manager)
     }
@@ -232,9 +236,11 @@ impl TransformManager {
                     )?;
 
                     // Store the result
+                    let mut result_map = HashMap::new();
+                    result_map.insert("result".to_string(), result.clone());
                     ResultStorage::store_transform_result_generic(
                         &transform,
-                        &result.clone(),
+                        result_map,
                         Some(&self.message_bus)
                     )?;
 
@@ -335,6 +341,144 @@ impl TransformManager {
 
         Ok(())
     }
+
+    /// Start a background listener for TransformRegistrationRequest events
+    fn start_transform_registration_listener(
+        db_ops: Arc<DbOperations>,
+        message_bus: Arc<MessageBus>,
+    ) -> Result<(), SchemaError> {
+        use crate::fold_db_core::infrastructure::message_bus::events::schema_events::{
+            TransformRegistrationRequest, TransformRegistrationResponse,
+        };
+        use std::thread;
+
+        info!("🔧 Starting TransformRegistrationRequest listener");
+
+        // Create a consumer for TransformRegistrationRequest events
+        let mut consumer = message_bus.subscribe::<TransformRegistrationRequest>();
+
+        // Start a background thread to handle registration requests
+        thread::spawn(move || {
+            info!("📡 TransformRegistrationRequest listener thread started");
+
+            loop {
+                match consumer.recv() {
+                    Ok(request) => {
+                        info!(
+                            "📨 Received TransformRegistrationRequest for transform '{}'",
+                            request.registration.transform_id
+                        );
+
+                        // Handle the registration directly without creating a new manager
+                        let result = Self::handle_transform_registration(
+                            &db_ops,
+                            &request.registration,
+                        );
+
+                        // Send response back
+                        let response = TransformRegistrationResponse {
+                            correlation_id: request.correlation_id,
+                            success: result.is_ok(),
+                            error: result.as_ref().err().map(|e| e.to_string()),
+                        };
+
+                        match message_bus.publish(response) {
+                            Ok(_) => {
+                                if result.is_ok() {
+                                    info!(
+                                        "✅ Published TransformRegistrationResponse (success) for transform '{}'",
+                                        request.registration.transform_id
+                                    );
+                                } else {
+                                    error!(
+                                        "❌ Published TransformRegistrationResponse (failure) for transform '{}'",
+                                        request.registration.transform_id
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                error!(
+                                    "❌ Failed to publish TransformRegistrationResponse for transform '{}': {}",
+                                    request.registration.transform_id, e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("❌ TransformRegistrationRequest listener error: {}", e);
+                        // Continue listening for more events
+                    }
+                }
+            }
+        });
+
+        info!("✅ TransformRegistrationRequest listener started successfully");
+        Ok(())
+    }
+
+    /// Handle transform registration without creating a new manager instance
+    fn handle_transform_registration(
+        db_ops: &Arc<DbOperations>,
+        registration: &crate::schema::types::TransformRegistration,
+    ) -> Result<(), SchemaError> {
+        use log::info;
+        
+        let transform_id = &registration.transform_id;
+        let transform = &registration.transform;
+        let trigger_fields = &registration.trigger_fields;
+
+        info!("🔧 Handling transform registration for '{}'", transform_id);
+
+        // 1. Store the transform in the database
+        db_ops.store_transform(transform_id, transform)?;
+
+        // 2. Update field-to-transform mappings
+        Self::update_field_trigger_mappings_static(db_ops, transform_id, trigger_fields)?;
+
+        // 3. Persist field mappings to database
+        let field_to_transforms = db_ops.load_field_to_transforms_mapping(SCHEMA_FIELD_TO_TRANSFORMS_KEY)?;
+        
+        let mapping_data = serde_json::to_vec(&field_to_transforms).map_err(|e| {
+            SchemaError::InvalidData(format!("Failed to serialize field mappings: {}", e))
+        })?;
+        
+        db_ops.store_transform_mapping(SCHEMA_FIELD_TO_TRANSFORMS_KEY, &mapping_data)?;
+
+        info!(
+            "✅ Successfully registered transform '{}' with {} trigger field mappings",
+            transform_id,
+            trigger_fields.len()
+        );
+
+        Ok(())
+    }
+
+    /// Static version of update_field_trigger_mappings for use in event handlers
+    fn update_field_trigger_mappings_static(
+        db_ops: &Arc<DbOperations>,
+        transform_id: &str,
+        trigger_fields: &[String],
+    ) -> Result<(), SchemaError> {
+        // Load current mappings
+        let mut field_to_transforms = db_ops.load_field_to_transforms_mapping(SCHEMA_FIELD_TO_TRANSFORMS_KEY)?;
+
+        // Add mappings for each trigger field
+        for field in trigger_fields {
+            field_to_transforms
+                .entry(field.clone())
+                .or_insert_with(HashSet::new)
+                .insert(transform_id.to_string());
+        }
+
+        // Store updated mappings
+        let mapping_data = serde_json::to_vec(&field_to_transforms).map_err(|e| {
+            SchemaError::InvalidData(format!("Failed to serialize field mappings: {}", e))
+        })?;
+        
+        db_ops.store_transform_mapping(SCHEMA_FIELD_TO_TRANSFORMS_KEY, &mapping_data)?;
+
+        Ok(())
+    }
 }
 
 impl TransformRunner for TransformManager {
@@ -406,10 +550,11 @@ impl TransformRunner for TransformManager {
         );
 
         // Store the result using message bus
-        match crate::fold_db_core::transform_manager::result_storage::ResultStorage::store_transform_result_generic(
-            &self.db_ops,
+        let mut result_map = HashMap::new();
+        result_map.insert("result".to_string(), result.clone());
+        match ResultStorage::store_transform_result_generic(
             &transform,
-            &result,
+            result_map,
             Some(&self.message_bus)
         ) {
             Ok(_) => {

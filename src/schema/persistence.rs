@@ -3,7 +3,7 @@ use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::constants::{
     ATOM_UUID_FIELD, DEFAULT_OUTPUT_FIELD_NAME, DEFAULT_TRANSFORM_ID_SUFFIX, KEY_FIELD_NAME,
 };
-use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError};
+use crate::schema::types::{JsonSchemaDefinition, Schema, SchemaError, DeclarativeSchemaDefinition};
 use log::info;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,179 +12,33 @@ use crate::schema::types::field::RangeField;
 use crate::schema::types::field::HashRangeField;
 use crate::schema::types::field::SingleField;
 use crate::schema::types::field::FieldVariant;
+use crate::fees::payment_config::SchemaPaymentConfig;
+use crate::fees::types::config::FieldPaymentConfig;
+use crate::fees::types::config::TrustDistanceScaling;
+use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
+use crate::schema::types::field::common::FieldCommon;
 
 impl SchemaCore {
-    /// Persist all schema load states using DbOperations
-    pub(crate) fn persist_states(&self) -> Result<(), SchemaError> {
-        let available = self.available.lock().map_err(|_| schema_lock_error())?;
 
-        for (name, (_, state)) in available.iter() {
-            self.db_ops.store_schema_state(name, *state)?;
-        }
-
-        Ok(())
-    }
-
-    /// Load schema states using DbOperations
-    pub fn load_states(&self) -> HashMap<String, SchemaState> {
-        self.db_ops.get_all_schema_states().unwrap_or_default()
-    }
-
-    /// Persists a schema using DbOperations
-    pub(crate) fn persist_schema(&self, schema: &Schema) -> Result<(), SchemaError> {
-        self.db_ops.store_schema(&schema.name, schema)
-    }
-
-    /// Return all JSON schema files in the given directory
-    pub(crate) fn iter_schema_files(dir: &Path) -> Result<Vec<PathBuf>, SchemaError> {
-        let mut files = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|e| e == "json").unwrap_or(false) {
-                    files.push(path);
-                }
-            }
-        }
-        Ok(files)
-    }
-
-    /// Parse a schema from the given JSON file path
+    /// The definitive parser.
     pub(crate) fn parse_schema_file(&self, path: &Path) -> Result<Option<Schema>, SchemaError> {
         let contents = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(e) => {
-                return Err(SchemaError::InvalidData(format!(
-                    "Failed to read {}: {}",
-                    path.display(),
-                    e
-                )))
+                return Err(SchemaError::InvalidData(format!("Failed to read {}: {}", path.display(), e)))
             }
         };
-
-        log::info!("🔍 Parsing schema file: {}", path.display());
-
-        let mut schema_opt = serde_json::from_str::<Schema>(&contents).ok();
-        if schema_opt.is_some() {
-            log::info!("✅ Parsed as Schema: {}", path.display());
-        }
-
-        if schema_opt.is_none() {
-            if let Ok(json_schema) = serde_json::from_str::<JsonSchemaDefinition>(&contents) {
-                if let Ok(schema) = self.interpret_schema(json_schema) {
-                    schema_opt = Some(schema);
-                    log::info!("✅ Parsed as JsonSchemaDefinition: {}", path.display());
-                }
-            }
-        }
-
-        if schema_opt.is_none() {
-            if let Ok(declarative_schema) = serde_json::from_str::<
-                crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
-            >(&contents)
-            {
-                log::info!(
-                    "🔍 Attempting to interpret declarative schema: {}",
-                    path.display()
-                );
-                if let Ok(schema) = self.interpret_declarative_schema(declarative_schema) {
-                    schema_opt = Some(schema);
-                    log::info!(
-                        "✅ Parsed as DeclarativeSchemaDefinition: {}",
-                        path.display()
-                    );
-                } else {
-                    log::warn!(
-                        "❌ Failed to interpret declarative schema: {}",
-                        path.display()
-                    );
-                }
-            } else {
-                log::warn!(
-                    "❌ Failed to parse as DeclarativeSchemaDefinition: {}",
-                    path.display()
-                );
-            }
-        }
-
-        if schema_opt.is_none() {
-            log::warn!("❌ Could not parse schema file: {}", path.display());
-        }
-
-        Ok(schema_opt)
+        let declarative_schema = serde_json::from_str::<DeclarativeSchemaDefinition>(&contents)
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to parse declarative schema: {}", e)))?;
+        Ok(Some(self.interpret_declarative_schema(declarative_schema)?))
     }
 
-    /// Loads schemas from the `schemas` directory and restores their states.
-    ///
-    /// Schemas found in `available_schemas` are only discovered and added to the
-    /// available list but are **not** automatically loaded into memory.
-    pub fn load_schemas_from_disk(&self) -> Result<(), SchemaError> {
-        let states = self.load_states();
-
-        // Load from the node's schemas directory
-        info!("Loading schemas from {}", self.schemas_dir.display());
-        self.load_schemas_from_directory(&self.schemas_dir, &states)?;
-
-        // Discover available schemas without loading them
-        for mut schema in self.discover_available_schemas()? {
-            let name = schema.name.clone();
-            let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
-            let mut available = self.available.lock().map_err(|_| schema_lock_error())?;
-            available.insert(name.clone(), (schema, state));
-            info!(
-                "Discovered available schema '{}' from available_schemas/ with state: {:?}",
-                name, state
-            );
-        }
-
-        // Persist any changes to schema states from newly discovered schemas
-        self.persist_states()?;
-
-        Ok(())
-    }
-
-    /// Helper method to load schemas from a specific directory
-    pub(crate) fn load_schemas_from_directory(
-        &self,
-        dir: &Path,
-        states: &HashMap<String, SchemaState>,
-    ) -> Result<(), SchemaError> {
-        for path in Self::iter_schema_files(dir)? {
-            if let Some(mut schema) = self.parse_schema_file(&path)? {
-                let name = schema.name.clone();
-                let state = states.get(&name).copied().unwrap_or(SchemaState::Available);
-                {
-                    let mut available = self.available.lock().map_err(|_| schema_lock_error())?;
-                    available.insert(name.clone(), (schema.clone(), state));
-                }
-                if state == SchemaState::Approved {
-                    let mut loaded = self.schemas.lock().map_err(|_| schema_lock_error())?;
-                    loaded.insert(name.clone(), schema);
-                    drop(loaded);
-                    let _ = self.map_fields(&name);
-                }
-                info!(
-                    "Loaded schema '{}' from {} with state: {:?}",
-                    name,
-                    dir.display(),
-                    state
-                );
-            }
-        }
-        Ok(())
-    }
 
     /// Interprets a declarative schema definition and converts it to a Schema.
     pub fn interpret_declarative_schema(
         &self,
-        declarative_schema: crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
+        declarative_schema: DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
-        use crate::fees::payment_config::SchemaPaymentConfig;
-        use crate::fees::types::config::FieldPaymentConfig;
-        use crate::fees::types::config::TrustDistanceScaling;
-        use crate::permissions::types::policy::{PermissionsPolicy, TrustDistance};
-        use crate::schema::field::HashRangeField;
-        use crate::schema::types::{field::common::Field, FieldVariant, SingleField};
 
         let default_permissions_policy = PermissionsPolicy::new(
             TrustDistance::Distance(0),
@@ -195,51 +49,56 @@ impl SchemaCore {
             trust_distance_scaling: TrustDistanceScaling::None,
             min_payment: None,
         };
-        let default_field_mappers = std::collections::HashMap::new();
-        let default_inner_field = crate::schema::types::field::common::FieldCommon::new(
+        let default_field_mappers = HashMap::new();
+        let default_inner_field = FieldCommon::new(
             default_permissions_policy.clone(),
             default_payment_config.clone(),
             default_field_mappers.clone(),
         );
 
         // Convert fields from FieldDefinition to FieldVariant
-        let mut fields = std::collections::HashMap::new();
-        for (field_name, field_def) in declarative_schema.fields.clone() {
-            match &declarative_schema.schema_type {
-                SchemaType::HashRange => {
+        let mut fields = HashMap::new();
+        let mut add_field = |field_name: String| {    
+            let schema_type = declarative_schema.schema_type.clone();
+            match &schema_type {
+                SchemaType::HashRange { .. } => {
 
-                    let mut hashrange_field = HashRangeField {
+                    let hashrange_field = HashRangeField {
                         inner: default_inner_field.clone(),
                         molecule_hash_range: None,
                     };
 
                     fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
                 }
-                SchemaType::Range { range_key } => {
-                    let mut range_field = RangeField {
+                SchemaType::Range { .. } => {
+                    let range_field = RangeField {
                         inner: default_inner_field.clone(),
                         molecule_range: None,
                     };
                     
                     fields.insert(field_name, FieldVariant::Range(range_field));
                 }
-                _ => {
-                    // For other schema types, create SingleField variants
-                    let mut single_field = SingleField {
+                SchemaType::Single => {
+                    let single_field = SingleField {
                         inner: default_inner_field.clone(),
                     };
-
-                    // Set molecule UUID if provided
-                    if let Some(atom_uuid) = field_def.field_expression {
-                        single_field.set_molecule_uuid(atom_uuid);
-                    }
-
-                    // Fields from declarative schemas are derived and should not be writable
-                    single_field.set_writable(false);
 
                     fields.insert(field_name, FieldVariant::Single(single_field));
                 }
             }
+        };
+
+        for field_name in declarative_schema.fields.clone().unwrap() {
+            add_field(field_name);
+        }
+
+        for (field_name, _) in declarative_schema.transform_fields.clone().unwrap() {
+            add_field(field_name);
+        }
+
+        if let Some(transform_fields) = &declarative_schema.transform_fields {
+            // Register declarative transforms using the event bus
+            self.register_declarative_transforms(&declarative_schema, transform_fields)?;
         }
 
         // Create the schema with appropriate type
@@ -255,160 +114,54 @@ impl SchemaCore {
             hash: None,
         };
 
-        // Auto-register the declarative transform only if the schema is approved
-        // Check if this schema is already approved before registering the transform
-        let schema_name = &declarative_schema.name;
-        match self.db_ops.get_schema_state(schema_name) {
-            Ok(Some(crate::schema::SchemaState::Approved)) => {
-                info!(
-                    "✅ Schema '{}' is approved, registering declarative transform",
-                    schema_name
-                );
-                self.register_declarative_transform(&declarative_schema)?;
-            }
-            Ok(Some(state)) => {
-                info!(
-                    "⏸️ Schema '{}' is in {:?} state, skipping declarative transform registration",
-                    schema_name, state
-                );
-            }
-            Ok(None) => {
-                info!("⏸️ Schema '{}' not found in database, skipping declarative transform registration", schema_name);
-            }
-            Err(e) => {
-                log_feature!(
-                    LogFeature::Schema,
-                    warn,
-                    "Failed to check schema state for '{}': {}, skipping transform registration",
-                    schema_name,
-                    e
-                );
-            }
-        }
-
         Ok(schema)
     }
 
-    /// Registers a declarative transform automatically when a declarative schema is loaded
-    ///
-    /// PURPOSE: This is a SECONDARY/LEGACY registration path for declarative transforms.
-    /// Called during schema interpretation IF the schema is already approved.
-    ///
-    /// FLOW: Schema interpretation → Check if approved → Transform registration (if approved)
-    ///
-    /// NOTE: This path is DEPRECATED and should be removed. The primary path is in
-    /// schema_operations.rs during schema approval. This creates duplicate registration
-    /// attempts and potential conflicts.
-    ///
-    /// This method:
-    /// 1. Extracts input dependencies from raw declarative schema field definitions
-    /// 2. Creates trigger fields for all fields in the input schema  
-    /// 3. Stores the transform and registration in the database
-    pub fn register_declarative_transform(
+    /// Registers declarative transforms using the event bus
+    fn register_declarative_transforms(
         &self,
-        declarative_schema: &crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
+        declarative_schema: &DeclarativeSchemaDefinition,
+        transform_fields: &HashMap<String, String>,
     ) -> Result<(), SchemaError> {
-        use crate::schema::types::{Transform, TransformRegistration};
-        use log::info;
+        use crate::fold_db_core::infrastructure::message_bus::events::schema_events::TransformRegistrationRequest;
+        use crate::schema::types::transform::{Transform, TransformRegistration};
+        use uuid::Uuid;
 
-        // Extract input dependencies from the schema
-        let mut input_molecules = Vec::new();
-        let mut input_names = Vec::new();
+        for (field_name, _field_expression) in transform_fields {
+            // Create a transform ID based on schema name and field name
+            let transform_id = format!("{}_{}", declarative_schema.name, field_name);
+            
+            // Create the transform from the declarative schema
+            let transform = Transform::from_declarative_schema(declarative_schema.clone());
+            
+            // Determine trigger fields
+            let trigger_fields = declarative_schema.get_inputs();
+            
+            // Create the registration
+            let registration = TransformRegistration {
+                transform_id: transform_id.clone(),
+                transform,
+                trigger_fields,
+            };
 
-        // Extract schema names from field expressions
-        for field_def in declarative_schema.fields.values() {
-            if let Some(atom_uuid) = &field_def.field_expression {
-                // Extract schema name from atom_uuid expression (e.g., "BlogPost.map().$atom_uuid")
-                if let Some(schema_name) = atom_uuid.split('.').next() {
-                    if !input_molecules.contains(&schema_name.to_string()) {
-                        input_molecules.push(schema_name.to_string());
-                        input_names.push(schema_name.to_string());
-                        info!("📋 Added input dependency from atom_uuid: {}", schema_name);
-                    }
-                }
-            }
+            // Create the registration request event
+            let correlation_id = Uuid::new_v4().to_string();
+            let registration_request = TransformRegistrationRequest {
+                registration,
+                correlation_id,
+            };
+
+            // Publish the event to the message bus
+            self.get_message_bus().publish(registration_request)
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to publish transform registration request: {}", e)))?;
+
+            log::info!(
+                "📤 Published TransformRegistrationRequest for transform '{}' on field '{}'",
+                transform_id,
+                field_name
+            );
         }
-
-        // Also check key configuration for schema names
-        if let Some(key_config) = &declarative_schema.key {
-            let key_expressions = vec![&key_config.hash_field, &key_config.range_field];
-            for expression in key_expressions {
-                if let Some(schema_name) = expression.split('.').next() {
-                    if !input_molecules.contains(&schema_name.to_string()) {
-                        input_molecules.push(schema_name.to_string());
-                        input_names.push(schema_name.to_string());
-                        info!("📋 Added input dependency from key config: {}", schema_name);
-                    }
-                }
-            }
-        }
-
-        // If no input dependencies found, use a default
-        if input_molecules.is_empty() {
-            input_molecules.push("BlogPost".to_string());
-            input_names.push("BlogPost".to_string());
-            info!("📋 Using default input dependency: BlogPost");
-        }
-
-        // For declarative schemas, use the default output field name
-        // TODO: In the future, this could be made configurable via schema metadata
-        let output_field = DEFAULT_OUTPUT_FIELD_NAME.to_string();
-
-        // Create a transform from the declarative schema
-        let transform = Transform::from_declarative_schema(
-            declarative_schema.clone(),
-        );
-
-        // Generate transform ID using configurable suffix
-        let transform_id = format!(
-            "{}.{}",
-            declarative_schema.name, DEFAULT_TRANSFORM_ID_SUFFIX
-        );
-
-        // Create trigger fields based on input dependencies
-        // For declarative transforms, we need to trigger on individual fields
-        // so the EventMonitor can find the transforms when mutations complete
-        let mut trigger_fields = Vec::new();
-        for input_schema in &input_molecules {
-            // Get the schema definition to find all its fields
-            if let Ok(Some(schema)) = self.db_ops.get_schema(input_schema) {
-                for field_name in schema.fields.keys() {
-                    let field_key = format!("{}.{}", input_schema, field_name);
-                    trigger_fields.push(field_key.clone());
-                    info!("📋 Added trigger field: {}", field_key);
-                }
-            } else {
-                // Fallback: if we can't get the schema, just use the schema name
-                trigger_fields.push(input_schema.clone());
-                info!("📋 Added fallback trigger field: {}", input_schema);
-            }
-        }
-
-        // Create the registration
-        let registration = TransformRegistration {
-            transform_id: transform_id.clone(),
-            transform,
-            trigger_fields,
-        };
-
-        // Store the transform registration in the database for later processing
-        self.db_ops
-            .store_transform(&transform_id, &registration.transform)?;
-        self.db_ops.store_transform_registration(&registration)?;
-
-        info!(
-            "✅ Auto-registered declarative transform: {} (stored for later processing)",
-            transform_id
-        );
 
         Ok(())
-    }
-
-    /// Gets a transform by ID from the database
-    pub fn get_transform(
-        &self,
-        transform_id: &str,
-    ) -> Result<Option<crate::schema::types::Transform>, SchemaError> {
-        self.db_ops.get_transform(transform_id)
     }
 }

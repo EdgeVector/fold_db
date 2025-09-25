@@ -15,7 +15,7 @@ use datafold::db_operations::DbOperations;
 use datafold::fees::types::config::FieldPaymentConfig;
 use datafold::fees::SchemaPaymentConfig;
 use datafold::fold_db_core::infrastructure::message_bus::{
-    request_events::FieldValueSetRequest, MessageBus, NormalizedRequestParts,
+    request_events::FieldValueSetRequest, MessageBus,
 };
 use datafold::fold_db_core::managers::atom::AtomManager;
 use datafold::fold_db_core::transform_manager::TransformManager;
@@ -86,16 +86,26 @@ pub fn normalized_field_value_request_with_keys(
     let mut fields = serde_json::Map::new();
     fields.insert(field_name.clone(), field_value);
 
-    FieldValueSetRequest::from_normalized_parts(NormalizedRequestParts {
+    // Create mutation context if we have key values
+    let mutation_context = if hash.is_some() || range.is_some() {
+        Some(datafold::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+            range_key: range.map(|s| s.to_string()),
+            hash_key: hash.map(|s| s.to_string()),
+            mutation_hash: None,
+            incremental: true,
+        })
+    } else {
+        None
+    };
+
+    FieldValueSetRequest {
         correlation_id,
         schema_name,
         field_name,
-        fields,
-        hash: hash.map(|value| value.to_string()),
-        range: range.map(|value| value.to_string()),
+        value: JsonValue::Object(fields),
         source_pub_key,
-        mutation_hash: None,
-    })
+        mutation_context,
+    }
 }
 
 /// Build a Single schema with optional universal key configuration for tests.

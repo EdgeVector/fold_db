@@ -51,7 +51,7 @@ impl EventType for TransformTriggered {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformRegistrationRequest {
     pub registration: crate::schema::types::TransformRegistration,
     pub correlation_id: String,
@@ -63,7 +63,7 @@ impl EventType for TransformRegistrationRequest {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformRegistrationResponse {
     pub correlation_id: String,
     pub success: bool,

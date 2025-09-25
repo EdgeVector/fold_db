@@ -23,8 +23,10 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             schema_type: crate::schema::types::schema::SchemaType,
             #[serde(skip_serializing_if = "Option::is_none")]
             key: Option<KeyConfig>,
-            #[serde(deserialize_with = "deserialize_mixed_format_fields")]
-            fields: HashMap<String, FieldDefinition>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            fields: Option<Vec<String>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform_fields: Option<HashMap<String, String>>,
         }
 
         // Deserialize into the helper struct
@@ -36,6 +38,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             helper.schema_type,
             helper.key,
             helper.fields,
+            helper.transform_fields,
         ))
     }
 }
@@ -107,10 +110,11 @@ pub struct DeclarativeSchemaDefinition {
         /// Key configuration (required when schema_type == "HashRange")
         #[serde(skip_serializing_if = "Option::is_none")]
         pub key: Option<KeyConfig>,
-        /// Field definitions with their mapping expressions
-        pub fields: HashMap<String, FieldDefinition>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub fields: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub transform_fields: Option<HashMap<String, String>>,
 
-        // getter
         #[serde(skip)]
         inputs_schema_fields: Vec<String>,
 
@@ -145,13 +149,15 @@ impl DeclarativeSchemaDefinition {
         name: String,
         schema_type: crate::schema::types::schema::SchemaType,
         key: Option<KeyConfig>,
-        fields: HashMap<String, FieldDefinition>,
+        fields: Option<Vec<String>>,
+        transform_fields: Option<HashMap<String, String>>,
     ) -> Self {
         let mut schema = Self {
             name,
             schema_type,
             key,
             fields,
+            transform_fields,
             inputs_schema_fields: Vec::new(),
             key_to_hash_code: HashMap::new(),
             field_to_hash_code: HashMap::new(),
@@ -167,8 +173,6 @@ impl DeclarativeSchemaDefinition {
     fn generate_inputs(&mut self) {
         let mut inputs_schema_fields = Vec::new();
         for code_def in self.hash_to_code.keys() {
-            // get the schema.field from the code_def, will be the first two elements of the split
-            let mut dot_iterator = self.hash_to_code.get(code_def).unwrap().split(".");
             inputs_schema_fields.push(
                 self.hash_to_code.get(code_def).unwrap().split(".").take(2).collect::<Vec<&str>>().join(".")
             );
@@ -198,29 +202,13 @@ impl DeclarativeSchemaDefinition {
     fn generate_hash_to_code_mappings(&mut self) {
         let mut hash_to_code = HashMap::new();
         
-        // Hash key expressions if present
-        if let Some(key_config) = &self.key {
-            // Hash hash_field expression
-            if !key_config.hash_field.trim().is_empty() {
-                let hash = Self::hash_expression(&key_config.hash_field);
-                hash_to_code.insert(hash.clone(), key_config.hash_field.clone());
-                self.key_to_hash_code.insert(key_config.hash_field.clone(), hash);
-            }
-            
-            // Hash range_field expression
-            if !key_config.range_field.trim().is_empty() {
-                let hash = Self::hash_expression(&key_config.range_field);
-                hash_to_code.insert(hash.clone(), key_config.range_field.clone());
-                self.key_to_hash_code.insert(key_config.range_field.clone(), hash);
-            }
-        }
-        
         // Hash field expressions
-        for field_def in self.fields.values() {
-            if let Some(field_expression) = &field_def.field_expression {
-                let hash = Self::hash_expression(field_expression);
-                hash_to_code.insert(hash.clone(), field_expression.clone());
-                self.field_to_hash_code.insert(field_expression.clone(), hash);
+        for (field_name, field_def) in self.transform_fields.as_ref().unwrap().iter() {
+            let field_def_str = field_def.as_str();
+            if !field_def_str.trim().is_empty() {
+                let hash = Self::hash_expression(field_def_str);
+                hash_to_code.insert(hash.clone(), field_def_str.to_string());
+                self.field_to_hash_code.insert(field_name.clone(), hash);
             }
         }
         

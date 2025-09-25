@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use crate::schema::constants::{HASH_FIELD_NAME, RANGE_FIELD_NAME};
 use crate::schema::field::HashRangeField;
 use crate::schema::types::{
-    field::common::Field, FieldVariant, JsonSchemaDefinition, JsonSchemaField, Schema, SchemaError,
-    SingleField,
+    field::common::Field, FieldVariant, Schema, SchemaError,
+    SingleField, SchemaType,
 };
+use crate::schema::json_schema::{JsonSchemaDefinition, JsonSchemaField};
 
 /// Converts a JSON schema field to a FieldVariant.
 fn convert_field(
@@ -13,7 +14,7 @@ fn convert_field(
     schema_type: &crate::schema::types::schema::SchemaType,
 ) -> FieldVariant {
     match schema_type {
-        crate::schema::types::schema::SchemaType::HashRange => {
+        crate::schema::types::schema::SchemaType::HashRange { .. } => {
             // For HashRange schemas, create HashRangeField variants
             let hashrange_field = HashRangeField {
                 inner: crate::schema::types::field::common::FieldCommon::new(
@@ -79,6 +80,12 @@ pub fn interpret_schema(
         );
     }
 
+    let key = match json_schema.schema_type {
+        SchemaType::HashRange { keyconfig } => Some(keyconfig),
+        SchemaType::Range { keyconfig } => Some(keyconfig),
+        SchemaType::Single => None,
+    };
+
     // Create the schema
     Ok(Schema {
         name: json_schema.name,
@@ -88,29 +95,4 @@ pub fn interpret_schema(
         payment_config: json_schema.payment_config,
         hash: json_schema.hash,
     })
-}
-
-/// Interprets a JSON schema from a string and loads it as Available.
-pub fn load_schema_from_json(
-    json_str: &str,
-) -> Result<Schema, SchemaError> {
-    log::info!(
-        "Parsing JSON schema from string, length: {}",
-        json_str.len()
-    );
-    let json_schema: JsonSchemaDefinition = serde_json::from_str(json_str)
-        .map_err(|e| SchemaError::InvalidField(format!("Invalid JSON schema: {e}")))?;
-
-    log::info!(
-        "JSON schema parsed successfully, name: {}, fields: {:?}",
-        json_schema.name,
-        json_schema.fields.keys().collect::<Vec<_>>()
-    );
-    let schema = interpret_schema(json_schema)?;
-    log::info!(
-        "Schema interpreted successfully, name: {}, fields: {:?}",
-        schema.name,
-        schema.fields.keys().collect::<Vec<_>>()
-    );
-    Ok(schema)
 }

@@ -4,7 +4,8 @@ use crate::fold_db_core::infrastructure::message_bus::events::MutationRequest;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::schema::types::MutationType;
+use crate::schema::types::operations::MutationType;
+use crate::schema::types::key_config::KeyConfig;
 use uuid::Uuid;
 
 /// Handles storing transform results
@@ -24,21 +25,12 @@ impl ResultStorage {
         let mut fields_and_values = HashMap::new();
         let mut keys_and_values = HashMap::new();
 
-        for (field_name, hash_code) in field_to_hash_code {
-            let result = code_hash_to_result.get(&hash_code).unwrap().clone();
-            fields_and_values.insert(field_name, result);
-        }
-
-        for (key_name, hash_code) in key_to_hash_code {
-            let result = code_hash_to_result.get(&hash_code).unwrap().clone();
-            keys_and_values.insert(key_name, result);
-        }
-
         // create a mutation through the event bus
+        // TODO: add key_config to the mutation
         let mutation = Mutation::new(
             transform.get_declarative_schema().unwrap().name.clone(),
             fields_and_values,
-            keys_and_values,
+            KeyConfig::new(),
             TRANSFORM_SYSTEM_ID.to_string(),
             0,
             MutationType::Update,

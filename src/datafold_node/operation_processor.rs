@@ -6,7 +6,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
+use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::operations::MutationType;
 use super::DataFoldNode;
 
 /// Centralized operation processor that handles all operation types consistently.
@@ -52,9 +53,9 @@ impl OperationProcessor {
             Operation::Mutation {
                 schema,
                 fields_and_values,
-                keys_and_values,
+                key_config,
                 mutation_type,
-            } => self.execute_mutation(schema, fields_and_values, keys_and_values, mutation_type).await,
+            } => self.execute_mutation(schema, fields_and_values, key_config, mutation_type).await,
         }
     }
 
@@ -90,8 +91,8 @@ impl OperationProcessor {
         &self,
         schema: String,
         fields_and_values: HashMap<String, Value>,
-        keys_and_values: HashMap<String, String>,
-        mutation_type: crate::schema::types::MutationType,
+        key_config: KeyConfig,
+        mutation_type: MutationType,
     ) -> FoldDbResult<Value> {
         // Validate that fields_and_values is not empty
         if fields_and_values.is_empty() {
@@ -111,14 +112,14 @@ impl OperationProcessor {
         let mutation = Mutation {
             schema_name: schema,
             fields_and_values,
-            keys_and_values,
+            key_config,
             pub_key: String::new(),
             trust_distance: 0,
             mutation_type,
             synchronous: None,
         };
 
-        let mut node_guard = self.node.lock().await;
+        let node_guard = self.node.lock().await;
         node_guard.mutate(mutation)?;
 
         Ok(serde_json::json!({ "success": true }))

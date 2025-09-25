@@ -15,20 +15,11 @@ pub mod error;
 mod operation_processor;
 pub mod http_server;
 pub mod log_routes;
-mod network;
-pub mod network_routes;
 pub mod node;
-mod permissions;
 pub mod query_routes;
-mod schema_manager;
 pub mod schema_routes;
 pub mod security_routes;
 pub mod system_routes;
-pub mod tcp_command_router;
-pub mod tcp_connections;
-pub mod tcp_protocol;
-pub mod tcp_server;
-pub mod tests;
 mod transform_queue;
 
 // Re-export the DataFoldNode struct for easier imports
@@ -37,4 +28,3 @@ pub use config::NodeConfig;
 pub use http_server::DataFoldHttpServer;
 pub use node::DataFoldNode;
 pub use operation_processor::OperationProcessor;
-pub use tcp_server::TcpServer;

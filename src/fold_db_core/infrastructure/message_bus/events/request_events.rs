@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::schema::types::Mutation;
+use crate::schema::types::key_config::KeyConfig;
 
 use super::EventType;
 
@@ -12,6 +13,7 @@ pub struct AtomCreateRequest {
     pub prev_atom_uuid: Option<String>,
     pub content: Value,
     pub status: Option<String>,
+    pub key_config: Option<KeyConfig>,
 }
 
 impl EventType for AtomCreateRequest {

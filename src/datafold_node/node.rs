@@ -152,21 +152,7 @@ impl DataFoldNode {
             info,
             "Loading DataFoldNode from config"
         );
-        let node = Self::new(config)?;
-
-        // Delegate to SchemaCore for unified schema discovery and loading
-        {
-            let db = node
-                .db
-                .lock()
-                .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
-            // Initialize schema system via SchemaCore
-            db.schema_manager
-                .discover_and_load_all_schemas()
-                .map_err(|e| {
-                    FoldDbError::Config(format!("Failed to initialize schema system: {}", e))
-                })?;
-        }
+        let node: DataFoldNode = Self::new(config)?;
 
         log_feature!(
             LogFeature::Database,

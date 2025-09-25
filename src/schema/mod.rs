@@ -54,7 +54,7 @@ pub use file_operations::SchemaFileOperations;
 pub use hasher::SchemaHasher;
 pub use molecule_variants::MoleculeVariant;
 pub use schema_field_mapping::map_fields;
-pub use schema_interpretation::{interpret_schema, load_schema_from_file, load_schema_from_json};
+pub use schema_interpretation::{interpret_schema};
 pub use schema_types::{SchemaLoadingReport, SchemaSource, SchemaState};
 pub use types::*;
 

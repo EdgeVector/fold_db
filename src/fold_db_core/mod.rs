@@ -39,30 +39,28 @@ pub use mutation_completion_handler::{
     MutationCompletionResult, DEFAULT_COMPLETION_TIMEOUT,
 };
 
-// Import infrastructure components that are used internally
-use crate::fold_db_core::transform_manager::types::TransformRunner;
-use infrastructure::init::{init_orchestrator, init_transform_manager};
-use infrastructure::message_bus::request_events::{
-    AtomCreateResponse, FieldUpdateResponse, FieldValueSetResponse, MoleculeCreateResponse,
-    MoleculeUpdateRequest, SchemaApprovalResponse, SchemaLoadResponse, SystemInitializationRequest,
-};
-
-// External dependencies
-use crate::atom::MoleculeBehavior;
-use crate::db_operations::DbOperations;
-use crate::logging::features::{log_feature, LogFeature};
-use crate::permissions::PermissionWrapper;
-use crate::schema::types::{Mutation, Query};
-use crate::schema::SchemaCore;
-use crate::schema::SchemaState;
-use crate::schema::{Schema, SchemaError};
-use log::info;
-use serde_json::Value;
+// Standard library imports
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-// REMOVED: PendingOperationRequest - marked as dead code, never used
+// External crate imports
+use log::info;
+use serde_json::Value;
+
+// Internal crate imports
+use crate::db_operations::DbOperations;
+use crate::logging::features::{log_feature, LogFeature};
+use crate::permissions::PermissionWrapper;
+use crate::schema::types::{Mutation, Query};
+use crate::schema::{SchemaCore, SchemaError};
+
+// Infrastructure components that are used internally
+use infrastructure::init::{init_orchestrator, init_transform_manager};
+use infrastructure::message_bus::request_events::{
+    AtomCreateResponse, FieldUpdateResponse, FieldValueSetResponse, MoleculeCreateResponse,
+    SchemaApprovalResponse, SchemaLoadResponse, SystemInitializationRequest,
+};
 
 /// Unified response type for all operations
 #[derive(Debug, Clone)]
@@ -146,6 +144,9 @@ impl FoldDB {
     }
 
     /// Creates a new FoldDB instance with the specified storage path.
+    /// All initializations happen here. This is the main entry point for the FoldDB system.
+    /// Do not initialize anywhere else.
+    /// updated by @tomtang2
     pub fn new(path: &str) -> sled::Result<Self> {
         let db = match sled::open(path) {
             Ok(db) => db,
@@ -163,7 +164,7 @@ impl FoldDB {
         let orchestrator_tree = db_ops.orchestrator_tree.clone();
 
         // Initialize message bus
-        let message_bus = infrastructure::factory::InfrastructureFactory::create_message_bus();
+        let message_bus = Arc::new(MessageBus::new());
 
         // Initialize components via event-driven system initialization
         let correlation_id = uuid::Uuid::new_v4().to_string();
@@ -185,7 +186,7 @@ impl FoldDB {
         let db_ops_arc = Arc::new(db_ops.clone());
         let atom_manager = AtomManager::new(db_ops.clone(), Arc::clone(&message_bus));
         let schema_manager = Arc::new(
-            SchemaCore::new(path, Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
+            SchemaCore::new(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
                 .map_err(|e| sled::Error::Unsupported(e.to_string()))?,
         );
 
@@ -200,57 +201,6 @@ impl FoldDB {
             Arc::new(db_ops.clone()),
         )?;
 
-        info!("Loading schema states from disk during FoldDB initialization");
-        if let Err(e) = schema_manager.discover_and_load_all_schemas() {
-            info!("Failed to load schema states: {}", e);
-        } else {
-            // After loading schema states, we need to ensure approved schemas are moved from 'available'
-            // to 'schemas' HashMap so that map_fields() can find them
-            if let Ok(approved_schemas) =
-                schema_manager.list_schemas_by_state(SchemaState::Approved)
-            {
-                info!("Moving {} approved schemas from 'available' to 'schemas' HashMap for field mapping", approved_schemas.len());
-
-                // Move approved schemas from available to schemas HashMap
-                for schema_name in &approved_schemas {
-                    if let Err(e) = schema_manager.ensure_approved_schema_in_schemas(schema_name) {
-                        info!(
-                            "Failed to move approved schema '{}' to schemas HashMap: {}",
-                            schema_name, e
-                        );
-                    }
-                }
-
-                // Now proceed with field mapping for all approved schemas
-                for schema_name in approved_schemas {
-                    if let Ok(molecules) = schema_manager.map_fields(&schema_name) {
-                        // Persist each molecule using event-driven communication
-                        for molecule in molecules {
-                            let molecule_uuid = molecule.uuid().to_string();
-                            let atom_uuid = molecule.get_atom_uuid().clone();
-
-                            // Send MoleculeUpdateRequest via message bus
-                            let correlation_id = uuid::Uuid::new_v4().to_string();
-                            let update_request = MoleculeUpdateRequest {
-                                correlation_id: correlation_id.clone(),
-                                molecule_uuid: molecule_uuid.clone(),
-                                atom_uuid,
-                                source_pub_key: "system".to_string(),
-                                molecule_type: "Single".to_string(), // Default type for schema initialization
-                                additional_data: None,
-                            };
-
-                            if let Err(e) = message_bus.publish(update_request) {
-                                info!(
-                                    "Failed to publish MoleculeUpdateRequest for schema '{}': {}",
-                                    schema_name, e
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         // Create and start EventMonitor for system-wide observability
         let event_monitor = Arc::new(infrastructure::event_monitor::EventMonitor::new(
@@ -314,31 +264,6 @@ impl FoldDB {
         // Delegate to working schema_manager implementation
         self.schema_manager
             .load_schema_from_file(path.as_ref().to_str().unwrap())
-    }
-
-    /// Add a schema to available schemas (for testing compatibility)
-    pub fn add_schema_available(&mut self, schema: Schema) -> Result<(), SchemaError> {
-        // Delegate to working schema_manager implementation
-        self.schema_manager.add_schema_available(schema)
-    }
-
-    /// Approve a schema for queries and mutations (for testing compatibility)
-    pub fn approve_schema(&mut self, schema_name: &str) -> Result<(), SchemaError> {
-        // Delegate to working schema_manager implementation
-        self.schema_manager.approve_schema(schema_name)
-    }
-
-    /// Mark a schema as unloaded without removing transforms.
-    pub fn unload_schema(&self, schema_name: &str) -> Result<(), SchemaError> {
-        self.schema_manager.unload_schema(schema_name)
-    }
-
-    /// Get a schema by name - public accessor for testing
-    pub fn get_schema(
-        &self,
-        schema_name: &str,
-    ) -> Result<Option<crate::schema::Schema>, SchemaError> {
-        self.schema_manager.get_schema(schema_name)
     }
 
     /// Provides access to the underlying database operations
@@ -444,34 +369,6 @@ impl FoldDB {
         &self,
     ) -> Result<HashMap<String, crate::schema::types::Transform>, SchemaError> {
         self.transform_manager.list_transforms()
-    }
-
-    /// Execute a transform by ID using direct execution
-    /// This executes the transform immediately and returns the result
-    pub fn run_transform(&self, transform_id: &str) -> Result<Value, SchemaError> {
-        println!(
-            "🔄 run_transform called for {} - using direct execution",
-            transform_id
-        );
-
-        // Use direct execution through the transform manager
-        println!(
-            "🔄 About to call TransformRunner::execute_transform_now for transform: {}",
-            transform_id
-        );
-        match TransformRunner::execute_transform_now(&*self.transform_manager, transform_id) {
-            Ok(result) => {
-                println!("🔄 TransformRunner::execute_transform_now completed successfully with result: {}", result);
-                Ok(result)
-            }
-            Err(e) => {
-                println!(
-                    "🔄 TransformRunner::execute_transform_now failed with error: {}",
-                    e
-                );
-                Err(SchemaError::InvalidData(e.to_string()))
-            }
-        }
     }
 
     /// Process any pending transforms in the queue

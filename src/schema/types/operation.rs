@@ -1,4 +1,5 @@
-use crate::schema::types::MutationType;
+use crate::schema::types::operations::MutationType;
+use crate::schema::types::key_config::KeyConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ pub enum Operation {
     Mutation {
         schema: String,
         fields_and_values: HashMap<String, Value>,
-        keys_and_values: HashMap<String, String>,
+        key_config: KeyConfig,
         mutation_type: MutationType,
     },
 }

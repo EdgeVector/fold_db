@@ -69,39 +69,17 @@ impl MoleculeHashRange {
         }
     }
 
-    /// Adds or updates an atom UUID for the given hash and range values.
-    /// 
-    /// # Arguments
-    /// * `hash_value` - The hash field value
-    /// * `range_value` - The range field value  
-    /// * `atom_uuid` - The UUID of the atom to store
-    pub fn set_atom_uuid(&mut self, hash_value: String, range_value: String, atom_uuid: String) {
-        log::debug!(
-            "Setting atom_uuid for molecule_uuid: {} -> hash: {} -> range: {} -> atom: {}",
-            self.uuid,
-            hash_value,
-            range_value,
-            atom_uuid
-        );
-        
-        self.atom_uuids
-            .entry(hash_value)
-            .or_insert_with(BTreeMap::new)
-            .insert(range_value, atom_uuid);
-        self.updated_at = Utc::now();
-    }
-
     /// Adds an atom UUID using a KeyConfig for field mapping.
     /// 
     /// # Arguments
     /// * `atom_uuid` - The UUID of the atom to store
     /// * `key_config` - Configuration specifying which fields to use as hash and range
-    pub fn add_atom_uuid(&mut self, atom_uuid: String, key_config: &KeyConfig) {
-        self.set_atom_uuid(
-            key_config.hash_field.clone(),
-            key_config.range_field.clone(),
-            atom_uuid,
-        );
+    pub fn set_atom_uuid(&mut self, atom_uuid: String, key_config: &KeyConfig) {
+        self.atom_uuids
+            .entry(key_config.hash_field.clone().unwrap())
+            .or_insert_with(BTreeMap::new)
+            .insert(key_config.range_field.clone().unwrap(), atom_uuid);
+        self.updated_at = Utc::now();
     }
 
     /// Returns the UUID of the Atom referenced by the specified hash and range values.

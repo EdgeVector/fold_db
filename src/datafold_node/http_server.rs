@@ -1,5 +1,5 @@
 use super::log_routes;
-use super::{network_routes, query_routes, schema_routes, security_routes, system_routes};
+use super::{query_routes, schema_routes, security_routes, system_routes};
 use crate::datafold_node::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::error_handling::http_errors;
@@ -126,36 +126,7 @@ impl DataFoldHttpServer {
                     web::scope("/api")
                         // Schema endpoints
                         .route("/schemas", web::get().to(schema_routes::list_schemas))
-                        .route(
-                            "/schemas/status",
-                            web::get().to(schema_routes::get_schema_status),
-                        )
-                        .route(
-                            "/schemas/refresh",
-                            web::post().to(schema_routes::refresh_schemas),
-                        )
-                        .route(
-                            "/schemas/available",
-                            web::get().to(schema_routes::list_available_schemas),
-                        )
-                        .route(
-                            "/schemas/available/add",
-                            web::post().to(schema_routes::add_schema_to_available),
-                        )
-                        .route(
-                            "/schemas/by-state/{state}",
-                            web::get().to(schema_routes::list_schemas_by_state),
-                        )
                         .route("/schema/{name}", web::get().to(schema_routes::get_schema))
-                        .route("/schema", web::post().to(schema_routes::create_schema))
-                        .route(
-                            "/schema/{name}",
-                            web::delete().to(schema_routes::unload_schema_route),
-                        )
-                        .route(
-                            "/schema/{name}/load",
-                            web::post().to(schema_routes::load_schema_route),
-                        )
                         .route(
                             "/schema/{name}/approve",
                             web::post().to(schema_routes::approve_schema),
@@ -163,10 +134,6 @@ impl DataFoldHttpServer {
                         .route(
                             "/schema/{name}/block",
                             web::post().to(schema_routes::block_schema),
-                        )
-                        .route(
-                            "/schema/{name}/state",
-                            web::get().to(schema_routes::get_schema_state),
                         )
                         // Operation endpoints
                         .route("/execute", web::post().to(query_routes::execute_operation))
@@ -199,10 +166,6 @@ impl DataFoldHttpServer {
                         )
                         // Transform endpoints
                         .route("/transforms", web::get().to(query_routes::list_transforms))
-                        .route(
-                            "/transform/{id}/run",
-                            web::post().to(query_routes::run_transform),
-                        )
                         .route(
                             "/transforms/queue",
                             web::get().to(query_routes::get_transform_queue),
@@ -276,17 +239,6 @@ impl DataFoldHttpServer {
                                     web::post().to(security_routes::protected_endpoint),
                                 ),
                         )
-                        // Network endpoints
-                        .service(
-                            web::scope("/network")
-                                .route("/init", web::post().to(network_routes::init_network))
-                                .route("/start", web::post().to(network_routes::start_network))
-                                .route("/stop", web::post().to(network_routes::stop_network))
-                                .route("/status", web::get().to(network_routes::get_network_status))
-                                .route("/connect", web::post().to(network_routes::connect_to_node))
-                                .route("/discover", web::post().to(network_routes::discover_nodes))
-                                .route("/nodes", web::get().to(network_routes::list_nodes)),
-                        ),
                 )
                 // Serve the built React UI if it exists
                 .service(
