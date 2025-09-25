@@ -5,6 +5,7 @@
 
 use crate::db_operations::DbOperations;
 use crate::schema::{Schema, SchemaError};
+use crate::schema::types::field::HashRangeFilter;
 use log::info;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -22,7 +23,6 @@ impl HashRangeQueryProcessor {
 
     /// Get the hash and range field names from the schema's universal key configuration
     fn get_key_field_names(&self, schema: &Schema) -> Result<(String, String), SchemaError> {
-        // For HashRange schemas, both hash_field and range_field are required
         let key_config = schema.key.as_ref().ok_or_else(|| {
             SchemaError::InvalidData(format!(
                 "HashRange schema '{}' requires key configuration",
@@ -30,23 +30,19 @@ impl HashRangeQueryProcessor {
             ))
         })?;
 
-        let hash_field = if key_config.hash_field.trim().is_empty() {
-            return Err(SchemaError::InvalidData(format!(
-                "HashRange schema '{}' requires non-empty hash_field in key configuration",
-                schema.name
-            )));
-        } else {
-            key_config.hash_field.clone()
-        };
+        let hash_field = key_config.hash_field.as_ref()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| SchemaError::InvalidData(format!(
+                "HashRange schema '{}' requires non-empty hash_field", schema.name
+            )))?
+            .clone();
 
-        let range_field = if key_config.range_field.trim().is_empty() {
-            return Err(SchemaError::InvalidData(format!(
-                "HashRange schema '{}' requires non-empty range_field in key configuration",
-                schema.name
-            )));
-        } else {
-            key_config.range_field.clone()
-        };
+        let range_field = key_config.range_field.as_ref()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| SchemaError::InvalidData(format!(
+                "HashRange schema '{}' requires non-empty range_field", schema.name
+            )))?
+            .clone();
 
         info!(
             "🔑 HashRange schema '{}' key fields - hash: '{}', range: '{}'",
@@ -179,7 +175,7 @@ impl HashRangeQueryProcessor {
         &self,
         schema: &Schema,
         fields: &[String],
-        hash_key_filter: Option<Value>,
+        hash_key_filter: Option<HashRangeFilter>,
     ) -> Result<Value, SchemaError> {
         info!(
             "🔑 Querying HashRange schema '{}' with hash->range->fields grouping",
@@ -190,37 +186,26 @@ impl HashRangeQueryProcessor {
         self.get_key_field_names(schema)?;
 
         if let Some(hash_filter) = &hash_key_filter {
-            // Query specific hash key
-            let hash_key = if let Some(key_obj) = hash_filter.as_object() {
-                if let Some(key_value) = key_obj.get("Key") {
-                    if let Some(key_str) = key_value.as_str() {
-                        key_str.to_string()
-                    } else {
-                        return Err(SchemaError::InvalidData(
-                            "Hash filter Key must be a string".to_string(),
-                        ));
-                    }
-                } else {
-                    return Err(SchemaError::InvalidData(
-                        "Hash filter must contain 'Key' field".to_string(),
-                    ));
+            match hash_filter {
+                HashRangeFilter::HashKey(hash_key) => {
+                    info!("🔍 HashRange query for hash key: '{}'", hash_key);
+
+                    // Fetch range data for the specific hash key
+                    let range_data = self.fetch_range_data_for_hash_key(schema, fields, hash_key)?;
+
+                    // Create the final result structure: {hash_key: {range_key: {fields}}}
+                    let mut result = serde_json::Map::new();
+                    result.insert(hash_key.clone(), json!(range_data));
+
+                    Ok(json!(result))
                 }
-            } else {
-                return Err(SchemaError::InvalidData(
-                    "Hash filter must be an object".to_string(),
-                ));
-            };
-
-            info!("🔍 HashRange query for hash key: '{}'", hash_key);
-
-            // Fetch range data for the specific hash key
-            let range_data = self.fetch_range_data_for_hash_key(schema, fields, &hash_key)?;
-
-            // Create the final result structure: {hash_key: {range_key: {fields}}}
-            let mut result = serde_json::Map::new();
-            result.insert(hash_key, json!(range_data));
-
-            Ok(json!(result))
+                _ => {
+                    // For other HashRangeFilter variants, we need more complex logic
+                    // For now, fall back to fetching first 10 hash keys
+                    info!("🔍 Complex HashRange filter provided - fetching first 10 hash keys");
+                    self.fetch_first_10_hash_keys(schema, fields)
+                }
+            }
         } else {
             // No hash_key_filter provided - fetch first 10 hash keys and their data
             info!("🔍 No hash_key_filter provided - fetching first 10 hash keys");

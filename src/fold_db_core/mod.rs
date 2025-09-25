@@ -25,7 +25,7 @@ pub use infrastructure::{EventMonitor, MessageBus};
 pub use orchestration::TransformOrchestrator;
 pub use query::QueryExecutor;
 pub use shared::*;
-pub use transform_manager::TransformManager;
+pub use transform_manager::{TransformManager, types::TransformRunner};
 
 // Re-export core components
 pub use mutation_completion_handler::{
@@ -87,6 +87,8 @@ pub struct FoldDB {
     pub(crate) event_monitor: Arc<infrastructure::event_monitor::EventMonitor>,
     /// Mutation completion handler for tracking async mutation completion
     pub(crate) completion_handler: Arc<MutationCompletionHandler>,
+    /// Transform orchestrator for managing transform execution
+    pub(crate) transform_orchestrator: Arc<TransformOrchestrator>,
 }
 
 impl FoldDB {
@@ -202,6 +204,15 @@ impl FoldDB {
         );
         info!("Created QueryExecutor for query operations");
 
+        // Create TransformOrchestrator for managing transform execution
+        let transform_orchestrator = Arc::new(TransformOrchestrator::new(
+            Arc::clone(&transform_manager) as Arc<dyn TransformRunner>,
+            orchestrator_tree,
+            Arc::clone(&message_bus),
+            Arc::new(db_ops.clone()),
+        ));
+        info!("Created TransformOrchestrator for transform execution");
+
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
@@ -217,6 +228,7 @@ impl FoldDB {
             message_bus,
             event_monitor,
             completion_handler,
+            transform_orchestrator,
         })
     }
 
@@ -268,6 +280,11 @@ impl FoldDB {
     /// Get the schema manager for testing schema functionality
     pub fn schema_manager(&self) -> Arc<SchemaCore> {
         Arc::clone(&self.schema_manager)
+    }
+
+    /// Get the transform orchestrator for managing transform execution
+    pub fn transform_orchestrator(&self) -> Arc<TransformOrchestrator> {
+        Arc::clone(&self.transform_orchestrator)
     }
 
     /// Provides access to the mutation completion handler for tracking async mutation completion.

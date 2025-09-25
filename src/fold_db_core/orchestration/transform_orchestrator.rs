@@ -364,10 +364,6 @@ mod tests {
     struct MockTransformRunner;
 
     impl TransformRunner for MockTransformRunner {
-        fn execute_transform_now(&self, _transform_id: &str) -> Result<JsonValue, SchemaError> {
-            Ok(serde_json::json!({"status": "success"}))
-        }
-
         fn execute_transform_with_context(
             &self,
             _transform_id: &str,

@@ -138,14 +138,14 @@ impl EventMonitor {
                     "🎯 DIAGNOSTIC: Using standard transform execution for {}",
                     event.transform_id
                 );
-                manager.execute_transform_now(&event.transform_id)
+                manager.execute_transform_with_context(&event.transform_id, &None)
             }
         } else {
             info!(
                 "🎯 DIAGNOSTIC: No mutation context, using standard transform execution for {}",
                 event.transform_id
             );
-            manager.execute_transform_now(&event.transform_id)
+            manager.execute_transform_with_context(&event.transform_id, &None)
         };
 
         match result {
@@ -336,7 +336,7 @@ impl EventMonitor {
     fn process_discovered_transforms_for_mutation_completed_schema(
         schema_name: &str,
         manager: &Arc<dyn TransformRunner>,
-        tree: &sled::Tree,
+        _tree: &sled::Tree,
         message_bus: &Arc<MessageBus>,
         mutation_context: Option<
             crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
@@ -621,10 +621,6 @@ mod tests {
     }
 
     impl TransformRunner for MockTransformRunner {
-        fn execute_transform_now(&self, _transform_id: &str) -> Result<JsonValue, SchemaError> {
-            Ok(serde_json::json!({"status": "success"}))
-        }
-
         fn execute_transform_with_context(
             &self,
             _transform_id: &str,
@@ -637,7 +633,7 @@ mod tests {
                     serde_json::json!({"status": "success_with_context", "range_key": context.range_key, "hash_key": context.hash_key, "incremental": context.incremental}),
                 )
             } else {
-                Ok(serde_json::json!({"status": "success_with_context", "no_context": true}))
+                Ok(serde_json::json!({"status": "success", "no_context": true}))
             }
         }
 

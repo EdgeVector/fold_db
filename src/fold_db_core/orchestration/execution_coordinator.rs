@@ -65,7 +65,7 @@ impl ExecutionCoordinator {
         self.validate_transform_exists(transform_id)?;
 
         // Execute the transform
-        let execution_result = self.execute_transform_now(transform_id);
+        let execution_result = self.execute_transform_with_context(transform_id, &None);
 
         // Publish execution result using EventPublisher utility
         EventPublisher::handle_execution_result_and_publish(
@@ -111,7 +111,7 @@ impl ExecutionCoordinator {
     }
 
     /// Execute a transform with consolidated execution logic (no helper dependency)
-    fn execute_transform_now(&self, transform_id: &str) -> Result<JsonValue, SchemaError> {
+    fn execute_transform_with_context(&self, transform_id: &str, _mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>) -> Result<JsonValue, SchemaError> {
         info!(
             "🔧 ExecutionCoordinator: Executing transform directly: {}",
             transform_id
@@ -120,7 +120,7 @@ impl ExecutionCoordinator {
         let execution_start_time = Instant::now();
 
         // Execute transform using the TransformRunner interface
-        match self.manager.execute_transform_now(transform_id) {
+        match self.manager.execute_transform_with_context(transform_id, _mutation_context) {
             Ok(result) => {
                 let duration = execution_start_time.elapsed();
                 info!(
@@ -386,22 +386,6 @@ mod tests {
     }
 
     impl TransformRunner for MockTransformRunner {
-        fn execute_transform_now(&self, transform_id: &str) -> Result<JsonValue, SchemaError> {
-            if self.execution_delay_ms > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(self.execution_delay_ms));
-            }
-
-            if self.should_succeed {
-                Ok(serde_json::json!({
-                    "status": "success",
-                    "transform_id": transform_id
-                }))
-            } else {
-                Err(SchemaError::InvalidData(
-                    "Mock execution failure".to_string(),
-                ))
-            }
-        }
 
         fn execute_transform_with_context(
             &self,

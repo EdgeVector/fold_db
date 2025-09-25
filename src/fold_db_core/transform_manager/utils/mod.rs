@@ -143,8 +143,7 @@ impl TransformUtils {
         db_ops: &Arc<crate::db_operations::DbOperations>,
         schema: &Schema,
         field_name: &str,
-        range_key_filter: Option<Value>,
-        hash_key_filter: Option<Value>,
+        unified_filter: Option<crate::schema::types::field::HashRangeFilter>,
     ) -> Result<JsonValue, SchemaError> {
         info!(
             "🔍 FieldValueResolver: Looking up field '{}' in schema '{}'",
@@ -221,53 +220,34 @@ impl TransformUtils {
 
                             info!("🔍 Extracted range key: '{}' from key: {}", range_key, key);
 
-                            // Apply range key filter if provided
-                            let should_process = if let Some(filter_value) = &range_key_filter {
-                                info!("🎯 Processing range filter: {:?}", filter_value);
-
-                                // Parse the filter into a RangeFilter enum
-                                let range_filter = match serde_json::from_value::<
-                                    crate::schema::types::field::range_filter::RangeFilter,
-                                >(
-                                    filter_value.clone()
-                                ) {
-                                    Ok(filter) => filter,
-                                    Err(e) => {
-                                        error!("❌ Failed to parse range filter: {}", e);
-                                        return Err(SchemaError::InvalidData(format!(
-                                            "Invalid range filter format: {}",
-                                            e
-                                        )));
-                                    }
-                                };
+                            // Apply unified filter if provided
+                            let should_process = if let Some(unified_filter) = &unified_filter {
+                                info!("🎯 Processing unified filter: {:?}", unified_filter);
 
                                 // Apply the filter to this specific range key
-                                match &range_filter {
-                                    crate::schema::types::field::range_filter::RangeFilter::Key(key) => {
-                                        info!("🎯 Applying Key filter for: {}", key);
-                                        range_key == key
-                                    }
-                                    crate::schema::types::field::range_filter::RangeFilter::KeyPrefix(prefix) => {
-                                        info!("🎯 Applying KeyPrefix filter for: {}", prefix);
+                                match unified_filter {
+                                    crate::schema::types::field::HashRangeFilter::RangePrefix(prefix) => {
+                                        info!("🎯 Applying RangePrefix filter for: {}", prefix);
                                         range_key.starts_with(prefix)
                                     }
-                                    crate::schema::types::field::range_filter::RangeFilter::KeyRange { start, end } => {
-                                        info!("🎯 Applying KeyRange filter from {} to {}", start, end);
+                                    crate::schema::types::field::HashRangeFilter::RangeRange { start, end } => {
+                                        info!("🎯 Applying RangeRange filter from {} to {}", start, end);
                                         range_key >= start.as_str() && range_key < end.as_str()
                                     }
-                                    crate::schema::types::field::range_filter::RangeFilter::Keys(keys) => {
-                                        info!("🎯 Applying Keys filter for: {:?}", keys);
-                                        keys.contains(&range_key.to_string())
+                                    crate::schema::types::field::HashRangeFilter::RangePattern(pattern) => {
+                                        info!("🎯 Applying RangePattern filter for: {}", pattern);
+                                        Self::matches_pattern(range_key, pattern)
                                     }
-                                    crate::schema::types::field::range_filter::RangeFilter::KeyPattern(pattern) => {
-                                        info!("🎯 Applying KeyPattern filter for: {}", pattern);
-                                        crate::schema::types::field::range_filter::matches_pattern(range_key, pattern)
-                                    }
-                                    crate::schema::types::field::range_filter::RangeFilter::Value(value) => {
+                                    crate::schema::types::field::HashRangeFilter::Value(value) => {
                                         info!("🎯 Applying Value filter for: {}", value);
                                         // For value filters, we need to check the actual atom content
                                         // This is more complex and would require loading the atom first
                                         true // For now, include all entries when using Value filter
+                                    }
+                                    _ => {
+                                        // For other HashRangeFilter variants that don't apply to range keys
+                                        info!("🎯 Filter variant doesn't apply to range keys, processing all");
+                                        true
                                     }
                                 }
                             } else {
@@ -335,28 +315,21 @@ impl TransformUtils {
                 info!("🔑 Detected HashRange field, using HashRange resolution");
 
                 // For HashRange schemas, we need to query using the hash key filter
-                if let Some(hash_filter) = &hash_key_filter {
-                    info!("🎯 Processing HashRange hash filter: {:?}", hash_filter);
+                if let Some(hash_filter) = &unified_filter {
+                    info!("🎯 Processing HashRange unified filter: {:?}", hash_filter);
 
-                    // Extract the hash key from the filter (e.g., {"Key": "DataFold"} -> "DataFold")
-                    let hash_key = if let Some(key_obj) = hash_filter.as_object() {
-                        if let Some(key_value) = key_obj.get("Key") {
-                            if let Some(key_str) = key_value.as_str() {
-                                key_str.to_string()
-                            } else {
-                                return Err(SchemaError::InvalidData(
-                                    "Hash filter Key must be a string".to_string(),
-                                ));
-                            }
-                        } else {
-                            return Err(SchemaError::InvalidData(
-                                "Hash filter must contain 'Key' field".to_string(),
-                            ));
+                    // Extract the hash key from the filter
+                    let hash_key = match hash_filter {
+                        crate::schema::types::field::HashRangeFilter::HashKey(key) => key.clone(),
+                        crate::schema::types::field::HashRangeFilter::HashRangeKey { hash, .. } => hash.clone(),
+                        crate::schema::types::field::HashRangeFilter::HashRangePrefix { hash, .. } => hash.clone(),
+                        crate::schema::types::field::HashRangeFilter::HashRangeRange { hash, .. } => hash.clone(),
+                        crate::schema::types::field::HashRangeFilter::HashRangePattern { hash, .. } => hash.clone(),
+                        _ => {
+                            // For filters that don't specify a hash key, we can't query specific hash ranges
+                            info!("🔍 HashRange filter doesn't specify hash key, using general query");
+                            return Ok(serde_json::Value::Null);
                         }
-                    } else {
-                        return Err(SchemaError::InvalidData(
-                            "Hash filter must be an object".to_string(),
-                        ));
                     };
 
                     info!("🔍 HashRange query for hash key: '{}'", hash_key);
@@ -546,6 +519,7 @@ impl TransformUtils {
         field_name: &str,
     ) -> Result<String, SchemaError> {
         let molecule_uuid = field
+            .common()
             .molecule_uuid()
             .ok_or_else(|| {
                 error!("❌ Field '{}' has no molecule_uuid", field_name);
@@ -627,6 +601,54 @@ impl TransformUtils {
             "🔗 Molecule {} - ref:{} -> atom:{}",
             operation, molecule_uuid, atom_uuid
         );
+    }
+
+    /// Simple glob-style pattern matching (supports `*` and `?`)
+    fn matches_pattern(text: &str, pattern: &str) -> bool {
+        let pattern_chars: Vec<char> = pattern.chars().collect();
+        let text_chars: Vec<char> = text.chars().collect();
+
+        Self::match_recursive(&text_chars, &pattern_chars, 0, 0)
+    }
+
+    fn match_recursive(text: &[char], pattern: &[char], text_idx: usize, pattern_idx: usize) -> bool {
+        // If we've reached the end of both strings, it's a match
+        if pattern_idx >= pattern.len() && text_idx >= text.len() {
+            return true;
+        }
+
+        // If we've reached the end of pattern but not text, no match
+        if pattern_idx >= pattern.len() {
+            return false;
+        }
+
+        match pattern[pattern_idx] {
+            '*' => {
+                // Try matching zero characters
+                if Self::match_recursive(text, pattern, text_idx, pattern_idx + 1) {
+                    return true;
+                }
+                // Try matching one or more characters
+                if text_idx < text.len() && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx) {
+                    return true;
+                }
+                false
+            }
+            '?' => {
+                // Match any single character (but not end of string)
+                if text_idx < text.len() && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx + 1) {
+                    return true;
+                }
+                false
+            }
+            ch => {
+                // Match exact character
+                if text_idx < text.len() && text[text_idx] == ch && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx + 1) {
+                    return true;
+                }
+                false
+            }
+        }
     }
 
     /// Standard logging for field mappings state

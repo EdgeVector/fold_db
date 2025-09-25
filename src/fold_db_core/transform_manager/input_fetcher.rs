@@ -123,8 +123,15 @@ impl InputFetcher {
         let range_key = Value::from(key_config.clone().map(|k| k.range_field));
         let hash_key = Value::from(key_config.clone().map(|k| k.hash_field));
 
+        // Convert the old filter format to unified HashRangeFilter
+        let unified_filter = if let Some(hash_key_value) = hash_key.as_str() {
+            Some(crate::schema::types::field::HashRangeFilter::HashKey(hash_key_value.to_string()))
+        } else {
+            None
+        };
+        
         TransformUtils::resolve_field_value(
-            db_ops, &schema, field_name, Option::from(range_key), Option::from(hash_key),
+            db_ops, &schema, field_name, unified_filter,
         )
     }
 

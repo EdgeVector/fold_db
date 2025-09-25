@@ -13,6 +13,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use super::hash_range_query::HashRangeQueryProcessor;
+use crate::schema::types::field::HashRangeFilter;
 
 /// Main query executor that handles all query operations
 pub struct QueryExecutor {
@@ -72,38 +73,32 @@ impl QueryExecutor {
             }
         }
 
-        // Extract range key filter if this is a range schema with a filter
-        let range_key_filter: Option<Value> =
-            if let (Some(range_key), Some(filter)) = (schema.range_key(), &query.filter) {
-                if let Some(range_filter_obj) = filter.get("range_filter") {
-                    if let Some(range_filter_map) = range_filter_obj.as_object() {
-                        range_filter_map.get(range_key).cloned()
-                    } else {
-                        None
-                    }
-                } else {
+        // Extract and combine all filters into a unified HashRangeFilter for all schema types
+        let unified_filter: Option<HashRangeFilter> = if let Some(filter) = &query.filter {
+            let hash_filter = filter.get("hash_filter")
+                .and_then(|v| serde_json::from_value::<HashRangeFilter>(v.clone()).ok());
+                    let range_filter = filter.get("range_filter")
+                        .and_then(|v| serde_json::from_value::<HashRangeFilter>(v.clone()).ok());
+            
+            // Combine filters based on what's available
+            match (hash_filter, range_filter) {
+                (Some(hash), Some(range)) => {
+                    // Both hash and range filters - combine them
+                    info!("🔑 Schema with both hash and range filters - combining");
+                    Some(Self::combine_hash_range_filters(hash, range))
+                }
+                (Some(hash), None) => {
+                    info!("🔑 Schema with hash filter only");
+                    Some(hash)
+                }
+                        (None, Some(range)) => {
+                            info!("🔑 Schema with range filter only");
+                            Some(range)
+                        }
+                (None, None) => {
+                    info!("🔑 Schema with no filters");
                     None
                 }
-            } else {
-                None
-            };
-
-        // Extract hash key filter if this is a HashRange schema with a filter
-        let hash_key_filter: Option<Value> = if matches!(
-            schema.schema_type,
-            crate::schema::types::SchemaType::HashRange
-        ) {
-            if let Some(filter) = &query.filter {
-                // Check for hash_filter format (preferred)
-                if let Some(hash_filter_obj) = filter.get("hash_filter") {
-                    info!("🔑 HashRange schema detected with hash_filter");
-                    Some(hash_filter_obj.clone())
-                } else {
-                    // No hash filter found
-                    None
-                }
-            } else {
-                None
             }
         } else {
             None
@@ -112,12 +107,12 @@ impl QueryExecutor {
         // Handle HashRange schema grouping
         if matches!(
             schema.schema_type,
-            crate::schema::types::SchemaType::HashRange
+            crate::schema::types::SchemaType::HashRange { .. }
         ) {
             return self.hash_range_processor.query_hashrange_schema(
                 &schema,
                 &query.fields,
-                hash_key_filter,
+                unified_filter,
             );
         }
 
@@ -132,8 +127,7 @@ impl QueryExecutor {
             match self.get_field_value_from_db(
                 &schema,
                 field_name,
-                range_key_filter.clone(),
-                hash_key_filter.clone(),
+                unified_filter.clone(),
             ) {
                 Ok(value) => {
                     println!(
@@ -168,16 +162,37 @@ impl QueryExecutor {
         &self,
         schema: &Schema,
         field_name: &str,
-        range_key_filter: Option<Value>,
-        hash_key_filter: Option<Value>,
+        unified_filter: Option<HashRangeFilter>,
     ) -> Result<Value, SchemaError> {
         // Use the unified FieldValueResolver to eliminate duplicate code
         crate::fold_db_core::transform_manager::utils::TransformUtils::resolve_field_value(
             &self.db_ops,
             schema,
             field_name,
-            range_key_filter,
-            hash_key_filter,
+            unified_filter,
         )
+    }
+
+    /// Combine hash and range filters into a single HashRangeFilter
+    fn combine_hash_range_filters(hash_filter: HashRangeFilter, range_filter: HashRangeFilter) -> HashRangeFilter {
+        match (hash_filter, range_filter) {
+            // HashKey + RangePrefix = HashRangePrefix
+            (HashRangeFilter::HashKey(hash), HashRangeFilter::RangePrefix(prefix)) => {
+                HashRangeFilter::HashRangePrefix { hash, prefix }
+            }
+            // HashKey + RangeRange = HashRangeRange
+            (HashRangeFilter::HashKey(hash), HashRangeFilter::RangeRange { start, end }) => {
+                HashRangeFilter::HashRangeRange { hash, start, end }
+            }
+            // HashKey + RangePattern = HashRangePattern
+            (HashRangeFilter::HashKey(hash), HashRangeFilter::RangePattern(pattern)) => {
+                HashRangeFilter::HashRangePattern { hash, pattern }
+            }
+            // For other combinations, prefer the hash filter and log a warning
+            (hash_filter, _) => {
+                log::warn!("⚠️ Combining filters: using hash filter, ignoring range filter");
+                hash_filter
+            }
+        }
     }
 }
