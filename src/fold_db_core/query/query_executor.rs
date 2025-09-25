@@ -14,7 +14,6 @@ use super::hash_range_query::HashRangeQueryProcessor;
 
 /// Main query executor that handles all query operations
 pub struct QueryExecutor {
-    db_ops: Arc<DbOperations>,
     schema_manager: Arc<SchemaCore>,
     hash_range_processor: HashRangeQueryProcessor,
 }
@@ -28,7 +27,6 @@ impl QueryExecutor {
         let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops));
 
         Self {
-            db_ops,
             schema_manager,
             hash_range_processor,
         }

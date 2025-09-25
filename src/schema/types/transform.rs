@@ -17,21 +17,6 @@ use std::collections::{HashSet, HashMap};
 /// * Payment requirements for accessing transformed data
 /// * Automatic input dependency tracking
 ///
-/// # Example
-///
-/// ```
-/// use datafold::schema::types::{Transform, DeclarativeSchemaDefinition, SchemaType};
-/// use std::collections::HashMap;
-///
-/// let schema = DeclarativeSchemaDefinition::new(
-///     "health_schema".to_string(),
-///     SchemaType::Single,
-///     None,
-///     HashMap::new(),
-/// );
-///
-/// let transform = Transform::new(schema, "health.risk_score".to_string());
-/// ```
 /// Parameters for registering a transform
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformRegistration {

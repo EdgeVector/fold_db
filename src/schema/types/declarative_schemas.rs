@@ -43,62 +43,6 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
     }
 }
 
-// Custom deserializer for fields that can be either strings or FieldDefinition objects
-fn deserialize_mixed_format_fields<'de, D>(deserializer: D) -> Result<HashMap<String, FieldDefinition>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::{self, MapAccess, Visitor};
-    use std::fmt;
-
-    struct FieldsVisitor;
-
-    impl<'de> Visitor<'de> for FieldsVisitor {
-        type Value = HashMap<String, FieldDefinition>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map of field names to field definitions")
-        }
-
-        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-        where
-            M: MapAccess<'de>,
-        {
-            let mut fields = HashMap::new();
-
-            while let Some((key, value)) = map.next_entry::<String, serde_json::Value>()? {
-                let field_def = match value {
-                    serde_json::Value::String(expression) => {
-                        // Simple string format: "field_name": "expression"
-                        FieldDefinition {
-                            field_expression: Some(expression),
-                        }
-                    }
-                    serde_json::Value::Object(obj) => {
-                        // Object format: "field_name": {"field_expression": "expression"}
-                        FieldDefinition {
-                            field_expression: obj.get("field_expression")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                        }
-                    }
-                    _ => {
-                        return Err(de::Error::invalid_type(
-                            de::Unexpected::Other("neither string nor object"),
-                            &self,
-                        ));
-                    }
-                };
-
-                fields.insert(key, field_def);
-            }
-
-            Ok(fields)
-        }
-    }
-
-    deserializer.deserialize_map(FieldsVisitor)
-}
 
 /// Declarative schema definition used by declarative transforms.
 #[derive(Debug, Clone, Serialize, PartialEq)]

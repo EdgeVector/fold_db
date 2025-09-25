@@ -43,7 +43,7 @@ impl ExecutionEngine {
     ) -> IteratorStackResult<ExecutionResult> {
         // Create execution context
         let context = ExecutionContext {
-            input_data: input_data,
+            input_data,
             emission_depth: 0,
             variables: HashMap::new(),
         };

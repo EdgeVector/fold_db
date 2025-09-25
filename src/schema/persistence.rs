@@ -110,7 +110,7 @@ impl SchemaCore {
         use crate::schema::types::transform::{Transform, TransformRegistration};
         use uuid::Uuid;
 
-        for (field_name, _field_expression) in transform_fields {
+        for field_name in transform_fields.keys() {
             // Create a transform ID based on schema name and field name
             let transform_id = format!("{}_{}", declarative_schema.name, field_name);
             

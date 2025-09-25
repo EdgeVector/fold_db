@@ -11,13 +11,6 @@ use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStack
 use std::collections::HashMap;
 
 impl ChainParser {
-    /// Checks if a chain contains any reducer operations
-    fn contains_reducer_operation(&self, chain: &ParsedChain) -> bool {
-        chain
-            .operations
-            .iter()
-            .any(|op| matches!(op, ChainOperation::Reducer(_)))
-    }
 
     /// Extracts the branch identifier up to a specific depth for fan-out detection
     pub fn extract_branch_up_to_depth(

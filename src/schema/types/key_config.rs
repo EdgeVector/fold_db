@@ -2,7 +2,6 @@ use serde::{Serialize, Deserialize};
 
 // Forward declarations for types that need to be defined
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-
 // Used in two ways, one to set the field_names which will be used to resolve the keys, and one to pass key values in a mutation.
 pub struct KeyConfig {
     pub hash_field: Option<String>,
@@ -16,5 +15,13 @@ impl KeyConfig {
             hash_field,
             range_field,
         }
+    }
+
+    /// Creates a KeyConfig from a HashMap of string key-value pairs
+    pub fn from_map(map: std::collections::HashMap<String, String>) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            hash_field: map.get("hash_field").cloned(),
+            range_field: map.get("range_field").cloned(),
+        })
     }
 }

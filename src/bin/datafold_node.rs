@@ -1,11 +1,10 @@
 use datafold::{
     constants::DEFAULT_P2P_PORT,
-    datafold_node::{load_node_config, DataFoldNode, TcpServer},
-    network::NetworkConfig,
+    datafold_node::{load_node_config, DataFoldNode},
 };
 
 use clap::Parser;
-use log::{error, info};
+use log::info;
 
 /// Command line options for the datafold node binary.
 #[derive(Parser, Debug)]
@@ -52,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting DataFold Node...");
 
     // Parse command-line arguments using clap
-    let Cli { port, tcp_port } = Cli::parse();
+    let Cli { port, tcp_port: _ } = Cli::parse();
 
     // Load node configuration
     let config = load_node_config(None, Some(port))?;
@@ -60,46 +59,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load or initialize node
     info!("Loading DataFold Node...");
-    let mut node = DataFoldNode::load(config).await?;
+    let node = DataFoldNode::load(config).await?;
     info!("Node loaded successfully");
 
     // Schemas are loaded from disk during node initialization
     info!("Previously loaded schemas are available");
 
-    // Initialize network layer
-    info!("Initializing network layer...");
-    let listen_address = format!("/ip4/0.0.0.0/tcp/{}", port);
-    let network_config = NetworkConfig::new(&listen_address)
-        .with_mdns(true)
-        .with_max_connections(50)
-        .with_keep_alive_interval(20)
-        .with_max_message_size(1_000_000);
-
-    node.init_network(network_config).await?;
-    info!("Network layer initialized");
-
-    // Start the network service
-    info!("Starting network service on port {}...", port);
-    node.start_network_with_address(&listen_address).await?;
-    info!("Network service started");
-
     // Print node ID for connecting
     info!("Node ID: {}", node.get_node_id());
-    info!("Other nodes can connect to this node using the Node ID above");
+    info!("Node initialized successfully");
 
-    // Start the TCP server
-    info!("Starting TCP server on port {}...", tcp_port);
-    let tcp_server = TcpServer::new(node.clone(), tcp_port).await?;
-
-    // Run the TCP server in a separate task
-    let tcp_server_handle = tokio::spawn(async move {
-        if let Err(e) = tcp_server.run().await {
-            error!("TCP server error: {}", e);
-        }
-    });
-
-    // Wait for the TCP server to start
-    tcp_server_handle.await?;
+    // TODO: Network and TCP server functionality needs to be implemented
+    info!("Network and TCP server functionality is not yet implemented");
 
     Ok(())
 }

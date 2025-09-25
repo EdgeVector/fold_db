@@ -1,6 +1,6 @@
 //! Mutation generator for creating mutations from AI responses and JSON data
 
-use crate::ingestion::{IngestionError, IngestionResult};
+use crate::ingestion::IngestionResult;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::{Mutation, KeyConfig};
@@ -82,114 +82,8 @@ impl MutationGenerator {
         Ok(mutations)
     }
 
-    /// Extract value from JSON using a dot-notation path
-    fn extract_value_from_json_path(
-        &self,
-        json_data: &Value,
-        path: &str,
-    ) -> IngestionResult<Option<Value>> {
-        let path_parts = self.parse_json_path(path)?;
-        let mut current = json_data;
 
-        for part in &path_parts {
-            match part {
-                JsonPathPart::Field(field_name) => {
-                    if let Value::Object(obj) = current {
-                        current = obj.get(field_name).unwrap_or(&Value::Null);
-                    } else {
-                        return Ok(None);
-                    }
-                }
-                JsonPathPart::Index(index) => {
-                    if let Value::Array(arr) = current {
-                        current = arr.get(*index).unwrap_or(&Value::Null);
-                    } else {
-                        return Ok(None);
-                    }
-                }
-            }
 
-            if current == &Value::Null {
-                return Ok(None);
-            }
-        }
-
-        Ok(Some(current.clone()))
-    }
-
-    /// Parse a JSON path into components
-    fn parse_json_path(&self, path: &str) -> IngestionResult<Vec<JsonPathPart>> {
-        let mut parts = Vec::new();
-        let mut current_field = String::new();
-        let mut chars = path.chars().peekable();
-
-        while let Some(ch) = chars.next() {
-            match ch {
-                '.' => {
-                    if !current_field.is_empty() {
-                        parts.push(JsonPathPart::Field(current_field.clone()));
-                        current_field.clear();
-                    }
-                }
-                '[' => {
-                    // Handle array index
-                    if !current_field.is_empty() {
-                        parts.push(JsonPathPart::Field(current_field.clone()));
-                        current_field.clear();
-                    }
-
-                    let mut index_str = String::new();
-                    for index_ch in chars.by_ref() {
-                        if index_ch == ']' {
-                            break;
-                        }
-                        index_str.push(index_ch);
-                    }
-
-                    let index = index_str.parse::<usize>().map_err(|_| {
-                        IngestionError::path_parsing_error(format!(
-                            "Invalid array index '{}' in path '{}'",
-                            index_str, path
-                        ))
-                    })?;
-
-                    parts.push(JsonPathPart::Index(index));
-                }
-                _ => {
-                    current_field.push(ch);
-                }
-            }
-        }
-
-        if !current_field.is_empty() {
-            parts.push(JsonPathPart::Field(current_field));
-        }
-
-        Ok(parts)
-    }
-
-    /// Parse schema field path to extract the field name
-    fn parse_schema_field_path(&self, schema_path: &str) -> IngestionResult<String> {
-        // Expected format: "schema.field" or "schema.field[\"key\"]"
-
-        // Split on the first dot to separate schema name from field path
-        let parts: Vec<&str> = schema_path.splitn(2, '.').collect();
-        if parts.len() != 2 {
-            return Err(IngestionError::field_mapping_error(format!(
-                "Invalid schema path format '{}', expected 'schema.field'",
-                schema_path
-            )));
-        }
-
-        let field_part = parts[1];
-
-        // Handle array/object access notation like field["key"]
-        if let Some(bracket_pos) = field_part.find('[') {
-            Ok(field_part[..bracket_pos].to_string())
-        } else {
-            Ok(field_part.to_string())
-        }
-    }
 
     /// Generate mutations for collection fields (arrays) - DEPRECATED
     pub fn generate_collection_mutations(
@@ -209,12 +103,6 @@ impl MutationGenerator {
     }
 }
 
-/// Parts of a JSON path
-#[derive(Debug, Clone)]
-enum JsonPathPart {
-    Field(String),
-    Index(usize),
-}
 
 impl Default for MutationGenerator {
     fn default() -> Self {
@@ -227,55 +115,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    #[test]
-    fn test_parse_json_path() {
-        let generator = MutationGenerator::new();
-
-        let result = generator.parse_json_path("user.name").unwrap();
-        assert_eq!(result.len(), 2);
-
-        let result = generator.parse_json_path("items[0].price").unwrap();
-        assert_eq!(result.len(), 3);
-    }
-
-    #[test]
-    fn test_extract_value_from_json_path() {
-        let generator = MutationGenerator::new();
-        let json_data = json!({
-            "user": {
-                "name": "John",
-                "items": [
-                    {"price": 10.0},
-                    {"price": 20.0}
-                ]
-            }
-        });
-
-        let result = generator
-            .extract_value_from_json_path(&json_data, "user.name")
-            .unwrap();
-        assert_eq!(result, Some(json!("John")));
-
-        let result = generator
-            .extract_value_from_json_path(&json_data, "user.items[0].price")
-            .unwrap();
-        assert_eq!(result, Some(json!(10.0)));
-    }
-
-    #[test]
-    fn test_parse_schema_field_path() {
-        let generator = MutationGenerator::new();
-
-        let result = generator
-            .parse_schema_field_path("UserSchema.name")
-            .unwrap();
-        assert_eq!(result, "name");
-
-        let result = generator
-            .parse_schema_field_path("ProductSchema.tags[\"category\"]")
-            .unwrap();
-        assert_eq!(result, "tags");
-    }
 
     #[test]
     fn test_generate_mutations() {

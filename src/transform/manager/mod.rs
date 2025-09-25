@@ -1,4 +1,4 @@
-pub mod manager;
+pub mod transform_manager;
 pub mod types;
 
 // New focused modules
@@ -12,6 +12,6 @@ pub mod transform_runner;
 // Utility modules for code consolidation
 pub mod utils;
 
-pub use manager::TransformManager;
+pub use transform_manager::TransformManager;
 pub use types::*;
 pub use utils::*;

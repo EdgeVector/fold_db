@@ -1,5 +1,5 @@
 use super::core::DbOperations;
-use crate::transform::manager::manager::SCHEMA_FIELD_TO_TRANSFORMS_KEY;
+use crate::transform::manager::transform_manager::SCHEMA_FIELD_TO_TRANSFORMS_KEY;
 use crate::schema::types::transform::{Transform, TransformRegistration};
 use crate::schema::SchemaError;
 

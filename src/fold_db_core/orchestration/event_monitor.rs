@@ -18,9 +18,6 @@ use std::time::Duration;
 
 /// Handles monitoring of MutationExecuted and TransformTriggered events for automatic transform execution
 pub struct EventMonitor {
-    message_bus: Arc<MessageBus>,
-    manager: Arc<dyn TransformRunner>,
-    persistence: PersistenceManager,
     /// Single monitoring thread for all events
     _monitoring_thread: Option<thread::JoinHandle<()>>,
 }
@@ -30,7 +27,7 @@ impl EventMonitor {
     pub fn new(
         message_bus: Arc<MessageBus>,
         manager: Arc<dyn TransformRunner>,
-        persistence: PersistenceManager,
+        _persistence: PersistenceManager,
     ) -> Self {
         let monitoring_thread = Self::start_unified_monitoring(
             Arc::clone(&message_bus),
@@ -38,9 +35,6 @@ impl EventMonitor {
         );
 
         Self {
-            message_bus,
-            manager,
-            persistence,
             _monitoring_thread: Some(monitoring_thread),
         }
     }

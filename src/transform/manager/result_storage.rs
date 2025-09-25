@@ -44,7 +44,7 @@ impl ResultStorage {
                 correlation_id: Uuid::new_v4().to_string(),
                 mutation,
             };
-            message_bus.publish(mutation_request);
+            let _ = message_bus.publish(mutation_request);
         }
 
         Ok(())

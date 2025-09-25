@@ -1,14 +1,11 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::datafold_node::config::NodeConfig;
-use crate::datafold_node::config::NodeInfo;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
-use crate::network::NetworkCore;
 use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityManager};
 
 /// A node in the DataFold distributed database system.
@@ -25,48 +22,14 @@ use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityManager};
 /// * Permission management for schemas
 /// * Request forwarding to trusted nodes
 ///
-/// # Examples
-///
-/// ```rust,no_run
-/// use datafold::datafold_node::{DataFoldNode, NodeConfig};
-/// use datafold::schema::{Schema, types::Operation};
-/// use datafold::error::FoldDbResult;
-/// use std::path::PathBuf;
-/// use std::collections::HashMap;
-///
-/// fn main() -> FoldDbResult<()> {
-///     // Create a new node with default configuration
-///     let config = NodeConfig::new(PathBuf::from("data"));
-///     let mut node = DataFoldNode::new(config)?;
-///
-///     // Create and load a schema
-///     let schema = Schema::new("user_profile".to_string());
-///
-///     // Load the schema
-///     node.load_schema(schema)?;
-///
-///     // Execute a query
-///     let operation = Operation::Query {
-///         schema: "user_profile".to_string(),
-///         fields: vec!["username".to_string(), "email".to_string()],
-///         filter: None,
-///     };
-///     let result = node.execute_operation(operation)?;
-///     Ok(())
-/// }
-/// ```
 #[derive(Clone)]
 pub struct DataFoldNode {
     /// The underlying database instance for data storage and operations
     pub(super) db: Arc<Mutex<FoldDB>>,
     /// Configuration settings for this node
     pub(super) config: NodeConfig,
-    /// Map of trusted nodes and their trust distances
-    pub(super) trusted_nodes: HashMap<String, NodeInfo>,
     /// Unique identifier for this node
     pub(super) node_id: String,
-    /// Network layer for P2P communication
-    pub(super) network: Option<Arc<tokio::sync::Mutex<NetworkCore>>>,
     /// Security manager for authentication and encryption
     pub(super) security_manager: Arc<SecurityManager>,
     /// The node's private key for signing operations
@@ -136,9 +99,7 @@ impl DataFoldNode {
         Ok(Self {
             db,
             config,
-            trusted_nodes: HashMap::new(),
             node_id,
-            network: None,
             security_manager,
             private_key,
             public_key,

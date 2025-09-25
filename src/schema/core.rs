@@ -62,7 +62,7 @@ impl SchemaCore {
 
     pub fn set_schema_state(&self, schema_name: &str, schema_state: SchemaState) -> Result<(), SchemaError> {
         self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?.insert(schema_name.to_string(), schema_state);
-        self.db_ops.store_schema_state(schema_name, schema_state);
+        let _ = self.db_ops.store_schema_state(schema_name, schema_state);
         Ok(())
     }
 

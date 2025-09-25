@@ -115,24 +115,6 @@ impl TransformUtils {
 
     // ========== FIELD RESOLUTION UTILITIES ==========
 
-    /// Extract simplified value from range field atom content
-    /// Converts {"range_key":"2","value":"2"} to "2"
-    /// Converts {"range_key":"2","value":{"value":"b"}} to "b"
-    fn extract_simplified_value(content: &JsonValue) -> Result<JsonValue, SchemaError> {
-        // Try to extract the "value" field
-        if let Some(value_field) = content.get("value") {
-            // If the value field is itself an object with a nested "value", extract that
-            if let Some(nested_value) = value_field.get("value") {
-                return Ok(nested_value.clone());
-            } else {
-                return Ok(value_field.clone());
-            }
-        }
-
-        // If no "value" field found, return the content as-is
-        warn!("⚠️ No 'value' field found, returning content as-is");
-        Ok(content.clone())
-    }
 
     /// Unified field value resolution from schema using database operations
     pub fn resolve_field_value(
@@ -165,58 +147,8 @@ impl TransformUtils {
         field.resolve_value(db_ops, unified_filter)
     }
 
-    /// Extract molecule_uuid from field variant with consistent error handling
-    fn extract_molecule_uuid(
-        field: &FieldVariant,
-        field_name: &str,
-    ) -> Result<String, SchemaError> {
-        let molecule_uuid = field
-            .common()
-            .molecule_uuid()
-            .ok_or_else(|| {
-                error!("❌ Field '{}' has no molecule_uuid", field_name);
-                SchemaError::InvalidField(format!("Field '{}' has no molecule_uuid", field_name))
-            })?
-            .clone();
-        Ok(molecule_uuid)
-    }
 
-    /// Load Molecule from database with consistent error handling
-    fn load_molecule(
-        db_ops: &Arc<crate::db_operations::DbOperations>,
-        molecule_uuid: &str,
-    ) -> Result<crate::atom::Molecule, SchemaError> {
-        match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", molecule_uuid)) {
-            Ok(Some(molecule)) => Ok(molecule),
-            Ok(None) => {
-                error!("❌ Molecule '{}' not found", molecule_uuid);
-                Err(SchemaError::InvalidField(format!(
-                    "Molecule '{}' not found",
-                    molecule_uuid
-                )))
-            }
-            Err(e) => {
-                error!("❌ Failed to load Molecule {}: {}", molecule_uuid, e);
-                Err(SchemaError::InvalidField(format!(
-                    "Failed to load Molecule: {}",
-                    e
-                )))
-            }
-        }
-    }
 
-    /// Load Atom from database with consistent error handling
-    fn load_atom(
-        db_ops: &Arc<crate::db_operations::DbOperations>,
-        atom_uuid: &str,
-    ) -> Result<crate::atom::Atom, SchemaError> {
-        db_ops
-            .get_item(&format!("atom:{}", atom_uuid))?
-            .ok_or_else(|| {
-                error!("❌ Atom '{}' not found", atom_uuid);
-                SchemaError::InvalidField(format!("Atom '{}' not found", atom_uuid))
-            })
-    }
 
     // ========== LOGGING UTILITIES ==========
 
@@ -249,53 +181,6 @@ impl TransformUtils {
         );
     }
 
-    /// Simple glob-style pattern matching (supports `*` and `?`)
-    fn matches_pattern(text: &str, pattern: &str) -> bool {
-        let pattern_chars: Vec<char> = pattern.chars().collect();
-        let text_chars: Vec<char> = text.chars().collect();
-
-        Self::match_recursive(&text_chars, &pattern_chars, 0, 0)
-    }
-
-    fn match_recursive(text: &[char], pattern: &[char], text_idx: usize, pattern_idx: usize) -> bool {
-        // If we've reached the end of both strings, it's a match
-        if pattern_idx >= pattern.len() && text_idx >= text.len() {
-            return true;
-        }
-
-        // If we've reached the end of pattern but not text, no match
-        if pattern_idx >= pattern.len() {
-            return false;
-        }
-
-        match pattern[pattern_idx] {
-            '*' => {
-                // Try matching zero characters
-                if Self::match_recursive(text, pattern, text_idx, pattern_idx + 1) {
-                    return true;
-                }
-                // Try matching one or more characters
-                if text_idx < text.len() && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx) {
-                    return true;
-                }
-                false
-            }
-            '?' => {
-                // Match any single character (but not end of string)
-                if text_idx < text.len() && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx + 1) {
-                    return true;
-                }
-                false
-            }
-            ch => {
-                // Match exact character
-                if text_idx < text.len() && text[text_idx] == ch && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx + 1) {
-                    return true;
-                }
-                false
-            }
-        }
-    }
 
     /// Standard logging for field mappings state
     pub fn log_field_mappings_state(mappings: &HashMap<String, HashSet<String>>, context: &str) {

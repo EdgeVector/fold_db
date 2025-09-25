@@ -77,7 +77,7 @@ impl MoleculeHashRange {
     pub fn set_atom_uuid(&mut self, key_config: &KeyConfig, atom_uuid: String) {
         self.atom_uuids
             .entry(key_config.hash_field.clone().unwrap())
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .insert(key_config.range_field.clone().unwrap(), atom_uuid);
         self.updated_at = Utc::now();
     }

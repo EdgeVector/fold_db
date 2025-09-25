@@ -75,7 +75,7 @@ impl OperationProcessor {
             filter,
         };
 
-        let mut node_guard = self.node.lock().await;
+        let node_guard = self.node.lock().await;
         let results = node_guard.query(query)?;
         
         // Convert Vec<Result<Value, SchemaError>> to Vec<Value> with errors as JSON

@@ -41,8 +41,6 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 }
 
 /// List schemas by specific state
-
-
 /// Approve a schema for queries and mutations
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();

@@ -118,7 +118,7 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, filter: &HashRange
             }
         }
         HashRangeFilter::HashRangeKeys(keys) => {
-            for (hash, range) in keys {
+            for (_hash, range) in keys {
                 if let Some(atom_uuid) = operations.get_atom_uuid(range) {
                     matches.insert(range.clone(), atom_uuid);
                 }
@@ -221,7 +221,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
                 }
             }
         }
-        HashRangeFilter::HashRangePattern { hash, pattern: _pattern } => {
+        HashRangeFilter::HashRangePattern { hash: _, pattern: _pattern } => {
             // Pattern matching not supported - return empty results
         }
         HashRangeFilter::RangePattern(_pattern) => {
@@ -244,7 +244,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
 /// Implementation of RangeOperations for MoleculeRange
 impl RangeOperations for MoleculeRange {
     fn get_atom_uuid(&self, key: &str) -> Option<String> {
-        self.get_atom_uuid(key).map(|s| s.clone())
+        self.get_atom_uuid(key).cloned()
     }
     
     fn get_all_atoms(&self) -> Vec<(String, String)> {
@@ -271,7 +271,7 @@ impl RangeOperations for MoleculeRange {
 /// Implementation of HashRangeOperations for MoleculeHashRange
 impl HashRangeOperations for MoleculeHashRange {
     fn get_atom_uuid(&self, hash: &str, range: &str) -> Option<String> {
-        self.get_atom_uuid(hash, range).map(|s| s.clone())
+        self.get_atom_uuid(hash, range).cloned()
     }
     
     fn get_all_atoms(&self) -> Vec<(String, String, String)> {
