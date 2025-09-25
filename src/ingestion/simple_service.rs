@@ -1,7 +1,6 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
 
 use crate::datafold_node::{DataFoldNode, OperationProcessor};
-use crate::fees::SchemaPaymentConfig;
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;

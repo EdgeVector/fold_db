@@ -56,15 +56,14 @@ impl MutationGenerator {
                 keys_and_values.get("range_field").cloned(),
             );
             
-            let mutation = Mutation {
-                schema_name: schema_name.to_string(),
-                fields_and_values: fields_and_values.clone(),
+            let mutation = Mutation::new(
+                schema_name.to_string(),
+                fields_and_values.clone(),
                 key_config,
                 pub_key,
                 trust_distance,
-                mutation_type: MutationType::Create,
-                synchronous: None,
-            };
+                MutationType::Create,
+            );
             mutations.push(mutation);
             log_feature!(
                 LogFeature::Ingestion,

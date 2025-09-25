@@ -32,17 +32,14 @@ pub mod datafold_node;
 pub mod db_operations;
 pub mod error;
 pub mod error_handling;
-pub mod fees;
 pub mod fold_db_core;
 pub mod ingestion;
 pub mod logging;
 pub mod network;
-pub mod permissions;
 pub mod schema;
 pub mod security;
 pub mod testing_utils;
 pub mod transform;
-pub mod validation;
 pub mod validation_utils;
 pub mod web_logger;
 

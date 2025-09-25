@@ -5,34 +5,6 @@ use crate::transform::iterator_stack::errors::IteratorStackResult;
 use crate::transform::iterator_stack::types::IteratorStack;
 use serde_json::Value;
 
-/// Error types for field evaluation
-#[derive(Debug, Clone, PartialEq)]
-pub enum FieldEvaluationError {
-    /// Field not found in context
-    FieldNotFound(String),
-    /// Invalid operation for current value type
-    InvalidOperation(String),
-    /// Evaluation failed with specific reason
-    EvaluationFailed(String),
-}
-
-impl std::fmt::Display for FieldEvaluationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FieldEvaluationError::FieldNotFound(field) => {
-                write!(f, "Field not found: {}", field)
-            }
-            FieldEvaluationError::InvalidOperation(op) => {
-                write!(f, "Invalid operation: {}", op)
-            }
-            FieldEvaluationError::EvaluationFailed(reason) => {
-                write!(f, "Evaluation failed: {}", reason)
-            }
-        }
-    }
-}
-
-impl std::error::Error for FieldEvaluationError {}
 
 /// Field evaluation methods
 pub trait FieldEvaluator {

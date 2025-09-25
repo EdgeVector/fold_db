@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::operations::MutationType;
+use crate::schema::types::field::HashRangeFilter;
 use super::DataFoldNode;
 
 /// Centralized operation processor that handles all operation types consistently.
@@ -64,7 +65,7 @@ impl OperationProcessor {
         &self,
         schema: String,
         fields: Vec<String>,
-        filter: Option<Value>,
+        filter: Option<HashRangeFilter>,
     ) -> FoldDbResult<Value> {
         let query = Query {
             schema_name: schema,
@@ -109,15 +110,14 @@ impl OperationProcessor {
             }
         };
 
-        let mutation = Mutation {
-            schema_name: schema,
+        let mutation = Mutation::new(
+            schema,
             fields_and_values,
             key_config,
-            pub_key: String::new(),
-            trust_distance: 0,
+            String::new(),
+            0,
             mutation_type,
-            synchronous: None,
-        };
+        );
 
         let node_guard = self.node.lock().await;
         node_guard.mutate(mutation)?;

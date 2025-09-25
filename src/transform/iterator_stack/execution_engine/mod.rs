@@ -14,7 +14,6 @@ pub use core::{
     ExecutionContext, ExecutionEngine, ExecutionResult, ExecutionStatistics, ExecutionWarning,
     ExecutionWarningType, IndexEntry,
 };
-pub use field_evaluation::FieldEvaluationError;
 pub use field_execution::FieldExecutionResult;
 
 // Re-export all public functionality

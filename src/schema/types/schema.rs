@@ -1,4 +1,3 @@
-use crate::fees::SchemaPaymentConfig;
 use crate::schema::types::field::FieldVariant;
 use crate::schema::types::key_config::KeyConfig;
 use serde::{Deserialize, Deserializer, Serialize};

@@ -1,5 +1,6 @@
 use crate::schema::types::operations::MutationType;
 use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::field::HashRangeFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -12,7 +13,7 @@ pub enum Operation {
     Query {
         schema: String,
         fields: Vec<String>,
-        filter: Option<Value>,
+        filter: Option<HashRangeFilter>,
     },
     #[serde(rename = "mutation")]
     Mutation {

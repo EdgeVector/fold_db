@@ -146,7 +146,6 @@ mod tests {
 
     fn create_test_schema() -> Schema {
         use crate::schema::types::SchemaType;
-        use crate::fees::SchemaPaymentConfig;
         
         // Create a simple field with field mappers
         let field = FieldVariant::Single(SingleField::new(

@@ -1,4 +1,3 @@
-use crate::transform::ast::TransformDeclaration;
 use serde::{Deserialize, Serialize};
 use crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition;
 use std::collections::{HashSet, HashMap};
@@ -92,36 +91,5 @@ impl Transform {
         &self,
     ) -> Option<&DeclarativeSchemaDefinition> {
         Some(&*self.schema)
-    }
-
-
-    /// Creates a new Transform from a TransformDeclaration.
-    ///
-    /// # Arguments
-    ///
-    /// * `declaration` - The transform declaration
-    ///
-    /// # Returns
-    ///
-    /// A new Transform instance
-    #[must_use]
-    pub fn from_declaration(declaration: TransformDeclaration) -> Self {
-        // Extract logic from the declaration
-        let _logic = declaration
-            .logic
-            .iter()
-            .map(|expr| format!("{}", expr))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        Self {
-            schema: Box::new(DeclarativeSchemaDefinition::new(
-                "legacy_transform".to_string(),
-                crate::schema::types::schema::SchemaType::Single,
-                None,
-                None,
-                None,
-            )),
-        }
     }
 }

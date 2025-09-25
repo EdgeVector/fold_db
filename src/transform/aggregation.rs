@@ -190,7 +190,7 @@ fn process_execution_result_aggregation(
     accumulator: &mut AggregationAccumulator,
 ) -> Result<(), SchemaError> {
     match &schema.schema_type {
-        SchemaType::HashRange => {
+        SchemaType::HashRange { keyconfig: _ } => {
             let mut field_arrays: HashMap<String, Vec<JsonValue>> = HashMap::new();
             for (field_name, _) in parsed_chains.iter() {
                 field_arrays.insert(field_name.clone(), Vec::new());

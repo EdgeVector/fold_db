@@ -3,7 +3,7 @@
 //! This module consolidates common functionality used across different
 //! executor modules to eliminate code duplication and improve maintainability.
 
-use crate::schema::types::{DeclarativeSchemaDefinition, SchemaError};
+use crate::schema::types::SchemaError;
 use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -174,30 +174,4 @@ pub fn parse_expressions_batch(
     }
 
     Ok(parsed_chains)
-}
-
-/// Collects all expressions from a schema definition.
-///
-/// This function consolidates the duplicate expression collection logic that was
-/// previously scattered across multiple executor modules.
-///
-/// # Arguments
-///
-/// * `schema` - The declarative schema definition
-///
-/// # Returns
-///
-/// Vector of (field_name, expression) pairs
-pub fn collect_expressions_from_schema(
-    schema: &DeclarativeSchemaDefinition,
-) -> Vec<(String, String)> {
-    let mut all_expressions = Vec::new();
-
-    for (field_name, field_def) in &schema.fields {
-        if let Some(atom_uuid_expr) = &field_def.field_expression {
-            all_expressions.push((field_name.clone(), atom_uuid_expr.clone()));
-        }
-    }
-
-    all_expressions
 }

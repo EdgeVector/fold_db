@@ -46,14 +46,6 @@
 //! - [Iterator Stack Quick Reference](../../docs/design/iterator_stack_quick_reference.md)
 //! - [Iterator Stack Flow Diagram](../../docs/design/iterator_stack_flow_diagram.md)
 
-pub mod ast;
-pub mod executor;
-pub mod interpreter;
-
-// New modular components
-pub mod coordination;
-pub mod validation;
-
 // Execution coordination components
 pub mod aggregation;
 pub mod iterator_stack;
@@ -61,9 +53,7 @@ pub mod shared_utilities;
 
 // Public re-exports
 pub use crate::schema::types::Transform;
-pub use ast::{Expression, Operator, TransformDeclaration, UnaryOperator, Value};
-pub use executor::TransformExecutor;
-pub use interpreter::Interpreter;
+
 
 // New modular components
 pub mod manager;

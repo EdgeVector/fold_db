@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-
+use uuid::Uuid;
 use super::{key_config::KeyConfig, operations::MutationType};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Mutation {
+    pub uuid: String,
     pub schema_name: String,
     pub fields_and_values: HashMap<String, Value>,
     pub key_config: KeyConfig,
@@ -17,7 +18,7 @@ pub struct Mutation {
 
 impl Mutation {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         schema_name: String,
         fields_and_values: HashMap<String, Value>,
         key_config: KeyConfig,
@@ -26,6 +27,7 @@ impl Mutation {
         mutation_type: MutationType,
     ) -> Self {
         Self {
+            uuid: Uuid::new_v4().to_string(),
             schema_name,
             fields_and_values,
             key_config,

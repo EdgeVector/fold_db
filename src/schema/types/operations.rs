@@ -1,7 +1,6 @@
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
+use crate::schema::types::field::HashRangeFilter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Query {
@@ -9,7 +8,7 @@ pub struct Query {
     pub fields: Vec<String>,
     pub pub_key: String,
     pub trust_distance: u32,
-    pub filter: Option<Value>,
+    pub filter: Option<HashRangeFilter>,
 }
 
 impl Query {
@@ -35,7 +34,7 @@ impl Query {
         fields: Vec<String>,
         pub_key: String,
         trust_distance: u32,
-        filter: Option<Value>,
+        filter: Option<HashRangeFilter>,
     ) -> Self {
         Self {
             schema_name,
