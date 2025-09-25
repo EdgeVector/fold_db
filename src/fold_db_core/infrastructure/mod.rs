@@ -7,7 +7,6 @@
 //! - Event monitoring and observability
 
 pub mod event_monitor;
-pub mod factory;
 pub mod init;
 pub mod message_bus;
 

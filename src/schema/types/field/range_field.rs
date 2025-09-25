@@ -13,57 +13,53 @@ use crate::schema::types::field::range_filter::{matches_pattern, RangeFilter, Ra
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RangeField {
     pub inner: FieldCommon,
-    pub molecule_range: Option<MoleculeRange>,
+    pub molecule: Option<MoleculeRange>,
 }
 
 impl RangeField {
     #[must_use]
     pub fn new(
-        permission_policy: PermissionsPolicy,
-        payment_config: FieldPaymentConfig,
         field_mappers: HashMap<String, String>,
     ) -> Self {
         Self {
-            inner: FieldCommon::new(permission_policy, payment_config, field_mappers),
-            molecule_range: None,
+            inner: FieldCommon::new(field_mappers),
+            molecule: None,
         }
     }
 
     /// Creates a new RangeField with a MoleculeRange
     #[must_use]
     pub fn new_with_range(
-        permission_policy: PermissionsPolicy,
-        payment_config: FieldPaymentConfig,
         field_mappers: HashMap<String, String>,
         source_pub_key: String,
     ) -> Self {
         Self {
-            inner: FieldCommon::new(permission_policy, payment_config, field_mappers),
-            molecule_range: Some(MoleculeRange::new(source_pub_key)),
+            inner: FieldCommon::new(field_mappers),
+            molecule: Some(MoleculeRange::new(source_pub_key)),
         }
     }
 
     /// Returns a reference to the MoleculeRange if it exists
-    pub fn molecule_range(&self) -> Option<&MoleculeRange> {
-        self.molecule_range.as_ref()
+    pub fn molecule(&self) -> Option<&MoleculeRange> {
+        self.molecule.as_ref()
     }
 
     /// Returns a mutable reference to the MoleculeRange if it exists
-    pub fn molecule_range_mut(&mut self) -> Option<&mut MoleculeRange> {
-        self.molecule_range.as_mut()
+    pub fn molecule_mut(&mut self) -> Option<&mut MoleculeRange> {
+        self.molecule.as_mut()
     }
 
     /// Sets the MoleculeRange for this field
-    pub fn set_molecule_range(&mut self, molecule_range: MoleculeRange) {
-        self.molecule_range = Some(molecule_range);
+    pub fn set_molecule(&mut self, molecule: MoleculeRange) {
+        self.molecule = Some(molecule);
     }
 
     /// Initializes the MoleculeRange if it doesn't exist
-    pub fn ensure_molecule_range(&mut self, source_pub_key: String) -> &mut MoleculeRange {
-        if self.molecule_range.is_none() {
-            self.molecule_range = Some(MoleculeRange::new(source_pub_key));
+    pub fn ensure_molecule(&mut self, source_pub_key: String) -> &mut MoleculeRange {
+        if self.molecule.is_none() {
+            self.molecule = Some(MoleculeRange::new(source_pub_key));
         }
-        self.molecule_range.as_mut().unwrap()
+        self.molecule.as_mut().unwrap()
     }
 
     /// Applies a range filter to the field's data
@@ -73,7 +69,7 @@ impl RangeField {
             total_count: 0,
         };
 
-        let Some(molecule_range) = &self.molecule_range else {
+        let Some(molecule) = &self.molecule else {
             return empty_result;
         };
 
@@ -81,26 +77,43 @@ impl RangeField {
 
         match filter {
             RangeFilter::Key(key) => {
-                if let Some(atom_uuid) = molecule_range.get_atom_uuid(key) {
+                if let Some(atom_uuid) = molecule.get_atom_uuid(key) {
                     matches.insert(key.clone(), atom_uuid.clone());
                 }
             }
             RangeFilter::KeyPrefix(prefix) => {
-                for (key, atom_uuid) in &molecule_range.atom_uuids {
-                    if key.starts_with(prefix) {
-                        matches.insert(key.clone(), atom_uuid.clone());
+                // Leverage BTree's efficient range operations for prefix search
+                // Create a range from prefix to prefix + 1 (incrementing the last character)
+                let mut prefix_end = prefix.to_string();
+                if let Some(last_char) = prefix_end.chars().last() {
+                    if let Some(next_char) = char::from_u32(last_char as u32 + 1) {
+                        prefix_end.pop();
+                        prefix_end.push(next_char);
+                    } else {
+                        // If we can't increment the last character, append a null character
+                        prefix_end.push('\0');
                     }
+                } else {
+                    // Empty prefix case - search all keys starting with empty string
+                    prefix_end = "\0".to_string();
+                }
+                
+                let range = molecule.atom_uuids.range(prefix.to_string()..prefix_end);
+                
+                for (key, atom_uuid) in range {
+                    matches.insert(key.clone(), atom_uuid.clone());
                 }
             }
             RangeFilter::KeyRange { start, end } => {
-                for (key, atom_uuid) in &molecule_range.atom_uuids {
-                    if key >= start && key < end {
-                        matches.insert(key.clone(), atom_uuid.clone());
-                    }
+                // Leverage BTree's efficient range operations
+                let range = molecule.atom_uuids.range(start.clone()..end.clone());
+                
+                for (key, atom_uuid) in range {
+                    matches.insert(key.clone(), atom_uuid.clone());
                 }
             }
             RangeFilter::Value(target_value) => {
-                for (key, atom_uuid) in &molecule_range.atom_uuids {
+                for (key, atom_uuid) in &molecule.atom_uuids {
                     // Check if the value matches the target
                     if atom_uuid == target_value {
                         matches.insert(key.clone(), atom_uuid.clone());
@@ -109,13 +122,13 @@ impl RangeField {
             }
             RangeFilter::Keys(keys) => {
                 for key in keys {
-                    if let Some(value) = molecule_range.get_atom_uuid(key) {
+                    if let Some(value) = molecule.get_atom_uuid(key) {
                         matches.insert(key.clone(), value.clone());
                     }
                 }
             }
             RangeFilter::KeyPattern(pattern) => {
-                for (key, atom_uuid) in &molecule_range.atom_uuids {
+                for (key, atom_uuid) in &molecule.atom_uuids {
                     if matches_pattern(key, pattern) {
                         matches.insert(key.clone(), atom_uuid.clone());
                     }
@@ -138,7 +151,7 @@ impl RangeField {
 
     /// Gets all keys in the range (useful for pagination or listing)
     pub fn get_all_keys(&self) -> Vec<String> {
-        self.molecule_range
+        self.molecule
             .as_ref()
             .map(|range| range.atom_uuids.keys().cloned().collect())
             .unwrap_or_default()
@@ -146,16 +159,14 @@ impl RangeField {
 
     /// Gets a subset of keys within a range (useful for pagination)
     pub fn get_keys_in_range(&self, start: &str, end: &str) -> Vec<String> {
-        self.molecule_range
+        self.molecule
             .as_ref()
             .map(|range| {
-                let start_string = start.to_string();
-                let end_string = end.to_string();
+                // Leverage BTree's efficient range operations
                 range
                     .atom_uuids
-                    .keys()
-                    .filter(|key| **key >= start_string && **key < end_string)
-                    .cloned()
+                    .range(start.to_string()..end.to_string())
+                    .map(|(key, _)| key.clone())
                     .collect()
             })
             .unwrap_or_default()
@@ -163,7 +174,7 @@ impl RangeField {
 
     /// Gets the total count of items in the range
     pub fn count(&self) -> usize {
-        self.molecule_range
+        self.molecule
             .as_ref()
             .map(|range| range.atom_uuids.len())
             .unwrap_or(0)
@@ -171,3 +182,33 @@ impl RangeField {
 }
 
 impl_field!(RangeField);
+
+impl RangeField {
+    /// Refreshes the field's data from the database using the provided key configuration.
+    /// For RangeField, this looks up the MoleculeRange data from sled.
+    pub fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
+        // If we have a molecule_uuid, look up the corresponding MoleculeRange
+        if let Some(molecule_uuid) = self.inner.molecule_uuid() {
+            let ref_key = format!("ref:{}", molecule_uuid);
+            if let Ok(Some(molecule)) = db_ops.get_item::<MoleculeRange>(&ref_key) {
+                self.molecule = Some(molecule);
+            }
+        }
+    }
+
+    /// Writes a mutation to the RangeField
+    pub fn write_mutation(&mut self, key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
+        // Initialize molecule if needed
+        if self.molecule.is_none() {
+            self.ensure_molecule(pub_key.clone());
+        }
+        
+        // For RangeField, we use the range key to store the atom
+        if let Some(range_key) = &key_config.range_field {
+            if let Some(molecule) = &mut self.molecule {
+                molecule.set_atom_uuid(range_key.clone(), atom.uuid().to_string());
+                log::debug!("Writing atom to RangeField with pub_key '{}' and range key '{}': {:?}", pub_key, range_key, atom);
+            }
+        }
+    }
+}

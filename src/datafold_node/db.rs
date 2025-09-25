@@ -43,7 +43,7 @@ impl DataFoldNode {
     /// Executes a mutation on the database.
     pub fn mutate(&self, mutation: Mutation) -> FoldDbResult<String> {
         self.with_db_mut(
-            |db| db.write_schema(mutation),
+            |db| db.write_mutation(mutation),
             "Failed to acquire database lock for mutation",
             "Mutation operation failed"
         )
@@ -57,6 +57,7 @@ impl DataFoldNode {
             "Failed to list transforms"
         )
     }
+
 
     /// Process all queued transforms.
     pub fn process_transform_queue(&self) -> FoldDbResult<()> {

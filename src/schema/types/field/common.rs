@@ -4,42 +4,27 @@ use std::collections::HashMap;
 use crate::fees::types::config::FieldPaymentConfig;
 use crate::permissions::types::policy::PermissionsPolicy;
 use crate::schema::types::Transform;
-
+use crate::db_operations::DbOperations;
+use crate::schema::types::key_config::KeyConfig;
+use crate::atom::Molecule;
+use serde_json::Value;
 /// Common interface for all schema fields.
 ///
 /// The `Field` trait exposes accessors for properties shared by all field
 /// implementations. These mirror the methods that previously existed on
 /// `SchemaField`.
 pub trait Field {
-    /// Returns the permission policy associated with this field.
-    fn permission_policy(&self) -> &PermissionsPolicy;
+    /// Gets the common field data
+    fn common(&self) -> &FieldCommon;
+    
+    /// Gets the common field data mutably
+    fn common_mut(&mut self) -> &mut FieldCommon;
 
-    /// Returns the payment configuration for this field.
-    fn payment_config(&self) -> &FieldPaymentConfig;
+    /// Refreshes the field's data from the database using the provided key configuration.
+    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations);
 
-    /// Gets the atom reference uuid for this field, if one exists.
-    fn molecule_uuid(&self) -> Option<&String>;
-
-    /// Sets the atom reference uuid for this field.
-    fn set_molecule_uuid(&mut self, uuid: String);
-
-    /// Returns any field mappers configured for this field.
-    fn field_mappers(&self) -> &HashMap<String, String>;
-
-    /// Sets the field mappers for this field.
-    fn set_field_mappers(&mut self, mappers: HashMap<String, String>);
-
-    /// Returns the transform associated with this field, if any.
-    fn transform(&self) -> Option<&Transform>;
-
-    /// Sets the transform for this field.
-    fn set_transform(&mut self, transform: Transform);
-
-    /// Indicates whether this field is writable.
-    fn writable(&self) -> bool;
-
-    /// Sets whether this field can be written to.
-    fn set_writable(&mut self, writable: bool);
+    /// Writes a mutation to the field
+    fn write_mutation(&mut self, key_config: &KeyConfig, atom: crate::atom::Atom, pub_key: String);
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -51,8 +36,6 @@ pub enum FieldType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldCommon {
-    pub permission_policy: PermissionsPolicy,
-    pub payment_config: FieldPaymentConfig,
     pub molecule_uuid: Option<String>,
     pub field_mappers: HashMap<String, String>,
     pub transform: Option<Transform>,
@@ -66,18 +49,47 @@ fn default_writable() -> bool {
 
 impl FieldCommon {
     pub fn new(
-        permission_policy: PermissionsPolicy,
-        payment_config: FieldPaymentConfig,
         field_mappers: HashMap<String, String>,
     ) -> Self {
         Self {
-            permission_policy,
-            payment_config,
             molecule_uuid: None,
             field_mappers,
             transform: None,
             writable: true,
         }
+    }
+
+    // Convenience methods to avoid repetition
+    pub fn molecule_uuid(&self) -> Option<&String> {
+        self.molecule_uuid.as_ref()
+    }
+
+    pub fn set_molecule_uuid(&mut self, uuid: String) {
+        self.molecule_uuid = Some(uuid);
+    }
+
+    pub fn field_mappers(&self) -> &HashMap<String, String> {
+        &self.field_mappers
+    }
+
+    pub fn set_field_mappers(&mut self, mappers: HashMap<String, String>) {
+        self.field_mappers = mappers;
+    }
+
+    pub fn transform(&self) -> Option<&Transform> {
+        self.transform.as_ref()
+    }
+
+    pub fn set_transform(&mut self, transform: Transform) {
+        self.transform = Some(transform);
+    }
+
+    pub fn writable(&self) -> bool {
+        self.writable
+    }
+
+    pub fn set_writable(&mut self, writable: bool) {
+        self.writable = writable;
     }
 }
 
@@ -85,44 +97,20 @@ impl FieldCommon {
 macro_rules! impl_field {
     ($t:ty) => {
         impl $crate::schema::types::field::Field for $t {
-            fn permission_policy(&self) -> &$crate::permissions::types::policy::PermissionsPolicy {
-                &self.inner.permission_policy
+            fn common(&self) -> &$crate::schema::types::field::FieldCommon {
+                &self.inner
+            }
+            
+            fn common_mut(&mut self) -> &mut $crate::schema::types::field::FieldCommon {
+                &mut self.inner
             }
 
-            fn payment_config(&self) -> &$crate::fees::types::config::FieldPaymentConfig {
-                &self.inner.payment_config
+            fn refresh_from_db(&mut self, db_ops: &$crate::db_operations::DbOperations) {
+                log::error!("refresh_from_db not implemented for {}", stringify!($t));
             }
 
-            fn molecule_uuid(&self) -> Option<&String> {
-                self.inner.molecule_uuid.as_ref()
-            }
-
-            fn set_molecule_uuid(&mut self, uuid: String) {
-                self.inner.molecule_uuid = Some(uuid);
-            }
-
-            fn field_mappers(&self) -> &std::collections::HashMap<String, String> {
-                &self.inner.field_mappers
-            }
-
-            fn set_field_mappers(&mut self, mappers: std::collections::HashMap<String, String>) {
-                self.inner.field_mappers = mappers;
-            }
-
-            fn transform(&self) -> Option<&$crate::schema::types::Transform> {
-                self.inner.transform.as_ref()
-            }
-
-            fn set_transform(&mut self, transform: $crate::schema::types::Transform) {
-                self.inner.transform = Some(transform);
-            }
-
-            fn writable(&self) -> bool {
-                self.inner.writable
-            }
-
-            fn set_writable(&mut self, writable: bool) {
-                self.inner.writable = writable;
+            fn write_mutation(&mut self, key_config: &$crate::schema::types::key_config::KeyConfig, atom: $crate::atom::Atom, pub_key: String) {
+                log::error!("write_mutation not implemented for {}", stringify!($t));
             }
         }
     };

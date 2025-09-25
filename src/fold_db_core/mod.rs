@@ -12,11 +12,8 @@
 
 // Organized module declarations
 pub mod infrastructure;
-pub mod managers;
-pub mod mutation;
 pub mod orchestration;
 pub mod query;
-pub mod services;
 pub mod shared;
 pub mod transform_manager;
 
@@ -25,11 +22,8 @@ pub mod mutation_completion_handler;
 
 // Re-export key components for backwards compatibility
 pub use infrastructure::{EventMonitor, MessageBus};
-pub use managers::AtomManager; // FieldManager removed (was dead code), CollectionManager removed - collections no longer supported
-pub use mutation::MutationExecutor;
 pub use orchestration::TransformOrchestrator;
 pub use query::QueryExecutor;
-pub use services::field_retrieval::service::FieldRetrievalService;
 pub use shared::*;
 pub use transform_manager::TransformManager;
 
@@ -52,11 +46,13 @@ use serde_json::Value;
 use crate::db_operations::DbOperations;
 use crate::logging::features::{log_feature, LogFeature};
 use crate::permissions::PermissionWrapper;
-use crate::schema::types::{Mutation, Query};
+use crate::schema::types::{Mutation, Query, key_config::KeyConfig};
+use crate::schema::types::field::Field;
 use crate::schema::{SchemaCore, SchemaError};
+use crate::atom::Atom;
 
 // Infrastructure components that are used internally
-use infrastructure::init::{init_orchestrator, init_transform_manager};
+use infrastructure::init::{init_transform_manager};
 use infrastructure::message_bus::request_events::{
     AtomCreateResponse, FieldUpdateResponse, FieldValueSetResponse, MoleculeCreateResponse,
     SchemaApprovalResponse, SchemaLoadResponse, SystemInitializationRequest,
@@ -77,19 +73,14 @@ pub enum OperationResponse {
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
-    pub(crate) atom_manager: AtomManager,
-    pub(crate) field_retrieval_service: FieldRetrievalService,
     pub(crate) schema_manager: Arc<SchemaCore>,
     pub(crate) transform_manager: Arc<TransformManager>,
-    pub(crate) transform_orchestrator: Arc<TransformOrchestrator>,
     /// Shared database operations
     pub(crate) db_ops: Arc<DbOperations>,
     #[allow(dead_code)]
     permission_wrapper: PermissionWrapper,
     /// Query executor for handling all query operations
     query_executor: QueryExecutor,
-    /// Mutation executor for handling all mutation operations
-    mutation_executor: MutationExecutor,
     /// Message bus for event-driven communication
     pub(crate) message_bus: Arc<MessageBus>,
     /// Event monitor for system-wide observability
@@ -184,7 +175,6 @@ impl FoldDB {
 
         // Create managers using event-driven initialization only
         let db_ops_arc = Arc::new(db_ops.clone());
-        let atom_manager = AtomManager::new(db_ops.clone(), Arc::clone(&message_bus));
         let schema_manager = Arc::new(
             SchemaCore::new(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
                 .map_err(|e| sled::Error::Unsupported(e.to_string()))?,
@@ -193,14 +183,6 @@ impl FoldDB {
         // Use standard initialization but with deprecated closures that recommend events
         let transform_manager =
             init_transform_manager(Arc::new(db_ops.clone()), Arc::clone(&message_bus))?;
-        let orchestrator = init_orchestrator(
-            &FieldRetrievalService::new(Arc::clone(&message_bus)),
-            transform_manager.clone(),
-            orchestrator_tree,
-            Arc::clone(&message_bus),
-            Arc::new(db_ops.clone()),
-        )?;
-
 
         // Create and start EventMonitor for system-wide observability
         let event_monitor = Arc::new(infrastructure::event_monitor::EventMonitor::new(
@@ -220,15 +202,6 @@ impl FoldDB {
         );
         info!("Created QueryExecutor for query operations");
 
-        // Create MutationExecutor for handling all mutation operations
-        let mutation_executor = MutationExecutor::new(
-            Arc::new(db_ops.clone()),
-            Arc::clone(&schema_manager),
-            Arc::clone(&message_bus),
-            Arc::clone(&completion_handler),
-        );
-        info!("Created MutationExecutor for mutation operations");
-
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
@@ -236,15 +209,11 @@ impl FoldDB {
         // - MutationCompletionHandler: Tracks async mutation completion
 
         Ok(Self {
-            atom_manager,
-            field_retrieval_service: FieldRetrievalService::new(Arc::clone(&message_bus)),
             schema_manager,
             transform_manager,
-            transform_orchestrator: orchestrator,
             db_ops: Arc::new(db_ops.clone()),
             permission_wrapper: PermissionWrapper::new(),
             query_executor,
-            mutation_executor,
             message_bus,
             event_monitor,
             completion_handler,
@@ -269,16 +238,6 @@ impl FoldDB {
     /// Provides access to the underlying database operations
     pub fn get_db_ops(&self) -> Arc<DbOperations> {
         Arc::clone(&self.db_ops)
-    }
-
-    /// Provides access to the field retrieval service for testing
-    pub fn field_retrieval_service(&self) -> &FieldRetrievalService {
-        &self.field_retrieval_service
-    }
-
-    /// Provides access to the atom manager for testing
-    pub fn atom_manager(&self) -> &AtomManager {
-        &self.atom_manager
     }
 
     /// Provides access to the event monitor for observability
@@ -348,8 +307,44 @@ impl FoldDB {
     }
 
     /// Write schema operation - main orchestration method for mutations
-    pub fn write_schema(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
-        self.mutation_executor.write_schema(mutation)
+    pub fn write_mutation(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
+        // Get the schema definition
+        let mut schema = self.schema_manager.get_schema(&mutation.schema_name)?
+            .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name)))?;
+        
+        // Extract hash and range key field names from the mutation's key_config
+        let hash_key = mutation.key_config.hash_field.as_ref()
+            .ok_or_else(|| SchemaError::InvalidData("Hash key field not specified".to_string()))?;
+        let range_key = mutation.key_config.range_field.as_ref()
+            .ok_or_else(|| SchemaError::InvalidData("Range key field not specified".to_string()))?;
+        
+        // Get the actual hash and range values from the mutation
+        let hash_value = mutation.fields_and_values.get(hash_key)
+            .ok_or_else(|| SchemaError::InvalidData(format!("Hash key '{}' not found in mutation", hash_key)))?
+            .as_str()
+            .ok_or_else(|| SchemaError::InvalidData(format!("Hash key '{}' must be a string", hash_key)))?;
+        let range_value = mutation.fields_and_values.get(range_key)
+            .ok_or_else(|| SchemaError::InvalidData(format!("Range key '{}' not found in mutation", range_key)))?
+            .as_str()
+            .ok_or_else(|| SchemaError::InvalidData(format!("Range key '{}' must be a string", range_key)))?;
+        
+        let key_config = KeyConfig::new(Some(hash_value.to_string()), Some(range_value.to_string()));
+        // Generate a unique mutation ID
+        let mutation_id = uuid::Uuid::new_v4().to_string();
+        
+        // Process each field in the mutation
+        for (field_name, value) in mutation.fields_and_values {
+            if let Some(schema_field) = schema.fields.get_mut(&field_name) {
+                schema_field.refresh_from_db(&self.db_ops);
+                let new_atom = Atom::new(mutation.schema_name.clone(), mutation.pub_key.clone(), value);
+                schema_field.write_mutation(&key_config, new_atom, mutation.pub_key.clone());
+            }
+        }
+
+        
+        
+        // Return the mutation ID
+        Ok(mutation_id)
     }
 
     /// Register a transform with the system
@@ -375,90 +370,5 @@ impl FoldDB {
     pub fn process_transform_queue(&self) {
         // Transform orchestrator processing is handled automatically by events
         // self.transform_orchestrator.process_pending_transforms();
-    }
-
-    /// Waits for a specific mutation to complete processing.
-    ///
-    /// This method allows queries and other operations to wait for specific mutations to finish
-    /// processing before executing, solving the race condition where queries try to access data
-    /// before mutations finish processing. This is the core functionality that eliminates
-    /// "Atom not found" errors.
-    ///
-    /// # Arguments
-    ///
-    /// * `mutation_id` - The unique identifier of the mutation to wait for completion
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if the mutation completed successfully within the timeout period,
-    /// or a `SchemaError` if the operation failed.
-    ///
-    /// # Timeout Behavior
-    ///
-    /// Uses the default 5-second timeout as defined in `MutationCompletionHandler`.
-    /// If the mutation does not complete within this timeframe, a timeout error is returned.
-    ///
-    /// # Error Handling
-    ///
-    /// - **Timeout**: Returns `SchemaError::InvalidData("Mutation failed")` when the mutation
-    ///   does not complete within the 5-second timeout
-    /// - **Invalid ID**: Returns `SchemaError::InvalidData` with details when the mutation ID
-    ///   is not found or was never registered
-    /// - **System Error**: Returns appropriate `SchemaError` for lock failures or channel errors
-    ///
-    /// # Usage Examples
-    ///
-    /// ## Basic Usage
-    /// ```no_run
-    /// use datafold::fold_db_core::FoldDB;
-    /// use datafold::schema::types::{Mutation, MutationType};
-    /// use std::collections::HashMap;
-    /// use serde_json::Value;
-    ///
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let mut db = FoldDB::new("test_db")?;
-    ///
-    /// // Execute a mutation and get the mutation ID
-    /// let fields = HashMap::new();
-    /// let mutation = Mutation::new(
-    ///     "schema_name".to_string(),
-    ///     fields,
-    ///     "pub_key".to_string(),
-    ///     0,
-    ///     MutationType::Update
-    /// );
-    /// let mutation_id = db.write_schema(mutation)?;
-    ///
-    /// // Wait for the mutation to complete before querying
-    /// db.wait_for_mutation(&mutation_id).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// ## Error Handling Example
-    /// ```no_run
-    /// use datafold::fold_db_core::FoldDB;
-    ///
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let db = FoldDB::new("test_db")?;
-    ///
-    /// match db.wait_for_mutation("invalid-mutation-id").await {
-    ///     Ok(()) => println!("Mutation completed successfully"),
-    ///     Err(e) => println!("Mutation failed or timed out: {}", e),
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Implementation Notes
-    ///
-    /// This method integrates with the `MutationCompletionHandler` to provide efficient
-    /// completion tracking. The mutation must be registered with the completion handler
-    /// (typically done by `write_schema`) before calling this method.
-    ///
-    /// The method is async and non-blocking, allowing other operations to continue while
-    /// waiting for mutation completion.
-    pub async fn wait_for_mutation(&self, mutation_id: &str) -> Result<(), SchemaError> {
-        self.mutation_executor.wait_for_mutation(mutation_id).await
     }
 }

@@ -1,7 +1,7 @@
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::{
     infrastructure::message_bus::MessageBus, orchestration::TransformOrchestrator,
-    services::field_retrieval::FieldRetrievalService, transform_manager::TransformManager,
+    transform_manager::TransformManager,
 };
 use sled::Tree;
 use std::sync::Arc;
@@ -15,8 +15,7 @@ pub fn init_transform_manager(
     Ok(Arc::new(mgr))
 }
 
-pub fn init_orchestrator(
-    _field_retrieval_service: &FieldRetrievalService,
+pub fn init_transform_orchestrator(
     transform_manager: Arc<TransformManager>,
     tree: Tree,
     message_bus: Arc<MessageBus>,

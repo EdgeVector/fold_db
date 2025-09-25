@@ -74,7 +74,7 @@ impl MoleculeHashRange {
     /// # Arguments
     /// * `atom_uuid` - The UUID of the atom to store
     /// * `key_config` - Configuration specifying which fields to use as hash and range
-    pub fn set_atom_uuid(&mut self, atom_uuid: String, key_config: &KeyConfig) {
+    pub fn set_atom_uuid(&mut self, key_config: &KeyConfig, atom_uuid: String) {
         self.atom_uuids
             .entry(key_config.hash_field.clone().unwrap())
             .or_insert_with(BTreeMap::new)
@@ -144,6 +144,23 @@ impl MoleculeHashRange {
         self.atom_uuids
             .get(hash_value)
             .map(|range_map| range_map.keys())
+    }
+
+    /// Returns an iterator over all hash groups and their range maps
+    pub fn iter_hash_groups(&self) -> impl Iterator<Item = (&String, &BTreeMap<String, String>)> {
+        self.atom_uuids.iter()
+    }
+
+    /// Returns an iterator over all atoms across all hash groups
+    /// Each item is (hash_value, range_value, atom_uuid)
+    pub fn iter_all_atoms(&self) -> impl Iterator<Item = (&String, &String, &String)> {
+        self.atom_uuids
+            .iter()
+            .flat_map(|(hash_value, range_map)| {
+                range_map.iter().map(move |(range_value, atom_uuid)| {
+                    (hash_value, range_value, atom_uuid)
+                })
+            })
     }
 }
 
