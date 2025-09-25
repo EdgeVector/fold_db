@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::fees::types::config::FieldPaymentConfig;
 use crate::permissions::types::policy::PermissionsPolicy;
 use crate::schema::types::Transform;
 use crate::db_operations::DbOperations;
 use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::field::HashRangeFilter;
+use crate::schema::types::SchemaError;
 use crate::atom::Molecule;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 /// Common interface for all schema fields.
 ///
 /// The `Field` trait exposes accessors for properties shared by all field
@@ -25,6 +28,13 @@ pub trait Field {
 
     /// Writes a mutation to the field
     fn write_mutation(&mut self, key_config: &KeyConfig, atom: crate::atom::Atom, pub_key: String);
+
+    /// Resolves field values by refreshing the field, applying filters, and fetching atom content
+    fn resolve_value(
+        &mut self,
+        db_ops: &Arc<DbOperations>,
+        filter: Option<HashRangeFilter>,
+    ) -> Result<JsonValue, SchemaError>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -111,6 +121,11 @@ macro_rules! impl_field {
 
             fn write_mutation(&mut self, key_config: &$crate::schema::types::key_config::KeyConfig, atom: $crate::atom::Atom, pub_key: String) {
                 log::error!("write_mutation not implemented for {}", stringify!($t));
+            }
+
+            fn resolve_value(&mut self, db_ops: &std::sync::Arc<$crate::db_operations::DbOperations>, filter: Option<$crate::schema::types::field::HashRangeFilter>) -> Result<serde_json::Value, $crate::schema::types::SchemaError> {
+                log::error!("resolve_value not implemented for {}", stringify!($t));
+                Err($crate::schema::types::SchemaError::InvalidField(format!("resolve_value not implemented for {}", stringify!($t))))
             }
         }
     };

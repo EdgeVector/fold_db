@@ -523,8 +523,8 @@ impl TransformRunner for TransformManager {
 
         // Log mutation context if available
         if let Some(ref context) = mutation_context {
-            info!("🎯 DIAGNOSTIC: Transform execution with mutation context - range_key: {:?}, hash_key: {:?}, incremental: {}", 
-                  context.range_key, context.hash_key, context.incremental);
+            info!("🎯 DIAGNOSTIC: Transform execution with mutation context - key_config: {:?}, incremental: {}", 
+                  context.key_config, context.incremental);
         }
 
         // Execute the transform using the execution module with mutation context

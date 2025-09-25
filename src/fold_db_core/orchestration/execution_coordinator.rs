@@ -403,8 +403,7 @@ mod tests {
                     Ok(serde_json::json!({
                         "status": "success_with_context",
                         "transform_id": transform_id,
-                        "range_key": context.range_key,
-                        "hash_key": context.hash_key,
+                        "key_config": context.key_config,
                         "incremental": context.incremental
                     }))
                 } else {

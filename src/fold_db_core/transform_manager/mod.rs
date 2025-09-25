@@ -8,7 +8,6 @@ pub mod loading;
 // Refactored execution modules
 pub mod input_fetcher;
 pub mod result_storage;
-pub mod schema_data_fetcher;
 
 // Utility modules for code consolidation
 pub mod utils;

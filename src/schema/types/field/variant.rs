@@ -1,13 +1,17 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::fees::types::config::FieldPaymentConfig;
 use crate::permissions::types::policy::PermissionsPolicy;
 use crate::schema::types::field::{
     Field, FieldCommon, FieldType, HashRangeField, RangeField, SingleField,
+    HashRangeFilter, HashRangeFilterResult,
 };
 use crate::db_operations::DbOperations;
-use crate::schema::types::Transform;
+use crate::schema::types::{Transform, SchemaError};
+use serde_json::Value as JsonValue;
+use log::{info, error};
 
 /// Enumeration over all field variants.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,5 +57,13 @@ impl Field for FieldVariant {
 
     fn write_mutation(&mut self, key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
         delegate_field_method!(self, write_mutation, key_config, atom, pub_key)
+    }
+
+    fn resolve_value(
+        &mut self,
+        db_ops: &Arc<DbOperations>,
+        filter: Option<HashRangeFilter>,
+    ) -> Result<JsonValue, SchemaError> {
+        delegate_field_method!(self, resolve_value, db_ops, filter)
     }
 }

@@ -45,7 +45,7 @@ impl QueryExecutor {
         info!("🔍 EVENT-DRIVEN query for schema: {}", query.schema_name);
 
         // Get schema first
-        let schema = match self.schema_manager.get_schema(&query.schema_name)? {
+        let mut schema = match self.schema_manager.get_schema(&query.schema_name)? {
             Some(schema) => schema,
             None => {
                 return Err(SchemaError::NotFound(format!(
@@ -75,31 +75,18 @@ impl QueryExecutor {
 
         // Extract and combine all filters into a unified HashRangeFilter for all schema types
         let unified_filter: Option<HashRangeFilter> = if let Some(filter) = &query.filter {
-            let hash_filter = filter.get("hash_filter")
-                .and_then(|v| serde_json::from_value::<HashRangeFilter>(v.clone()).ok());
-                    let range_filter = filter.get("range_filter")
-                        .and_then(|v| serde_json::from_value::<HashRangeFilter>(v.clone()).ok());
+            let hash_filter_value = filter.get("hash_filter").cloned();
+            let range_filter_value = filter.get("range_filter").cloned();
             
-            // Combine filters based on what's available
-            match (hash_filter, range_filter) {
-                (Some(hash), Some(range)) => {
-                    // Both hash and range filters - combine them
-                    info!("🔑 Schema with both hash and range filters - combining");
-                    Some(Self::combine_hash_range_filters(hash, range))
-                }
-                (Some(hash), None) => {
-                    info!("🔑 Schema with hash filter only");
-                    Some(hash)
-                }
-                        (None, Some(range)) => {
-                            info!("🔑 Schema with range filter only");
-                            Some(range)
-                        }
-                (None, None) => {
-                    info!("🔑 Schema with no filters");
-                    None
-                }
+            let combined_filter = HashRangeFilter::from_json_values(hash_filter_value, range_filter_value);
+            
+            if combined_filter.is_some() {
+                info!("🔑 Schema with unified filter created");
+            } else {
+                info!("🔑 Schema with no filters");
             }
+            
+            combined_filter
         } else {
             None
         };
@@ -125,7 +112,7 @@ impl QueryExecutor {
                 field_name, schema.name
             );
             match self.get_field_value_from_db(
-                &schema,
+                &mut schema,
                 field_name,
                 unified_filter.clone(),
             ) {
@@ -160,7 +147,7 @@ impl QueryExecutor {
     /// Get field value directly from database using unified resolver
     fn get_field_value_from_db(
         &self,
-        schema: &Schema,
+        schema: &mut Schema,
         field_name: &str,
         unified_filter: Option<HashRangeFilter>,
     ) -> Result<Value, SchemaError> {
@@ -173,26 +160,4 @@ impl QueryExecutor {
         )
     }
 
-    /// Combine hash and range filters into a single HashRangeFilter
-    fn combine_hash_range_filters(hash_filter: HashRangeFilter, range_filter: HashRangeFilter) -> HashRangeFilter {
-        match (hash_filter, range_filter) {
-            // HashKey + RangePrefix = HashRangePrefix
-            (HashRangeFilter::HashKey(hash), HashRangeFilter::RangePrefix(prefix)) => {
-                HashRangeFilter::HashRangePrefix { hash, prefix }
-            }
-            // HashKey + RangeRange = HashRangeRange
-            (HashRangeFilter::HashKey(hash), HashRangeFilter::RangeRange { start, end }) => {
-                HashRangeFilter::HashRangeRange { hash, start, end }
-            }
-            // HashKey + RangePattern = HashRangePattern
-            (HashRangeFilter::HashKey(hash), HashRangeFilter::RangePattern(pattern)) => {
-                HashRangeFilter::HashRangePattern { hash, pattern }
-            }
-            // For other combinations, prefer the hash filter and log a warning
-            (hash_filter, _) => {
-                log::warn!("⚠️ Combining filters: using hash filter, ignoring range filter");
-                hash_filter
-            }
-        }
-    }
 }

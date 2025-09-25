@@ -1,12 +1,17 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::atom::MoleculeRange;
 use crate::fees::types::config::FieldPaymentConfig;
 use crate::impl_field;
 use crate::permissions::types::policy::PermissionsPolicy;
 use crate::schema::types::field::common::FieldCommon;
+use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, RangeOperations, apply_range_filter};
+use crate::schema::types::SchemaError;
+use crate::db_operations::DbOperations;
+use log::{info, error};
 
 // RangeFilter has been unified into HashRangeFilter
 /// Field storing a range of values.
@@ -62,134 +67,13 @@ impl RangeField {
         self.molecule.as_mut().unwrap()
     }
 
-    /// Applies a range filter to the field's data (using HashRangeFilter for unified filtering)
-    pub fn apply_filter(&self, filter: &crate::schema::types::field::HashRangeFilter) -> crate::schema::types::field::HashRangeFilterResult {
-        let empty_result = crate::schema::types::field::HashRangeFilterResult::empty();
-
-        let Some(molecule) = &self.molecule else {
-            return empty_result;
-        };
-
-        let mut matches = HashMap::new();
-
-        match filter {
-            crate::schema::types::field::HashRangeFilter::HashKey(key) => {
-                if let Some(atom_uuid) = molecule.get_atom_uuid(key) {
-                    matches.insert(key.clone(), atom_uuid.clone());
-                }
-            }
-            crate::schema::types::field::HashRangeFilter::RangePrefix(prefix) => {
-                // Leverage BTree's efficient range operations for prefix search
-                // Create a range from prefix to prefix + 1 (incrementing the last character)
-                let mut prefix_end = prefix.to_string();
-                if let Some(last_char) = prefix_end.chars().last() {
-                    if let Some(next_char) = char::from_u32(last_char as u32 + 1) {
-                        prefix_end.pop();
-                        prefix_end.push(next_char);
-                    } else {
-                        // If we can't increment the last character, append a null character
-                        prefix_end.push('\0');
-                    }
-                } else {
-                    // Empty prefix case - search all keys starting with empty string
-                    prefix_end = "\0".to_string();
-                }
-                
-                let range = molecule.atom_uuids.range(prefix.to_string()..prefix_end);
-                
-                for (key, atom_uuid) in range {
-                    matches.insert(key.clone(), atom_uuid.clone());
-                }
-            }
-            crate::schema::types::field::HashRangeFilter::RangeRange { start, end } => {
-                // Leverage BTree's efficient range operations
-                let range = molecule.atom_uuids.range(start.clone()..end.clone());
-                
-                for (key, atom_uuid) in range {
-                    matches.insert(key.clone(), atom_uuid.clone());
-                }
-            }
-            crate::schema::types::field::HashRangeFilter::Value(target_value) => {
-                for (key, atom_uuid) in &molecule.atom_uuids {
-                    // Check if the value matches the target
-                    if atom_uuid == target_value {
-                        matches.insert(key.clone(), atom_uuid.clone());
-                    }
-                }
-            }
-            crate::schema::types::field::HashRangeFilter::HashRangeKeys(keys) => {
-                for key in keys {
-                    if let Some(value) = molecule.get_atom_uuid(key) {
-                        matches.insert(key.clone(), value.clone());
-                    }
-                }
-            }
-            crate::schema::types::field::HashRangeFilter::RangePattern(pattern) => {
-                for (key, atom_uuid) in &molecule.atom_uuids {
-                    if matches_pattern(key, pattern) {
-                        matches.insert(key.clone(), atom_uuid.clone());
-                    }
-                }
-            }
-        }
-
-        crate::schema::types::field::HashRangeFilterResult::new(matches)
-    }
-
     /// Applies a filter from a JSON Value (for use with Operation::Query filter)
-    pub fn apply_json_filter(&self, filter_value: &Value) -> Result<crate::schema::types::field::HashRangeFilterResult, String> {
-        let filter: crate::schema::types::field::HashRangeFilter = serde_json::from_value(filter_value.clone())
+    pub fn apply_json_filter(&self, filter_value: &JsonValue) -> Result<HashRangeFilterResult, String> {
+        let filter: HashRangeFilter = serde_json::from_value(filter_value.clone())
             .map_err(|e| format!("Invalid range filter format: {}", e))?;
         Ok(self.apply_filter(&filter))
     }
 
-    /// Simple glob-style pattern matching (supports `*` and `?`)
-    fn matches_pattern(text: &str, pattern: &str) -> bool {
-        let pattern_chars: Vec<char> = pattern.chars().collect();
-        let text_chars: Vec<char> = text.chars().collect();
-
-        Self::match_recursive(&text_chars, &pattern_chars, 0, 0)
-    }
-
-    fn match_recursive(text: &[char], pattern: &[char], text_idx: usize, pattern_idx: usize) -> bool {
-        // If we've reached the end of both strings, it's a match
-        if pattern_idx >= pattern.len() && text_idx >= text.len() {
-            return true;
-        }
-
-        // If we've reached the end of pattern but not text, no match
-        if pattern_idx >= pattern.len() {
-            return false;
-        }
-
-        match pattern[pattern_idx] {
-            '*' => {
-                // Try matching zero characters
-                if Self::match_recursive(text, pattern, text_idx, pattern_idx + 1) {
-                    return true;
-                }
-                // Try matching one or more characters
-                if text_idx < text.len() && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx) {
-                    return true;
-                }
-                false
-            }
-            '?' => {
-                // Match any single character (but not end of string)
-                if text_idx < text.len() && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx + 1) {
-                    return true;
-                }
-                false
-            }
-            ch => {
-                // Match exact character
-                if text_idx < text.len() && text[text_idx] == ch && Self::match_recursive(text, pattern, text_idx + 1, pattern_idx + 1) {
-                    return true;
-                }
-                false
-            }
-        }
-    }
 
     /// Gets all keys in the range (useful for pagination or listing)
     pub fn get_all_keys(&self) -> Vec<String> {
@@ -223,12 +107,26 @@ impl RangeField {
     }
 }
 
-impl_field!(RangeField);
+impl FilterApplicator for RangeField {
+    fn apply_filter(&self, filter: &HashRangeFilter) -> HashRangeFilterResult {
+        let Some(molecule) = &self.molecule else {
+            return HashRangeFilterResult::empty();
+        };
 
-impl RangeField {
-    /// Refreshes the field's data from the database using the provided key configuration.
-    /// For RangeField, this looks up the MoleculeRange data from sled.
-    pub fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
+        apply_range_filter(molecule, filter)
+    }
+}
+
+impl crate::schema::types::field::Field for RangeField {
+    fn common(&self) -> &crate::schema::types::field::FieldCommon {
+        &self.inner
+    }
+    
+    fn common_mut(&mut self) -> &mut crate::schema::types::field::FieldCommon {
+        &mut self.inner
+    }
+
+    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
         // If we have a molecule_uuid, look up the corresponding MoleculeRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
@@ -238,8 +136,7 @@ impl RangeField {
         }
     }
 
-    /// Writes a mutation to the RangeField
-    pub fn write_mutation(&mut self, key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
+    fn write_mutation(&mut self, key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
         // Initialize molecule if needed
         if self.molecule.is_none() {
             self.ensure_molecule(pub_key.clone());
@@ -253,4 +150,59 @@ impl RangeField {
             }
         }
     }
+
+    fn resolve_value(
+        &mut self,
+        db_ops: &Arc<DbOperations>,
+        filter: Option<HashRangeFilter>,
+    ) -> Result<JsonValue, SchemaError> {
+        info!("🔍 RangeField: Resolving range values with filter: {:?}", filter);
+
+        self.refresh_from_db(db_ops);
+
+        // Apply filters to get matching atom UUIDs
+        let filter_result = if let Some(ref filter) = filter {
+            self.apply_filter(filter)
+        } else {
+            // No filter - return all range keys
+            let mut matches = HashMap::new();
+            if let Some(molecule) = &self.molecule {
+                for (key, atom_uuid) in &molecule.atom_uuids {
+                    matches.insert(key.clone(), atom_uuid.clone());
+                }
+            }
+            HashRangeFilterResult::new(matches)
+        };
+
+        info!("🔍 RangeField: Filter applied, found {} matches", filter_result.matches.len());
+
+        // Fetch actual atom content from database
+        let mut resolved_values = serde_json::Map::new();
+
+        for (key, atom_uuid) in filter_result.matches {
+            info!("🔍 RangeField: Fetching atom content for key '{}', UUID '{}'", key, atom_uuid);
+            
+            match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
+                Ok(Some(atom)) => {
+                    info!("✅ RangeField: Successfully fetched atom for key '{}'", key);
+                    resolved_values.insert(key, atom.content().clone());
+                }
+                Ok(None) => {
+                    error!("❌ RangeField: Atom '{}' not found for key '{}'", atom_uuid, key);
+                    resolved_values.insert(key, JsonValue::Null);
+                }
+                Err(e) => {
+                    error!("❌ RangeField: Failed to fetch atom '{}' for key '{}': {}", atom_uuid, key, e);
+                    return Err(SchemaError::InvalidField(format!(
+                        "Failed to fetch atom '{}' for key '{}': {}",
+                        atom_uuid, key, e
+                    )));
+                }
+            }
+        }
+
+        info!("✅ RangeField: Value resolution completed successfully");
+        Ok(JsonValue::Object(resolved_values))
+    }
 }
+

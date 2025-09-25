@@ -3,6 +3,7 @@ use serde_json::Value;
 
 use super::super::request_events::KeySnapshot;
 use super::EventType;
+use crate::schema::types::key_config::KeyConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FieldValueSet {
@@ -18,10 +19,8 @@ pub struct FieldValueSet {
 /// Context information about a mutation for smarter transform execution
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MutationContext {
-    /// The range key value that was mutated (for range and hashrange schemas)
-    pub range_key: Option<String>,
-    /// The hash key value that was mutated (for hashrange schemas)
-    pub hash_key: Option<String>,
+    /// The key configuration containing hash and range field values
+    pub key_config: Option<KeyConfig>,
     /// The mutation hash for tracking
     pub mutation_hash: Option<String>,
     /// Whether this mutation should trigger incremental processing

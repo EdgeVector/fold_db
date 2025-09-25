@@ -373,7 +373,7 @@ mod tests {
         ) -> Result<JsonValue, SchemaError> {
             if let Some(ref context) = mutation_context {
                 Ok(
-                    serde_json::json!({"status": "success_with_context", "range_key": context.range_key, "hash_key": context.hash_key, "incremental": context.incremental}),
+                    serde_json::json!({"status": "success_with_context", "key_config": context.key_config, "incremental": context.incremental}),
                 )
             } else {
                 Ok(serde_json::json!({"status": "success_with_context", "no_context": true}))
