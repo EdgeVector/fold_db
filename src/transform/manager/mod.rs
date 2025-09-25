@@ -2,7 +2,6 @@ pub mod manager;
 pub mod types;
 
 // New focused modules
-pub mod execution;
 pub mod loading;
 
 // Refactored execution modules

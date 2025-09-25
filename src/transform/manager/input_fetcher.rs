@@ -1,5 +1,5 @@
 use crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext;
-use crate::fold_db_core::transform_manager::utils::{DefaultValueHelper, TransformUtils};
+use crate::transform::manager::utils::{DefaultValueHelper, TransformUtils};
 use crate::schema::types::Transform;
 use crate::schema::types::{Schema, SchemaError};
 use crate::schema::types::field::HashRangeFilter;
@@ -17,7 +17,6 @@ impl InputFetcher {
         transform: &Transform,
         db_ops: &Arc<crate::db_operations::DbOperations>,
         mutation_context: &Option<MutationContext>,
-        _fold_db: Option<&mut crate::fold_db_core::FoldDB>,
     ) -> Result<HashMap<String, JsonValue>, SchemaError> {
         let mut input_values = HashMap::new();
         let inputs_to_process = transform.get_declarative_schema().unwrap().get_inputs();

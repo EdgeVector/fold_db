@@ -36,33 +36,6 @@ impl Default for FieldExecutionResult {
     }
 }
 
-/// Field execution methods
-pub trait FieldExecutor {
-    /// Executes OneToOne alignment
-    fn execute_one_to_one(
-        &mut self,
-        stack: &mut IteratorStack,
-        chain: &ParsedChain,
-        context: &ExecutionContext,
-    ) -> IteratorStackResult<FieldExecutionResult>;
-
-    /// Executes Broadcast alignment
-    fn execute_broadcast(
-        &mut self,
-        stack: &mut IteratorStack,
-        chain: &ParsedChain,
-        context: &ExecutionContext,
-    ) -> IteratorStackResult<FieldExecutionResult>;
-
-    /// Executes Reduced alignment
-    fn execute_reduced(
-        &mut self,
-        stack: &mut IteratorStack,
-        chain: &ParsedChain,
-        context: &ExecutionContext,
-    ) -> IteratorStackResult<FieldExecutionResult>;
-}
-
 /// Default implementation of field execution methods
 pub struct DefaultFieldExecutor {
     /// Field evaluator for processing field expressions

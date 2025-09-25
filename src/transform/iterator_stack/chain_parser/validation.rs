@@ -5,7 +5,7 @@
 
 use crate::transform::iterator_stack::chain_parser::parser::ChainParser;
 use crate::transform::iterator_stack::chain_parser::types::{
-    ChainOperation, CompatibilityAnalysis, FieldAlignment, FieldAlignmentRequirement, ParsedChain,
+    ChainOperation, CompatibilityAnalysis, ParsedChain,
 };
 use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use std::collections::HashMap;
@@ -72,13 +72,11 @@ impl ChainParser {
                 max_depth: 0,
                 compatible: true,
                 branches: HashMap::new(),
-                alignment_requirements: Vec::new(),
             });
         }
 
         let max_depth = chains.iter().map(|c| c.depth).max().unwrap_or(0);
         let mut branches = HashMap::new();
-        let mut alignment_requirements = Vec::new();
 
         // Group chains by branch
         for chain in chains {
@@ -119,32 +117,10 @@ impl ChainParser {
             }
         }
 
-        // Generate alignment requirements
-        for chain in chains {
-            let alignment = if self.contains_reducer_operation(chain) {
-                FieldAlignment::Reduced
-            } else if chain.depth == max_depth {
-                FieldAlignment::OneToOne
-            } else if chain.depth < max_depth {
-                FieldAlignment::Broadcast
-            } else {
-                // This case should never be reached since max_depth is the maximum of all chain depths
-                FieldAlignment::Broadcast
-            };
-
-            alignment_requirements.push(FieldAlignmentRequirement {
-                field_expression: chain.expression.clone(),
-                depth: chain.depth,
-                alignment,
-                branch: chain.branch.clone(),
-            });
-        }
-
         Ok(CompatibilityAnalysis {
             max_depth,
             compatible: true,
             branches,
-            alignment_requirements,
         })
     }
 }

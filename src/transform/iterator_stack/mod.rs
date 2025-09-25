@@ -107,12 +107,10 @@
 pub mod chain_parser;
 pub mod errors;
 pub mod execution_engine;
-pub mod field_alignment;
 pub mod stack;
 pub mod types;
 
 pub use chain_parser::*;
 pub use errors::*;
 pub use execution_engine::*;
-pub use field_alignment::*;
 pub use types::*;

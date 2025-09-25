@@ -3,7 +3,6 @@
 //! Contains all data structures, result types, and enums used in the
 //! execution engine for processing field expressions and managing execution context.
 
-use crate::transform::iterator_stack::field_alignment::FieldAlignmentInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -12,9 +11,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     /// Input data to process
-    pub input_data: Value,
-    /// Field alignment information
-    pub field_alignments: HashMap<String, FieldAlignmentInfo>,
+    pub input_data: HashMap<String, Value>,
     /// Maximum depth for emission
     pub emission_depth: usize,
     /// Additional context variables
@@ -25,11 +22,9 @@ pub struct ExecutionContext {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionResult {
     /// Generated index entries
-    pub index_entries: Vec<IndexEntry>,
-    /// Execution statistics
-    pub statistics: ExecutionStatistics,
+    pub index_entries: HashMap<String, Vec<IndexEntry>>,
     /// Any warnings generated during execution
-    pub warnings: Vec<ExecutionWarning>,
+    pub warnings: HashMap<String, Vec<ExecutionWarning>>,
 }
 
 /// A single index entry produced by the execution engine

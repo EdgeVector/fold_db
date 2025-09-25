@@ -5,10 +5,11 @@
 
 use super::persistence_manager::PersistenceManager;
 use crate::fold_db_core::infrastructure::message_bus::{
-    schema_events::{TransformExecuted, TransformTriggered},
+    schema_events::{TransformExecuted, TransformRegistrationRequest, TransformTriggered},
     MessageBus,
 };
 use crate::transform::manager::types::TransformRunner;
+use crate::fold_db_core::infrastructure::message_bus::events::schema_events::TransformRegistrationResponse;
 use crate::schema::SchemaError;
 use log::{error, info};
 use std::sync::Arc;
@@ -51,7 +52,7 @@ impl EventMonitor {
     ) -> thread::JoinHandle<()> {
         let mut mutation_executed_consumer = message_bus.subscribe::<crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted>();
         let mut triggered_consumer = message_bus.subscribe::<TransformTriggered>();
-
+        let mut registration_consumer = message_bus.subscribe::<TransformRegistrationRequest>();
         thread::spawn(move || {
             info!("EventMonitor: Starting unified monitoring of MutationExecuted and TransformTriggered events");
 
@@ -71,6 +72,15 @@ impl EventMonitor {
                         Self::handle_transform_triggered_event(&event, &manager, &message_bus)
                     {
                         error!("Error handling TransformTriggered event: {}", e);
+                    }
+                }
+
+                // Check TransformRegistrationRequest events
+                if let Ok(event) = registration_consumer.try_recv() {
+                    if let Err(e) =
+                        Self::handle_transform_registration_request_event(&event, &manager, &message_bus)
+                    {
+                        error!("Error handling TransformRegistrationRequest event: {}", e);
                     }
                 }
 
@@ -201,6 +211,54 @@ impl EventMonitor {
         Ok(())
     }
 
+
+    /// Handle a TransformRegistrationRequest event by registering the transform
+    fn handle_transform_registration_request_event(
+        event: &TransformRegistrationRequest,
+        manager: &Arc<dyn TransformRunner>,
+        message_bus: &Arc<MessageBus>,
+    ) -> Result<(), SchemaError> {
+        info!("🔧 EventMonitor: Handling TransformRegistrationRequest for '{}'", event.registration.transform_id);
+        
+        // Handle the transform registration using the TransformManager instance
+        match manager.handle_transform_registration(&event.registration) {
+            Ok(()) => {
+                info!("✅ EventMonitor: Successfully registered transform '{}'", event.registration.transform_id);
+                
+                // Publish success response
+                let response = TransformRegistrationResponse {
+                    correlation_id: event.correlation_id.clone(),
+                    success: true,
+                    error: None,
+                };
+                
+                if let Err(e) = message_bus.publish(response) {
+                    error!("Failed to publish TransformRegistrationResponse: {}", e);
+                    return Err(SchemaError::InvalidData(format!(
+                        "Failed to publish TransformRegistrationResponse: {}", e
+                    )));
+                }
+                
+                Ok(())
+            }
+            Err(e) => {
+                error!("❌ EventMonitor: Failed to register transform '{}': {}", event.registration.transform_id, e);
+                
+                // Publish error response
+                let response = TransformRegistrationResponse {
+                    correlation_id: event.correlation_id.clone(),
+                    success: false,
+                    error: Some(e.to_string()),
+                };
+                
+                if let Err(publish_err) = message_bus.publish(response) {
+                    error!("Failed to publish TransformRegistrationResponse: {}", publish_err);
+                }
+                
+                Err(e)
+            }
+        }
+    }
 
     /// Stop monitoring (the thread will be stopped when the EventMonitor is dropped)
     pub fn stop_monitoring(&mut self) {

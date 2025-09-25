@@ -9,10 +9,8 @@ use crate::schema::types::SchemaError;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
 use crate::transform::shared_utilities::resolve_field_value_from_chain;
-use log::info;
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
 
 /// Extracts optimal field value from execution engine entry.
 ///
@@ -51,7 +49,6 @@ struct AggregationAccumulator<'a> {
     schema: &'a DeclarativeSchemaDefinition,
     expressions: HashMap<String, String>,
     raw_fields: HashMap<String, Vec<JsonValue>>,
-    legacy_fields: serde_json::Map<String, JsonValue>,
 }
 
 impl<'a> AggregationAccumulator<'a> {
@@ -65,31 +62,6 @@ impl<'a> AggregationAccumulator<'a> {
             schema,
             expressions: expression_map,
             raw_fields: HashMap::new(),
-            legacy_fields: serde_json::Map::new(),
-        }
-    }
-
-    fn insert_values(&mut self, field_name: &str, values: Vec<JsonValue>, treat_as_array: bool) {
-        self.raw_fields
-            .insert(field_name.to_string(), values.clone());
-
-        let compat_key = match (&self.schema.schema_type, field_name) {
-            (SchemaType::HashRange, "_hash_field") => Some("hash_key"),
-            (SchemaType::HashRange, "_range_field") => Some("range_key"),
-            (_, name) if !name.starts_with('_') => Some(name),
-            _ => None,
-        };
-
-        if let Some(key) = compat_key {
-            let compat_value = if key == "hash_key" || key == "range_key" {
-                // For HashRange schemas, hash_key and range_key should be arrays
-                JsonValue::Array(values)
-            } else if treat_as_array {
-                JsonValue::Array(values)
-            } else {
-                values.into_iter().next().unwrap_or(JsonValue::Null)
-            };
-            self.legacy_fields.insert(key.to_string(), compat_value);
         }
     }
 
@@ -124,17 +96,14 @@ impl<'a> AggregationAccumulator<'a> {
         let range_value = self.derive_key_value("_range_field");
 
         let shaped_input = JsonValue::Object(shape_payload);
-        let shaped_result =
-            shape_unified_result(self.schema, &shaped_input, hash_value, range_value)?;
+        
+        // Create a simple structured result
+        let mut shaped_result = serde_json::Map::new();
+        shaped_result.insert("hash".to_string(), JsonValue::String(hash_value.unwrap_or_default()));
+        shaped_result.insert("range".to_string(), JsonValue::String(range_value.unwrap_or_default()));
+        shaped_result.insert("fields".to_string(), shaped_input);
 
-        let mut final_object = shaped_result
-            .as_object()
-            .cloned()
-            .unwrap_or_else(serde_json::Map::new);
-
-        for (key, value) in self.legacy_fields {
-            final_object.entry(key).or_insert(value);
-        }
+        let mut final_object = shaped_result;
 
         Ok(JsonValue::Object(final_object))
     }
@@ -153,13 +122,9 @@ pub fn aggregate_results_unified(
     input_values: &HashMap<String, JsonValue>,
     all_expressions: &[(String, String)],
 ) -> Result<JsonValue, SchemaError> {
-    let start_time = Instant::now();
-    info!("🔄 Unified aggregation for {:?} schema", schema.schema_type);
-
     let mut accumulator = AggregationAccumulator::new(schema, all_expressions);
 
     if execution_result.index_entries.is_empty() {
-        info!("⚠️ ExecutionEngine produced empty results, using direct value resolution");
         process_direct_value_resolution(
             schema,
             parsed_chains,
@@ -168,7 +133,6 @@ pub fn aggregate_results_unified(
             &mut accumulator,
         )?;
     } else {
-        info!("✅ Using ExecutionEngine results with aggregation processing");
         process_execution_result_aggregation(
             schema,
             parsed_chains,
@@ -180,8 +144,6 @@ pub fn aggregate_results_unified(
     }
 
     let result = accumulator.finalize()?;
-    let duration = start_time.elapsed();
-    info!("⏱️ Unified aggregation completed in {:?}", duration);
     Ok(result)
 }
 
@@ -199,10 +161,6 @@ fn process_direct_value_resolution(
             match resolve_field_value_from_chain(parsed_chain, input_values, field_name) {
                 Ok(value) => value,
                 Err(err) => {
-                    info!(
-                        "⚠️ Chain resolution failed for field '{}': {}",
-                        field_name, err
-                    );
                     JsonValue::Null
                 }
             }
@@ -211,16 +169,13 @@ fn process_direct_value_resolution(
             {
                 Ok(value) => value,
                 Err(err) => {
-                    info!(
-                        "⚠️ Direct dotted path resolution failed for field '{}': {}",
-                        field_name, err
-                    );
                     JsonValue::Null
                 }
             }
         };
 
-        accumulator.insert_values(field_name, vec![field_value], false);
+        accumulator.raw_fields
+        .insert(field_name.to_string(), vec![field_value]);
     }
 
     Ok(())
@@ -260,7 +215,8 @@ fn process_execution_result_aggregation(
             }
 
             for (field_name, values) in field_arrays {
-                accumulator.insert_values(&field_name, values, true);
+                accumulator.raw_fields
+                .insert(field_name.to_string(), values);
             }
         }
         _ => {
@@ -280,10 +236,6 @@ fn process_execution_result_aggregation(
                         {
                             Ok(value) => value,
                             Err(err) => {
-                                info!(
-                                    "⚠️ Fallback resolution failed for field '{}': {}",
-                                    field_name, err
-                                );
                                 JsonValue::Null
                             }
                         }
@@ -295,17 +247,14 @@ fn process_execution_result_aggregation(
                     ) {
                         Ok(value) => value,
                         Err(err) => {
-                            info!(
-                                "⚠️ Direct dotted path resolution failed for field '{}': {}",
-                                field_name, err
-                            );
                             JsonValue::Null
                         }
                     }
                 };
 
                 if !field_name.starts_with('_') {
-                    accumulator.insert_values(field_name, vec![field_value], false);
+                    accumulator.raw_fields
+                    .insert(field_name.to_string(), vec![field_value]);
                 }
             }
         }

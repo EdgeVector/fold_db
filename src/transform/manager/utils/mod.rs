@@ -119,16 +119,12 @@ impl TransformUtils {
     /// Converts {"range_key":"2","value":"2"} to "2"
     /// Converts {"range_key":"2","value":{"value":"b"}} to "b"
     fn extract_simplified_value(content: &JsonValue) -> Result<JsonValue, SchemaError> {
-        info!("🎯 Extracting simplified value from: {}", content);
-
         // Try to extract the "value" field
         if let Some(value_field) = content.get("value") {
             // If the value field is itself an object with a nested "value", extract that
             if let Some(nested_value) = value_field.get("value") {
-                info!("✅ Extracted nested value: {}", nested_value);
                 return Ok(nested_value.clone());
             } else {
-                info!("✅ Extracted direct value: {}", value_field);
                 return Ok(value_field.clone());
             }
         }
@@ -190,8 +186,6 @@ impl TransformUtils {
         db_ops: &Arc<crate::db_operations::DbOperations>,
         molecule_uuid: &str,
     ) -> Result<crate::atom::Molecule, SchemaError> {
-        info!("🔍 Loading Molecule from database...");
-
         match db_ops.get_item::<crate::atom::Molecule>(&format!("ref:{}", molecule_uuid)) {
             Ok(Some(molecule)) => Ok(molecule),
             Ok(None) => {
@@ -216,7 +210,6 @@ impl TransformUtils {
         db_ops: &Arc<crate::db_operations::DbOperations>,
         atom_uuid: &str,
     ) -> Result<crate::atom::Atom, SchemaError> {
-        info!("🔍 Loading Atom from database...");
         db_ops
             .get_item(&format!("atom:{}", atom_uuid))?
             .ok_or_else(|| {
@@ -244,11 +237,8 @@ impl TransformUtils {
     }
 
     /// Standard logging for verification results
-    pub fn log_verification_result(item_type: &str, id: &str, details: Option<&str>) {
-        match details {
-            Some(detail) => info!("✅ Verified {}: {} - {}", item_type, id, detail),
-            None => info!("✅ Verified {}: {}", item_type, id),
-        }
+    pub fn log_verification_result(_item_type: &str, _id: &str, _details: Option<&str>) {
+        // Logging removed to reduce verbosity
     }
 
     /// Standard logging for atom ref operations
@@ -318,7 +308,7 @@ impl TransformUtils {
             info!("  📋 '{}' -> {:?}", field_key, transforms);
         }
         if mappings.is_empty() {
-            info!("⚠️ No field mappings found in {}", context);
+            warn!("⚠️ No field mappings found in {}", context);
         }
     }
 

@@ -58,30 +58,4 @@ pub struct CompatibilityAnalysis {
     pub compatible: bool,
     /// Chains grouped by branch
     pub branches: HashMap<String, Vec<ParsedChain>>,
-    /// Field alignment requirements
-    pub alignment_requirements: Vec<FieldAlignmentRequirement>,
-}
-
-/// Field alignment types based on depth relative to maximum depth
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum FieldAlignment {
-    /// 1:1 aligned - uses maximum depth D
-    OneToOne,
-    /// Broadcast - uses shallower depth, duplicated across all rows at depth D
-    Broadcast,
-    /// Reduced - would exceed depth D, must be reduced
-    Reduced,
-}
-
-/// Field alignment requirement for a specific field
-#[derive(Debug, Clone)]
-pub struct FieldAlignmentRequirement {
-    /// Original field expression
-    pub field_expression: String,
-    /// Iterator depth of this field
-    pub depth: usize,
-    /// Required alignment type
-    pub alignment: FieldAlignment,
-    /// Branch identifier
-    pub branch: String,
 }

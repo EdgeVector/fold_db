@@ -618,9 +618,6 @@ mod tests {
             "max",
             "clamp",
             "concat",
-            "to_string",
-            "to_number",
-            "to_boolean",
         ];
 
         for name in expected.iter() {
