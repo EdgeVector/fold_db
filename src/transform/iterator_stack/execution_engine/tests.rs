@@ -1,498 +1,140 @@
-//! Tests for the execution engine
+//! Tests for the iterator stack execution engine.
+//!
+//! These tests exercise the public `ExecutionEngine` API using realistic
+//! declarative transform expressions. They verify that nested iterator
+//! structures (such as the `split_by_word().map()` pipeline used by the
+//! BlogPost → BlogPostWordIndex transform) emit the expected number of index
+//! entries and surface performance warnings when large fan-outs occur.
 
-#[allow(unused_imports)]
-use crate::transform::iterator_stack::chain_parser::{ChainOperation, ParsedChain};
-// Field alignment types removed - using simplified approach
-#[allow(unused_imports)]
-use crate::transform::iterator_stack::{ExecutionEngine, ExecutionWarningType};
-#[allow(unused_imports)]
-use log::debug;
-#[allow(unused_imports)]
-use serde_json::json;
-#[allow(unused_imports)]
-use std::collections::HashMap;
-
-// Tests commented out - using simplified field execution approach without alignment types
-// TODO: Rewrite tests for simplified field execution approach
-/*
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::{ExecutionEngine, ExecutionWarningType};
+    use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
+    use serde_json::{json, Value as JsonValue};
+    use std::collections::HashMap;
 
-    #[test]
-    fn test_simple_field_execution() {
-        let mut engine = ExecutionEngine::new();
-
-        // Create a simple chain
-        let chain = ParsedChain {
-            expression: "user.name".to_string(),
-            operations: vec![
-                ChainOperation::FieldAccess("user".to_string()),
-                ChainOperation::FieldAccess("name".to_string()),
-            ],
-            depth: 0,
-            branch: "main".to_string(),
-            scopes: vec![],
-        };
-
-        // Create alignment result
-        let mut field_alignments = HashMap::new();
-        field_alignments.insert(
-            "user.name".to_string(),
-            FieldAlignmentInfo {
-                expression: "user.name".to_string(),
-                depth: 0,
-                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
-                branch: "main".to_string(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-
-        let alignment_result = AlignmentValidationResult {
-            valid: true,
-            max_depth: 0,
-            field_alignments,
-            errors: vec![],
-            warnings: vec![],
-        };
-
-        // Create input data
-        let input_data = json!({
-            "user": {
-                "name": "John Doe",
-                "email": "john@example.com"
-            }
-        });
-
-        let result = engine
-            .execute_fields(&[chain], &alignment_result, input_data)
-            .unwrap();
-
-        assert!(!result.index_entries.is_empty());
-        assert_eq!(result.index_entries[0].hash_value, json!("John Doe"));
-    }
-
-    #[test]
-    fn test_broadcast_execution() {
-        let mut engine = ExecutionEngine::new();
-
-        // Create a chain that will broadcast across an array
-        let chain1 = ParsedChain {
-            expression: "users.name".to_string(),
-            operations: vec![
-                ChainOperation::FieldAccess("users".to_string()),
-                ChainOperation::FieldAccess("name".to_string()),
-            ],
-            depth: 1,
-            branch: "main".to_string(),
-            scopes: vec![],
-        };
-
-        let chain2 = ParsedChain {
-            expression: "users.email".to_string(),
-            operations: vec![
-                ChainOperation::FieldAccess("users".to_string()),
-                ChainOperation::FieldAccess("email".to_string()),
-            ],
-            depth: 1,
-            branch: "main".to_string(),
-            scopes: vec![],
-        };
-
-        // Create alignment result
-        let mut field_alignments = HashMap::new();
-        field_alignments.insert(
-            "users.name".to_string(),
-            FieldAlignmentInfo {
-                expression: "users.name".to_string(),
-                depth: 1,
-                alignment:
-                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-                branch: "main".to_string(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-        field_alignments.insert(
-            "users.email".to_string(),
-            FieldAlignmentInfo {
-                expression: "users.email".to_string(),
-                depth: 1,
-                alignment:
-                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-                branch: "main".to_string(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-
-        let alignment_result = AlignmentValidationResult {
-            valid: true,
-            max_depth: 1,
-            field_alignments,
-            errors: vec![],
-            warnings: vec![],
-        };
-
-        // Create input data with array
-        let input_data = json!({
-            "users": [
-                {
-                    "name": "John Doe",
-                    "email": "john@example.com"
-                },
-                {
-                    "name": "Jane Smith",
-                    "email": "jane@example.com"
-                }
-            ]
-        });
-
-        let result = engine
-            .execute_fields(&[chain1, chain2], &alignment_result, input_data)
-            .unwrap();
-
-        debug!(
-            "Broadcast test - Index entries count: {}",
-            result.index_entries.len()
-        );
-        debug!(
-            "Broadcast test - Items per depth: {:?}",
-            result.statistics.items_per_depth
-        );
-        debug!(
-            "Broadcast test - Alignment result valid: {}",
-            alignment_result.valid
-        );
-        debug!("Broadcast test - Max depth: {}", alignment_result.max_depth);
-
-        assert!(!result.index_entries.is_empty());
-        assert_eq!(result.statistics.items_per_depth.get(&1), Some(&4)); // 2 users × 2 fields = 4 entries at depth 1
-    }
-
-    #[test]
-    fn test_shared_prefix_iterator_cache_hits() {
-        let mut engine = ExecutionEngine::new();
-        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-
-        let chain_words = parser
-            .parse("blogpost.map().content.split_by_word().map()")
-            .unwrap();
-        let chain_author = parser.parse("blogpost.map().author").unwrap();
-
-        let mut field_alignments = HashMap::new();
-        field_alignments.insert(
-            chain_words.expression.clone(),
-            FieldAlignmentInfo {
-                expression: chain_words.expression.clone(),
-                depth: chain_words.depth,
-                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
-                branch: chain_words.branch.clone(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-        field_alignments.insert(
-            chain_author.expression.clone(),
-            FieldAlignmentInfo {
-                expression: chain_author.expression.clone(),
-                depth: chain_author.depth,
-                alignment:
-                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-                branch: chain_author.branch.clone(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-
-        let alignment_result = AlignmentValidationResult {
-            valid: true,
-            max_depth: chain_words.depth.max(chain_author.depth),
-            field_alignments,
-            errors: vec![],
-            warnings: vec![],
-        };
-
-        let input_data = json!({
-            "blogpost": [
-                {
-                    "author": "Alice",
-                    "content": "Hello world from Alice"
-                },
-                {
-                    "author": "Bob",
-                    "content": "Bob writes again"
-                }
-            ]
-        });
-
-        let result = engine
-            .execute_fields(&[chain_words, chain_author], &alignment_result, input_data)
-            .unwrap();
-
-        assert_eq!(result.statistics.cache_hits, 1);
-        assert_eq!(result.statistics.cache_misses, 2);
-        assert!(
-            !result.index_entries.is_empty(),
-            "Expected index entries from cached execution"
-        );
-    }
-
-    #[test]
-    fn test_word_split_with_fields_wrapper() {
-        let mut engine = ExecutionEngine::new();
-        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-
-        let chain = parser
-            .parse("BlogPost.map().fields.content.split_by_word().map()")
-            .expect("Failed to parse chain expression");
-
-        let mut field_alignments = HashMap::new();
-        field_alignments.insert(
-            chain.expression.clone(),
-            FieldAlignmentInfo {
-                expression: chain.expression.clone(),
-                depth: chain.depth,
-                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
-                branch: chain.branch.clone(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-
-        let alignment_result = AlignmentValidationResult {
-            valid: true,
-            max_depth: chain.depth,
-            field_alignments,
-            errors: vec![],
-            warnings: vec![],
-        };
-
-        let input_data = json!({
-            "BlogPost": [
-                {
-                    "fields": {
-                        "content": "Split these words correctly",
-                        "publish_date": "2025-01-01T00:00:00Z"
-                    },
-                    "hash": null,
-                    "range": null
-                }
-            ]
-        });
-
-        let result = engine
-            .execute_fields(&[chain], &alignment_result, input_data)
-            .expect("Execution engine should produce word entries");
-
-        assert_eq!(result.index_entries.len(), 4, "Expected four word entries");
-        let words: Vec<_> = result
-            .index_entries
+    /// Helper to parse a collection of (field, expression) pairs into the map
+    /// expected by `ExecutionEngine::execute_fields`.
+    fn parse_chain_map(pairs: &[(&str, &str)]) -> HashMap<String, ParsedChain> {
+        let parser = ChainParser::new();
+        pairs
             .iter()
-            .map(|entry| entry.hash_value.as_str().unwrap_or_default().to_string())
-            .collect();
-        assert_eq!(words, vec!["Split", "these", "words", "correctly"]);
+            .map(|(field, expression)| {
+                let parsed = parser
+                    .parse(expression)
+                    .unwrap_or_else(|err| panic!("Failed to parse '{}': {}", expression, err));
+                ((*field).to_string(), parsed)
+            })
+            .collect()
+    }
+
+    /// Helper to convert simple (&str, JsonValue) pairs into the input map
+    /// consumed by the execution engine.
+    fn build_input_map(pairs: Vec<(&str, JsonValue)>) -> HashMap<String, JsonValue> {
+        pairs
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value))
+            .collect()
     }
 
     #[test]
-    fn test_word_split_with_input_wrapper() {
+    fn blog_post_word_index_produces_entries_for_each_word() {
+        let chains = parse_chain_map(&[
+            ("word", "BlogPost.map().content.split_by_word().map()"),
+            ("publish_date", "BlogPost.map().publish_date"),
+        ]);
+
+        let input_data = build_input_map(vec![(
+            "BlogPost",
+            json!([
+                {
+                    "title": "First",
+                    "content": "Rust empowers fearless concurrency",
+                    "author": "Carol",
+                    "publish_date": "2024-12-31",
+                    "tags": ["rust", "systems"],
+                },
+                {
+                    "title": "Second",
+                    "content": "Tests validate iterator stacks",
+                    "author": "Dylan",
+                    "publish_date": "2025-01-05",
+                    "tags": ["testing", "rust"],
+                }
+            ]),
+        )]);
+
         let mut engine = ExecutionEngine::new();
-        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-
-        let chain = parser
-            .parse("input.BlogPost.map().fields.content.split_by_word().map()")
-            .expect("Failed to parse chain expression with input prefix");
-
-        let mut field_alignments = HashMap::new();
-        field_alignments.insert(
-            chain.expression.clone(),
-            FieldAlignmentInfo {
-                expression: chain.expression.clone(),
-                depth: chain.depth,
-                alignment: crate::transform::iterator_stack::chain_parser::FieldAlignment::OneToOne,
-                branch: chain.branch.clone(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-
-        let alignment_result = AlignmentValidationResult {
-            valid: true,
-            max_depth: chain.depth,
-            field_alignments,
-            errors: vec![],
-            warnings: vec![],
-        };
-
-        let input_data = json!({
-            "input": {
-                "BlogPost": [
-                    {
-                        "fields": {
-                            "content": "Handle words from nested input",
-                            "publish_date": "2025-01-01T00:00:00Z"
-                        },
-                        "hash": null,
-                        "range": null
-                    }
-                ]
-            }
-        });
-
         let result = engine
-            .execute_fields(&[chain], &alignment_result, input_data)
-            .expect("Execution engine should produce word entries with input wrapper");
+            .execute_fields(chains, input_data)
+            .expect("execution should succeed");
 
-        assert_eq!(result.index_entries.len(), 5, "Expected five word entries");
-        let words: Vec<_> = result
+        let word_entries = result
             .index_entries
+            .get("word")
+            .expect("word field entries should be present");
+        let produced_words: Vec<String> = word_entries
             .iter()
             .map(|entry| entry.hash_value.as_str().unwrap_or_default().to_string())
             .collect();
         assert_eq!(
-            words,
+            produced_words,
             vec![
-                "Handle".to_string(),
-                "words".to_string(),
-                "from".to_string(),
-                "nested".to_string(),
-                "input".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn test_execution_warnings() {
-        let mut engine = ExecutionEngine::new();
-
-        // Use the chain parser to create the chain properly
-        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-        let chain = parser.parse("items.value").unwrap();
-
-        // Create alignment result
-        let mut field_alignments = HashMap::new();
-        field_alignments.insert(
-            "items.value".to_string(),
-            FieldAlignmentInfo {
-                expression: "items.value".to_string(),
-                depth: 1,
-                alignment:
-                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-                branch: "main".to_string(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
+                "Rust",
+                "empowers",
+                "fearless",
+                "concurrency",
+                "Tests",
+                "validate",
+                "iterator",
+                "stacks"
+            ],
+            "all words should be emitted across nested iterators"
         );
 
-        let alignment_result = AlignmentValidationResult {
-            valid: true,
-            max_depth: 1,
-            field_alignments,
-            errors: vec![],
-            warnings: vec![],
-        };
-
-        // Create input data with many items
-        let mut items = Vec::new();
-        for i in 0..1500 {
-            items.push(json!({
-                "id": i,
-                "value": format!("item_{}", i)
-            }));
-        }
-
-        let input_data = json!({
-            "items": items
-        });
-
-        let result = engine
-            .execute_fields(&[chain], &alignment_result, input_data)
-            .unwrap();
-
-        debug!(
-            "Warnings test - Index entries count: {}",
-            result.index_entries.len()
-        );
-        debug!("Warnings test - Warnings count: {}", result.warnings.len());
-        debug!(
-            "Warnings test - Items per depth: {:?}",
-            result.statistics.items_per_depth
-        );
-
-        // Should have warnings due to high entry count
-        // Temporarily check entry count first
-        assert!(
-            result.index_entries.len() > 1000,
-            "Expected more than 1000 entries, got {}",
-            result.index_entries.len()
-        );
-        assert!(!result.warnings.is_empty());
-        assert!(result
-            .warnings
+        let publish_date_entries = result
+            .index_entries
+            .get("publish_date")
+            .expect("publish_date entries should be present");
+        let publish_dates: Vec<String> = publish_date_entries
             .iter()
-            .any(|w| matches!(w.warning_type, ExecutionWarningType::PerformanceDegradation)));
+            .map(|entry| entry.hash_value.as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(publish_dates, vec!["2024-12-31", "2025-01-05"]);
+
+        assert!(
+            result
+                .warnings
+                .get("word")
+                .map(Vec::is_empty)
+                .unwrap_or(true),
+            "word execution should not emit warnings"
+        );
     }
 
     #[test]
-    fn test_simple_array_iteration() {
+    fn performance_warning_triggered_for_large_fanout() {
+        let chains = parse_chain_map(&[("value", "items.map().value")]);
+
+        let large_input: Vec<JsonValue> = (0..1_200)
+            .map(|idx| json!({ "value": format!("item-{idx}") }))
+            .collect();
+        let input_data = build_input_map(vec![("items", json!(large_input))]);
+
         let mut engine = ExecutionEngine::new();
-
-        // Use the chain parser to create the chain properly
-        let parser = crate::transform::iterator_stack::chain_parser::ChainParser::new();
-        let chain = parser.parse("items.value").unwrap();
-
-        debug!("Chain scopes: {:?}", chain.scopes);
-        debug!("Chain depth: {}", chain.depth);
-        debug!("Chain operations: {:?}", chain.operations);
-
-        // Create alignment result
-        let mut field_alignments = HashMap::new();
-        field_alignments.insert(
-            "items.value".to_string(),
-            FieldAlignmentInfo {
-                expression: "items.value".to_string(),
-                depth: 1,
-                alignment:
-                    crate::transform::iterator_stack::chain_parser::FieldAlignment::Broadcast,
-                branch: "main".to_string(),
-                requires_reducer: false,
-                suggested_reducer: None,
-            },
-        );
-
-        let alignment_result = AlignmentValidationResult {
-            valid: true,
-            max_depth: 1,
-            field_alignments,
-            errors: vec![],
-            warnings: vec![],
-        };
-
-        // Create simple input data
-        let input_data = json!({
-            "items": [
-                {"value": "item1"},
-                {"value": "item2"},
-                {"value": "item3"}
-            ]
-        });
-
         let result = engine
-            .execute_fields(&[chain], &alignment_result, input_data)
-            .unwrap();
+            .execute_fields(chains, input_data)
+            .expect("execution should succeed for large fan-out");
 
-        debug!(
-            "Simple array test - Index entries count: {}",
-            result.index_entries.len()
-        );
-        debug!(
-            "Simple array test - Items per depth: {:?}",
-            result.statistics.items_per_depth
-        );
+        let entries = result
+            .index_entries
+            .get("value")
+            .expect("value entries should be present");
+        assert_eq!(entries.len(), 1_200);
 
-        // Should have 3 entries (one for each item)
-        assert_eq!(result.index_entries.len(), 3);
+        let warnings = result.warnings.get("value").expect("warnings entry");
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.warning_type == ExecutionWarningType::PerformanceDegradation));
     }
 }
-*/
