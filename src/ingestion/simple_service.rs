@@ -234,9 +234,9 @@ impl SimpleIngestionService {
             ))
         })?;
         
-        let schema_states = db_guard.schema_manager.get_schema_states().map_err(|e| {
-            IngestionError::SchemaSystemError(e)
-        })?;
+        let schema_states = db_guard.schema_manager.get_schema_states().map_err(
+            IngestionError::SchemaSystemError,
+        )?;
 
         let mut schemas = Vec::new();
         for schema_name in schema_states.keys() {

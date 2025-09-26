@@ -41,10 +41,18 @@ impl ExecutionEngine {
         chains: HashMap<String, ParsedChain>,
         input_data: HashMap<String, JsonValue>,
     ) -> IteratorStackResult<ExecutionResult> {
-        // Create execution context
+        // Determine the maximum depth that needs to be emitted across all chains so that
+        // deeper iterators (e.g., nested map operations) are actually traversed during
+        // execution. Previously this was hardcoded to `0`, which prevented the engine
+        // from iterating past the root scope and caused expressions like
+        // `BlogPost.map().content.split_by_word().map()` to emit only the first word.
+        let max_emission_depth = chains.values().map(|chain| chain.depth).max().unwrap_or(0);
+
+        // Create execution context using the calculated emission depth so every chain can
+        // iterate to its required depth.
         let context = ExecutionContext {
             input_data,
-            emission_depth: 0,
+            emission_depth: max_emission_depth,
             variables: HashMap::new(),
         };
 
@@ -54,8 +62,7 @@ impl ExecutionEngine {
 
         // Execute each unique expression only once
         for (field, chain) in chains.iter() {
-            let field_result =
-                self.execute_single_field(chain, &context, &mut dataset_cache)?;
+            let field_result = self.execute_single_field(chain, &context, &mut dataset_cache)?;
             index_entries.insert(field.clone(), field_result.entries);
             warnings.insert(field.clone(), field_result.warnings);
         }
@@ -66,7 +73,6 @@ impl ExecutionEngine {
         })
     }
 
-
     /// Executes a single field expression
     fn execute_single_field(
         &mut self,
@@ -74,15 +80,15 @@ impl ExecutionEngine {
         context: &ExecutionContext,
         cache: &mut IteratorDatasetCache,
     ) -> IteratorStackResult<FieldExecutionResult> {
-
         // Create iterator stack from the chain
         let mut stack = IteratorStack::from_chain(chain)?;
 
         // Convert input_data to JSON value for scope creation
-        let input_json = serde_json::to_value(&context.input_data)
-            .map_err(|e| IteratorStackError::ExecutionError {
+        let input_json = serde_json::to_value(&context.input_data).map_err(|e| {
+            IteratorStackError::ExecutionError {
                 message: format!("Failed to convert input data to JSON: {}", e),
-            })?;
+            }
+        })?;
 
         // If the stack is empty (no scopes), create default scopes based on the chain operations
         if stack.is_empty() {
