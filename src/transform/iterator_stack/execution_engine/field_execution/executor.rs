@@ -103,7 +103,7 @@ impl DefaultFieldExecutor {
             .evaluate_field_expression(chain, stack, 0)?;
         debug!("Direct evaluation returned: {}", field_value);
 
-        let entry = self.create_index_entry(stack, chain, field_value.clone(), field_value)?;
+        let entry = self.create_index_entry(stack, chain, field_value.clone(), None)?;
         entries.push(entry);
         
         Ok(())
@@ -152,8 +152,8 @@ impl DefaultFieldExecutor {
             stack.len().saturating_sub(1)
         );
         
-        let entry_creator = |current_stack: &mut IteratorStack, _current_path: &[usize]| -> IteratorStackResult<()> {
-            self.process_iteration_item(current_stack, chain, iteration_depth, entries)
+        let entry_creator = |current_stack: &mut IteratorStack, current_path: &[usize]| -> IteratorStackResult<()> {
+            self.process_iteration_item(current_stack, chain, iteration_depth, entries, current_path)
         };
         
         IterationHelper::iterate_to_depth(stack, iteration_depth, entry_creator)?;
@@ -180,6 +180,7 @@ impl DefaultFieldExecutor {
         chain: &ParsedChain,
         iteration_depth: usize,
         entries: &mut Vec<IndexEntry>,
+        current_path: &[usize],
     ) -> IteratorStackResult<()> {
         debug!(
             "iterate_to_depth callback called for chain: {}",
@@ -196,25 +197,31 @@ impl DefaultFieldExecutor {
         let entry = self.create_index_entry(
             current_stack, 
             chain, 
-            field_value, 
-            Value::Null // Will be set later when combining
+            field_value,
+            Some(current_path)
         )?;
         entries.push(entry);
 
         Ok(())
     }
 
-    /// Creates an IndexEntry with the given values
+    /// Creates an IndexEntry with a deterministic row_id and field value
     fn create_index_entry(
         &self,
         stack: &IteratorStack,
         chain: &ParsedChain,
-        hash_value: Value,
-        range_value: Value,
+        value: Value,
+        current_path: Option<&[usize]>,
     ) -> IteratorStackResult<IndexEntry> {
+        let row_id = if let Some(path) = current_path {
+            if path.is_empty() { "0".to_string() } else { path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("/") }
+        } else {
+            // Direct evaluation path
+            "0".to_string()
+        };
         Ok(IndexEntry {
-            hash_value,
-            range_value,
+            row_id,
+            value,
             atom_uuid: ReducerHelper::generate_atom_uuid(stack)?,
             metadata: ReducerHelper::extract_metadata(stack)?,
             expression: chain.expression.clone(),

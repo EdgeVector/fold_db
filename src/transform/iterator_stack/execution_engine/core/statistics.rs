@@ -25,8 +25,8 @@ impl StatisticsHelper {
         let mut total_size = 0;
         for entry in entries {
             total_size += std::mem::size_of::<IndexEntry>();
-            total_size += entry.hash_value.to_string().len();
-            total_size += entry.range_value.to_string().len();
+            total_size += entry.value.to_string().len();
+            total_size += entry.row_id.len();
             total_size += entry.atom_uuid.len();
             total_size += entry.metadata.len() * 64; // Rough estimate for metadata
         }

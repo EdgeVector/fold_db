@@ -4,7 +4,7 @@
 //! into the final output format for different schema types. It provides a unified
 //! interface for processing both direct value resolution and execution result aggregation.
 
-use crate::schema::types::{DeclarativeSchemaDefinition, SchemaError};
+use crate::schema::types::{DeclarativeSchemaDefinition, SchemaError, KeyConfig, KeyValue};
 use crate::schema::types::schema::SchemaType;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
@@ -12,12 +12,9 @@ use crate::transform::shared_utilities::resolve_field_value_from_chain;
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 
-/// Constants for field naming and structure
-const HASH_FIELD_PREFIX: &str = "_hash_field";
-const RANGE_FIELD_PREFIX: &str = "_range_field";
-const HASH_KEY: &str = "hash";
-const RANGE_KEY: &str = "range";
-const FIELDS_KEY: &str = "fields";
+/// Constants (legacy fallbacks only used when needed)
+const HASH_FIELD_PREFIX: &str = "_hash_field"; // legacy fallback, will be removed
+const RANGE_FIELD_PREFIX: &str = "_range_field"; // legacy fallback, will be removed
 
 /// Extracts the optimal field value from an execution engine entry.
 ///
@@ -31,9 +28,7 @@ const FIELDS_KEY: &str = "fields";
 /// # Returns
 ///
 /// The extracted field value as JSON
-fn extract_optimal_field_value(entry: &IndexEntry) -> JsonValue {
-    serde_json::to_value(&entry.hash_value).unwrap_or(JsonValue::Null)
-}
+fn extract_optimal_field_value(entry: &IndexEntry) -> JsonValue { serde_json::to_value(&entry.value).unwrap_or(JsonValue::Null) }
 
 /// Aggregation accumulator that builds the final result structure.
 ///
@@ -43,7 +38,8 @@ struct AggregationAccumulator<'a> {
     #[allow(dead_code)]
     schema: &'a DeclarativeSchemaDefinition,
     expressions: HashMap<String, String>,
-    raw_fields: HashMap<String, Vec<JsonValue>>,
+    // row_id -> (field_name -> collected values)
+    raw_rows: HashMap<String, HashMap<String, Vec<JsonValue>>>,
 }
 
 impl<'a> AggregationAccumulator<'a> {
@@ -63,43 +59,71 @@ impl<'a> AggregationAccumulator<'a> {
             .map(|(field, expr)| (field.clone(), expr.clone()))
             .collect();
 
-        Self {
-            schema,
-            expressions: expression_map,
-            raw_fields: HashMap::new(),
-        }
+        Self { schema, expressions: expression_map, raw_rows: HashMap::new() }
     }
 
-    /// Finalizes the aggregation and returns the structured result.
+    /// Finalizes the aggregation and returns the structured list of rows.
     ///
     /// # Returns
     ///
     /// The final aggregated result in hash->range->fields format
     fn finalize(self) -> Result<JsonValue, SchemaError> {
-        let mut shape_payload = serde_json::Map::new();
-        let mut used_names: HashSet<String> = HashSet::new();
+        let mut rows_array: Vec<JsonValue> = Vec::new();
 
-        // Process all collected field values
-        for (field_name, values) in &self.raw_fields {
-            let field_key = self.determine_field_key(field_name);
-            let unique_name = self.ensure_unique_name(&field_key, &used_names);
-            used_names.insert(unique_name.clone());
+        for (_row_id, fields_map) in &self.raw_rows {
+            let mut used_names: HashSet<String> = HashSet::new();
+            let mut shaped_fields = serde_json::Map::new();
 
-            let value = self.format_field_value(values);
-            shape_payload.insert(unique_name, value);
+            for (field_name, values) in fields_map {
+                // Preserve original declared field name for row shaping
+                let unique_name = field_name.clone();
+                used_names.insert(unique_name.clone());
+                let value = self.format_field_value(values);
+                shaped_fields.insert(unique_name, value);
+            }
+
+            let key = self.derive_key_from_row(&shaped_fields);
+
+            let mut row_obj = serde_json::Map::new();
+            row_obj.insert("key".to_string(), serde_json::to_value(&key).unwrap());
+            row_obj.insert("fields".to_string(), JsonValue::Object(shaped_fields));
+            rows_array.push(JsonValue::Object(row_obj));
         }
 
-        // Create the structured result
-        let hash_value = self.derive_key_value(HASH_FIELD_PREFIX);
-        let range_value = self.derive_key_value(RANGE_FIELD_PREFIX);
-        let shaped_input = JsonValue::Object(shape_payload);
-        
-        let mut result = serde_json::Map::new();
-        result.insert(HASH_KEY.to_string(), JsonValue::String(hash_value.unwrap_or_default()));
-        result.insert(RANGE_KEY.to_string(), JsonValue::String(range_value.unwrap_or_default()));
-        result.insert(FIELDS_KEY.to_string(), shaped_input);
+        Ok(JsonValue::Array(rows_array))
+    }
 
-        Ok(JsonValue::Object(result))
+    /// Derive hash/range values using KeyConfig if available; fallback to legacy internal fields.
+    fn derive_key_from_row(&self, row_fields: &serde_json::Map<String, JsonValue>) -> KeyValue {
+        let mut hash_value: Option<String> = None;
+        let mut range_value: Option<String> = None;
+
+        if let Some(KeyConfig { hash_field, range_field }) = &self.schema.key {
+            if let Some(hf) = hash_field {
+                if let Some(v) = row_fields.get(hf) {
+                    hash_value = convert_json_to_string(v);
+                }
+            }
+            if let Some(rf) = range_field {
+                if let Some(v) = row_fields.get(rf) {
+                    range_value = convert_json_to_string(v);
+                }
+            }
+        }
+
+        // Fallbacks for older tests
+        if hash_value.is_none() {
+            if let Some(v) = row_fields.get(HASH_FIELD_PREFIX) {
+                hash_value = convert_json_to_string(v);
+            }
+        }
+        if range_value.is_none() {
+            if let Some(v) = row_fields.get(RANGE_FIELD_PREFIX) {
+                range_value = convert_json_to_string(v);
+            }
+        }
+
+        KeyValue::new(hash_value, range_value)
     }
 
     /// Determines the appropriate field key for a given field name.
@@ -127,13 +151,7 @@ impl<'a> AggregationAccumulator<'a> {
     /// # Returns
     ///
     /// Single value or array of values as appropriate
-    fn format_field_value(&self, values: &[JsonValue]) -> JsonValue {
-        if values.len() == 1 {
-            values[0].clone()
-        } else {
-            JsonValue::Array(values.to_vec())
-        }
-    }
+    fn format_field_value(&self, values: &[JsonValue]) -> JsonValue { if values.len() == 1 { values[0].clone() } else { JsonValue::Array(values.to_vec()) } }
 
     /// Ensures a unique field name by appending numbers if necessary.
     ///
@@ -169,11 +187,7 @@ impl<'a> AggregationAccumulator<'a> {
     /// # Returns
     ///
     /// The first string value found, if any
-    fn derive_key_value(&self, field_name: &str) -> Option<String> {
-        self.raw_fields
-            .get(field_name)
-            .and_then(|values| values.iter().find_map(convert_json_to_string))
-    }
+    fn derive_key_value(&self, _field_name: &str) -> Option<String> { None }
 }
 
 /// Main aggregation function that handles all aggregation patterns.
@@ -241,6 +255,7 @@ fn process_direct_value_resolution(
     all_expressions: &[(String, String)],
     accumulator: &mut AggregationAccumulator,
 ) -> Result<(), SchemaError> {
+    let mut row_fields: HashMap<String, Vec<JsonValue>> = HashMap::new();
     for (field_name, expression) in all_expressions {
         let field_value = resolve_field_value(
             field_name,
@@ -248,10 +263,9 @@ fn process_direct_value_resolution(
             parsed_chains,
             input_values,
         )?;
-
-        accumulator.raw_fields
-            .insert(field_name.clone(), vec![field_value]);
+        row_fields.insert(field_name.clone(), vec![field_value]);
     }
+    accumulator.raw_rows = HashMap::from([(String::from("_single_row"), row_fields)]);
 
     Ok(())
 }
@@ -316,39 +330,46 @@ fn process_hash_range_aggregation(
     execution_result: &ExecutionResult,
     accumulator: &mut AggregationAccumulator,
 ) -> Result<(), SchemaError> {
-    let mut field_arrays: HashMap<String, Vec<JsonValue>> = HashMap::new();
-    
-    // Initialize field arrays
-    for (field_name, _) in parsed_chains.iter() {
-        field_arrays.insert(field_name.clone(), Vec::new());
+    // Group entries by row_id
+    let mut rows: HashMap<String, HashMap<String, Vec<JsonValue>>> = HashMap::new();
+
+    // Build a map from expression to output field name
+    let mut expr_to_field: HashMap<String, String> = HashMap::new();
+    for (field_name, parsed_chain) in parsed_chains.iter() {
+        expr_to_field.insert(parsed_chain.expression.clone(), field_name.clone());
     }
 
-    // Group entries by expression
-    let mut entries_by_expression: HashMap<String, Vec<&IndexEntry>> = HashMap::new();
     for entries in execution_result.index_entries.values() {
         for entry in entries {
-            entries_by_expression
-                .entry(entry.expression.clone())
-                .or_default()
-                .push(entry);
+            let row = rows.entry(entry.row_id.clone()).or_default();
+            if let Some(field_name) = expr_to_field.get(&entry.expression) {
+                row.entry(field_name.clone()).or_default().push(extract_optimal_field_value(entry));
+            }
         }
     }
 
-    // Collect values for each field
-    for (field_name, parsed_chain) in parsed_chains.iter() {
-        if let Some(entries) = entries_by_expression.get(&parsed_chain.expression) {
-            if let Some(values) = field_arrays.get_mut(field_name) {
-                for entry in entries {
-                    values.push(extract_optimal_field_value(entry));
+    // Ensure every row contains all fields by inheriting from nearest ancestor prefixes
+    let mut row_ids: Vec<String> = rows.keys().cloned().collect();
+    // Sort by depth (number of segments) ascending so parents come first
+    row_ids.sort_by_key(|id| id.split('/').count());
+
+    // Build a quick lookup to avoid multiple clones
+    let rows_clone = rows.clone();
+    for child_id in row_ids.iter() {
+        let child_fields = rows.get_mut(child_id).unwrap();
+        let segments: Vec<&str> = child_id.split('/').collect();
+        if segments.len() <= 1 { continue; }
+        for prefix_len in (1..segments.len()).rev() {
+            let prefix = segments[..prefix_len].join("/");
+            if let Some(parent_fields) = rows_clone.get(&prefix) {
+                for (fname, fvals) in parent_fields {
+                    child_fields.entry(fname.clone()).or_insert_with(|| fvals.clone());
                 }
             }
         }
     }
 
-    // Transfer collected values to accumulator
-    for (field_name, values) in field_arrays {
-        accumulator.raw_fields.insert(field_name, values);
-    }
+    accumulator.raw_rows = rows;
 
     Ok(())
 }
@@ -373,6 +394,9 @@ fn process_single_range_aggregation(
     all_expressions: &[(String, String)],
     accumulator: &mut AggregationAccumulator,
 ) -> Result<(), SchemaError> {
+    // Build a single synthetic row for Single/Range schema types
+    let mut row_fields: HashMap<String, Vec<JsonValue>> = HashMap::new();
+
     // Create a map of expression to entry for quick lookup
     let mut entries_by_expression: HashMap<String, &IndexEntry> = HashMap::new();
     for entries in execution_result.index_entries.values() {
@@ -381,28 +405,24 @@ fn process_single_range_aggregation(
         }
     }
 
-    // Process each expression
     for (field_name, expression) in all_expressions {
-        let field_value = if let Some((_, parsed_chain)) =
-            parsed_chains.iter().find(|(name, _)| name == field_name)
-        {
+        let field_value = if let Some((_, parsed_chain)) = parsed_chains.iter().find(|(name, _)| name == field_name) {
             if let Some(entry) = entries_by_expression.get(&parsed_chain.expression) {
                 extract_optimal_field_value(entry)
             } else {
-                resolve_field_value_from_chain(parsed_chain, input_values, field_name)
-                    .unwrap_or(JsonValue::Null)
+                resolve_field_value_from_chain(parsed_chain, input_values, field_name).unwrap_or(JsonValue::Null)
             }
         } else {
-            crate::transform::shared_utilities::resolve_dotted_path(expression, input_values)
-                .unwrap_or(JsonValue::Null)
+            crate::transform::shared_utilities::resolve_dotted_path(expression, input_values).unwrap_or(JsonValue::Null)
         };
 
-        // Only include non-internal fields
         if !field_name.starts_with('_') {
-            accumulator.raw_fields
-                .insert(field_name.clone(), vec![field_value]);
+            row_fields.insert(field_name.clone(), vec![field_value]);
         }
     }
+
+    // Use a constant row id since Single/Range produce one row
+    accumulator.raw_rows = HashMap::from([(String::from("_single_row"), row_fields)]);
 
     Ok(())
 }
@@ -520,11 +540,11 @@ mod tests {
     /// Helper function to build an index entry for testing
     fn build_index_entry(expression: &str, value: JsonValue) -> IndexEntry {
         IndexEntry {
-            expression: expression.to_string(),
-            hash_value: value,
-            range_value: JsonValue::Null,
+            row_id: "row1".to_string(),
+            value,
             atom_uuid: "test-uuid".to_string(),
             metadata: HashMap::new(),
+            expression: expression.to_string(),
         }
     }
 
@@ -571,9 +591,11 @@ mod tests {
 
         assert!(result.is_ok());
         let result_value = result.unwrap();
-        assert_eq!(result_value[HASH_KEY], json!(""));
-        assert_eq!(result_value[RANGE_KEY], json!(""));
-        assert_eq!(result_value[FIELDS_KEY]["field1"], json!("value1"));
+        let arr = result_value.as_array().expect("rows array");
+        assert_eq!(arr.len(), 1);
+        let row = arr[0].as_object().unwrap();
+        assert!(row.contains_key("key"));
+        assert_eq!(row["fields"]["field1"], json!("value1"));
     }
 
     #[test]
@@ -620,9 +642,11 @@ mod tests {
 
         assert!(result.is_ok());
         let result_value = result.unwrap();
-        assert_eq!(result_value[HASH_KEY], json!(""));
-        assert_eq!(result_value[RANGE_KEY], json!(""));
-        assert_eq!(result_value[FIELDS_KEY]["field1"], json!("executed_value1"));
+        let arr = result_value.as_array().expect("rows array");
+        assert_eq!(arr.len(), 1);
+        let row = arr[0].as_object().unwrap();
+        assert!(row.contains_key("key"));
+        assert_eq!(row["fields"]["field1"], json!("executed_value1"));
     }
 
     #[test]
@@ -668,7 +692,11 @@ mod tests {
 
         assert!(result.is_ok());
         let result_value = result.unwrap();
-        assert_eq!(result_value[FIELDS_KEY]["field1"], json!(["value1", "value2"]));
+        let arr = result_value.as_array().expect("rows array");
+        assert_eq!(arr.len(), 1);
+        let row = arr[0].as_object().unwrap();
+        assert!(row.contains_key("key"));
+        assert_eq!(row["fields"]["field1"], json!(["value1", "value2"]));
     }
 
     #[test]

@@ -124,6 +124,32 @@ impl IteratorManager {
         Self
     }
 
+    /// Computes a deterministic row identifier for the current iterator stack state.
+    /// This composes cache-like keys across scopes to produce a stable row id.
+    pub fn compute_key_for_stack(stack: &IteratorStack, parent_hash: Option<&str>) -> String {
+        let mut current_parent = parent_hash.unwrap_or("root").to_string();
+        for depth in 0..stack.len() {
+            if let Some(scope) = stack.scope_at_depth(depth) {
+                let normalized_branch = normalize_branch_path(&scope.branch_path);
+                let iter_sig = iterator_signature(&scope.iterator_type);
+                let key_input = format!("{}|{}|{}", current_parent, normalized_branch, iter_sig);
+                current_parent = format!("{:x}", hash_string(&key_input));
+            }
+        }
+        current_parent
+    }
+
+    /// Computes a row identifier using iterator positions across all active scopes
+    pub fn compute_row_id_from_positions(stack: &IteratorStack) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for depth in 0..stack.len() {
+            if let Some(scope) = stack.scope_at_depth(depth) {
+                parts.push(scope.position.to_string());
+            }
+        }
+        if parts.is_empty() { "root".to_string() } else { parts.join("/") }
+    }
+
     /// Initializes the iterator stack with input data (optimized single-pass approach)
     pub fn initialize_stack(
         &mut self,

@@ -27,14 +27,14 @@ pub struct ExecutionResult {
     pub warnings: HashMap<String, Vec<ExecutionWarning>>,
 }
 
-/// A single index entry produced by the execution engine
+/// A single row value entry produced by the execution engine
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IndexEntry {
-    /// Hash field value (used for indexing)
-    pub hash_value: Value,
-    /// Range field value (used for sorting/filtering)
-    pub range_value: Value,
-    /// Unique identifier for the atom
+    /// Deterministic identifier for the logical row
+    pub row_id: String,
+    /// Evaluated value for the current field
+    pub value: Value,
+    /// Unique identifier for the atom (kept for compatibility/traceability)
     pub atom_uuid: String,
     /// Additional metadata
     pub metadata: HashMap<String, Value>,
