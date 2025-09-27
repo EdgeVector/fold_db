@@ -6,9 +6,11 @@ use std::sync::Arc;
 use crate::atom::MoleculeRange;
 use crate::impl_field;
 use crate::schema::types::field::common::FieldCommon;
+use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, RangeOperations, apply_range_filter};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperations;
+use crate::schema::types::key_value::KeyValue;
 use log::{info, error};
 
 // RangeFilter has been unified into HashRangeFilter
@@ -153,7 +155,7 @@ impl crate::schema::types::field::Field for RangeField {
         &mut self,
         db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
-    ) -> Result<JsonValue, SchemaError> {
+    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> { 
         info!("🔍 RangeField: Resolving range values with filter: {:?}", filter);
 
         self.refresh_from_db(db_ops);
@@ -166,7 +168,7 @@ impl crate::schema::types::field::Field for RangeField {
             let mut matches = HashMap::new();
             if let Some(molecule) = &self.molecule {
                 for (key, atom_uuid) in &molecule.atom_uuids {
-                    matches.insert(key.clone(), atom_uuid.clone());
+                    matches.insert(KeyValue::new(None, Some(key.clone())), atom_uuid.clone());
                 }
             }
             HashRangeFilterResult::new(matches)
@@ -175,32 +177,30 @@ impl crate::schema::types::field::Field for RangeField {
         info!("🔍 RangeField: Filter applied, found {} matches", filter_result.matches.len());
 
         // Fetch actual atom content from database
-        let mut resolved_values = serde_json::Map::new();
+        let mut resolved_values = HashMap::new();
 
         for (key, atom_uuid) in filter_result.matches {
-            info!("🔍 RangeField: Fetching atom content for key '{}', UUID '{}'", key, atom_uuid);
-            
             match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
                 Ok(Some(atom)) => {
-                    info!("✅ RangeField: Successfully fetched atom for key '{}'", key);
-                    resolved_values.insert(key, atom.content().clone());
+                    resolved_values.insert(key, FieldValue { value: atom.content().clone(), atom_uuid });
                 }
                 Ok(None) => {
-                    error!("❌ RangeField: Atom '{}' not found for key '{}'", atom_uuid, key);
-                    resolved_values.insert(key, JsonValue::Null);
+                    return Err(SchemaError::InvalidField(format!(
+                        "Atom '{}' not found for key '{}'",
+                        atom_uuid, key.to_string()
+                    )))
                 }
                 Err(e) => {
-                    error!("❌ RangeField: Failed to fetch atom '{}' for key '{}': {}", atom_uuid, key, e);
                     return Err(SchemaError::InvalidField(format!(
-                        "Failed to fetch atom '{}' for key '{}': {}",
-                        atom_uuid, key, e
+                        "Failed to fetch atom '{}' for key '{}'",
+                        atom_uuid, key.to_string()
                     )));
                 }
             }
         }
 
         info!("✅ RangeField: Value resolution completed successfully");
-        Ok(JsonValue::Object(resolved_values))
+        Ok(resolved_values)
     }
 }
 

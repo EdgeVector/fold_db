@@ -7,7 +7,9 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::Query;
 use crate::schema::SchemaCore;
 use crate::schema::SchemaError;
-use serde_json::Value;
+use std::collections::HashMap;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 use std::sync::Arc;
 
 use super::hash_range_query::HashRangeQueryProcessor;
@@ -33,13 +35,12 @@ impl QueryExecutor {
     }
 
     /// Query multiple fields from a schema
-    pub fn query(&self, query: Query) -> Result<Value, SchemaError> {
+    pub fn query(&self, query: Query) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut schema = self.schema_manager.get_schema(&query.schema_name)?.ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", query.schema_name)))?;
-        let result = self.hash_range_processor.query_with_filter(
+        self.hash_range_processor.query_with_filter(
             &mut schema,
             &query.fields,
             query.filter,
-        )?;
-        Ok(Value::Object(result.into_iter().collect()))
+        )
     }
 }

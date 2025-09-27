@@ -5,7 +5,9 @@
 
 use crate::impl_field;
 use crate::schema::types::field::common::FieldCommon;
-use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult, create_composite_key, parse_composite_key};
+use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{FilterApplicator, HashRangeOperations, apply_hash_range_filter};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperations;
@@ -93,7 +95,7 @@ impl crate::schema::types::field::Field for HashRangeField {
         &mut self,
         db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
-    ) -> Result<JsonValue, SchemaError> {
+    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         info!("🔍 HashRangeField: Resolving hash-range values with filter: {:?}", filter);
 
         // Refresh field data from database first
@@ -107,42 +109,37 @@ impl crate::schema::types::field::Field for HashRangeField {
             let mut matches = HashMap::new();
             if let Some(molecule) = &self.molecule {
                 for (hash_value, range_key, atom_uuid) in molecule.iter_all_atoms() {
-                    let composite_key = format!("{}:{}", hash_value, range_key);
+                    let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid.clone());
                 }
             }
             HashRangeFilterResult::new(matches)
         };
 
-        info!("🔍 HashRangeField: Filter applied, found {} matches", filter_result.matches.len());
-
         // Fetch actual atom content from database
-        let mut resolved_values = serde_json::Map::new();
+        let mut resolved_values = HashMap::new();
 
         for (key, atom_uuid) in filter_result.matches {
-            info!("🔍 HashRangeField: Fetching atom content for key '{}', UUID '{}'", key, atom_uuid);
-            
             match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
                 Ok(Some(atom)) => {
-                    info!("✅ HashRangeField: Successfully fetched atom for key '{}'", key);
-                    resolved_values.insert(key, atom.content().clone());
+                    resolved_values.insert(key, FieldValue { value: atom.content().clone(), atom_uuid });
                 }
                 Ok(None) => {
-                    error!("❌ HashRangeField: Atom '{}' not found for key '{}'", atom_uuid, key);
-                    resolved_values.insert(key, JsonValue::Null);
+                    return Err(SchemaError::InvalidField(format!(
+                        "Atom '{}' not found for key '{}'",
+                        atom_uuid, key.to_string()
+                    )))
                 }
                 Err(e) => {
-                    error!("❌ HashRangeField: Failed to fetch atom '{}' for key '{}': {}", atom_uuid, key, e);
                     return Err(SchemaError::InvalidField(format!(
                         "Failed to fetch atom '{}' for key '{}': {}",
-                        atom_uuid, key, e
-                    )));
+                        atom_uuid, key.to_string(), e
+                    )))
                 }
             }
         }
 
-        info!("✅ HashRangeField: Value resolution completed successfully");
-        Ok(JsonValue::Object(resolved_values))
+        Ok(resolved_values)
     }
 }
 
@@ -156,13 +153,13 @@ impl HashRangeField {
 
     /// Gets all keys in the hash range (useful for pagination or listing)
     /// Returns composite keys in the format "hash_value:range_value"
-    pub fn get_all_keys(&self) -> Vec<String> {
+    pub fn get_all_keys(&self) -> Vec<KeyValue> {
         self.molecule
             .as_ref()
             .map(|molecule| {
                 molecule
                     .iter_all_atoms()
-                    .map(|(hash_value, range_key, _)| create_composite_key(hash_value, range_key))
+                    .map(|(hash_value, range_key, _)| KeyValue::new(Some(hash_value.clone()), Some(range_key.clone())))
                     .collect()
             })
             .unwrap_or_default()
@@ -170,7 +167,7 @@ impl HashRangeField {
 
     /// Gets a subset of keys within a range for a specific hash group (useful for pagination)
     /// Returns composite keys in the format "hash_value:range_value"
-    pub fn get_keys_in_range(&self, hash_value: &str, start: &str, end: &str) -> Vec<String> {
+    pub fn get_keys_in_range(&self, hash_value: &str, start: &str, end: &str) -> Vec<KeyValue> {
         self.molecule
             .as_ref()
             .and_then(|molecule| molecule.get_atoms_for_hash(hash_value))
@@ -178,18 +175,18 @@ impl HashRangeField {
                 // Leverage BTree's efficient range operations
                 range_map
                     .range(start.to_string()..end.to_string())
-                    .map(|(range_key, _)| create_composite_key(hash_value, range_key))
+                    .map(|(range_key, _)| KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone())))
                     .collect()
             })
             .unwrap_or_default()
     }
 
     /// Gets all range keys for a specific hash group
-    pub fn get_range_keys_for_hash(&self, hash_value: &str) -> Vec<String> {
+    pub fn get_range_keys_for_hash(&self, hash_value: &str) -> Vec<KeyValue> {
         self.molecule
             .as_ref()
             .and_then(|molecule| molecule.range_values_for_hash(hash_value))
-            .map(|iter| iter.cloned().collect())
+            .map(|iter| iter.map(|range_key| KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone()))).collect())
             .unwrap_or_default()
     }
 

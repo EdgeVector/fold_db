@@ -8,6 +8,8 @@ use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::SchemaError;
 use crate::atom::Molecule;
 use crate::db_operations::DbOperations;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 use serde_json::Value as JsonValue;
 use log::{info, error};
 /// Field storing a single value.
@@ -65,7 +67,7 @@ impl crate::schema::types::field::Field for SingleField {
         &mut self,
         db_ops: &Arc<DbOperations>,
         _filter: Option<HashRangeFilter>,
-    ) -> Result<JsonValue, SchemaError> {
+    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         info!("🔍 SingleField: Resolving single value");
 
         // Refresh field data from database first
@@ -79,14 +81,15 @@ impl crate::schema::types::field::Field for SingleField {
             match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
                 Ok(Some(atom)) => {
                     info!("✅ SingleField: Successfully fetched atom content");
-                    Ok(atom.content().clone())
+                    Ok(HashMap::from([(KeyValue::new(None, None), FieldValue { value: atom.content().clone(), atom_uuid: atom_uuid.clone() })]))
                 }
                 Ok(None) => {
-                    error!("❌ SingleField: Atom '{}' not found", atom_uuid);
-                    Ok(JsonValue::Null)
+                    Err(SchemaError::InvalidField(format!(
+                        "Atom '{}' not found",
+                        atom_uuid
+                    )))
                 }
                 Err(e) => {
-                    error!("❌ SingleField: Failed to fetch atom '{}': {}", atom_uuid, e);
                     Err(SchemaError::InvalidField(format!(
                         "Failed to fetch atom '{}': {}",
                         atom_uuid, e
@@ -94,8 +97,9 @@ impl crate::schema::types::field::Field for SingleField {
                 }
             }
         } else {
-            info!("ℹ️ SingleField: No molecule found, returning null");
-            Ok(JsonValue::Null)
+            Err(SchemaError::InvalidField(format!(
+                "No molecule found",
+            )))
         }
     }
 }

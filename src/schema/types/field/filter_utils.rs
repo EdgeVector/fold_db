@@ -4,7 +4,8 @@
 //! HashRangeField, and other field types to eliminate code duplication.
 
 use std::collections::HashMap;
-use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, create_composite_key};
+use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult};
+use crate::schema::types::key_value::KeyValue;
 use crate::atom::{MoleculeRange, MoleculeHashRange};
 
 /// Common filter application utilities
@@ -97,30 +98,35 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, filter: &HashRange
     match filter {
         HashRangeFilter::HashKey(key) => {
             if let Some(atom_uuid) = operations.get_atom_uuid(key) {
-                matches.insert(key.clone(), atom_uuid);
+                let composite_key = KeyValue::new(None, Some(key.clone()));
+                matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangePrefix(prefix) => {
             for (key, atom_uuid) in operations.get_atoms_with_prefix(prefix) {
-                matches.insert(key, atom_uuid);
+                let composite_key = KeyValue::new(None, Some(key.clone()));
+                matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangeRange { start, end } => {
             for (key, atom_uuid) in operations.get_atoms_in_range(start, end) {
-                matches.insert(key, atom_uuid);
+                let composite_key = KeyValue::new(None, Some(key.clone()));
+                matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::Value(target_value) => {
             for (key, atom_uuid) in operations.get_all_atoms() {
                 if atom_uuid == *target_value {
-                    matches.insert(key, atom_uuid);
+                    let composite_key = KeyValue::new(None, Some(key.clone()));
+                    matches.insert(composite_key, atom_uuid);
                 }
             }
         }
         HashRangeFilter::HashRangeKeys(keys) => {
             for (_hash, range) in keys {
                 if let Some(atom_uuid) = operations.get_atom_uuid(range) {
-                    matches.insert(range.clone(), atom_uuid);
+                    let composite_key = KeyValue::new(None, Some(range.clone()));
+                    matches.insert(composite_key, atom_uuid);
                 }
             }
         }
@@ -130,17 +136,20 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, filter: &HashRange
         // Hash-range specific filters - RangeField only handles range keys, so ignore hash components
         HashRangeFilter::HashRangeKey { range, .. } => {
             if let Some(atom_uuid) = operations.get_atom_uuid(range) {
-                matches.insert(range.clone(), atom_uuid);
+                let composite_key = KeyValue::new(None, Some(range.clone()));
+                matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::HashRangePrefix { prefix, .. } => {
             for (key, atom_uuid) in operations.get_atoms_with_prefix(prefix) {
-                matches.insert(key, atom_uuid);
+                let composite_key = KeyValue::new(None, Some(key.clone()));
+                matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::HashRangeRange { start, end, .. } => {
             for (key, atom_uuid) in operations.get_atoms_in_range(start, end) {
-                matches.insert(key, atom_uuid);
+                let composite_key = KeyValue::new(None, Some(key.clone()));
+                matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::HashRangePattern { pattern: _pattern, .. } => {
@@ -165,42 +174,42 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
     match filter {
         HashRangeFilter::HashRangeKey { hash, range } => {
             if let Some(atom_uuid) = operations.get_atom_uuid(hash, range) {
-                let composite_key = create_composite_key(hash, range);
+                let composite_key = KeyValue::new(Some(hash.clone()), Some(range.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::HashKey(hash) => {
             if let Some(range_atoms) = operations.get_atoms_for_hash(hash) {
                 for (range_key, atom_uuid) in range_atoms {
-                    let composite_key = create_composite_key(hash, &range_key);
+                    let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
         }
         HashRangeFilter::HashRangePrefix { hash, prefix } => {
             for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(hash, prefix) {
-                let composite_key = create_composite_key(hash, &range_key);
+                let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangePrefix(prefix) => {
             for hash_value in operations.get_hash_values() {
                 for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(&hash_value, prefix) {
-                    let composite_key = create_composite_key(&hash_value, &range_key);
+                    let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
         }
         HashRangeFilter::HashRangeRange { hash, start, end } => {
             for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(hash, start, end) {
-                let composite_key = create_composite_key(hash, &range_key);
+                let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangeRange { start, end } => {
             for hash_value in operations.get_hash_values() {
                 for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(&hash_value, start, end) {
-                    let composite_key = create_composite_key(&hash_value, &range_key);
+                    let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
@@ -208,7 +217,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
         HashRangeFilter::Value(target_value) => {
             for (hash_value, range_key, atom_uuid) in operations.get_all_atoms() {
                 if atom_uuid == *target_value {
-                    let composite_key = create_composite_key(&hash_value, &range_key);
+                    let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
@@ -216,7 +225,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
         HashRangeFilter::HashRangeKeys(keys) => {
             for (hash, range) in keys {
                 if let Some(atom_uuid) = operations.get_atom_uuid(hash, range) {
-                    let composite_key = create_composite_key(hash, range);
+                    let composite_key = KeyValue::new(Some(hash.clone()), Some(range.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
@@ -232,7 +241,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
         }
         HashRangeFilter::HashRange { start, end } => {
             for (hash_value, range_key, atom_uuid) in operations.get_atoms_in_hash_range(start, end) {
-                let composite_key = create_composite_key(&hash_value, &range_key);
+                let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }

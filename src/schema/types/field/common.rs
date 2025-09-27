@@ -7,7 +7,8 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::field::HashRangeFilter;
 use crate::schema::types::SchemaError;
-use crate::atom::Molecule;
+use crate::schema::types::field::FieldValue;
+use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
 /// Common interface for all schema fields.
 ///
@@ -32,7 +33,7 @@ pub trait Field {
         &mut self,
         db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
-    ) -> Result<JsonValue, SchemaError>;
+    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

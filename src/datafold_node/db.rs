@@ -1,9 +1,11 @@
-use serde_json::Value;
+
 use std::collections::HashMap;
 
 use crate::error::{FoldDbError, FoldDbResult};
+use crate::schema::types::SchemaError;
 use crate::schema::types::{Mutation, Query, Transform};
-use crate::schema::SchemaError;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 use super::DataFoldNode;
 
 impl DataFoldNode {
@@ -32,9 +34,9 @@ impl DataFoldNode {
     }
 
     /// Executes a query against the database.
-    pub fn query(&self, query: Query) -> FoldDbResult<Vec<Result<Value, SchemaError>>> {
+    pub fn query(&self, query: Query) -> FoldDbResult<HashMap<String, HashMap<KeyValue, FieldValue>>> {
         self.with_db(
-            |db| Ok(db.query_schema(query)), 
+            |db| db.query_executor.query(query),
             "Failed to acquire database lock for query",
             "Query operation failed"
         )
@@ -55,19 +57,6 @@ impl DataFoldNode {
             |db| db.list_transforms(),
             "Failed to acquire database lock for listing transforms",
             "Failed to list transforms"
-        )
-    }
-
-
-    /// Process all queued transforms.
-    pub fn process_transform_queue(&self) -> FoldDbResult<()> {
-        self.with_db(
-            |db| {
-                db.process_transform_queue();
-                Ok(())
-            },
-            "Failed to acquire database lock for transform queue processing",
-            "Transform queue processing failed"
         )
     }
 }

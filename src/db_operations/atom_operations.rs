@@ -1,6 +1,5 @@
 use super::core::DbOperations;
 use crate::atom::{Atom, AtomStatus, Molecule, MoleculeRange};
-use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::SchemaError;
 use serde_json::Value;
 
@@ -37,91 +36,14 @@ impl DbOperations {
         atom_uuid: String,
         source_pub_key: String,
     ) -> Result<Molecule, SchemaError> {
-        // DIAGNOSTIC: Log the update attempt
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "🔍 DIAGNOSTIC: update_molecule called - molecule_uuid: {}, atom_uuid: {}",
-            molecule_uuid,
-            atom_uuid
-        );
-
         let mut molecule = match self.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))? {
-            Some(existing_molecule) => {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "🔍 DIAGNOSTIC: Found existing Molecule - current atom_uuid: {}",
-                    existing_molecule.get_atom_uuid()
-                );
-                existing_molecule
-            }
-            None => {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "🔍 DIAGNOSTIC: Creating new Molecule"
-                );
-                Molecule::new(atom_uuid.clone(), source_pub_key)
-            }
+            Some(existing_molecule) => existing_molecule,
+            None => Molecule::new(atom_uuid.clone(), source_pub_key),
         };
-
-        // DIAGNOSTIC: Log before update
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "🔍 DIAGNOSTIC: Before set_atom_uuid - current: {}, new: {}",
-            molecule.get_atom_uuid(),
-            atom_uuid
-        );
 
         molecule.set_atom_uuid(atom_uuid.clone());
 
-        // DIAGNOSTIC: Log after update
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "🔍 DIAGNOSTIC: After set_atom_uuid - updated to: {}",
-            molecule.get_atom_uuid()
-        );
-
-        // DIAGNOSTIC: Log before persistence
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "🔍 DIAGNOSTIC: About to persist Molecule with key: ref:{}",
-            molecule_uuid
-        );
-
         self.store_item(&format!("ref:{}", molecule_uuid), &molecule)?;
-
-        // DIAGNOSTIC: Verify persistence by reading back
-        match self.get_item::<Molecule>(&format!("ref:{}", molecule_uuid))? {
-            Some(persisted_molecule) => {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "🔍 DIAGNOSTIC: Persistence verification - stored atom_uuid: {}",
-                    persisted_molecule.get_atom_uuid()
-                );
-                if persisted_molecule.get_atom_uuid() != &atom_uuid {
-                    log_feature!(
-                        LogFeature::Database,
-                        error,
-                        "❌ DIAGNOSTIC: PERSISTENCE MISMATCH! Expected: {}, Got: {}",
-                        atom_uuid,
-                        persisted_molecule.get_atom_uuid()
-                    );
-                }
-            }
-            None => {
-                log_feature!(
-                    LogFeature::Database,
-                    error,
-                    "❌ DIAGNOSTIC: PERSISTENCE FAILED! Could not read back stored Molecule"
-                );
-            }
-        }
 
         Ok(molecule)
     }

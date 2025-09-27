@@ -8,6 +8,7 @@ use crate::schema::types::field::{
 };
 use crate::db_operations::DbOperations;
 use crate::schema::types::{Transform, SchemaError};
+use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
 use log::{info, error};
 
@@ -20,6 +21,11 @@ pub enum FieldVariant {
     Range(RangeField),
     /// Hash-range field for complex indexing
     HashRange(HashRangeField),
+}
+
+pub struct FieldValue {
+    pub value: JsonValue,
+    pub atom_uuid: String,
 }
 
 // Macro to reduce boilerplate for Field trait implementation
@@ -61,7 +67,7 @@ impl Field for FieldVariant {
         &mut self,
         db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
-    ) -> Result<JsonValue, SchemaError> {
+    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         delegate_field_method!(self, resolve_value, db_ops, filter)
     }
 }

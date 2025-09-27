@@ -5,10 +5,11 @@
 use crate::db_operations::DbOperations;
 use crate::schema::{Schema, SchemaError};
 use crate::schema::types::field::HashRangeFilter;
-use serde_json::Value;
 use std::sync::Arc;
 use crate::schema::types::field::Field;
 use std::collections::HashMap;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 
 /// Processor for HashRange schema queries using field resolution
 pub struct HashRangeQueryProcessor {
@@ -27,7 +28,7 @@ impl HashRangeQueryProcessor {
         schema: &mut Schema,
         fields: &[String],
         filter: Option<HashRangeFilter>,
-    ) -> Result<HashMap<String, Value>, SchemaError> {
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut result = HashMap::new();
         for (field_name, field) in schema.fields.iter_mut() {
             if !fields.contains(field_name) {

@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 // External crate imports
 use log::info;
-use serde_json::Value;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 
 // Internal crate imports
 use crate::db_operations::DbOperations;
@@ -37,7 +38,7 @@ pub struct FoldDB {
     /// Shared database operations
     pub(crate) db_ops: Arc<DbOperations>,
     /// Query executor for handling all query operations
-    query_executor: QueryExecutor,
+    pub(crate) query_executor: QueryExecutor,
     /// Message bus for event-driven communication
     pub(crate) message_bus: Arc<MessageBus>,
     /// Event monitor for system-wide observability
@@ -258,26 +259,6 @@ impl FoldDB {
     /// ```
     pub fn get_completion_handler(&self) -> Arc<MutationCompletionHandler> {
         Arc::clone(&self.completion_handler)
-    }
-
-
-    /// Query multiple fields from a schema
-    pub fn query(&self, query: Query) -> Result<Value, SchemaError> {
-        self.query_executor.query(query)
-    }
-
-    /// Query a schema (alias for query method for backwards compatibility)
-    pub fn query_schema(&self, query: Query) -> Vec<Result<Value, SchemaError>> {
-        match self.query_executor.query(query) {
-            Ok(value) => vec![Ok(value)],
-            Err(err) => vec![Err(err)],
-        }
-    }
-
-    /// Process any pending transforms in the queue
-    pub fn process_transform_queue(&self) {
-        // Transform orchestrator processing is handled automatically by events
-        // self.transform_orchestrator.process_pending_transforms();
     }
 
     /// Write schema operation - main orchestration method for mutations
