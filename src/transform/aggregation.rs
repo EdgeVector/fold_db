@@ -10,7 +10,7 @@ use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
 use crate::transform::shared_utilities::resolve_field_value_from_chain;
 use serde_json::Value as JsonValue;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Constants (legacy fallbacks only used when needed)
 const HASH_FIELD_PREFIX: &str = "_hash_field"; // legacy fallback, will be removed
@@ -70,16 +70,21 @@ impl<'a> AggregationAccumulator<'a> {
     fn finalize(self) -> Result<JsonValue, SchemaError> {
         let mut rows_array: Vec<JsonValue> = Vec::new();
 
-        for (_row_id, fields_map) in &self.raw_rows {
-            let mut used_names: HashSet<String> = HashSet::new();
+        for fields_map in self.raw_rows.values() {
             let mut shaped_fields = serde_json::Map::new();
 
             for (field_name, values) in fields_map {
                 // Preserve original declared field name for row shaping
-                let unique_name = field_name.clone();
-                used_names.insert(unique_name.clone());
                 let value = self.format_field_value(values);
-                shaped_fields.insert(unique_name, value);
+                shaped_fields.insert(field_name.clone(), value);
+            }
+
+            // Ensure all declared transform fields are present in each row
+            // If a field did not produce a value for this row, insert null
+            for declared_field in self.expressions.keys() {
+                if !shaped_fields.contains_key(declared_field) {
+                    shaped_fields.insert(declared_field.clone(), JsonValue::Null);
+                }
             }
 
             let key = self.derive_key_from_row(&shaped_fields);
@@ -126,21 +131,6 @@ impl<'a> AggregationAccumulator<'a> {
         KeyValue::new(hash_value, range_value)
     }
 
-    /// Determines the appropriate field key for a given field name.
-    ///
-    /// # Arguments
-    ///
-    /// * `field_name` - The original field name
-    ///
-    /// # Returns
-    ///
-    /// The sanitized field key
-    fn determine_field_key(&self, field_name: &str) -> String {
-        self.expressions
-            .get(field_name)
-            .and_then(|expr| extract_expression_final_segment(expr))
-            .unwrap_or_else(|| sanitize_field_name(field_name))
-    }
 
     /// Formats field values into the appropriate JSON structure.
     ///
@@ -153,41 +143,7 @@ impl<'a> AggregationAccumulator<'a> {
     /// Single value or array of values as appropriate
     fn format_field_value(&self, values: &[JsonValue]) -> JsonValue { if values.len() == 1 { values[0].clone() } else { JsonValue::Array(values.to_vec()) } }
 
-    /// Ensures a unique field name by appending numbers if necessary.
-    ///
-    /// # Arguments
-    ///
-    /// * `base_name` - The base field name
-    /// * `used_names` - Set of already used names
-    ///
-    /// # Returns
-    ///
-    /// A unique field name
-    fn ensure_unique_name(&self, base_name: &str, used_names: &HashSet<String>) -> String {
-        if !used_names.contains(base_name) {
-            return base_name.to_string();
-        }
-
-        let mut index = 1;
-        loop {
-            let candidate = format!("{}_{}", base_name, index);
-            if !used_names.contains(&candidate) {
-                return candidate;
-            }
-            index += 1;
-        }
-    }
-
-    /// Derives a key value from the collected field data.
-    ///
-    /// # Arguments
-    ///
-    /// * `field_name` - The field name to extract
-    ///
-    /// # Returns
-    ///
-    /// The first string value found, if any
-    fn derive_key_value(&self, _field_name: &str) -> Option<String> { None }
+    
 }
 
 /// Main aggregation function that handles all aggregation patterns.
@@ -461,6 +417,7 @@ fn resolve_field_value(
 /// # Returns
 ///
 /// The final segment if valid, None otherwise
+#[cfg(test)]
 fn extract_expression_final_segment(expression: &str) -> Option<String> {
     expression.split('.').rev().find_map(|segment| {
         let trimmed = segment.trim();
@@ -483,6 +440,7 @@ fn extract_expression_final_segment(expression: &str) -> Option<String> {
 /// # Returns
 ///
 /// The sanitized field name
+#[cfg(test)]
 fn sanitize_field_name(field_name: &str) -> String {
     let sanitized = field_name.trim_start_matches('_');
     if sanitized.is_empty() {

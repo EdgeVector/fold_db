@@ -1,7 +1,8 @@
 use super::core::DbOperations;
-use crate::transform::manager::transform_manager::SCHEMA_FIELD_TO_TRANSFORMS_KEY;
 use crate::schema::types::transform::{Transform, TransformRegistration};
 use crate::schema::SchemaError;
+use log::info;
+use std::collections::{BTreeMap, HashSet};
 
 impl DbOperations {
     /// Stores a transform using generic tree operations
@@ -31,9 +32,9 @@ impl DbOperations {
         let mut transforms = Vec::new();
 
         // Metadata keys that should be excluded from transform listing
-        let metadata_keys = [
-            SCHEMA_FIELD_TO_TRANSFORMS_KEY,
-        ];
+        // Keys reserved for metadata persisted in the transforms tree
+        const SCHEMA_FIELD_TO_TRANSFORMS_KEY: &str = "map_schema_field_to_transforms";
+        let metadata_keys = [SCHEMA_FIELD_TO_TRANSFORMS_KEY];
 
         for result in self.transforms_tree.iter() {
             let (key, _) = result.map_err(|e| {
@@ -103,27 +104,64 @@ impl DbOperations {
     pub fn load_field_to_transforms_mapping(
         &self,
         key: &str,
-    ) -> Result<std::collections::BTreeMap<String, std::collections::HashSet<String>>, SchemaError> {
-        use crate::transform::manager::utils::SerializationHelper;
-        use log::info;
+    ) -> Result<BTreeMap<String, HashSet<String>>, SchemaError> {
 
         // Load field_to_transforms with special debug logging
         let schema_field_to_transforms = match self.get_transform_mapping(key)? {
             Some(data) => {
-                let loaded_map: std::collections::BTreeMap<String, std::collections::HashSet<String>> =
-                    SerializationHelper::deserialize_mapping(&data, "field_to_transforms")?;
-                info!(
-                    "🔍 DEBUG: Loaded field_to_transforms mapping from database with {} entries:",
-                    loaded_map.len()
-                );
+                let loaded_map: BTreeMap<String, HashSet<String>> =
+                    deserialize_mapping(&data, "field_to_transforms")?;
                 for (field_key, transforms) in &loaded_map {
                     info!("  📋 Loaded '{}' -> {:?}", field_key, transforms);
                 }
                 loaded_map
             }
-            None => std::collections::BTreeMap::new(),
+            None => BTreeMap::new(),
         };
 
         Ok(schema_field_to_transforms)
+    }
+}
+
+/// Deserialize a mapping of String -> Set<String> stored as JSON bytes.
+fn deserialize_mapping(
+    bytes: &[u8],
+    context: &str,
+) -> Result<BTreeMap<String, HashSet<String>>, SchemaError> {
+    let parsed: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| {
+        SchemaError::InvalidData(format!(
+            "Failed to parse {} mapping as JSON: {}",
+            context, e
+        ))
+    })?;
+
+    // Accept either an object of arrays or object of sets; normalize to BTreeMap<String, HashSet<String>>
+    match parsed {
+        serde_json::Value::Object(map) => {
+            let mut result: BTreeMap<String, HashSet<String>> = BTreeMap::new();
+            for (key, value) in map.into_iter() {
+                let set: HashSet<String> = match value {
+                    serde_json::Value::Array(arr) => arr
+                        .into_iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect(),
+                    serde_json::Value::Null => HashSet::new(),
+                    other => {
+                        return Err(SchemaError::InvalidData(format!(
+                            "Invalid value for {}.{}: expected array, got {}",
+                            context,
+                            key,
+                            other
+                        )))
+                    }
+                };
+                result.insert(key, set);
+            }
+            Ok(result)
+        }
+        other => Err(SchemaError::InvalidData(format!(
+            "Invalid {} mapping root: expected object, got {}",
+            context, other
+        ))),
     }
 }

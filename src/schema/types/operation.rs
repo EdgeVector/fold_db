@@ -1,5 +1,5 @@
 use crate::schema::types::operations::MutationType;
-use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::HashRangeFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,7 +19,7 @@ pub enum Operation {
     Mutation {
         schema: String,
         fields_and_values: HashMap<String, Value>,
-        key_config: KeyConfig,
+        key_value: KeyValue,
         mutation_type: MutationType,
     },
 }

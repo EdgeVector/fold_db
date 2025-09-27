@@ -135,8 +135,6 @@ impl DataFoldHttpServer {
                             "/schema/{name}/block",
                             web::post().to(schema_routes::block_schema),
                         )
-                        // Operation endpoints
-                        .route("/execute", web::post().to(query_routes::execute_operation))
                         .route("/query", web::post().to(query_routes::execute_query))
                         .route("/mutation", web::post().to(query_routes::execute_mutation))
                         // Ingestion endpoints

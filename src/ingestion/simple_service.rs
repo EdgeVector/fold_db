@@ -341,11 +341,24 @@ impl SimpleIngestionService {
             let operation = Operation::Mutation {
                 schema: mutation.schema_name.clone(),
                 fields_and_values: mutation.fields_and_values.clone(),
-                key_config: mutation.key_config.clone(),
+                key_value: mutation.key_value.clone(),
                 mutation_type: mutation.mutation_type.clone(),
             };
 
-            match processor.execute_sync(operation) {
+            // Execute mutation explicitly via async block_on since generic sync path was removed
+            let rt = tokio::runtime::Handle::current();
+            let exec_result: Result<serde_json::Value, IngestionError> = rt.block_on(async {
+                match operation {
+                    Operation::Mutation { schema, fields_and_values, key_value, mutation_type } => {
+                        processor.execute_mutation(schema, fields_and_values, key_value, mutation_type)
+                            .await
+                            .map_err(|e| IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(e.to_string())))
+                    }
+                    _ => Err(IngestionError::invalid_input("Expected a mutation operation")),
+                }
+            });
+
+            match exec_result {
                 Ok(_) => {
                     executed_count += 1;
                     log_feature!(

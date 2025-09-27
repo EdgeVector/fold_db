@@ -25,7 +25,7 @@ impl TransformRunner for super::TransformManager {
         let transform = self.db_ops.get_transform(transform_id)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to load transform '{}': {}", transform_id, e)))?;
         // Execute the transform using the execution module with mutation context
-        let input_values = InputFetcher::fetch_input_values_with_context(
+        let _input_values = InputFetcher::fetch_input_values_with_context(
             &transform.clone().unwrap(), 
             &self.db_ops, 
             mutation_context,
@@ -43,7 +43,7 @@ impl TransformRunner for super::TransformManager {
             .collect();
         
         let execution_result = ExecutionEngine::new()
-            .execute_fields(chains_map, input_values.clone())
+            .execute_fields(chains_map, std::collections::HashMap::new())
             .map_err(|e| SchemaError::InvalidField(format!("Iterator stack error: {}", e)))?;
         
         // Reconstruct expressions from parsed chains for unified aggregation
@@ -55,7 +55,7 @@ impl TransformRunner for super::TransformManager {
             schema,
             &parsed_chains,
             &execution_result,
-            &input_values,
+            &std::collections::HashMap::new(),
             &all_expressions,
         )?;
 
@@ -65,7 +65,10 @@ impl TransformRunner for super::TransformManager {
         ResultStorage::store_transform_result_generic(
             &transform.clone().unwrap(),
             result_map,
-            mutation_context.as_ref().unwrap().key_config.clone().unwrap(),
+            mutation_context
+                .as_ref()
+                .and_then(|ctx| ctx.key_value.clone())
+                .expect("Mutation context key_value required for result storage"),
             Some(&self.message_bus)
         )?;
 

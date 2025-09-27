@@ -136,14 +136,14 @@ impl crate::schema::types::field::Field for RangeField {
         }
     }
 
-    fn write_mutation(&mut self, key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
+    fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
         // Initialize molecule if needed
         if self.molecule.is_none() {
             self.ensure_molecule(pub_key.clone());
         }
         
         // For RangeField, we use the range key to store the atom
-        if let Some(range_key) = &key_config.range_field {
+        if let Some(range_key) = &key_value.range {
             if let Some(molecule) = &mut self.molecule {
                 molecule.set_atom_uuid(range_key.clone(), atom.uuid().to_string());
                 log::debug!("Writing atom to RangeField with pub_key '{}' and range key '{}': {:?}", pub_key, range_key, atom);
@@ -187,13 +187,13 @@ impl crate::schema::types::field::Field for RangeField {
                 Ok(None) => {
                     return Err(SchemaError::InvalidField(format!(
                         "Atom '{}' not found for key '{}'",
-                        atom_uuid, key.to_string()
+                        atom_uuid, key
                     )))
                 }
-                Err(e) => {
+                Err(_e) => {
                     return Err(SchemaError::InvalidField(format!(
                         "Failed to fetch atom '{}' for key '{}'",
-                        atom_uuid, key.to_string()
+                        atom_uuid, key
                     )));
                 }
             }

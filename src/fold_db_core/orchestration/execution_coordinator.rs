@@ -6,7 +6,6 @@
 use super::queue_manager::QueueItem;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::transform::manager::types::TransformRunner;
-use crate::transform::manager::utils::EventPublisher;
 use crate::schema::SchemaError;
 use log::{error, info};
 use serde_json::Value as JsonValue;
@@ -65,16 +64,7 @@ impl ExecutionCoordinator {
         self.validate_transform_exists(transform_id)?;
 
         // Execute the transform
-        let execution_result = self.execute_transform_with_context(transform_id, &None);
-
-        // Publish execution result using EventPublisher utility
-        EventPublisher::handle_execution_result_and_publish(
-            &self.message_bus,
-            transform_id,
-            &execution_result,
-        );
-
-        execution_result
+        self.execute_transform_with_context(transform_id, &None)
     }
 
     /// Validate that a transform exists before execution using ValidationHelper patterns

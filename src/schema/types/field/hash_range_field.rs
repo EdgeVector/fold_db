@@ -76,16 +76,16 @@ impl crate::schema::types::field::Field for HashRangeField {
         }
     }
 
-    fn write_mutation(&mut self, key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
+    fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
         // Initialize molecule if needed
         if self.molecule.is_none() {
             self.molecule = Some(crate::atom::MoleculeHashRange::new(pub_key.clone()));
         }
         
         // For HashRangeField, we use both hash and range keys to store the atom
-        if let (Some(hash_key), Some(range_key)) = (&key_config.hash_field, &key_config.range_field) {
+        if let (Some(hash_key), Some(range_key)) = (&key_value.hash, &key_value.range) {
             if let Some(molecule) = &mut self.molecule {
-                molecule.set_atom_uuid(key_config, atom.uuid().to_string());
+                molecule.set_atom_uuid_from_values(hash_key.clone(), range_key.clone(), atom.uuid().to_string());
                 log::debug!("Writing atom to HashRangeField with pub_key '{}', hash '{}' and range '{}': {:?}", pub_key, hash_key, range_key, atom);
             }
         }
@@ -127,13 +127,13 @@ impl crate::schema::types::field::Field for HashRangeField {
                 Ok(None) => {
                     return Err(SchemaError::InvalidField(format!(
                         "Atom '{}' not found for key '{}'",
-                        atom_uuid, key.to_string()
+                        atom_uuid, key
                     )))
                 }
                 Err(e) => {
                     return Err(SchemaError::InvalidField(format!(
                         "Failed to fetch atom '{}' for key '{}': {}",
-                        atom_uuid, key.to_string(), e
+                        atom_uuid, key, e
                     )))
                 }
             }

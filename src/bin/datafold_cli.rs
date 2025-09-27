@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use datafold::schema::SchemaHasher;
 use datafold::{load_node_config, DataFoldNode, MutationType, Operation};
 use datafold::datafold_node::OperationProcessor;
+use datafold::fold_db_core::query::format_hash_range_fields;
 use log::info;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -307,19 +308,19 @@ fn handle_query(
         None
     };
 
-    let operation = Operation::Query {
-        schema,
-        fields,
-        filter: filter_value,
-    };
-
     let processor = OperationProcessor::new(node);
-    let result = processor.execute_sync(operation)?;
+    let (schema, fields, filter) = (schema, fields, filter_value);
+    let rt = tokio::runtime::Handle::current();
+    let result_map = rt.block_on(async move {
+        processor.execute_query_map(schema, fields, filter).await
+    })?;
+
+    let formatted = format_hash_range_fields(&result_map);
 
     if output == "json" {
-        info!("{}", result);
+        info!("{}", serde_json::to_string(&formatted)?);
     } else {
-        info!("{}", serde_json::to_string_pretty(&result)?);
+        info!("{}", serde_json::to_string_pretty(&formatted)?);
     }
 
     Ok(())
@@ -338,18 +339,17 @@ fn handle_mutate(
     let fields_and_values_map: HashMap<String, Value> = serde_json::from_str(&fields_and_values)?;
     let keys_and_values_map: HashMap<String, String> = serde_json::from_str(&keys_and_values)?;
 
-    // Create KeyConfig from the keys_and_values
-    let key_config = datafold::schema::types::key_config::KeyConfig::from_map(keys_and_values_map)?;
-
-    let operation = Operation::Mutation {
-        schema,
-        fields_and_values: fields_and_values_map,
-        key_config,
-        mutation_type,
-    };
+    // Create KeyValue from the keys_and_values
+    let key_value = datafold::schema::types::key_value::KeyValue::new(
+        keys_and_values_map.get("hash").cloned(),
+        keys_and_values_map.get("range").cloned(),
+    );
 
     let processor = OperationProcessor::new(node);
-    processor.execute_sync(operation)?;
+    let rt = tokio::runtime::Handle::current();
+    rt.block_on(async move {
+        processor.execute_mutation(schema, fields_and_values_map, key_value, mutation_type).await
+    })?;
     info!("Mutation executed successfully");
 
     Ok(())
@@ -361,10 +361,23 @@ fn handle_execute(
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Executing operation from file: {}", path.display());
     let operation_str = fs::read_to_string(path)?;
-    let operation: Operation = serde_json::from_str(&operation_str)?;
-
     let processor = OperationProcessor::new(node);
-    let result = processor.execute_sync(operation)?;
+    // Determine operation type and dispatch explicitly
+    let parsed: Operation = serde_json::from_str(&operation_str)?;
+    let rt = tokio::runtime::Handle::current();
+    let result = match parsed {
+        Operation::Query { schema, fields, filter } => {
+            let map = rt.block_on(async move {
+                processor.execute_query_map(schema, fields, filter).await
+            })?;
+            format_hash_range_fields(&map)
+        }
+        Operation::Mutation { schema, fields_and_values, key_value, mutation_type } => {
+            rt.block_on(async move {
+                processor.execute_mutation(schema, fields_and_values, key_value, mutation_type).await
+            })?
+        }
+    };
 
     if !result.is_null() {
         info!("Result:");
@@ -375,6 +388,8 @@ fn handle_execute(
 
     Ok(())
 }
+
+// formatting is handled by fold_db_core::query::formatter
 
 /// Main entry point for the DataFold CLI.
 ///

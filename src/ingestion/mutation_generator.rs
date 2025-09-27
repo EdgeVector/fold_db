@@ -3,7 +3,7 @@
 use crate::ingestion::IngestionResult;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::{Mutation, KeyConfig};
+use crate::schema::types::{Mutation, KeyValue};
 use crate::MutationType;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -50,8 +50,8 @@ impl MutationGenerator {
 
         // If we have fields to mutate, create a mutation
         if !fields_and_values.is_empty() {
-            // Convert keys_and_values to KeyConfig
-            let key_config = KeyConfig::new(
+            // Build KeyValue from keys
+            let key_value = KeyValue::new(
                 keys_and_values.get("hash_field").cloned(),
                 keys_and_values.get("range_field").cloned(),
             );
@@ -59,7 +59,7 @@ impl MutationGenerator {
             let mutation = Mutation::new(
                 schema_name.to_string(),
                 fields_and_values.clone(),
-                key_config,
+                key_value,
                 pub_key,
                 trust_distance,
                 MutationType::Create,

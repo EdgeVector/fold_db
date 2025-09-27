@@ -50,7 +50,7 @@ impl crate::schema::types::field::Field for SingleField {
         }
     }
 
-    fn write_mutation(&mut self, _key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
+    fn write_mutation(&mut self, _key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
         // Initialize molecule if needed
         if self.molecule.is_none() {
             self.molecule = Some(crate::atom::Molecule::new(atom.uuid().to_string(), pub_key.clone()));
@@ -97,9 +97,7 @@ impl crate::schema::types::field::Field for SingleField {
                 }
             }
         } else {
-            Err(SchemaError::InvalidField(format!(
-                "No molecule found",
-            )))
+            Err(SchemaError::InvalidField("No molecule found".to_string()))
         }
     }
 }

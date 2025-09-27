@@ -1,9 +1,10 @@
 use crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext;
-use crate::transform::manager::utils::{DefaultValueHelper, TransformUtils};
 use crate::schema::types::Transform;
 use crate::schema::types::{Schema, SchemaError};
 use crate::schema::types::field::HashRangeFilter;
-use serde_json::Value as JsonValue;
+use crate::schema::types::field::Field;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -17,7 +18,7 @@ impl InputFetcher {
         transform: &Transform,
         db_ops: &Arc<crate::db_operations::DbOperations>,
         mutation_context: &Option<MutationContext>,
-    ) -> Result<HashMap<String, JsonValue>, SchemaError> {
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut input_values = HashMap::new();
         let inputs_to_process = transform.get_declarative_schema().unwrap().get_inputs();
 
@@ -51,12 +52,23 @@ impl InputFetcher {
         schema: &mut Schema,
         field_name: &str,
         mutation_context: &Option<MutationContext>,
-    ) -> Result<JsonValue, SchemaError> {
-        let key_config = mutation_context.as_ref().and_then(|ctx| ctx.key_config.clone());
-        let value = TransformUtils::resolve_field_value(db_ops, schema, field_name, HashRangeFilter::from_key_config(key_config.clone()))
-            .unwrap_or_else(|_| {
-                DefaultValueHelper::get_default_value_for_field(field_name)
-            });
+    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+        let key_value_opt = mutation_context.as_ref().and_then(|ctx| ctx.key_value.clone());
+        let field = schema.fields.get_mut(field_name).unwrap();
+        let filter = match key_value_opt {
+            Some(kv) => {
+                let hash_opt = kv.hash.clone();
+                let range_opt = kv.range.clone();
+                match (hash_opt, range_opt) {
+                    (Some(hash), Some(range)) => Some(HashRangeFilter::HashRangeKey { hash, range }),
+                    (Some(hash), None) => Some(HashRangeFilter::HashKey(hash)),
+                    (None, Some(prefix)) => Some(HashRangeFilter::RangePrefix(prefix)),
+                    (None, None) => None,
+                }
+            }
+            None => None,
+        };
+        let value = field.resolve_value(db_ops, filter)?;
         Ok(value)
     }
 }

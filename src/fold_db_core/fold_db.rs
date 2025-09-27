@@ -9,13 +9,11 @@ use std::sync::Arc;
 
 // External crate imports
 use log::info;
-use crate::schema::types::key_value::KeyValue;
-use crate::schema::types::field::FieldValue;
 
 // Internal crate imports
 use crate::db_operations::DbOperations;
 use crate::logging::features::{log_feature, LogFeature};
-use crate::schema::types::{Mutation, Query};
+use crate::schema::types::Mutation;
 use crate::schema::types::field::common::Field;
 use crate::schema::{SchemaCore, SchemaError};
 use crate::atom::Atom;
@@ -269,7 +267,7 @@ impl FoldDB {
         let mut schema = self.schema_manager.get_schema(&mutation.schema_name)?
             .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name)))?;
         
-        let key_config = mutation.key_config;
+        let key_value = mutation.key_value;
         let mutation_id = mutation.uuid.clone();
         
         // Process each field in the mutation
@@ -278,7 +276,7 @@ impl FoldDB {
             if let Some(schema_field) = schema.fields.get_mut(&field_name) {
                 schema_field.refresh_from_db(&self.db_ops);
                 let new_atom = Atom::new(mutation.schema_name.clone(), mutation.pub_key.clone(), value);
-                schema_field.write_mutation(&key_config, new_atom, mutation.pub_key.clone());
+                schema_field.write_mutation(&key_value, new_atom, mutation.pub_key.clone());
             }
         }
 

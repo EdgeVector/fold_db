@@ -2,103 +2,43 @@ use super::http_server::AppState;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Operation;
+use crate::fold_db_core::query::format_hash_range_fields;
 use crate::datafold_node::OperationProcessor;
 use actix_web::{web, HttpResponse, Responder};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-/// Execute an operation (query or mutation).
-#[derive(Deserialize)]
-pub struct OperationRequest {
-    operation: String,
-}
-
-pub async fn execute_operation(
-    request: web::Json<OperationRequest>,
-    state: web::Data<AppState>,
-) -> impl Responder {
-    let operation_str = &request.operation;
-
-    let operation: Operation = match serde_json::from_str(operation_str) {
-        Ok(op) => op,
-        Err(e) => {
-            return HttpResponse::BadRequest()
-                .json(json!({"error": format!("Failed to parse operation: {}", e)}));
-        }
-    };
-
-    // Create processor with the node
-    let node_arc = Arc::clone(&state.node);
-    let processor = OperationProcessor::new(node_arc);
-
-    match processor.execute(operation).await {
-        Ok(result) => HttpResponse::Ok().json(json!({"data": result})),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to execute operation: {}", e)})),
-    }
-}
-
-/// Common operation execution logic
-async fn execute_operation_with_validation(
-    data: web::Json<Value>,
-    state: web::Data<AppState>,
-    expected_operation_type: fn(&Operation) -> bool,
-    log_feature: LogFeature,
-    operation_name: &str,
-    success_response: fn(Value) -> HttpResponse,
-) -> impl Responder {
-    log_feature!(
-        log_feature,
-        info,
-        "Received {} request: {}",
-        operation_name,
-        serde_json::to_string(&data).unwrap_or_else(|_| "Invalid JSON".to_string())
-    );
-
-    // Parse the operation
-    let web_operation = match serde_json::from_value::<Operation>(data.into_inner()) {
-        Ok(op) => {
-            if expected_operation_type(&op) {
-                op
-            } else {
-                return HttpResponse::BadRequest()
-                    .json(json!({"error": format!("Expected a {} operation", operation_name)}));
-            }
-        },
-        Err(e) => {
-            return HttpResponse::BadRequest()
-                .json(json!({"error": format!("Failed to parse {}: {}", operation_name, e)}))
-        }
-    };
-
-    // Create processor with the node
-    let node_arc = Arc::clone(&state.node);
-    let processor = OperationProcessor::new(node_arc);
-
-    match processor.execute(web_operation).await {
-        Ok(results) => {
-            log_feature!(log_feature, info, "{} executed successfully", operation_name);
-            success_response(results)
-        }
-        Err(e) => {
-            log_feature!(log_feature, error, "{} execution failed: {}", operation_name, e);
-            HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to execute {}: {}", operation_name, e)}))
-        }
-    }
-}
 
 /// Execute a query.
 pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) -> impl Responder {
-    execute_operation_with_validation(
-        query,
-        state,
-        |op| matches!(op, Operation::Query { .. }),
+    log_feature!(
         LogFeature::Query,
-        "query",
-        |results| HttpResponse::Ok().json(json!({"data": results})),
-    ).await
+        info,
+        "Received query request: {}",
+        serde_json::to_string(&query).unwrap_or_else(|_| "Invalid JSON".to_string())
+    );
+
+    let op = match serde_json::from_value::<Operation>(query.into_inner()) {
+        Ok(Operation::Query { schema, fields, filter }) => (schema, fields, filter),
+        Ok(_) => {
+            return HttpResponse::BadRequest()
+                .json(json!({"error": "Expected a query operation"}))
+        }
+        Err(e) => {
+            return HttpResponse::BadRequest()
+                .json(json!({"error": format!("Failed to parse query: {}", e)}))
+        }
+    };
+
+    let (schema, fields, filter) = op;
+    let node_arc = Arc::clone(&state.node);
+    let processor = OperationProcessor::new(node_arc);
+
+    match processor.execute_query_map(schema, fields, filter).await {
+        Ok(result_map) => HttpResponse::Ok().json(json!({"data": format_hash_range_fields(&result_map)})),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to execute query: {}", e)})),
+    }
 }
 
 /// Execute a mutation.
@@ -106,15 +46,39 @@ pub async fn execute_mutation(
     mutation_data: web::Json<Value>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    execute_operation_with_validation(
-        mutation_data,
-        state,
-        |op| matches!(op, Operation::Mutation { .. }),
+    log_feature!(
         LogFeature::Mutation,
-        "mutation",
-        |_| HttpResponse::Ok().json(json!({"success": true})),
-    ).await
+        info,
+        "Received mutation request: {}",
+        serde_json::to_string(&mutation_data).unwrap_or_else(|_| "Invalid JSON".to_string())
+    );
+
+    let (schema, fields_and_values, key_value, mutation_type) = match serde_json::from_value::<Operation>(mutation_data.into_inner()) {
+        Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type }) => (schema, fields_and_values, key_value, mutation_type),
+        Ok(_) => {
+            return HttpResponse::BadRequest()
+                .json(json!({"error": "Expected a mutation operation"}))
+        }
+        Err(e) => {
+            return HttpResponse::BadRequest()
+                .json(json!({"error": format!("Failed to parse mutation: {}", e)}))
+        }
+    };
+
+    let node_arc = Arc::clone(&state.node);
+    let processor = OperationProcessor::new(node_arc);
+
+    match processor
+        .execute_mutation(schema, fields_and_values, key_value, mutation_type)
+        .await
+    {
+        Ok(result) => HttpResponse::Ok().json(json!({"data": result})),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to execute mutation: {}", e)})),
+    }
 }
+
+// formatting is handled by fold_db_core::query::formatter
 
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;

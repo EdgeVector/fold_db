@@ -59,8 +59,8 @@ impl Field for FieldVariant {
         delegate_field_method!(self, refresh_from_db, db_ops)
     }
 
-    fn write_mutation(&mut self, key_config: &crate::schema::types::key_config::KeyConfig, atom: crate::atom::Atom, pub_key: String) {
-        delegate_field_method!(self, write_mutation, key_config, atom, pub_key)
+    fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
+        delegate_field_method!(self, write_mutation, key_value, atom, pub_key)
     }
 
     fn resolve_value(

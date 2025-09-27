@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use crate::schema::types::Transform;
 use crate::db_operations::DbOperations;
-use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::field::HashRangeFilter;
+use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
 /// Common interface for all schema fields.
 ///
@@ -26,7 +25,7 @@ pub trait Field {
     fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations);
 
     /// Writes a mutation to the field
-    fn write_mutation(&mut self, key_config: &KeyConfig, atom: crate::atom::Atom, pub_key: String);
+    fn write_mutation(&mut self, key_value: &KeyValue, atom: crate::atom::Atom, pub_key: String);
 
     /// Resolves field values by refreshing the field, applying filters, and fetching atom content
     fn resolve_value(
@@ -118,7 +117,7 @@ macro_rules! impl_field {
                 log::error!("refresh_from_db not implemented for {}", stringify!($t));
             }
 
-            fn write_mutation(&mut self, key_config: &$crate::schema::types::key_config::KeyConfig, atom: $crate::atom::Atom, pub_key: String) {
+            fn write_mutation(&mut self, key_value: &$crate::schema::types::key_value::KeyValue, atom: $crate::atom::Atom, pub_key: String) {
                 log::error!("write_mutation not implemented for {}", stringify!($t));
             }
 

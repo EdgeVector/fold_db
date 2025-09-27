@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::schema::types::operations::MutationType;
-use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::key_value::KeyValue;
 use uuid::Uuid;
 
 /// Handles storing transform results
@@ -16,7 +16,7 @@ impl ResultStorage {
     pub fn store_transform_result_generic(
         transform: &Transform,
         code_hash_to_result: HashMap<String, JsonValue>,
-        key_config: KeyConfig,
+        key_value: KeyValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
     ) -> Result<(), SchemaError> {
         // TODO: Map Transform's declarative schema's field_to_hash_code to the result of the execution.
@@ -28,12 +28,10 @@ impl ResultStorage {
             fields_and_values.insert(field_name.clone(), result);
         }
 
-        // create a mutation through the event bus
-        // TODO: add key_config to the mutation
         let mutation = Mutation::new(
             transform.get_declarative_schema().unwrap().name.clone(),
             fields_and_values,
-            key_config,
+            key_value,
             TRANSFORM_SYSTEM_ID.to_string(),
             0,
             MutationType::Update,

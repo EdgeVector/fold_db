@@ -1,14 +1,10 @@
 use crate::error::{FoldDbError, FoldDbResult};
-use crate::log_feature;
-use crate::logging::features::LogFeature;
-use crate::schema::types::{Mutation, Operation, Query};
-use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::{Mutation, Query, KeyValue};
 use crate::schema::types::field::FieldValue;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::operations::MutationType;
 use crate::schema::types::field::HashRangeFilter;
 use super::DataFoldNode;
@@ -27,72 +23,7 @@ impl OperationProcessor {
         Self { node }
     }
 
-    /// Executes an operation and returns the result.
-    /// 
-    /// This is the single source of truth for operation execution across all entry points.
-    /// 
-    /// # Arguments
-    /// 
-    /// * `operation` - The operation to execute
-    /// 
-    /// # Returns
-    /// 
-    /// * `Ok(Value)` - The operation result
-    /// * `Err(SchemaError)` - If the operation failed
-    pub async fn execute(&self, operation: Operation) -> FoldDbResult<Value> {
-        log_feature!(
-            LogFeature::Query,
-            info,
-            "Executing operation: {:?}",
-            operation
-        );
-
-        match operation {
-            Operation::Query {
-                schema,
-                fields,
-                filter,
-            } => self.execute_query(schema, fields, filter).await,
-            Operation::Mutation {
-                schema,
-                fields_and_values,
-                key_config,
-                mutation_type,
-            } => self.execute_mutation(schema, fields_and_values, key_config, mutation_type).await,
-        }
-    }
-
-    /// Executes a query operation.
-    async fn execute_query(
-        &self,
-        schema: String,
-        fields: Vec<String>,
-        filter: Option<HashRangeFilter>,
-    ) -> FoldDbResult<Value> {
-        let query = Query {
-            schema_name: schema,
-            fields,
-            pub_key: String::new(),
-            trust_distance: 0,
-            filter,
-        };
-
-        let node_guard = self.node.lock().await;
-        let results = DataFoldNode::query(&*node_guard, query)?;
-
-        // Manually convert to JSON using only serializable fields
-        // Outer: field_name -> Inner map
-        let mut outer = serde_json::Map::new();
-        for (field_name, kv_map) in results {
-            let mut inner = serde_json::Map::new();
-            for (key, field_value) in kv_map {
-                inner.insert(key.to_string(), field_value.value);
-            }
-            outer.insert(field_name, serde_json::Value::Object(inner));
-        }
-
-        Ok(serde_json::Value::Object(outer))
-    }
+    // Removed generic execute path in favor of explicit query/mutation methods
 
     /// Executes a query and returns raw structured results, not JSON.
     pub async fn execute_query_map(
@@ -110,16 +41,16 @@ impl OperationProcessor {
         };
 
         let node_guard = self.node.lock().await;
-        let results = DataFoldNode::query(&*node_guard, query)?;
+        let results = DataFoldNode::query(&node_guard, query)?;
         Ok(results)
     }
 
     /// Executes a mutation operation.
-    async fn execute_mutation(
+    pub async fn execute_mutation(
         &self,
         schema: String,
         fields_and_values: HashMap<String, Value>,
-        key_config: KeyConfig,
+        key_value: KeyValue,
         mutation_type: MutationType,
     ) -> FoldDbResult<Value> {
         // Validate that fields_and_values is not empty
@@ -140,7 +71,7 @@ impl OperationProcessor {
         let mutation = Mutation::new(
             schema,
             fields_and_values,
-            key_config,
+            key_value,
             String::new(),
             0,
             mutation_type,
@@ -153,23 +84,7 @@ impl OperationProcessor {
     }
 
 
-    /// Synchronous wrapper for CLI and other synchronous contexts.
-    /// 
-    /// This method provides a synchronous interface to the async operation processor
-    /// by using tokio::runtime::Handle::current() to run the async operation.
-    /// 
-    /// # Arguments
-    /// 
-    /// * `operation` - The operation to execute
-    /// 
-    /// # Returns
-    /// 
-    /// * `Ok(Value)` - The operation result
-    /// * `Err(SchemaError)` - If the operation failed
-    pub fn execute_sync(&self, operation: Operation) -> FoldDbResult<Value> {
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(self.execute(operation))
-    }
+    // Removed execute_sync as part of eliminating the generic execute path
 }
 
 #[cfg(test)]

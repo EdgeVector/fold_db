@@ -11,16 +11,20 @@ impl KeyValue {
     pub fn new(hash: Option<String>, range: Option<String>) -> Self {
         Self { hash, range }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for KeyValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(hash) = &self.hash {
             if let Some(range) = &self.range {
-                format!("{}:{}", hash, range)
+                write!(f, "{}:{}", hash, range)
             } else {
-                hash.clone()
+                write!(f, "{}", hash)
             }
+        } else if let Some(range) = &self.range {
+            write!(f, "{}", range)
         } else {
-            self.range.clone().unwrap_or_default()
+            write!(f, "")
         }
     }
 }

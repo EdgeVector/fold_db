@@ -82,6 +82,15 @@ impl MoleculeHashRange {
         self.updated_at = Utc::now();
     }
 
+    /// Adds an atom UUID using explicit hash and range values.
+    pub fn set_atom_uuid_from_values(&mut self, hash_value: String, range_value: String, atom_uuid: String) {
+        self.atom_uuids
+            .entry(hash_value)
+            .or_default()
+            .insert(range_value, atom_uuid);
+        self.updated_at = Utc::now();
+    }
+
     /// Returns the UUID of the Atom referenced by the specified hash and range values.
     #[must_use]
     pub fn get_atom_uuid(&self, hash_value: &str, range_value: &str) -> Option<&String> {
