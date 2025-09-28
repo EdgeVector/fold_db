@@ -71,44 +71,66 @@ export class UnifiedSchemaClient {
   }
 
   /**
-   * Get schemas filtered by state (available, approved, blocked)
+   * Get schemas filtered by state (computed client-side)
    * UNPROTECTED - No authentication required
    */
   async getSchemasByState(state: string): Promise<EnhancedApiResponse<SchemasByStateResponse>> {
-    // Validate state parameter
     if (!Object.values(SCHEMA_STATES).includes(state as any)) {
       throw new Error(`Invalid schema state: ${state}. Must be one of: ${Object.values(SCHEMA_STATES).join(', ')}`);
     }
-
-    return this.client.get<SchemasByStateResponse>(API_ENDPOINTS.SCHEMAS_BY_STATE(state), {
-      cacheable: true,
-      cacheKey: `schemas:state:${state}`,
-      cacheTtl: 180000 // 3 minutes
-    });
+    const all = await this.getSchemas();
+    if (!all.success || !all.data) {
+      return { success: false, error: 'Failed to fetch schemas', status: all.status, data: { data: [], state } };
+    }
+    const names = (all.data as any[])
+      .filter((s: any) => s.state === state)
+      .map((s: any) => s.name);
+    return {
+      success: true,
+      data: { data: names, state },
+      status: 200,
+      meta: { timestamp: Date.now(), cached: all.meta?.cached || false }
+    };
   }
 
   /**
-   * Get all schemas with their state mappings
+   * Get all schemas with their state mappings (computed client-side)
    * UNPROTECTED - No authentication required
    */
   async getAllSchemasWithState(): Promise<EnhancedApiResponse<SchemasWithStateResponse>> {
-    return this.client.get<SchemasWithStateResponse>(API_ENDPOINTS.SCHEMAS_BASE, {
-      cacheable: true,
-      cacheKey: 'schemas:with-state',
-      cacheTtl: 180000 // 3 minutes
+    const all = await this.getSchemas();
+    if (!all.success || !all.data) {
+      return { success: false, error: 'Failed to fetch schemas', status: all.status, data: { data: {} as any } };
+    }
+    const map: Record<string, string> = {};
+    (all.data as any[]).forEach((s: any) => {
+      map[s.name] = s.state;
     });
+    return {
+      success: true,
+      data: { data: map },
+      status: 200,
+      meta: { timestamp: Date.now(), cached: all.meta?.cached || false }
+    };
   }
 
   /**
-   * Get schema status summary (counts by state)
+   * Get schema status summary (computed client-side)
    * UNPROTECTED - No authentication required
    */
   async getSchemaStatus(): Promise<EnhancedApiResponse<SchemaStatusResponse>> {
-    return this.client.get<SchemaStatusResponse>(API_ENDPOINTS.SCHEMA_STATUS, {
-      cacheable: true,
-      cacheKey: 'schemas:status',
-      cacheTtl: 60000 // 1 minute
-    });
+    const all = await this.getSchemas();
+    if (!all.success || !all.data) {
+      return { success: false, error: 'Failed to fetch schemas', status: all.status, data: { available: 0, approved: 0, blocked: 0, total: 0 } };
+    }
+    const list = all.data as any[];
+    const counts = {
+      available: list.filter(s => s.state === SCHEMA_STATES.AVAILABLE).length,
+      approved: list.filter(s => s.state === SCHEMA_STATES.APPROVED).length,
+      blocked: list.filter(s => s.state === SCHEMA_STATES.BLOCKED).length,
+      total: list.length
+    };
+    return { success: true, data: counts, status: 200, meta: { timestamp: Date.now(), cached: all.meta?.cached || false } };
   }
 
   /**
@@ -159,77 +181,29 @@ export class UnifiedSchemaClient {
    */
   async getApprovedSchemas(): Promise<EnhancedApiResponse<Schema[]>> {
     try {
-      const response = await this.getSchemasByState(SCHEMA_STATES.APPROVED);
-      
+      const response = await this.getSchemas();
       if (!response.success || !response.data) {
-        return {
-          success: false,
-          error: 'Failed to fetch approved schemas',
-          status: response.status,
-          data: []
-        };
+        return { success: false, error: 'Failed to fetch schemas', status: response.status, data: [] };
       }
-
-      // Get full schema details for approved schemas
-      const approvedSchemaNames = response.data.data;
-      const schemaPromises = approvedSchemaNames.map(name => 
-        this.getSchema(name).catch(error => ({
-          success: false,
-          error: error.message,
-          status: error.status || 500,
-          data: null
-        }))
-      );
-
-      const schemaResponses = await Promise.all(schemaPromises);
-      const successfulSchemas = schemaResponses
-        .filter(resp => resp.success && resp.data)
-        .map(resp => resp.data!);
-
-      return {
-        success: true,
-        data: successfulSchemas,
-        status: 200,
-        meta: {
-          requestId: response.meta?.requestId,
-          timestamp: Date.now(),
-          cached: response.meta?.cached || false
-        }
-      };
+      const approved = response.data.filter((s: any) => s.state === SCHEMA_STATES.APPROVED);
+      return { success: true, data: approved, status: 200, meta: { timestamp: Date.now(), cached: response.meta?.cached } };
     } catch (error) {
-      return {
-        success: false,
-        error: error.message || 'Failed to fetch approved schemas',
-        status: error.status || 500,
-        data: []
-      };
+      return { success: false, error: error.message || 'Failed to fetch approved schemas', status: error.status || 500, data: [] };
     }
   }
 
   /**
-   * Load a schema into memory
-   * UNPROTECTED - No authentication required
+   * Load a schema into memory (no-op client-side; server has no endpoint)
    */
-  async loadSchema(name: string): Promise<EnhancedApiResponse<void>> {
-    return this.client.post<void>(
-      API_ENDPOINTS.SCHEMA_LOAD(name),
-      {}, // Empty body, schema name is in URL
-      {
-        timeout: 10000, // Longer timeout for load operations
-        retries: 1 // Limited retries for state-changing operations
-      }
-    );
+  async loadSchema(_name: string): Promise<EnhancedApiResponse<void>> {
+    return { success: true, status: 200 } as any;
   }
 
   /**
-   * Unload a schema from memory (remove/delete)
-   * UNPROTECTED - No authentication required
+   * Unload a schema from memory (no-op client-side; server has no endpoint)
    */
-  async unloadSchema(name: string): Promise<EnhancedApiResponse<void>> {
-    return this.client.delete<void>(API_ENDPOINTS.SCHEMA_UNLOAD(name), {
-      timeout: 10000, // Longer timeout for unload operations
-      retries: 1 // Limited retries for state-changing operations
-    });
+  async unloadSchema(_name: string): Promise<EnhancedApiResponse<void>> {
+    return { success: true, status: 200 } as any;
   }
 
   /**

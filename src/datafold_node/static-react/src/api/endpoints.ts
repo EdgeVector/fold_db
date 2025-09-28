@@ -1,7 +1,7 @@
 // Centralized API endpoint definitions
 export const API_ENDPOINTS = {
   // Auth & Security
-  VERIFY_MESSAGE: '/security/verify-message',
+  VERIFY_MESSAGE: '/security/verify',
   GET_SYSTEM_PUBLIC_KEY: '/security/system-key',
   
   // Schemas
@@ -9,19 +9,15 @@ export const API_ENDPOINTS = {
   SCHEMA_BY_NAME: (name: string) => `/schema/${name}`,
   SCHEMA_APPROVE: (name: string) => `/schema/${name}/approve`,
   SCHEMA_BLOCK: (name: string) => `/schema/${name}/block`,
-  SCHEMA_LOAD: (name: string) => `/schema/${name}/load`,
-  SCHEMA_UNLOAD: (name: string) => `/schema/${name}/unload`,
-  SCHEMAS_BY_STATE: (state: string) => `/schemas/state/${state}`,
-  SCHEMA_STATUS: '/schemas/status',
+  // Non-existent: load/unload/state/status removed
   
   // Operations
   QUERY: '/query',
   MUTATION: '/mutation',
-  EXECUTE: '/execute',
+  // Non-existent: execute removed
   
   // System
   SYSTEM_STATUS: '/system/status',
-  SYSTEM_CONFIG: '/system/config',
   SYSTEM_LOGS: '/logs',
   SYSTEM_LOGS_STREAM: '/logs/stream',
   SYSTEM_RESET_DATABASE: '/system/reset-database',
@@ -38,12 +34,6 @@ export const API_ENDPOINTS = {
   INGESTION_CONFIG: '/ingestion/config',
   INGESTION_VALIDATE: '/ingestion/validate',
   INGESTION_PROCESS: '/ingestion/process',
-  
-  // Network
-  NETWORK_STATUS: '/network/status',
-  NETWORK_PEERS: '/network/peers',
-  NETWORK_CONNECT: '/network/connect',
-  NETWORK_DISCONNECT: '/network/disconnect',
   
   // Logging
   LOGS_LEVEL: '/logs/level',

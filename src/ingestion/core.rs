@@ -472,8 +472,7 @@ mod tests {
 
     #[test]
     fn test_ingestion_core_new_with_ollama_provider() {
-        let mut config = IngestionConfig::default();
-        config.provider = AIProvider::Ollama;
+        let config = IngestionConfig { provider: AIProvider::Ollama, ..Default::default() };
 
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path();

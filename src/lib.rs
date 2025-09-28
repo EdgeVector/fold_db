@@ -40,7 +40,6 @@ pub mod schema;
 pub mod security;
 pub mod testing_utils;
 pub mod transform;
-pub mod validation_utils;
 pub mod web_logger;
 
 // Re-export main types for convenience

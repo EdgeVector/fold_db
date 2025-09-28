@@ -7,7 +7,7 @@
 //! entries and surface performance warnings when large fan-outs occur.
 
 #[cfg(test)]
-mod tests {
+mod execution_engine_tests {
     use super::super::{ExecutionEngine, ExecutionWarningType};
     use crate::transform::aggregation::aggregate_results_unified;
     use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};

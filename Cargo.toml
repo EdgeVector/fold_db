@@ -84,10 +84,6 @@ path = "src/lib.rs"
 # Note: Binary paths based on actual file structure
 # These binaries will be available when installing the package
 [[bin]]
-name = "datafold_cli"
-path = "src/bin/datafold_cli.rs"
-
-[[bin]]
 name = "datafold_http_server"
 path = "src/bin/datafold_http_server.rs"
 

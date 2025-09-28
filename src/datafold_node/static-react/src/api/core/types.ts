@@ -235,9 +235,7 @@ export interface SystemKeyData {
 export interface SchemaApiClient {
   getSchemas(): Promise<EnhancedApiResponse<SchemaData[]>>;
   getSchema(name: string): Promise<EnhancedApiResponse<SchemaData>>;
-  getSchemasByState(state: string): Promise<EnhancedApiResponse<SchemaData[]>>;
-  getAllSchemasWithState(): Promise<EnhancedApiResponse<SchemaStatusData>>;
-  getSchemaStatus(): Promise<EnhancedApiResponse<SchemaStatusData>>;
+  // Removed: getSchemasByState, getAllSchemasWithState, getSchemaStatus – compute client-side
   approveSchema(name: string): Promise<EnhancedApiResponse<void>>;
   blockSchema(name: string): Promise<EnhancedApiResponse<void>>;
 }
@@ -245,7 +243,7 @@ export interface SchemaApiClient {
 export interface MutationApiClient {
   executeMutation(mutation: any): Promise<EnhancedApiResponse<Record<string, unknown>>>;
   executeQuery(query: any): Promise<EnhancedApiResponse<Record<string, unknown>>>;
-  validateMutation(mutation: MutationData): Promise<EnhancedApiResponse<{ isValid: boolean; error?: string }>>;
+  // validateMutation now a client-side noop; keep optional for compatibility
 }
 
 export interface SecurityApiClient {

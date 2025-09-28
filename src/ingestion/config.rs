@@ -268,33 +268,29 @@ mod tests {
 
     #[test]
     fn test_validation_openrouter_fails_without_api_key() {
-        let mut config = IngestionConfig::default();
-        config.provider = AIProvider::OpenRouter;
+        let config = IngestionConfig { provider: AIProvider::OpenRouter, ..Default::default() };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validation_openrouter_succeeds_with_api_key() {
-        let mut config = IngestionConfig::default();
-        config.provider = AIProvider::OpenRouter;
+        let mut config = IngestionConfig { provider: AIProvider::OpenRouter, ..Default::default() };
         config.openrouter.api_key = "test-key".to_string();
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validation_ollama_succeeds_by_default() {
-        let mut config = IngestionConfig::default();
-        config.provider = AIProvider::Ollama;
+        let config = IngestionConfig { provider: AIProvider::Ollama, ..Default::default() };
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_is_ready() {
-        let mut config = IngestionConfig::default();
+        let mut config = IngestionConfig { provider: AIProvider::OpenRouter, ..Default::default() };
         assert!(!config.is_ready());
 
         config.enabled = true;
-        config.provider = AIProvider::OpenRouter;
         config.openrouter.api_key = "test-key".to_string();
         assert!(config.is_ready());
 

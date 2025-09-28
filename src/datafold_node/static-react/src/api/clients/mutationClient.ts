@@ -109,23 +109,8 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to validation result
    */
   async validateMutation(mutation: any): Promise<EnhancedApiResponse<ValidationResult>> {
-    // Extract schema name from mutation if available
-    const schemaName = mutation.schema || mutation.schemaName;
-    
-    return this.client.post<ValidationResult>(
-      `${API_ENDPOINTS.MUTATION}/validate`,
-      { mutation },
-      {
-        validateSchema: schemaName ? {
-          schemaName,
-          operation: 'write' as const,
-          requiresApproved: true
-        } : true,
-        timeout: 5000,
-        retries: 1,
-        cacheable: false
-      }
-    );
+    // Removed: server has no /mutation/validate. Perform client-side no-op validation.
+    return Promise.resolve({ success: true, data: { isValid: true }, status: 200 });
   }
 
   /**
@@ -135,31 +120,9 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @param mutations Array of mutation objects
    * @returns Promise resolving to batch execution results
    */
-  async executeBatchMutations(
-    mutations: any[]
-  ): Promise<EnhancedApiResponse<MutationResponse[]>> {
-    if (mutations.length === 0) {
-      return {
-        success: false,
-        error: 'Empty batch: At least one mutation is required',
-        status: 400,
-        data: []
-      };
-    }
-
-    return this.client.post<MutationResponse[]>(
-      `${API_ENDPOINTS.MUTATION}/batch`,
-      { mutations: mutations },
-      {
-        validateSchema: {
-          operation: 'write' as const,
-          requiresApproved: true
-        },
-        timeout: 30000, // Extended timeout for batch operations
-        retries: 0, // No retries for batch mutations
-        cacheable: false
-      }
-    );
+  async executeBatchMutations(_mutations: any[]): Promise<EnhancedApiResponse<MutationResponse[]>> {
+    // Removed: server has no /mutation/batch
+    return { success: false, error: 'Batch mutations not supported', status: 501, data: [] };
   }
 
   /**
@@ -176,22 +139,19 @@ export class UnifiedMutationClient implements MutationApiClient {
     pagination?: { offset: number; limit: number };
     fields?: string[];
   }): Promise<EnhancedApiResponse<QueryResponse>> {
-    return this.client.post<QueryResponse>(
-      `${API_ENDPOINTS.QUERY}/parameterized`,
-      queryParams,
-      {
-        validateSchema: {
-          schemaName: queryParams.schema,
-          operation: 'read' as const,
-          requiresApproved: true
-        },
-        timeout: 15000,
-        retries: 2,
-        cacheable: true,
-        cacheTtl: 120000, // Cache parameterized queries for 2 minutes
-        cacheKey: `parameterized-query:${JSON.stringify(queryParams)}`
-      }
-    );
+    // Repoint to /query (server supports only POST /query)
+    return this.client.post<QueryResponse>(API_ENDPOINTS.QUERY, queryParams, {
+      validateSchema: {
+        schemaName: queryParams.schema,
+        operation: 'read' as const,
+        requiresApproved: true
+      },
+      timeout: 15000,
+      retries: 2,
+      cacheable: true,
+      cacheTtl: 120000,
+      cacheKey: `parameterized-query:${JSON.stringify(queryParams)}`
+    });
   }
 
   /**
@@ -201,34 +161,9 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @param params History query parameters
    * @returns Promise resolving to mutation history
    */
-  async getMutationHistory(params: {
-    schema?: string;
-    recordId?: string;
-    limit?: number;
-    offset?: number;
-    startDate?: string;
-    endDate?: string;
-  }): Promise<EnhancedApiResponse<MutationResponse[]>> {
-    const queryString = new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, value]) => value !== undefined)
-        .map(([key, value]) => [key, String(value)])
-    ).toString();
-
-    return this.client.get<MutationResponse[]>(
-      `${API_ENDPOINTS.MUTATION}/history${queryString ? `?${queryString}` : ''}`,
-      {
-        validateSchema: params.schema ? {
-          schemaName: params.schema,
-          operation: 'read' as const,
-          requiresApproved: true
-        } : true,
-        timeout: 10000,
-        retries: 2,
-        cacheable: true,
-        cacheTtl: 300000 // Cache history for 5 minutes
-      }
-    );
+  async getMutationHistory(_params: any): Promise<EnhancedApiResponse<MutationResponse[]>> {
+    // Removed: server has no /mutation/history
+    return { success: false, error: 'Mutation history not supported', status: 501, data: [] };
   }
 
   /**
