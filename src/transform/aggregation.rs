@@ -5,9 +5,10 @@
 //! interface for processing both direct value resolution and execution result aggregation.
 
 use crate::schema::types::{DeclarativeSchemaDefinition, SchemaError, KeyConfig, KeyValue};
+use crate::schema::types::field::FieldValue;
 use crate::schema::types::schema::SchemaType;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
-use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
+use crate::transform::result_types::{ExecutionResult, IndexEntry};
 use crate::transform::shared_utilities::resolve_field_value_from_chain;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -191,6 +192,24 @@ pub fn aggregate_results_unified(
     }
 
     accumulator.finalize()
+}
+
+/// Variant of aggregation that accepts typed input values
+pub fn aggregate_results_unified_typed(
+    schema: &DeclarativeSchemaDefinition,
+    parsed_chains: &[(String, ParsedChain)],
+    execution_result: &ExecutionResult,
+    input_values: &HashMap<String, HashMap<KeyValue, FieldValue>>,
+    all_expressions: &[(String, String)],
+) -> Result<JsonValue, SchemaError> {
+    let json_input = convert_typed_input_to_json(input_values);
+    aggregate_results_unified(
+        schema,
+        parsed_chains,
+        execution_result,
+        &json_input,
+        all_expressions,
+    )
 }
 
 /// Processes direct value resolution when no execution results are available.
@@ -470,13 +489,41 @@ fn convert_json_to_string(value: &JsonValue) -> Option<String> {
     }
 }
 
+/// Convert typed input HashMap<String, HashMap<KeyValue, FieldValue>> to JSON for fallback resolution paths
+fn convert_typed_input_to_json(
+    input_values: &HashMap<String, HashMap<KeyValue, FieldValue>>,
+) -> HashMap<String, JsonValue> {
+    let mut grouped: HashMap<String, serde_json::Map<String, JsonValue>> = HashMap::new();
+
+    for (key, kv_map) in input_values.iter() {
+        let (schema_name, field_name) = if let Some(dot) = key.find('.') {
+            (&key[..dot], &key[dot + 1..])
+        } else {
+            (key.as_str(), "_root")
+        };
+
+        let values: Vec<JsonValue> = kv_map.values().map(|fv| fv.value.clone()).collect();
+        let field_json = if values.len() == 1 { values[0].clone() } else { JsonValue::Array(values) };
+
+        let entry = grouped.entry(schema_name.to_string()).or_default();
+        entry.insert(field_name.to_string(), field_json);
+    }
+
+    grouped
+        .into_iter()
+        .map(|(schema, map)| (schema, JsonValue::Object(map)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::schema::types::DeclarativeSchemaDefinition;
     use crate::schema::types::schema::SchemaType;
     use crate::transform::iterator_stack::chain_parser::{ChainOperation, ParsedChain};
-    use crate::transform::iterator_stack::execution_engine::{ExecutionResult, IndexEntry};
+    use crate::transform::result_types::{ExecutionResult, IndexEntry};
+    use crate::schema::types::field::FieldValue;
+    use crate::schema::types::key_value::KeyValue;
     use serde_json::json;
     use serde_json::Value as JsonValue;
     use std::collections::HashMap;
@@ -520,30 +567,31 @@ mod tests {
             Some(transform_fields),
         );
 
-        let parsed_chains = vec![(
-            "field1".to_string(),
-            build_parsed_chain("input.field1", &["input", "field1"]),
-        )];
+        let parsed_chains = vec![
+            (
+                "field1".to_string(),
+                build_parsed_chain("input.field1", &["input", "field1"]),
+            )
+        ];
 
         let execution_result = ExecutionResult {
             index_entries: HashMap::new(),
             warnings: HashMap::new(),
         };
 
-        let input_values = HashMap::from([(
-            "input".to_string(),
-            json!({
-                "field1": "value1"
-            }),
-        )]);
+        // typed input: key -> map<KeyValue, FieldValue>
+        let mut typed_input: HashMap<String, HashMap<KeyValue, FieldValue>> = HashMap::new();
+        let mut field_map: HashMap<KeyValue, FieldValue> = HashMap::new();
+        field_map.insert(KeyValue::new(None, None), FieldValue { value: json!("value1"), atom_uuid: "a1".to_string() });
+        typed_input.insert("input.field1".to_string(), field_map);
 
         let all_expressions = vec![("field1".to_string(), "input.field1".to_string())];
 
-        let result = aggregate_results_unified(
+        let result = aggregate_results_unified_typed(
             &schema,
             &parsed_chains,
             &execution_result,
-            &input_values,
+            &typed_input,
             &all_expressions,
         );
 
@@ -569,10 +617,12 @@ mod tests {
             Some(transform_fields),
         );
 
-        let parsed_chains = vec![(
-            "field1".to_string(),
-            build_parsed_chain("input.field1", &["input", "field1"]),
-        )];
+        let parsed_chains = vec![
+            (
+                "field1".to_string(),
+                build_parsed_chain("input.field1", &["input", "field1"]),
+            )
+        ];
 
         let mut index_entries = HashMap::new();
         index_entries.insert("input.field1".to_string(), vec![build_index_entry("input.field1", json!("executed_value1"))]);
@@ -581,20 +631,15 @@ mod tests {
             warnings: HashMap::new(),
         };
 
-        let input_values = HashMap::from([(
-            "input".to_string(),
-            json!({
-                "field1": "fallback_value1"
-            }),
-        )]);
+        let typed_input: HashMap<String, HashMap<KeyValue, FieldValue>> = HashMap::new();
 
         let all_expressions = vec![("field1".to_string(), "input.field1".to_string())];
 
-        let result = aggregate_results_unified(
+        let result = aggregate_results_unified_typed(
             &schema,
             &parsed_chains,
             &execution_result,
-            &input_values,
+            &typed_input,
             &all_expressions,
         );
 
@@ -622,10 +667,12 @@ mod tests {
             Some(transform_fields),
         );
 
-        let parsed_chains = vec![(
-            "field1".to_string(),
-            build_parsed_chain("input.field1", &["input", "field1"]),
-        )];
+        let parsed_chains = vec![
+            (
+                "field1".to_string(),
+                build_parsed_chain("input.field1", &["input", "field1"]),
+            )
+        ];
 
         let mut index_entries = HashMap::new();
         index_entries.insert("input.field1".to_string(), vec![
@@ -637,14 +684,14 @@ mod tests {
             warnings: HashMap::new(),
         };
 
-        let input_values = HashMap::new();
+        let typed_input: HashMap<String, HashMap<KeyValue, FieldValue>> = HashMap::new();
         let all_expressions = vec![("field1".to_string(), "input.field1".to_string())];
 
-        let result = aggregate_results_unified(
+        let result = aggregate_results_unified_typed(
             &schema,
             &parsed_chains,
             &execution_result,
-            &input_values,
+            &typed_input,
             &all_expressions,
         );
 

@@ -50,20 +50,47 @@ fn execute_engine_and_aggregate_rows_with_keyconfig() {
         ])
     );
 
-    // Execute engine
-    let mut engine = datafold::transform::iterator_stack::execution_engine::ExecutionEngine::new();
-    let exec = engine.execute_fields(chains_map, input_values.clone()).expect("exec ok");
+    // Build typed input per target field used by the chains
+    type FV = datafold::schema::types::field::FieldValue;
+    type KV = datafold::schema::types::key_value::KeyValue;
+    let mut typed_input: HashMap<String, HashMap<KV, FV>> = HashMap::new();
+
+    // Two blog posts with stable keys
+    let k1 = KV::new(Some("h1".to_string()), Some("r1".to_string()));
+    let k2 = KV::new(Some("h2".to_string()), Some("r2".to_string()));
+
+    // Helper to insert a field map
+    let mut insert_field = |name: &str, v1: serde_json::Value, v2: serde_json::Value| {
+        let mut m: HashMap<KV, FV> = HashMap::new();
+        m.insert(k1.clone(), FV { value: v1, atom_uuid: "a1".to_string() });
+        m.insert(k2.clone(), FV { value: v2, atom_uuid: "a2".to_string() });
+        typed_input.insert(name.to_string(), m);
+    };
+
+    insert_field(
+        "BlogPost.content",
+        json!("Rust empowers fearless concurrency"),
+        json!("Tests validate iterator stacks"),
+    );
+    insert_field("BlogPost.publish_date", json!("2024-12-31"), json!("2025-01-05"));
+    insert_field("BlogPost.author", json!("Carol"), json!("Dylan"));
+    insert_field("BlogPost.title", json!("First"), json!("Second"));
+
+    let exec = datafold::transform::iterator_stack_typed::adapter::execute_fields_typed(
+        &chains_map,
+        &typed_input,
+    );
 
     // Aggregate into rows
     let all_expressions: Vec<(String, String)> = parsed
         .iter()
         .map(|(field, chain)| (field.clone(), chain.expression.clone()))
         .collect();
-    let aggregated = datafold::transform::aggregation::aggregate_results_unified(
+    let aggregated = datafold::transform::aggregation::aggregate_results_unified_typed(
         &transform_schema,
         &parsed,
         &exec,
-        &input_values,
+        &typed_input,
         &all_expressions,
     ).expect("aggregate ok");
 

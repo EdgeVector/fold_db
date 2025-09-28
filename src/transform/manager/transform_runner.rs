@@ -4,9 +4,10 @@ use crate::schema::types::SchemaError;
 use serde_json::Value as JsonValue;
 use std::collections::{HashSet, HashMap};
 use super::input_fetcher::InputFetcher;
-use crate::transform::aggregation::aggregate_results_unified;
+use crate::transform::aggregation::{aggregate_results_unified_typed};
+use crate::transform::iterator_stack_typed::adapter::execute_fields_typed;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
-use crate::transform::iterator_stack::execution_engine::ExecutionEngine;
+// Legacy ExecutionEngine removed; using typed engine via adapter
 use crate::transform::shared_utilities::parse_expressions_batch;
 
 
@@ -42,20 +43,19 @@ impl TransformRunner for super::TransformManager {
             .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.clone()))
             .collect();
         
-        let execution_result = ExecutionEngine::new()
-            .execute_fields(chains_map, input_values)
-            .map_err(|e| SchemaError::InvalidField(format!("Iterator stack error: {}", e)))?;
+        // Use the new typed engine end-to-end
+        let execution_result = execute_fields_typed(&chains_map, &input_values);
         
         // Reconstruct expressions from parsed chains for unified aggregation
         let all_expressions: Vec<(String, String)> = parsed_chains
             .iter()
             .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
             .collect();
-        let result = aggregate_results_unified(
+        let result = aggregate_results_unified_typed(
             schema,
             &parsed_chains,
             &execution_result,
-            &std::collections::HashMap::new(),
+            &input_values,
             &all_expressions,
         )?;
 

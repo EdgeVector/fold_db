@@ -106,11 +106,11 @@
 
 pub mod chain_parser;
 pub mod errors;
-pub mod execution_engine;
+// pub mod execution_engine; // removed legacy engine
 pub mod stack;
 pub mod types;
 
 pub use chain_parser::*;
 pub use errors::*;
-pub use execution_engine::*;
+// pub use execution_engine::*;
 pub use types::*;

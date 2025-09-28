@@ -49,6 +49,8 @@
 // Execution coordination components
 pub mod aggregation;
 pub mod iterator_stack;
+pub mod iterator_stack_typed;
+pub mod result_types;
 pub mod shared_utilities;
 
 // Public re-exports
