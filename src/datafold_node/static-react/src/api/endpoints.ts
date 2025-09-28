@@ -29,29 +29,5 @@ export const API_ENDPOINTS_DERIVED = {
   ADD_TO_TRANSFORM_QUEUE: (id) => `/transforms/queue/${id}`,
 } as const;
 
-export const API_ENDPOINTS = {
-  GET_SYSTEM_PUBLIC_KEY: '/security/system-key',
-  SCHEMAS_BASE: '/schemas',
-  SCHEMA_BY_NAME: (name) => `/schema/${name}`,
-  SCHEMA_APPROVE: (name) => `/schema/${name}/approve`,
-  SCHEMA_BLOCK: (name) => `/schema/${name}/block`,
-  QUERY: '/query',
-  MUTATION: '/mutation',
-  TRANSFORMS: '/transforms',
-  TRANSFORMS_QUEUE: '/transforms/queue',
-  TRANSFORMS_QUEUE_ADD: (id) => `/transforms/queue/${id}`,
-  SYSTEM_STATUS: '/system/status',
-  SYSTEM_LOGS: '/logs',
-  SYSTEM_LOGS_STREAM: '/logs/stream',
-  SYSTEM_RESET_DATABASE: '/system/reset-database',
-  SYSTEM_PRIVATE_KEY: '/system/private-key',
-  SYSTEM_PUBLIC_KEY: '/system/public-key',
-  INGESTION_STATUS: '/ingestion/status',
-  INGESTION_CONFIG: '/ingestion/config',
-  INGESTION_VALIDATE: '/ingestion/validate',
-  INGESTION_PROCESS: '/ingestion/process',
-  LOGS_LEVEL: '/logs/level',
-  ...API_ENDPOINTS_DERIVED,
-} as const;
-
+export const API_ENDPOINTS = API_ENDPOINTS_DERIVED;
 export type ApiEndpoint = typeof API_ENDPOINTS[keyof typeof API_ENDPOINTS];

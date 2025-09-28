@@ -112,48 +112,14 @@ function generateEndpointsFromSpec(spec) {
   }
   derivedLines.push('} as const;');
 
-  // Backward-compatible aliases used across the UI
-  const aliasSpecs = [
-    { key: 'GET_SYSTEM_PUBLIC_KEY', path: '/api/security/system-key' },
-    { key: 'SCHEMAS_BASE', path: '/api/schemas' },
-    { key: 'SCHEMA_BY_NAME', path: '/api/schema/{name}' },
-    { key: 'SCHEMA_APPROVE', path: '/api/schema/{name}/approve' },
-    { key: 'SCHEMA_BLOCK', path: '/api/schema/{name}/block' },
-    { key: 'QUERY', path: '/api/query' },
-    { key: 'MUTATION', path: '/api/mutation' },
-    { key: 'TRANSFORMS', path: '/api/transforms' },
-    { key: 'TRANSFORMS_QUEUE', path: '/api/transforms/queue' },
-    { key: 'TRANSFORMS_QUEUE_ADD', path: '/api/transforms/queue/{id}' },
-    { key: 'SYSTEM_STATUS', path: '/api/system/status' },
-    { key: 'SYSTEM_LOGS', path: '/api/logs' },
-    { key: 'SYSTEM_LOGS_STREAM', path: '/api/logs/stream' },
-    { key: 'SYSTEM_RESET_DATABASE', path: '/api/system/reset-database' },
-    { key: 'SYSTEM_PRIVATE_KEY', path: '/api/system/private-key' },
-    { key: 'SYSTEM_PUBLIC_KEY', path: '/api/system/public-key' },
-    { key: 'INGESTION_STATUS', path: '/api/ingestion/status' },
-    { key: 'INGESTION_CONFIG', path: '/api/ingestion/config' },
-    { key: 'INGESTION_VALIDATE', path: '/api/ingestion/validate' },
-    { key: 'INGESTION_PROCESS', path: '/api/ingestion/process' },
-    { key: 'LOGS_LEVEL', path: '/api/logs/level' },
-  ];
+  // Single export: expose only derived endpoints
+  const lines = [];
+  lines.push(...derivedLines);
+  lines.push('\nexport const API_ENDPOINTS = API_ENDPOINTS_DERIVED;');
+  lines.push('export type ApiEndpoint = typeof API_ENDPOINTS[keyof typeof API_ENDPOINTS];');
 
-  const missing = [];
-  const aliasLines = [];
-  aliasLines.push('export const API_ENDPOINTS = {');
-  for (const a of aliasSpecs) {
-    if (!paths[a.path]) {
-      missing.push(a.path);
-      continue;
-    }
-    const builder = pathToBuilder(a.path);
-    aliasLines.push(`  ${a.key}: ${builder.code},`);
-  }
-  aliasLines.push('  ...API_ENDPOINTS_DERIVED,');
-  aliasLines.push('} as const;');
-  aliasLines.push('\nexport type ApiEndpoint = typeof API_ENDPOINTS[keyof typeof API_ENDPOINTS];');
-
-  const content = header(OPENAPI_INPUT) + derivedLines.join('\n') + '\n\n' + aliasLines.join('\n') + '\n';
-  return { content, missing };
+  const content = header(OPENAPI_INPUT) + lines.join('\n') + '\n';
+  return { content, missing: [] };
 }
 
 async function main() {
