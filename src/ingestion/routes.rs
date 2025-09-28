@@ -14,6 +14,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// Process JSON ingestion request
+#[utoipa::path(
+    post,
+    path = "/api/ingestion/process",
+    tag = "ingestion",
+    request_body = crate::ingestion::core::IngestionRequest,
+    responses((status = 200, description = "Ingestion response", body = crate::ingestion::IngestionResponse))
+)]
 pub async fn process_json(
     request: web::Json<IngestionRequest>,
     state: web::Data<AppState>,
@@ -79,6 +86,12 @@ pub async fn process_json(
 }
 
 /// Get ingestion status
+#[utoipa::path(
+    get,
+    path = "/api/ingestion/status",
+    tag = "ingestion",
+    responses((status = 200, description = "Ingestion status", body = serde_json::Value))
+)]
 pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -121,6 +134,12 @@ pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
 }
 
 /// Health check endpoint for ingestion service
+#[utoipa::path(
+    get,
+    path = "/api/ingestion/health",
+    tag = "ingestion",
+    responses((status = 200, description = "Health OK", body = serde_json::Value), (status = 503, description = "Health not OK", body = serde_json::Value))
+)]
 pub async fn health_check(_state: web::Data<AppState>) -> impl Responder {
     match create_simple_ingestion_service().await {
         Ok(service) => {
@@ -163,6 +182,13 @@ pub async fn health_check(_state: web::Data<AppState>) -> impl Responder {
 }
 
 /// Validate JSON data without processing
+#[utoipa::path(
+    post,
+    path = "/api/ingestion/validate",
+    tag = "ingestion",
+    request_body = serde_json::Value,
+    responses((status = 200, description = "Validation result", body = serde_json::Value), (status = 400, description = "Invalid"))
+)]
 pub async fn validate_json(
     request: web::Json<serde_json::Value>,
     _state: web::Data<AppState>,
@@ -198,6 +224,12 @@ pub async fn validate_json(
 }
 
 /// Get Ingestion configuration
+#[utoipa::path(
+    get,
+    path = "/api/ingestion/config",
+    tag = "ingestion",
+    responses((status = 200, description = "Ingestion config", body = crate::ingestion::config::IngestionConfig))
+)]
 pub async fn get_ingestion_config(_state: web::Data<AppState>) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -216,6 +248,13 @@ pub async fn get_ingestion_config(_state: web::Data<AppState>) -> impl Responder
 }
 
 /// Save Ingestion configuration
+#[utoipa::path(
+    post,
+    path = "/api/ingestion/config",
+    tag = "ingestion",
+    request_body = crate::ingestion::config::SavedConfig,
+    responses((status = 200, description = "Saved"), (status = 500, description = "Failed"))
+)]
 pub async fn save_ingestion_config(
     request: web::Json<SavedConfig>,
     _state: web::Data<AppState>,

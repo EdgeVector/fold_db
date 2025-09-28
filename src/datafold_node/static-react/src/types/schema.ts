@@ -4,7 +4,15 @@
  * 
  * This file contains all TypeScript interfaces and types for the schema Redux slice.
  * Ensures type safety and proper intellisense support for schema state management.
+ * 
+ * Note: We compose UI state types with Rust-generated domain types from ts-rs.
  */
+
+// Bring in Rust-generated types (server-side domain types)
+import type { Schema as RustSchema, SchemaType as RustSchemaType, KeyConfig as RustKeyConfig } from './generated';
+
+// Re-export for consumers that need server-side types at the UI boundary
+export type { RustSchema, RustSchemaType, RustKeyConfig };
 
 // ============================================================================
 // CORE SCHEMA TYPES
@@ -56,44 +64,39 @@ export interface RangeSchemaInfo {
 
 /**
  * Individual schema structure as returned from the backend API
+ * Composed from Rust-generated Schema with additional UI state fields.
  */
-export interface Schema {
-  /** Unique identifier for the schema */
-  name: string;
-  
+export type Schema = RustSchema & {
   /** Current state of the schema (available, approved, blocked, etc.) */
   state: SchemaState;
-  
-  /** Schema definition/structure */
+
+  /** Optional high-level definition/structure metadata */
   definition?: Record<string, any>;
-  
-  /** Schema fields */
-  fields?: SchemaField[];
-  
+
   /** Schema metadata */
   metadata?: {
     /** Creation timestamp */
     createdAt?: string;
-    
+
     /** Last updated timestamp */
     updatedAt?: string;
-    
+
     /** Schema version */
     version?: string;
-    
+
     /** Schema description */
     description?: string;
-    
+
     /** Schema tags */
     tags?: string[];
   };
-  
+
   /** Range schema information */
   rangeInfo?: RangeSchemaInfo;
-  
+
   /** Whether schema is currently being processed */
   processing?: boolean;
-  
+
   /** Last operation performed on this schema */
   lastOperation?: {
     type: 'approve' | 'block' | 'unload' | 'load';
@@ -101,7 +104,7 @@ export interface Schema {
     success: boolean;
     error?: string;
   };
-}
+};
 
 // ============================================================================
 // REDUX STATE TYPES

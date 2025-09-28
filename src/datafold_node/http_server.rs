@@ -9,7 +9,7 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use actix_cors::Cors;
 use actix_files::Files;
-use actix_web::{web, App, HttpServer as ActixHttpServer};
+use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -124,6 +124,14 @@ impl DataFoldHttpServer {
                 .app_data(json_config)
                 .service(
                     web::scope("/api")
+                        // OpenAPI spec endpoint
+                        .route(
+                            "/openapi.json",
+                            web::get().to(|| async move {
+                                let doc = crate::datafold_node::openapi::build_openapi();
+                                HttpResponse::Ok().content_type("application/json").body(doc)
+                            }),
+                        )
                         // Schema endpoints
                         .route("/schemas", web::get().to(schema_routes::list_schemas))
                         .route("/schema/{name}", web::get().to(schema_routes::get_schema))
@@ -208,33 +216,8 @@ impl DataFoldHttpServer {
                                 .service(
                                     web::resource("/system-key")
                                         .route(
-                                            web::post()
-                                                .to(security_routes::register_system_public_key),
-                                        )
-                                        .route(
                                             web::get().to(security_routes::get_system_public_key),
-                                        )
-                                        .route(
-                                            web::delete()
-                                                .to(security_routes::remove_system_public_key),
                                         ),
-                                )
-                                .route("/verify", web::post().to(security_routes::verify_message))
-                                .route(
-                                    "/status",
-                                    web::get().to(security_routes::get_security_status),
-                                )
-                                .route(
-                                    "/examples",
-                                    web::get().to(security_routes::get_client_examples),
-                                )
-                                .route(
-                                    "/demo-keypair",
-                                    web::get().to(security_routes::generate_demo_keypair),
-                                )
-                                .route(
-                                    "/protected",
-                                    web::post().to(security_routes::protected_endpoint),
                                 ),
                         )
                 )

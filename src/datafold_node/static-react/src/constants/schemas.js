@@ -24,10 +24,12 @@ export const SCHEMA_STATES = {
 };
 
 // API endpoints - Use centralized endpoints for API-STD-1 compliance
+import { API_ENDPOINTS } from '../api/endpoints';
 export const SCHEMA_API_ENDPOINTS = {
-  AVAILABLE: '/api/schemas/available',
-  PERSISTED: '/api/schemas',
-  SCHEMA_DETAIL: '/schemas'  // Hardcoded to break circular dependency
+  // No dedicated "available" route on the server; use list-all
+  AVAILABLE: API_ENDPOINTS.SCHEMAS_BASE,
+  PERSISTED: API_ENDPOINTS.SCHEMAS_BASE,
+  SCHEMA_DETAIL: API_ENDPOINTS.SCHEMAS_BASE
 };
 
 // Validation error messages

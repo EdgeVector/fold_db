@@ -18,6 +18,12 @@ pub struct LogConfigResponse {
 }
 
 /// List current logs (backward compatibility)
+#[utoipa::path(
+    get,
+    path = "/api/logs",
+    tag = "logs",
+    responses((status = 200, description = "List logs", body = serde_json::Value))
+)]
 pub async fn list_logs() -> impl Responder {
     let logs = web_logger::get_logs();
     HttpResponse::Ok().json(serde_json::json!({
@@ -31,6 +37,12 @@ pub async fn list_logs() -> impl Responder {
 }
 
 /// Stream logs via Server-Sent Events (backward compatibility)
+#[utoipa::path(
+    get,
+    path = "/api/logs/stream",
+    tag = "logs",
+    responses((status = 200, description = "Stream logs"))
+)]
 pub async fn stream_logs() -> impl Responder {
     let rx = match web_logger::subscribe() {
         Some(r) => r,
@@ -50,6 +62,12 @@ pub async fn stream_logs() -> impl Responder {
 }
 
 /// Get current logging configuration
+#[utoipa::path(
+    get,
+    path = "/api/logs/config",
+    tag = "logs",
+    responses((status = 200, description = "Logging configuration", body = LogConfigResponse))
+)]
 pub async fn get_config() -> Result<impl Responder> {
     if let Some(config) = LoggingSystem::get_config().await {
         Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -65,6 +83,17 @@ pub async fn get_config() -> Result<impl Responder> {
 }
 
 /// Update feature-specific log level at runtime
+#[utoipa::path(
+    put,
+    path = "/api/logs/level",
+    tag = "logs",
+    request_body = LogLevelUpdate,
+    responses(
+        (status = 200, description = "Updated"),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn update_feature_level(
     level_update: web::Json<LogLevelUpdate>,
 ) -> Result<impl Responder> {
@@ -91,6 +120,12 @@ pub async fn update_feature_level(
 }
 
 /// Reload logging configuration from file
+#[utoipa::path(
+    post,
+    path = "/api/logs/config/reload",
+    tag = "logs",
+    responses((status = 200, description = "Reloaded"), (status = 400, description = "Bad request"))
+)]
 pub async fn reload_config() -> Result<impl Responder> {
     match LoggingSystem::reload_config_from_file("config/logging.toml").await {
         Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -104,6 +139,12 @@ pub async fn reload_config() -> Result<impl Responder> {
 }
 
 /// Get available log features and their current levels
+#[utoipa::path(
+    get,
+    path = "/api/logs/features",
+    tag = "logs",
+    responses((status = 200, description = "Features", body = serde_json::Value))
+)]
 pub async fn get_features() -> Result<impl Responder> {
     if let Some(features) = LoggingSystem::get_features().await {
         Ok(HttpResponse::Ok().json(serde_json::json!({

@@ -8,11 +8,6 @@ import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import { SCHEMA_STATES } from '../../constants/api';
 import type { EnhancedApiResponse, MutationApiClient } from '../core/types';
-import type { 
-  MutationResponse, 
-  QueryResponse, 
-  ValidationResult 
-} from '../../types/api';
 
 // Mutation-specific response types
 export interface MutationResponse {
@@ -64,7 +59,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @param mutation The mutation object to execute
    * @returns Promise resolving to mutation result
    */
-  async executeMutation(mutation: any): Promise<EnhancedApiResponse<MutationResponse>> {
+  async executeMutation(mutation: any): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<MutationResponse>(
       API_ENDPOINTS.MUTATION,
       mutation,
@@ -84,7 +79,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @param query The query object to execute
    * @returns Promise resolving to query results
    */
-  async executeQuery(query: any): Promise<EnhancedApiResponse<QueryResponse>> {
+  async executeQuery(query: any): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<QueryResponse>(
       API_ENDPOINTS.QUERY,
       query,
@@ -181,7 +176,7 @@ export class UnifiedMutationClient implements MutationApiClient {
   }> {
     try {
       // Use the schema client to get schema details
-      const response = await this.client.get<any>(`/api/schemas/${schemaName}`, {
+      const response = await this.client.get<any>(API_ENDPOINTS.SCHEMA_BY_NAME(schemaName), {
         timeout: 5000,
         retries: 1,
         cacheable: true,

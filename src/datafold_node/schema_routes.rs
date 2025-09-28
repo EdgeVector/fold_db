@@ -18,6 +18,15 @@ where
 }
 
 /// List all schemas.
+#[utoipa::path(
+    get,
+    path = "/api/schemas",
+    tag = "schemas",
+    responses(
+        (status = 200, description = "List of schemas"),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
     log_feature!(LogFeature::Schema, info, "Received request to list schemas");
     let result = with_schema_manager(&state, |db| db.schema_manager.get_schemas()).await;
@@ -29,6 +38,19 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 }
 
 /// Get a schema by name.
+#[utoipa::path(
+    get,
+    path = "/api/schema/{name}",
+    tag = "schemas",
+    params(
+        ("name" = String, Path, description = "Schema name")
+    ),
+    responses(
+        (status = 200, description = "Schema", body = crate::schema::types::schema::Schema),
+        (status = 404, description = "Schema not found"),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
     let result = with_schema_manager(&state, |db| db.schema_manager.get_schema(&name)).await;
@@ -42,6 +64,15 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 
 /// List schemas by specific state
 /// Approve a schema for queries and mutations
+#[utoipa::path(
+    post,
+    path = "/api/schema/{name}/approve",
+    tag = "schemas",
+    params(
+        ("name" = String, Path, description = "Schema name")
+    ),
+    responses((status = 200, description = "Approved"), (status = 500, description = "Server error"))
+)]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
     let result = with_schema_manager(&state, |db| db.schema_manager.set_schema_state(&schema_name, SchemaState::Approved)).await;
@@ -53,6 +84,15 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
 }
 
 /// Block a schema from queries and mutations
+#[utoipa::path(
+    post,
+    path = "/api/schema/{name}/block",
+    tag = "schemas",
+    params(
+        ("name" = String, Path, description = "Schema name")
+    ),
+    responses((status = 200, description = "Blocked"), (status = 500, description = "Server error"))
+)]
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
     let result = with_schema_manager(&state, |db| db.schema_manager.block_schema(&schema_name)).await;

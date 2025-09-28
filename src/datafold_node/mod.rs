@@ -14,6 +14,7 @@ mod db;
 pub mod error;
 mod operation_processor;
 pub mod http_server;
+pub mod openapi;
 pub mod log_routes;
 pub mod node;
 pub mod query_routes;

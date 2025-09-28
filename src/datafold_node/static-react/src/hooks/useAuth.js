@@ -1,3 +1,4 @@
+import { API_ENDPOINTS } from '../api/endpoints';
 /**
  * @fileoverview Authentication Hook
  * 
@@ -34,7 +35,7 @@ export function useAuth() {
     setIsLoading(true);
     try {
       // In a real app, this would make an API call
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(API_ENDPOINTS.AUTH_LOGIN, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -90,7 +91,7 @@ export function useAuth() {
     }
 
     try {
-      const response = await fetch('/api/auth/refresh', {
+      const response = await fetch(API_ENDPOINTS.AUTH_REFRESH, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

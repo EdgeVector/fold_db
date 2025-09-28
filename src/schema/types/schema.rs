@@ -4,9 +4,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use ts_rs::TS;
+use utoipa::ToSchema;
 
 /// Represents the schema-level type information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS, ToSchema)]
 #[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 pub enum SchemaType {
     /// Single schema without range semantics
@@ -37,7 +38,7 @@ pub fn default_schema_type() -> SchemaType {
 /// - Proper access control
 /// - Payment validation
 /// - Data transformation rules
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, ToSchema)]
 #[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 pub struct Schema {
     /// Unique name identifying this schema

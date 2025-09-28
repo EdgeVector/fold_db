@@ -10,6 +10,17 @@ use std::sync::Arc;
 
 
 /// Execute a query.
+#[utoipa::path(
+    post,
+    path = "/api/query",
+    tag = "query",
+    request_body = serde_json::Value,
+    responses(
+        (status = 200, description = "Query result", body = serde_json::Value),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) -> impl Responder {
     let op = match serde_json::from_value::<Operation>(query.into_inner()) {
         Ok(Operation::Query { schema, fields, filter }) => (schema, fields, filter),
@@ -35,6 +46,17 @@ pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) 
 }
 
 /// Execute a mutation.
+#[utoipa::path(
+    post,
+    path = "/api/mutation",
+    tag = "query",
+    request_body = serde_json::Value,
+    responses(
+        (status = 200, description = "Mutation result", body = serde_json::Value),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn execute_mutation(
     mutation_data: web::Json<Value>,
     state: web::Data<AppState>,
@@ -73,6 +95,15 @@ pub async fn execute_mutation(
 
 // formatting is handled by fold_db_core::query::formatter
 
+#[utoipa::path(
+    get,
+    path = "/api/transforms",
+    tag = "query",
+    responses(
+        (status = 200, description = "Transforms list", body = serde_json::Value),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
     match node.list_transforms() {
@@ -82,6 +113,18 @@ pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/transforms/queue/{id}",
+    tag = "query",
+    params(
+        ("id" = String, Path, description = "Transform id")
+    ),
+    responses(
+        (status = 200, description = "Queued"),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn add_to_transform_queue(
     path: web::Path<String>,
     state: web::Data<AppState>,
@@ -95,6 +138,15 @@ pub async fn add_to_transform_queue(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/transforms/queue",
+    tag = "query",
+    responses(
+        (status = 200, description = "Queue info", body = serde_json::Value),
+        (status = 500, description = "Server error")
+    )
+)]
 pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
     match node.get_transform_queue_info() {

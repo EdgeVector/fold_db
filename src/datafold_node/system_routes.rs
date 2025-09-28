@@ -8,6 +8,14 @@ use super::http_server::AppState;
 use super::DataFoldNode;
 
 /// Get system status information
+#[utoipa::path(
+    get,
+    path = "/api/system/status",
+    tag = "system",
+    responses(
+        (status = 200, description = "System status", body = serde_json::Value)
+    )
+)]
 pub async fn get_system_status(_state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(json!({
         "status": "running",
@@ -23,6 +31,14 @@ pub async fn get_system_status(_state: web::Data<AppState>) -> impl Responder {
 ///
 /// This endpoint returns the node's private key for use by the UI.
 /// The private key is generated automatically when the node is created.
+#[utoipa::path(
+    get,
+    path = "/api/system/private-key",
+    tag = "system",
+    responses(
+        (status = 200, description = "Node private key", body = serde_json::Value)
+    )
+)]
 pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
 
@@ -44,6 +60,14 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
 ///
 /// This endpoint returns the node's public key for verification purposes.
 /// The public key is generated automatically when the node is created.
+#[utoipa::path(
+    get,
+    path = "/api/system/public-key",
+    tag = "system",
+    responses(
+        (status = 200, description = "Node public key", body = serde_json::Value)
+    )
+)]
 pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
 
@@ -83,6 +107,17 @@ pub struct ResetDatabaseResponse {
 /// 4. Clearing all data and state
 ///
 /// This is a destructive operation that cannot be undone.
+#[utoipa::path(
+    post,
+    path = "/api/system/reset-database",
+    tag = "system",
+    request_body = ResetDatabaseRequest,
+    responses(
+        (status = 200, description = "Database reset result", body = ResetDatabaseResponse),
+        (status = 400, description = "Bad request", body = ResetDatabaseResponse),
+        (status = 500, description = "Server error", body = ResetDatabaseResponse)
+    )
+)]
 pub async fn reset_database(
     state: web::Data<AppState>,
     req: web::Json<ResetDatabaseRequest>,
