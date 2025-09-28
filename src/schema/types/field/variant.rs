@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::schema::types::field::{
     Field, FieldCommon, FieldType, HashRangeField, RangeField, SingleField,
-    HashRangeFilter, HashRangeFilterResult,
+    HashRangeFilter, HashRangeFilterResult, FilterApplicator, fetch_atoms_for_matches,
 };
 use crate::db_operations::DbOperations;
 use crate::schema::types::{Transform, SchemaError};
@@ -68,6 +68,15 @@ impl Field for FieldVariant {
         db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-        delegate_field_method!(self, resolve_value, db_ops, filter)
+        // Refresh field data from database first
+        self.refresh_from_db(db_ops);
+
+        // Fetch actual atom content from database using shared helper
+        let results = match self {
+            FieldVariant::Single(f) => f.apply_filter(filter),
+            FieldVariant::Range(f) => f.apply_filter(filter),
+            FieldVariant::HashRange(f) => f.apply_filter(filter),
+        };
+        fetch_atoms_for_matches(db_ops, results.matches)
     }
 }

@@ -7,7 +7,7 @@ use crate::atom::MoleculeRange;
 use crate::impl_field;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, RangeOperations, apply_range_filter};
+use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, RangeOperations, apply_range_filter, fetch_atoms_for_matches};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperations;
 use crate::schema::types::key_value::KeyValue;
@@ -67,11 +67,11 @@ impl RangeField {
         self.molecule.as_mut().unwrap()
     }
 
-    /// Applies a filter from a JSON Value (for use with Operation::Query filter)
+    /// Applies a filter from a JSON Value (delegates to trait default)
     pub fn apply_json_filter(&self, filter_value: &JsonValue) -> Result<HashRangeFilterResult, String> {
-        let filter: HashRangeFilter = serde_json::from_value(filter_value.clone())
-            .map_err(|e| format!("Invalid range filter format: {}", e))?;
-        Ok(self.apply_filter(&filter))
+        serde_json::from_value::<HashRangeFilter>(filter_value.clone())
+            .map(|f| self.apply_filter(Some(f)))
+            .or_else(|_| Ok(self.apply_filter(None)))
     }
 
 
@@ -108,7 +108,7 @@ impl RangeField {
 }
 
 impl FilterApplicator for RangeField {
-    fn apply_filter(&self, filter: &HashRangeFilter) -> HashRangeFilterResult {
+    fn apply_filter(&self, filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
         let Some(molecule) = &self.molecule else {
             return HashRangeFilterResult::empty();
         };
@@ -151,56 +151,12 @@ impl crate::schema::types::field::Field for RangeField {
         }
     }
 
-    fn resolve_value(
-        &mut self,
-        db_ops: &Arc<DbOperations>,
-        filter: Option<HashRangeFilter>,
-    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> { 
-        info!("🔍 RangeField: Resolving range values with filter: {:?}", filter);
-
+    fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops);
 
-        // Apply filters to get matching atom UUIDs
-        let filter_result = if let Some(ref filter) = filter {
-            self.apply_filter(filter)
-        } else {
-            // No filter - return all range keys
-            let mut matches = HashMap::new();
-            if let Some(molecule) = &self.molecule {
-                for (key, atom_uuid) in &molecule.atom_uuids {
-                    matches.insert(KeyValue::new(None, Some(key.clone())), atom_uuid.clone());
-                }
-            }
-            HashRangeFilterResult::new(matches)
-        };
-
-        info!("🔍 RangeField: Filter applied, found {} matches", filter_result.matches.len());
-
-        // Fetch actual atom content from database
-        let mut resolved_values = HashMap::new();
-
-        for (key, atom_uuid) in filter_result.matches {
-            match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
-                Ok(Some(atom)) => {
-                    resolved_values.insert(key, FieldValue { value: atom.content().clone(), atom_uuid });
-                }
-                Ok(None) => {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Atom '{}' not found for key '{}'",
-                        atom_uuid, key
-                    )))
-                }
-                Err(_e) => {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Failed to fetch atom '{}' for key '{}'",
-                        atom_uuid, key
-                    )));
-                }
-            }
-        }
-
-        info!("✅ RangeField: Value resolution completed successfully");
-        Ok(resolved_values)
+        // Fetch actual atom content from database using shared helper
+        let result = self.apply_filter(filter);
+        fetch_atoms_for_matches(db_ops, result.matches)
     }
 }
 

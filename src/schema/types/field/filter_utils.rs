@@ -4,6 +4,10 @@
 //! HashRangeField, and other field types to eliminate code duplication.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use crate::db_operations::DbOperations;
+use crate::schema::types::field::FieldValue;
+use crate::schema::types::SchemaError;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
 use crate::atom::{MoleculeRange, MoleculeHashRange};
@@ -33,19 +37,61 @@ impl FilterUtils {
 
 }
 
+/// Resolve atom UUID matches into concrete FieldValue map by fetching atoms
+pub fn fetch_atoms_for_matches(
+    db_ops: &Arc<DbOperations>,
+    matches: impl IntoIterator<Item = (KeyValue, String)>,
+)-> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
+
+    for (key, atom_uuid) in matches.into_iter() {
+        match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
+            Ok(Some(atom)) => {
+                resolved_values.insert(
+                    key,
+                    FieldValue { value: atom.content().clone(), atom_uuid: atom_uuid.clone() },
+                );
+            }
+            Ok(None) => {
+                let key_str = key.to_string();
+                if key_str.is_empty() {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Atom '{}' not found",
+                        atom_uuid
+                    )));
+                } else {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Atom '{}' not found for key '{}'",
+                        atom_uuid, key
+                    )));
+                }
+            }
+            Err(e) => {
+                let key_str = key.to_string();
+                if key_str.is_empty() {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Failed to fetch atom '{}': {}",
+                        atom_uuid, e
+                    )));
+                } else {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Failed to fetch atom '{}' for key '{}': {}",
+                        atom_uuid, key, e
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(resolved_values)
+}
+
 /// Trait for fields that can apply HashRangeFilter
 /// This allows different field types to implement their own filter logic
 /// while sharing common utilities
 pub trait FilterApplicator {
     /// Apply a HashRangeFilter and return the results
-    fn apply_filter(&self, filter: &HashRangeFilter) -> HashRangeFilterResult;
-    
-    /// Apply a filter from JSON Value
-    fn apply_json_filter(&self, filter_value: &serde_json::Value) -> Result<HashRangeFilterResult, String> {
-        let filter: HashRangeFilter = serde_json::from_value(filter_value.clone())
-            .map_err(|e| format!("Invalid filter format: {}", e))?;
-        Ok(self.apply_filter(&filter))
-    }
+    fn apply_filter(&self, filter: Option<HashRangeFilter>) -> HashRangeFilterResult;
 }
 
 /// Helper trait for range-based operations
@@ -92,31 +138,38 @@ pub trait HashRangeOperations {
 }
 
 /// Generic filter application for RangeField
-pub fn apply_range_filter<T: RangeOperations>(operations: &T, filter: &HashRangeFilter) -> HashRangeFilterResult {
+pub fn apply_range_filter<T: RangeOperations>(operations: &T, optional_filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
+    let filter = optional_filter.unwrap_or(HashRangeFilter::SampleN(100));
     let mut matches = HashMap::new();
 
     match filter {
+        HashRangeFilter::SampleN(n) => {
+            for (key, atom_uuid) in operations.get_all_atoms().into_iter().take(n) {
+                let composite_key = KeyValue::new(None, Some(key.clone()));
+                matches.insert(composite_key, atom_uuid);
+            }
+        }
         HashRangeFilter::HashKey(key) => {
-            if let Some(atom_uuid) = operations.get_atom_uuid(key) {
+            if let Some(atom_uuid) = operations.get_atom_uuid(&key) {
                 let composite_key = KeyValue::new(None, Some(key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangePrefix(prefix) => {
-            for (key, atom_uuid) in operations.get_atoms_with_prefix(prefix) {
+            for (key, atom_uuid) in operations.get_atoms_with_prefix(&prefix) {
                 let composite_key = KeyValue::new(None, Some(key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangeRange { start, end } => {
-            for (key, atom_uuid) in operations.get_atoms_in_range(start, end) {
+            for (key, atom_uuid) in operations.get_atoms_in_range(&start, &end) {
                 let composite_key = KeyValue::new(None, Some(key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::Value(target_value) => {
             for (key, atom_uuid) in operations.get_all_atoms() {
-                if atom_uuid == *target_value {
+                if atom_uuid == target_value {
                     let composite_key = KeyValue::new(None, Some(key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
@@ -124,7 +177,7 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, filter: &HashRange
         }
         HashRangeFilter::HashRangeKeys(keys) => {
             for (_hash, range) in keys {
-                if let Some(atom_uuid) = operations.get_atom_uuid(range) {
+                if let Some(atom_uuid) = operations.get_atom_uuid(&range) {
                     let composite_key = KeyValue::new(None, Some(range.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
@@ -135,19 +188,19 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, filter: &HashRange
         }
         // Hash-range specific filters - RangeField only handles range keys, so ignore hash components
         HashRangeFilter::HashRangeKey { range, .. } => {
-            if let Some(atom_uuid) = operations.get_atom_uuid(range) {
+            if let Some(atom_uuid) = operations.get_atom_uuid(&range) {
                 let composite_key = KeyValue::new(None, Some(range.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::HashRangePrefix { prefix, .. } => {
-            for (key, atom_uuid) in operations.get_atoms_with_prefix(prefix) {
+            for (key, atom_uuid) in operations.get_atoms_with_prefix(&prefix) {
                 let composite_key = KeyValue::new(None, Some(key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::HashRangeRange { start, end, .. } => {
-            for (key, atom_uuid) in operations.get_atoms_in_range(start, end) {
+            for (key, atom_uuid) in operations.get_atoms_in_range(&start, &end) {
                 let composite_key = KeyValue::new(None, Some(key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
@@ -168,18 +221,25 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, filter: &HashRange
 }
 
 /// Generic filter application for HashRangeField
-pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &HashRangeFilter) -> HashRangeFilterResult {
+pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, optional_filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
+    let filter = optional_filter.unwrap_or(HashRangeFilter::SampleN(100));
     let mut matches = HashMap::new();
 
     match filter {
+        HashRangeFilter::SampleN(n) => {
+            for (hash_value, range_key, atom_uuid) in operations.get_all_atoms().into_iter().take(n) {
+                let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
+                matches.insert(composite_key, atom_uuid);
+            }
+        }
         HashRangeFilter::HashRangeKey { hash, range } => {
-            if let Some(atom_uuid) = operations.get_atom_uuid(hash, range) {
+            if let Some(atom_uuid) = operations.get_atom_uuid(&hash, &range) {
                 let composite_key = KeyValue::new(Some(hash.clone()), Some(range.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::HashKey(hash) => {
-            if let Some(range_atoms) = operations.get_atoms_for_hash(hash) {
+            if let Some(range_atoms) = operations.get_atoms_for_hash(&hash) {
                 for (range_key, atom_uuid) in range_atoms {
                     let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
@@ -187,28 +247,28 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
             }
         }
         HashRangeFilter::HashRangePrefix { hash, prefix } => {
-            for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(hash, prefix) {
+            for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(&hash, &prefix) {
                 let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangePrefix(prefix) => {
             for hash_value in operations.get_hash_values() {
-                for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(&hash_value, prefix) {
+                for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(&hash_value, &prefix) {
                     let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
         }
         HashRangeFilter::HashRangeRange { hash, start, end } => {
-            for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(hash, start, end) {
+            for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(&hash, &start, &end) {
                 let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangeRange { start, end } => {
             for hash_value in operations.get_hash_values() {
-                for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(&hash_value, start, end) {
+                for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(&hash_value, &start, &end) {
                     let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
@@ -216,7 +276,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
         }
         HashRangeFilter::Value(target_value) => {
             for (hash_value, range_key, atom_uuid) in operations.get_all_atoms() {
-                if atom_uuid == *target_value {
+                if atom_uuid == target_value {
                     let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
@@ -224,7 +284,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
         }
         HashRangeFilter::HashRangeKeys(keys) => {
             for (hash, range) in keys {
-                if let Some(atom_uuid) = operations.get_atom_uuid(hash, range) {
+                if let Some(atom_uuid) = operations.get_atom_uuid(&hash, &range) {
                     let composite_key = KeyValue::new(Some(hash.clone()), Some(range.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
@@ -240,7 +300,7 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, filter: &
             // Pattern matching not supported - return empty results
         }
         HashRangeFilter::HashRange { start, end } => {
-            for (hash_value, range_key, atom_uuid) in operations.get_atoms_in_hash_range(start, end) {
+            for (hash_value, range_key, atom_uuid) in operations.get_atoms_in_hash_range(&start, &end) {
                 let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }

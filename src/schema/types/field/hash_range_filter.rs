@@ -24,6 +24,8 @@ pub enum HashRangeFilter {
         start: String, 
         end: String 
     },
+    /// Filter by sample size
+    SampleN(usize),
     /// Filter by value match (searches across all hash groups)
     Value(String),
     /// Filter by multiple hash-range key pairs

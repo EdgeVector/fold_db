@@ -8,7 +8,7 @@ use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{FilterApplicator, HashRangeOperations, apply_hash_range_filter};
+use crate::schema::types::field::{FilterApplicator, HashRangeOperations, apply_hash_range_filter, fetch_atoms_for_matches};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperations;
 use serde::{Deserialize, Serialize};
@@ -91,65 +91,14 @@ impl crate::schema::types::field::Field for HashRangeField {
         }
     }
 
-    fn resolve_value(
-        &mut self,
-        db_ops: &Arc<DbOperations>,
-        filter: Option<HashRangeFilter>,
-    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-        info!("🔍 HashRangeField: Resolving hash-range values with filter: {:?}", filter);
-
-        // Refresh field data from database first
+    fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops);
-
-        // Apply filters to get matching atom UUIDs
-        let filter_result = if let Some(ref filter) = filter {
-            self.apply_filter(filter)
-        } else {
-            // No filter - return all hash-range keys
-            let mut matches = HashMap::new();
-            if let Some(molecule) = &self.molecule {
-                for (hash_value, range_key, atom_uuid) in molecule.iter_all_atoms() {
-                    let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
-                    matches.insert(composite_key, atom_uuid.clone());
-                }
-            }
-            HashRangeFilterResult::new(matches)
-        };
-
-        // Fetch actual atom content from database
-        let mut resolved_values = HashMap::new();
-
-        for (key, atom_uuid) in filter_result.matches {
-            match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
-                Ok(Some(atom)) => {
-                    resolved_values.insert(key, FieldValue { value: atom.content().clone(), atom_uuid });
-                }
-                Ok(None) => {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Atom '{}' not found for key '{}'",
-                        atom_uuid, key
-                    )))
-                }
-                Err(e) => {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Failed to fetch atom '{}' for key '{}': {}",
-                        atom_uuid, key, e
-                    )))
-                }
-            }
-        }
-
-        Ok(resolved_values)
+        let result = self.apply_filter(filter);
+        fetch_atoms_for_matches(db_ops, result.matches)
     }
 }
 
 impl HashRangeField {
-    /// Applies a filter from a JSON Value (for use with Operation::Query filter)
-    pub fn apply_json_filter(&self, filter_value: &JsonValue) -> Result<HashRangeFilterResult, String> {
-        let filter: HashRangeFilter = serde_json::from_value(filter_value.clone())
-            .map_err(|e| format!("Invalid hash-range filter format: {}", e))?;
-        Ok(self.apply_filter(&filter))
-    }
 
     /// Gets all keys in the hash range (useful for pagination or listing)
     /// Returns composite keys in the format "hash_value:range_value"
@@ -217,7 +166,7 @@ impl HashRangeField {
 }
 
 impl FilterApplicator for HashRangeField {
-    fn apply_filter(&self, filter: &HashRangeFilter) -> HashRangeFilterResult {
+    fn apply_filter(&self, filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
         let Some(molecule) = &self.molecule else {
             return HashRangeFilterResult::empty();
         };
