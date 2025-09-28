@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ResultsSection from '../../components/ResultsSection.jsx';
 
 describe('ResultsSection Component', () => {
@@ -114,6 +114,23 @@ describe('ResultsSection Component', () => {
     expect(preElement).toHaveTextContent('"users"');
     expect(preElement).toHaveTextContent('"id": 1');
     expect(preElement).toHaveTextContent('"name": "John"');
+  });
+
+  it('renders structured view toggle and switches modes when hash-range shape is detected', () => {
+    const hr = {
+      status: 200,
+      data: {
+        H1: { R1: { a: 1 } }
+      }
+    };
+
+    const { getByText, getByRole } = render(<ResultsSection results={hr} />);
+    // Header should reflect Structured
+    expect(getByText('(Structured)')).toBeInTheDocument();
+    // Toggle to JSON
+    const toggle = getByRole('button', { name: /View JSON/ });
+    fireEvent.click(toggle);
+    expect(screen.getByText((content, element) => element?.textContent === '(JSON)')).toBeInTheDocument();
   });
 
   it('displays results without data property correctly', () => {

@@ -1,9 +1,15 @@
+import { useMemo, useState } from 'react'
+import StructuredResults from './StructuredResults'
+import { isHashRangeFieldsShape } from '../utils/hashRangeResults'
+
 function ResultsSection({ results }) {
   if (!results) return null
 
   // Check if this is an error result
   const isError = results.error || (results.status && results.status >= 400)
   const hasData = results.data !== undefined
+  const defaultStructured = useMemo(() => !isError && isHashRangeFieldsShape(hasData ? results.data : results), [results, isError, hasData])
+  const [structured, setStructured] = useState(defaultStructured)
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 mt-6">
@@ -12,7 +18,7 @@ function ResultsSection({ results }) {
           {isError ? 'Error' : 'Results'}
         </span>
         <span className="text-xs font-normal text-gray-500">
-          ({typeof results === 'string' ? 'Text' : 'JSON'})
+          ({typeof results === 'string' ? 'Text' : structured ? 'Structured' : 'JSON'})
         </span>
         {results.status && (
           <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
@@ -22,6 +28,17 @@ function ResultsSection({ results }) {
           }`}>
             Status: {results.status}
           </span>
+        )}
+        {!isError && typeof results !== 'string' && (
+          <div className="ml-auto">
+            <button
+              type="button"
+              className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+              onClick={() => setStructured((v) => !v)}
+            >
+              {structured ? 'View JSON' : 'View Structured'}
+            </button>
+          </div>
         )}
       </h3>
       
@@ -45,18 +62,24 @@ function ResultsSection({ results }) {
         </div>
       )}
       
-      <div className={`rounded-md p-4 overflow-auto max-h-[500px] ${
-        isError ? 'bg-red-50 border border-red-200' : 'bg-gray-50'
-      }`}>
-        <pre className={`font-mono text-sm whitespace-pre-wrap ${
-          isError ? 'text-red-700' : 'text-gray-700'
+      {structured && !isError && typeof results !== 'string' ? (
+        <div className="rounded-md p-2 bg-gray-50 border overflow-auto max-h-[500px]">
+          <StructuredResults results={results} />
+        </div>
+      ) : (
+        <div className={`rounded-md p-4 overflow-auto max-h-[500px] ${
+          isError ? 'bg-red-50 border border-red-200' : 'bg-gray-50'
         }`}>
-          {typeof results === 'string'
-            ? results
-            : JSON.stringify(hasData ? results.data : results, null, 2)
-          }
-        </pre>
-      </div>
+          <pre className={`font-mono text-sm whitespace-pre-wrap ${
+            isError ? 'text-red-700' : 'text-gray-700'
+          }`}>
+            {typeof results === 'string'
+              ? results
+              : JSON.stringify(hasData ? results.data : results, null, 2)
+            }
+          </pre>
+        </div>
+      )}
     </div>
   )
 }
