@@ -8,6 +8,9 @@ use crate::transform::iterator_stack::errors::IteratorStackResult;
 use crate::transform::iterator_stack::types::IteratorStack;
 use log::debug;
 use serde_json::Value;
+use std::collections::HashMap;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 
 /// Helper methods for scope creation logic
 pub struct ScopeCreationHelper;
@@ -17,7 +20,8 @@ impl ScopeCreationHelper {
     pub fn create_default_scopes(
         stack: &mut IteratorStack,
         chain: &ParsedChain,
-        input_data: &Value,
+        input_data: HashMap<String, HashMap<KeyValue, FieldValue>>,
+        field: &str,
     ) -> IteratorStackResult<()> {
         debug!("Creating default scopes for chain: {}", chain.expression);
 

@@ -6,12 +6,14 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 
 /// Context for executing a set of field expressions
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     /// Input data to process
-    pub input_data: HashMap<String, Value>,
+    pub input_data: HashMap<String, HashMap<KeyValue, FieldValue>>,
     /// Maximum depth for emission
     pub emission_depth: usize,
     /// Additional context variables

@@ -6,8 +6,9 @@
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
 use crate::transform::iterator_stack::types::IteratorStack;
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 
 use super::scope_creation::ScopeCreationHelper;
 use super::types::{ExecutionContext, ExecutionResult};
@@ -39,7 +40,7 @@ impl ExecutionEngine {
     pub fn execute_fields(
         &mut self,
         chains: HashMap<String, ParsedChain>,
-        input_data: HashMap<String, JsonValue>,
+        input_data: HashMap<String, HashMap<KeyValue, FieldValue>>,
     ) -> IteratorStackResult<ExecutionResult> {
         // Determine the maximum depth that needs to be emitted across all chains so that
         // deeper iterators (e.g., nested map operations) are actually traversed during
@@ -62,7 +63,7 @@ impl ExecutionEngine {
 
         // Execute each unique expression only once
         for (field, chain) in chains.iter() {
-            let field_result = self.execute_single_field(chain, &context, &mut dataset_cache)?;
+            let field_result = self.execute_single_field(chain, &context, &mut dataset_cache, field.clone())?;
             index_entries.insert(field.clone(), field_result.entries);
             warnings.insert(field.clone(), field_result.warnings);
         }
@@ -78,31 +79,25 @@ impl ExecutionEngine {
         &mut self,
         chain: &ParsedChain,
         context: &ExecutionContext,
+        field: &str,
         cache: &mut IteratorDatasetCache,
     ) -> IteratorStackResult<FieldExecutionResult> {
         // Create iterator stack from the chain
         let mut stack = IteratorStack::from_chain(chain)?;
 
-        // Convert input_data to JSON value for scope creation
-        let input_json = serde_json::to_value(&context.input_data).map_err(|e| {
-            IteratorStackError::ExecutionError {
-                message: format!("Failed to convert input data to JSON: {}", e),
-            }
-        })?;
-
         // If the stack is empty (no scopes), create default scopes based on the chain operations
         if stack.is_empty() {
-            ScopeCreationHelper::create_default_scopes(&mut stack, chain, &input_json)?;
+            ScopeCreationHelper::create_default_scopes(&mut stack, chain, context.input_data.clone(), field.clone())?;
         }
 
         // Initialize the iterator stack with input data
         self.iterator_manager
-            .initialize_stack(&mut stack, &input_json, cache)?;
+            .initialize_stack(&mut stack, context.input_data.get(field).unwrap().clone(), cache)?;
 
         // Execute field expression using unified approach
         let result = self
             .field_executor
-            .execute_field(&mut stack, chain, context)?;
+            .execute_field(&mut stack, chain, context, field.clone())?;
         Ok(result)
     }
 }

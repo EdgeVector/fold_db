@@ -3,9 +3,11 @@ use crate::schema::types::key_config::KeyConfig;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use ts_rs::TS;
 
 /// Represents the schema-level type information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 pub enum SchemaType {
     /// Single schema without range semantics
     Single,
@@ -35,7 +37,8 @@ pub fn default_schema_type() -> SchemaType {
 /// - Proper access control
 /// - Payment validation
 /// - Data transformation rules
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 pub struct Schema {
     /// Unique name identifying this schema
     pub name: String,
@@ -46,6 +49,7 @@ pub struct Schema {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<KeyConfig>,
     /// Collection of fields with their definitions and configurations
+    #[ts(type = "Record<string, any>")]
     pub fields: HashMap<String, FieldVariant>,
     /// SHA256 hash of the schema content for integrity verification
     #[serde(skip_serializing_if = "Option::is_none")]

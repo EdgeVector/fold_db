@@ -23,6 +23,7 @@ pub enum FieldVariant {
     HashRange(HashRangeField),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldValue {
     pub value: JsonValue,
     pub atom_uuid: String,

@@ -2,7 +2,7 @@ use super::http_server::AppState;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Operation;
-use crate::fold_db_core::query::format_hash_range_fields;
+use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::{json, Value};
@@ -11,13 +11,6 @@ use std::sync::Arc;
 
 /// Execute a query.
 pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) -> impl Responder {
-    log_feature!(
-        LogFeature::Query,
-        info,
-        "Received query request: {}",
-        serde_json::to_string(&query).unwrap_or_else(|_| "Invalid JSON".to_string())
-    );
-
     let op = match serde_json::from_value::<Operation>(query.into_inner()) {
         Ok(Operation::Query { schema, fields, filter }) => (schema, fields, filter),
         Ok(_) => {
@@ -35,7 +28,7 @@ pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) 
     let processor = OperationProcessor::new(node_arc);
 
     match processor.execute_query_map(schema, fields, filter).await {
-        Ok(result_map) => HttpResponse::Ok().json(json!({"data": format_hash_range_fields(&result_map)})),
+        Ok(result_map) => HttpResponse::Ok().json(json!({"data": records_from_field_map(&result_map)})),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to execute query: {}", e)})),
     }

@@ -9,6 +9,8 @@ use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::field::FieldValue;
 
 #[derive(Default)]
 pub struct IteratorDatasetCache {
@@ -154,12 +156,9 @@ impl IteratorManager {
     pub fn initialize_stack(
         &mut self,
         stack: &mut IteratorStack,
-        input_data: &Value,
+        input_data: &HashMap<KeyValue, FieldValue>,
         cache: &mut IteratorDatasetCache,
     ) -> IteratorStackResult<()> {
-        debug!("Initializing iterator stack with {} scopes", stack.len());
-        debug!("Input data structure: {}", input_data);
-
         // Set the root data directly in the root context
         if let Some(root_context) = stack.context_at_depth_mut(0) {
             root_context

@@ -1,7 +1,9 @@
 use serde::{Serialize, Deserialize};
+use ts_rs::TS;
 
 // Forward declarations for types that need to be defined
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 // Used in two ways, one to set the field_names which will be used to resolve the keys, and one to pass key values in a mutation.
 pub struct KeyConfig {
     pub hash_field: Option<String>,
