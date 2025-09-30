@@ -44,7 +44,6 @@ pub struct Schema {
     /// Unique name identifying this schema
     pub name: String,
     /// The type of schema. Defaults to a key range schema.
-    #[serde(default = "default_schema_type")]
     pub schema_type: SchemaType,
     /// Universal key configuration for all schema types
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,15 +69,22 @@ impl Schema {
     #[must_use]
     pub fn new(
         name: String,
-        schema_type: SchemaType,
         key: Option<KeyConfig>,
         fields: HashMap<String, FieldVariant>,
         hash: Option<String>,
     ) -> Self {
+        let mut schema_type = SchemaType::Single;
+        if key.is_some() {
+            if key.as_ref().unwrap().hash_field.is_some() && key.as_ref().unwrap().range_field.is_some() {
+                schema_type = SchemaType::HashRange { keyconfig: key.clone().unwrap() };
+            } else {
+                schema_type = SchemaType::Range { keyconfig: key.clone().unwrap() };
+            }
+        }
         Self {
             name,
-            schema_type,
-            key,
+            schema_type: schema_type.clone(),
+            key: key.as_ref().cloned(),
             fields,
             hash,
         }

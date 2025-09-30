@@ -248,7 +248,7 @@ export class ApiClient implements ApiClientInstance {
       timeout: options.timeout || this.config.timeout,
       retries: options.retries !== undefined ? options.retries : this.config.retryAttempts,
       validateSchema: !!options.validateSchema,
-      requiresAuth: options.requiresAuth || false,
+      requiresAuth: false,
       abortSignal: options.abortSignal,
       metadata: {
         requestId,
@@ -394,10 +394,7 @@ export class ApiClient implements ApiClientInstance {
       // Prepare headers
       const headers = { ...config.headers };
       
-      // Add authentication if required
-      if (config.requiresAuth) {
-        await this.addAuthHeaders(headers, config.body);
-      }
+      // No authentication: UI does not require or send auth headers
 
       // Set content type for requests with body
       if (config.body && !headers[REQUEST_HEADERS.CONTENT_TYPE]) {
@@ -478,23 +475,9 @@ export class ApiClient implements ApiClientInstance {
   /**
    * Add authentication headers using the authentication wrapper
    */
-  private async addAuthHeaders(headers: Record<string, string>, body?: any): Promise<void> {
-    try {
-      const authState = store.getState().auth;
-      
-      if (!authState?.isAuthenticated || !authState?.privateKey || !authState?.systemKeyId) {
-        throw new ApiError('Authentication required but not available');
-      }
-
-      // Authentication is now handled by the backend without requiring signed messages
-      // Just add a header to indicate the user is authenticated
-      headers[REQUEST_HEADERS.AUTHENTICATED] = 'true';
-      
-    } catch (_error) {
-      throw new ApiError('Authentication failed', HTTP_STATUS_CODES.UNAUTHORIZED, {
-        isNetworkError: false
-      });
-    }
+  private async addAuthHeaders(_headers: Record<string, string>, _body?: any): Promise<void> {
+    // No-op: UI does not perform authentication
+    return;
   }
 
   /**

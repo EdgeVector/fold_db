@@ -12,7 +12,9 @@ import https from 'node:https';
 import http from 'node:http';
 
 const OPENAPI_INPUT = process.argv[2] || process.env.OPENAPI_URL || 'http://localhost:9001/api/openapi.json';
-const projectRoot = process.cwd();
+// Ensure output always targets the static-react project, even if run from repo root
+const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const projectRoot = path.resolve(scriptDir, '..');
 const outputFile = path.join(projectRoot, 'src', 'api', 'endpoints.ts');
 
 function fetchJsonFromHttp(url) {
@@ -73,8 +75,18 @@ function pathToBuilder(pathStr) {
     return { kind: 'static', code: `'${withoutApi}'` };
   }
   const args = params.join(', ');
-  const template = withoutApi.replace(/\{(\w+)\}/g, (_m, p1) => `\$\{${p1}\}`);
+  const template = withoutApi.replace(/\{(\w+)\}/g, (_m, p1) => '${' + p1 + '}');
   return { kind: 'param', code: `(${args}) => \`${template}\`` };
+}
+
+// Build a typed parameter signature using OpenAPI types with a safe fallback
+function buildTypedParamSignature(pathStr, method, params) {
+  // Use a conditional type helper to avoid type errors when params are missing
+  // type PathParams<P extends keyof paths, M extends keyof paths[P]> =
+  //   paths[P][M] extends { parameters: { path: infer T } } ? T : Record<string, string>
+  return params
+    .map((p) => `${p}: PathParams<'${pathStr}', '${method}'>['${p}']`)
+    .join(', ');
 }
 
 function generateEndpointsFromSpec(spec) {
@@ -104,18 +116,99 @@ function generateEndpointsFromSpec(spec) {
 
   // Derived endpoints for all paths
   const derivedLines = [];
+  derivedLines.push("import type { paths } from '../types/openapi'\n");
+  derivedLines.push('type PathParams<P extends keyof paths, M extends keyof paths[P]> =');
+  derivedLines.push("  paths[P][M] extends { parameters: { path: infer T } } ? T : Record<string, string>\n");
   derivedLines.push('export const API_ENDPOINTS_DERIVED = {');
   for (const [p, info] of pathInfo.entries()) {
     const key = toConstCase(info.opId);
     const builder = pathToBuilder(p);
-    derivedLines.push(`  ${key}: ${builder.code},`);
+    if (builder.kind === 'param') {
+      const params = Array.from(p.matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
+      const typedSig = buildTypedParamSignature(p, info.method, params);
+      const code = builder.code.replace(/^\(([^)]*)\)/, `(${typedSig})`);
+      derivedLines.push(`  ${key}: ${code},`);
+    } else {
+      derivedLines.push(`  ${key}: ${builder.code},`);
+    }
   }
   derivedLines.push('} as const;');
 
-  // Single export: expose only derived endpoints
+  // Generate API_BASE_URLS from spec path prefixes
+  const baseSegments = new Set();
+  for (const p of Object.keys(paths)) {
+    const m = p.match(/^\/api\/?([^\/]+)/);
+    if (m && m[1]) baseSegments.add(m[1]);
+  }
+
+  const baseUrlsLines = [];
+  baseUrlsLines.push('// Base URL prefixes derived from OpenAPI paths');
+  baseUrlsLines.push('export const API_BASE_URLS = {');
+  baseUrlsLines.push("  ROOT: '/api',");
+  Array.from(baseSegments)
+    .sort()
+    .forEach((seg) => {
+      const key = toConstCase(seg);
+      baseUrlsLines.push(`  ${key}: '/api/${seg}',`);
+    });
+  baseUrlsLines.push('} as const;');
+
+  // Build canonical alias map to keep stable keys used across the app
+  const aliasLines = [];
+  aliasLines.push('export const API_ENDPOINTS_ALIASES = {');
+
+  const addAlias = (aliasKey, pathStr) => {
+    // Lookup using exact path or prefixed with /api for OpenAPI keys
+    const fullPath = pathStr.startsWith('/api') ? pathStr : `/api${pathStr.startsWith('/') ? '' : '/'}${pathStr}`;
+    const info = pathInfo.get(fullPath);
+    if (!info) return false;
+    const builder = pathToBuilder(fullPath);
+    if (builder.kind === 'param') {
+      const params = Array.from(fullPath.matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
+      const typedSig = buildTypedParamSignature(fullPath, info.method, params);
+      const code = builder.code.replace(/^\(([^)]*)\)/, `(${typedSig})`);
+      aliasLines.push(`  ${aliasKey}: ${code},`);
+    } else {
+      aliasLines.push(`  ${aliasKey}: ${builder.code},`);
+    }
+    return true;
+  };
+
+  // Canonical aliases expected by clients and lint rules
+  addAlias('MUTATION', '/mutation');
+  addAlias('QUERY', '/query');
+  addAlias('SCHEMAS_BASE', '/schemas');
+  addAlias('SCHEMA_BY_NAME', '/schema/{name}');
+  addAlias('SCHEMA_APPROVE', '/schema/{name}/approve');
+  addAlias('SCHEMA_BLOCK', '/schema/{name}/block');
+  addAlias('SYSTEM_STATUS', '/system/status');
+  // System and logs aliases used by UI clients
+  addAlias('SYSTEM_LOGS', '/logs');
+  addAlias('SYSTEM_LOGS_STREAM', '/logs/stream');
+  addAlias('SYSTEM_RESET_DATABASE', '/system/reset-database');
+  addAlias('SYSTEM_PRIVATE_KEY', '/system/private-key');
+  addAlias('SYSTEM_PUBLIC_KEY', '/system/public-key');
+  addAlias('TRANSFORMS', '/transforms');
+  addAlias('TRANSFORMS_QUEUE', '/transforms/queue');
+  addAlias('TRANSFORMS_QUEUE_ADD', '/transforms/queue/{id}');
+
+  // Ingestion aliases (canonical keys expected by UI clients)
+  addAlias('INGESTION_STATUS', '/ingestion/status');
+  addAlias('INGESTION_CONFIG', '/ingestion/config');
+  addAlias('INGESTION_VALIDATE', '/ingestion/validate');
+  addAlias('INGESTION_PROCESS', '/ingestion/process');
+  addAlias('INGESTION_HEALTH', '/ingestion/health');
+
+  aliasLines.push('} as const;');
+
+  // Single export: merge derived endpoints with aliases
   const lines = [];
   lines.push(...derivedLines);
-  lines.push('\nexport const API_ENDPOINTS = API_ENDPOINTS_DERIVED;');
+  lines.push('');
+  lines.push(...baseUrlsLines);
+  lines.push('');
+  lines.push(...aliasLines);
+  lines.push('\nexport const API_ENDPOINTS = { ...API_ENDPOINTS_DERIVED, ...API_ENDPOINTS_ALIASES } as const;');
   lines.push('export type ApiEndpoint = typeof API_ENDPOINTS[keyof typeof API_ENDPOINTS];');
 
   const content = header(OPENAPI_INPUT) + lines.join('\n') + '\n';

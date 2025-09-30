@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run generate:endpoints",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest --run",

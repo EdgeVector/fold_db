@@ -19,7 +19,7 @@ import { createTestStore } from '../utils/testUtilities.jsx'
 describe('Component Integration Tests', () => {
   describe('TabNavigation with Authentication', () => {
     it('integrates properly with authentication state changes', async () => {
-      const onTabChange = jest.fn()
+      const onTabChange = vi.fn()
       const { unmount } = await renderWithRedux(
         <TabNavigation
           activeTab="keys"
@@ -27,7 +27,7 @@ describe('Component Integration Tests', () => {
         />, { initialState: createUnauthenticatedState() }
       )
 
-      // Should show locked tabs when not authenticated (using custom auth-required tabs)
+      // Tabs are not locked when unauthenticated (public UI)
       const authRequiredTabs = [
         { id: 'admin', label: 'Admin', requiresAuth: true, icon: '👑' }
       ]
@@ -40,7 +40,7 @@ describe('Component Integration Tests', () => {
         />, { initialState: createUnauthenticatedState() }
       )
       
-      expect(screen.getByRole('button', { name: /admin tab/i })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /admin tab/i })).toBeEnabled()
 
       // Unmount and re-mount with authenticated state
       unmount()
@@ -51,7 +51,7 @@ describe('Component Integration Tests', () => {
         />, { initialState: createAuthenticatedState() }
       )
 
-      // Should now enable previously locked tabs
+      // Tabs remain enabled when authenticated
       expect(screen.getByRole('button', { name: /schemas tab/i })).toBeEnabled()
     })
   })
@@ -59,7 +59,7 @@ describe('Component Integration Tests', () => {
   describe('Form Components Integration', () => {
     it('handles schema selection workflow', async () => {
       const user = userEvent.setup()
-      const onSchemaChange = jest.fn()
+      const onSchemaChange = vi.fn()
       const mockSchemas = [
         { value: 'schema1', label: 'User Profile Schema' },
         { value: 'schema2', label: 'Product Catalog Schema' }
@@ -120,7 +120,7 @@ describe('Component Integration Tests', () => {
       const user = userEvent.setup()
       const onTabChange = jest.fn()
       const onSchemaChange = jest.fn()
-      const onRangeKeyChange = jest.fn()
+      const onRangeKeyChange = vi.fn()
 
       const mockSchemas = [
         { value: 'users', label: 'User Profiles' },
@@ -180,7 +180,7 @@ describe('Component Integration Tests', () => {
             name="field1"
             label="Required Field"
             value=""
-            onChange={jest.fn()}
+            onChange={vi.fn()}
             required={true}
             error="This field is required"
           />

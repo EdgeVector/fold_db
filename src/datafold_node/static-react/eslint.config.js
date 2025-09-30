@@ -16,13 +16,17 @@ export default [
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
+        localStorage: 'readonly',
         fetch: 'readonly',
         navigator: 'readonly',
         EventSource: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        clearTimeout: 'readonly',
         Element: 'readonly',
+        TextEncoder: 'readonly',
+        crypto: 'readonly',
         // Node.js globals
         global: 'readonly',
         require: 'readonly',
@@ -65,11 +69,23 @@ export default [
         },
         {
           selector: "Literal[value='/api/schema']",
-          message: "🚫 REGRESSION PREVENTION: Use API_ENDPOINTS.SCHEMA instead of hardcoded '/api/schema'"
+          message: "🚫 REGRESSION PREVENTION: Use API_ENDPOINTS.SCHEMAS_BASE or SCHEMA_BY_NAME(name)"
         },
         {
           selector: "Literal[value='/api/data/mutate']",
           message: "🚫 REGRESSION PREVENTION: Invalid endpoint! Use API_ENDPOINTS.MUTATION instead"
+        }
+      ],
+      // Block axios usage in app code
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'axios',
+              message: '🚫 Use unified ApiClient and domain clients instead of axios.'
+            }
+          ]
         }
       ],
       // Encourage using API clients instead of direct fetch
@@ -77,7 +93,7 @@ export default [
         'warn',
         {
           name: 'fetch',
-          message: '⚠️ Consider using MutationClient, SchemaClient, or SecurityClient instead of direct fetch() calls'
+          message: '⚠️ Consider using domain clients (schemaClient, mutationClient, etc.) instead of direct fetch() calls'
         }
       ]
     },
@@ -97,13 +113,17 @@ export default [
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
+        localStorage: 'readonly',
         fetch: 'readonly',
         navigator: 'readonly',
         EventSource: 'readonly',
         setTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        clearTimeout: 'readonly',
         Element: 'readonly',
+        TextEncoder: 'readonly',
+        crypto: 'readonly',
         // Node.js globals
         global: 'readonly',
         require: 'readonly',
@@ -145,11 +165,23 @@ export default [
         },
         {
           selector: "Literal[value='/api/schema']",
-          message: "🚫 REGRESSION PREVENTION: Use API_ENDPOINTS.SCHEMA instead of hardcoded '/api/schema'"
+          message: "🚫 REGRESSION PREVENTION: Use API_ENDPOINTS.SCHEMAS_BASE or SCHEMA_BY_NAME(name)"
         },
         {
           selector: "Literal[value='/api/data/mutate']",
           message: "🚫 REGRESSION PREVENTION: Invalid endpoint! Use API_ENDPOINTS.MUTATION instead"
+        }
+      ],
+      // Block axios usage in app code
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'axios',
+              message: '🚫 Use unified ApiClient and domain clients instead of axios.'
+            }
+          ]
         }
       ],
       // Encourage using API clients instead of direct fetch
@@ -157,7 +189,7 @@ export default [
         'warn',
         {
           name: 'fetch',
-          message: '⚠️ Consider using MutationClient, SchemaClient, or SecurityClient instead of direct fetch() calls'
+          message: '⚠️ Consider using domain clients (schemaClient, mutationClient, etc.) instead of direct fetch() calls'
         }
       ]
     },
@@ -184,6 +216,7 @@ export default [
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
+        localStorage: 'readonly',
         fetch: 'readonly',
         navigator: 'readonly',
         EventSource: 'readonly',
@@ -193,6 +226,8 @@ export default [
         clearTimeout: 'readonly',
         Element: 'readonly',
         performance: 'readonly',
+        TextEncoder: 'readonly',
+        crypto: 'readonly',
         // Web API globals for MSW tests
         Response: 'readonly',
         Request: 'readonly',
@@ -230,6 +265,7 @@ export default [
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
+        localStorage: 'readonly',
         fetch: 'readonly',
         navigator: 'readonly',
         EventSource: 'readonly',
@@ -239,6 +275,8 @@ export default [
         clearTimeout: 'readonly',
         Element: 'readonly',
         performance: 'readonly',
+        TextEncoder: 'readonly',
+        crypto: 'readonly',
         // Node.js globals
         global: 'readonly',
         require: 'readonly',
@@ -258,6 +296,7 @@ export default [
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
+        localStorage: 'readonly',
         fetch: 'readonly',
         navigator: 'readonly',
         EventSource: 'readonly',
@@ -267,6 +306,8 @@ export default [
         clearTimeout: 'readonly',
         Element: 'readonly',
         performance: 'readonly',
+        TextEncoder: 'readonly',
+        crypto: 'readonly',
         // Node.js globals
         global: 'readonly',
         require: 'readonly',

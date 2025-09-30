@@ -37,12 +37,10 @@ describe('TabNavigation', () => {
     expect(activeTab).toHaveAttribute('aria-current', 'page')
   })
 
-  it('shows lock icon for auth-required tabs when not authenticated', async () => {
+  it('renders tabs without authentication labels when not authenticated', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createUnauthenticatedState() })
-    
-    const authRequiredTabs = DEFAULT_TABS.filter(tab => tab.requiresAuth)
-    authRequiredTabs.forEach(tab => {
-      const tabButton = screen.getByRole('button', { name: new RegExp(`${tab.label} tab.*requires authentication`, 'i') })
+    DEFAULT_TABS.forEach(tab => {
+      const tabButton = screen.getByRole('button', { name: new RegExp(`${tab.label} tab`, 'i') })
       expect(tabButton).toBeInTheDocument()
     })
   })
@@ -54,13 +52,11 @@ describe('TabNavigation', () => {
     expect(keysTab).toBeInTheDocument()
   })
 
-  it('disables auth-required tabs when not authenticated', async () => {
+  it('keeps all tabs enabled regardless of authentication', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createUnauthenticatedState() })
-    
-    const authRequiredTabs = DEFAULT_TABS.filter(tab => tab.requiresAuth)
-    authRequiredTabs.forEach(tab => {
+    DEFAULT_TABS.forEach(tab => {
       const tabButton = screen.getByRole('button', { name: new RegExp(`${tab.label} tab`, 'i') })
-      expect(tabButton).toBeDisabled()
+      expect(tabButton).toBeEnabled()
     })
   })
 
@@ -82,7 +78,7 @@ describe('TabNavigation', () => {
     expect(defaultProps.onTabChange).toHaveBeenCalledWith('schemas')
   })
 
-  it('does not call onTabChange when clicking disabled auth-required tab', async () => {
+  it('calls onTabChange when clicking any tab', async () => {
     const authRequiredTabs = [
       { id: 'admin', label: 'Admin', requiresAuth: true, icon: '👑' }
     ]
@@ -92,7 +88,7 @@ describe('TabNavigation', () => {
     const adminTab = screen.getByRole('button', { name: /admin tab/i })
     fireEvent.click(adminTab)
     
-    expect(defaultProps.onTabChange).not.toHaveBeenCalled()
+    expect(defaultProps.onTabChange).toHaveBeenCalledWith('admin')
   })
 
   it('allows clicking Key Management tab when not authenticated', async () => {

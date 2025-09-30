@@ -40,7 +40,7 @@ impl TestDatabaseFactory {
 
     /// Create test schema (consolidates duplicate create_test_schema functions)
     pub fn create_test_schema(name: &str) -> crate::schema::types::Schema {
-        crate::schema::types::Schema::new(name.to_string(), SchemaType::Single, None, HashMap::new(), None)
+        crate::schema::types::Schema::new(name.to_string(), None, HashMap::new(), None)
     }
 
     /// Create test node config (consolidates create_test_config functions)

@@ -158,7 +158,7 @@ export class UnifiedIngestionClient {
 
   /**
    * Process data ingestion with AI analysis
-   * PROTECTED - Data processing requires authentication
+   * UNPROTECTED - UI does not require authentication per project preference
    * 
    * @param data The data to process
    * @param options Processing options

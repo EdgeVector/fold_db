@@ -55,31 +55,11 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     });
   }
 
-  /**
-   * Verify a signed message
-   * UNPROTECTED - No authentication required (verification endpoint)
-   * 
-   * @param signedMessage The signed message to verify
-   * @returns Promise resolving to verification result
-   */
-  async verifyMessage(signedMessage: SignedMessage): Promise<EnhancedApiResponse<VerificationResponse>> {
-    return this.client.post<VerificationResponse>(
-      API_ENDPOINTS.VERIFY_MESSAGE,
-      signedMessage,
-      {
-        requiresAuth: false, // Verification is public
-        timeout: API_TIMEOUTS.CRYPTO_OPERATIONS, // Reasonable timeout for crypto operations
-        retries: API_RETRIES.STANDARD, // Allow retries for network issues
-        cacheable: true, // Cache verification results
-        cacheTtl: API_CACHE_TTL.VERIFICATION_RESULTS, // Cache for 5 minutes
-        cacheKey: `${CACHE_KEYS.VERIFY}:${signedMessage.signature}:${signedMessage.public_key_id}`
-      }
-    );
-  }
+  // Removed verifyMessage: Single-developer mono-repo; no server verify endpoint yet.
 
   /**
-   * Get the system's public key
-   * UNPROTECTED - No authentication required (public key is public)
+ * Get the system's public key
+ * UNPROTECTED - UI never uses authentication
    * 
    * @returns Promise resolving to system public key
    */
@@ -111,7 +91,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     error?: string;
   } {
     try {
-      // Basic validation for Ed25519 public keys
+      // Basic validation for Ed25519 public keys without decoding
       if (!publicKey || typeof publicKey !== 'string') {
         return {
           isValid: false,
@@ -119,35 +99,32 @@ export class UnifiedSecurityClient implements SecurityApiClient {
         };
       }
 
-      // Remove any whitespace
       const cleanKey = publicKey.trim();
 
-      // Check if it's valid base64
-      try {
-        const decoded = atob(cleanKey);
-        const length = decoded.length;
-
-        // Ed25519 public keys are 32 bytes
-        if (length === 32) {
-          return {
-            isValid: true,
-            format: 'Ed25519',
-            length: length
-          };
-        } else {
-          return {
-            isValid: false,
-            format: 'Unknown',
-            length: length,
-            error: `Invalid key length: ${length} bytes (expected 32 for Ed25519)`
-          };
-        }
-      } catch {
+      // Base64 character check (no decode)
+      const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+      if (!base64Regex.test(cleanKey)) {
         return {
           isValid: false,
           error: 'Invalid base64 encoding'
         };
       }
+
+      // Ed25519 public keys are 32 bytes → base64 length should be 44
+      if (cleanKey.length !== 44) {
+        return {
+          isValid: false,
+          format: 'Unknown',
+          length: Math.ceil((cleanKey.length / 4) * 3),
+          error: 'Invalid key length: expected 44 base64 chars for Ed25519'
+        };
+      }
+
+      return {
+        isValid: true,
+        format: 'Ed25519',
+        length: 32
+      };
     } catch (error) {
       return {
         isValid: false,
@@ -158,7 +135,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
 
   /**
    * Get security status and configuration
-   * PROTECTED - Requires authentication
+   * UNPROTECTED - UI never uses authentication
    * 
    * @returns Promise resolving to security status
    */
@@ -262,8 +239,6 @@ export function createSecurityClient(client?: ApiClient): UnifiedSecurityClient 
   return new UnifiedSecurityClient(client);
 }
 
-// Backward compatibility exports - these will be deprecated
-export const verifyMessage = securityClient.verifyMessage.bind(securityClient);
 export const getSystemPublicKey = securityClient.getSystemPublicKey.bind(securityClient);
 
 // New exports

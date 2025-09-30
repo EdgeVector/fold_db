@@ -12,7 +12,6 @@
 
 import { useCallback, useState } from 'react';
 import { mutationClient } from '../../api/clients/mutationClient';
-import { API_ENDPOINTS } from '../../api/endpoints';
 import { useQueryState } from '../../hooks/useQueryState';
 import { useQueryBuilder } from '../../hooks/useQueryBuilder';
 import QueryForm from '../query/QueryForm';
@@ -23,7 +22,6 @@ import { useAppSelector } from '../../store/hooks';
 function QueryTab({ onResult }) {
   // UCR-1-7: Refactored to use extracted components and hooks
   // Use the extracted query state management hook
-  const isAuthenticated = useAppSelector(state => state.auth?.isAuthenticated ?? false);
   const {
     state: queryState,
     handleSchemaChange,
@@ -65,13 +63,7 @@ function QueryTab({ onResult }) {
 
     setIsExecuting(true);
     try {
-      // Use core API client to post directly to /query endpoint
-      const response = await mutationClient.client.post(API_ENDPOINTS.QUERY, queryData, {
-        timeout: 10000,
-        retries: 2,
-        cacheable: true,
-        cacheTtl: 60000
-      });
+      const response = await mutationClient.executeQuery(queryData);
       
       if (!response.success) {
         console.error('Query failed:', response.error);
@@ -136,18 +128,7 @@ function QueryTab({ onResult }) {
     }
   }, [isValid]);
 
-  if (!isAuthenticated) {
-    return (
-      <div className="p-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-yellow-800">Authentication Required</h2>
-          <p className="text-sm text-yellow-700 mt-2">
-            Please authenticate using the Keys tab before accessing query functionality.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // UI does not require authentication
 
   return (
     <div className="p-6">

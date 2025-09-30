@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from '../api/endpoints';
+// No backend auth endpoints; UI does not require authentication.
 /**
  * @fileoverview Authentication Hook
  * 
@@ -31,33 +31,20 @@ export function useAuth() {
    * @param {string} password - Password
    * @returns {Promise<object>} Login result
    */
-  const login = useCallback(async (username, password) => {
+  const login = useCallback(async (_username, _password) => {
     setIsLoading(true);
     try {
-      // In a real app, this would make an API call
-      const response = await fetch(API_ENDPOINTS.AUTH_LOGIN, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
+      // No-op login: store a session flag locally
+      const pseudoUser = { name: 'local-user' };
+      const pseudoToken = 'local-session';
 
-      if (!response.ok) {
-        throw new Error('Login failed');
-      }
+      setToken(pseudoToken);
+      setUser(pseudoUser);
 
-      const data = await response.json();
-      
-      setToken(data.token);
-      setUser(data.user);
-      
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('auth_user', JSON.stringify(data.user));
+      localStorage.setItem('auth_token', pseudoToken);
+      localStorage.setItem('auth_user', JSON.stringify(pseudoUser));
 
-      return { success: true, user: data.user };
-    } catch (error) {
-      throw new Error(error.message || 'Login failed');
+      return { success: true, user: pseudoUser };
     } finally {
       setIsLoading(false);
     }
@@ -89,31 +76,9 @@ export function useAuth() {
     if (!token) {
       throw new Error('No token to refresh');
     }
-
-    try {
-      const response = await fetch(API_ENDPOINTS.AUTH_REFRESH, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Token refresh failed');
-      }
-
-      const data = await response.json();
-      
-      setToken(data.token);
-      localStorage.setItem('auth_token', data.token);
-
-      return data.token;
-    } catch (error) {
-      logout(); // Clear invalid token
-      throw error;
-    }
-  }, [token, logout]);
+    // No backend token; just return the existing local token
+    return token;
+  }, [token]);
 
   // Check token validity on mount
   useEffect(() => {

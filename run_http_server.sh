@@ -18,13 +18,58 @@ cleanup_locks() {
     echo "Cleaned up existing processes."
 }
 
+# Optionally reset the database from test_db template
+reset_db() {
+    echo "Resetting database from test_db template..."
+    rm -rf data
+    cp -R test_db data
+    echo "Database reset complete."
+}
+
+# Parse flags
+RESET_DB=false
+for arg in "$@"; do
+    case "$arg" in
+        --reset-db)
+            RESET_DB=true
+            shift
+            ;;
+        *)
+            ;;
+    esac
+done
+
 # Clean up any existing locks and processes
 cleanup_locks
 
-# Build the React frontend first
+# Reset DB if requested
+if [ "$RESET_DB" = true ]; then
+    reset_db
+fi
+
+# Build the Rust project first (needed to generate OpenAPI spec)
+echo "Building the Rust project..."
+cargo build
+
+if [ $? -ne 0 ]; then
+    echo "Rust build failed. Exiting."
+    exit 1
+fi
+
+# Generate OpenAPI spec to a local file for the UI prebuild
+echo "Generating OpenAPI spec..."
+mkdir -p target
+cargo run --quiet --bin openapi_dump > target/openapi.json
+
+if [ $? -ne 0 ]; then
+    echo "Failed to generate OpenAPI spec. Exiting."
+    exit 1
+fi
+
+# Build the React frontend (prebuild will read OPENAPI_URL file)
 echo "Building the React frontend..."
 cd src/datafold_node/static-react
-npm run build
+OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
 
 if [ $? -ne 0 ]; then
     echo "React build failed. Exiting."
@@ -33,15 +78,6 @@ fi
 
 # Go back to root directory
 cd ../../..
-
-# Build the Rust project
-echo "Building the Rust project..."
-cargo build
-
-if [ $? -ne 0 ]; then
-    echo "Rust build failed. Exiting."
-    exit 1
-fi
 
 # Run the HTTP server in the background
 echo "Starting the HTTP server on port 9001 in the background..."

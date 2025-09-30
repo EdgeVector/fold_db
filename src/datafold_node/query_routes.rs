@@ -39,7 +39,15 @@ pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) 
     let processor = OperationProcessor::new(node_arc);
 
     match processor.execute_query_map(schema, fields, filter).await {
-        Ok(result_map) => HttpResponse::Ok().json(json!({"data": records_from_field_map(&result_map)})),
+        Ok(result_map) => {
+            // Return results as array of { key: KeyValue, fields: {...} }
+            let records_map = records_from_field_map(&result_map);
+            let data: Vec<Value> = records_map
+                .into_iter()
+                .map(|(key, record)| json!({ "key": key, "fields": record.fields }))
+                .collect();
+            HttpResponse::Ok().json(json!({"data": data}))
+        },
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to execute query: {}", e)})),
     }

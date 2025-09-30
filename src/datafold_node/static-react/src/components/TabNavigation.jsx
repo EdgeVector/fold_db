@@ -1,13 +1,12 @@
 /**
- * @fileoverview TabNavigation Component - Authentication-aware tab navigation
+ * @fileoverview TabNavigation Component - Public UI tab navigation
  *
  * This component provides a reusable tab navigation interface with built-in
  * authentication awareness, accessibility features, and smooth transitions.
- * It automatically handles disabled states for authentication-required tabs
- * and provides visual indicators for auth status.
+ * It provides accessible navigation, disabled state handling, and icons.
  *
  * **Key Features:**
- * - Authentication-aware tab management
+ * - Simple, public tab management (no authentication)
  * - Accessibility compliant (ARIA attributes, keyboard navigation)
  * - Smooth transitions with configurable duration
  * - Icon support for visual enhancement
@@ -23,18 +22,16 @@
 
 import {
   DEFAULT_TABS,
-  AUTH_INDICATORS,
   TAB_TRANSITION_DURATION_MS
 } from '../constants/ui.js';
 
 import { COMPONENT_STYLES } from '../constants/styling.js';
-import { useAppSelector } from '../store/hooks';
 
 /**
  * @typedef {Object} TabConfig
  * @property {string} id - Unique tab identifier used for navigation and state management
  * @property {string} label - Display label shown to users
- * @property {boolean} requiresAuth - Whether tab requires user authentication to access
+ * @property {boolean} [requiresAuth] - Deprecated, ignored in public UI
  * @property {string} [icon] - Optional emoji or icon character for visual enhancement
  * @property {boolean} [disabled] - Whether tab is disabled regardless of auth status
  */
@@ -55,9 +52,7 @@ import { useAppSelector } from '../store/hooks';
  * It provides smooth transitions and follows accessibility best practices.
  *
  * **Authentication Behavior:**
- * - Tabs with `requiresAuth: true` are disabled when user is not authenticated
- * - Visual indicators (🔒/✓) show authentication status
- * - Clicking disabled auth-required tabs is prevented
+ * - Not applicable. UI does not use authentication.
  *
  * **Accessibility Features:**
  * - Proper ARIA attributes (`aria-current`, `aria-label`)
@@ -80,12 +75,10 @@ import { useAppSelector } from '../store/hooks';
  * // Basic usage with default tabs
  * function App() {
  *   const [activeTab, setActiveTab] = useState('schemas');
- *   const [isAuthenticated, setIsAuthenticated] = useState(false);
  *
  *   return (
  *     <TabNavigation
  *       activeTab={activeTab}
- *       isAuthenticated={isAuthenticated}
  *       onTabChange={setActiveTab}
  *     />
  *   );
@@ -93,7 +86,7 @@ import { useAppSelector } from '../store/hooks';
  *
  * // Custom tabs configuration
  * const customTabs = [
- *   { id: 'dashboard', label: 'Dashboard', requiresAuth: true, icon: '📊' },
+ *   { id: 'dashboard', label: 'Dashboard', icon: '📊' },
  *   { id: 'settings', label: 'Settings', requiresAuth: false, icon: '⚙️' },
  *   { id: 'admin', label: 'Admin', requiresAuth: true, disabled: !isAdmin }
  * ];
@@ -122,7 +115,6 @@ import { useAppSelector } from '../store/hooks';
  *   return (
  *     <TabNavigation
  *       activeTab={location.pathname.slice(1)}
- *       isAuthenticated={isAuthenticated}
  *       onTabChange={handleTabChange}
  *     />
  *   );
@@ -137,19 +129,13 @@ function TabNavigation({
   onTabChange,
   className = ''
 }) {
-  const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
-
-  const handleTabClick = (tabId, requiresAuth) => {
-    // Prevent navigation to auth-required tabs when not authenticated
-    if (requiresAuth && !isAuthenticated) {
-      return;
-    }
+  const handleTabClick = (tabId, _requiresAuth) => {
     onTabChange(tabId);
   };
 
   const getTabStyles = (tab) => {
     const isActive = activeTab === tab.id;
-    const isDisabled = tab.disabled || (tab.requiresAuth && !isAuthenticated);
+    const isDisabled = tab.disabled || false;
     
     let styles = COMPONENT_STYLES.tab.base;
     
@@ -164,20 +150,11 @@ function TabNavigation({
     return styles;
   };
 
-  const getAuthIndicator = (tab) => {
-    if (!tab.requiresAuth) {
-      return isAuthenticated ? AUTH_INDICATORS.authenticated : null;
-    }
-    
-    return isAuthenticated ? null : AUTH_INDICATORS.unauthenticated;
-  };
-
   return (
     <div className={`border-b border-gray-200 ${className}`}>
       <div className="flex space-x-8">
         {tabs.map((tab) => {
-          const isDisabled = tab.disabled || (tab.requiresAuth && !isAuthenticated);
-          const authIndicator = getAuthIndicator(tab);
+          const isDisabled = tab.disabled || false;
           
           return (
             <button
@@ -186,7 +163,7 @@ function TabNavigation({
               onClick={() => handleTabClick(tab.id, tab.requiresAuth)}
               disabled={isDisabled}
               aria-current={activeTab === tab.id ? 'page' : undefined}
-              aria-label={`${tab.label} tab${tab.requiresAuth && !isAuthenticated ? ' (requires authentication)' : ''}`}
+              aria-label={`${tab.label} tab`}
               style={{
                 transitionDuration: `${TAB_TRANSITION_DURATION_MS}ms`
               }}
@@ -200,20 +177,6 @@ function TabNavigation({
               
               {/* Tab Label */}
               <span>{tab.label}</span>
-              
-              {/* Auth Indicator */}
-              {authIndicator && (
-                <span 
-                  className="ml-1 text-xs" 
-                  aria-label={
-                    authIndicator === AUTH_INDICATORS.unauthenticated
-                      ? 'authentication required'
-                      : 'authenticated'
-                  }
-                >
-                  {authIndicator}
-                </span>
-              )}
             </button>
           );
         })}

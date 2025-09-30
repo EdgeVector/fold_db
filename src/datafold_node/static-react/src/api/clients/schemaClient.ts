@@ -46,11 +46,35 @@ export class UnifiedSchemaClient {
    * UNPROTECTED - No authentication required
    */
   async getSchemas(): Promise<EnhancedApiResponse<Schema[]>> {
-    return this.client.get<Schema[]>(API_ENDPOINTS.SCHEMAS_BASE, {
+    const response = await this.client.get<unknown>(API_ENDPOINTS.SCHEMAS_BASE, {
       cacheable: true,
       cacheKey: 'schemas:all',
       cacheTtl: 300000 // 5 minutes
     });
+
+    if (!response.success) {
+      return { ...response, data: [] } as EnhancedApiResponse<Schema[]>;
+    }
+
+    // Normalize various possible shapes into Schema[] to avoid forEach errors downstream
+    const raw = (response as any).data;
+    let list: Schema[] = [];
+    if (Array.isArray(raw)) {
+      list = raw as Schema[];
+    } else if (raw && Array.isArray(raw.schemas)) {
+      list = raw.schemas as Schema[];
+    } else if (raw && Array.isArray(raw.data)) {
+      // Server returns { data: [...] }
+      list = raw.data as Schema[];
+    } else {
+      // Unexpected shape; log once and return empty list to keep UI stable
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[schemaClient.getSchemas] Unexpected response shape; normalizing to empty array', raw);
+      }
+      list = [];
+    }
+
+    return { ...response, data: list } as EnhancedApiResponse<Schema[]>;
   }
 
   /**

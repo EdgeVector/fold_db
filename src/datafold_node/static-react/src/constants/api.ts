@@ -3,6 +3,7 @@
  * Centralized API configuration for API-STD-1 compliance
  * Extracted from repeated patterns across API clients for DRY enforcement
  */
+import { API_BASE_URLS as GENERATED_API_BASE_URLS } from '../api/endpoints';
 
 // Base Request Configuration
 export const API_REQUEST_TIMEOUT_MS = 30000;
@@ -63,17 +64,8 @@ export const API_CACHE_TTL = {
   MUTATION_HISTORY: 300000
 } as const;
 
-// API Base URLs
-export const API_BASE_URLS = {
-  ROOT: '/api',
-  SECURITY: '/api/security',
-  SCHEMAS: '/api/schemas',
-  SYSTEM: '/api/system',
-  TRANSFORMS: '/api/transforms',
-  INGESTION: '/api/ingestion',
-  MUTATIONS: '/api/mutations',
-  QUERIES: '/api/queries'
-} as const;
+// API Base URLs (generated from Rust OpenAPI via endpoints.ts)
+export const API_BASE_URLS = GENERATED_API_BASE_URLS;
 
 // HTTP Status Codes
 export const HTTP_STATUS_CODES = {

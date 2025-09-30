@@ -5,16 +5,19 @@ import QueryTab from '../../../components/tabs/QueryTab'
 import { renderWithRedux, createTestSchemaState, createMockAuthState } from '../../utils/testStore.jsx'
 
 // Mock the API client
-vi.mock('../../../api/clients/mutationClient', () => ({
-  mutationClient: {
-    client: {
-      post: vi.fn(() => Promise.resolve({
-        success: true,
-        data: { results: ['test result'] }
-      }))
+vi.mock('../../../api/clients/mutationClient', () => {
+  const post = vi.fn(() => Promise.resolve({
+    success: true,
+    data: { results: ['test result'] }
+  }));
+
+  return {
+    mutationClient: {
+      client: { post },
+      executeQuery: (...args) => post(...args),
     }
-  }
-}))
+  };
+})
 
 // Mock the query hooks
 vi.mock('../../../hooks/useQueryState', () => ({
@@ -91,7 +94,7 @@ describe('QueryTab Component', () => {
     vi.clearAllMocks()
   })
 
-  it('renders query interface when not authenticated (no auth required)', async () => {
+  it('renders query interface regardless of authentication', async () => {
     const authState = createMockAuthState({ isAuthenticated: false })
     const initialState = {
       auth: authState,
@@ -102,9 +105,9 @@ describe('QueryTab Component', () => {
       preloadedState: initialState
     })
 
-    // Should render the authentication warning since QueryTab requires auth
-    expect(screen.getByText('Authentication Required')).toBeInTheDocument()
-    expect(screen.getByText('Please authenticate using the Keys tab before accessing query functionality.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByTestId('query-form')).toBeInTheDocument()
+    }, { timeout: 5000 })
   })
 
   it('renders query interface when authenticated', async () => {

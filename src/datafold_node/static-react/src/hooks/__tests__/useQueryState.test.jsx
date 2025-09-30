@@ -346,12 +346,15 @@ describe('useQueryState Hook', () => {
       expect(result.current.rangeKey).toBeNull();
     });
 
-    it('should return null for selected schema object when not authenticated', () => {
+    it('returns selected schema object regardless of authentication', () => {
       mockUseAppSelector.mockImplementation((selector) => {
-        if (selector.toString().includes('auth')) {
-          return { isAuthenticated: false };
+        if (selector === selectAllSchemas) {
+          return mockSchemas;
         }
-        return [];
+        if (selector === selectFetchLoading) {
+          return false;
+        }
+        return undefined;
       });
 
       const { result } = renderUseQueryState();
@@ -360,7 +363,7 @@ describe('useQueryState Hook', () => {
         result.current.handleSchemaChange('UserSchema');
       });
 
-      expect(result.current.selectedSchemaObj).toBeNull();
+      expect(result.current.selectedSchemaObj).toEqual(mockSchemas[0]);
     });
 
     it('should return selected schema object when authenticated', () => {
