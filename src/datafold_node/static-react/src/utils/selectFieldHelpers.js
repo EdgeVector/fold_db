@@ -7,7 +7,6 @@
  */
 
 import { isValueEmpty } from './rangeSchemaHelpers.js';
-import { generateFieldId } from './formHelpers.js';
 
 /**
  * Groups options by their group property

@@ -4,6 +4,7 @@ use utoipa::OpenApi;
 #[openapi(
     paths(
         crate::datafold_node::schema_routes::list_schemas,
+        crate::datafold_node::schema_routes::load_schemas,
         crate::datafold_node::schema_routes::get_schema,
         crate::datafold_node::schema_routes::approve_schema,
         crate::datafold_node::schema_routes::block_schema,

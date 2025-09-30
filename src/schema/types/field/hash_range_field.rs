@@ -13,7 +13,7 @@ use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperations;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use crate::atom::MoleculeHashRange;
+use crate::atom::{MoleculeHashRange, MoleculeBehavior};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use log::{info, error};
@@ -77,9 +77,12 @@ impl crate::schema::types::field::Field for HashRangeField {
     }
 
     fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
-        // Initialize molecule if needed
+        // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.molecule.is_none() {
-            self.molecule = Some(crate::atom::MoleculeHashRange::new(pub_key.clone()));
+            let new_molecule = crate::atom::MoleculeHashRange::new(pub_key.clone());
+            // Get the molecule's UUID and set it in FieldCommon for persistence lookup
+            self.inner.set_molecule_uuid(new_molecule.uuid().to_string());
+            self.molecule = Some(new_molecule);
         }
         
         // For HashRangeField, we use both hash and range keys to store the atom

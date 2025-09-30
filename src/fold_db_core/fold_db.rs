@@ -275,10 +275,45 @@ impl FoldDB {
         for (field_name, value) in mutation.fields_and_values {
             if let Some(schema_field) = schema.fields.get_mut(&field_name) {
                 schema_field.refresh_from_db(&self.db_ops);
-                let new_atom = Atom::new(mutation.schema_name.clone(), mutation.pub_key.clone(), value);
+                let new_atom = Atom::new(mutation.schema_name.clone(), mutation.pub_key.clone(), value.clone());
+                
+                // Persist the atom to the database
+                self.db_ops.store_item(&format!("atom:{}", new_atom.uuid()), &new_atom)?;
+                
+                // Write to field (updates in-memory molecule)
                 schema_field.write_mutation(&key_value, new_atom, mutation.pub_key.clone());
+                
+                // Persist the updated molecule to the database (done after write_mutation)
+                // Extract molecule_uuid first to avoid borrow conflict
+                let molecule_uuid = schema_field.common().molecule_uuid().map(|s| s.to_string());
+                
+                if let Some(mol_uuid) = molecule_uuid {
+                    // Get the molecule from the field and persist it
+                    use crate::schema::types::field::FieldVariant;
+                    match schema_field {
+                        FieldVariant::Single(f) => {
+                            if let Some(mol) = &f.molecule {
+                                self.db_ops.store_item(&format!("ref:{}", mol_uuid), mol)?;
+                            }
+                        }
+                        FieldVariant::Range(f) => {
+                            if let Some(mol) = &f.molecule {
+                                self.db_ops.store_item(&format!("ref:{}", mol_uuid), mol)?;
+                            }
+                        }
+                        FieldVariant::HashRange(f) => {
+                            if let Some(mol) = &f.molecule {
+                                self.db_ops.store_item(&format!("ref:{}", mol_uuid), mol)?;
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        // Persist the updated schema back to the database and schema_manager
+        self.db_ops.store_schema(&schema.name, &schema)?;
+        self.schema_manager.load_schema_internal(schema)?;
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;

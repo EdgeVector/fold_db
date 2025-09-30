@@ -9,6 +9,7 @@ use log::{info};
 use serde::{Serialize};
 use serde_json;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -88,12 +89,15 @@ impl SchemaCore {
 
     pub fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
         let name = schema.name.clone();
-
-        if self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?.contains_key(&name) {
-            return Ok(());
-        } else {
-            self.add_schema_available(schema)?;
-        };
+        let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
+        
+        // Update or insert the schema (allows updating existing schemas)
+        schemas.insert(name.clone(), schema);
+        
+        // Ensure the schema has a state (default to Available if not present)
+        let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
+        schema_states.entry(name).or_insert(SchemaState::Available);
+        
         Ok(())
     }
 
@@ -126,11 +130,154 @@ impl SchemaCore {
         }
     }
 
+    /// Load all schema files from a directory (creates Available schemas)
+    /// Only processes .json files; ignores non-existent directories
+    pub fn load_schemas_from_directory<P: AsRef<std::path::Path>>(
+        &self,
+        directory: P,
+    ) -> Result<usize, SchemaError> {
+        let dir_path = directory.as_ref();
+        if !dir_path.exists() {
+            return Ok(0);
+        }
+
+        let mut loaded_count: usize = 0;
+        let entries = fs::read_dir(dir_path).map_err(|e| {
+            SchemaError::InvalidData(format!("Failed to read directory {}: {}", dir_path.display(), e))
+        })?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to read entry in {}: {}", dir_path.display(), e))
+            })?;
+            let path = entry.path();
+            if path.extension().map(|ext| ext == "json").unwrap_or(false) {
+                match self.load_schema_from_file(&path) {
+                    Ok(()) => {
+                        loaded_count += 1;
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load schema from file {}: {}", path.display(), e);
+                    }
+                }
+            }
+        }
+
+        Ok(loaded_count)
+    }
+
     /// Creates a new SchemaCore for testing purposes with a temporary database
     pub fn new_for_testing() -> Result<Self, SchemaError> {
         let db = sled::Config::new().temporary(true).open()?;
         let db_ops = std::sync::Arc::new(crate::db_operations::DbOperations::new(db)?);
         let message_bus = Arc::new(MessageBus::new());
         Self::new(db_ops, message_bus)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blogpost_schema_json() -> String {
+        // Declarative schema format used in available_schemas
+        // Minimal fields map is acceptable per current parser
+        r#"{
+            "name": "BlogPost",
+            "key": { "range_field": "publish_date" },
+            "fields": {
+                "title": {},
+                "content": {},
+                "author": {},
+                "publish_date": {}
+            }
+        }"#.to_string()
+    }
+
+    fn wordindex_schema_json() -> String {
+        r#"{
+            "name": "BlogPostWordIndex",
+            "key": { "hash_field": "word", "range_field": "publish_date" },
+            "fields": {
+                "word": {},
+                "publish_date": {}
+            }
+        }"#.to_string()
+    }
+
+    #[test]
+    fn new_for_testing_starts_with_empty_schemas() {
+        let core = SchemaCore::new_for_testing().expect("init core");
+        let schemas = core.get_schemas().expect("get_schemas");
+        assert!(schemas.is_empty(), "expected no schemas at start");
+    }
+
+    #[test]
+    fn load_schema_from_json_adds_available_schema() {
+        let core = SchemaCore::new_for_testing().expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json()).expect("load blogpost");
+
+        let schemas = core.get_schemas().expect("get_schemas");
+        assert!(schemas.contains_key("BlogPost"), "BlogPost should be loaded");
+
+        let states = core.get_schema_states().expect("get states");
+        assert_eq!(states.get("BlogPost"), Some(&SchemaState::Available));
+    }
+
+    #[test]
+    fn load_multiple_schemas_from_json() {
+        let core = SchemaCore::new_for_testing().expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json()).expect("load blogpost");
+        core.load_schema_from_json(&wordindex_schema_json()).expect("load wordindex");
+
+        let schemas = core.get_schemas().expect("get_schemas");
+        assert!(schemas.contains_key("BlogPost"));
+        assert!(schemas.contains_key("BlogPostWordIndex"));
+
+        let states = core.get_schema_states().expect("get states");
+        assert_eq!(states.get("BlogPost"), Some(&SchemaState::Available));
+        assert_eq!(states.get("BlogPostWordIndex"), Some(&SchemaState::Available));
+    }
+
+    #[test]
+    fn load_schema_from_file_works_with_declarative_format() {
+        let core = SchemaCore::new_for_testing().expect("init core");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("BlogPost.json");
+        std::fs::write(&path, blogpost_schema_json()).expect("write schema json");
+
+        core.load_schema_from_file(&path).expect("load from file");
+        let schemas = core.get_schemas().expect("get_schemas");
+        assert!(schemas.contains_key("BlogPost"));
+    }
+
+    #[test]
+    fn blogpost_wordindex_sets_hashrange_keyconfig() {
+        use crate::schema::types::schema::SchemaType;
+
+        let core = SchemaCore::new_for_testing().expect("init core");
+        core.load_schema_from_json(&wordindex_schema_json()).expect("load wordindex");
+
+        let schemas = core.get_schemas().expect("get_schemas");
+        let s = schemas.get("BlogPostWordIndex").expect("schema exists");
+        match &s.schema_type {
+            SchemaType::HashRange { keyconfig } => {
+                assert_eq!(keyconfig.hash_field.as_deref(), Some("word"));
+                assert_eq!(keyconfig.range_field.as_deref(), Some("publish_date"));
+            }
+            other => panic!("expected HashRange schema_type, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn load_wordindex_schema_from_file() {
+        let core = SchemaCore::new_for_testing().expect("init core");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("BlogPostWordIndex.json");
+        std::fs::write(&path, wordindex_schema_json()).expect("write schema json");
+
+        core.load_schema_from_file(&path).expect("load from file");
+        let schemas = core.get_schemas().expect("get_schemas");
+        assert!(schemas.contains_key("BlogPostWordIndex"));
     }
 }

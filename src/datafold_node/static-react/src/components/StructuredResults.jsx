@@ -57,7 +57,7 @@ function formatValue(value) {
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   try {
     return JSON.stringify(value, null, 2)
-  } catch (_e) {
+  } catch {
     return String(value)
   }
 }
@@ -100,10 +100,10 @@ export default function StructuredResults({ results, pageSize = DEFAULT_PAGE_SIZ
     })
   }, [])
 
-  const showMoreHashes = useCallback(() => {
-    const nextCount = Math.min(allHashes.length, hashWindow.count + pageSize)
-    setHashWindow((w) => ({ start: 0, count: nextCount }))
-  }, [allHashes.length, hashWindow.count, pageSize])
+const showMoreHashes = useCallback(() => {
+  const nextCount = Math.min(allHashes.length, hashWindow.count + pageSize)
+  setHashWindow((_w) => ({ start: 0, count: nextCount }))
+}, [allHashes, hashWindow.count, pageSize])
 
   const visibleHashes = useMemo(() => sliceKeys(allHashes, hashWindow.start, hashWindow.count), [allHashes, hashWindow])
 

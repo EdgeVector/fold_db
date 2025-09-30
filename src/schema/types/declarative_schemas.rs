@@ -20,11 +20,13 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         #[derive(serde::Deserialize)]
         struct DeclarativeSchemaDefinitionHelper {
             name: String,
-            schema_type: crate::schema::types::schema::SchemaType,
+            // Allow schema_type to be omitted; we will derive from key if missing
+            schema_type: Option<crate::schema::types::schema::SchemaType>,
             #[serde(skip_serializing_if = "Option::is_none")]
             key: Option<KeyConfig>,
+            // Accept either an array of strings or an object map and normalize later
             #[serde(skip_serializing_if = "Option::is_none")]
-            fields: Option<Vec<String>>,
+            fields: Option<serde_json::Value>,
             #[serde(skip_serializing_if = "Option::is_none")]
             transform_fields: Option<HashMap<String, String>>,
         }
@@ -32,12 +34,60 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         // Deserialize into the helper struct
         let helper = DeclarativeSchemaDefinitionHelper::deserialize(deserializer)?;
         
+        // Normalize fields into Option<Vec<String>> supporting multiple shapes
+        let normalized_fields: Option<Vec<String>> = match helper.fields {
+            None => None,
+            Some(val) => {
+                if let Some(arr) = val.as_array() {
+                    // Expect array of strings
+                    let mut out: Vec<String> = Vec::new();
+                    for item in arr {
+                        if let Some(s) = item.as_str() {
+                            out.push(s.to_string());
+                        } else {
+                            return Err(serde::de::Error::custom("Invalid fields array; expected strings"));
+                        }
+                    }
+                    Some(out)
+                } else if let Some(obj) = val.as_object() {
+                    // Accept object map and use keys as field names
+                    let mut names: Vec<String> = obj.keys().cloned().collect();
+                    names.sort();
+                    Some(names)
+                } else {
+                    return Err(serde::de::Error::custom("Invalid fields; expected array or object map"));
+                }
+            }
+        };
+
+        // Determine schema_type if omitted
+        let normalized_schema_type = match (&helper.schema_type, &helper.key) {
+            (Some(st), _) => st.clone(),
+            (None, Some(k)) => {
+                use crate::schema::types::schema::SchemaType;
+                let has_hash = k.hash_field.is_some();
+                let has_range = k.range_field.is_some();
+                if has_hash && has_range {
+                    SchemaType::HashRange { keyconfig: k.clone() }
+                } else if has_range || has_hash {
+                    // If either key exists (but not both), treat as Range
+                    SchemaType::Range { keyconfig: k.clone() }
+                } else {
+                    SchemaType::Single
+                }
+            }
+            (None, None) => {
+                use crate::schema::types::schema::SchemaType;
+                SchemaType::Single
+            }
+        };
+
         // Use the constructor to create the actual struct with generated mappings
         Ok(DeclarativeSchemaDefinition::new(
             helper.name,
-            helper.schema_type,
+            normalized_schema_type,
             helper.key,
-            helper.fields,
+            normalized_fields,
             helper.transform_fields,
         ))
     }
@@ -146,13 +196,15 @@ impl DeclarativeSchemaDefinition {
     fn generate_hash_to_code_mappings(&mut self) {
         let mut hash_to_code = HashMap::new();
         
-        // Hash field expressions
-        for (field_name, field_def) in self.transform_fields.as_ref().unwrap().iter() {
-            let field_def_str = field_def.as_str();
-            if !field_def_str.trim().is_empty() {
-                let hash = Self::hash_expression(field_def_str);
-                hash_to_code.insert(hash.clone(), field_def_str.to_string());
-                self.field_to_hash_code.insert(field_name.clone(), hash);
+        // Hash field expressions if provided; tolerate missing transform_fields
+        if let Some(map) = self.transform_fields.as_ref() {
+            for (field_name, field_def) in map.iter() {
+                let field_def_str = field_def.as_str();
+                if !field_def_str.trim().is_empty() {
+                    let hash = Self::hash_expression(field_def_str);
+                    hash_to_code.insert(hash.clone(), field_def_str.to_string());
+                    self.field_to_hash_code.insert(field_name.clone(), hash);
+                }
             }
         }
         

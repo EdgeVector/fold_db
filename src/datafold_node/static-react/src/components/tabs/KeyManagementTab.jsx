@@ -6,7 +6,7 @@ import { validatePrivateKey, clearAuthentication } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { bytesToBase64 } from '../../utils/cryptoUtils';
 
-function KeyManagementTab({ onResult }) {
+function KeyManagementTab({ onResult: _onResult }) {
     // Redux state and dispatch
     const dispatch = useAppDispatch();
     const authState = useAppSelector(state => state.auth);

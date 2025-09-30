@@ -134,6 +134,7 @@ impl DataFoldHttpServer {
                         )
                         // Schema endpoints
                         .route("/schemas", web::get().to(schema_routes::list_schemas))
+                        .route("/schemas/load", web::post().to(schema_routes::load_schemas))
                         .route("/schema/{name}", web::get().to(schema_routes::get_schema))
                         .route(
                             "/schema/{name}/approve",

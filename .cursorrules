@@ -1,0 +1,1 @@
+use ./run_http_server to start the server, it will kill all other db proccesses and start the front and back end.

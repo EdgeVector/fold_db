@@ -8,7 +8,7 @@
  * @since 2.0.0
  */
 
-import { getPublicKey, utils, sign, verify } from '@noble/ed25519';
+import { utils, sign, verify } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 import { Buffer } from 'buffer';
 
@@ -45,7 +45,7 @@ export async function verifySignature(signature, payload, publicKeyBase64) {
     const message = new TextEncoder().encode(payloadString);
     
     return await verify(sig, message, publicKey);
-  } catch (error) {
+  } catch {
     return false;
   }
 }

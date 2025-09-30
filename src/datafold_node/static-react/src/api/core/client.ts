@@ -454,7 +454,7 @@ export class ApiClient implements ApiClientInstance {
       } else {
         data = await response.text() as T;
       }
-    } catch (_error) {
+    } catch {
       throw new ApiError('Failed to parse response', response.status, { requestId });
     }
 

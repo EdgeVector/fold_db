@@ -17,7 +17,7 @@ import { useQueryBuilder } from '../../hooks/useQueryBuilder';
 import QueryForm from '../query/QueryForm';
 import QueryActions from '../query/QueryActions';
 import QueryPreview from '../query/QueryPreview';
-import { useAppSelector } from '../../store/hooks';
+// import { useAppSelector } from '../../store/hooks';
 
 function QueryTab({ onResult }) {
   // UCR-1-7: Refactored to use extracted components and hooks

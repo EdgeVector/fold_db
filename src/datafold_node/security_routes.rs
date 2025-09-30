@@ -40,10 +40,8 @@ pub async fn get_system_public_key(data: web::Data<AppState>) -> ActixResult<Htt
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn minimal() {
-        assert!(true);
+        // Intentionally empty: compile-time smoke test for this module
     }
 }

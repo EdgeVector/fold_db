@@ -7,7 +7,6 @@ use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use sled::{Db, Tree};
 use std::sync::Arc;
 use std::collections::HashMap;
-use crate::schema::types::schema::SchemaType;
 
 /// Consolidated temporary database creation - eliminates 11+ duplicates
 pub struct TestDatabaseFactory;

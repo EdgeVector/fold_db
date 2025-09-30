@@ -41,7 +41,7 @@ function QueryForm({
   queryState,
   onSchemaChange,
   onFieldToggle,
-  onFieldValueChange,
+  onFieldValueChange: _onFieldValueChange,
   onRangeFilterChange,
   onRangeSchemaFilterChange,
   onHashKeyChange,
@@ -58,7 +58,7 @@ function QueryForm({
   /**
    * Validate query form data
    */
-  const validateForm = useCallback(() => {
+  const _validateForm = useCallback(() => {
     const errors = {};
 
     // Schema validation
@@ -94,7 +94,7 @@ function QueryForm({
     }
     // Clear schema validation error
     setValidationErrors(prev => {
-      const { schema, ...rest } = prev;
+      const { schema: _schema, ...rest } = prev;
       return rest;
     });
   }, [onSchemaChange, clearQuery]);
@@ -106,7 +106,7 @@ function QueryForm({
     onFieldToggle(fieldName);
     // Clear fields validation error
     setValidationErrors(prev => {
-      const { fields, ...rest } = prev;
+      const { fields: _fields, ...rest } = prev;
       return rest;
     });
   }, [onFieldToggle]);
@@ -116,7 +116,7 @@ function QueryForm({
     : {};
 
   const rangeFields = Object.entries(selectedSchemaFields)
-    .filter(([_, field]) => field.field_type === 'Range');
+    .filter(([__name, field]) => field.field_type === 'Range');
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -248,7 +248,7 @@ function QueryForm({
               onRangeSchemaFilterChange(value);
               // Clear range filter validation error
               setValidationErrors(prev => {
-                const { rangeFilter, ...rest } = prev;
+                const { rangeFilter: _rangeFilter, ...rest } = prev;
                 return rest;
               });
             }}

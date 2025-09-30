@@ -102,3 +102,37 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
             .json(json!({"error": format!("Failed to block schema: {}", e)})),
     }
 }
+
+/// Load schemas from standard directories into memory as Available
+#[utoipa::path(
+    post,
+    path = "/api/schemas/load",
+    tag = "schemas",
+    responses(
+        (status = 200, description = "Load attempt summary"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
+    log_feature!(LogFeature::Schema, info, "Received request to load schemas from directories");
+    let result = with_schema_manager(&state, |db| {
+        // Try available_schemas and data/schemas
+        let available_loaded = db
+            .schema_manager
+            .load_schemas_from_directory("available_schemas")
+            .unwrap_or(0);
+        let data_loaded = db
+            .schema_manager
+            .load_schemas_from_directory("data/schemas")
+            .unwrap_or(0);
+        (available_loaded, data_loaded)
+    })
+    .await;
+
+    HttpResponse::Ok().json(json!({
+        "data": {
+            "available_schemas_loaded": result.0,
+            "data_schemas_loaded": result.1
+        }
+    }))
+}

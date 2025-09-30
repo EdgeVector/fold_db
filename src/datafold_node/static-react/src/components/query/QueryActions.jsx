@@ -53,7 +53,7 @@ function QueryActions({
   queryData
 }) {
   const [loadingAction, setLoadingAction] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null);
+  const [_confirmAction, setConfirmAction] = useState(null);
   const { clearQuery } = useQueryState();
 
   /**

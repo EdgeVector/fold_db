@@ -74,12 +74,14 @@ impl Schema {
         hash: Option<String>,
     ) -> Self {
         let mut schema_type = SchemaType::Single;
-        if key.is_some() {
-            if key.as_ref().unwrap().hash_field.is_some() && key.as_ref().unwrap().range_field.is_some() {
-                schema_type = SchemaType::HashRange { keyconfig: key.clone().unwrap() };
+        if let Some(key_config) = key.as_ref() {
+            let has_hash = key_config.hash_field.is_some();
+            let has_range = key_config.range_field.is_some();
+            schema_type = if has_hash && has_range {
+                SchemaType::HashRange { keyconfig: key_config.clone() }
             } else {
-                schema_type = SchemaType::Range { keyconfig: key.clone().unwrap() };
-            }
+                SchemaType::Range { keyconfig: key_config.clone() }
+            };
         }
         Self {
             name,

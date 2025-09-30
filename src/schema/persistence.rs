@@ -75,12 +75,16 @@ impl SchemaCore {
             }
         };
 
-        for field_name in declarative_schema.fields.clone().unwrap() {
-            add_field(field_name);
+        if let Some(field_list) = declarative_schema.fields.clone() {
+            for field_name in field_list {
+                add_field(field_name);
+            }
         }
 
-        for (field_name, _) in declarative_schema.transform_fields.clone().unwrap() {
-            add_field(field_name);
+        if let Some(transform_map) = declarative_schema.transform_fields.clone() {
+            for (field_name, _) in transform_map {
+                add_field(field_name);
+            }
         }
 
         if let Some(transform_fields) = &declarative_schema.transform_fields {

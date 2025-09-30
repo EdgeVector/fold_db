@@ -33,7 +33,8 @@ export default [
         __dirname: 'readonly',
         module: 'readonly',
         exports: 'readonly',
-        process: 'readonly'
+        process: 'readonly',
+        URL: 'readonly'
       },
       parserOptions: {
         ecmaVersion: 'latest',
@@ -130,7 +131,8 @@ export default [
         __dirname: 'readonly',
         module: 'readonly',
         exports: 'readonly',
-        process: 'readonly'
+        process: 'readonly',
+        URL: 'readonly'
       },
     },
     plugins: {
@@ -152,6 +154,8 @@ export default [
         'warn',
         { allowConstantExport: true },
       ],
+      // Allow explicit any in API boundary types in TS for now
+      '@typescript-eslint/no-explicit-any': ['warn'],
       // PREVENT UI REGRESSIONS: No hardcoded API URLs
       'no-restricted-syntax': [
         'error',
@@ -197,6 +201,11 @@ export default [
   // Test files configuration
   {
     files: ['**/*.{test,spec}.{js,jsx,ts,tsx}', '**/test/**/*.{js,jsx,ts,tsx}', '**/tests/**/*.{js,jsx,ts,tsx}'],
+    plugins: {
+      '@typescript-eslint': tseslint,
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
     languageOptions: {
       globals: {
         // Vitest globals
@@ -254,7 +263,31 @@ export default [
     rules: {
       'no-restricted-globals': 'off', // Allow fetch in test files
       'no-restricted-syntax': 'off', // Allow hardcoded endpoints in test files
+      'no-unused-vars': ['warn', { varsIgnorePattern: '^[A-Z_]|^_', argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['warn', { varsIgnorePattern: '^[A-Z_]|^_', argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'off'
     },
+  },
+  // Node-based scripts configuration
+  {
+    files: ['scripts/**/*.{js,ts}'],
+    plugins: {
+      '@typescript-eslint': tseslint,
+    },
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+        URL: 'readonly'
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { varsIgnorePattern: '^[A-Z_]|^_', argsIgnorePattern: '^_' }],
+      'no-useless-escape': 'off'
+    }
   },
   // Main application files - add missing globals
   {

@@ -61,11 +61,15 @@ export class UnifiedSchemaClient {
     let list: Schema[] = [];
     if (Array.isArray(raw)) {
       list = raw as Schema[];
-    } else if (raw && Array.isArray(raw.schemas)) {
-      list = raw.schemas as Schema[];
-    } else if (raw && Array.isArray(raw.data)) {
+    } else if (raw && Array.isArray((raw as any).schemas)) {
+      list = (raw as any).schemas as Schema[];
+    } else if (raw && Array.isArray((raw as any).data)) {
       // Server returns { data: [...] }
-      list = raw.data as Schema[];
+      list = (raw as any).data as Schema[];
+    } else if (raw && typeof raw === 'object') {
+      // Server may return an object map from name -> Schema
+      // Convert to array of Schema objects
+      list = Object.values(raw as Record<string, Schema>);
     } else {
       // Unexpected shape; log once and return empty list to keep UI stable
       if (typeof console !== 'undefined' && console.warn) {

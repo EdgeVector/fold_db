@@ -59,10 +59,10 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @param mutation The mutation object to execute
    * @returns Promise resolving to mutation result
    */
-  async executeMutation(mutation: any): Promise<EnhancedApiResponse<Record<string, unknown>>> {
+  async executeMutation(_mutation: any): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<MutationResponse>(
       API_ENDPOINTS.MUTATION,
-      mutation,
+      _mutation,
       {
         validateSchema: false, // Skip schema validation for mutations
         timeout: 15000, // Longer timeout for mutation operations
@@ -103,7 +103,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @param mutation The mutation object to validate
    * @returns Promise resolving to validation result
    */
-  async validateMutation(mutation: any): Promise<EnhancedApiResponse<ValidationResult>> {
+  async validateMutation(_mutation: any): Promise<EnhancedApiResponse<ValidationResult>> {
     // Removed: server has no /mutation/validate. Perform client-side no-op validation.
     return Promise.resolve({ success: true, data: { isValid: true }, status: 200 });
   }

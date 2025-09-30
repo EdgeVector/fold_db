@@ -36,7 +36,7 @@ export function AppContent() {
   // Redux state and dispatch
   const dispatch = useAppDispatch()
   const authState = useAppSelector(state => state.auth)
-  const { isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
+  const { isAuthenticated: _isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
   
 
   // Initialize system key on mount

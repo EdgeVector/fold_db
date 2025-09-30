@@ -24,6 +24,7 @@ export const API_ENDPOINTS_DERIVED = {
   APPROVE_SCHEMA: (name: PathParams<'/api/schema/{name}/approve', 'post'>['name']) => `/schema/${name}/approve`,
   BLOCK_SCHEMA: (name: PathParams<'/api/schema/{name}/block', 'post'>['name']) => `/schema/${name}/block`,
   LIST_SCHEMAS: '/schemas',
+  LOAD_SCHEMAS: '/schemas/load',
   GET_SYSTEM_PUBLIC_KEY: '/security/system-key',
   GET_NODE_PRIVATE_KEY: '/system/private-key',
   GET_NODE_PUBLIC_KEY: '/system/public-key',

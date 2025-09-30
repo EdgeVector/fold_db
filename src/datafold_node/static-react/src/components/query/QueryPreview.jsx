@@ -104,7 +104,7 @@ function QueryPreview({
   validationErrors = [],
   isExecuting = false,
   showJson = false,
-  collapsible = true,
+  collapsible: _collapsible = true,
   className = '',
   title = 'Query Preview'
 }) {

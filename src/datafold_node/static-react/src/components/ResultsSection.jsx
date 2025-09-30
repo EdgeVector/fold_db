@@ -3,12 +3,10 @@ import StructuredResults from './StructuredResults'
 import { isHashRangeFieldsShape } from '../utils/hashRangeResults'
 
 function ResultsSection({ results }) {
-  if (!results) return null
-
-  // Check if this is an error result
-  const isError = results.error || (results.status && results.status >= 400)
-  const hasData = results.data !== undefined
-  const defaultStructured = useMemo(() => !isError && isHashRangeFieldsShape(hasData ? results.data : results), [results, isError, hasData])
+  const hasResults = Boolean(results)
+  const isError = hasResults && (Boolean(results.error) || (results.status && results.status >= 400))
+  const hasData = hasResults && results.data !== undefined
+  const defaultStructured = useMemo(() => hasResults && !isError && isHashRangeFieldsShape(hasData ? results.data : results), [hasResults, results, isError, hasData])
   const [structured, setStructured] = useState(defaultStructured)
 
   return (

@@ -6,7 +6,7 @@ use crate::impl_field;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, fetch_atoms_for_matches, FilterApplicator};
 use crate::schema::types::SchemaError;
-use crate::atom::Molecule;
+use crate::atom::{Molecule, MoleculeBehavior};
 use crate::db_operations::DbOperations;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
@@ -51,9 +51,12 @@ impl crate::schema::types::field::Field for SingleField {
     }
 
     fn write_mutation(&mut self, _key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
-        // Initialize molecule if needed
+        // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.molecule.is_none() {
-            self.molecule = Some(crate::atom::Molecule::new(atom.uuid().to_string(), pub_key.clone()));
+            let new_molecule = crate::atom::Molecule::new(atom.uuid().to_string(), pub_key.clone());
+            // Get the molecule's UUID and set it in FieldCommon for persistence lookup
+            self.inner.set_molecule_uuid(new_molecule.uuid().to_string());
+            self.molecule = Some(new_molecule);
         }
         
         // For SingleField, we store the atom using the pub_key

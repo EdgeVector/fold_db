@@ -145,8 +145,6 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_test_schema() -> Schema {
-        use crate::schema::types::SchemaType;
-        
         // Create a simple field with field mappers
         let field = FieldVariant::Single(SingleField::new(
             HashMap::new(),
@@ -158,7 +156,6 @@ mod tests {
 
         Schema::new(
             "test_schema".to_string(),
-            SchemaType::Single,
             None,
             fields,
             None,

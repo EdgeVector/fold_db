@@ -24,7 +24,7 @@ import { Buffer } from 'buffer'
 function MutationTab({ onResult }) {
   // Redux state - TASK-003: Use approved schemas for SCHEMA-002 compliance
   const schemas = useAppSelector(selectApprovedSchemas)
-  const authState = useAppSelector(state => state.auth)
+  const _authState = useAppSelector(state => state.auth)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [mutationData, setMutationData] = useState({})
   const [mutationType, setMutationType] = useState('Create')

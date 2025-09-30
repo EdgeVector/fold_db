@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::atom::MoleculeRange;
+use crate::atom::{MoleculeRange, MoleculeBehavior};
 use crate::impl_field;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::FieldValue;
@@ -137,9 +137,13 @@ impl crate::schema::types::field::Field for RangeField {
     }
 
     fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
-        // Initialize molecule if needed
+        // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.molecule.is_none() {
             self.ensure_molecule(pub_key.clone());
+            // After creating the molecule, get its UUID and set it in FieldCommon
+            if let Some(mol) = &self.molecule {
+                self.inner.set_molecule_uuid(mol.uuid().to_string());
+            }
         }
         
         // For RangeField, we use the range key to store the atom
