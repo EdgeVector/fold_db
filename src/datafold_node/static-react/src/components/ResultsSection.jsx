@@ -3,11 +3,15 @@ import StructuredResults from './StructuredResults'
 import { isHashRangeFieldsShape } from '../utils/hashRangeResults'
 
 function ResultsSection({ results }) {
-  const hasResults = Boolean(results)
+  const hasResults = results != null
   const isError = hasResults && (Boolean(results.error) || (results.status && results.status >= 400))
   const hasData = hasResults && results.data !== undefined
   const defaultStructured = useMemo(() => hasResults && !isError && isHashRangeFieldsShape(hasData ? results.data : results), [hasResults, results, isError, hasData])
   const [structured, setStructured] = useState(defaultStructured)
+
+  if (!hasResults) {
+    return null
+  }
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 mt-6">

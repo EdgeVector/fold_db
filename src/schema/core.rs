@@ -4,6 +4,7 @@ use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::types::{Schema, SchemaError, FieldVariant, Field};
 use crate::schema::{
     SchemaState,
+    SchemaWithState,
 };
 use log::{info};
 use serde::{Serialize};
@@ -58,7 +59,24 @@ impl SchemaCore {
     }
 
     pub fn get_schema_states(&self) -> Result<HashMap<String, SchemaState>, SchemaError> {
-        Ok(self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?.clone())
+        Ok(self
+            .schema_states
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?
+            .clone())
+    }
+
+    pub fn get_schemas_with_states(&self) -> Result<Vec<SchemaWithState>, SchemaError> {
+        let schemas = self.get_schemas()?;
+        let schema_states = self.get_schema_states()?;
+
+        let mut with_states = Vec::with_capacity(schemas.len());
+        for (name, schema) in schemas {
+            let state = schema_states.get(&name).copied().unwrap_or_default();
+            with_states.push(SchemaWithState::new(schema, state));
+        }
+
+        Ok(with_states)
     }
 
     pub fn set_schema_state(&self, schema_name: &str, schema_state: SchemaState) -> Result<(), SchemaError> {
@@ -222,6 +240,20 @@ mod tests {
 
         let states = core.get_schema_states().expect("get states");
         assert_eq!(states.get("BlogPost"), Some(&SchemaState::Available));
+    }
+
+    #[test]
+    fn get_schemas_with_states_returns_default_available() {
+        let core = SchemaCore::new_for_testing().expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json()).expect("load blogpost");
+
+        let schemas_with_states = core.get_schemas_with_states().expect("get with states");
+        assert_eq!(schemas_with_states.len(), 1);
+        let schema_entry = schemas_with_states
+            .iter()
+            .find(|entry| entry.name() == "BlogPost")
+            .expect("BlogPost entry");
+        assert_eq!(schema_entry.state, SchemaState::Available);
     }
 
     #[test]

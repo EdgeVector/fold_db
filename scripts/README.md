@@ -1,89 +1,169 @@
-# User Activity HashRange Schema
+# DataFold Scripts and Examples
 
-This directory contains a HashRange schema example and management script for DataFold.
+This directory contains example scripts, management tools, and integration tests for DataFold.
 
-## Files
+## Scripts
 
-- `available_schemas/UserActivity.json` - HashRange schema for tracking user activities
-- `scripts/manage_user_activity.rs` - Rust script to populate and query user activity data
-- `scripts/run_user_activity.sh` - Shell script to run the management script
-- `scripts/Cargo.toml` - Cargo configuration for the script
+### Integration Tests
 
-## Schema Overview
+- **`../tests/integration_test_http.py`** - Comprehensive HTTP API integration test
+  - Starts the HTTP server
+  - Loads and approves schemas
+  - Creates mutations
+  - Queries and validates data
+  - Cleans up resources
+  - Usage: `python3 tests/integration_test_http.py`
 
-The `UserActivity` schema is a HashRange schema that tracks user activities with:
+### Data Management
+
+- **`manage_blogposts.py`** - Blog post management via HTTP API
+  - Creates sample blog posts using curl
+  - Demonstrates Range schema mutations
+  - Queries and displays blog posts
+  - Usage: `python3 scripts/manage_blogposts.py`
+
+- **`manage_user_activity.py`** - User activity tracking via HTTP API
+  - Creates sample user activity data
+  - Demonstrates HashRange schema usage
+  - Usage: `python3 scripts/manage_user_activity.py`
+
+### Utility Scripts
+
+- **`cleanup_db_locks.sh`** - Clean up database lock files
+- **`fix_tests.sh`** - Fix common test issues
+- **`generate_coverage.sh`** - Generate test coverage reports
+- **`install-hooks.sh`** - Install git hooks for pre-commit checks
+- **`migrate_logging.py`** - Migrate logging configuration
+
+## Integration Test
+
+The HTTP integration test (`../tests/integration_test_http.py`) provides a comprehensive example of the complete DataFold workflow:
+
+### Test Flow
+
+1. **Start Server**: Automatically starts the HTTP server using `run_http_server.sh`
+2. **Load Schemas**: Calls `/api/schemas/load` to load schemas from `available_schemas/`
+3. **Approve Schema**: Approves the BlogPost schema via `/api/schema/BlogPost/approve`
+4. **Create Mutation**: Creates a test blog post using `/api/mutation` with:
+   ```json
+   {
+     "type": "mutation",
+     "schema": "BlogPost",
+     "mutation_type": "create",
+     "fields_and_values": {
+       "title": "Integration Test Blog Post",
+       "author": "Integration Test Suite",
+       "publish_date": "2025-09-30T14:43:28Z",
+       "tags": ["test", "integration", "automation"]
+     },
+     "key_value": {
+       "hash": null,
+       "range": "2025-09-30T14:43:28Z"
+     }
+   }
+   ```
+5. **Query Data**: Queries the data back and validates it matches
+6. **Cleanup**: Stops the server and cleans up processes
+
+### Running the Integration Test
+
+```bash
+# From the project root directory
+python3 tests/integration_test_http.py
+```
+
+The test will output detailed progress and a summary:
+- ✅ PASS for successful tests
+- ❌ FAIL with detailed error messages
+- Final summary with pass/fail counts
+
+## Example Schemas
+
+### BlogPost Schema (Range Schema)
+
+A simple blog post schema with time-based ordering:
+
+- **Range Key**: `publish_date` - Orders posts by publication date
+- **Fields**:
+  - `title` - Blog post title
+  - `content` - Post content
+  - `author` - Author name
+  - `publish_date` - Publication timestamp
+  - `tags` - Array of tags
+
+### UserActivity Schema (HashRange Schema)
+
+Tracks user activities with efficient querying by user:
 
 - **Hash Key**: `user_id` - Groups activities by user
 - **Range Key**: `timestamp` - Orders activities by time
 - **Fields**:
-  - `user_id` - The user identifier
-  - `action` - The action performed (login, view_page, create_post, etc.)
-  - `resource` - The resource accessed (/dashboard, /profile, etc.)
-  - `timestamp` - When the activity occurred
-  - `metadata` - Additional context (IP address, session info, etc.)
+  - `user_id` - User identifier
+  - `action` - Action performed
+  - `resource` - Resource accessed
+  - `timestamp` - Activity timestamp
+  - `metadata` - Additional context
 
-## Usage
+## HTTP API Endpoints
 
-### 1. Run the Management Script
+All scripts use the following HTTP API endpoints:
 
-```bash
-# From the project root directory
-./scripts/run_user_activity.sh
+### Schema Management
+- `POST /api/schemas/load` - Load schemas from directories
+- `GET /api/schema/{name}` - Get schema details
+- `POST /api/schema/{name}/approve` - Approve a schema
+- `POST /api/schema/{name}/block` - Block a schema
+
+### Data Operations
+- `POST /api/mutation` - Create, update, or delete data
+- `POST /api/query` - Query data
+
+### Mutation Format
+
+```json
+{
+  "type": "mutation",
+  "schema": "SchemaName",
+  "mutation_type": "create",  // or "update", "delete"
+  "fields_and_values": {
+    "field1": "value1",
+    "field2": "value2"
+  },
+  "key_value": {
+    "hash": "hash_value",      // null for Range schemas
+    "range": "range_value"     // null for Single schemas
+  }
+}
 ```
 
-This will:
-- Load and approve the UserActivity schema
-- Create sample user activity data for 3 users
-- Demonstrate HashRange queries by user_id and action
-- Display formatted results
+### Query Format
 
-### 2. Manual Usage
-
-You can also run the script directly:
-
-```bash
-cd scripts
-cargo run --bin manage_user_activity
+```json
+{
+  "type": "query",
+  "schema": "SchemaName",
+  "fields": ["field1", "field2", "field3"],
+  "filter": {  // Optional
+    "hash": "hash_value",
+    "range": "range_value"
+  }
+}
 ```
 
-### 3. Query Examples
+## Best Practices
 
-The script demonstrates several query patterns:
+1. **Always approve schemas** before creating mutations
+2. **Use proper key_value format** matching your schema type (Single, Range, or HashRange)
+3. **Include all required fields** in mutations
+4. **Clean up test data** after running scripts
+5. **Check server logs** (`server.log`) for debugging
 
-- **Query by user**: Find all activities for a specific user
-- **Query by action**: Find all activities of a specific type (e.g., all logins)
-- **Time-based queries**: Use range filters to find activities within time ranges
+## Development
 
-## Sample Data
+To add a new integration test or management script:
 
-The script creates sample data for 3 users:
-
-- **user_001**: Web app user with login, page views, post creation, and logout
-- **user_002**: Mobile app user with profile updates
-- **user_003**: Web app user with search and tutorial viewing
-
-## HashRange Benefits
-
-This schema demonstrates the power of HashRange schemas:
-
-1. **Efficient User Queries**: Quickly find all activities for a specific user
-2. **Time Ordering**: Activities are naturally ordered by timestamp
-3. **Action Filtering**: Can query by action type across all users
-4. **Scalability**: Hash distribution allows for horizontal scaling
-
-## Customization
-
-To customize the schema or data:
-
-1. **Modify the schema**: Edit `available_schemas/UserActivity.json`
-2. **Add more fields**: Update the schema and regenerate data
-3. **Change sample data**: Modify the `create_sample_activities()` function
-4. **Add new query patterns**: Extend the query methods in the script
-
-## Integration with HTTP Server
-
-To use this schema with the HTTP server:
-
-1. Start the HTTP server: `./run_http_server.sh`
-2. The schema will be available for mutations and queries via the API
-3. Use the same mutation/query patterns as shown in the script
+1. Follow the pattern in `integration_test_http.py`
+2. Use curl via subprocess for HTTP requests
+3. Validate responses and provide clear error messages
+4. Clean up resources (stop server, cleanup processes)
+5. Add documentation to this README

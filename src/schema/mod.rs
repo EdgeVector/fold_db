@@ -44,7 +44,7 @@ pub use duplicate_detection::SchemaDuplicateDetector;
 pub use file_operations::SchemaFileOperations;
 pub use hasher::SchemaHasher;
 pub use molecule_variants::MoleculeVariant;
-pub use schema_types::{SchemaLoadingReport, SchemaSource, SchemaState};
+pub use schema_types::{SchemaLoadingReport, SchemaSource, SchemaState, SchemaWithState};
 pub use types::*;
 
 /// Public prelude module containing types needed by tests and external code
