@@ -1,7 +1,7 @@
 use super::http_server::AppState;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::SchemaState;
+use crate::schema::{SchemaError, SchemaState, SchemaWithState};
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 
@@ -29,7 +29,8 @@ where
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
     log_feature!(LogFeature::Schema, info, "Received request to list schemas");
-    let result = with_schema_manager(&state, |db| db.schema_manager.get_schemas()).await;
+    let result =
+        with_schema_manager(&state, |db| db.schema_manager.get_schemas_with_states()).await;
     match result {
         Ok(schemas) => HttpResponse::Ok().json(json!({"data": schemas})),
         Err(e) => HttpResponse::InternalServerError()
@@ -53,7 +54,19 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
-    let result = with_schema_manager(&state, |db| db.schema_manager.get_schema(&name)).await;
+    let result: Result<Option<SchemaWithState>, SchemaError> =
+        with_schema_manager(&state, |db| {
+            let schema = db.schema_manager.get_schema(&name)?;
+            if let Some(schema) = schema {
+                let state = db.schema_manager.get_schema_states()?;
+                let schema_state = state.get(&name).copied().unwrap_or_default();
+                Ok(Some(SchemaWithState::new(schema, schema_state)))
+            } else {
+                Ok(None)
+            }
+        })
+        .await;
+
     match result {
         Ok(Some(schema)) => HttpResponse::Ok().json(schema),
         Ok(None) => HttpResponse::NotFound().json(json!({"error": "Schema not found"})),
