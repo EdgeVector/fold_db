@@ -142,11 +142,6 @@ impl SchemaCore {
             self.get_message_bus().publish(registration_request)
                 .map_err(|e| SchemaError::InvalidData(format!("Failed to publish transform registration request: {}", e)))?;
 
-            log::info!(
-                "📤 Published TransformRegistrationRequest for transform '{}' on field '{}'",
-                transform_id,
-                field_name
-            );
         }
 
         Ok(())

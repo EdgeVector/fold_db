@@ -167,12 +167,27 @@ impl DeclarativeSchemaDefinition {
     fn generate_inputs(&mut self) {
         let mut inputs_schema_fields = Vec::new();
         for code_def in self.hash_to_code.keys() {
-            inputs_schema_fields.push(
-                self.hash_to_code.get(code_def).unwrap().split(".").take(2).collect::<Vec<&str>>().join(".")
-            );
+            let expression = self.hash_to_code.get(code_def).unwrap();
+            
+            // Split expression by "." and filter out elements containing "(" or ")"
+            // This handles .map(), .filter(), .reduce(), etc.
+            let parts: Vec<&str> = expression
+                .split(".")
+                .filter(|part| !part.contains("(") && !part.contains(")"))
+                .collect();
+            
+            // Take the first two valid parts to form the field reference
+            if parts.len() >= 2 {
+                inputs_schema_fields.push(format!("{}.{}", parts[0], parts[1]));
+            } else if parts.len() == 1 {
+                // Fallback: if only one part, use it as-is
+                inputs_schema_fields.push(parts[0].to_string());
+            }
         }
+        // Remove duplicates and sort
+        inputs_schema_fields.sort();
+        inputs_schema_fields.dedup();
         self.inputs_schema_fields = inputs_schema_fields;
-
     }
 
     pub fn get_inputs(&self) -> Vec<String> {

@@ -7,9 +7,10 @@
 use super::message_bus::{
     atom_events::{AtomCreated, AtomUpdated, FieldValueSet, MoleculeCreated, MoleculeUpdated},
     query_events::{MutationExecuted, QueryExecuted},
-    schema_events::{SchemaChanged, SchemaLoaded, TransformExecuted, TransformTriggered},
+    schema_events::{SchemaChanged, SchemaLoaded, TransformExecuted, TransformTriggered, TransformRegistrationRequest},
     Consumer, MessageBus,
 };
+use crate::transform::manager::TransformManager;
 use log::info;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -29,6 +30,7 @@ pub struct EventStatistics {
     pub transform_executions: u64,
     pub transform_successes: u64,
     pub transform_failures: u64,
+    pub transform_registrations: u64,
     pub query_executions: u64,
     pub mutation_executions: u64,
     pub total_events: u64,
@@ -114,6 +116,11 @@ impl EventStatistics {
 
     fn increment_transform_triggers(&mut self) {
         self.transform_triggers += 1;
+        self.total_events += 1;
+    }
+
+    fn increment_transform_registrations(&mut self) {
+        self.transform_registrations += 1;
         self.total_events += 1;
     }
 
@@ -299,13 +306,14 @@ pub struct EventMonitor {
     _schema_changed_thread: thread::JoinHandle<()>,
     _transform_triggered_thread: thread::JoinHandle<()>,
     _transform_executed_thread: thread::JoinHandle<()>,
+    _transform_registration_thread: thread::JoinHandle<()>,
     _query_executed_thread: thread::JoinHandle<()>,
     _mutation_executed_thread: thread::JoinHandle<()>,
 }
 
 impl EventMonitor {
     /// Create a new EventMonitor that subscribes to all event types
-    pub fn new(message_bus: &MessageBus) -> Self {
+    pub fn new(message_bus: &MessageBus, transform_manager: Arc<TransformManager>) -> Self {
         let statistics = Arc::new(Mutex::new(EventStatistics {
             monitoring_start_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -326,6 +334,7 @@ impl EventMonitor {
         let mut schema_changed_consumer = message_bus.subscribe::<SchemaChanged>();
         let mut transform_triggered_consumer = message_bus.subscribe::<TransformTriggered>();
         let mut transform_executed_consumer = message_bus.subscribe::<TransformExecuted>();
+        let mut transform_registration_consumer = message_bus.subscribe::<TransformRegistrationRequest>();
         let mut query_executed_consumer = message_bus.subscribe::<QueryExecuted>();
         let mut mutation_executed_consumer = message_bus.subscribe::<MutationExecuted>();
 
@@ -379,6 +388,12 @@ impl EventMonitor {
         });
 
         let stats_clone = statistics.clone();
+        let transform_manager_clone = Arc::clone(&transform_manager);
+        let transform_registration_thread = thread::spawn(move || {
+            Self::monitor_transform_registration_events(&mut transform_registration_consumer, stats_clone, transform_manager_clone);
+        });
+
+        let stats_clone = statistics.clone();
         let query_executed_thread = thread::spawn(move || {
             Self::monitor_query_executed_events(&mut query_executed_consumer, stats_clone);
         });
@@ -399,6 +414,7 @@ impl EventMonitor {
             _schema_changed_thread: schema_changed_thread,
             _transform_triggered_thread: transform_triggered_thread,
             _transform_executed_thread: transform_executed_thread,
+            _transform_registration_thread: transform_registration_thread,
             _query_executed_thread: query_executed_thread,
             _mutation_executed_thread: mutation_executed_thread,
         }
@@ -631,6 +647,26 @@ impl EventMonitor {
         }
     }
 
+    fn monitor_transform_registration_events(
+        consumer: &mut Consumer<TransformRegistrationRequest>,
+        statistics: Arc<Mutex<EventStatistics>>,
+        transform_manager: Arc<TransformManager>,
+    ) {
+        loop {
+            match consumer.recv_timeout(Duration::from_millis(100)) {
+                Ok(event) => {
+                    statistics.lock().unwrap().increment_transform_registrations();
+                    
+                    // Handle the transform registration
+                    if let Err(e) = transform_manager.handle_transform_registration(&event.registration) {
+                        log::error!("Failed to handle transform registration: {}", e);
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
     fn monitor_query_executed_events(
         consumer: &mut Consumer<QueryExecuted>,
         statistics: Arc<Mutex<EventStatistics>>,
@@ -684,20 +720,25 @@ mod tests {
     #[test]
     fn test_event_monitor_observability() {
         let bus = MessageBus::new();
-        let monitor = EventMonitor::new(&bus);
+        // Create a dummy TransformManager for testing
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db_ops = Arc::new(crate::db_operations::DbOperations::new(db).unwrap());
+        let bus_arc = Arc::new(bus);
+        let transform_manager = Arc::new(crate::transform::manager::TransformManager::new(db_ops, Arc::clone(&bus_arc)).unwrap());
+        let monitor = EventMonitor::new(&bus_arc, transform_manager);
 
         // Publish various events
-        bus.publish(FieldValueSet::new("test.field", json!("value"), "test"))
+        bus_arc.publish(FieldValueSet::new("test.field", json!("value"), "test"))
             .unwrap();
-        bus.publish(AtomCreated::new("atom-123", json!({"test": "data"})))
+        bus_arc.publish(AtomCreated::new("atom-123", json!({"test": "data"})))
             .unwrap();
-        bus.publish(MoleculeCreated::new(
+        bus_arc.publish(MoleculeCreated::new(
             "molecule-456",
             "Collection",
             "schema.field",
         ))
         .unwrap();
-        bus.publish(SchemaLoaded::new("TestSchema", "success"))
+        bus_arc.publish(SchemaLoaded::new("TestSchema", "success"))
             .unwrap();
 
         // Allow time for event processing

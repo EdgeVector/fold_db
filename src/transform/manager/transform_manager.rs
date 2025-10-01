@@ -1,7 +1,6 @@
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{SchemaError, Transform};
-use log::info;
 use std::collections::{HashMap, HashSet, BTreeMap};
 use std::sync::{Arc, RwLock};
 
@@ -129,6 +128,7 @@ impl TransformManager {
         let transform = &registration.transform;
         let trigger_fields = &registration.trigger_fields;
 
+
         // 1. Store the transform in the database
         self.db_ops.store_transform(transform_id, transform)?;
 
@@ -181,31 +181,14 @@ impl TransformManager {
         transform_id: &str,
         trigger_fields: &[String],
     ) -> Result<(), SchemaError> {
+        
         let mut field_to_transforms = self.schema_field_to_transforms.write().map_err(|_| {
             SchemaError::InvalidData("Failed to acquire field_to_transforms lock".to_string())
         })?;
 
-        let field_set: HashSet<String> = trigger_fields.iter().cloned().collect();
-        info!(
-            "🔍 DEBUG: Registering field mappings for transform '{}' with trigger_fields: {:?}",
-            transform_id, trigger_fields
-        );
         for field_key in trigger_fields {
             let set = field_to_transforms.entry(field_key.clone()).or_default();
             set.insert(transform_id.to_string());
-            info!(
-                "🔗 DEBUG: Registered field mapping '{}' -> transform '{}'",
-                field_key, transform_id
-            );
-        }
-        self.schema_field_to_transforms.write().map_err(|_| {
-            SchemaError::InvalidData("Failed to acquire schema_field_to_transforms lock".to_string())
-        })?.insert(transform_id.to_string(), field_set);
-
-        // DEBUG: Log current field mappings state
-        info!("🔍 DEBUG: Current field_to_transforms state after registration:");
-        for (field_key, transforms) in field_to_transforms.iter() {
-            info!("  📋 '{}' -> {:?}", field_key, transforms);
         }
 
         Ok(())

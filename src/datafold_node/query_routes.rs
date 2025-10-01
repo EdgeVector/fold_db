@@ -1,6 +1,4 @@
 use super::http_server::AppState;
-use crate::log_feature;
-use crate::logging::features::LogFeature;
 use crate::schema::types::Operation;
 use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;

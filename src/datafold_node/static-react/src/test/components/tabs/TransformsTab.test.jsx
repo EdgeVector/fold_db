@@ -123,7 +123,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -162,7 +162,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -203,7 +203,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -242,7 +242,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -278,7 +278,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -333,7 +333,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -377,7 +377,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -424,7 +424,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 
@@ -434,6 +434,44 @@ it('renders transform viewer with basic elements', async () => {
     
     expect(screen.getByText('test_schema.field1')).toBeInTheDocument()
     expect(screen.getByText('test_schema.field2')).toBeInTheDocument()
+  }, 10000)
+
+  it('fetches transforms on mount (simple approach)', async () => {
+    const { transformClient } = await import('../../../api/clients')
+    
+    // Mock transformClient.getTransforms to return API transforms
+    transformClient.getTransforms.mockResolvedValue({
+      data: {
+        data: {
+          'test_transform_1': {
+            kind: 'declarative',
+            output: 'test_schema.transformed_field',
+            inputs: ['input']
+          }
+        }
+      },
+      success: true,
+      status: 200
+    })
+
+    const authState = createMockAuthState({ isAuthenticated: true })
+    const initialState = {
+      auth: authState,
+      schemas: {
+        schemas: {},
+        loading: { fetch: false, operations: {} },
+        errors: { fetch: null, operations: {} },
+        lastFetch: null,
+        cache: { ttl: 0, data: null }
+      }
+    }
+
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+      preloadedState: initialState
+    })
+
+    // Should call getTransforms once on mount
+    expect(transformClient.getTransforms).toHaveBeenCalledTimes(1)
   }, 10000)
 
   it('fetches and refreshes queue information periodically', async () => {
@@ -449,7 +487,7 @@ it('renders transform viewer with basic elements', async () => {
       }
     }
 
-    await renderWithRedux(<TransformsTab onResult={mockOnResult} />, {
+    await renderWithRedux(<TransformsTab onResult={mockOnResult} isActive={true} />, {
       preloadedState: initialState
     })
 

@@ -115,6 +115,7 @@ const TransformsTab = ({ onResult }) => {
     }
   }, [])
 
+  // Fetch transforms and queue info on mount
   useEffect(() => {
     fetchApiTransforms()
     fetchQueueInfo()

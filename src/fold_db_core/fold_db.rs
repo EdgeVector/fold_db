@@ -143,7 +143,7 @@ impl FoldDB {
             init_transform_manager(Arc::new(db_ops.clone()), Arc::clone(&message_bus))?;
 
         // Create and start EventMonitor for system-wide observability
-        let event_monitor = Arc::new(EventMonitor::new(&message_bus));
+        let event_monitor = Arc::new(EventMonitor::new(&message_bus, Arc::clone(&transform_manager)));
         info!("Started EventMonitor for system-wide event tracking");
 
         // Create MutationCompletionHandler for tracking async mutation completion
@@ -270,10 +270,18 @@ impl FoldDB {
         let key_config = schema.key.clone();
         let mut key_value = mutation.key_value;
         if let Some(hash_field) = &key_config.as_ref().unwrap().hash_field {
-            key_value.hash = Some(mutation.fields_and_values.get(hash_field).unwrap().to_string());
+            if let Some(value) = mutation.fields_and_values.get(hash_field) {
+                if let Some(s) = value.as_str() {
+                    key_value.hash = Some(s.to_string());
+                }
+            }
         }
         if let Some(range_field) = &key_config.as_ref().unwrap().range_field {
-            key_value.range = Some(mutation.fields_and_values.get(range_field).unwrap().to_string());
+            if let Some(value) = mutation.fields_and_values.get(range_field) {
+                if let Some(s) = value.as_str() {
+                    key_value.range = Some(s.to_string());
+                }
+            }
         }
         let mutation_id = mutation.uuid.clone();
         
