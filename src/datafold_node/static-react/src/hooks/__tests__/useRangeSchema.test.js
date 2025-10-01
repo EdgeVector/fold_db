@@ -75,7 +75,7 @@ describe('useRangeSchema Hook', () => {
     expect(result.current.isRange({ schema_type: {} })).toBe(false);
   });
 
-  it('should validate mixed field types correctly', () => {
+  it('should trust backend schema_type even with mixed field types', () => {
     const { result } = renderHook(() => useRangeSchema());
     
     const mixedSchema = {
@@ -84,14 +84,12 @@ describe('useRangeSchema Hook', () => {
       fields: {
         key: { field_type: 'Range' },
         data: { field_type: 'Range' },
-        metadata: { field_type: 'String' } // Not a Range field
+        metadata: { field_type: 'String' } // Backend allows mixed types
       }
     };
 
-    expect(result.current.isRange(mixedSchema)).toBe(false);
-    expect(mockConsole.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Field metadata has field_type "String", expected "Range"')
-    );
+    // Backend schema_type is authoritative - if backend says Range, it's Range
+    expect(result.current.isRange(mixedSchema)).toBe(true);
   });
 
   it('should provide range key extraction functionality', () => {

@@ -157,32 +157,15 @@ export function isRangeSchema(schema) {
     return false;
   }
   
-  // Modern format: check schema_type
+  // Modern format: check schema_type from backend
+  // The backend sets schema_type based on key configuration, so we trust that
   const schemaType = getSchemaType(schema);
   if (schemaType === 'Range') {
-    // Must have fields defined for validation
-    if (!schema.fields || typeof schema.fields !== 'object' || Object.keys(schema.fields).length === 0) {
-      return false;
-    }
-    // All fields should be Range type
-    const fieldEntries = Object.entries(schema.fields);
-    const allFieldsAreRange = fieldEntries.every(([fieldName, field]) => {
-      if (!field || typeof field !== 'object') {
-        console.warn(`Field ${fieldName} is not a valid field object in schema ${schema.name}`);
-        return false;
-      }
-      
-      if (field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE) {
-        console.warn(`Field ${fieldName} has field_type "${field.field_type}", expected "${RANGE_SCHEMA_CONFIG.FIELD_TYPE}" in schema ${schema.name}`);
-        return false;
-      }
-      
-      return true;
-    });
-    return allFieldsAreRange;
+    return true;
   }
   
   // Legacy format: schema with range_key and all Range-type fields
+  // This is for backward compatibility with old test data
   if (schema.range_key && typeof schema.range_key === 'string') {
     if (!schema.fields || typeof schema.fields !== 'object' || Object.keys(schema.fields).length === 0) {
       return false;

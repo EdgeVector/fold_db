@@ -15,21 +15,21 @@ describe('rangeSchemaUtils', () => {
       expect(isRangeSchema(undefined)).toBe(false)
     })
 
-    it('should return false for schema without fields', () => {
+    it('should return true for schema with Range schema_type even without fields', () => {
       const schema = {
         name: 'TestSchema',
         schema_type: { Range: { range_key: 'test_id' } }
       }
-      expect(isRangeSchema(schema)).toBe(false)
+      expect(isRangeSchema(schema)).toBe(true) // Backend schema_type is authoritative
     })
 
-    it('should return false for schema with empty fields', () => {
+    it('should return true for schema with Range schema_type even with empty fields', () => {
       const schema = {
         name: 'TestSchema',
         schema_type: { Range: { range_key: 'test_id' } },
         fields: {}
       }
-      expect(isRangeSchema(schema)).toBe(false)
+      expect(isRangeSchema(schema)).toBe(true) // Backend schema_type is authoritative
     })
 
     it('should return false for schema without range_key', () => {
@@ -43,17 +43,17 @@ describe('rangeSchemaUtils', () => {
       expect(isRangeSchema(schema)).toBe(false)
     })
 
-    it('should return false when not all fields are Range type', () => {
+    it('should return true when schema_type is Range (backend is authoritative)', () => {
       const schema = {
         name: 'TestSchema',
         schema_type: { Range: { range_key: 'test_id' } },
         fields: {
           test_id: { field_type: 'Range' },
           field1: { field_type: 'Range' },
-          field2: { field_type: 'Single' } // Mixed types
+          field2: { field_type: 'Single' } // Mixed types OK - backend sets schema_type
         }
       }
-      expect(isRangeSchema(schema)).toBe(false)
+      expect(isRangeSchema(schema)).toBe(true) // Backend is authoritative
     })
 
     it('should return true for valid range schema with new format', () => {
