@@ -30,8 +30,8 @@ use std::sync::{Arc, RwLock};
 /// - TransformManager: Registration, execution, mapping, and result storage
 pub struct TransformManager {
     pub(super) db_ops: Arc<DbOperations>,
-    pub(super) registered_transforms: HashMap<String, Transform>,
-    pub(super) schema_field_to_transforms: BTreeMap<String, HashSet<String>>,
+    pub(super) registered_transforms: RwLock<HashMap<String, Transform>>,
+    pub(super) schema_field_to_transforms: RwLock<BTreeMap<String, HashSet<String>>>,
     pub(super) message_bus: Arc<MessageBus>,
 }
 
@@ -51,12 +51,10 @@ impl TransformManager {
         // Create the TransformManager instance
         let manager = Self {
             db_ops: Arc::clone(&db_ops),
-            registered_transforms: registered_transforms,
-            schema_field_to_transforms: schema_field_to_transforms,
+            registered_transforms: RwLock::new(registered_transforms),
+            schema_field_to_transforms: RwLock::new(schema_field_to_transforms),
             message_bus: Arc::clone(&message_bus),
         };
-
-        db_ops.sync_transform_state(&empty_transforms, &empty_mappings)?;
 
         Ok(manager)
     }
@@ -64,7 +62,9 @@ impl TransformManager {
 
     /// List all registered transforms.
     pub fn list_transforms(&self) -> Result<HashMap<String, Transform>, SchemaError> {
-        Ok(self.registered_transforms.clone())
+        let transforms = self.registered_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        Ok(transforms.clone())
     }
 
     /// Gets all transforms that should run when the specified field is updated.
@@ -74,8 +74,9 @@ impl TransformManager {
         field_name: &str,
     ) -> Result<HashSet<String>, SchemaError> {
         let key = format!("{}.{}", schema_name, field_name);
-        let field_to_transforms = self
-            .schema_field_to_transforms
+        let mappings = self.schema_field_to_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        let field_to_transforms = mappings
             .get(&key)
             .cloned()
             .unwrap_or_default();
@@ -94,10 +95,13 @@ impl TransformManager {
         // Update in-memory state
         self.update_in_memory_registration(transform_id, transform, trigger_fields)?;
 
-        self.db_ops.sync_transform_state(
-            &self.registered_transforms,
-            &self.schema_field_to_transforms,
-        )?;
+        // Sync to storage
+        let transforms = self.registered_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        let mappings = self.schema_field_to_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        
+        self.db_ops.sync_transform_state(&transforms, &mappings)?;
 
         Ok(())
     }
@@ -112,15 +116,15 @@ impl TransformManager {
     ) -> Result<(), SchemaError> {
         // Update registered transforms
         {
-            let mut registered_transforms = self.registered_transforms.clone();
+            let mut registered_transforms = self.registered_transforms.write()
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire write lock: {}", e)))?;
             registered_transforms.insert(transform_id.to_string(), transform.clone());
         }
 
         // Update field-to-transform mappings
         {
-            let mut field_to_transforms = self
-                .schema_field_to_transforms
-                .clone();
+            let mut field_to_transforms = self.schema_field_to_transforms.write()
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire write lock: {}", e)))?;
 
             for field in trigger_fields {
                 field_to_transforms

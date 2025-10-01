@@ -23,9 +23,12 @@ impl TransformRunner for super::TransformManager {
         >,
     ) -> Result<JsonValue, SchemaError> {
         // Load the transform from in-memory registered transforms
-        let transform = self.registered_transforms.get(transform_id)
+        let transforms = self.registered_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        let transform = transforms.get(transform_id)
             .cloned()
             .ok_or_else(|| SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)))?;
+        drop(transforms); // Release the lock early
         // Execute the transform using the execution module with mutation context
         let input_values = InputFetcher::fetch_input_values_with_context(
             &transform, 
@@ -77,8 +80,9 @@ impl TransformRunner for super::TransformManager {
     }
 
     fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
-        let registered_transforms = self.registered_transforms.get(transform_id);
-        Ok(registered_transforms.is_some())
+        let transforms = self.registered_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        Ok(transforms.contains_key(transform_id))
     }
 
     fn get_transforms_for_field(
@@ -87,8 +91,9 @@ impl TransformRunner for super::TransformManager {
         field_name: &str,
     ) -> Result<HashSet<String>, SchemaError> {
         let key = format!("{}.{}", schema_name, field_name);
-        let field_to_transforms = self.schema_field_to_transforms.get(&key);
-        Ok(field_to_transforms.cloned().unwrap_or_default())
+        let mappings = self.schema_field_to_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        Ok(mappings.get(&key).cloned().unwrap_or_default())
     }
 
 }

@@ -10,7 +10,7 @@ fn test_blogpost_wordindex_transform_registration() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let mut fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
     
     // Load the BlogPost schema first (source schema)
     let blogpost_schema_json = json!({
