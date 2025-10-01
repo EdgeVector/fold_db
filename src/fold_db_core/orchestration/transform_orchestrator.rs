@@ -10,7 +10,7 @@ use sled::Tree;
 use std::sync::Arc;
 
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::transform::manager::types::TransformRunner;
+use crate::transform::manager::TransformManager;
 use crate::schema::SchemaError;
 
 // Import the new specialized components
@@ -47,7 +47,7 @@ pub struct TransformOrchestrator {
 impl TransformOrchestrator {
     /// Create a new TransformOrchestrator with component delegation
     pub fn new(
-        manager: Arc<dyn TransformRunner>,
+        manager: Arc<TransformManager>,
         tree: Tree,
         message_bus: Arc<MessageBus>,
         db_ops: Arc<crate::db_operations::DbOperations>,
@@ -145,10 +145,6 @@ impl TransformOrchestrator {
         mutation_hash: &str,
     ) -> Result<(), SchemaError> {
         info!("🚀 ADD_TRANSFORM - Adding transform: {}", transform_id);
-
-        // Validate transform exists using execution coordinator
-        self.execution_coordinator
-            .validate_transform_exists(transform_id)?;
 
         // Add to queue
         let added = self.queue_manager.add_item(transform_id, mutation_hash)?;

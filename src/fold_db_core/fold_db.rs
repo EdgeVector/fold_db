@@ -3,7 +3,6 @@
 //! This module contains the main FoldDB struct that manages schemas, permissions, and data storage.
 
 // Standard library imports
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -18,7 +17,6 @@ use crate::schema::types::field::common::Field;
 use crate::schema::{SchemaCore, SchemaError};
 use crate::atom::Atom;
 use crate::transform::manager::TransformManager;
-use crate::transform::manager::types::TransformRunner;
 
 // Infrastructure components that are used internally
 use super::infrastructure::init::{init_transform_manager};
@@ -159,7 +157,7 @@ impl FoldDB {
 
         // Create TransformOrchestrator for managing transform execution
         let transform_orchestrator = Arc::new(TransformOrchestrator::new(
-            Arc::clone(&transform_manager) as Arc<dyn TransformRunner>,
+            Arc::clone(&transform_manager),
             orchestrator_tree,
             Arc::clone(&message_bus),
             Arc::new(db_ops.clone()),
@@ -349,13 +347,4 @@ impl FoldDB {
         // Return the mutation ID
         Ok(mutation_id)
     }
-
-
-    /// List all registered transforms
-    pub fn list_transforms(
-        &self,
-    ) -> Result<HashMap<String, crate::schema::types::Transform>, SchemaError> {
-        self.transform_manager.list_transforms()
-    }
-
 }

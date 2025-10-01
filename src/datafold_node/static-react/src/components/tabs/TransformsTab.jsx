@@ -82,7 +82,7 @@ const TransformsTab = ({ onResult }) => {
       const response = await transformClient.getTransforms()
 
       if (response?.success && response.data) {
-        const data = response.data.data
+        const data = response.data
         const normalized = Array.isArray(data)
           ? data
           : data && typeof data === 'object'
@@ -282,16 +282,40 @@ const TransformsTab = ({ onResult }) => {
       {!isLoadingTransforms && !transformsError && apiTransforms.length > 0 && (
         <div className="bg-green-50 p-4 rounded-lg">
           <h3 className="text-md font-medium text-green-800 mb-2">Registered API Transforms</h3>
-          <ul className="space-y-1 text-sm text-green-700">
+          <div className="space-y-3">
             {apiTransforms.map((transform, index) => {
-              const identifier = typeof transform === 'string' ? transform : transform?.id || `transform-${index}`
+              // Handle the actual API response structure - each transform is a schema object
+              if (transform && typeof transform === 'object' && transform.transform_fields) {
+                return Object.entries(transform.transform_fields).map(([fieldName, logic]) => (
+                  <div key={`${transform.name}_${fieldName}`} className="bg-white p-3 rounded border">
+                    <div className="font-medium text-gray-900">
+                      {transform.name}.{fieldName}
+                    </div>
+                    <div className="mt-1 text-sm text-gray-600">
+                      <span className="font-medium">Logic:</span> {logic}
+                    </div>
+                    <div className="mt-2">
+                      <button
+                        onClick={() => handleAddToQueue(transform.name, fieldName)}
+                        className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                      >
+                        Add to Queue
+                      </button>
+                    </div>
+                  </div>
+                ))
+              }
+              
+              // Fallback for unexpected data structure
               return (
-                <li key={identifier}>
-                  {typeof transform === 'string' ? transform : transform?.id || transform?.output}
-                </li>
+                <div key={index} className="bg-white p-3 rounded border">
+                  <div className="font-medium text-gray-900">
+                    {typeof transform === 'string' ? transform : `Transform ${index + 1}`}
+                  </div>
+                </div>
               )
-            })}
-          </ul>
+            }).flat()}
+          </div>
         </div>
       )}
     </div>

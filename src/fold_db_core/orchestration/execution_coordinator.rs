@@ -5,7 +5,7 @@
 
 use super::queue_manager::QueueItem;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::transform::manager::types::TransformRunner;
+use crate::transform::manager::{TransformManager, types::TransformRunner};
 use crate::schema::SchemaError;
 use log::{error, info};
 use serde_json::Value as JsonValue;
@@ -14,7 +14,7 @@ use std::time::Instant;
 
 /// Coordinates transform execution with proper validation and event publishing
 pub struct ExecutionCoordinator {
-    manager: Arc<dyn TransformRunner>,
+    manager: Arc<TransformManager>,
     message_bus: Arc<MessageBus>,
     _db_ops: Arc<crate::db_operations::DbOperations>,
 }
@@ -22,7 +22,7 @@ pub struct ExecutionCoordinator {
 impl ExecutionCoordinator {
     /// Create a new ExecutionCoordinator
     pub fn new(
-        manager: Arc<dyn TransformRunner>,
+        manager: Arc<TransformManager>,
         message_bus: Arc<MessageBus>,
         db_ops: Arc<crate::db_operations::DbOperations>,
     ) -> Self {
@@ -60,44 +60,8 @@ impl ExecutionCoordinator {
             }));
         }
 
-        // Validate transform exists before execution
-        self.validate_transform_exists(transform_id)?;
-
         // Execute the transform
         self.execute_transform_with_context(transform_id, &None)
-    }
-
-    /// Validate that a transform exists before execution using ValidationHelper patterns
-    pub fn validate_transform_exists(&self, transform_id: &str) -> Result<(), SchemaError> {
-        info!("🔍 Validating transform exists: {}", transform_id);
-
-        // Use consistent validation pattern from ValidationHelper
-        if transform_id.trim().is_empty() {
-            let error_msg = "Transform ID cannot be empty".to_string();
-            error!("❌ {}", error_msg);
-            return Err(SchemaError::InvalidData(error_msg));
-        }
-
-        match self.manager.transform_exists(transform_id) {
-            Ok(exists) => {
-                if !exists {
-                    let error_msg = format!("Transform '{}' not found", transform_id);
-                    error!("❌ {}", error_msg);
-                    Err(SchemaError::InvalidData(error_msg))
-                } else {
-                    info!("✅ Transform exists: {}", transform_id);
-                    Ok(())
-                }
-            }
-            Err(e) => {
-                let error_msg = format!(
-                    "Error checking transform existence for {}: {}",
-                    transform_id, e
-                );
-                error!("❌ {}", error_msg);
-                Err(SchemaError::InvalidData(error_msg))
-            }
-        }
     }
 
     /// Execute a transform with consolidated execution logic (no helper dependency)
@@ -318,7 +282,7 @@ impl ExecutionCoordinator {
     }
 
     /// Get access to the underlying transform manager
-    pub fn get_manager(&self) -> &Arc<dyn TransformRunner> {
+    pub fn get_manager(&self) -> &Arc<TransformManager> {
         &self.manager
     }
 

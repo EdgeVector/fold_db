@@ -4,8 +4,6 @@ use crate::schema::types::{SchemaError, Transform};
 use std::collections::{HashMap, HashSet, BTreeMap};
 use std::sync::{Arc, RwLock};
 
-pub const SCHEMA_FIELD_TO_TRANSFORMS_KEY: &str = "map_schema_field_to_transforms";
-
 /// TransformManager: Handles transform registration, execution, and field-to-transform mapping
 ///
 /// CURRENT ARCHITECTURE RESPONSIBILITIES:
@@ -32,8 +30,8 @@ pub const SCHEMA_FIELD_TO_TRANSFORMS_KEY: &str = "map_schema_field_to_transforms
 /// - TransformManager: Registration, execution, mapping, and result storage
 pub struct TransformManager {
     pub(super) db_ops: Arc<DbOperations>,
-    pub(super) registered_transforms: RwLock<HashMap<String, Transform>>,
-    pub(super) schema_field_to_transforms: RwLock<BTreeMap<String, HashSet<String>>>,
+    pub(super) registered_transforms: HashMap<String, Transform>,
+    pub(super) schema_field_to_transforms: BTreeMap<String, HashSet<String>>,
     pub(super) message_bus: Arc<MessageBus>,
 }
 
@@ -43,47 +41,30 @@ impl TransformManager {
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
-        // Load any persisted transforms using direct database operations
-        let mut registered_transforms = HashMap::new();
-
-        let transform_ids = db_ops.list_transforms()?;
-
-        for transform_id in transform_ids {
-            if let Ok(Some(transform)) = db_ops.get_transform(&transform_id) {
-                registered_transforms.insert(transform_id, transform);
-            }
-        }
-
-        // Load mappings using direct database operations
-        let schema_field_to_transforms = db_ops.load_field_to_transforms_mapping(SCHEMA_FIELD_TO_TRANSFORMS_KEY)?;
+        // Load persisted state from storage by syncing with empty in-memory state
+        let empty_transforms = HashMap::new();
+        let empty_mappings = BTreeMap::new();
+        
+        let (registered_transforms, schema_field_to_transforms) = 
+            db_ops.sync_transform_state(&empty_transforms, &empty_mappings)?;
 
         // Create the TransformManager instance
         let manager = Self {
             db_ops: Arc::clone(&db_ops),
-            registered_transforms: RwLock::new(registered_transforms),
-            schema_field_to_transforms: RwLock::new(schema_field_to_transforms),
+            registered_transforms: registered_transforms,
+            schema_field_to_transforms: schema_field_to_transforms,
             message_bus: Arc::clone(&message_bus),
         };
+
+        db_ops.sync_transform_state(&empty_transforms, &empty_mappings)?;
 
         Ok(manager)
     }
 
-    /// Returns true if a transform with the given id is registered.
-    pub fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
-        let registered_transforms = self
-            .registered_transforms
-            .read()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-        Ok(registered_transforms.contains_key(transform_id))
-    }
 
     /// List all registered transforms.
     pub fn list_transforms(&self) -> Result<HashMap<String, Transform>, SchemaError> {
-        let registered_transforms = self
-            .registered_transforms
-            .read()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-        Ok(registered_transforms.clone())
+        Ok(self.registered_transforms.clone())
     }
 
     /// Gets all transforms that should run when the specified field is updated.
@@ -95,29 +76,11 @@ impl TransformManager {
         let key = format!("{}.{}", schema_name, field_name);
         let field_to_transforms = self
             .schema_field_to_transforms
-            .read()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
 
-        let result = field_to_transforms.get(&key).cloned().unwrap_or_default();
-        Ok(result)
-    }
-
-    /// Gets all transforms that should run when the specified schema is updated.
-    pub fn get_transforms_for_schema(&self, schema_name: &str) -> Result<HashSet<String>, SchemaError> {
-        let field_to_transforms = self
-            .schema_field_to_transforms
-            .read()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire read lock".to_string()))?;
-
-        // Find all transforms that depend on any field of this schema
-        let mut result = HashSet::new();
-        for (field_key, transform_ids) in field_to_transforms.iter() {
-            if field_key.starts_with(&format!("{}.", schema_name)) {
-                result.extend(transform_ids.iter().cloned());
-            }
-        }
-
-        Ok(result)
+        Ok(field_to_transforms)
     }
 
     pub fn handle_transform_registration(
@@ -128,18 +91,17 @@ impl TransformManager {
         let transform = &registration.transform;
         let trigger_fields = &registration.trigger_fields;
 
-
-        // 1. Store the transform in the database
-        self.db_ops.store_transform(transform_id, transform)?;
-
-        // 2. Update field-to-transform mappings
-        self.update_field_trigger_mappings(transform_id, trigger_fields)?;
-
-        // 3. Update in-memory state
+        // Update in-memory state
         self.update_in_memory_registration(transform_id, transform, trigger_fields)?;
+
+        self.db_ops.sync_transform_state(
+            &self.registered_transforms,
+            &self.schema_field_to_transforms,
+        )?;
 
         Ok(())
     }
+
 
     /// Update in-memory state with new transform registration
     fn update_in_memory_registration(
@@ -150,10 +112,7 @@ impl TransformManager {
     ) -> Result<(), SchemaError> {
         // Update registered transforms
         {
-            let mut registered_transforms = self
-                .registered_transforms
-                .write()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire write lock".to_string()))?;
+            let mut registered_transforms = self.registered_transforms.clone();
             registered_transforms.insert(transform_id.to_string(), transform.clone());
         }
 
@@ -161,8 +120,7 @@ impl TransformManager {
         {
             let mut field_to_transforms = self
                 .schema_field_to_transforms
-                .write()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire write lock".to_string()))?;
+                .clone();
 
             for field in trigger_fields {
                 field_to_transforms
@@ -170,25 +128,6 @@ impl TransformManager {
                     .or_insert_with(HashSet::new)
                     .insert(transform_id.to_string());
             }
-        }
-
-        Ok(())
-    }
-
-    /// Helper method to update field trigger mappings
-    pub(super) fn update_field_trigger_mappings(
-        &self,
-        transform_id: &str,
-        trigger_fields: &[String],
-    ) -> Result<(), SchemaError> {
-        
-        let mut field_to_transforms = self.schema_field_to_transforms.write().map_err(|_| {
-            SchemaError::InvalidData("Failed to acquire field_to_transforms lock".to_string())
-        })?;
-
-        for field_key in trigger_fields {
-            let set = field_to_transforms.entry(field_key.clone()).or_default();
-            set.insert(transform_id.to_string());
         }
 
         Ok(())

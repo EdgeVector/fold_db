@@ -22,17 +22,18 @@ impl TransformRunner for super::TransformManager {
             crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
         >,
     ) -> Result<JsonValue, SchemaError> {
-        // Load the transform from the database
-        let transform = self.db_ops.get_transform(transform_id)
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to load transform '{}': {}", transform_id, e)))?;
+        // Load the transform from in-memory registered transforms
+        let transform = self.registered_transforms.get(transform_id)
+            .cloned()
+            .ok_or_else(|| SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)))?;
         // Execute the transform using the execution module with mutation context
         let input_values = InputFetcher::fetch_input_values_with_context(
-            &transform.clone().unwrap(), 
+            &transform, 
             &self.db_ops, 
             mutation_context,
         )?;
         
-        let schema = transform.as_ref().unwrap().get_declarative_schema().unwrap();
+        let schema = transform.get_declarative_schema().unwrap();
 
         // Execute multi-chain coordination
         let expressions: Vec<(String, String)> = schema.hash_to_code().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -63,7 +64,7 @@ impl TransformRunner for super::TransformManager {
         let mut result_map = std::collections::HashMap::new();
         result_map.insert("result".to_string(), result.clone());
         ResultStorage::store_transform_result_generic(
-            &transform.clone().unwrap(),
+            &transform,
             result_map,
             mutation_context
                 .as_ref()
@@ -76,10 +77,8 @@ impl TransformRunner for super::TransformManager {
     }
 
     fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
-        let registered_transforms = self.registered_transforms.read().map_err(|_| {
-            SchemaError::InvalidData("Failed to acquire registered_transforms lock".to_string())
-        })?;
-        Ok(registered_transforms.contains_key(transform_id))
+        let registered_transforms = self.registered_transforms.get(transform_id);
+        Ok(registered_transforms.is_some())
     }
 
     fn get_transforms_for_field(
@@ -88,22 +87,8 @@ impl TransformRunner for super::TransformManager {
         field_name: &str,
     ) -> Result<HashSet<String>, SchemaError> {
         let key = format!("{}.{}", schema_name, field_name);
-        let field_to_transforms = self.schema_field_to_transforms.read().map_err(|_| {
-            SchemaError::InvalidData("Failed to acquire field_to_transforms lock".to_string())
-        })?;
-        Ok(field_to_transforms.get(&key).cloned().unwrap_or_default())
+        let field_to_transforms = self.schema_field_to_transforms.get(&key);
+        Ok(field_to_transforms.cloned().unwrap_or_default())
     }
 
-    fn get_transforms_for_schema(&self, schema_name: &str) -> Result<HashSet<String>, SchemaError> {
-        // Delegate to the public method implementation
-        self.get_transforms_for_schema(schema_name)
-    }
-
-    fn handle_transform_registration(
-        &self,
-        registration: &crate::schema::types::TransformRegistration,
-    ) -> Result<(), SchemaError> {
-        // Delegate to the public method implementation
-        self.handle_transform_registration(registration)
-    }
 }

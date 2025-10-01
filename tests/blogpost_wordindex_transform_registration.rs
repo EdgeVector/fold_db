@@ -134,7 +134,7 @@ fn test_blogpost_wordindex_transform_registration() {
     // Verify that transforms are properly stored in the database
     for expected_id in &expected_transform_ids {
         assert!(
-            transform_manager.transform_exists(*expected_id).expect("Failed to check transform existence"),
+            transform_manager.list_transforms().expect("Failed to list transforms").contains_key(*expected_id),
             "Transform '{}' should exist in the database",
             expected_id
         );

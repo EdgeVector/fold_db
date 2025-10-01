@@ -8,7 +8,7 @@ use crate::fold_db_core::infrastructure::message_bus::{
     schema_events::{TransformExecuted, TransformRegistrationRequest, TransformTriggered},
     MessageBus,
 };
-use crate::transform::manager::types::TransformRunner;
+use crate::transform::manager::{TransformManager, types::TransformRunner};
 use crate::fold_db_core::infrastructure::message_bus::events::schema_events::TransformRegistrationResponse;
 use crate::schema::SchemaError;
 use log::{error, info};
@@ -26,7 +26,7 @@ impl EventMonitor {
     /// Create a new EventMonitor and start monitoring
     pub fn new(
         message_bus: Arc<MessageBus>,
-        manager: Arc<dyn TransformRunner>,
+        manager: Arc<TransformManager>,
         _persistence: PersistenceManager,
     ) -> Self {
         let monitoring_thread = Self::start_unified_monitoring(
@@ -42,7 +42,7 @@ impl EventMonitor {
     /// Start unified monitoring for MutationExecuted and TransformTriggered events
     fn start_unified_monitoring(
         message_bus: Arc<MessageBus>,
-        manager: Arc<dyn TransformRunner>,
+        manager: Arc<TransformManager>,
     ) -> thread::JoinHandle<()> {
         let mut mutation_executed_consumer = message_bus.subscribe::<crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted>();
         let mut triggered_consumer = message_bus.subscribe::<TransformTriggered>();
@@ -87,7 +87,7 @@ impl EventMonitor {
     /// Handle a TransformTriggered event by executing the transform
     fn handle_transform_triggered_event(
         event: &TransformTriggered,
-        manager: &Arc<dyn TransformRunner>,
+        manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
         let result = manager.execute_transform_with_context(&event.transform_id, &event.mutation_context);
@@ -143,7 +143,7 @@ impl EventMonitor {
     /// @tomtang: this is the entry point for the transform orchestration
     fn handle_mutation_executed_event(
         event: &crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted,
-        manager: &Arc<dyn TransformRunner>,
+        manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
         let mut unique_transform_ids = std::collections::HashSet::new();
@@ -209,7 +209,7 @@ impl EventMonitor {
     /// Handle a TransformRegistrationRequest event by registering the transform
     fn handle_transform_registration_request_event(
         event: &TransformRegistrationRequest,
-        manager: &Arc<dyn TransformRunner>,
+        manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
         info!("🔧 EventMonitor: Handling TransformRegistrationRequest for '{}'", event.registration.transform_id);

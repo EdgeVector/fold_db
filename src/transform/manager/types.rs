@@ -18,9 +18,4 @@ pub trait TransformRunner: Send + Sync {
         schema_name: &str,
         field_name: &str,
     ) -> Result<HashSet<String>, SchemaError>;
-    fn get_transforms_for_schema(&self, schema_name: &str) -> Result<HashSet<String>, SchemaError>;
-    fn handle_transform_registration(
-        &self,
-        registration: &crate::schema::types::TransformRegistration,
-    ) -> Result<(), SchemaError>;
 }

@@ -54,7 +54,7 @@ impl DataFoldNode {
     /// List all registered transforms.
     pub fn list_transforms(&self) -> FoldDbResult<HashMap<String, Transform>> {
         self.with_db(
-            |db| db.list_transforms(),
+            |db| db.transform_manager.list_transforms(),
             "Failed to acquire database lock for listing transforms",
             "Failed to list transforms"
         )
