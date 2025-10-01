@@ -57,10 +57,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_node_config(None, Some(port))?;
     info!("Config loaded successfully");
 
-    // Load or initialize node
-    info!("Loading DataFold Node...");
-    let node = DataFoldNode::load(config).await?;
-    info!("Node loaded successfully");
+    // Create node
+    info!("Creating DataFold Node...");
+    let node = DataFoldNode::new(config)?;
+    info!("Node created successfully");
 
     // Schemas are loaded from disk during node initialization
     info!("Previously loaded schemas are available");

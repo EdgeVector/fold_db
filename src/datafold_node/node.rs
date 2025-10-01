@@ -96,26 +96,16 @@ impl DataFoldNode {
             )
         };
 
-        Ok(Self {
+        let node = Self {
             db,
             config,
             node_id,
             security_manager,
             private_key,
             public_key,
-        })
-    }
+        };
 
-    /// Loads an existing database node from the specified configuration.
-    pub async fn load(config: NodeConfig) -> FoldDbResult<Self> {
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "Loading DataFoldNode from config"
-        );
-        let node: DataFoldNode = Self::new(config)?;
-
-        // Automatically load schemas from available_schemas directory on startup
+        // Automatically load schemas from available_schemas directory
         log_feature!(
             LogFeature::Database,
             info,
@@ -124,7 +114,7 @@ impl DataFoldNode {
         
         let db_guard = node.get_fold_db()?;
         let schema_manager = db_guard.schema_manager.clone();
-        drop(db_guard); // Release the lock before async operation
+        drop(db_guard); // Release the lock before schema loading
         
         // Load schemas from available_schemas directory
         match schema_manager.load_schemas_from_directory("available_schemas") {
@@ -132,7 +122,7 @@ impl DataFoldNode {
                 log_feature!(
                     LogFeature::Database,
                     info,
-                    "Auto-loaded {} schemas from available_schemas directory on startup",
+                    "Auto-loaded {} schemas from available_schemas directory",
                     loaded_count
                 );
             }
@@ -140,20 +130,21 @@ impl DataFoldNode {
                 log_feature!(
                     LogFeature::Database,
                     error,
-                    "Failed to auto-load schemas from available_schemas directory: {}. Server will start but no schemas will be available until manually loaded.",
+                    "Failed to auto-load schemas from available_schemas directory: {}. Node will start but no schemas will be available until manually loaded.",
                     e
                 );
-                // Don't fail startup if schema loading fails - directory might not exist or be empty
+                // Don't fail node creation if schema loading fails - directory might not exist or be empty
             }
         }
 
         log_feature!(
             LogFeature::Database,
             info,
-            "DataFoldNode loaded successfully with schema system initialized"
+            "DataFoldNode created successfully with schema system initialized"
         );
         Ok(node)
     }
+
 
     /// Get a reference to the underlying FoldDB instance
     pub fn get_fold_db(&self) -> FoldDbResult<std::sync::MutexGuard<'_, FoldDB>> {

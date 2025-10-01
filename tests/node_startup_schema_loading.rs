@@ -48,8 +48,8 @@ async fn test_node_loads_available_schemas_on_startup() {
         security_config: Default::default(),
     };
     
-    // Create and load the node
-    let node = DataFoldNode::load(config).await.expect("Failed to load DataFoldNode");
+    // Create the node
+    let node = DataFoldNode::new(config).expect("Failed to create DataFoldNode");
     
     // Get the fold_db to check loaded schemas
     let fold_db = node.get_fold_db().expect("Failed to get FoldDB");
@@ -121,5 +121,81 @@ async fn test_node_loads_available_schemas_on_startup() {
     }
     
     println!("✅ All {} schemas loaded successfully on node startup!", expected_schema_names.len());
+}
+
+/// Test to verify that DataFoldNode::new() loads available schemas (used by database reset)
+#[tokio::test]
+async fn test_node_new_loads_available_schemas() {
+    // Create a temporary directory for this test
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_db_path = temp_dir.path().join("test_db");
+    
+    // Verify that the available_schemas directory exists and contains the expected schemas
+    let available_schemas_dir = std::env::current_dir().expect("Failed to get current directory").join("available_schemas");
+    assert!(available_schemas_dir.exists(), "available_schemas directory should exist");
+    
+    // Discover schema files in the available_schemas directory
+    let expected_schema_names: Vec<String> = fs::read_dir(&available_schemas_dir).unwrap()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_str()?;
+            if file_name_str.ends_with(".json") {
+                Some(file_name_str[..file_name_str.len() - 5].to_string()) // Remove .json extension
+            } else {
+                None
+            }
+        })
+        .collect();
+    
+    assert!(!expected_schema_names.is_empty(), "Should have at least one schema file in available_schemas directory");
+    
+    // Create node configuration
+    let config = NodeConfig {
+        storage_path: test_db_path.to_path_buf(),
+        default_trust_distance: 1,
+        network_listen_address: "/ip4/127.0.0.1/tcp/9003".to_string(),
+        security_config: Default::default(),
+    };
+    
+    // Create a new node using DataFoldNode::new() (this is what database reset uses)
+    let node = DataFoldNode::new(config).expect("Failed to create DataFoldNode with new()");
+    
+    // Get the fold_db to check loaded schemas
+    let fold_db = node.get_fold_db().expect("Failed to get FoldDB");
+    let schema_manager = fold_db.schema_manager();
+    
+    // Verify that all expected schemas were loaded
+    let schemas = schema_manager.get_schemas().expect("Failed to get schemas");
+    
+    // Check that all expected schemas from the available_schemas directory are loaded
+    for expected_schema_name in &expected_schema_names {
+        assert!(
+            schemas.contains_key(expected_schema_name), 
+            "Schema '{}' should be loaded from available_schemas directory when using DataFoldNode::new()", 
+            expected_schema_name
+        );
+    }
+    
+    // Verify that the number of loaded schemas matches the number of schema files
+    assert_eq!(
+        schemas.len(), 
+        expected_schema_names.len(), 
+        "Number of loaded schemas should match number of schema files in available_schemas directory"
+    );
+    
+    // Verify that all schemas are in "Available" state by default
+    let schema_states = schema_manager.get_schema_states().expect("Failed to get schema states");
+    
+    for expected_schema_name in &expected_schema_names {
+        assert_eq!(
+            schema_states.get(expected_schema_name).copied().unwrap_or_default(),
+            datafold::schema::SchemaState::Available,
+            "Schema '{}' should be in Available state when using DataFoldNode::new()",
+            expected_schema_name
+        );
+    }
+    
+    println!("✅ All {} schemas loaded successfully with DataFoldNode::new() (database reset behavior)!", expected_schema_names.len());
 }
 
