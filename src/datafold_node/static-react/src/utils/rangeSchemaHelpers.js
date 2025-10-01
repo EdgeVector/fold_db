@@ -37,9 +37,39 @@ import {
  */
 
 /**
+ * Gets the schema type from a schema object.
+ * Handles the tagged union format from Rust: "Single" | { "Range": {...} } | { "HashRange": {...} }
+ * 
+ * @param {Schema} schema - Schema object
+ * @returns {'Single'|'Range'|'HashRange'|null} Schema type or null if not determinable
+ */
+export function getSchemaType(schema) {
+  if (!schema || typeof schema !== 'object') return null;
+  
+  const schemaType = schema.schema_type;
+  
+  // Handle string type (Single)
+  if (schemaType === 'Single') {
+    return 'Single';
+  }
+  
+  // Handle object types (Range or HashRange)
+  if (typeof schemaType === 'object' && schemaType !== null) {
+    if ('HashRange' in schemaType) {
+      return 'HashRange';
+    }
+    if ('Range' in schemaType) {
+      return 'Range';
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Detects if a schema is a HashRange schema
  * HashRange schemas have:
- * 1. schema_type: "HashRange"
+ * 1. schema_type: { "HashRange": { keyconfig: {...} } }
  * 2. Fields with field_type: "HashRange" that contain hash_field and range_field
  * 
  * @param {Schema} schema - Schema object to check
@@ -50,14 +80,16 @@ export function isHashRangeSchema(schema) {
     return false;
   }
   
-  // Prefer universal key detection for HashRange
-  if (schema.schema_type === 'HashRange' && schema.key && typeof schema.key === 'object') {
+  const schemaType = getSchemaType(schema);
+  const isHashRangeType = schemaType === 'HashRange';
+  
+  if (isHashRangeType && schema.key && typeof schema.key === 'object') {
     const { hash_field, range_field } = schema.key || {};
     return typeof hash_field === 'string' && hash_field.trim() && typeof range_field === 'string' && range_field.trim();
   }
   
   // Fallback: legacy field-based detection
-  return schema.schema_type === 'HashRange' &&
+  return isHashRangeType &&
     schema.fields &&
     typeof schema.fields === 'object' &&
     Object.values(schema.fields).some(field =>
@@ -74,7 +106,7 @@ export function isHashRangeSchema(schema) {
  * @returns {string|null} Hash field expression or null if not found
  */
 export function getHashField(schema) {
-  if (!schema || schema.schema_type !== 'HashRange') return null;
+  if (!schema || !isHashRangeSchema(schema)) return null;
   // Prefer universal key
   if (schema.key && typeof schema.key?.hash_field === 'string' && schema.key.hash_field.trim()) {
     return schema.key.hash_field;
@@ -91,7 +123,7 @@ export function getHashField(schema) {
  * @returns {string|null} Range field expression or null if not found
  */
 export function getRangeField(schema) {
-  if (!schema || schema.schema_type !== 'HashRange') return null;
+  if (!schema || !isHashRangeSchema(schema)) return null;
   // Prefer universal key
   if (schema.key && typeof schema.key?.range_field === 'string' && schema.key.range_field.trim()) {
     return schema.key.range_field;
@@ -114,51 +146,65 @@ function lastSegment(expr) {
 
 /**
  * Detects if a schema is a range schema
- * Range schemas have:
- * 1. A range_key field defined in the schema
- * 2. All fields have field_type: "Range"
+ * Range schemas have schema_type: { "Range": { keyconfig: {...} } }
+ * Legacy support: schemas with range_key and all Range fields
  * 
  * @param {Schema} schema - Schema object to check
  * @returns {boolean} True if schema is a range schema
  */
 export function isRangeSchema(schema) {
-  // Enhanced range schema detection with better validation
   if (!schema || typeof schema !== 'object') {
     return false;
   }
   
-  // Check for range_key in the new schema_type structure or old format
-  const hasRangeKey = schema.schema_type?.Range?.range_key || schema.range_key;
-  if (!hasRangeKey || typeof hasRangeKey !== 'string') {
-    return false;
-  }
-  
-  if (!schema.fields || typeof schema.fields !== 'object') {
-    return false;
-  }
-  
-  // Check if all fields have field_type: "Range"
-  const fieldEntries = Object.entries(schema.fields);
-  if (fieldEntries.length === 0) {
-    return false;
-  }
-  
-  // More robust field type checking
-  const allFieldsAreRange = fieldEntries.every(([fieldName, field]) => {
-    if (!field || typeof field !== 'object') {
-      console.warn(`Field ${fieldName} is not a valid field object in schema ${schema.name}`);
+  // Modern format: check schema_type
+  const schemaType = getSchemaType(schema);
+  if (schemaType === 'Range') {
+    // Must have fields defined for validation
+    if (!schema.fields || typeof schema.fields !== 'object' || Object.keys(schema.fields).length === 0) {
       return false;
     }
-    
-    if (field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE) {
-      console.warn(`Field ${fieldName} has field_type "${field.field_type}", expected "${RANGE_SCHEMA_CONFIG.FIELD_TYPE}" in schema ${schema.name}`);
+    // All fields should be Range type
+    const fieldEntries = Object.entries(schema.fields);
+    const allFieldsAreRange = fieldEntries.every(([fieldName, field]) => {
+      if (!field || typeof field !== 'object') {
+        console.warn(`Field ${fieldName} is not a valid field object in schema ${schema.name}`);
+        return false;
+      }
+      
+      if (field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE) {
+        console.warn(`Field ${fieldName} has field_type "${field.field_type}", expected "${RANGE_SCHEMA_CONFIG.FIELD_TYPE}" in schema ${schema.name}`);
+        return false;
+      }
+      
+      return true;
+    });
+    return allFieldsAreRange;
+  }
+  
+  // Legacy format: schema with range_key and all Range-type fields
+  if (schema.range_key && typeof schema.range_key === 'string') {
+    if (!schema.fields || typeof schema.fields !== 'object' || Object.keys(schema.fields).length === 0) {
       return false;
     }
-    
-    return true;
-  });
+    const fieldEntries = Object.entries(schema.fields);
+    const allFieldsAreRange = fieldEntries.every(([fieldName, field]) => {
+      if (!field || typeof field !== 'object') {
+        console.warn(`Field ${fieldName} is not a valid field object in schema ${schema.name}`);
+        return false;
+      }
+      
+      if (field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE) {
+        console.warn(`Field ${fieldName} has field_type "${field.field_type}", expected "${RANGE_SCHEMA_CONFIG.FIELD_TYPE}" in schema ${schema.name}`);
+        return false;
+      }
+      
+      return true;
+    });
+    return allFieldsAreRange;
+  }
   
-  return allFieldsAreRange;
+  return false;
 }
 
 /**
@@ -170,28 +216,42 @@ export function isRangeSchema(schema) {
 export function getRangeKey(schema) {
   if (!schema || typeof schema !== 'object') return null;
   
+  const schemaType = getSchemaType(schema);
+  
   // HashRange: derive from universal key if present
-  if (schema.schema_type === 'HashRange') {
+  if (schemaType === 'HashRange') {
     const rf = schema?.key?.range_field;
-    return (typeof rf === 'string' && rf.trim()) ? lastSegment(rf) : null;
+    if (typeof rf === 'string' && rf.trim()) {
+      return lastSegment(rf);
+    }
+    // Fallback: check keyconfig in schema_type
+    const keyconfig = schema?.schema_type?.HashRange?.keyconfig;
+    if (keyconfig?.range_field && typeof keyconfig.range_field === 'string' && keyconfig.range_field.trim()) {
+      return lastSegment(keyconfig.range_field);
+    }
   }
   
-  // Range: prefer universal key, fallback to legacy range_key
-  if (schema?.schema_type?.Range) {
+  // Range: prefer universal key
+  if (schemaType === 'Range') {
     const universalRange = schema?.key?.range_field;
     if (typeof universalRange === 'string' && universalRange.trim()) {
       return lastSegment(universalRange);
     }
-    return schema?.schema_type?.Range?.range_key || schema?.range_key || null;
+    // Check keyconfig in schema_type (Rust format)
+    const keyconfig = schema?.schema_type?.Range?.keyconfig;
+    if (keyconfig?.range_field && typeof keyconfig.range_field === 'string' && keyconfig.range_field.trim()) {
+      return lastSegment(keyconfig.range_field);
+    }
+    // Legacy format: check range_key directly in Range object
+    const legacyRangeKey = schema?.schema_type?.Range?.range_key;
+    if (typeof legacyRangeKey === 'string' && legacyRangeKey.trim()) {
+      return legacyRangeKey;
+    }
   }
   
-  // Legacy Range format: schema_type is string "Range" or has range_key directly
-  if (schema.schema_type === 'Range' || schema.range_key) {
-    const universalRange = schema?.key?.range_field;
-    if (typeof universalRange === 'string' && universalRange.trim()) {
-      return lastSegment(universalRange);
-    }
-    return schema?.range_key || null;
+  // Legacy format: check for range_key at top level (old schema format)
+  if (schema.range_key && typeof schema.range_key === 'string' && schema.range_key.trim()) {
+    return schema.range_key;
   }
   
   // Single: optional universal range_field may exist
@@ -213,7 +273,7 @@ export function getHashKey(schema) {
     return lastSegment(hf);
   }
   // HashRange fallback: try first field definition
-  if (schema.schema_type === 'HashRange') {
+  if (isHashRangeSchema(schema)) {
     const hr = Object.values(schema.fields || {}).find(field => field.field_type === 'HashRange' && field.hash_field);
     return hr ? lastSegment(hr.hash_field) : null;
   }
@@ -230,8 +290,8 @@ export function getKeyShape(schema) {
   const hashField = getHashKey(schema);
   const rangeField = getRangeKey(schema);
   let type = 'single';
-  if (schema?.schema_type === 'HashRange') type = 'hashrange';
-  else if (schema?.schema_type?.Range) type = 'range';
+  if (isHashRangeSchema(schema)) type = 'hashrange';
+  else if (isRangeSchema(schema)) type = 'range';
   return { type, hashField, rangeField };
 }
 

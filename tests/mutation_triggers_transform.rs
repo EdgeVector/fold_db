@@ -106,33 +106,22 @@ fn test_blogpost_mutation_triggers_transforms() {
     
     println!("📋 Triggered transforms: {:?}", triggered_transform_ids);
     
-    // Verify that transforms were triggered for the affected fields
-    // Each field in BlogPost that's referenced in BlogPostWordIndex transform_fields should trigger its corresponding transform
-    let expected_transforms = vec![
-        "BlogPostWordIndex_content",   // content field
-        "BlogPostWordIndex_tags",      // tags field
-        "BlogPostWordIndex_publish_date", // publish_date field
-        "BlogPostWordIndex_author",    // author field
-        "BlogPostWordIndex_title",     // title field
-        "BlogPostWordIndex_word",      // word transform (depends on content)
-    ];
+    // Verify that the BlogPostWordIndex transform was triggered
+    // The single transform handles all fields referenced in BlogPostWordIndex transform_fields
+    let expected_transform = "BlogPostWordIndex";
     
-    // Verify all expected transforms were triggered
-    for expected_transform in &expected_transforms {
-        assert!(
-            triggered_transform_ids.contains(&expected_transform.to_string()),
-            "Transform '{}' should be triggered when BlogPost fields are mutated, but it wasn't. Triggered: {:?}",
-            expected_transform,
-            triggered_transform_ids
-        );
-    }
+    assert!(
+        triggered_transform_ids.contains(&expected_transform.to_string()),
+        "Transform '{}' should be triggered when BlogPost fields are mutated, but it wasn't. Triggered: {:?}",
+        expected_transform,
+        triggered_transform_ids
+    );
     
-    // Verify no unexpected transforms were triggered (should only have the 6 BlogPostWordIndex transforms)
+    // Verify only the single BlogPostWordIndex transform was triggered
     assert_eq!(
         triggered_transform_ids.len(),
-        expected_transforms.len(),
-        "Should trigger exactly {} transforms, but got {}. Triggered: {:?}",
-        expected_transforms.len(),
+        1,
+        "Should trigger exactly 1 transform (BlogPostWordIndex), but got {}. Triggered: {:?}",
         triggered_transform_ids.len(),
         triggered_transform_ids
     );
@@ -261,29 +250,11 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
     
     println!("📋 Triggered transforms: {:?}", triggered_transform_ids);
     
-    // Verify that ONLY the title transform was triggered
+    // Verify that the BlogPostWordIndex transform was triggered
     assert!(
-        triggered_transform_ids.contains(&"BlogPostWordIndex_title".to_string()),
-        "BlogPostWordIndex_title should be triggered when title field is mutated"
+        triggered_transform_ids.contains(&"BlogPostWordIndex".to_string()),
+        "BlogPostWordIndex should be triggered when title field is mutated"
     );
-    
-    // Verify that other transforms were NOT triggered
-    let should_not_trigger = vec![
-        "BlogPostWordIndex_content",
-        "BlogPostWordIndex_tags",
-        "BlogPostWordIndex_publish_date",
-        "BlogPostWordIndex_author",
-        "BlogPostWordIndex_word",
-    ];
-    
-    for transform_id in &should_not_trigger {
-        assert!(
-            !triggered_transform_ids.contains(&transform_id.to_string()),
-            "Transform '{}' should NOT be triggered when only title is mutated, but it was. Triggered: {:?}",
-            transform_id,
-            triggered_transform_ids
-        );
-    }
     
     // Verify exactly one transform was triggered
     assert_eq!(
@@ -379,23 +350,17 @@ fn test_content_mutation_triggers_word_transform() {
     
     println!("📋 Triggered transforms: {:?}", triggered_transform_ids);
     
-    // Verify that both the content transform AND the word transform are triggered
-    // The word transform depends on content, so it should be triggered
+    // Verify that the BlogPostWordIndex transform is triggered
     assert!(
-        triggered_transform_ids.contains(&"BlogPostWordIndex_content".to_string()),
-        "BlogPostWordIndex_content should be triggered when content field is mutated"
+        triggered_transform_ids.contains(&"BlogPostWordIndex".to_string()),
+        "BlogPostWordIndex should be triggered when content field is mutated"
     );
     
-    assert!(
-        triggered_transform_ids.contains(&"BlogPostWordIndex_word".to_string()),
-        "BlogPostWordIndex_word should be triggered when content field is mutated (word transform depends on content)"
-    );
-    
-    // Should trigger exactly 2 transforms: content and word
+    // Should trigger exactly 1 transform: BlogPostWordIndex
     assert_eq!(
         triggered_transform_ids.len(),
-        2,
-        "Should trigger exactly 2 transforms (content and word), but got {}. Triggered: {:?}",
+        1,
+        "Should trigger exactly 1 transform (BlogPostWordIndex), but got {}. Triggered: {:?}",
         triggered_transform_ids.len(),
         triggered_transform_ids
     );

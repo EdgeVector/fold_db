@@ -69,33 +69,23 @@ fn test_blogpost_wordindex_transform_registration() {
     let registered_transforms = transform_manager.list_transforms()
         .expect("Failed to list transforms");
     
-    // Verify that transforms were registered for each transform field
-    let expected_transform_ids = vec![
-        "BlogPostWordIndex_word",
-        "BlogPostWordIndex_publish_date", 
-        "BlogPostWordIndex_content",
-        "BlogPostWordIndex_author",
-        "BlogPostWordIndex_title",
-        "BlogPostWordIndex_tags"
-    ];
+    // Verify that ONE transform was registered for the BlogPostWordIndex schema
+    let expected_transform_id = "BlogPostWordIndex";
     
     println!("📋 Registered transforms: {:?}", registered_transforms.keys().collect::<Vec<_>>());
     
-    // Check that all expected transforms are registered
-    for expected_id in &expected_transform_ids {
-        assert!(
-            registered_transforms.contains_key(*expected_id),
-            "Transform '{}' should be registered after loading BlogPostWordIndex schema",
-            expected_id
-        );
-    }
+    // Check that the transform is registered
+    assert!(
+        registered_transforms.contains_key(expected_transform_id),
+        "Transform '{}' should be registered after loading BlogPostWordIndex schema",
+        expected_transform_id
+    );
     
-    // Verify that the number of registered transforms matches expectations
+    // Verify that only ONE transform is registered
     assert_eq!(
         registered_transforms.len(),
-        expected_transform_ids.len(),
-        "Should have exactly {} registered transforms for BlogPostWordIndex schema",
-        expected_transform_ids.len()
+        1,
+        "Should have exactly 1 registered transform for BlogPostWordIndex schema"
     );
     
     // Verify transform field mappings are correctly established
@@ -122,23 +112,21 @@ fn test_blogpost_wordindex_transform_registration() {
         );
     }
     
-    // Verify that BlogPost.content triggers the word transform specifically
+    // Verify that BlogPost.content triggers the BlogPostWordIndex transform
     let transforms_for_content = transform_manager.get_transforms_for_field("BlogPost", "content")
         .expect("Failed to get transforms for content field");
     
     assert!(
-        transforms_for_content.contains("BlogPostWordIndex_word"),
-        "BlogPost.content should trigger the BlogPostWordIndex_word transform"
+        transforms_for_content.contains(expected_transform_id),
+        "BlogPost.content should trigger the BlogPostWordIndex transform"
     );
     
-    // Verify that transforms are properly stored in the database
-    for expected_id in &expected_transform_ids {
-        assert!(
-            transform_manager.list_transforms().expect("Failed to list transforms").contains_key(*expected_id),
-            "Transform '{}' should exist in the database",
-            expected_id
-        );
-    }
+    // Verify that transform is properly stored in the database
+    assert!(
+        transform_manager.list_transforms().expect("Failed to list transforms").contains_key(expected_transform_id),
+        "Transform '{}' should exist in the database",
+        expected_transform_id
+    );
     
     // Verify the transform schema structure
     for (transform_id, transform) in &registered_transforms {
@@ -212,30 +200,21 @@ fn test_blogpost_wordindex_from_file() {
     
     println!("📋 Transforms registered from file: {:?}", registered_transforms.keys().collect::<Vec<_>>());
     
-    // Should have 6 transforms for the 6 transform_fields in the schema
+    // Should have 1 transform for the BlogPostWordIndex schema
+    let expected_transform_id = "BlogPostWordIndex";
+    
     assert_eq!(
         registered_transforms.len(),
-        6,
-        "Should have 6 registered transforms for BlogPostWordIndex schema loaded from file"
+        1,
+        "Should have 1 registered transform for BlogPostWordIndex schema loaded from file"
     );
     
-    // Verify specific transforms exist
-    let expected_transforms = [
-        "BlogPostWordIndex_word",
-        "BlogPostWordIndex_publish_date",
-        "BlogPostWordIndex_content", 
-        "BlogPostWordIndex_author",
-        "BlogPostWordIndex_title",
-        "BlogPostWordIndex_tags"
-    ];
-    
-    for expected_transform in &expected_transforms {
-        assert!(
-            registered_transforms.contains_key(*expected_transform),
-            "Transform '{}' should be registered when loading from file",
-            expected_transform
-        );
-    }
+    // Verify the transform exists
+    assert!(
+        registered_transforms.contains_key(expected_transform_id),
+        "Transform '{}' should be registered when loading from file",
+        expected_transform_id
+    );
     
     println!("✅ BlogPostWordIndex transform registration from file test passed!");
 }

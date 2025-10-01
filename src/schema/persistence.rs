@@ -114,35 +114,38 @@ impl SchemaCore {
         use crate::schema::types::transform::{Transform, TransformRegistration};
         use uuid::Uuid;
 
-        for (field_name, field_expression) in transform_fields.iter() {
-            // Create a transform ID based on schema name and field name
-            let transform_id = format!("{}_{}", declarative_schema.name, field_name);
-            
-            // Create the transform from the declarative schema
-            let transform = Transform::from_declarative_schema(declarative_schema.clone());
-            
-            // Determine trigger fields for THIS SPECIFIC field expression
-            let trigger_fields = DeclarativeSchemaDefinition::extract_inputs_from_expression(field_expression);
-            
-            // Create the registration
-            let registration = TransformRegistration {
-                transform_id: transform_id.clone(),
-                transform,
-                trigger_fields,
-            };
-
-            // Create the registration request event
-            let correlation_id = Uuid::new_v4().to_string();
-            let registration_request = TransformRegistrationRequest {
-                registration,
-                correlation_id,
-            };
-
-            // Publish the event to the message bus
-            self.get_message_bus().publish(registration_request)
-                .map_err(|e| SchemaError::InvalidData(format!("Failed to publish transform registration request: {}", e)))?;
-
+        // Create ONE transform for the entire schema
+        let transform_id = declarative_schema.name.clone();
+        let transform = Transform::from_declarative_schema(declarative_schema.clone());
+        
+        // Collect ALL trigger fields from ALL field expressions
+        let mut all_trigger_fields = Vec::new();
+        for field_expression in transform_fields.values() {
+            let fields = DeclarativeSchemaDefinition::extract_inputs_from_expression(field_expression);
+            all_trigger_fields.extend(fields);
         }
+        
+        // Remove duplicates by converting to HashSet and back
+        let unique_trigger_fields: std::collections::HashSet<_> = all_trigger_fields.into_iter().collect();
+        let trigger_fields: Vec<String> = unique_trigger_fields.into_iter().collect();
+        
+        // Create the registration for the single transform
+        let registration = TransformRegistration {
+            transform_id: transform_id.clone(),
+            transform,
+            trigger_fields,
+        };
+
+        // Create the registration request event
+        let correlation_id = Uuid::new_v4().to_string();
+        let registration_request = TransformRegistrationRequest {
+            registration,
+            correlation_id,
+        };
+
+        // Publish the event to the message bus
+        self.get_message_bus().publish(registration_request)
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to publish transform registration request: {}", e)))?;
 
         Ok(())
     }

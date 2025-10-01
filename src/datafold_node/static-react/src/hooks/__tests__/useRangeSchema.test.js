@@ -152,9 +152,9 @@ describe('useRangeSchema Hook', () => {
     expect(mutation.type).toBe('mutation');
     expect(mutation.schema).toBe('TestRangeSchema');
     expect(mutation.mutation_type).toBe('create');
-    expect(mutation.data.timestamp).toBe('test_key_123'); // Range key as primitive
-    expect(mutation.data.value).toEqual({ [RANGE_SCHEMA_CONFIG.MUTATION_WRAPPER_KEY]: 42 }); // Wrapped in object
-    expect(mutation.data.metadata).toEqual({ [RANGE_SCHEMA_CONFIG.MUTATION_WRAPPER_KEY]: 'test string' });
+    expect(mutation.fields_and_values.timestamp).toBe('test_key_123'); // Range key as primitive
+    expect(mutation.fields_and_values.value).toEqual({ [RANGE_SCHEMA_CONFIG.MUTATION_WRAPPER_KEY]: 42 }); // Wrapped in object
+    expect(mutation.fields_and_values.metadata).toEqual({ [RANGE_SCHEMA_CONFIG.MUTATION_WRAPPER_KEY]: 'test string' });
   });
 
   it('should format range mutations correctly for Delete', () => {
@@ -171,8 +171,8 @@ describe('useRangeSchema Hook', () => {
     expect(mutation.type).toBe('mutation');
     expect(mutation.schema).toBe('TestRangeSchema');
     expect(mutation.mutation_type).toBe('delete');
-    expect(mutation.data.timestamp).toBe('test_key_123');
-    expect(Object.keys(mutation.data)).toHaveLength(1); // Only range key
+    expect(mutation.fields_and_values.timestamp).toBe('test_key_123');
+    expect(Object.keys(mutation.fields_and_values)).toHaveLength(1); // Only range key
   });
 
   it('should handle different field value types in mutations', () => {
@@ -194,11 +194,11 @@ describe('useRangeSchema Hook', () => {
       fieldData
     );
 
-    expect(mutation.data.string_field).toEqual({ value: 'text' });
-    expect(mutation.data.number_field).toEqual({ value: 123 });
-    expect(mutation.data.boolean_field).toEqual({ value: true });
-    expect(mutation.data.object_field).toEqual({ custom: 'data' }); // Objects used as-is
-    expect(mutation.data.null_field).toEqual({ value: null });
+    expect(mutation.fields_and_values.string_field).toEqual({ value: 'text' });
+    expect(mutation.fields_and_values.number_field).toEqual({ value: 123 });
+    expect(mutation.fields_and_values.boolean_field).toEqual({ value: true });
+    expect(mutation.fields_and_values.object_field).toEqual({ custom: 'data' }); // Objects used as-is
+    expect(mutation.fields_and_values.null_field).toEqual({ value: null });
   });
 
   it('should format range queries correctly', () => {
@@ -302,6 +302,6 @@ describe('useRangeSchema Hook', () => {
       {}
     );
 
-    expect(mutation.data.timestamp).toBe('spaced_key'); // Trimmed
+    expect(mutation.fields_and_values.timestamp).toBe('spaced_key'); // Trimmed
   });
 });

@@ -85,33 +85,23 @@ fn test_blogpost_wordindex_approval_and_transform_visibility() {
     let registered_transforms = transform_manager.list_transforms()
         .expect("Failed to list transforms");
     
-    // Verify that transforms were registered for each transform field
-    let expected_transform_ids = vec![
-        "BlogPostWordIndex_word",
-        "BlogPostWordIndex_publish_date", 
-        "BlogPostWordIndex_content",
-        "BlogPostWordIndex_author",
-        "BlogPostWordIndex_title",
-        "BlogPostWordIndex_tags"
-    ];
+    // Verify that ONE transform was registered for the BlogPostWordIndex schema
+    let expected_transform_id = "BlogPostWordIndex";
     
     println!("📋 Registered transforms before approval: {:?}", registered_transforms.keys().collect::<Vec<_>>());
     
-    // Check that all expected transforms are registered
-    for expected_id in &expected_transform_ids {
-        assert!(
-            registered_transforms.contains_key(*expected_id),
-            "Transform '{}' should be registered after loading BlogPostWordIndex schema",
-            expected_id
-        );
-    }
+    // Check that the transform is registered
+    assert!(
+        registered_transforms.contains_key(expected_transform_id),
+        "Transform '{}' should be registered after loading BlogPostWordIndex schema",
+        expected_transform_id
+    );
     
-    // Verify that the number of registered transforms matches expectations
+    // Verify that only ONE transform is registered
     assert_eq!(
         registered_transforms.len(),
-        expected_transform_ids.len(),
-        "Should have exactly {} registered transforms for BlogPostWordIndex schema",
-        expected_transform_ids.len()
+        1,
+        "Should have exactly 1 registered transform for BlogPostWordIndex schema"
     );
     
     // Now approve the BlogPostWordIndex schema
@@ -131,27 +121,24 @@ fn test_blogpost_wordindex_approval_and_transform_visibility() {
         "BlogPostWordIndex should be in Approved state after approval"
     );
     
-    // Verify transforms are still registered after approval
+    // Verify transform is still registered after approval
     let updated_registered_transforms = transform_manager.list_transforms()
         .expect("Failed to list transforms after approval");
     
     println!("📋 Registered transforms after approval: {:?}", updated_registered_transforms.keys().collect::<Vec<_>>());
     
-    // Check that all expected transforms are still registered after approval
-    for expected_id in &expected_transform_ids {
-        assert!(
-            updated_registered_transforms.contains_key(*expected_id),
-            "Transform '{}' should still be registered after approving BlogPostWordIndex schema",
-            expected_id
-        );
-    }
+    // Check that the transform is still registered after approval
+    assert!(
+        updated_registered_transforms.contains_key(expected_transform_id),
+        "Transform '{}' should still be registered after approving BlogPostWordIndex schema",
+        expected_transform_id
+    );
     
-    // Verify that the number of registered transforms still matches expectations
+    // Verify that only ONE transform is still registered
     assert_eq!(
         updated_registered_transforms.len(),
-        expected_transform_ids.len(),
-        "Should still have exactly {} registered transforms after approval",
-        expected_transform_ids.len()
+        1,
+        "Should still have exactly 1 registered transform after approval"
     );
     
     // Verify that the schema with approved state is accessible
@@ -169,7 +156,7 @@ fn test_blogpost_wordindex_approval_and_transform_visibility() {
     );
     
     println!("✅ BlogPostWordIndex schema approved successfully");
-    println!("✅ All {} transforms are registered and visible", expected_transform_ids.len());
+    println!("✅ Transform '{}' is registered and visible", expected_transform_id);
     println!("✅ Transform registration persisted through schema approval");
 }
 
@@ -229,27 +216,24 @@ fn test_blogpost_wordindex_approval_from_file() {
         "BlogPostWordIndex should be in Available state when loaded from file"
     );
     
-    // Verify transforms are registered
+    // Verify transform is registered
     let transform_manager = fold_db.transform_manager();
     let registered_transforms = transform_manager.list_transforms()
         .expect("Failed to list transforms");
     
-    let expected_transform_ids = vec![
-        "BlogPostWordIndex_word",
-        "BlogPostWordIndex_publish_date", 
-        "BlogPostWordIndex_content",
-        "BlogPostWordIndex_author",
-        "BlogPostWordIndex_title",
-        "BlogPostWordIndex_tags"
-    ];
+    let expected_transform_id = "BlogPostWordIndex";
     
-    for expected_id in &expected_transform_ids {
-        assert!(
-            registered_transforms.contains_key(*expected_id),
-            "Transform '{}' should be registered after loading from file",
-            expected_id
-        );
-    }
+    assert!(
+        registered_transforms.contains_key(expected_transform_id),
+        "Transform '{}' should be registered after loading from file",
+        expected_transform_id
+    );
+    
+    assert_eq!(
+        registered_transforms.len(),
+        1,
+        "Should have exactly 1 registered transform for BlogPostWordIndex schema"
+    );
     
     // Now approve the schema
     fold_db.schema_manager().set_schema_state("BlogPostWordIndex", datafold::schema::SchemaState::Approved)
@@ -268,18 +252,22 @@ fn test_blogpost_wordindex_approval_from_file() {
         "BlogPostWordIndex should be in Approved state after approval from file"
     );
     
-    // Verify transforms are still visible after approval
+    // Verify transform is still visible after approval
     let final_registered_transforms = transform_manager.list_transforms()
         .expect("Failed to list transforms after file-based approval");
     
-    for expected_id in &expected_transform_ids {
-        assert!(
-            final_registered_transforms.contains_key(*expected_id),
-            "Transform '{}' should still be registered after file-based approval",
-            expected_id
-        );
-    }
+    assert!(
+        final_registered_transforms.contains_key(expected_transform_id),
+        "Transform '{}' should still be registered after file-based approval",
+        expected_transform_id
+    );
+    
+    assert_eq!(
+        final_registered_transforms.len(),
+        1,
+        "Should still have exactly 1 registered transform after approval"
+    );
     
     println!("✅ BlogPostWordIndex schema approved successfully from file");
-    println!("✅ All transforms remain visible after approval");
+    println!("✅ Transform '{}' remains visible after approval", expected_transform_id);
 }

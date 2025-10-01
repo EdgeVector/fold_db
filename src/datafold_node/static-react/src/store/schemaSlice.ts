@@ -162,14 +162,18 @@ export const fetchSchemas = createAsyncThunk<
               
               if (schemaResponse.success && schemaResponse.data) {
                 const schemaData = schemaResponse.data;
+                // Check if schema_type is Range (tagged union: { "Range": { keyconfig: {...} } })
+                const isRangeType = typeof (schemaData as any).schema_type === 'object' && 
+                                   (schemaData as any).schema_type !== null &&
+                                   'Range' in (schemaData as any).schema_type;
                 return {
                   ...schema,
                   ...schemaData, // Include the full schema data including schema_type
                   fields: schemaData.fields || {},
-                  // Add range info if this is a range schema (using any to access schema_type)
+                  // Add range info if this is a range schema
                   rangeInfo: {
-                    isRangeSchema: (schemaData as any).schema_type === 'Range',
-                    rangeField: (schemaData as any).schema_type === 'Range' ? {
+                    isRangeSchema: isRangeType,
+                    rangeField: isRangeType ? {
                       name: 'range_key',
                       type: 'Range'
                     } : undefined
