@@ -147,7 +147,7 @@ describe('useQueryBuilder Hook', () => {
   });
 
   describe('field validation', () => {
-    it('should validate required fields', () => {
+    it('should not validate required fields (backend handles validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -156,8 +156,8 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Required field "email" is missing');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true);
     });
 
     it('should not validate required fields that are not selected', () => {
@@ -172,7 +172,7 @@ describe('useQueryBuilder Hook', () => {
       expect(result.current.isValid).toBe(true);
     });
 
-    it('should validate field types for numbers', () => {
+    it('should not validate field types (backend handles validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -181,8 +181,8 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Field "age" must be a number');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true);
     });
 
     it('should accept valid numbers as strings', () => {
@@ -209,7 +209,7 @@ describe('useQueryBuilder Hook', () => {
       expect(result.current.isValid).toBe(true);
     });
 
-    it('should validate empty required field values', () => {
+    it('should not validate empty required field values (backend handles validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -218,11 +218,11 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Required field "id" cannot be empty');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true);
     });
 
-    it('should validate null required field values', () => {
+    it('should not validate null required field values (backend handles validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -231,13 +231,13 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Required field "id" cannot be empty');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true);
     });
   });
 
   describe('range schema validation', () => {
-    it('should require range key for range schemas', () => {
+    it('should not require range key for range schemas (backend handles validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'RangeSchema',
         queryState: {
@@ -247,8 +247,8 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Range key missing for range schema');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true);
     });
 
     it('should be valid when range key is provided for range schemas', () => {
@@ -279,7 +279,7 @@ describe('useQueryBuilder Hook', () => {
   });
 
   describe('filter validation', () => {
-    it('should validate filters against schema fields', () => {
+    it('should not validate filters against schema fields (backend handles validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -289,8 +289,8 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Filter field "nonexistent_field" does not exist in schema');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true);
     });
 
     it('should be valid when filters reference existing fields', () => {
@@ -470,7 +470,7 @@ describe('useQueryBuilder Hook', () => {
       expect(builtQuery).toEqual(result.current.query);
     });
 
-    it('should provide validateQuery function that returns validation result', () => {
+    it('should provide validateQuery function that returns validation result (no front-end validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -480,8 +480,8 @@ describe('useQueryBuilder Hook', () => {
       });
 
       const validation = result.current.validateQuery();
-      expect(validation.isValid).toBe(false);
-      expect(validation.errors).toEqual(result.current.validationErrors);
+      expect(validation.isValid).toBe(true);
+      expect(validation.errors).toEqual([]);
     });
   });
 

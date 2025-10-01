@@ -315,6 +315,188 @@ describe('QueryForm Component', () => {
     });
   });
 
+  describe('range schema validation removal', () => {
+    it('should allow range schema queries without range key input', async () => {
+      // Use a range schema fixture
+      const rangeSchema = {
+        name: 'time_series_data',
+        state: 'approved',
+        fields: {
+          timestamp: { field_type: 'Range', description: 'Timestamp for data point' },
+          value: { field_type: 'Range', description: 'Numeric value at timestamp' },
+          metadata: { field_type: 'Range', description: 'Additional metadata for data point' }
+        },
+        schema_type: {
+          Range: { range_key: 'timestamp' }
+        },
+        rangeInfo: {
+          isRangeSchema: true,
+          rangeField: {
+            name: 'timestamp',
+            type: 'Range'
+          }
+        }
+      };
+
+      mockProps.approvedSchemas = [rangeSchema];
+      mockProps.queryState.selectedSchema = 'time_series_data';
+      mockProps.isRangeSchema = true;
+      mockProps.rangeKey = 'timestamp';
+      mockProps.queryState.rangeSchemaFilter = {}; // Empty range filter
+      mockProps.queryState.queryFields = ['value']; // Selected fields but no range key
+
+      renderWithRedux(<QueryForm {...mockProps} />, { initialState: createAuthenticatedState() });
+
+      // Verify range schema is detected
+      expect(screen.getByText('Range Filter')).toBeInTheDocument();
+      
+      // Verify that no validation error is shown for missing range key
+      // Since we removed front-end validation, the form should not prevent submission
+      // due to missing range key input
+      const rangeFilterSection = screen.getByText('Range Filter').closest('div');
+      expect(rangeFilterSection).toBeInTheDocument();
+      
+      // The range filter fields should be present but not required
+      const startField = rangeFilterSection.querySelector('input[placeholder*="start" i]');
+      const endField = rangeFilterSection.querySelector('input[placeholder*="end" i]');
+      
+      if (startField) {
+        expect(startField).not.toHaveAttribute('required');
+        expect(startField.value).toBe('');
+      }
+      
+      if (endField) {
+        expect(endField).not.toHaveAttribute('required');
+        expect(endField.value).toBe('');
+      }
+    });
+
+    it('should allow range schema queries with partial range key input', async () => {
+      const rangeSchema = {
+        name: 'sensor_readings',
+        state: 'approved',
+        fields: {
+          sensor_id: { field_type: 'Range', description: 'Sensor identifier' },
+          reading_value: { field_type: 'Range', description: 'Sensor reading value' },
+          calibration_data: { field_type: 'Range', description: 'Sensor calibration information' }
+        },
+        schema_type: {
+          Range: { range_key: 'sensor_id' }
+        },
+        rangeInfo: {
+          isRangeSchema: true,
+          rangeField: {
+            name: 'sensor_id',
+            type: 'Range'
+          }
+        }
+      };
+
+      mockProps.approvedSchemas = [rangeSchema];
+      mockProps.queryState.selectedSchema = 'sensor_readings';
+      mockProps.isRangeSchema = true;
+      mockProps.rangeKey = 'sensor_id';
+      mockProps.queryState.rangeSchemaFilter = {
+        start: 'sensor_001' // Only start value, no end value
+      };
+      mockProps.queryState.queryFields = ['reading_value'];
+
+      renderWithRedux(<QueryForm {...mockProps} />, { initialState: createAuthenticatedState() });
+
+      // Verify the form renders without validation errors
+      expect(screen.getByText('Range Filter')).toBeInTheDocument();
+      expect(screen.getByText('Field Selection')).toBeInTheDocument();
+      
+      // The form should accept partial range input without validation errors
+      const rangeFilterSection = screen.getByText('Range Filter').closest('div');
+      const startField = rangeFilterSection.querySelector('input[value="sensor_001"]');
+      expect(startField).toBeInTheDocument();
+    });
+
+    it('should not validate range key format or content', async () => {
+      const rangeSchema = {
+        name: 'user_activity',
+        state: 'approved',
+        fields: {
+          user_id: { field_type: 'Range', description: 'User identifier for activity' },
+          activity_type: { field_type: 'Range', description: 'Type of user activity' }
+        },
+        schema_type: {
+          Range: { range_key: 'user_id' }
+        },
+        rangeInfo: {
+          isRangeSchema: true,
+          rangeField: {
+            name: 'user_id',
+            type: 'Range'
+          }
+        }
+      };
+
+      mockProps.approvedSchemas = [rangeSchema];
+      mockProps.queryState.selectedSchema = 'user_activity';
+      mockProps.isRangeSchema = true;
+      mockProps.rangeKey = 'user_id';
+      mockProps.queryState.rangeSchemaFilter = {
+        start: '   ', // Whitespace only
+        end: 'invalid@#$%format' // Invalid characters
+      };
+      mockProps.queryState.queryFields = ['activity_type'];
+
+      renderWithRedux(<QueryForm {...mockProps} />, { initialState: createAuthenticatedState() });
+
+      // Verify the form renders without validation errors for invalid range key format
+      expect(screen.getByText('Range Filter')).toBeInTheDocument();
+      
+      // No validation error messages should be shown
+      const errorMessages = screen.queryAllByText(/required|invalid|format|error/i);
+      const rangeRelatedErrors = errorMessages.filter(msg => 
+        msg.textContent.toLowerCase().includes('range') || 
+        msg.textContent.toLowerCase().includes('key')
+      );
+      expect(rangeRelatedErrors).toHaveLength(0);
+    });
+
+    it('should allow empty range filter for range schemas', async () => {
+      const rangeSchema = {
+        name: 'analytics_events',
+        state: 'approved',
+        fields: {
+          event_id: { field_type: 'Range', description: 'Event identifier' },
+          timestamp: { field_type: 'Range', description: 'Event timestamp' }
+        },
+        schema_type: {
+          Range: { range_key: 'event_id' }
+        },
+        rangeInfo: {
+          isRangeSchema: true,
+          rangeField: {
+            name: 'event_id',
+            type: 'Range'
+          }
+        }
+      };
+
+      mockProps.approvedSchemas = [rangeSchema];
+      mockProps.queryState.selectedSchema = 'analytics_events';
+      mockProps.isRangeSchema = true;
+      mockProps.rangeKey = 'event_id';
+      mockProps.queryState.rangeSchemaFilter = {}; // Completely empty
+      mockProps.queryState.queryFields = ['timestamp'];
+
+      renderWithRedux(<QueryForm {...mockProps} />, { initialState: createAuthenticatedState() });
+
+      // Verify the form renders successfully with empty range filter
+      expect(screen.getByText('Range Filter')).toBeInTheDocument();
+      expect(screen.getByText('Field Selection')).toBeInTheDocument();
+      
+      // No validation should prevent the form from being rendered or submitted
+      const form = screen.getByText('Range Filter').closest('form') || 
+                   screen.getByText('Range Filter').closest('div');
+      expect(form).toBeInTheDocument();
+    });
+  });
+
   describe('error handling', () => {
     it('should handle missing schema fields gracefully', () => {
       const schemasWithoutFields = [

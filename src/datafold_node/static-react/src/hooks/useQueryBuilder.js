@@ -78,11 +78,11 @@ export function useQueryBuilder({
     return false;
   }, [selectedSchemaObj, providedIsRangeSchema]);
 
-  // Validation logic
+  // Minimal validation - only check basic schema selection
   const validationErrors = useMemo(() => {
     const errors = [];
     
-    // Basic schema validation
+    // Only validate that a schema is selected
     if (!schema) {
       errors.push('Schema selection is required');
       return errors;
@@ -93,77 +93,9 @@ export function useQueryBuilder({
       return errors;
     }
 
-    if (!queryState) {
-      return errors;
-    }
-
-    const { queryFields = [], fieldValues = {}, rangeFilters = {}, filters = [], rangeSchemaFilter = {} } = queryState;
-
-    // If no fields are selected, only validate basic schema requirements
-    if (queryFields.length === 0) {
-      // For schemas without fields, this is valid
-      if (!selectedSchemaObj.fields || Object.keys(selectedSchemaObj.fields).length === 0) {
-        return errors;
-      }
-      // For range schemas with no fields selected, this is also valid (no range key required)
-      if (schemaIsRange) {
-        return errors;
-      }
-      // Otherwise require at least one field
-      errors.push('At least one field must be selected');
-      return errors;
-    }
-
-    // Validate required fields that are selected
-    if (selectedSchemaObj.fields) {
-      queryFields.forEach(fieldName => {
-        const fieldDef = selectedSchemaObj.fields[fieldName];
-        const value = fieldValues[fieldName];
-        
-        if (fieldDef) {
-          // Check if required field is missing or empty
-          if (fieldDef.required) {
-            if (!(fieldName in fieldValues)) {
-              errors.push(`Required field "${fieldName}" is missing`);
-            } else if (value === null || value === '') {
-              errors.push(`Required field "${fieldName}" cannot be empty`);
-            }
-          }
-          
-          // Validate field types for non-empty values
-          if (value && value !== '') {
-            if (fieldDef.field_type === 'Integer' || fieldDef.field_type === 'Number') {
-              if (isNaN(Number(value))) {
-                errors.push(`Field "${fieldName}" must be a number`);
-              }
-            }
-          }
-        }
-      });
-    }
-
-    // Validate range schema requirements
-    if (schemaIsRange && queryFields.length > 0) {
-      const hasRangeKey = (
-        (rangeFilters && Object.keys(rangeFilters).some(key => rangeFilters[key]?.key)) ||
-        Boolean(rangeSchemaFilter?.key)
-      );
-      if (!hasRangeKey) {
-        errors.push('Range key missing for range schema');
-      }
-    }
-
-    // Validate filters against schema (only if filters exist)
-    if (filters && Array.isArray(filters) && filters.length > 0) {
-      filters.forEach(filter => {
-        if (selectedSchemaObj.fields && !selectedSchemaObj.fields[filter.field]) {
-          errors.push(`Filter field "${filter.field}" does not exist in schema`);
-        }
-      });
-    }
-
+    // All other validation removed - backend is authoritative
     return errors;
-  }, [schema, selectedSchemaObj, queryState]);
+  }, [schema, selectedSchemaObj]);
 
   const isValid = validationErrors.length === 0;
 
