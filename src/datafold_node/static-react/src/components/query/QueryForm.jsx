@@ -56,32 +56,24 @@ function QueryForm({
   const { clearQuery } = useQueryState();
 
   /**
-   * Validate query form data
+   * Minimal validation - backend handles detailed checks
    */
   const _validateForm = useCallback(() => {
     const errors = {};
 
-    // Schema validation
+    // Only check basic UX requirements
     if (!queryState?.selectedSchema) {
       errors.schema = 'Schema selection is required';
     }
 
-    // Fields validation
     if (!queryState?.queryFields || queryState.queryFields.length === 0) {
       errors.fields = 'At least one field must be selected';
     }
 
-    // Range validation for range schemas
-    if (isRangeSchema && queryState?.rangeSchemaFilter) {
-      const filter = queryState.rangeSchemaFilter;
-      if (filter.start && filter.end && filter.start >= filter.end) {
-        errors.rangeFilter = 'Start key must be less than end key';
-      }
-    }
-
+    // Backend validates everything else (range keys, field types, etc.)
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
-  }, [queryState, isRangeSchema]);
+  }, [queryState]);
 
   /**
    * Handle schema change with validation

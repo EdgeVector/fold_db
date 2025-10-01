@@ -68,9 +68,8 @@ export function getSchemaType(schema) {
 
 /**
  * Detects if a schema is a HashRange schema
- * HashRange schemas have:
- * 1. schema_type: { "HashRange": { keyconfig: {...} } }
- * 2. Fields with field_type: "HashRange" that contain hash_field and range_field
+ * HashRange schemas have schema_type: { "HashRange": { keyconfig: {...} } }
+ * Backend is authoritative - no front-end validation
  * 
  * @param {Schema} schema - Schema object to check
  * @returns {boolean} True if schema is a HashRange schema
@@ -80,23 +79,8 @@ export function isHashRangeSchema(schema) {
     return false;
   }
   
-  const schemaType = getSchemaType(schema);
-  const isHashRangeType = schemaType === 'HashRange';
-  
-  if (isHashRangeType && schema.key && typeof schema.key === 'object') {
-    const { hash_field, range_field } = schema.key || {};
-    return typeof hash_field === 'string' && hash_field.trim() && typeof range_field === 'string' && range_field.trim();
-  }
-  
-  // Fallback: legacy field-based detection
-  return isHashRangeType &&
-    schema.fields &&
-    typeof schema.fields === 'object' &&
-    Object.values(schema.fields).some(field =>
-      field.field_type === 'HashRange' &&
-      field.hash_field &&
-      field.range_field
-    );
+  // Trust backend schema_type - it knows best
+  return getSchemaType(schema) === 'HashRange';
 }
 
 /**
@@ -147,7 +131,7 @@ function lastSegment(expr) {
 /**
  * Detects if a schema is a range schema
  * Range schemas have schema_type: { "Range": { keyconfig: {...} } }
- * Legacy support: schemas with range_key and all Range fields
+ * Backend is authoritative - no front-end validation
  * 
  * @param {Schema} schema - Schema object to check
  * @returns {boolean} True if schema is a range schema
@@ -157,37 +141,8 @@ export function isRangeSchema(schema) {
     return false;
   }
   
-  // Modern format: check schema_type from backend
-  // The backend sets schema_type based on key configuration, so we trust that
-  const schemaType = getSchemaType(schema);
-  if (schemaType === 'Range') {
-    return true;
-  }
-  
-  // Legacy format: schema with range_key and all Range-type fields
-  // This is for backward compatibility with old test data
-  if (schema.range_key && typeof schema.range_key === 'string') {
-    if (!schema.fields || typeof schema.fields !== 'object' || Object.keys(schema.fields).length === 0) {
-      return false;
-    }
-    const fieldEntries = Object.entries(schema.fields);
-    const allFieldsAreRange = fieldEntries.every(([fieldName, field]) => {
-      if (!field || typeof field !== 'object') {
-        console.warn(`Field ${fieldName} is not a valid field object in schema ${schema.name}`);
-        return false;
-      }
-      
-      if (field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE) {
-        console.warn(`Field ${fieldName} has field_type "${field.field_type}", expected "${RANGE_SCHEMA_CONFIG.FIELD_TYPE}" in schema ${schema.name}`);
-        return false;
-      }
-      
-      return true;
-    });
-    return allFieldsAreRange;
-  }
-  
-  return false;
+  // Trust backend schema_type - it knows best
+  return getSchemaType(schema) === 'Range';
 }
 
 /**
@@ -332,20 +287,16 @@ export function getNonRangeFields(schema) {
 
 /**
  * Validates range_key for range schema mutations
+ * Minimal validation - backend is authoritative
  * 
  * @param {string} rangeKeyValue - Range key value to validate
  * @param {boolean} [isRequired=true] - Whether range key is required
  * @returns {string|null} Error message or null if valid
  */
 export function validateRangeKey(rangeKeyValue, isRequired = true) {
-  // First check for whitespace-only strings specifically
-  if (rangeKeyValue && typeof rangeKeyValue === 'string' && rangeKeyValue.length > 0 && rangeKeyValue.trim().length === 0) {
-    return VALIDATION_MESSAGES.RANGE_KEY_EMPTY || 'Range key cannot be empty';
-  }
-  
-  // Then check for required but missing/empty
-  if (isRequired && (!rangeKeyValue || !rangeKeyValue.trim())) {
-    return VALIDATION_MESSAGES.RANGE_KEY_REQUIRED || 'Range key is required for range schema mutations';
+  // Only check if required field is completely missing - backend handles everything else
+  if (isRequired && !rangeKeyValue) {
+    return 'Range key is required';
   }
   
   return null;
@@ -509,18 +460,15 @@ export function normalizeSchemaState(state) {
 }
 
 /**
- * Checks if a value is considered empty for validation purposes
- * This addresses duplication in empty value checking across validation functions
+ * Checks if a value is considered empty
+ * Minimal check - backend handles detailed validation
  * 
  * @param {*} value - Value to check
  * @returns {boolean} True if value is empty
  */
 export function isValueEmpty(value) {
-  if (value === null || value === undefined) return true;
-  if (typeof value === 'string') return value.trim().length === 0;
-  if (Array.isArray(value)) return value.length === 0;
-  if (typeof value === 'object') return Object.keys(value).length === 0;
-  return false;
+  // Only check for null/undefined - backend validates everything else
+  return value === null || value === undefined;
 }
 
 /**

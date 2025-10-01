@@ -194,77 +194,12 @@ export const VALIDATION_CONFIG = {
 };
 
 /**
- * Custom validation functions
+ * Validation functions - REMOVED
+ * Backend is authoritative for all validation
+ * Frontend only prevents obviously pointless API calls
  */
 export const VALIDATION_FUNCTIONS = {
-  /**
-   * Validate range key for mutation operations
-   */
-  validateRangeKey: (value, required = true) => {
-    if (!required && (!value || value.trim() === '')) {
-      return null; // Optional and empty is valid
-    }
-    
-    if (required && (!value || value.trim() === '')) {
-      return VALIDATION_MESSAGES.RANGE_KEY_REQUIRED;
-    }
-    
-    if (value.length > VALIDATION_RULES.RANGE_KEY.MAX_LENGTH) {
-      return VALIDATION_MESSAGES.FIELD_TOO_LONG(VALIDATION_RULES.RANGE_KEY.MAX_LENGTH);
-    }
-    
-    return null; // Valid
-  },
-  
-  /**
-   * Validate schema name
-   */
-  validateSchemaName: (value) => {
-    if (!value || value.trim() === '') {
-      return VALIDATION_MESSAGES.REQUIRED;
-    }
-    
-    if (value.length < VALIDATION_RULES.SCHEMA_NAME.MIN_LENGTH) {
-      return VALIDATION_MESSAGES.FIELD_TOO_SHORT(VALIDATION_RULES.SCHEMA_NAME.MIN_LENGTH);
-    }
-    
-    if (value.length > VALIDATION_RULES.SCHEMA_NAME.MAX_LENGTH) {
-      return VALIDATION_MESSAGES.FIELD_TOO_LONG(VALIDATION_RULES.SCHEMA_NAME.MAX_LENGTH);
-    }
-    
-    if (!VALIDATION_RULES.SCHEMA_NAME.PATTERN.test(value)) {
-      return VALIDATION_MESSAGES.FIELD_INVALID_PATTERN;
-    }
-    
-    if (VALIDATION_RULES.SCHEMA_NAME.RESERVED_WORDS.includes(value.toLowerCase())) {
-      return VALIDATION_MESSAGES.FIELD_RESERVED_NAME;
-    }
-    
-    return null; // Valid
-  },
-  
-  /**
-   * Validate field name
-   */
-  validateFieldName: (value) => {
-    if (!value || value.trim() === '') {
-      return VALIDATION_MESSAGES.REQUIRED;
-    }
-    
-    if (value.length > VALIDATION_RULES.FIELD_NAME.MAX_LENGTH) {
-      return VALIDATION_MESSAGES.FIELD_TOO_LONG(VALIDATION_RULES.FIELD_NAME.MAX_LENGTH);
-    }
-    
-    if (!VALIDATION_RULES.FIELD_NAME.PATTERN.test(value)) {
-      return VALIDATION_MESSAGES.FIELD_INVALID_PATTERN;
-    }
-    
-    if (VALIDATION_RULES.FIELD_NAME.RESERVED_WORDS.includes(value.toLowerCase())) {
-      return VALIDATION_MESSAGES.FIELD_RESERVED_NAME;
-    }
-    
-    return null; // Valid
-  }
+  // All validation functions removed - backend handles validation
 };
 
 // ============================================================================

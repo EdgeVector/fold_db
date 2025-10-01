@@ -53,10 +53,10 @@ function QueryTab({ onResult }) {
    * Handle query execution - follows original QueryTab pattern
    */
   const handleExecuteQuery = useCallback(async (queryData) => {
-    if (!queryData || !isValid) {
+    // Backend handles all validation
+    if (!queryData) {
       onResult({
-        error: 'Invalid query configuration',
-        details: { queryData, isValid }
+        error: 'No query data provided'
       });
       return;
     }

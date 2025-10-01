@@ -58,11 +58,12 @@ describe('useRangeSchema Hook', () => {
     expect(result.current.isRange(regularSchema)).toBe(false);
   });
 
-  it('should detect old format range schemas', () => {
+  it('should not detect schemas without schema_type (backend is authoritative)', () => {
     const { result } = renderHook(() => useRangeSchema());
     const oldFormatSchema = createMockOldFormatRangeSchema();
 
-    expect(result.current.isRange(oldFormatSchema)).toBe(true);
+    // Without schema_type from backend, we can't determine schema type
+    expect(result.current.isRange(oldFormatSchema)).toBe(false);
   });
 
   it('should handle invalid schema inputs gracefully', () => {
@@ -113,18 +114,20 @@ describe('useRangeSchema Hook', () => {
     expect(nonRangeKeyFields).not.toHaveProperty('timestamp'); // Should be excluded
   });
 
-  it('should validate range keys correctly', () => {
+  it('should do minimal range key validation (backend is authoritative)', () => {
     const { result } = renderHook(() => useRangeSchema());
 
     // Valid range keys
     expect(result.current.rangeProps.validateRangeKey('valid_key', true)).toBe(null);
     expect(result.current.rangeProps.validateRangeKey('valid_key', false)).toBe(null);
 
-    // Empty/whitespace range keys
-    expect(result.current.rangeProps.validateRangeKey('', true)).toBe(VALIDATION_MESSAGES.RANGE_KEY_REQUIRED);
-    expect(result.current.rangeProps.validateRangeKey('   ', true)).toBe(VALIDATION_MESSAGES.RANGE_KEY_EMPTY);
-    expect(result.current.rangeProps.validateRangeKey(null, true)).toBe(VALIDATION_MESSAGES.RANGE_KEY_REQUIRED);
-    expect(result.current.rangeProps.validateRangeKey(undefined, true)).toBe(VALIDATION_MESSAGES.RANGE_KEY_REQUIRED);
+    // Only check if required field is completely missing
+    expect(result.current.rangeProps.validateRangeKey('', true)).toBe('Range key is required');
+    expect(result.current.rangeProps.validateRangeKey(null, true)).toBe('Range key is required');
+    expect(result.current.rangeProps.validateRangeKey(undefined, true)).toBe('Range key is required');
+
+    // Backend validates whitespace and other edge cases
+    expect(result.current.rangeProps.validateRangeKey('   ', true)).toBe(null);
 
     // Optional range keys
     expect(result.current.rangeProps.validateRangeKey('', false)).toBe(null);

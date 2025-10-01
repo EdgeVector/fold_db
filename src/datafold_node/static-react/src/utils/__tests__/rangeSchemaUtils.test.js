@@ -69,7 +69,7 @@ describe('rangeSchemaUtils', () => {
       expect(isRangeSchema(schema)).toBe(true)
     })
 
-    it('should return true for valid range schema with old format (backward compatibility)', () => {
+    it('should return false for old format without schema_type (backend is authoritative)', () => {
       const schema = {
         name: 'UserScores',
         range_key: 'user_id',
@@ -79,7 +79,8 @@ describe('rangeSchemaUtils', () => {
           achievements: { field_type: 'Range' }
         }
       }
-      expect(isRangeSchema(schema)).toBe(true)
+      // Without schema_type from backend, we can't determine if it's Range
+      expect(isRangeSchema(schema)).toBe(false)
     })
 
     it('should prioritize new format over old format when both are present', () => {
@@ -243,9 +244,9 @@ describe('rangeSchemaUtils', () => {
     })
 
     it('should return error for empty string when required', () => {
-      expect(validateRangeKeyForMutation('', true)).toBe('Range key is required for range schema mutations')
-      expect(validateRangeKeyForMutation(null, true)).toBe('Range key is required for range schema mutations')
-      expect(validateRangeKeyForMutation(undefined, true)).toBe('Range key is required for range schema mutations')
+      expect(validateRangeKeyForMutation('', true)).toBe('Range key is required')
+      expect(validateRangeKeyForMutation(null, true)).toBe('Range key is required')
+      expect(validateRangeKeyForMutation(undefined, true)).toBe('Range key is required')
     })
 
     it('should return null for empty string when not required', () => {
@@ -254,8 +255,9 @@ describe('rangeSchemaUtils', () => {
       expect(validateRangeKeyForMutation(undefined, false)).toBe(null)
     })
 
-    it('should return error for whitespace-only string', () => {
-      expect(validateRangeKeyForMutation('   ', true)).toBe('Range key cannot be empty')
+    it('should allow whitespace strings (backend validates)', () => {
+      // Backend is authoritative - it will validate whitespace
+      expect(validateRangeKeyForMutation('   ', true)).toBe(null)
     })
   })
 

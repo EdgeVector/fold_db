@@ -85,11 +85,7 @@ function IngestionTab({ onResult }) {
   }
 
   const validateJson = async () => {
-    if (!jsonData.trim()) {
-      setValidationResult({ valid: false, error: 'JSON data is required' })
-      return
-    }
-
+    // Backend handles all validation - just parse and send
     try {
       const parsedData = JSON.parse(jsonData)
       const response = await ingestionClient.validateData(parsedData)
@@ -99,7 +95,7 @@ function IngestionTab({ onResult }) {
       } else {
         setValidationResult({
           valid: false,
-          error: 'Validation failed'
+          error: response.error || 'Validation failed'
         })
       }
     } catch (error) {
@@ -111,14 +107,7 @@ function IngestionTab({ onResult }) {
   }
 
   const processIngestion = async () => {
-    if (!jsonData.trim()) {
-      onResult({
-        success: false,
-        error: 'JSON data is required'
-      })
-      return
-    }
-
+    // Backend handles all validation
     setIsLoading(true)
     try {
       const parsedData = JSON.parse(jsonData)

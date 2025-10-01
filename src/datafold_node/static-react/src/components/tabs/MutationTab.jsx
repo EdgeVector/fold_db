@@ -63,18 +63,10 @@ function MutationTab({ onResult }) {
     const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
     let mutation
 
+    // Backend handles all validation
     if (isRangeSchema(selectedSchemaObj)) {
-      const rangeKeyError = validateRangeKeyForMutation(rangeKeyValue, mutationType !== 'Delete')
-      if (rangeKeyError) {
-        const errData = { error: rangeKeyError, details: 'Range key validation failed' }
-        setResult(errData)
-        onResult(errData)
-        return
-      }
-      if (mutationType !== 'Delete' && Object.keys(mutationData).length === 0 && !rangeKeyValue.trim()) return
       mutation = formatEnhancedRangeSchemaMutation(selectedSchemaObj, mutationType, rangeKeyValue, mutationData)
     } else {
-      if (mutationType !== 'Delete' && Object.keys(mutationData).length === 0) return
       mutation = {
         type: 'mutation',
         schema: selectedSchema,
