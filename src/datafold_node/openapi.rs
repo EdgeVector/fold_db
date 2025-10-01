@@ -50,7 +50,8 @@ use utoipa::OpenApi;
 struct ApiDoc;
 
 pub fn build_openapi() -> String {
-    serde_json::to_string(&ApiDoc::openapi()).unwrap_or_else(|_| "{}".to_string())
+    serde_json::to_string(&ApiDoc::openapi())
+        .expect("Failed to serialize OpenAPI documentation - this is a critical error")
 }
 
 

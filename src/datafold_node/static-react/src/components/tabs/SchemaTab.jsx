@@ -149,6 +149,12 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       
       if (approveSchemaAction.fulfilled.match(result)) {
         console.log('🟡 SchemaTab: approveSchema fulfilled, calling callbacks')
+        
+        // Refetch schemas from backend to get updated states
+        console.log('🔄 Refetching schemas from backend after approval...')
+        await dispatch(fetchSchemas({ forceRefresh: true }))
+        console.log('✅ Refetch complete - backend state should be reflected')
+        
         if (onResult) {
           onResult({ success: true, message: `Schema ${schemaName} approved successfully` })
         }
@@ -157,12 +163,16 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
         }
       } else {
         console.log('🔴 SchemaTab: approveSchema rejected:', result.payload)
-        throw new Error(result.payload || `Failed to approve schema: ${schemaName}`)
+        const errorMessage = typeof result.payload === 'string' 
+          ? result.payload 
+          : result.payload?.error || `Failed to approve schema: ${schemaName}`
+        throw new Error(errorMessage)
       }
     } catch (err) {
       console.error('🔴 SchemaTab: Failed to approve schema:', err)
       if (onResult) {
-        onResult({ error: `Failed to approve schema: ${err.message}` })
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        onResult({ error: `Failed to approve schema: ${errorMessage}` })
       }
     }
   }
@@ -173,6 +183,13 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       const result = await dispatch(blockSchemaAction({ schemaName }))
       
       if (blockSchemaAction.fulfilled.match(result)) {
+        console.log('🟡 SchemaTab: blockSchema fulfilled, calling callbacks')
+        
+        // Refetch schemas from backend to get updated states
+        console.log('🔄 Refetching schemas from backend after blocking...')
+        await dispatch(fetchSchemas({ forceRefresh: true }))
+        console.log('✅ Refetch complete - backend state should be reflected')
+        
         if (onResult) {
           onResult({ success: true, message: `Schema ${schemaName} blocked successfully` })
         }
@@ -180,12 +197,16 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           onSchemaUpdated()
         }
       } else {
-        throw new Error(result.payload || `Failed to block schema: ${schemaName}`)
+        const errorMessage = typeof result.payload === 'string' 
+          ? result.payload 
+          : result.payload?.error || `Failed to block schema: ${schemaName}`
+        throw new Error(errorMessage)
       }
     } catch (err) {
       console.error('Failed to block schema:', err)
       if (onResult) {
-        onResult({ error: `Failed to block schema: ${err.message}` })
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        onResult({ error: `Failed to block schema: ${errorMessage}` })
       }
     }
   }

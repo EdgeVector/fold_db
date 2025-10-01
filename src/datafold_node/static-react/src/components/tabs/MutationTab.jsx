@@ -79,7 +79,8 @@ function MutationTab({ onResult }) {
         type: 'mutation',
         schema: selectedSchema,
         mutation_type: mutationType.toLowerCase(),
-        data: mutationType === 'Delete' ? {} : mutationData
+        fields_and_values: mutationType === 'Delete' ? {} : mutationData,
+        key_value: { hash: null, range: null }
       }
     }
 

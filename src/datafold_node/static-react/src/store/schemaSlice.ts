@@ -99,83 +99,56 @@ export const fetchSchemas = createAsyncThunk<
       };
     }
 
+    // Clear API client cache when force refresh is requested
+    if (params.forceRefresh) {
+      console.log('🔄 Force refresh requested - clearing API client cache');
+      schemaClient.clearCache();
+    }
+
     // Fetch with retry logic
     let lastError: Error | null = null;
     
     for (let attempt = 1; attempt <= SCHEMA_FETCH_RETRY_ATTEMPTS; attempt++) {
       try {
-        // Fetch available schemas from filesystem using SchemaClient
+        // Fetch schemas with their states from the backend
         const availableResponse = await schemaClient.getSchemas();
         
         if (!availableResponse.success) {
-          const error = new Error(`Failed to fetch available schemas: ${availableResponse.error || 'Unknown error'}`);
+          const error = new Error(`Failed to fetch schemas: ${availableResponse.error || 'Unknown error'}`);
           throw error;
         }
         
-        // Ensure availableResponse.data is an array before calling map
-        let availableSchemaNames: string[] = [];
-        if (Array.isArray(availableResponse.data)) {
-          availableSchemaNames = availableResponse.data.map(s => (typeof s === 'string' ? s : s.name || String(s)));
-        } else if (availableResponse.data && typeof availableResponse.data === 'object') {
-          // Handle case where data might be an object instead of array
-          availableSchemaNames = Object.keys(availableResponse.data);
-        } else {
-          console.warn('Available schemas response data is not in expected format:', availableResponse.data);
-          availableSchemaNames = [];
+        console.log('📁 Raw schemas response:', availableResponse.data);
+        
+        // The backend now returns schemas with state information included
+        const rawSchemas = availableResponse.data || [];
+        
+        if (!Array.isArray(rawSchemas)) {
+          throw new Error(`Schemas response is not an array: ${typeof rawSchemas}`);
         }
         
-        const availableData = { data: availableSchemaNames };
-        
-        // Fetch persisted schema states from database using SchemaClient
-        const persistedResponse = await schemaClient.getAllSchemasWithState();
-        
-        if (!persistedResponse.success) {
-          throw new Error(`Failed to fetch persisted schemas: ${persistedResponse.error || 'Unknown error'}`);
-        }
-        
-        console.log('📁 Available schemas:', availableData.data || []);
-        console.log('🗄️ Persisted schemas:', persistedResponse.data || {});
-        
-        const availableSchemas = availableData.data || [];
-        // persistedResponse.data is a Record<string, string>, not an array
-        const persistedStates = persistedResponse.data || {};
-        
-        // Ensure availableSchemas is an array and create schemas with states
-        if (!Array.isArray(availableSchemas)) {
-          throw new Error(`Available schemas is not an array: ${typeof availableSchemas}`);
-        }
-        
-        const schemasWithStates = availableSchemas.map((name: string) => {
-          // Check if schema already exists in Redux state (preserve optimistic updates)
-          const existingSchema = state.schemas.schemas[name];
-          if (existingSchema) {
-            console.log('🟡 fetchSchemas: Preserving existing Redux state for', name, ':', existingSchema.state);
-            return {
-              name,
-              state: existingSchema.state,
-              fields: existingSchema.fields || {}
-            };
-          }
-          
-          // Only use persisted state if no Redux state exists
-          const persistedState = persistedStates[name];
+        // Create schemas with states from the backend response
+        const schemasWithStates = rawSchemas.map((schema: any) => {
+          // Use state from backend response, default to Available
           let normalizedState = SCHEMA_STATES.AVAILABLE;
           
-          if (persistedState) {
-            if (typeof persistedState === 'string') {
-              normalizedState = persistedState.toLowerCase();
-            } else if (typeof persistedState === 'object' && persistedState.state) {
+          if (schema.state) {
+            if (typeof schema.state === 'string') {
+              normalizedState = schema.state.toLowerCase();
+            } else if (typeof schema.state === 'object' && schema.state.state) {
               // Handle object format like { state: 'approved' }
-              normalizedState = String(persistedState.state).toLowerCase();
+              normalizedState = String(schema.state.state).toLowerCase();
             } else {
-              normalizedState = String(persistedState).toLowerCase();
+              normalizedState = String(schema.state).toLowerCase();
             }
           }
           
+          console.log('🟢 fetchSchemas: Using backend state for', schema.name, ':', normalizedState);
+          
           return {
-            name,
+            name: schema.name,
             state: normalizedState,
-            fields: {} // Will be populated below
+            fields: schema.fields || {} // Include fields from backend response
           };
         });
         

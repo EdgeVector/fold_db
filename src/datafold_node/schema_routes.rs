@@ -128,24 +128,39 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
     log_feature!(LogFeature::Schema, info, "Received request to load schemas from directories");
-    let result = with_schema_manager(&state, |db| {
+    let result: Result<(usize, usize), crate::error::FoldDbError> = with_schema_manager(&state, |db| {
         // Try available_schemas and data/schemas
         let available_loaded = db
             .schema_manager
             .load_schemas_from_directory("available_schemas")
-            .unwrap_or(0);
+            .map_err(|e| {
+                log_feature!(LogFeature::Schema, error, "Failed to load schemas from available_schemas directory: {}", e);
+                e
+            })?;
         let data_loaded = db
             .schema_manager
             .load_schemas_from_directory("data/schemas")
-            .unwrap_or(0);
-        (available_loaded, data_loaded)
+            .map_err(|e| {
+                log_feature!(LogFeature::Schema, error, "Failed to load schemas from data/schemas directory: {}", e);
+                e
+            })?;
+        Ok((available_loaded, data_loaded))
     })
     .await;
 
-    HttpResponse::Ok().json(json!({
-        "data": {
-            "available_schemas_loaded": result.0,
-            "data_schemas_loaded": result.1
+    match result {
+        Ok((available_loaded, data_loaded)) => {
+            HttpResponse::Ok().json(json!({
+                "data": {
+                    "available_schemas_loaded": available_loaded,
+                    "data_schemas_loaded": data_loaded
+                }
+            }))
         }
-    }))
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "error": format!("Failed to load schemas: {}", e)
+            }))
+        }
+    }
 }

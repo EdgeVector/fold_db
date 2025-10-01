@@ -8,7 +8,8 @@ import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import { SCHEMA_STATES, SCHEMA_OPERATIONS, API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
 import type { EnhancedApiResponse, SchemaApiClient } from '../core/types';
-import type { Schema } from '../../types/schema';
+import type { Schema, SchemaState } from '../../types/schema';
+import { normalizeSchemaState } from '../../utils/rangeSchemaHelpers.js';
 
 // Schema-specific response types
 export interface SchemasByStateResponse {
@@ -16,8 +17,53 @@ export interface SchemasByStateResponse {
   state: string;
 }
 
-export interface SchemasWithStateResponse {
-  data: Record<string, string>;
+export type SchemasWithStateResponse = Record<string, SchemaState>;
+
+const FALLBACK_SCHEMA_STATE = SCHEMA_STATES.AVAILABLE as SchemaState;
+const RECOGNIZED_SCHEMA_STATES: ReadonlySet<SchemaState> = new Set<SchemaState>([
+  SCHEMA_STATES.AVAILABLE as SchemaState,
+  SCHEMA_STATES.APPROVED as SchemaState,
+  SCHEMA_STATES.BLOCKED as SchemaState,
+  'loading',
+  'error'
+]);
+
+function extractSchemaName(schema: unknown): string | null {
+  if (!schema || typeof schema !== 'object') {
+    return null;
+  }
+
+  const candidate = (schema as { name?: unknown }).name;
+  if (typeof candidate === 'string' && candidate.trim().length > 0) {
+    return candidate;
+  }
+
+  const nested = (schema as { schema?: { name?: unknown } }).schema;
+  if (nested && typeof nested === 'object') {
+    const nestedName = (nested as { name?: unknown }).name;
+    if (typeof nestedName === 'string' && nestedName.trim().length > 0) {
+      return nestedName;
+    }
+  }
+
+  return null;
+}
+
+function extractRawSchemaState(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object') {
+    return undefined;
+  }
+
+  const candidates: unknown[] = [
+    (schema as { state?: unknown }).state,
+    (schema as { schema_state?: unknown }).schema_state,
+    (schema as { schemaState?: unknown }).schemaState,
+    (schema as { status?: unknown }).status,
+    (schema as { current_state?: unknown }).current_state,
+    (schema as { schema?: { state?: unknown } }).schema?.state
+  ];
+
+  return candidates.find((candidate) => candidate !== undefined);
 }
 
 export interface SchemaStatusResponse {
@@ -128,17 +174,61 @@ export class UnifiedSchemaClient {
   async getAllSchemasWithState(): Promise<EnhancedApiResponse<SchemasWithStateResponse>> {
     const all = await this.getSchemas();
     if (!all.success || !all.data) {
-      return { success: false, error: 'Failed to fetch schemas', status: all.status, data: { data: {} as any } };
+      return {
+        success: false,
+        error: 'Failed to fetch schemas',
+        status: all.status,
+        data: {} as SchemasWithStateResponse
+      };
     }
-    const map: Record<string, string> = {};
-    (all.data as any[]).forEach((s: any) => {
-      map[s.name] = s.state;
+
+    const schemas = Array.isArray(all.data) ? all.data : [];
+    const states: SchemasWithStateResponse = {};
+
+    schemas.forEach((schemaEntry) => {
+      const name = extractSchemaName(schemaEntry);
+      if (!name) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('[schemaClient.getAllSchemasWithState] Encountered schema entry without a name, skipping entry.');
+        }
+        return;
+      }
+
+      const rawState = extractRawSchemaState(schemaEntry);
+      const normalized = normalizeSchemaState(rawState) as SchemaState;
+
+      if (!rawState || normalized.length === 0) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn(
+            `[schemaClient.getAllSchemasWithState] Missing schema state for '${name}', defaulting to '${FALLBACK_SCHEMA_STATE}'.`
+          );
+        }
+        states[name] = FALLBACK_SCHEMA_STATE;
+        return;
+      }
+
+      if (!RECOGNIZED_SCHEMA_STATES.has(normalized)) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn(
+            `[schemaClient.getAllSchemasWithState] Unrecognized schema state '${String(rawState)}' for '${name}', defaulting to '${FALLBACK_SCHEMA_STATE}'.`
+          );
+        }
+        states[name] = FALLBACK_SCHEMA_STATE;
+        return;
+      }
+
+      states[name] = normalized;
     });
+
     return {
       success: true,
-      data: { data: map },
-      status: 200,
-      meta: { timestamp: Date.now(), cached: all.meta?.cached || false }
+      data: states,
+      status: all.status ?? 200,
+      meta: {
+        ...all.meta,
+        timestamp: Date.now(),
+        cached: all.meta?.cached ?? false
+      }
     };
   }
 

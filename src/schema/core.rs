@@ -80,8 +80,12 @@ impl SchemaCore {
     }
 
     pub fn set_schema_state(&self, schema_name: &str, schema_state: SchemaState) -> Result<(), SchemaError> {
+        // Persist to database first - this is the source of truth
+        self.db_ops.store_schema_state(schema_name, schema_state)?;
+        
+        // Update in-memory cache only after successful persistence
         self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?.insert(schema_name.to_string(), schema_state);
-        let _ = self.db_ops.store_schema_state(schema_name, schema_state);
+        
         Ok(())
     }
 
@@ -107,12 +111,17 @@ impl SchemaCore {
 
     pub fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
         let name = schema.name.clone();
-        let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
         
-        // Update or insert the schema (allows updating existing schemas)
+        // Persist schema to database first
+        self.db_ops.store_schema(&name, &schema)?;
+        
+        // Persist schema state to database (default to Available)
+        self.db_ops.store_schema_state(&name, SchemaState::Available)?;
+        
+        // Update in-memory caches
+        let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
         schemas.insert(name.clone(), schema);
         
-        // Ensure the schema has a state (default to Available if not present)
         let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
         schema_states.entry(name).or_insert(SchemaState::Available);
         

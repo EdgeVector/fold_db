@@ -267,7 +267,14 @@ impl FoldDB {
         let mut schema = self.schema_manager.get_schema(&mutation.schema_name)?
             .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name)))?;
         
-        let key_value = mutation.key_value;
+        let key_config = schema.key.clone();
+        let mut key_value = mutation.key_value;
+        if let Some(hash_field) = &key_config.as_ref().unwrap().hash_field {
+            key_value.hash = Some(mutation.fields_and_values.get(hash_field).unwrap().to_string());
+        }
+        if let Some(range_field) = &key_config.as_ref().unwrap().range_field {
+            key_value.range = Some(mutation.fields_and_values.get(range_field).unwrap().to_string());
+        }
         let mutation_id = mutation.uuid.clone();
         
         // Process each field in the mutation

@@ -1,1 +1,5 @@
 use ./run_http_server to start the server, it will kill all other db proccesses and start the front and back end.
+
+No silent failures.  Throw errors if anything goes wrong.
+
+No branching logic -- think harder if it seems like there's going to be branching logic.

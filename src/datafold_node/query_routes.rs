@@ -69,12 +69,6 @@ pub async fn execute_mutation(
     mutation_data: web::Json<Value>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    log_feature!(
-        LogFeature::Mutation,
-        info,
-        "Received mutation request: {}",
-        serde_json::to_string(&mutation_data).unwrap_or_else(|_| "Invalid JSON".to_string())
-    );
 
     let (schema, fields_and_values, key_value, mutation_type) = match serde_json::from_value::<Operation>(mutation_data.into_inner()) {
         Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type }) => (schema, fields_and_values, key_value, mutation_type),

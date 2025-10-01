@@ -329,17 +329,19 @@ export function formatRangeMutation(schema, mutationType, rangeKeyValue, fieldDa
   const rangeKeyFieldName = getRangeKey(schema);
   
   if (mutationType === 'Delete') {
-    mutation.data = {};
+    mutation.fields_and_values = {};
+    mutation.key_value = { hash: null, range: null };
     // For delete operations, use the actual range key field name
     if (rangeKeyValue && rangeKeyValue.trim() && rangeKeyFieldName) {
-      mutation.data[rangeKeyFieldName] = rangeKeyValue.trim();
+      mutation.fields_and_values[rangeKeyFieldName] = rangeKeyValue.trim();
+      mutation.key_value.range = rangeKeyValue.trim();
     }
   } else {
-    const data = {};
+    const fieldsAndValues = {};
     
     // Add range key using the actual field name from schema (as primitive value)
     if (rangeKeyValue && rangeKeyValue.trim() && rangeKeyFieldName) {
-      data[rangeKeyFieldName] = rangeKeyValue.trim();
+      fieldsAndValues[rangeKeyFieldName] = rangeKeyValue.trim();
     }
     
     // Format non-range_key fields as JSON objects for range schemas
@@ -350,18 +352,22 @@ export function formatRangeMutation(schema, mutationType, rangeKeyValue, fieldDa
         const wrapperKey = RANGE_SCHEMA_CONFIG.MUTATION_WRAPPER_KEY || 'value';
         
         if (typeof fieldValue === 'string' || typeof fieldValue === 'number' || typeof fieldValue === 'boolean') {
-          data[fieldName] = { [wrapperKey]: fieldValue };
+          fieldsAndValues[fieldName] = { [wrapperKey]: fieldValue };
         } else if (typeof fieldValue === 'object' && fieldValue !== null) {
           // If already an object, use as-is
-          data[fieldName] = fieldValue;
+          fieldsAndValues[fieldName] = fieldValue;
         } else {
           // For other types, wrap in an object
-          data[fieldName] = { [wrapperKey]: fieldValue };
+          fieldsAndValues[fieldName] = { [wrapperKey]: fieldValue };
         }
       }
     });
     
-    mutation.data = data;
+    mutation.fields_and_values = fieldsAndValues;
+    mutation.key_value = { 
+      hash: null, 
+      range: rangeKeyValue && rangeKeyValue.trim() ? rangeKeyValue.trim() : null 
+    };
   }
   
   return mutation;

@@ -103,20 +103,7 @@ export const validateSchemaOperation = (
   schema: Schema | undefined,
   options: { skipValidation?: boolean } = {}
 ): { isValid: boolean; error?: SchemaOperationErrorPayload } => {
-  if (!schema) {
-    return {
-      isValid: false,
-      error: createErrorPayload(schemaName, SCHEMA_ERROR_MESSAGES.SCHEMA_NOT_FOUND)
-    };
-  }
-
-  if (!options.skipValidation && !isOperationAllowed(operation, schema.state)) {
-    return {
-      isValid: false,
-      error: createErrorPayload(schemaName, SCHEMA_ERROR_MESSAGES.INVALID_SCHEMA_STATE)
-    };
-  }
-
+  // Skip frontend validation - let the backend handle it
   return { isValid: true };
 };
 

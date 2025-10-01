@@ -42,7 +42,8 @@ impl ResultStorage {
                 correlation_id: Uuid::new_v4().to_string(),
                 mutation,
             };
-            let _ = message_bus.publish(mutation_request);
+            message_bus.publish(mutation_request)
+                .map_err(|e| crate::schema::types::SchemaError::InvalidData(format!("Failed to publish mutation request to message bus: {}", e)))?;
         }
 
         Ok(())

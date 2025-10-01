@@ -115,6 +115,38 @@ impl DataFoldNode {
         );
         let node: DataFoldNode = Self::new(config)?;
 
+        // Automatically load schemas from available_schemas directory on startup
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "Auto-loading schemas from available_schemas directory..."
+        );
+        
+        let db_guard = node.get_fold_db()?;
+        let schema_manager = db_guard.schema_manager.clone();
+        drop(db_guard); // Release the lock before async operation
+        
+        // Load schemas from available_schemas directory
+        match schema_manager.load_schemas_from_directory("available_schemas") {
+            Ok(loaded_count) => {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Auto-loaded {} schemas from available_schemas directory on startup",
+                    loaded_count
+                );
+            }
+            Err(e) => {
+                log_feature!(
+                    LogFeature::Database,
+                    error,
+                    "Failed to auto-load schemas from available_schemas directory: {}. Server will start but no schemas will be available until manually loaded.",
+                    e
+                );
+                // Don't fail startup if schema loading fails - directory might not exist or be empty
+            }
+        }
+
         log_feature!(
             LogFeature::Database,
             info,
