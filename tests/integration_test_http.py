@@ -93,7 +93,7 @@ def start_http_server():
     
     # Use run_http_server.sh to start the server
     try:
-        # Run the script which handles building and starting the server
+        # Run the script which kills existing processes, builds, and starts the server
         result = subprocess.run(
             ["./run_http_server.sh"],
             capture_output=True,
@@ -168,8 +168,7 @@ def stop_http_server():
         except Exception as e:
             print(f"⚠️  Error stopping server: {e}")
     
-    # Fallback: cleanup all datafold processes
-    cleanup_processes()
+    # Note: run_http_server.sh already handles killing existing processes
 
 
 def curl_get(endpoint):
@@ -338,24 +337,29 @@ def test_verify_schemas_available(results):
         print(f"  Response: {json.dumps(response, indent=2)}")
         return False
     
-    # Parse the schemas data - API returns a dict of schema_name -> schema_object
+    # Parse the schemas data - API returns a list of schema objects
     schemas_data = response["data"]
     
-    if not isinstance(schemas_data, dict):
-        results.add_fail("Verify schemas discovered", f"Expected dict, got {type(schemas_data).__name__}")
+    if not isinstance(schemas_data, list):
+        results.add_fail("Verify schemas discovered", f"Expected list, got {type(schemas_data).__name__}")
         print(f"  Response: {json.dumps(response, indent=2)[:500]}...")
         return False
     
-    discovered_schema_names = list(schemas_data.keys())
+    # Extract schema names from the list
+    discovered_schema_names = []
+    for schema_obj in schemas_data:
+        if isinstance(schema_obj, dict) and 'name' in schema_obj:
+            discovered_schema_names.append(schema_obj['name'])
+    
     print(f"  Discovered {len(discovered_schema_names)} schema(s) in database")
     
     # Verify each expected schema is present
     all_found = True
     for expected_name in expected_schemas:
         if expected_name in discovered_schema_names:
-            # Verify the schema has basic structure (fields)
-            schema_obj = schemas_data[expected_name]
-            if isinstance(schema_obj, dict) and 'fields' in schema_obj:
+            # Find the schema object to get field count
+            schema_obj = next((s for s in schemas_data if s.get('name') == expected_name), None)
+            if schema_obj and isinstance(schema_obj, dict) and 'fields' in schema_obj:
                 field_count = len(schema_obj['fields']) if isinstance(schema_obj['fields'], dict) else 0
                 print(f"  ✅ {expected_name} (with {field_count} field(s))")
             else:
