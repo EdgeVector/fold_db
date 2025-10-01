@@ -257,5 +257,31 @@ impl DeclarativeSchemaDefinition {
         &self.hash_to_code
     }
 
+    /// Extract input fields from a single transform expression.
+    /// Example: "BlogPost.map().content.split_by_word().map()" -> ["BlogPost.content"]
+    pub fn extract_inputs_from_expression(expression: &str) -> Vec<String> {
+        let mut inputs = Vec::new();
+        
+        // Split expression by "." and filter out elements containing "(" or ")"
+        // This handles .map(), .filter(), .reduce(), etc.
+        let parts: Vec<&str> = expression
+            .split(".")
+            .filter(|part| !part.contains("(") && !part.contains(")"))
+            .collect();
+        
+        // Take the first two valid parts to form the field reference
+        if parts.len() >= 2 {
+            inputs.push(format!("{}.{}", parts[0], parts[1]));
+        } else if parts.len() == 1 {
+            // Fallback: if only one part, use it as-is
+            inputs.push(parts[0].to_string());
+        }
+        
+        // Remove duplicates and sort
+        inputs.sort();
+        inputs.dedup();
+        
+        inputs
+    }
     
 }

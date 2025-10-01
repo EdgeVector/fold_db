@@ -40,12 +40,16 @@ def create_blog_post_via_curl(title, content, author, publish_date, tags):
         "type": "mutation",
         "schema": "BlogPost",
         "mutation_type": "create",
-        "data": {
+        "fields_and_values": {
             "title": title,
             "content": content,
             "author": author,
             "publish_date": publish_date,
             "tags": tags
+        },
+        "key_value": {
+            "hash": None,
+            "range": publish_date
         }
     }
     
@@ -64,7 +68,7 @@ def create_blog_post_via_curl(title, content, author, publish_date, tags):
         
         if result.returncode == 0:
             response = json.loads(result.stdout)
-            if response.get("success"):
+            if response.get("data") or response.get("success"):
                 print(f"✅ Created: {title}")
                 return True
             else:
@@ -182,7 +186,8 @@ def query_blog_posts_via_curl():
     query_data = {
         "type": "query",
         "schema": "BlogPost",
-        "fields": ["title", "author", "publish_date", "tags"]
+        "fields": ["title", "author", "publish_date", "tags"],
+        "filter": None
     }
     
     curl_cmd = [
@@ -197,9 +202,9 @@ def query_blog_posts_via_curl():
         
         if result.returncode == 0:
             response = json.loads(result.stdout)
-            # Check for both 'success' and 'data' fields
-            if response.get("success") or response.get("data"):
-                return response.get("data", response.get("results", []))
+            # Check for 'data' field in response
+            if response.get("data"):
+                return response.get("data")
             else:
                 print(f"❌ Query failed: {response.get('error', 'Unknown error')}")
                 return None
@@ -223,33 +228,50 @@ def display_blog_posts(posts):
         print("❌ No blog posts found.")
         return
     
-    print(f"\n📖 Found {len(posts)} blog posts:\n")
+    print(f"\n📖 Blog posts found:\n")
     
-    # Handle the specific format where posts is a list with one item containing field dictionaries
-    if isinstance(posts, list) and len(posts) > 0:
-        post_data = posts[0]  # Get the first (and only) item
+    blog_posts = []
+    
+    # Handle different response formats
+    if isinstance(posts, list):
+        # Handle array format: [{"fields": {...}, "key": {...}}, ...]
+        for item in posts:
+            if isinstance(item, dict) and 'fields' in item:
+                fields = item['fields']
+                blog_posts.append({
+                    'publish_date': fields.get('publish_date', 'Unknown'),
+                    'title': fields.get('title', 'No title'),
+                    'author': fields.get('author', 'Unknown'),
+                    'tags': fields.get('tags', [])
+                })
+    elif isinstance(posts, dict):
+        # Handle the hash->range->fields format
+        # For BlogPost (Range schema), it will be ""->"publish_date"->fields
+        for hash_key, range_data in posts.items():
+            if isinstance(range_data, dict):
+                # Iterate through range keys (publish dates)
+                for range_key, fields in range_data.items():
+                    if isinstance(fields, dict):
+                        blog_posts.append({
+                            'publish_date': range_key,
+                            'title': fields.get('title', 'No title'),
+                            'author': fields.get('author', 'Unknown'),
+                            'tags': fields.get('tags', [])
+                        })
+    
+    if blog_posts:
+        # Sort by publish date
+        blog_posts.sort(key=lambda x: x['publish_date'])
         
-        if isinstance(post_data, dict) and 'title' in post_data:
-            # Extract all the publish dates from the title field
-            publish_dates = list(post_data['title'].keys())
-            publish_dates.sort()  # Sort by date
-            
-            print("=" * 80)
-            for i, publish_date in enumerate(publish_dates, 1):
-                title = post_data['title'].get(publish_date, 'No title')
-                author = post_data['author'].get(publish_date, 'Unknown') if 'author' in post_data else 'Unknown'
-                tags = post_data['tags'].get(publish_date, []) if 'tags' in post_data else []
-                
-                print(f"{i:2d}. {title}")
-                print(f"    👤 Author: {author}")
-                print(f"    📅 Published: {publish_date}")
-                print(f"    🏷️  Tags: {', '.join(tags) if isinstance(tags, list) else str(tags)}")
-                print("-" * 80)
-        else:
-            print("❌ Unexpected data structure")
-            print(json.dumps(posts, indent=2))
+        print("=" * 80)
+        for i, post in enumerate(blog_posts, 1):
+            print(f"{i:2d}. {post['title']}")
+            print(f"    👤 Author: {post['author']}")
+            print(f"    📅 Published: {post['publish_date']}")
+            print(f"    🏷️  Tags: {', '.join(post['tags']) if isinstance(post['tags'], list) else str(post['tags'])}")
+            print("-" * 80)
     else:
-        print("❌ No blog posts found or unexpected format")
+        print("❌ No blog posts found in expected format")
         print(json.dumps(posts, indent=2))
 
 def show_curl_example():
@@ -262,12 +284,16 @@ def show_curl_example():
         "type": "mutation",
         "schema": "BlogPost",
         "mutation_type": "create",
-        "data": {
+        "fields_and_values": {
             "title": "Getting Started with DataFold",
             "content": "DataFold is a powerful distributed database system...",
             "author": "Alice Johnson",
             "publish_date": "2025-08-26T12:05:08Z",
             "tags": ["tutorial", "beginners", "datafold"]
+        },
+        "key_value": {
+            "hash": None,
+            "range": "2025-08-26T12:05:08Z"
         }
     }
     

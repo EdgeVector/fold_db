@@ -114,15 +114,15 @@ impl SchemaCore {
         use crate::schema::types::transform::{Transform, TransformRegistration};
         use uuid::Uuid;
 
-        for field_name in transform_fields.keys() {
+        for (field_name, field_expression) in transform_fields.iter() {
             // Create a transform ID based on schema name and field name
             let transform_id = format!("{}_{}", declarative_schema.name, field_name);
             
             // Create the transform from the declarative schema
             let transform = Transform::from_declarative_schema(declarative_schema.clone());
             
-            // Determine trigger fields
-            let trigger_fields = declarative_schema.get_inputs();
+            // Determine trigger fields for THIS SPECIFIC field expression
+            let trigger_fields = DeclarativeSchemaDefinition::extract_inputs_from_expression(field_expression);
             
             // Create the registration
             let registration = TransformRegistration {
