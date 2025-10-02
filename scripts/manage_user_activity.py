@@ -79,10 +79,9 @@ def create_user_activity_via_curl(user_id, action, resource, timestamp, metadata
 
 def query_user_activities_via_curl(user_id=None, action=None):
     """Query user activities via curl command."""
+    # Query struct expects: schema_name, fields, and optional filter
     query_data = {
-        "type": "query",
-        "schema": "UserActivity",
-        "query_type": "get_all",
+        "schema_name": "UserActivity",
         "fields": ["user_id", "action", "resource", "timestamp", "metadata"]
     }
     

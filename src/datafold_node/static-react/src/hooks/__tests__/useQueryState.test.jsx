@@ -24,12 +24,13 @@ describe('useQueryState Hook', () => {
     {
       name: 'UserSchema',
       state: 'approved',
+      schema_type: { Range: { range_key: 'range_field' } }, // Proper schema_type format
       range_key: 'range_field',
       fields: {
         range_field: { field_type: 'Range' },
-        id: { field_type: 'Range' },
-        name: { field_type: 'Range' },
-        age: { field_type: 'Range' }
+        id: { field_type: 'String' },
+        name: { field_type: 'String' },
+        age: { field_type: 'Number' }
       }
     },
     {

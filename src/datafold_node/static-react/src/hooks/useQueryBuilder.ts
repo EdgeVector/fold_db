@@ -106,26 +106,12 @@ export function useQueryBuilder({
     return false;
   }, [selectedSchemaObj, providedIsRangeSchema]);
 
-  // Minimal validation - only check basic schema selection
+  // No frontend validation - backend is authoritative
   const validationErrors = useMemo(() => {
-    const errors = [];
-    
-    // Only validate that a schema is selected
-    if (!schema) {
-      errors.push('Schema selection is required');
-      return errors;
-    }
+    return [];
+  }, []);
 
-    if (!selectedSchemaObj) {
-      errors.push('Selected schema not found');
-      return errors;
-    }
-
-    // All other validation removed - backend is authoritative
-    return errors;
-  }, [schema, selectedSchemaObj]);
-
-  const isValid = validationErrors.length === 0;
+  const isValid = true; // Always valid - backend validates
 
   // Build query object
   const query = useMemo(() => {
@@ -166,67 +152,26 @@ export function useQueryBuilder({
       }
     }
 
-    // Add range schema filter for range schemas (this is the correct one for Range schemas)
+    // Add range schema filter for range schemas
     if (schemaIsRange) {
-      const possibleRangeKey = providedRangeKey
-        || selectedSchemaObj?.schema_type?.Range?.range_key
-        || selectedSchemaObj?.range_key
-        || (selectedSchemaObj?.fields
-          ? Object.entries(selectedSchemaObj.fields).find(([, field]) => field?.field_type === 'Range')?.[0]
-          : null);
       const activeRangeFilter = rangeSchemaFilter && Object.keys(rangeSchemaFilter).length > 0
         ? rangeSchemaFilter
         : Object.values(rangeFilters).find(filter => filter && typeof filter === 'object' && (filter.key || filter.keyPrefix || (filter.start && filter.end))) || {};
       
-      // Handle direct rangeKey from queryState (fallback for when rangeKey is set directly)
+      // Handle direct rangeKey from queryState
       const directRangeKey = queryState?.rangeKeyValue;
       if (!activeRangeFilter.key && !activeRangeFilter.keyPrefix && !(activeRangeFilter.start && activeRangeFilter.end) && directRangeKey) {
         activeRangeFilter.key = directRangeKey;
       }
 
-      // Note: We don't set builtQuery.rangeKey because the backend doesn't recognize this field
-      // The backend only processes the 'filter' field, which is set below
-
-      if (possibleRangeKey) {
-        let filterType = null;
-        let filterValue = null;
-
-        if (activeRangeFilter.key) {
-          filterType = 'Key';
-          filterValue = activeRangeFilter.key;
-        } else if (activeRangeFilter.keyPrefix) {
-          filterType = 'KeyPrefix';
-          filterValue = activeRangeFilter.keyPrefix;
-        } else if (activeRangeFilter.start && activeRangeFilter.end) {
-          filterType = 'KeyRange';
-          filterValue = { start: activeRangeFilter.start, end: activeRangeFilter.end };
-        }
-
-        if (filterType && filterValue) {
-          // Use type-safe filter creation utilities
-          const rangeInput: RangeFilterInput = {
-            key: activeRangeFilter.key,
-            keyPrefix: activeRangeFilter.keyPrefix,
-            start: activeRangeFilter.start,
-            end: activeRangeFilter.end
-          };
-          
-          const filter = createFilterFromRangeInput(rangeInput);
-          if (filter) {
-            builtQuery.filter = filter;
-          }
-        }
+      // Create filter if any range filter value exists
+      if (activeRangeFilter.key) {
+        builtQuery.filter = createHashKeyFilter(activeRangeFilter.key);
+      } else if (activeRangeFilter.keyPrefix) {
+        builtQuery.filter = createRangePrefixFilter(activeRangeFilter.keyPrefix);
+      } else if (activeRangeFilter.start && activeRangeFilter.end) {
+        builtQuery.filter = createRangeRangeFilter(activeRangeFilter.start, activeRangeFilter.end);
       }
-    }
-
-    // Add filters
-    if (filters && filters.length > 0) {
-      builtQuery.filters = filters;
-    }
-
-    // Add orderBy
-    if (orderBy && orderBy.field) {
-      builtQuery.orderBy = orderBy;
     }
 
     return builtQuery;

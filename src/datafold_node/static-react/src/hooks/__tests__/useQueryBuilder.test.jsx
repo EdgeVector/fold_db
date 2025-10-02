@@ -89,24 +89,24 @@ describe('useQueryBuilder Hook', () => {
   };
 
   describe('initialization', () => {
-    it('should initialize with empty query and no errors when no schema selected', () => {
+    it('should initialize with empty query and no errors when no schema selected (no validation)', () => {
       const { result } = renderUseQueryBuilder();
 
       expect(result.current.query).toEqual({});
-      expect(result.current.validationErrors).toContain('Schema selection is required');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true); // Always valid - no frontend validation
     });
 
-    it('should provide build and validate functions', () => {
+    it('should not provide build and validate functions (removed)', () => {
       const { result } = renderUseQueryBuilder();
 
-      expect(typeof result.current.buildQuery).toBe('function');
-      expect(typeof result.current.validateQuery).toBe('function');
+      expect(result.current.buildQuery).toBeUndefined();
+      expect(result.current.validateQuery).toBeUndefined();
     });
   });
 
-  describe('schema validation', () => {
-    it('should validate when schema is not selected', () => {
+  describe('schema validation (removed - backend validates)', () => {
+    it('should always be valid when schema is not selected (no frontend validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: '',
         queryState: {
@@ -115,11 +115,11 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Schema selection is required');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true); // Always valid - backend validates
     });
 
-    it('should validate when selected schema is not found', () => {
+    it('should always be valid when selected schema is not found (no frontend validation)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'NonExistentSchema',
         queryState: {
@@ -128,8 +128,8 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Selected schema not found');
-      expect(result.current.isValid).toBe(false);
+      expect(result.current.validationErrors).toEqual([]);
+      expect(result.current.isValid).toBe(true); // Always valid - backend validates
     });
 
     it('should be valid with correct schema and fields', () => {
@@ -318,15 +318,12 @@ describe('useQueryBuilder Hook', () => {
       });
 
       expect(result.current.query).toEqual({
-        type: 'query', // Required field for server parsing
-        schema: 'UserSchema',
-        fields: ['id', 'name'], // Array of field names as expected by server
-        fieldValues: { id: 'user123', name: 'John' }, // Field values in separate property
-        queryFields: ['id', 'name']
+        schema_name: 'UserSchema', // Backend expects schema_name
+        fields: ['id', 'name'] // Array of field names
       });
     });
 
-    it('should build query with filters', () => {
+    it('should not include filters (not in backend Query struct)', () => {
       const filters = [{ field: 'age', operator: 'gt', value: 18 }];
       
       const { result } = renderUseQueryBuilder({
@@ -338,10 +335,11 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.query.filters).toEqual(filters);
+      // Backend Query struct doesn't have filters field
+      expect(result.current.query.filters).toBeUndefined();
     });
 
-    it('should build query with orderBy', () => {
+    it('should not include orderBy (not in backend Query struct)', () => {
       const orderBy = { field: 'name', direction: 'asc' };
       
       const { result } = renderUseQueryBuilder({
@@ -353,7 +351,8 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.query.orderBy).toEqual(orderBy);
+      // Backend Query struct doesn't have orderBy field
+      expect(result.current.query.orderBy).toBeUndefined();
     });
 
     it('should build query with range key for range schemas', () => {
@@ -392,8 +391,8 @@ describe('useQueryBuilder Hook', () => {
     });
   });
 
-  describe('query format regression tests', () => {
-    it('should always include type field to prevent server parsing errors', () => {
+  describe('query format matching backend Query struct', () => {
+    it('should use schema_name not type or schema', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -402,10 +401,12 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.query).toHaveProperty('type', 'query');
+      expect(result.current.query).toHaveProperty('schema_name', 'UserSchema');
+      expect(result.current.query).not.toHaveProperty('type');
+      expect(result.current.query).not.toHaveProperty('schema');
     });
 
-    it('should format fields as array not object to match server expectations', () => {
+    it('should format fields as array matching backend Query struct', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -418,7 +419,7 @@ describe('useQueryBuilder Hook', () => {
       expect(Array.isArray(result.current.query.fields)).toBe(true);
     });
 
-    it('should include fieldValues property separate from fields array', () => {
+    it('should not include fieldValues property (not in backend Query struct)', () => {
       const fieldValues = { id: 'user123', name: 'John Doe' };
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
@@ -428,13 +429,11 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.query.fieldValues).toEqual(fieldValues);
+      expect(result.current.query).not.toHaveProperty('fieldValues');
       expect(result.current.query.fields).toEqual(['id', 'name']);
-      // Ensure fields array doesn't contain values, only field names
-      expect(result.current.query.fields).not.toEqual(fieldValues);
     });
 
-    it('should maintain consistent query structure across different query types', () => {
+    it('should only include schema_name, fields, and filter (Query struct)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -446,18 +445,20 @@ describe('useQueryBuilder Hook', () => {
 
       const query = result.current.query;
       
-      // All queries must have these core fields
-      expect(query).toHaveProperty('type', 'query');
-      expect(query).toHaveProperty('schema', 'UserSchema');
+      // Query struct has exactly: schema_name, fields, filter (optional)
+      expect(query).toHaveProperty('schema_name', 'UserSchema');
       expect(query).toHaveProperty('fields');
-      expect(query).toHaveProperty('fieldValues');
       expect(Array.isArray(query.fields)).toBe(true);
-      expect(typeof query.fieldValues).toBe('object');
+      // Should not have these fields
+      expect(query).not.toHaveProperty('type');
+      expect(query).not.toHaveProperty('schema');
+      expect(query).not.toHaveProperty('queryFields');
+      expect(query).not.toHaveProperty('fieldValues');
     });
   });
 
-  describe('manual functions', () => {
-    it('should provide buildQuery function that returns current query', () => {
+  describe('manual functions (removed)', () => {
+    it('should not provide buildQuery function (removed - use query directly)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
@@ -466,22 +467,22 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      const builtQuery = result.current.buildQuery();
-      expect(builtQuery).toEqual(result.current.query);
+      expect(result.current.buildQuery).toBeUndefined();
+      expect(result.current.query).toBeDefined(); // Query is available directly
     });
 
-    it('should provide validateQuery function that returns validation result (no front-end validation)', () => {
+    it('should not provide validateQuery function (removed - backend validates)', () => {
       const { result } = renderUseQueryBuilder({
         schema: 'UserSchema',
         queryState: {
           queryFields: ['id'],
-          fieldValues: { id: '' } // Invalid empty required field
+          fieldValues: { id: '' } // Backend will validate
         }
       });
 
-      const validation = result.current.validateQuery();
-      expect(validation.isValid).toBe(true);
-      expect(validation.errors).toEqual([]);
+      expect(result.current.validateQuery).toBeUndefined();
+      expect(result.current.isValid).toBe(true); // Always true - no frontend validation
+      expect(result.current.validationErrors).toEqual([]);
     });
   });
 
@@ -513,8 +514,8 @@ describe('useQueryBuilder Hook', () => {
         queryState: {} // Missing all expected properties
       });
 
-      expect(result.current.query.schema).toBe('UserSchema');
-      expect(result.current.query.fields).toEqual([]); // Should be empty array, not object
+      expect(result.current.query.schema_name).toBe('UserSchema');
+      expect(result.current.query.fields).toEqual([]); // Should be empty array
     });
 
     it('should handle undefined schema in queryState', () => {
@@ -526,7 +527,7 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.validationErrors).toContain('Schema selection is required');
+      expect(result.current.validationErrors).toEqual([]); // No validation
     });
 
     it('should handle null filters and orderBy', () => {
@@ -564,7 +565,7 @@ describe('useQueryBuilder Hook', () => {
       });
 
       expect(result.current.isValid).toBe(true);
-      expect(result.current.query.schema).toBe('LocalSchema');
+      expect(result.current.query.schema_name).toBe('LocalSchema');
     });
 
     it('should fall back to Redux approved schemas when not in provided schemas', () => {
@@ -581,7 +582,7 @@ describe('useQueryBuilder Hook', () => {
       });
 
       expect(result.current.isValid).toBe(true);
-      expect(result.current.query.schema).toBe('UserSchema');
+      expect(result.current.query.schema_name).toBe('UserSchema');
     });
   });
 });

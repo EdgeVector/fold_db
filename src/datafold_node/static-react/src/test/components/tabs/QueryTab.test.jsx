@@ -232,4 +232,100 @@ describe('QueryTab Component', () => {
     const mockState = useQueryState()
     expect(mockState.clearState).toBeDefined()
   }, 10000)
+
+  it('includes range filter in network call to backend', async () => {
+    // Import and setup the API client spy first
+    const mutationClientModule = await import('../../../api/clients/mutationClient')
+    const executeQuerySpy = vi.fn().mockResolvedValue({
+      success: true,
+      data: { results: [] }
+    })
+    mutationClientModule.mutationClient.executeQuery = executeQuerySpy
+
+    // Import and setup the query builder mock
+    const queryBuilderModule = await import('../../../hooks/useQueryBuilder')
+    queryBuilderModule.useQueryBuilder.mockReturnValueOnce({
+      query: {
+        schema_name: 'BlogPost',
+        fields: ['title', 'author', 'publish_date'],
+        filter: { HashKey: '2024-01-15' }  // Range filter for exact key
+      },
+      isValid: true
+    })
+
+    // Import and setup the query state mock
+    const queryStateModule = await import('../../../hooks/useQueryState')
+    queryStateModule.useQueryState.mockReturnValueOnce({
+      state: {
+        selectedSchema: 'BlogPost',
+        queryFields: ['title', 'author', 'publish_date'],
+        rangeSchemaFilter: { key: '2024-01-15' }
+      },
+      handleSchemaChange: vi.fn(),
+      toggleField: vi.fn(),
+      handleFieldValueChange: vi.fn(),
+      handleRangeFilterChange: vi.fn(),
+      setRangeSchemaFilter: vi.fn(),
+      clearState: vi.fn(),
+      approvedSchemas: [
+        { 
+          name: 'BlogPost', 
+          schema_type: { Range: { range_key: 'publish_date' } },
+          fields: { 
+            title: { field_type: 'String' },
+            author: { field_type: 'String' },
+            publish_date: { field_type: 'Range' }
+          } 
+        }
+      ],
+      schemasLoading: false,
+      selectedSchemaObj: { 
+        name: 'BlogPost',
+        schema_type: { Range: { range_key: 'publish_date' } },
+        fields: { 
+          title: { field_type: 'String' },
+          author: { field_type: 'String' },
+          publish_date: { field_type: 'Range' }
+        } 
+      },
+      isRangeSchema: true,
+      rangeKey: 'publish_date'
+    })
+
+    const authState = createMockAuthState({ isAuthenticated: true })
+    const initialState = {
+      auth: authState,
+      ...createTestSchemaState()
+    }
+
+    await renderWithRedux(<QueryTab onResult={mockOnResult} />, {
+      preloadedState: initialState
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('execute-query')).toBeInTheDocument()
+    }, { timeout: 5000 })
+
+    const executeButton = screen.getByTestId('execute-query')
+    fireEvent.click(executeButton)
+
+    // Verify the filter was included in the network call
+    await waitFor(() => {
+      expect(executeQuerySpy).toHaveBeenCalled()
+    }, { timeout: 5000 })
+
+    // Check the actual call arguments
+    expect(executeQuerySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schema_name: 'BlogPost',
+        fields: expect.arrayContaining(['title', 'author', 'publish_date']),
+        filter: expect.objectContaining({ HashKey: '2024-01-15' })
+      })
+    )
+
+    // Verify the result callback was called
+    await waitFor(() => {
+      expect(mockOnResult).toHaveBeenCalled()
+    }, { timeout: 5000 })
+  }, 10000)
 })

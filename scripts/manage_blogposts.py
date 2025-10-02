@@ -183,11 +183,10 @@ def query_blog_posts_via_curl():
     """Query all blog posts via curl command."""
     print("\n🔍 Querying blog posts via curl...")
     
+    # Query struct expects: schema_name, fields, and optional filter
     query_data = {
-        "type": "query",
-        "schema": "BlogPost",
-        "fields": ["title", "author", "publish_date", "tags"],
-        "filter": None
+        "schema_name": "BlogPost",
+        "fields": ["title", "author", "publish_date", "tags"]
     }
     
     curl_cmd = [

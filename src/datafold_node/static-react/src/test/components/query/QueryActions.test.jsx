@@ -84,29 +84,29 @@ describe('QueryActions Component', () => {
       });
     });
 
-    it('should disable execute and validate buttons when query is invalid', () => {
+    it('should keep buttons enabled even when query is null (no validation)', () => {
       mockProps.queryData = null;
       renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeEnabled();
-      expect(screen.getByRole('button', { name: /validate/i })).toBeDisabled();
-      expect(screen.getByRole('button', { name: /execute query/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /validate/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
 
-    it('should disable execute and validate buttons when schema is missing', () => {
+    it('should keep buttons enabled even when schema is missing (no validation)', () => {
       mockProps.queryData = { queryFields: ['field1'] };
       renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
-      expect(screen.getByRole('button', { name: /validate/i })).toBeDisabled();
-      expect(screen.getByRole('button', { name: /execute query/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /validate/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
 
-    it('should disable execute and validate buttons when no fields selected', () => {
+    it('should keep buttons enabled even when no fields selected (no validation)', () => {
       mockProps.queryData = { schema: 'TestSchema', queryFields: [] };
       renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
-      expect(screen.getByRole('button', { name: /validate/i })).toBeDisabled();
-      expect(screen.getByRole('button', { name: /execute query/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /validate/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
   });
 
@@ -141,14 +141,14 @@ describe('QueryActions Component', () => {
       expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
 
-    it('should invalidate query with empty fields object', () => {
+    it('should keep buttons enabled even with empty fields object (no validation)', () => {
       mockProps.queryData = {
         schema: 'TestSchema',
         fields: {}
       };
       renderWithRedux(<QueryActions {...mockProps} />, { initialState });
 
-      expect(screen.getByRole('button', { name: /execute query/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /execute query/i })).toBeEnabled();
     });
   });
 

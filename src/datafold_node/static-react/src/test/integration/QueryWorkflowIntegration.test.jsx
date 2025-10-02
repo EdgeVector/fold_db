@@ -63,9 +63,7 @@ describe('QueryTab Workflow Integration Tests', () => {
   const defaultQueryBuilder = {
     query: {},
     validationErrors: [],
-    isValid: false,
-    buildQuery: vi.fn(),
-    validateQuery: vi.fn()
+    isValid: true // No frontend validation - always valid
   };
 
   beforeEach(async () => {
@@ -92,9 +90,7 @@ describe('QueryTab Workflow Integration Tests', () => {
     });
 
     mockUseQueryBuilder.mockReturnValue({
-      ...defaultQueryBuilder,
-      buildQuery: vi.fn().mockReturnValue({}),
-      validateQuery: vi.fn().mockReturnValue({ isValid: false, errors: [] })
+      ...defaultQueryBuilder
     });
   });
 
@@ -190,11 +186,7 @@ describe('QueryTab Workflow Integration Tests', () => {
           fields: { id: 'user123', name: 'John Doe' }
         },
         isValid: true,
-        validationErrors: [],
-        buildQuery: vi.fn().mockReturnValue({
-          schema: 'UserSchema',
-          fields: { id: 'user123', name: 'John Doe' }
-        })
+        validationErrors: []
       });
 
       renderQueryWorkflow({
@@ -248,31 +240,21 @@ describe('QueryTab Workflow Integration Tests', () => {
       expect(mockClearQuery).toHaveBeenCalled();
     });
 
-    it('handles query validation errors across components', () => {
-      const validationErrors = [
-        'Schema selection is required',
-        'Required field "id" is missing'
-      ];
-
+    it('has no validation errors - backend validates', () => {
       mockUseQueryBuilder.mockReturnValue({
         ...defaultQueryBuilder,
-        validationErrors,
-        isValid: false
+        validationErrors: [],
+        isValid: true // Always valid - no frontend validation
       });
 
       renderQueryWorkflow({
         schema: '',
-        canExecute: false
+        canExecute: true
       });
 
-      // Execute button should be disabled due to validation errors
+      // Execute button should be enabled (no frontend validation)
       const executeButton = screen.getByRole('button', { name: /execute query/i });
-      expect(executeButton).toBeDisabled();
-
-      // Preview should show validation errors
-      validationErrors.forEach(error => {
-        expect(screen.getByText(error)).toBeInTheDocument();
-      });
+      expect(executeButton).toBeEnabled();
     });
 
     it('handles loading states during query execution', () => {
@@ -335,24 +317,21 @@ describe('QueryTab Workflow Integration Tests', () => {
       expect(executeButton).toBeEnabled();
     });
 
-    it('shows validation error for range schema without range key', () => {
+    it('allows range schema without range key - backend validates', () => {
       mockUseQueryBuilder.mockReturnValue({
         ...defaultQueryBuilder,
-        validationErrors: ['Range key missing for range schema'],
-        isValid: false
+        validationErrors: [],
+        isValid: true // No frontend validation
       });
 
       renderQueryWorkflow({
         schema: 'RangeSchema',
-        canExecute: false
+        canExecute: true
       });
 
-      // Should show range key validation error
-      expect(screen.getByText('Range key missing for range schema')).toBeInTheDocument();
-
-      // Execute button should be disabled
+      // Execute button should be enabled (backend validates)
       const executeButton = screen.getByRole('button', { name: /execute query/i });
-      expect(executeButton).toBeDisabled();
+      expect(executeButton).toBeEnabled();
     });
   });
 
@@ -499,8 +478,9 @@ describe('QueryTab Workflow Integration Tests', () => {
       const executeButton = screen.getByRole('button', { name: /execute query/i });
       const saveButton = screen.getByRole('button', { name: /save query/i });
       
-      expect(executeButton).toBeDisabled();
-      expect(saveButton).toBeDisabled();
+      // No validation - buttons are enabled even without auth
+      expect(executeButton).toBeEnabled();
+      expect(saveButton).toBeEnabled();
     });
   });
 
@@ -555,24 +535,21 @@ describe('QueryTab Workflow Integration Tests', () => {
     });
 
     it('ensures QueryBuilder validation affects QueryActions state', () => {
-      // Invalid query state
+      // Query state - always valid (backend validates)
       mockUseQueryBuilder.mockReturnValue({
         ...defaultQueryBuilder,
-        validationErrors: ['Required field missing'],
-        isValid: false
+        validationErrors: [],
+        isValid: true
       });
 
       renderQueryWorkflow({
         schema: 'UserSchema',
-        canExecute: false
+        canExecute: true // Always allowed - no validation
       });
 
-      // Actions should be disabled for invalid query
+      // Actions should be enabled (no frontend validation)
       const executeButton = screen.getByRole('button', { name: /execute query/i });
-      expect(executeButton).toBeDisabled();
-
-      // Preview should show validation errors
-      expect(screen.getByText('Required field missing')).toBeInTheDocument();
+      expect(executeButton).toBeEnabled();
     });
   });
 });

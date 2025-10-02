@@ -56,24 +56,12 @@ function QueryForm({
   const { clearQuery } = useQueryState();
 
   /**
-   * Minimal validation - backend handles detailed checks
+   * No validation - backend handles all checks
    */
   const _validateForm = useCallback(() => {
-    const errors = {};
-
-    // Only check basic UX requirements
-    if (!queryState?.selectedSchema) {
-      errors.schema = 'Schema selection is required';
-    }
-
-    if (!queryState?.queryFields || queryState.queryFields.length === 0) {
-      errors.fields = 'At least one field must be selected';
-    }
-
-    // Backend validates everything else (range keys, field types, etc.)
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
-  }, [queryState]);
+    setValidationErrors({});
+    return true; // Always valid - backend validates
+  }, []);
 
   /**
    * Handle schema change with validation
