@@ -115,15 +115,20 @@ impl SchemaCore {
         // Persist schema to database first
         self.db_ops.store_schema(&name, &schema)?;
         
-        // Persist schema state to database (default to Available)
-        self.db_ops.store_schema_state(&name, SchemaState::Available)?;
+        // Only set state to Available if no existing state exists (preserve approved/blocked states)
+        let existing_state = self.db_ops.get_schema_state(&name)?;
+        if existing_state.is_none() {
+            self.db_ops.store_schema_state(&name, SchemaState::Available)?;
+        }
         
         // Update in-memory caches
         let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
         schemas.insert(name.clone(), schema);
         
         let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
-        schema_states.entry(name).or_insert(SchemaState::Available);
+        // Use existing state if available, otherwise default to Available
+        let state = existing_state.unwrap_or(SchemaState::Available);
+        schema_states.insert(name.clone(), state);
         
         Ok(())
     }

@@ -1,27 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useAppSelector } from '../../store/hooks'
-import { selectAllSchemas } from '../../store/schemaSlice'
+import { useState, useEffect, useCallback } from 'react'
 import { transformClient } from '../../api/clients'
 
 const INITIAL_QUEUE_STATE = {
   queue: [],
   length: 0,
   isEmpty: true
-}
-
-const getStateBadgeClasses = (state) => {
-  const normalized = typeof state === 'string' ? state.toLowerCase() : ''
-
-  switch (normalized) {
-    case 'approved':
-      return 'bg-green-100 text-green-800'
-    case 'available':
-      return 'bg-blue-100 text-blue-800'
-    case 'blocked':
-      return 'bg-red-100 text-red-800'
-    default:
-      return 'bg-gray-100 text-gray-700'
-  }
 }
 
 const normalizeQueueInfo = (data = {}) => {
@@ -32,49 +15,15 @@ const normalizeQueueInfo = (data = {}) => {
   return { queue, length, isEmpty }
 }
 
-const getSchemaStateLabel = (state) => {
-  if (typeof state !== 'string' || state.length === 0) {
-    return 'Unknown'
-  }
-
-  return state.charAt(0).toUpperCase() + state.slice(1)
-}
-
 const TransformsTab = ({ onResult }) => {
-  const schemas = useAppSelector(selectAllSchemas)
   const [queueInfo, setQueueInfo] = useState(INITIAL_QUEUE_STATE)
   const [loading, setLoading] = useState({})
   const [errors, setErrors] = useState({})
   const [isLoadingTransforms, setIsLoadingTransforms] = useState(false)
   const [transformsError, setTransformsError] = useState(null)
-  const [apiTransforms, setApiTransforms] = useState([])
+  const [transforms, setTransforms] = useState([])
 
-  const schemaTransforms = useMemo(() => {
-    if (!schemas) {
-      return []
-    }
-
-    return schemas.flatMap(schema => {
-      if (!schema || typeof schema !== 'object') {
-        return []
-      }
-
-      const fields = schema.fields && typeof schema.fields === 'object'
-        ? Object.entries(schema.fields)
-        : []
-
-      return fields
-        .filter(([, field]) => field && field.transform)
-        .map(([fieldName, field]) => ({
-          schemaName: schema.name,
-          fieldName,
-          transform: field.transform,
-          schemaState: schema.state
-        }))
-    })
-  }, [schemas])
-
-  const fetchApiTransforms = useCallback(async () => {
+  const fetchTransforms = useCallback(async () => {
     setIsLoadingTransforms(true)
     setTransformsError(null)
 
@@ -83,21 +32,26 @@ const TransformsTab = ({ onResult }) => {
 
       if (response?.success && response.data) {
         const data = response.data
-        const normalized = Array.isArray(data)
-          ? data
-          : data && typeof data === 'object'
-            ? Object.values(data)
+        // Backend returns HashMap<String, Transform> where Transform has flattened schema fields
+        // Convert to array with transform_id extracted from the key
+        const normalized = data && typeof data === 'object' && !Array.isArray(data)
+          ? Object.entries(data).map(([transformId, transform]) => ({
+              transform_id: transformId,
+              ...transform
+            }))
+          : Array.isArray(data)
+            ? data
             : []
-        setApiTransforms(normalized)
+        setTransforms(normalized)
       } else {
         const errorMessage = response?.error || 'Failed to load transforms'
         setTransformsError(errorMessage)
-        setApiTransforms([])
+        setTransforms([])
       }
     } catch (error) {
-      console.error('Failed to fetch API transforms:', error)
+      console.error('Failed to fetch transforms:', error)
       setTransformsError(error.message || 'Failed to load transforms')
-      setApiTransforms([])
+      setTransforms([])
     } finally {
       setIsLoadingTransforms(false)
     }
@@ -117,12 +71,12 @@ const TransformsTab = ({ onResult }) => {
 
   // Fetch transforms and queue info on mount
   useEffect(() => {
-    fetchApiTransforms()
+    fetchTransforms()
     fetchQueueInfo()
 
     const interval = setInterval(fetchQueueInfo, 5000)
     return () => clearInterval(interval)
-  }, [fetchApiTransforms, fetchQueueInfo])
+  }, [fetchTransforms, fetchQueueInfo])
 
   const handleAddToQueue = useCallback(async (schemaName, fieldName) => {
     const transformId = fieldName ? `${schemaName}.${fieldName}` : schemaName
@@ -198,7 +152,7 @@ const TransformsTab = ({ onResult }) => {
           <div className="flex items-center">
             <span className="text-red-800">Error loading transforms: {transformsError}</span>
             <button
-              onClick={fetchApiTransforms}
+              onClick={fetchTransforms}
               className="ml-4 px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
             >
               Retry
@@ -207,54 +161,106 @@ const TransformsTab = ({ onResult }) => {
         </div>
       )}
 
-      {schemaTransforms.length > 0 && (
+      {!isLoadingTransforms && !transformsError && transforms.length > 0 && (
         <div className="space-y-4">
-          {schemaTransforms.map(({ schemaName, fieldName, transform, schemaState }) => {
-            const transformId = `${schemaName}.${fieldName}`
+          {transforms.map((transform, index) => {
+            // Transform has flattened schema fields due to #[serde(flatten)] in Rust
+            const transformId = transform.transform_id || `transform-${index}`
             const isLoading = loading[transformId]
             const errorMessage = errors[transformId]
 
+            // Extract schema name from transform_id or use the name field
+            const schemaName = transform.name || transform.transform_id?.split('.')[0] || 'Unknown'
+
+            // Determine schema type - fields are flattened, so access directly
+            const schemaType = transform.schema_type
+            let schemaTypeLabel = 'Single'
+            let schemaTypeColor = 'bg-gray-100 text-gray-800'
+            
+            if (schemaType?.Range) {
+              schemaTypeLabel = 'Range'
+              schemaTypeColor = 'bg-blue-100 text-blue-800'
+            } else if (schemaType?.HashRange) {
+              schemaTypeLabel = 'HashRange'
+              schemaTypeColor = 'bg-purple-100 text-purple-800'
+            }
+
+            // Get key configuration and transform fields - flattened
+            const keyConfig = transform.key
+            const transformFieldsObj = transform.transform_fields || {}
+            const transformFieldsCount = Object.keys(transformFieldsObj).length
+            const fieldNames = Object.keys(transformFieldsObj)
+
             return (
-              <div key={transformId} className="bg-white p-4 rounded-lg shadow">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900">{schemaName}</h3>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${getStateBadgeClasses(schemaState)}`}>
-                      {getSchemaStateLabel(schemaState)}
-                    </span>
+              <div key={transformId} className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900">{schemaName}</h3>
+                    <div className="flex gap-2 mt-2 flex-wrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${schemaTypeColor}`}>
+                        {schemaTypeLabel}
+                      </span>
+                      {transformFieldsCount > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          {transformFieldsCount} field{transformFieldsCount !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    {fieldNames.length > 0 && (
+                      <div className="mt-2 text-sm text-gray-600">
+                        <span className="font-medium">Fields:</span> {fieldNames.join(', ')}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="mt-3 space-y-2">
-                  <div className="text-sm text-gray-700">
-                    <span className="font-medium">{fieldName}</span>
-                  </div>
-
-                  {transform?.logic && (
-                    <div className="text-sm text-gray-600">
-                      <span className="font-medium">Logic:</span> {transform.logic}
+                <div className="mt-3 space-y-3">
+                  {/* Key Configuration */}
+                  {keyConfig && (
+                    <div className="bg-blue-50 rounded p-3">
+                      <div className="text-sm font-medium text-blue-900 mb-1">Key Configuration:</div>
+                      <div className="text-sm text-blue-800 space-y-1">
+                        {keyConfig.hash_field && (
+                          <div>
+                            <span className="font-medium">Hash Key:</span> {keyConfig.hash_field}
+                          </div>
+                        )}
+                        {keyConfig.range_field && (
+                          <div>
+                            <span className="font-medium">Range Key:</span> {keyConfig.range_field}
+                          </div>
+                        )}
+                        {!keyConfig.hash_field && !keyConfig.range_field && keyConfig.key_field && (
+                          <div>
+                            <span className="font-medium">Key:</span> {keyConfig.key_field}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-
-                  {transform?.output && (
-                    <div className="text-sm text-gray-600">
-                      <span className="font-medium">Output:</span> {transform.output}
-                    </div>
-                  )}
-
-                  {Array.isArray(transform?.inputs) && transform.inputs.length > 0 && (
-                    <div className="text-sm text-gray-600">
-                      <span className="font-medium">Inputs:</span> {transform.inputs.join(', ')}
+                  
+                  {/* Transform Fields */}
+                  {transformFieldsCount > 0 && (
+                    <div>
+                      <div className="text-sm font-medium text-gray-700 mb-2">Transform Fields:</div>
+                      <div className="bg-gray-50 rounded p-3 space-y-2">
+                        {Object.entries(transformFieldsObj).map(([fieldName, logic]) => (
+                          <div key={fieldName} className="border-l-2 border-gray-300 pl-3">
+                            <div className="font-medium text-gray-900 text-sm">{fieldName}</div>
+                            <div className="text-gray-600 font-mono text-xs mt-1 break-all">{logic}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
 
                 <div className="mt-4 flex items-center gap-3">
                   <button
-                    onClick={() => handleAddToQueue(schemaName, fieldName)}
+                    onClick={() => handleAddToQueue(transformId, null)}
                     disabled={isLoading}
-                    className={`px-3 py-1 text-sm rounded text-white ${
-                      isLoading ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
+                    className={`px-4 py-2 text-sm font-medium rounded-md text-white ${
+                      isLoading ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
                     }`}
                   >
                     {isLoading ? 'Adding...' : 'Add to Queue'}
@@ -270,52 +276,12 @@ const TransformsTab = ({ onResult }) => {
         </div>
       )}
 
-      {!transformsError && schemaTransforms.length === 0 && (
+      {!isLoadingTransforms && !transformsError && transforms.length === 0 && (
         <div className="bg-gray-50 p-4 rounded-lg">
-          <p className="text-gray-600">No transforms found in schemas</p>
+          <p className="text-gray-600">No transforms registered</p>
           <p className="text-sm text-gray-500 mt-1">
             Register a transform in a schema to view it here and add it to the processing queue.
           </p>
-        </div>
-      )}
-
-      {!isLoadingTransforms && !transformsError && apiTransforms.length > 0 && (
-        <div className="bg-green-50 p-4 rounded-lg">
-          <h3 className="text-md font-medium text-green-800 mb-2">Registered API Transforms</h3>
-          <div className="space-y-3">
-            {apiTransforms.map((transform, index) => {
-              // Handle the actual API response structure - each transform is a schema object
-              if (transform && typeof transform === 'object' && transform.transform_fields) {
-                return Object.entries(transform.transform_fields).map(([fieldName, logic]) => (
-                  <div key={`${transform.name}_${fieldName}`} className="bg-white p-3 rounded border">
-                    <div className="font-medium text-gray-900">
-                      {transform.name}.{fieldName}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-600">
-                      <span className="font-medium">Logic:</span> {logic}
-                    </div>
-                    <div className="mt-2">
-                      <button
-                        onClick={() => handleAddToQueue(transform.name, fieldName)}
-                        className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                      >
-                        Add to Queue
-                      </button>
-                    </div>
-                  </div>
-                ))
-              }
-              
-              // Fallback for unexpected data structure
-              return (
-                <div key={index} className="bg-white p-3 rounded border">
-                  <div className="font-medium text-gray-900">
-                    {typeof transform === 'string' ? transform : `Transform ${index + 1}`}
-                  </div>
-                </div>
-              )
-            }).flat()}
-          </div>
         </div>
       )}
     </div>
