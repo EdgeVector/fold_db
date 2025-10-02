@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::schema::types::key_value::KeyValue;
+use ts_rs::TS;
 
 /// HashRange filter operations for querying hash-range fields
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 pub enum HashRangeFilter {
     /// Filter by exact hash and range key match
     HashRangeKey { hash: String, range: String },
@@ -110,7 +112,8 @@ impl HashRangeFilter {
 }
 
 /// Result of a hash-range filter operation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 pub struct HashRangeFilterResult {
     /// Matches with composite keys in format "KeyValue" -> atom_uuid
     pub matches: HashMap<KeyValue, String>,

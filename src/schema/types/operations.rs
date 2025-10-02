@@ -3,11 +3,10 @@ use serde::{Deserialize, Serialize};
 use crate::schema::types::field::HashRangeFilter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Query {
     pub schema_name: String,
     pub fields: Vec<String>,
-    pub pub_key: String,
-    pub trust_distance: u32,
     pub filter: Option<HashRangeFilter>,
 }
 
@@ -16,14 +15,10 @@ impl Query {
     pub fn new(
         schema_name: String,
         fields: Vec<String>,
-        pub_key: String,
-        trust_distance: u32,
     ) -> Self {
         Self {
             schema_name,
             fields,
-            pub_key,
-            trust_distance,
             filter: None,
         }
     }
@@ -32,15 +27,11 @@ impl Query {
     pub fn new_with_filter(
         schema_name: String,
         fields: Vec<String>,
-        pub_key: String,
-        trust_distance: u32,
         filter: Option<HashRangeFilter>,
     ) -> Self {
         Self {
             schema_name,
             fields,
-            pub_key,
-            trust_distance,
             filter,
         }
     }

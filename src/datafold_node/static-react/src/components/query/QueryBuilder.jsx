@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from 'react';
-import { useQueryBuilder } from '../../hooks/useQueryBuilder.js';
+import { useQueryBuilder } from '../../hooks/useQueryBuilder';
 
 /**
  * @typedef {Object} QueryBuilderProps

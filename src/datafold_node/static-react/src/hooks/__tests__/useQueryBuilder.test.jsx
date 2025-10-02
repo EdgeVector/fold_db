@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { Provider } from 'react-redux';
-import { useQueryBuilder } from '../useQueryBuilder.js';
+import { useQueryBuilder } from '../useQueryBuilder';
 import { createTestStore } from '../../test/utils/testUtilities.jsx';
 
 // Mock the Redux store hooks
@@ -366,7 +366,7 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.query.rangeKey).toBe('user:123');
+      expect(result.current.query.filter).toEqual({ "HashKey": "user:123" });
     });
 
     it('should not include rangeKey for non-range schemas', () => {

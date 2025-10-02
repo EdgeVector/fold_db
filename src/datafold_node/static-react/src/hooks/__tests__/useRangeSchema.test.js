@@ -212,7 +212,7 @@ describe('useRangeSchema Hook', () => {
     expect(query.type).toBe('query');
     expect(query.schema).toBe('TestRangeSchema');
     expect(query.fields).toEqual(fields);
-    expect(query.range_filter).toEqual({ Key: 'filter_key' });
+    expect(query.filter).toEqual({ HashKey: 'filter_key' });
   });
 
   it('should handle empty range filter in queries', () => {

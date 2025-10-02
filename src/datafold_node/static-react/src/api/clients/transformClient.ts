@@ -70,7 +70,7 @@ export class UnifiedTransformClient {
    * @returns Promise resolving to transforms data
    */
   async getTransforms(): Promise<EnhancedApiResponse<TransformsResponse>> {
-    return this.client.get<TransformsResponse>(API_ENDPOINTS.TRANSFORMS, {
+    return this.client.get<TransformsResponse>(API_ENDPOINTS.LIST_TRANSFORMS, {
       requiresAuth: false, // Transform reading is public
       timeout: 8000,
       retries: 2,
@@ -88,7 +88,7 @@ export class UnifiedTransformClient {
    * @returns Promise resolving to queue status
    */
   async getQueue(): Promise<EnhancedApiResponse<QueueInfo>> {
-    return this.client.get<QueueInfo>(API_ENDPOINTS.TRANSFORMS_QUEUE, {
+    return this.client.get<QueueInfo>(API_ENDPOINTS.GET_TRANSFORM_QUEUE, {
       requiresAuth: false, // Queue monitoring is public
       timeout: 5000,
       retries: 3, // Multiple retries for critical queue data
@@ -110,7 +110,7 @@ export class UnifiedTransformClient {
     }
 
     return this.client.post<AddToQueueResponse>(
-      API_ENDPOINTS.TRANSFORMS_QUEUE_ADD(transformId),
+      API_ENDPOINTS.ADD_TO_TRANSFORM_QUEUE(transformId),
       undefined, // No body needed for this endpoint
       {
         timeout: 10000, // Longer timeout for queue operations
@@ -144,7 +144,7 @@ export class UnifiedTransformClient {
       throw new Error('Transform ID is required and must be a string');
     }
 
-    return this.client.get<Transform>(`${API_ENDPOINTS.TRANSFORMS}/${transformId}`, {
+    return this.client.get<Transform>(`${API_ENDPOINTS.LIST_TRANSFORMS}/${transformId}`, {
       requiresAuth: false, // Transform reading is public
       timeout: 5000,
       retries: 2,
@@ -168,7 +168,7 @@ export class UnifiedTransformClient {
     }
 
     return this.client.delete<AddToQueueResponse>(
-      API_ENDPOINTS.TRANSFORMS_QUEUE_ADD(transformId),
+      API_ENDPOINTS.ADD_TO_TRANSFORM_QUEUE(transformId),
       {
         timeout: 8000,
         retries: 1,

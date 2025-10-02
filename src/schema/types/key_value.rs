@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Represents resolved key values for hash and range components.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, TS)]
+#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
 pub struct KeyValue {
     pub hash: Option<String>,
     pub range: Option<String>,

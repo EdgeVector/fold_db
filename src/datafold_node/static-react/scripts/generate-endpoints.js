@@ -153,62 +153,14 @@ function generateEndpointsFromSpec(spec) {
     });
   baseUrlsLines.push('} as const;');
 
-  // Build canonical alias map to keep stable keys used across the app
-  const aliasLines = [];
-  aliasLines.push('export const API_ENDPOINTS_ALIASES = {');
-
-  const addAlias = (aliasKey, pathStr) => {
-    // Lookup using exact path or prefixed with /api for OpenAPI keys
-    const fullPath = pathStr.startsWith('/api') ? pathStr : `/api${pathStr.startsWith('/') ? '' : '/'}${pathStr}`;
-    const info = pathInfo.get(fullPath);
-    if (!info) return false;
-    const builder = pathToBuilder(fullPath);
-    if (builder.kind === 'param') {
-      const params = Array.from(fullPath.matchAll(/\{(\w+)\}/g)).map((m) => m[1]);
-      const typedSig = buildTypedParamSignature(fullPath, info.method, params);
-      const code = builder.code.replace(/^\(([^)]*)\)/, `(${typedSig})`);
-      aliasLines.push(`  ${aliasKey}: ${code},`);
-    } else {
-      aliasLines.push(`  ${aliasKey}: ${builder.code},`);
-    }
-    return true;
-  };
-
-  // Canonical aliases expected by clients and lint rules
-  addAlias('MUTATION', '/mutation');
-  addAlias('QUERY', '/query');
-  addAlias('SCHEMAS_BASE', '/schemas');
-  addAlias('SCHEMA_BY_NAME', '/schema/{name}');
-  addAlias('SCHEMA_APPROVE', '/schema/{name}/approve');
-  addAlias('SCHEMA_BLOCK', '/schema/{name}/block');
-  addAlias('SYSTEM_STATUS', '/system/status');
-  // System and logs aliases used by UI clients
-  addAlias('SYSTEM_LOGS', '/logs');
-  addAlias('SYSTEM_LOGS_STREAM', '/logs/stream');
-  addAlias('SYSTEM_RESET_DATABASE', '/system/reset-database');
-  addAlias('SYSTEM_PRIVATE_KEY', '/system/private-key');
-  addAlias('SYSTEM_PUBLIC_KEY', '/system/public-key');
-  addAlias('TRANSFORMS', '/transforms');
-  addAlias('TRANSFORMS_QUEUE', '/transforms/queue');
-  addAlias('TRANSFORMS_QUEUE_ADD', '/transforms/queue/{id}');
-
-  // Ingestion aliases (canonical keys expected by UI clients)
-  addAlias('INGESTION_STATUS', '/ingestion/status');
-  addAlias('INGESTION_CONFIG', '/ingestion/config');
-  addAlias('INGESTION_VALIDATE', '/ingestion/validate');
-  addAlias('INGESTION_PROCESS', '/ingestion/process');
-  addAlias('INGESTION_HEALTH', '/ingestion/health');
-
-  aliasLines.push('} as const;');
-
-  // Single export: merge derived endpoints with aliases
+  // Export only OpenAPI-generated endpoints (no hardcoded aliases)
   const lines = [];
   lines.push(...derivedLines);
   lines.push('');
   lines.push(...baseUrlsLines);
   lines.push('');
-  lines.push(...aliasLines);
-  lines.push('\nexport const API_ENDPOINTS = { ...API_ENDPOINTS_DERIVED, ...API_ENDPOINTS_ALIASES } as const;');
+  lines.push('// Export generated endpoints directly (no hardcoded aliases)');
+  lines.push('export const API_ENDPOINTS = API_ENDPOINTS_DERIVED;');
   lines.push('export type ApiEndpoint = typeof API_ENDPOINTS[keyof typeof API_ENDPOINTS];');
 
   const content = header(OPENAPI_INPUT) + lines.join('\n') + '\n';

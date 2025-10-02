@@ -368,7 +368,7 @@ export function formatRangeMutation(schema, mutationType, rangeKeyValue, fieldDa
 }
 
 /**
- * Formats a range schema query with proper range_filter
+ * Formats a range schema query with proper HashRangeFilter
  * 
  * @param {Schema} schema - Schema object
  * @param {string[]} fields - Fields to query
@@ -383,7 +383,8 @@ export function formatRangeQuery(schema, fields, rangeFilterValue) {
   };
   
   if (rangeFilterValue && rangeFilterValue.trim()) {
-    query.range_filter = { Key: rangeFilterValue.trim() };
+    // Use proper HashRangeFilter format
+    query.filter = { "HashKey": rangeFilterValue.trim() };
   }
   
   return query;
@@ -398,24 +399,19 @@ export function formatRangeQuery(schema, fields, rangeFilterValue) {
  * @param {string} [rangeKey] - Range key value
  * @returns {Object} Formatted query object
  */
-export function formatHashRangeQuery(schema, fields, hashKey, _rangeKey) {
+export function formatHashRangeQuery(schema, fields, hashKey, rangeKey) {
   const query = {
     type: 'query',
     schema: schema.name,
     fields: fields
   };
   
-  // Add hash filter if hash key is provided
+  // Use proper HashRangeFilter format
   if (hashKey && hashKey.trim()) {
-    query.filter = {
-      hash_filter: {
-        Key: hashKey.trim()
-      }
-    };
+    query.filter = { "HashKey": hashKey.trim() };
+  } else if (rangeKey && rangeKey.trim()) {
+    query.filter = { "HashKey": rangeKey.trim() };
   }
-  
-  // Note: Range key filtering for HashRange schemas is not currently supported
-  // by the backend, so rangeKey parameter is ignored
   
   return query;
 }

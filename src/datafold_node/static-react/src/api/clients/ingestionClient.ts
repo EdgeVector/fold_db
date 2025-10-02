@@ -90,7 +90,7 @@ export class UnifiedIngestionClient {
    */
   async getStatus(): Promise<EnhancedApiResponse<IngestionStatus>> {
     return this.client.get<IngestionStatus>(
-      API_ENDPOINTS.INGESTION_STATUS,
+      API_ENDPOINTS.GET_STATUS,
       {
         requiresAuth: false, // Status endpoint is public
         timeout: API_TIMEOUTS.QUICK,
@@ -108,7 +108,7 @@ export class UnifiedIngestionClient {
    */
   async getConfig(): Promise<EnhancedApiResponse<IngestionConfig>> {
     return this.client.get<IngestionConfig>(
-      API_ENDPOINTS.INGESTION_CONFIG,
+      API_ENDPOINTS.GET_INGESTION_CONFIG,
       {
         timeout: API_TIMEOUTS.QUICK,
         retries: API_RETRIES.STANDARD,
@@ -126,7 +126,7 @@ export class UnifiedIngestionClient {
    */
   async saveConfig(config: IngestionConfig): Promise<EnhancedApiResponse<{ success: boolean; message: string }>> {
     return this.client.post<{ success: boolean; message: string }>(
-      API_ENDPOINTS.INGESTION_CONFIG,
+      API_ENDPOINTS.GET_INGESTION_CONFIG,
       config,
       {
         timeout: API_TIMEOUTS.CONFIG, // Longer timeout for config operations
@@ -145,7 +145,7 @@ export class UnifiedIngestionClient {
    */
   async validateData(data: ValidationRequest): Promise<EnhancedApiResponse<ValidationResponse>> {
     return this.client.post<ValidationResponse>(
-      API_ENDPOINTS.INGESTION_VALIDATE,
+      API_ENDPOINTS.VALIDATE_JSON,
       data,
       {
         requiresAuth: false, // Validation is a utility operation
@@ -186,7 +186,7 @@ export class UnifiedIngestionClient {
     }
 
     return this.client.post<ProcessIngestionResponse>(
-      API_ENDPOINTS.INGESTION_PROCESS,
+      API_ENDPOINTS.PROCESS_JSON,
       request,
       {
         timeout: API_TIMEOUTS.AI_PROCESSING, // Extended timeout for AI processing (60 seconds)

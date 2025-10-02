@@ -1,5 +1,6 @@
 use super::http_server::AppState;
-use crate::schema::types::Operation;
+use crate::schema::types::operations::Query;
+use crate::schema::types::operation::Operation;
 use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;
 use actix_web::{web, HttpResponse, Responder};
@@ -19,24 +20,11 @@ use std::sync::Arc;
         (status = 500, description = "Server error")
     )
 )]
-pub async fn execute_query(query: web::Json<Value>, state: web::Data<AppState>) -> impl Responder {
-    let op = match serde_json::from_value::<Operation>(query.into_inner()) {
-        Ok(Operation::Query { schema, fields, filter }) => (schema, fields, filter),
-        Ok(_) => {
-            return HttpResponse::BadRequest()
-                .json(json!({"error": "Expected a query operation"}))
-        }
-        Err(e) => {
-            return HttpResponse::BadRequest()
-                .json(json!({"error": format!("Failed to parse query: {}", e)}))
-        }
-    };
-
-    let (schema, fields, filter) = op;
+pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) -> impl Responder {
     let node_arc = Arc::clone(&state.node);
     let processor = OperationProcessor::new(node_arc);
 
-    match processor.execute_query_map(schema, fields, filter).await {
+    match processor.execute_query_map(query.clone()).await {
         Ok(result_map) => {
             // Return results as array of { key: KeyValue, fields: {...} }
             let records_map = records_from_field_map(&result_map);

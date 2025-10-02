@@ -9,7 +9,7 @@ import { render, screen } from '@testing-library/react';
 import QueryBuilder, { useQueryBuilder } from '../../../components/query/QueryBuilder';
 
 // Mock the useQueryBuilder hook for component tests
-vi.mock('../../../hooks/useQueryBuilder.js', () => ({
+vi.mock('../../../hooks/useQueryBuilder', () => ({
   useQueryBuilder: vi.fn()
 }));
 

@@ -8,20 +8,48 @@ import { useMemo, useCallback } from 'react';
 import { useAppSelector } from '../store/hooks';
 import { selectApprovedSchemas } from '../store/schemaSlice';
 import { isHashRangeSchema, isRangeSchema as detectRangeSchema } from '../utils/rangeSchemaHelpers.js';
+import { 
+  createFilterFromRangeInput, 
+  createHashKeyFilter, 
+  createRangePrefixFilter, 
+  createRangeRangeFilter,
+  type HashRangeFilter,
+  type RangeFilterInput
+} from '../utils/filterUtils';
+import type { Schema } from '../types/generated';
+
+interface QueryState {
+  queryFields?: string[];
+  fieldValues?: Record<string, any>;
+  rangeFilters?: Record<string, RangeFilterInput>;
+  rangeSchemaFilter?: RangeFilterInput;
+  hashKeyValue?: string;
+  rangeKeyValue?: string;
+  filters?: any[];
+  orderBy?: any;
+}
+
+interface UseQueryBuilderOptions {
+  schema?: string;
+  queryState?: QueryState;
+  schemas?: Record<string, Schema>;
+  selectedSchemaObj?: Schema;
+  isRangeSchema?: boolean;
+  rangeKey?: string;
+}
+
+interface QueryBuilderResult {
+  query: {
+    schema_name?: string;
+    fields?: string[];
+    filter?: HashRangeFilter;
+  };
+  isValid: boolean;
+  validationErrors: string[];
+}
 
 /**
  * Query builder hook that handles query construction and validation
- * 
- * @param {Object} options - Configuration options
- * @param {string} options.schema - Selected schema name
- * @param {Object} options.queryState - Current query state
- * @param {Array} options.queryState.queryFields - Array of selected field names
- * @param {Object} options.queryState.fieldValues - Object with field values
- * @param {Object} options.queryState.rangeFilters - Range filter configurations
- * @param {Array} options.queryState.filters - Query filters
- * @param {Object} options.queryState.orderBy - Order by configuration
- * @param {Object} options.schemas - Available schemas
- * @returns {Object} Query builder state and methods
  */
 export function useQueryBuilder({
   schema,
@@ -30,7 +58,7 @@ export function useQueryBuilder({
   selectedSchemaObj: providedSelectedSchema,
   isRangeSchema: providedIsRangeSchema,
   rangeKey: providedRangeKey
-}) {
+}: UseQueryBuilderOptions): QueryBuilderResult {
   const approvedSchemas = useAppSelector(selectApprovedSchemas);
 
   // Get the selected schema object
@@ -114,37 +142,27 @@ export function useQueryBuilder({
       orderBy
     } = queryState;
     
-    // Build query with selected fields and their values
-    const builtQuery = {
-      type: "query", // Required field for server parsing
-      schema,
-      fields: queryFields, // Array of selected field names as expected by server
-      queryFields // Also include queryFields for compatibility
+    // Build query object that matches backend Query struct exactly
+    const builtQuery: {
+      schema_name: string;
+      fields: string[];
+      filter?: any;
+    } = {
+      schema_name: schema, // Backend expects schema_name, not schema
+      fields: queryFields, // Array of selected field names
     };
-
-    // Add field values if there are any (for range keys or other purposes)
-    if (fieldValues && Object.keys(fieldValues).length > 0) {
-      builtQuery.fieldValues = fieldValues;
-    }
 
     // Handle HashRange schema queries
     if (isHashRangeSchema(selectedSchemaObj)) {
       const hashKey = queryState.hashKeyValue;
       const rangeKey = queryState.rangeSchemaFilter?.key;
       
-      if (hashKey || rangeKey) {
-        builtQuery.filter = {};
-        
-        if (hashKey && hashKey.trim()) {
-          builtQuery.filter.hash_filter = {
-            Key: hashKey.trim()
-          };
-        }
-        
-        if (rangeKey && rangeKey.trim()) {
-          // For HashRange schemas, range key filtering would go here if needed
-          // Currently the backend only supports hash key filtering
-        }
+      if (hashKey && hashKey.trim()) {
+        // For HashRange schemas, use HashKey filter for hash key filtering
+        builtQuery.filter = createHashKeyFilter(hashKey.trim());
+      } else if (rangeKey && rangeKey.trim()) {
+        // For HashRange schemas, use HashKey filter for range key filtering
+        builtQuery.filter = createHashKeyFilter(rangeKey.trim());
       }
     }
 
@@ -159,12 +177,15 @@ export function useQueryBuilder({
       const activeRangeFilter = rangeSchemaFilter && Object.keys(rangeSchemaFilter).length > 0
         ? rangeSchemaFilter
         : Object.values(rangeFilters).find(filter => filter && typeof filter === 'object' && (filter.key || filter.keyPrefix || (filter.start && filter.end))) || {};
-
-      if (activeRangeFilter.key) {
-        builtQuery.rangeKey = activeRangeFilter.key;
-      } else if (activeRangeFilter.keyPrefix) {
-        builtQuery.rangeKey = activeRangeFilter.keyPrefix;
+      
+      // Handle direct rangeKey from queryState (fallback for when rangeKey is set directly)
+      const directRangeKey = queryState?.rangeKeyValue;
+      if (!activeRangeFilter.key && !activeRangeFilter.keyPrefix && !(activeRangeFilter.start && activeRangeFilter.end) && directRangeKey) {
+        activeRangeFilter.key = directRangeKey;
       }
+
+      // Note: We don't set builtQuery.rangeKey because the backend doesn't recognize this field
+      // The backend only processes the 'filter' field, which is set below
 
       if (possibleRangeKey) {
         let filterType = null;
@@ -182,13 +203,18 @@ export function useQueryBuilder({
         }
 
         if (filterType && filterValue) {
-          builtQuery.filter = {
-            range_filter: {
-              [possibleRangeKey]: {
-                [filterType]: filterValue
-              }
-            }
+          // Use type-safe filter creation utilities
+          const rangeInput: RangeFilterInput = {
+            key: activeRangeFilter.key,
+            keyPrefix: activeRangeFilter.keyPrefix,
+            start: activeRangeFilter.start,
+            end: activeRangeFilter.end
           };
+          
+          const filter = createFilterFromRangeInput(rangeInput);
+          if (filter) {
+            builtQuery.filter = filter;
+          }
         }
       }
     }
@@ -222,9 +248,7 @@ export function useQueryBuilder({
   return {
     query,
     validationErrors,
-    isValid,
-    buildQuery,
-    validateQuery
+    isValid
   };
 }
 

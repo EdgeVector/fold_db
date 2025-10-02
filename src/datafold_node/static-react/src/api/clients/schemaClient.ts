@@ -92,7 +92,7 @@ export class UnifiedSchemaClient {
    * UNPROTECTED - No authentication required
    */
   async getSchemas(): Promise<EnhancedApiResponse<Schema[]>> {
-    const response = await this.client.get<unknown>(API_ENDPOINTS.SCHEMAS_BASE, {
+    const response = await this.client.get<unknown>(API_ENDPOINTS.LIST_SCHEMAS, {
       cacheable: true,
       cacheKey: 'schemas:all',
       cacheTtl: 300000 // 5 minutes
@@ -132,7 +132,7 @@ export class UnifiedSchemaClient {
    * UNPROTECTED - No authentication required
    */
   async getSchema(name: string): Promise<EnhancedApiResponse<Schema>> {
-    return this.client.get<Schema>(API_ENDPOINTS.SCHEMA_BY_NAME(name), {
+    return this.client.get<Schema>(API_ENDPOINTS.GET_SCHEMA(name), {
       validateSchema: {
         schemaName: name,
         operation: 'read' as const,
@@ -258,7 +258,7 @@ export class UnifiedSchemaClient {
    */
   async approveSchema(name: string): Promise<EnhancedApiResponse<void>> {
     return this.client.post<void>(
-      API_ENDPOINTS.SCHEMA_APPROVE(name),
+      API_ENDPOINTS.APPROVE_SCHEMA(name),
       {}, // Empty body, schema name is in URL
       {
         validateSchema: {
@@ -279,7 +279,7 @@ export class UnifiedSchemaClient {
    */
   async blockSchema(name: string): Promise<EnhancedApiResponse<void>> {
     return this.client.post<void>(
-      API_ENDPOINTS.SCHEMA_BLOCK(name),
+      API_ENDPOINTS.BLOCK_SCHEMA(name),
       {}, // Empty body, schema name is in URL
       {
         validateSchema: {

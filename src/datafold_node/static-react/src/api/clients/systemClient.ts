@@ -78,7 +78,7 @@ export class UnifiedSystemClient {
    * @returns Promise resolving to logs array
    */
   async getLogs(): Promise<EnhancedApiResponse<LogsResponse>> {
-    return this.client.get<LogsResponse>(API_ENDPOINTS.SYSTEM_LOGS, {
+    return this.client.get<LogsResponse>(API_ENDPOINTS.LIST_LOGS, {
       requiresAuth: false, // Logs are public for monitoring
       timeout: API_TIMEOUTS.STANDARD,
       retries: API_RETRIES.STANDARD,
@@ -102,7 +102,7 @@ export class UnifiedSystemClient {
     const request: ResetDatabaseRequest = { confirm };
 
     return this.client.post<ResetDatabaseResponse>(
-      API_ENDPOINTS.SYSTEM_RESET_DATABASE,
+      API_ENDPOINTS.RESET_DATABASE,
       request,
       {
         timeout: API_TIMEOUTS.DESTRUCTIVE_OPERATIONS, // Longer timeout for database operations
@@ -120,7 +120,7 @@ export class UnifiedSystemClient {
    * @returns Promise resolving to system status
    */
   async getSystemStatus(): Promise<EnhancedApiResponse<SystemStatusResponse>> {
-    return this.client.get<SystemStatusResponse>(API_ENDPOINTS.SYSTEM_STATUS, {
+    return this.client.get<SystemStatusResponse>(API_ENDPOINTS.GET_SYSTEM_STATUS, {
       requiresAuth: false, // Status is public for monitoring
       timeout: API_TIMEOUTS.QUICK,
       retries: API_RETRIES.CRITICAL, // Multiple retries for critical system data
@@ -137,7 +137,7 @@ export class UnifiedSystemClient {
    * @returns Promise resolving to private key response
    */
   async getNodePrivateKey(): Promise<EnhancedApiResponse<NodeKeyResponse>> {
-    return this.client.get<NodeKeyResponse>(API_ENDPOINTS.SYSTEM_PRIVATE_KEY, {
+    return this.client.get<NodeKeyResponse>(API_ENDPOINTS.GET_NODE_PRIVATE_KEY, {
       requiresAuth: false, // No authentication required for UI access
       timeout: API_TIMEOUTS.STANDARD,
       retries: API_RETRIES.STANDARD,
@@ -152,7 +152,7 @@ export class UnifiedSystemClient {
    * @returns Promise resolving to public key response
    */
   async getNodePublicKey(): Promise<EnhancedApiResponse<NodeKeyResponse>> {
-    return this.client.get<NodeKeyResponse>(API_ENDPOINTS.SYSTEM_PUBLIC_KEY, {
+    return this.client.get<NodeKeyResponse>(API_ENDPOINTS.GET_NODE_PUBLIC_KEY, {
       requiresAuth: false, // Public key is safe to share
       timeout: API_TIMEOUTS.QUICK,
       retries: API_RETRIES.STANDARD,
@@ -176,7 +176,7 @@ export class UnifiedSystemClient {
     onError?: (error: Event) => void
   ): EventSource {
     // Build URL manually using same logic as ApiClient.buildUrl()
-    const endpoint = API_ENDPOINTS.SYSTEM_LOGS_STREAM;
+    const endpoint = API_ENDPOINTS.STREAM_LOGS;
     const streamUrl = endpoint.startsWith('http')
       ? endpoint
       : `${API_CONFIG.BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;

@@ -141,7 +141,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
    */
   async getSecurityStatus(): Promise<EnhancedApiResponse<SecurityStatus>> {
     return this.client.get<SecurityStatus>(
-      API_ENDPOINTS.SYSTEM_STATUS,
+      API_ENDPOINTS.GET_SYSTEM_STATUS,
       {
         timeout: API_TIMEOUTS.QUICK,
         retries: API_RETRIES.STANDARD,

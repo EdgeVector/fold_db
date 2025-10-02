@@ -29,11 +29,7 @@ async fn test_node_loads_available_schemas_on_startup() {
             let entry = entry.ok()?;
             let file_name = entry.file_name();
             let file_name_str = file_name.to_str()?;
-            if file_name_str.ends_with(".json") {
-                Some(file_name_str[..file_name_str.len() - 5].to_string()) // Remove .json extension
-            } else {
-                None
-            }
+            file_name_str.strip_suffix(".json").map(|stripped| stripped.to_string())
         })
         .collect();
     
@@ -80,7 +76,7 @@ async fn test_node_loads_available_schemas_on_startup() {
     
     // Verify that each loaded schema has the correct structure
     for expected_schema_name in &expected_schema_names {
-        let schema = schemas.get(expected_schema_name).expect(&format!("{} should exist", expected_schema_name));
+        let schema = schemas.get(expected_schema_name).unwrap_or_else(|| panic!("{} should exist", expected_schema_name));
         assert_eq!(schema.name, *expected_schema_name, "Schema name should match expected name");
         
         // Verify that the schema has a valid schema type
@@ -115,7 +111,7 @@ async fn test_node_loads_available_schemas_on_startup() {
     
     // Verify that we can find each schema by name
     for expected_schema_name in &expected_schema_names {
-        let found_schema = schema_manager.get_schema(expected_schema_name).expect(&format!("Failed to get {}", expected_schema_name));
+        let found_schema = schema_manager.get_schema(expected_schema_name).unwrap_or_else(|_| panic!("Failed to get {}", expected_schema_name));
         assert!(found_schema.is_some(), "Should be able to retrieve {} by name", expected_schema_name);
         println!("✅ Schema '{}' can be retrieved by name: {:?}", expected_schema_name, found_schema.unwrap().schema_type);
     }
@@ -140,11 +136,7 @@ async fn test_node_new_loads_available_schemas() {
             let entry = entry.ok()?;
             let file_name = entry.file_name();
             let file_name_str = file_name.to_str()?;
-            if file_name_str.ends_with(".json") {
-                Some(file_name_str[..file_name_str.len() - 5].to_string()) // Remove .json extension
-            } else {
-                None
-            }
+            file_name_str.strip_suffix(".json").map(|stripped| stripped.to_string())
         })
         .collect();
     

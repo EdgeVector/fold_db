@@ -27,9 +27,9 @@ export const SCHEMA_STATES = {
 import { API_ENDPOINTS } from '../api/endpoints';
 export const SCHEMA_API_ENDPOINTS = {
   // No dedicated "available" route on the server; use list-all
-  AVAILABLE: API_ENDPOINTS.SCHEMAS_BASE,
-  PERSISTED: API_ENDPOINTS.SCHEMAS_BASE,
-  SCHEMA_DETAIL: API_ENDPOINTS.SCHEMAS_BASE
+  AVAILABLE: API_ENDPOINTS.LIST_SCHEMAS,
+  PERSISTED: API_ENDPOINTS.LIST_SCHEMAS,
+  SCHEMA_DETAIL: API_ENDPOINTS.LIST_SCHEMAS
 };
 
 // Validation error messages

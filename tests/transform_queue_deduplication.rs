@@ -197,14 +197,14 @@ fn test_transform_queue_deduplication_concurrent_simulation() {
     let mut results = Vec::new();
     for i in 0..10 {
         let result = queue_manager.add_item(transform_id, mutation_id)
-            .expect(&format!("Failed to add item in iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to add item in iteration {}", i));
         results.push(result);
     }
     
     // Only the first addition should return true, all others should be deduplicated
-    assert_eq!(results[0], true, "First addition should succeed");
+    assert!(results[0], "First addition should succeed");
     for (i, result) in results.iter().enumerate().skip(1) {
-        assert_eq!(*result, false, "Addition {} should be deduplicated", i + 1);
+        assert!(!(*result), "Addition {} should be deduplicated", i + 1);
     }
     
     // Verify only one item is in the queue

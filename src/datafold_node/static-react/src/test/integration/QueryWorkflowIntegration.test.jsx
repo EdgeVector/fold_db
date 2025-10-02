@@ -19,7 +19,7 @@ vi.mock('../../hooks/useQueryState.js', () => ({
   useQueryState: vi.fn()
 }));
 
-vi.mock('../../hooks/useQueryBuilder.js', () => ({
+vi.mock('../../hooks/useQueryBuilder', () => ({
   useQueryBuilder: vi.fn()
 }));
 
@@ -71,7 +71,7 @@ describe('QueryTab Workflow Integration Tests', () => {
   beforeEach(async () => {
     // Import the mocked hooks
     const { useQueryState } = await import('../../hooks/useQueryState.js');
-    const { useQueryBuilder } = await import('../../hooks/useQueryBuilder.js');
+    const { useQueryBuilder } = await import('../../hooks/useQueryBuilder');
     mockUseQueryState = useQueryState;
     mockUseQueryBuilder = useQueryBuilder;
 

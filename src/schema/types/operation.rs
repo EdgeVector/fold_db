@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 /// Represents an operation that can be performed on the database
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum Operation {
     #[serde(rename = "query")]
     Query {

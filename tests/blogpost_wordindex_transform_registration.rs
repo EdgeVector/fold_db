@@ -99,7 +99,7 @@ fn test_blogpost_wordindex_transform_registration() {
     ];
     
     for field in &expected_trigger_fields {
-        let transforms_for_field = transform_manager.get_transforms_for_field("BlogPost", &field.split('.').nth(1).unwrap())
+        let transforms_for_field = transform_manager.get_transforms_for_field("BlogPost", field.split('.').nth(1).unwrap())
             .expect("Failed to get transforms for field");
         
         println!("🔗 Transforms for field '{}': {:?}", field, transforms_for_field);

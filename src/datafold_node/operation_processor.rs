@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::schema::types::operations::MutationType;
-use crate::schema::types::field::HashRangeFilter;
 use super::DataFoldNode;
 
 /// Centralized operation processor that handles all operation types consistently.
@@ -28,18 +27,8 @@ impl OperationProcessor {
     /// Executes a query and returns raw structured results, not JSON.
     pub async fn execute_query_map(
         &self,
-        schema: String,
-        fields: Vec<String>,
-        filter: Option<HashRangeFilter>,
+        query: Query,
     ) -> FoldDbResult<std::collections::HashMap<String, std::collections::HashMap<KeyValue, FieldValue>>> {
-        let query = Query {
-            schema_name: schema,
-            fields,
-            pub_key: String::new(),
-            trust_distance: 0,
-            filter,
-        };
-
         let node_guard = self.node.lock().await;
         let results = DataFoldNode::query(&node_guard, query)?;
         Ok(results)

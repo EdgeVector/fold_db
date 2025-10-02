@@ -61,7 +61,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    */
   async executeMutation(_mutation: any): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<MutationResponse>(
-      API_ENDPOINTS.MUTATION,
+      API_ENDPOINTS.EXECUTE_MUTATION,
       _mutation,
       {
         validateSchema: false, // Skip schema validation for mutations
@@ -81,7 +81,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    */
   async executeQuery(query: any): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<QueryResponse>(
-      API_ENDPOINTS.QUERY,
+      API_ENDPOINTS.EXECUTE_QUERY,
       query,
       {
         validateSchema: {
@@ -135,7 +135,7 @@ export class UnifiedMutationClient implements MutationApiClient {
     fields?: string[];
   }): Promise<EnhancedApiResponse<QueryResponse>> {
     // Repoint to /query (server supports only POST /query)
-    return this.client.post<QueryResponse>(API_ENDPOINTS.QUERY, queryParams, {
+    return this.client.post<QueryResponse>(API_ENDPOINTS.EXECUTE_QUERY, queryParams, {
       validateSchema: {
         schemaName: queryParams.schema,
         operation: 'read' as const,
@@ -176,7 +176,7 @@ export class UnifiedMutationClient implements MutationApiClient {
   }> {
     try {
       // Use the schema client to get schema details
-      const response = await this.client.get<any>(API_ENDPOINTS.SCHEMA_BY_NAME(schemaName), {
+      const response = await this.client.get<any>(API_ENDPOINTS.GET_SCHEMA(schemaName), {
         timeout: 5000,
         retries: 1,
         cacheable: true,
