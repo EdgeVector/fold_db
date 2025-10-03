@@ -12,20 +12,17 @@ use log::info;
 // Internal crate imports
 use crate::db_operations::DbOperations;
 use crate::logging::features::{log_feature, LogFeature};
-use crate::schema::types::Mutation;
-use crate::schema::types::field::common::Field;
 use crate::schema::{SchemaCore, SchemaError};
-use crate::atom::Atom;
 use crate::transform::manager::TransformManager;
 
 // Infrastructure components that are used internally
 use super::infrastructure::init::{init_transform_manager};
 use super::infrastructure::message_bus::request_events::SystemInitializationRequest;
-use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 use super::infrastructure::{EventMonitor, MessageBus};
 use super::orchestration::TransformOrchestrator;
 use super::query::QueryExecutor;
 use super::mutation_completion_handler::MutationCompletionHandler;
+use super::mutation_manager::MutationManager;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
@@ -43,6 +40,8 @@ pub struct FoldDB {
     pub(crate) completion_handler: Arc<MutationCompletionHandler>,
     /// Transform orchestrator for managing transform execution
     pub(crate) transform_orchestrator: Arc<TransformOrchestrator>,
+    /// Mutation manager for handling all mutation operations
+    pub(crate) mutation_manager: MutationManager,
 }
 
 impl FoldDB {
@@ -164,6 +163,24 @@ impl FoldDB {
         ));
         info!("Created TransformOrchestrator for transform execution");
 
+
+        // Create MutationManager for handling all mutation operations
+        let mutation_manager = MutationManager::new(
+            Arc::new(db_ops.clone()),
+            Arc::clone(&schema_manager),
+            Arc::clone(&message_bus),
+        );
+        info!("Created MutationManager for mutation operations");
+
+        // Start the MutationManager event listener
+        if let Err(e) = mutation_manager.start_event_listener() {
+            return Err(sled::Error::Unsupported(format!(
+                "Failed to start MutationManager event listener: {}",
+                e
+            )));
+        }
+        info!("Started MutationManager event listener");
+
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
@@ -179,6 +196,7 @@ impl FoldDB {
             event_monitor,
             completion_handler,
             transform_orchestrator,
+            mutation_manager,
         })
     }
 
@@ -257,102 +275,13 @@ impl FoldDB {
         Arc::clone(&self.completion_handler)
     }
 
-    /// Write schema operation - main orchestration method for mutations
-    pub fn write_mutation(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
-        let start_time = std::time::Instant::now();
-        
-        // Get the schema definition
-        let mut schema = self.schema_manager.get_schema(&mutation.schema_name)?
-            .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name)))?;
-        
-        let key_config = schema.key.clone();
-        let mut key_value = mutation.key_value;
-        if let Some(hash_field) = &key_config.as_ref().unwrap().hash_field {
-            if let Some(value) = mutation.fields_and_values.get(hash_field) {
-                if let Some(s) = value.as_str() {
-                    key_value.hash = Some(s.to_string());
-                }
-            }
-        }
-        if let Some(range_field) = &key_config.as_ref().unwrap().range_field {
-            if let Some(value) = mutation.fields_and_values.get(range_field) {
-                if let Some(s) = value.as_str() {
-                    key_value.range = Some(s.to_string());
-                }
-            }
-        }
-        let mutation_id = mutation.uuid.clone();
-        
-        // Process each field in the mutation
-        let fields_affected: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
-        for (field_name, value) in mutation.fields_and_values {
-            if let Some(schema_field) = schema.fields.get_mut(&field_name) {
-                schema_field.refresh_from_db(&self.db_ops);
-                let new_atom = Atom::new(mutation.schema_name.clone(), mutation.pub_key.clone(), value.clone());
-                
-                // Persist the atom to the database
-                self.db_ops.store_item(&format!("atom:{}", new_atom.uuid()), &new_atom)?;
-                
-                // Write to field (updates in-memory molecule)
-                schema_field.write_mutation(&key_value, new_atom, mutation.pub_key.clone());
-                
-                // Persist the updated molecule to the database (done after write_mutation)
-                // Extract molecule_uuid first to avoid borrow conflict
-                let molecule_uuid = schema_field.common().molecule_uuid().map(|s| s.to_string());
-                
-                if let Some(mol_uuid) = molecule_uuid {
-                    // Get the molecule from the field and persist it
-                    use crate::schema::types::field::FieldVariant;
-                    match schema_field {
-                        FieldVariant::Single(f) => {
-                            if let Some(mol) = &f.molecule {
-                                self.db_ops.store_item(&format!("ref:{}", mol_uuid), mol)?;
-                            }
-                        }
-                        FieldVariant::Range(f) => {
-                            if let Some(mol) = &f.molecule {
-                                self.db_ops.store_item(&format!("ref:{}", mol_uuid), mol)?;
-                            }
-                        }
-                        FieldVariant::HashRange(f) => {
-                            if let Some(mol) = &f.molecule {
-                                self.db_ops.store_item(&format!("ref:{}", mol_uuid), mol)?;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    /// Get the mutation manager for handling mutation operations
+    pub fn mutation_manager(&self) -> &MutationManager {
+        &self.mutation_manager
+    }
 
-        // Persist the updated schema back to the database and schema_manager
-        self.db_ops.store_schema(&schema.name, &schema)?;
-        self.schema_manager.load_schema_internal(schema)?;
-
-        // Calculate execution time
-        let execution_time_ms = start_time.elapsed().as_millis() as u64;
-        
-        // Create mutation context for transform execution
-        let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
-            key_value: Some(key_value.clone()),
-            mutation_hash: Some(mutation_id.clone()),
-            incremental: true,
-        });
-        
-        // Publish MutationExecuted event to trigger transforms
-        let event = MutationExecuted::with_context(
-            "write_mutation",
-            mutation.schema_name.clone(),
-            execution_time_ms,
-            fields_affected,
-            mutation_context,
-        );
-        
-        if let Err(e) = self.message_bus.publish(event) {
-            log::warn!("Failed to publish MutationExecuted event: {}", e);
-            // Don't fail the mutation if event publishing fails
-        }
-        
-        // Return the mutation ID
-        Ok(mutation_id)
+    /// Check if the MutationManager event listener is running
+    pub fn is_mutation_listener_running(&self) -> bool {
+        self.mutation_manager.is_listening()
     }
 }

@@ -1,6 +1,12 @@
 use super::core::DbOperations;
 use crate::atom::{Atom, AtomStatus, Molecule, MoleculeRange};
-use crate::schema::SchemaError;
+use crate::schema::{
+    SchemaError, 
+    types::{
+        field::{FieldVariant, Field}, 
+        key_value::KeyValue
+    }
+};
 use serde_json::Value;
 
 impl DbOperations {
@@ -65,5 +71,73 @@ impl DbOperations {
         molecule_range.set_atom_uuid(key, atom_uuid);
         self.store_item(&format!("ref:{}", molecule_uuid), &molecule_range)?;
         Ok(molecule_range)
+    }
+
+    /// Creates and stores an atom for a mutation field
+    pub fn create_and_store_atom_for_mutation(
+        &self,
+        schema_name: &str,
+        pub_key: &str,
+        value: Value,
+    ) -> Result<Atom, SchemaError> {
+        let new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+        
+        // Persist the atom to the database
+        self.store_item(&format!("atom:{}", new_atom.uuid()), &new_atom)?;
+        
+        Ok(new_atom)
+    }
+
+    /// Persists a molecule from a field to the database
+    pub fn persist_field_molecule(
+        &self,
+        field: &FieldVariant,
+        molecule_uuid: &str,
+    ) -> Result<(), SchemaError> {
+        use crate::schema::types::field::FieldVariant;
+        match field {
+            FieldVariant::Single(f) => {
+                if let Some(mol) = &f.molecule {
+                    self.store_item(&format!("ref:{}", molecule_uuid), mol)?;
+                }
+            }
+            FieldVariant::Range(f) => {
+                if let Some(mol) = &f.molecule {
+                    self.store_item(&format!("ref:{}", molecule_uuid), mol)?;
+                }
+            }
+            FieldVariant::HashRange(f) => {
+                if let Some(mol) = &f.molecule {
+                    self.store_item(&format!("ref:{}", molecule_uuid), mol)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Processes a mutation field - creates atom, applies mutation, and persists molecule
+    pub fn process_mutation_field(
+        &self,
+        schema_name: &str,
+        pub_key: &str,
+        value: Value,
+        key_value: &KeyValue,
+        schema_field: &mut FieldVariant,
+    ) -> Result<(), SchemaError> {
+        // Refresh field from database
+        schema_field.refresh_from_db(self);
+        
+        // Create and store the atom
+        let new_atom = self.create_and_store_atom_for_mutation(schema_name, pub_key, value)?;
+        
+        // Write mutation to field (updates in-memory molecule)
+        schema_field.write_mutation(key_value, new_atom, pub_key.to_string());
+        
+        // Persist the updated molecule to the database
+        if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
+            self.persist_field_molecule(schema_field, molecule_uuid)?;
+        }
+        
+        Ok(())
     }
 }

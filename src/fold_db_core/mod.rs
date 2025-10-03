@@ -19,6 +19,7 @@ pub mod fold_db;
 
 // Core components
 pub mod mutation_completion_handler;
+pub mod mutation_manager;
 
 // Re-export key components for backwards compatibility
 pub use infrastructure::{EventMonitor, MessageBus};
@@ -31,6 +32,7 @@ pub use mutation_completion_handler::{
     MutationCompletionDiagnostics, MutationCompletionError, MutationCompletionHandler,
     MutationCompletionResult, DEFAULT_COMPLETION_TIMEOUT,
 };
+pub use mutation_manager::MutationManager;
 
 // Re-export the main FoldDB struct
 pub use fold_db::FoldDB;

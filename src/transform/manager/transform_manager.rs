@@ -20,11 +20,6 @@ use std::sync::{Arc, RwLock};
 /// - ResultStorage: Stores results as mutations through the message bus system
 /// - TransformUtils: Provides shared utilities for field value resolution and default handling
 ///
-/// ORCHESTRATION IS HANDLED BY TransformOrchestrator:
-/// - TransformOrchestrator listens for FieldValueSet events directly TODO: change listening even to MutationCompleted
-/// - TransformOrchestrator determines which transforms to execute
-/// - TransformOrchestrator calls TransformManager for actual execution
-///
 /// This separation provides clean responsibilities:
 /// - TransformOrchestrator: Orchestration and event handling
 /// - TransformManager: Registration, execution, mapping, and result storage

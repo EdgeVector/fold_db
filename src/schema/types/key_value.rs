@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use ts_rs::TS;
+use super::key_config::KeyConfig;
 
 /// Represents resolved key values for hash and range components.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, TS)]
@@ -12,6 +15,33 @@ pub struct KeyValue {
 impl KeyValue {
     pub fn new(hash: Option<String>, range: Option<String>) -> Self {
         Self { hash, range }
+    }
+
+    /// Creates a KeyValue from a mutation by extracting hash and range values
+    /// based on the key configuration
+    pub fn from_mutation(
+        mutation_fields: &HashMap<String, Value>,
+        key_config: &KeyConfig,
+    ) -> Self {
+        let mut key_value = Self::new(None, None);
+
+        if let Some(hash_field) = &key_config.hash_field {
+            if let Some(value) = mutation_fields.get(hash_field) {
+                if let Some(s) = value.as_str() {
+                    key_value.hash = Some(s.to_string());
+                }
+            }
+        }
+
+        if let Some(range_field) = &key_config.range_field {
+            if let Some(value) = mutation_fields.get(range_field) {
+                if let Some(s) = value.as_str() {
+                    key_value.range = Some(s.to_string());
+                }
+            }
+        }
+
+        key_value
     }
 }
 

@@ -45,7 +45,7 @@ impl DataFoldNode {
     /// Executes a mutation on the database.
     pub fn mutate(&self, mutation: Mutation) -> FoldDbResult<String> {
         self.with_db_mut(
-            |db| db.write_mutation(mutation),
+            |db| db.mutation_manager.write_mutation(mutation),
             "Failed to acquire database lock for mutation",
             "Mutation operation failed"
         )

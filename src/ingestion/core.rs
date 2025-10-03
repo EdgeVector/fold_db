@@ -419,7 +419,7 @@ impl IngestionCore {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 
-        db.write_mutation(mutation.clone())
+        db.mutation_manager.write_mutation(mutation.clone())
             .map_err(IngestionError::SchemaSystemError)?;
 
         Ok(())
