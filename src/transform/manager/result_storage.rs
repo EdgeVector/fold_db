@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::schema::types::operations::MutationType;
 use crate::schema::types::key_value::KeyValue;
 use uuid::Uuid;
+use log::warn;
 
 /// Handles storing transform results
 pub struct ResultStorage;
@@ -24,8 +25,11 @@ impl ResultStorage {
 
         let mut fields_and_values = HashMap::new();
         for (code_hash, result) in code_hash_to_result {
-            let field_name = field_to_hash_code.get(&code_hash).unwrap().clone();
-            fields_and_values.insert(field_name.clone(), result);
+            if let Some(field_name) = field_to_hash_code.get(&code_hash) {
+                fields_and_values.insert(field_name.clone(), result);
+            } else {
+                warn!("Field mapping not found for code hash: {}", code_hash);
+            }
         }
 
         let mutation = Mutation::new(

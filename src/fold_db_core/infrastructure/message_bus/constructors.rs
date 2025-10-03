@@ -200,6 +200,24 @@ impl MutationExecuted {
             schema: schema.into(),
             execution_time_ms,
             fields_affected,
+            mutation_context: None,
+        }
+    }
+
+    /// Create a new MutationExecuted event with mutation context
+    pub fn with_context(
+        operation: impl Into<String>,
+        schema: impl Into<String>,
+        execution_time_ms: u64,
+        fields_affected: Vec<String>,
+        mutation_context: Option<atom_events::MutationContext>,
+    ) -> Self {
+        Self {
+            operation: operation.into(),
+            schema: schema.into(),
+            execution_time_ms,
+            fields_affected,
+            mutation_context,
         }
     }
 }

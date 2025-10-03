@@ -161,7 +161,7 @@ impl EventMonitor {
         Self::add_transforms_to_queue(
             &unique_transform_ids,
             message_bus,
-            &None,
+            &event.mutation_context,
         )?;
         Ok(())
     }

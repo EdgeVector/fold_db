@@ -112,23 +112,42 @@ impl SchemaCore {
     pub fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
         let name = schema.name.clone();
         
-        // Persist schema to database first
-        self.db_ops.store_schema(&name, &schema)?;
+        // Check if schema already exists in database OR in-memory
+        let schemas_guard = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
+        let already_loaded = schemas_guard.contains_key(&name);
+        drop(schemas_guard);
         
-        // Only set state to Available if no existing state exists (preserve approved/blocked states)
-        let existing_state = self.db_ops.get_schema_state(&name)?;
-        if existing_state.is_none() {
-            self.db_ops.store_schema_state(&name, SchemaState::Available)?;
+        if already_loaded {
+            // Schema already loaded - skip to avoid overwriting runtime state (molecule_uuids, etc.)
+            log::debug!("Schema '{}' already loaded, skipping load_schema_internal", name);
+            return Ok(());
         }
         
-        // Update in-memory caches
-        let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
-        schemas.insert(name.clone(), schema);
+        // Check if schema exists in database
+        let existing_schema = self.db_ops.get_schema(&name)?;
         
-        let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
-        // Use existing state if available, otherwise default to Available
-        let state = existing_state.unwrap_or(SchemaState::Available);
-        schema_states.insert(name.clone(), state);
+        if let Some(existing) = existing_schema {
+            // Schema exists in DB but not in memory - load from DB to preserve molecule_uuids
+            let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
+            schemas.insert(name.clone(), existing);
+            
+            // Preserve existing state
+            let existing_state = self.db_ops.get_schema_state(&name)?;
+            let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
+            let state = existing_state.unwrap_or(SchemaState::Available);
+            schema_states.insert(name.clone(), state);
+        } else {
+            // New schema - persist to database
+            self.db_ops.store_schema(&name, &schema)?;
+            self.db_ops.store_schema_state(&name, SchemaState::Available)?;
+            
+            // Update in-memory caches
+            let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
+            schemas.insert(name.clone(), schema);
+            
+            let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
+            schema_states.insert(name.clone(), SchemaState::Available);
+        }
         
         Ok(())
     }

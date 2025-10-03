@@ -331,12 +331,20 @@ impl FoldDB {
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
         
+        // Create mutation context for transform execution
+        let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+            key_value: Some(key_value.clone()),
+            mutation_hash: Some(mutation_id.clone()),
+            incremental: true,
+        });
+        
         // Publish MutationExecuted event to trigger transforms
-        let event = MutationExecuted::new(
+        let event = MutationExecuted::with_context(
             "write_mutation",
             mutation.schema_name.clone(),
             execution_time_ms,
             fields_affected,
+            mutation_context,
         );
         
         if let Err(e) = self.message_bus.publish(event) {

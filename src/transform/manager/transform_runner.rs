@@ -1,6 +1,7 @@
 use super::types::TransformRunner;
 use super::result_storage::ResultStorage;
 use crate::schema::types::SchemaError;
+use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
 use std::collections::{HashSet, HashMap};
 use super::input_fetcher::InputFetcher;
@@ -39,7 +40,15 @@ impl TransformRunner for super::TransformManager {
         let schema = transform.get_declarative_schema().unwrap();
 
         // Execute multi-chain coordination
-        let expressions: Vec<(String, String)> = schema.hash_to_code().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        // Use field names instead of hash codes for proper key derivation
+        let field_to_hash_code = schema.get_field_to_hash_code();
+        let hash_to_code = schema.hash_to_code();
+        let expressions: Vec<(String, String)> = field_to_hash_code
+            .iter()
+            .filter_map(|(field_name, hash_code)| {
+                hash_to_code.get(hash_code).map(|expression| (field_name.clone(), expression.clone()))
+            })
+            .collect();
         let parsed_chains = parse_expressions_batch(&expressions)?;
         // Convert Vec<(String, ParsedChain)> to HashMap<String, ParsedChain>
         let chains_map: HashMap<String, ParsedChain> = parsed_chains
@@ -63,18 +72,36 @@ impl TransformRunner for super::TransformManager {
             &all_expressions,
         )?;
 
-        // Store the result using message bus
-        let mut result_map = std::collections::HashMap::new();
-        result_map.insert("result".to_string(), result.clone());
-        ResultStorage::store_transform_result_generic(
-            &transform,
-            result_map,
-            mutation_context
-                .as_ref()
-                .and_then(|ctx| ctx.key_value.clone())
-                .expect("Mutation context key_value required for result storage"),
-            Some(&self.message_bus)
-        )?;
+        // Store each result row as a separate mutation
+        if let Some(result_array) = result.as_array() {
+            let field_to_hash_code = schema.get_field_to_hash_code();
+            
+            for row in result_array {
+                // Extract the key from each row
+                let row_key = row.get("key")
+                    .and_then(|k| serde_json::from_value::<KeyValue>(k.clone()).ok())
+                    .unwrap_or_else(|| KeyValue::new(None, None));
+                
+                // Extract fields from the row and convert field names to hash codes
+                if let Some(fields_obj) = row.get("fields").and_then(|f| f.as_object()) {
+                    let mut code_hash_to_result = std::collections::HashMap::new();
+                    for (field_name, field_value) in fields_obj {
+                        // Convert field name to hash code for storage
+                        if let Some(hash_code) = field_to_hash_code.get(field_name) {
+                            code_hash_to_result.insert(hash_code.clone(), field_value.clone());
+                        }
+                    }
+                    
+                    // Store this row as a mutation
+                    ResultStorage::store_transform_result_generic(
+                        &transform,
+                        code_hash_to_result,
+                        row_key,
+                        Some(&self.message_bus)
+                    )?;
+                }
+            }
+        }
 
         Ok(result)
     }

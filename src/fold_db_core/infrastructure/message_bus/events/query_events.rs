@@ -22,6 +22,8 @@ pub struct MutationExecuted {
     pub schema: String,
     pub execution_time_ms: u64,
     pub fields_affected: Vec<String>,
+    /// Context information about the mutation for transform execution
+    pub mutation_context: Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
 }
 
 impl EventType for MutationExecuted {
