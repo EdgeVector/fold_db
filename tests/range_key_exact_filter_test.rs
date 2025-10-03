@@ -43,6 +43,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
         fields_and_values.insert("tags".to_string(), json!(tags));
         fields_and_values.insert("content".to_string(), json!("This is test content for the post"));
         
+        
         processor.execute_mutation(
             "BlogPost".to_string(),
             fields_and_values,
@@ -51,6 +52,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
         ).await
         .expect("Failed to execute mutation");
     }
+    
     
     // Test 1: Query with exact range key filter for "2024-01-02"
     let target_date = "2024-01-02";
@@ -61,6 +63,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     );
     let result_with_filter = processor.execute_query_map(query).await
     .expect("Failed to execute query with filter");
+    
     
     // Verify that only the post with publish_date "2024-01-02" is returned
     assert_eq!(result_with_filter.len(), 4, "Should have 4 fields in result");

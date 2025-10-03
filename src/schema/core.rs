@@ -112,24 +112,16 @@ impl SchemaCore {
     pub fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
         let name = schema.name.clone();
         
-        // Check if schema already exists in database OR in-memory
-        let schemas_guard = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
-        let already_loaded = schemas_guard.contains_key(&name);
-        drop(schemas_guard);
-        
-        if already_loaded {
-            // Schema already loaded - skip to avoid overwriting runtime state (molecule_uuids, etc.)
-            log::debug!("Schema '{}' already loaded, skipping load_schema_internal", name);
-            return Ok(());
-        }
+        // Always update the schema in-memory to preserve molecule_uuids and other runtime state
+        // This is needed after mutations to ensure the updated schema state is loaded
         
         // Check if schema exists in database
         let existing_schema = self.db_ops.get_schema(&name)?;
         
-        if let Some(existing) = existing_schema {
-            // Schema exists in DB but not in memory - load from DB to preserve molecule_uuids
+        if let Some(_existing) = existing_schema {
+            // Schema exists in DB - always update in-memory to preserve molecule_uuids and runtime state
             let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
-            schemas.insert(name.clone(), existing);
+            schemas.insert(name.clone(), schema); // Use the updated schema, not the existing one
             
             // Preserve existing state
             let existing_state = self.db_ops.get_schema_state(&name)?;

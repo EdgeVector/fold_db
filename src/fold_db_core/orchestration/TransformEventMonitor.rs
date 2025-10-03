@@ -17,13 +17,13 @@ use std::thread;
 use std::time::Duration;
 
 /// Handles monitoring of MutationExecuted and TransformTriggered events for automatic transform execution
-pub struct EventMonitor {
+pub struct TransformEventMonitor {
     /// Single monitoring thread for all events
     _monitoring_thread: Option<thread::JoinHandle<()>>,
 }
 
-impl EventMonitor {
-    /// Create a new EventMonitor and start monitoring
+impl TransformEventMonitor {
+    /// Create a new TransformEventMonitor and start monitoring
     pub fn new(
         message_bus: Arc<MessageBus>,
         manager: Arc<TransformManager>,

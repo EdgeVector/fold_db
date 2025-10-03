@@ -14,7 +14,7 @@ use crate::transform::manager::TransformManager;
 use crate::schema::SchemaError;
 
 // Import the new specialized components
-use super::event_monitor::EventMonitor;
+use super::transform_event_monitor::TransformEventMonitor;
 use super::execution_coordinator::ExecutionCoordinator;
 use super::persistence_manager::PersistenceManager;
 use super::queue_manager::QueueManager;
@@ -35,13 +35,13 @@ pub trait TransformQueue {
 /// This refactored version delegates operations to focused components:
 /// - QueueManager: Thread-safe queue operations
 /// - PersistenceManager: State persistence
-/// - EventMonitor: Field value event monitoring
+/// - TransformEventMonitor: Field value event monitoring
 /// - ExecutionCoordinator: Transform execution and result publishing
 pub struct TransformOrchestrator {
     queue_manager: QueueManager,
     persistence_manager: PersistenceManager,
     execution_coordinator: ExecutionCoordinator,
-    _event_monitor: EventMonitor, // Kept alive for background monitoring
+    _event_monitor: TransformEventMonitor, // Kept alive for background monitoring
 }
 
 impl TransformOrchestrator {
@@ -81,7 +81,7 @@ impl TransformOrchestrator {
         );
 
         // Initialize event monitor (starts background monitoring)
-        let event_monitor = EventMonitor::new(
+        let event_monitor = TransformEventMonitor::new(
             Arc::clone(&message_bus),
             Arc::clone(&manager),
             PersistenceManager::new(tree.clone()),

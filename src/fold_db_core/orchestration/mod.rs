@@ -9,12 +9,12 @@
 pub mod transform_orchestrator;
 
 // New decomposed orchestration components
-pub mod event_monitor;
+pub mod transform_event_monitor;
 pub mod execution_coordinator;
 pub mod persistence_manager;
 pub mod queue_manager;
 
-pub use event_monitor::EventMonitor;
+pub use transform_event_monitor::TransformEventMonitor;
 pub use execution_coordinator::{ExecutionCoordinator, ExecutionStats};
 pub use persistence_manager::PersistenceManager;
 pub use queue_manager::{QueueItem, QueueManager, QueueState};
