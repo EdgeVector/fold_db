@@ -427,48 +427,6 @@ fn resolve_field_value(
     }
 }
 
-/// Extracts the final segment from an expression for use as a field name.
-///
-/// # Arguments
-///
-/// * `expression` - The expression to parse
-///
-/// # Returns
-///
-/// The final segment if valid, None otherwise
-#[cfg(test)]
-fn extract_expression_final_segment(expression: &str) -> Option<String> {
-    expression.split('.').rev().find_map(|segment| {
-        let trimmed = segment.trim();
-        if trimmed.is_empty() || 
-           trimmed.eq_ignore_ascii_case("input") || 
-           trimmed.ends_with("()") {
-            None
-        } else {
-            Some(trimmed.trim_matches(|c| "\"'".contains(c)).to_string())
-        }
-    })
-}
-
-/// Sanitizes a field name by removing leading underscores.
-///
-/// # Arguments
-///
-/// * `field_name` - The field name to sanitize
-///
-/// # Returns
-///
-/// The sanitized field name
-#[cfg(test)]
-fn sanitize_field_name(field_name: &str) -> String {
-    let sanitized = field_name.trim_start_matches('_');
-    if sanitized.is_empty() {
-        field_name.to_string()
-    } else {
-        sanitized.to_string()
-    }
-}
-
 /// Converts a JSON value to a string representation.
 ///
 /// # Arguments
@@ -702,23 +660,6 @@ mod tests {
         let row = arr[0].as_object().unwrap();
         assert!(row.contains_key("key"));
         assert_eq!(row["fields"]["field1"], json!(["value1", "value2"]));
-    }
-
-    #[test]
-    fn test_field_name_sanitization() {
-        assert_eq!(sanitize_field_name("normal_field"), "normal_field");
-        assert_eq!(sanitize_field_name("_internal_field"), "internal_field");
-        assert_eq!(sanitize_field_name("__double_underscore"), "double_underscore");
-        assert_eq!(sanitize_field_name("_"), "_");
-    }
-
-    #[test]
-    fn test_expression_final_segment_extraction() {
-        assert_eq!(extract_expression_final_segment("input.field1"), Some("field1".to_string()));
-        assert_eq!(extract_expression_final_segment("input.user.name"), Some("name".to_string()));
-        assert_eq!(extract_expression_final_segment("input"), None);
-        assert_eq!(extract_expression_final_segment("input."), None);
-        assert_eq!(extract_expression_final_segment("input.func()"), None);
     }
 
     #[test]
