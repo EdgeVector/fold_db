@@ -476,8 +476,7 @@ def test_query_data(results, publish_date):
     print("=" * 80)
     
     query_data = {
-        "type": "query",
-        "schema": "BlogPost",
+        "schema_name": "BlogPost",
         "fields": ["title", "author", "publish_date", "tags", "content"]
     }
     
