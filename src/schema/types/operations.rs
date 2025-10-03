@@ -62,4 +62,21 @@ impl<'de> Deserialize<'de> for MutationType {
 // Re-export Mutation from the dedicated mutation module
 pub use super::mutation::Mutation;
 
+use crate::schema::types::key_value::KeyValue;
+use serde_json::Value;
+use std::collections::HashMap;
+
+/// Represents an operation that can be performed on the database
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum Operation {
+    #[serde(rename = "mutation")]
+    Mutation {
+        schema: String,
+        fields_and_values: HashMap<String, Value>,
+        key_value: KeyValue,
+        mutation_type: MutationType,
+    },
+}
+
 

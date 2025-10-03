@@ -354,7 +354,6 @@ impl SimpleIngestionService {
                             .await
                             .map_err(|e| IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(e.to_string())))
                     }
-                    _ => Err(IngestionError::invalid_input("Expected a mutation operation")),
                 }
             });
 

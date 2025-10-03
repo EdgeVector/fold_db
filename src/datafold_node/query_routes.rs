@@ -1,6 +1,6 @@
 use super::http_server::AppState;
 use crate::schema::types::operations::Query;
-use crate::schema::types::operation::Operation;
+use crate::schema::types::operations::Operation;
 use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;
 use actix_web::{web, HttpResponse, Responder};
@@ -58,10 +58,6 @@ pub async fn execute_mutation(
 
     let (schema, fields_and_values, key_value, mutation_type) = match serde_json::from_value::<Operation>(mutation_data.into_inner()) {
         Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type }) => (schema, fields_and_values, key_value, mutation_type),
-        Ok(_) => {
-            return HttpResponse::BadRequest()
-                .json(json!({"error": "Expected a mutation operation"}))
-        }
         Err(e) => {
             return HttpResponse::BadRequest()
                 .json(json!({"error": format!("Failed to parse mutation: {}", e)}))
