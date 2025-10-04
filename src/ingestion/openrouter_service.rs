@@ -21,12 +21,36 @@ Where:
 - existing_schemas is an array of schema names that match the input data
 - new_schemas is a single schema definition if no existing schemas match
 - mutation_mappers maps JSON paths (like \"path.field[0]") to schema paths (like \"schema.field[\\\"key\\\"]\")
+
+IMPORTANT - Schema Types:
+- For storing MULTIPLE entities/records, use \"key\": {\"range_field\": \"field_name\"}
+- For storing ONE global value per field, omit the \"key\" field
+- If the user is providing an ARRAY of objects, you MUST use a Range schema with a \"key\"
+- The range_field should be a unique identifier field (like \"name\", \"id\", \"email\")
+
+Example Range schema (for multiple records):
+{
+  \"name\": \"MySchema\",
+  \"key\": {\"range_field\": \"id\"},
+  \"fields\": {\"id\": {}, \"name\": {}, \"age\": {}}
+}
+
+Example Single schema (for one global value):
+{
+  \"name\": \"MySchema\",
+  \"fields\": {\"count\": {}, \"total\": {}}
+}
 "#;
 
 /// Instructions appended to every prompt
 const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and either:
 1. If existing schemas can handle this data, return their names in existing_schemas and provide mutation_mappers
 2. If no existing schemas match, create a new schema definition in new_schemas and provide mutation_mappers
+
+CRITICAL RULES:
+- If the original input was a JSON array (multiple objects), you MUST create a NEW Range schema with \"key\": {\"range_field\": \"unique_field\"}
+- NEVER recommend a Single-type schema for array inputs - they will overwrite data
+- When user provides an array, ignore any existing Single schemas and create a new Range schema with the \"key\" field
 
 The response must be valid JSON."#;
 
@@ -149,7 +173,8 @@ impl OpenRouterService {
             pretty_json_or_empty(available_schemas)
         );
 
-        let prompt = self.create_prompt(schema_sample, available_schemas);
+        let is_array_input = sample_json.is_array();
+        let prompt = self.create_prompt(schema_sample, available_schemas, is_array_input);
 
         log_feature!(
             LogFeature::Ingestion,
@@ -184,12 +209,19 @@ impl OpenRouterService {
     }
 
     /// Create the prompt for the AI
-    fn create_prompt(&self, sample_json: &Value, available_schemas: &Value) -> String {
+    fn create_prompt(&self, sample_json: &Value, available_schemas: &Value, is_array_input: bool) -> String {
+        let array_note = if is_array_input {
+            "\n\nIMPORTANT: The user provided a JSON ARRAY of multiple objects. You MUST create or use a Range schema with a range_key to store multiple entities."
+        } else {
+            ""
+        };
+        
         format!(
-            "{header}\n\nSample JSON Data:\n{sample}\n\nAvailable Schemas:\n{schemas}\n\n{actions}",
+            "{header}\n\nSample JSON Data:\n{sample}\n\nAvailable Schemas:\n{schemas}{array_note}\n\n{actions}",
             header = PROMPT_HEADER,
             sample = pretty_json(sample_json),
             schemas = pretty_json_or_empty(available_schemas),
+            array_note = array_note,
             actions = PROMPT_ACTIONS
         )
     }

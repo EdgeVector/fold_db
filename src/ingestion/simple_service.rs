@@ -109,23 +109,64 @@ impl SimpleIngestionService {
         let new_schema_created = ai_response.new_schemas.is_some();
 
         // Step 5: Generate mutations
-        // Convert JSON data to fields and values
-        let fields_and_values = if let Some(obj) = request.data.as_object() {
-            obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        // Handle both single objects and arrays of objects
+        let mutations = if let Some(array) = request.data.as_array() {
+            // Generate a mutation for each element in the array
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "JSON data is an array with {} items, generating mutation for each",
+                array.len()
+            );
+            
+            let mut all_mutations = Vec::new();
+            for (idx, item) in array.iter().enumerate() {
+                let fields_and_values = if let Some(obj) = item.as_object() {
+                    obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                } else {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "Array item {} is not an object, skipping",
+                        idx
+                    );
+                    continue;
+                };
+
+                let mutations = self.mutation_generator.generate_mutations(
+                    &schema_name,
+                    &std::collections::HashMap::new(),
+                    &fields_and_values,
+                    &ai_response.mutation_mappers,
+                    request
+                        .trust_distance
+                        .unwrap_or(self.config.default_trust_distance),
+                    request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+                )?;
+                
+                all_mutations.extend(mutations);
+            }
+            
+            all_mutations
         } else {
-            std::collections::HashMap::new()
+            // Handle single object
+            let fields_and_values = if let Some(obj) = request.data.as_object() {
+                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            } else {
+                std::collections::HashMap::new()
+            };
+            
+            self.mutation_generator.generate_mutations(
+                &schema_name,
+                &std::collections::HashMap::new(),
+                &fields_and_values,
+                &ai_response.mutation_mappers,
+                request
+                    .trust_distance
+                    .unwrap_or(self.config.default_trust_distance),
+                request.pub_key.unwrap_or_else(|| "default".to_string()),
+            )?
         };
-        
-        let mutations = self.mutation_generator.generate_mutations(
-            &schema_name,
-            &std::collections::HashMap::new(), // Empty keys for now
-            &fields_and_values,
-            &ai_response.mutation_mappers,
-            request
-                .trust_distance
-                .unwrap_or(self.config.default_trust_distance),
-            request.pub_key.unwrap_or_else(|| "default".to_string()),
-        )?;
 
         log_feature!(
             LogFeature::Ingestion,
@@ -139,7 +180,7 @@ impl SimpleIngestionService {
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
         {
-            self.execute_mutations_with_node(&mutations, node.clone())?
+            self.execute_mutations_with_node(&mutations, node.clone()).await?
         } else {
             0
         };
@@ -328,7 +369,7 @@ impl SimpleIngestionService {
 
 
     /// Execute mutations using the OperationProcessor
-    fn execute_mutations_with_node(
+    async fn execute_mutations_with_node(
         &self,
         mutations: &[Mutation],
         node: Arc<Mutex<DataFoldNode>>,
@@ -345,17 +386,14 @@ impl SimpleIngestionService {
                 mutation_type: mutation.mutation_type.clone(),
             };
 
-            // Execute mutation explicitly via async block_on since generic sync path was removed
-            let rt = tokio::runtime::Handle::current();
-            let exec_result: Result<serde_json::Value, IngestionError> = rt.block_on(async {
-                match operation {
-                    Operation::Mutation { schema, fields_and_values, key_value, mutation_type } => {
-                        processor.execute_mutation(schema, fields_and_values, key_value, mutation_type)
-                            .await
-                            .map_err(|e| IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(e.to_string())))
-                    }
+            // Execute mutation asynchronously
+            let exec_result: Result<serde_json::Value, IngestionError> = match operation {
+                Operation::Mutation { schema, fields_and_values, key_value, mutation_type } => {
+                    processor.execute_mutation(schema, fields_and_values, key_value, mutation_type)
+                        .await
+                        .map_err(|e| IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(e.to_string())))
                 }
-            });
+            };
 
             match exec_result {
                 Ok(_) => {
