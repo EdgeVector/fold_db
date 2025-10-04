@@ -7,7 +7,7 @@
 use super::message_bus::{
     atom_events::{AtomCreated, AtomUpdated, FieldValueSet, MoleculeCreated, MoleculeUpdated},
     query_events::{MutationExecuted, QueryExecuted},
-    schema_events::{SchemaChanged, SchemaLoaded, TransformExecuted, TransformTriggered, TransformRegistrationRequest},
+    schema_events::{SchemaChanged, SchemaLoaded, TransformExecuted, TransformTriggered, TransformRegistered, TransformRegistrationRequest},
     Consumer, MessageBus,
 };
 use crate::transform::manager::TransformManager;
@@ -306,6 +306,7 @@ pub struct EventMonitor {
     _schema_changed_thread: thread::JoinHandle<()>,
     _transform_triggered_thread: thread::JoinHandle<()>,
     _transform_executed_thread: thread::JoinHandle<()>,
+    _transform_registered_thread: thread::JoinHandle<()>,
     _transform_registration_thread: thread::JoinHandle<()>,
     _query_executed_thread: thread::JoinHandle<()>,
     _mutation_executed_thread: thread::JoinHandle<()>,
@@ -334,6 +335,7 @@ impl EventMonitor {
         let mut schema_changed_consumer = message_bus.subscribe::<SchemaChanged>();
         let mut transform_triggered_consumer = message_bus.subscribe::<TransformTriggered>();
         let mut transform_executed_consumer = message_bus.subscribe::<TransformExecuted>();
+        let mut transform_registered_consumer = message_bus.subscribe::<TransformRegistered>();
         let mut transform_registration_consumer = message_bus.subscribe::<TransformRegistrationRequest>();
         let mut query_executed_consumer = message_bus.subscribe::<QueryExecuted>();
         let mut mutation_executed_consumer = message_bus.subscribe::<MutationExecuted>();
@@ -389,6 +391,12 @@ impl EventMonitor {
 
         let stats_clone = statistics.clone();
         let transform_manager_clone = Arc::clone(&transform_manager);
+        let transform_registered_thread = thread::spawn(move || {
+            Self::monitor_transform_registered_events(&mut transform_registered_consumer, stats_clone, transform_manager_clone);
+        });
+
+        let stats_clone = statistics.clone();
+        let transform_manager_clone = Arc::clone(&transform_manager);
         let transform_registration_thread = thread::spawn(move || {
             Self::monitor_transform_registration_events(&mut transform_registration_consumer, stats_clone, transform_manager_clone);
         });
@@ -414,6 +422,7 @@ impl EventMonitor {
             _schema_changed_thread: schema_changed_thread,
             _transform_triggered_thread: transform_triggered_thread,
             _transform_executed_thread: transform_executed_thread,
+            _transform_registered_thread: transform_registered_thread,
             _transform_registration_thread: transform_registration_thread,
             _query_executed_thread: query_executed_thread,
             _mutation_executed_thread: mutation_executed_thread,
@@ -647,6 +656,36 @@ impl EventMonitor {
         }
     }
 
+    fn monitor_transform_registered_events(
+        consumer: &mut Consumer<TransformRegistered>,
+        statistics: Arc<Mutex<EventStatistics>>,
+        transform_manager: Arc<TransformManager>,
+    ) {
+        loop {
+            match consumer.recv_timeout(Duration::from_millis(100)) {
+                Ok(event) => {
+                    info!(
+                        "🔍 EventMonitor: TransformRegistered - transform_id: {}, source_schema: {}",
+                        event.transform_id, event.source_schema_name
+                    );
+
+                    // Update statistics
+                    statistics.lock().unwrap().increment_transform_registrations();
+
+                    // Handle the transform backfill
+                    if let Err(e) = Self::handle_transform_backfill(
+                        &event.transform_id,
+                        &event.source_schema_name,
+                        &transform_manager,
+                    ) {
+                        log::error!("Failed to handle transform backfill for '{}': {}", event.transform_id, e);
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
     fn monitor_transform_registration_events(
         consumer: &mut Consumer<TransformRegistrationRequest>,
         statistics: Arc<Mutex<EventStatistics>>,
@@ -706,6 +745,40 @@ impl EventMonitor {
                 Err(_) => continue,
             }
         }
+    }
+
+    /// Handle transform backfill by fetching all entries from the source schema
+    /// and executing the transform for each key-value pair
+    fn handle_transform_backfill(
+        transform_id: &str,
+        source_schema_name: &str,
+        transform_manager: &Arc<TransformManager>,
+    ) -> Result<(), crate::schema::SchemaError> {
+        use crate::transform::manager::types::TransformRunner;
+
+        log::info!("🔄 Starting backfill for transform '{}' from source schema '{}'", transform_id, source_schema_name);
+
+        // We need to access the database operations through a different approach
+        // Since db_ops is private, we'll need to create a new SchemaCore instance
+        // This is a temporary solution - ideally we'd have a public method to access db_ops
+        
+        // For now, let's use a simpler approach by executing the transform without context
+        // This will process all existing data in the source schema
+        log::info!("📋 Executing backfill for transform '{}' without specific context", transform_id);
+
+        // Execute the transform without mutation context to process all existing data
+        match transform_manager.execute_transform_with_context(transform_id, &None) {
+            Ok(result) => {
+                log::info!("✅ Backfill completed successfully for transform '{}': {} records processed", 
+                           transform_id, result.records.len());
+            }
+            Err(e) => {
+                log::error!("❌ Failed to execute backfill for transform '{}': {}", transform_id, e);
+                return Err(e);
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -5,7 +5,7 @@
 
 use super::persistence_manager::PersistenceManager;
 use crate::fold_db_core::infrastructure::message_bus::{
-    schema_events::{TransformExecuted, TransformRegistrationRequest, TransformTriggered},
+    schema_events::{TransformExecuted, TransformRegistrationRequest, TransformTriggered, TransformRegistered},
     MessageBus,
 };
 use crate::transform::manager::{TransformManager, types::TransformRunner};
@@ -230,6 +230,31 @@ impl TransformEventMonitor {
                     error!("Failed to publish TransformRegistrationResponse: {}", e);
                     return Err(SchemaError::InvalidData(format!(
                         "Failed to publish TransformRegistrationResponse: {}", e
+                    )));
+                }
+
+                // Publish TransformRegistered event to trigger backfill
+                // Extract source schema name from the transform's input fields
+                let source_schema_name = event.registration.transform.get_declarative_schema()
+                    .ok_or_else(|| SchemaError::InvalidData("Transform has no declarative schema".to_string()))?
+                    .get_inputs()
+                    .first()
+                    .ok_or_else(|| SchemaError::InvalidData("Transform has no input schema fields".to_string()))?
+                    .split('.')
+                    .next()
+                    .ok_or_else(|| SchemaError::InvalidData("Invalid input schema field format".to_string()))?
+                    .to_string();
+                
+                let transform_registered = TransformRegistered {
+                    transform_id: event.registration.transform_id.clone(),
+                    source_schema_name,
+                    correlation_id: event.correlation_id.clone(),
+                };
+                
+                if let Err(e) = message_bus.publish(transform_registered) {
+                    error!("Failed to publish TransformRegistered event: {}", e);
+                    return Err(SchemaError::InvalidData(format!(
+                        "Failed to publish TransformRegistered event: {}", e
                     )));
                 }
                 
