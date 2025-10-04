@@ -365,21 +365,60 @@ impl IngestionCore {
         trust_distance: u32,
         pub_key: String,
     ) -> IngestionResult<Vec<Mutation>> {
-        // Convert json_data to HashMap<String, Value>
-        let fields_and_values = if let Some(obj) = json_data.as_object() {
-            obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-        } else {
-            HashMap::new()
-        };
+        // Handle both single objects and arrays of objects
+        if let Some(array) = json_data.as_array() {
+            // Generate a mutation for each element in the array
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "JSON data is an array with {} items, generating mutation for each",
+                array.len()
+            );
+            
+            let mut all_mutations = Vec::new();
+            for (idx, item) in array.iter().enumerate() {
+                let fields_and_values = if let Some(obj) = item.as_object() {
+                    obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                } else {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "Array item {} is not an object, skipping",
+                        idx
+                    );
+                    continue;
+                };
 
-        self.mutation_generator.generate_mutations(
-            schema_name,
-            &HashMap::new(),
-            &fields_and_values,
-            mutation_mappers,
-            trust_distance,
-            pub_key,
-        )
+                let mutations = self.mutation_generator.generate_mutations(
+                    schema_name,
+                    &HashMap::new(),
+                    &fields_and_values,
+                    mutation_mappers,
+                    trust_distance,
+                    pub_key.clone(),
+                )?;
+                
+                all_mutations.extend(mutations);
+            }
+            
+            Ok(all_mutations)
+        } else {
+            // Handle single object
+            let fields_and_values = if let Some(obj) = json_data.as_object() {
+                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            } else {
+                HashMap::new()
+            };
+
+            self.mutation_generator.generate_mutations(
+                schema_name,
+                &HashMap::new(),
+                &fields_and_values,
+                mutation_mappers,
+                trust_distance,
+                pub_key,
+            )
+        }
     }
 
     /// Execute mutations
