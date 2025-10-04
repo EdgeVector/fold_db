@@ -46,7 +46,7 @@ pub struct Schema {
     /// The type of schema. Defaults to a key range schema.
     pub schema_type: SchemaType,
     /// Universal key configuration for all schema types
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub key: Option<KeyConfig>,
     /// Collection of fields with their definitions and configurations
     #[ts(type = "Record<string, any>")]
