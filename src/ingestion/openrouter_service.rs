@@ -117,11 +117,30 @@ impl OpenRouterService {
         sample_json: &Value,
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
+        // If the input is a JSON array, use only the first element for schema determination
+        // This prevents the LLM from being confused by array structures
+        let schema_sample = if let Some(array) = sample_json.as_array() {
+            if array.is_empty() {
+                return Err(IngestionError::ai_response_validation_error(
+                    "Cannot determine schema from empty JSON array".to_string()
+                ));
+            }
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "JSON data is an array with {} elements, using first element for schema determination",
+                array.len()
+            );
+            &array[0]
+        } else {
+            sample_json
+        };
+        
         log_feature!(
             LogFeature::Ingestion,
             info,
             "Sample JSON data: {}",
-            pretty_json(sample_json)
+            pretty_json(schema_sample)
         );
         log_feature!(
             LogFeature::Ingestion,
@@ -130,7 +149,7 @@ impl OpenRouterService {
             pretty_json_or_empty(available_schemas)
         );
 
-        let prompt = self.create_prompt(sample_json, available_schemas);
+        let prompt = self.create_prompt(schema_sample, available_schemas);
 
         log_feature!(
             LogFeature::Ingestion,
