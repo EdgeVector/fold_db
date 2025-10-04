@@ -72,8 +72,11 @@ impl MutationManager {
         }
 
         // Persist the updated schema back to the database and schema_manager
-        self.db_ops.store_schema(&schema.name, &schema)?;
+        let schema_name = schema.name.clone();
+        log::info!("🔄 Persisting schema '{}' with updated field molecule UUIDs", schema_name);
+        self.db_ops.store_schema(&schema_name, &schema)?;
         self.schema_manager.load_schema_internal(schema)?;
+        log::info!("✅ Schema '{}' persisted successfully", schema_name);
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -97,6 +100,12 @@ impl MutationManager {
         if let Err(e) = self.message_bus.publish(event) {
             log::warn!("Failed to publish MutationExecuted event: {}", e);
             // Don't fail the mutation if event publishing fails
+        }
+        
+        // Flush database to ensure mutation is persisted to disk
+        if let Err(e) = self.db_ops.flush() {
+            log::warn!("Failed to flush database after mutation completion: {}", e);
+            // Don't fail the mutation if flush fails, but log the warning
         }
         
         // Return the mutation ID
@@ -210,8 +219,11 @@ impl MutationManager {
         }
 
         // Persist the updated schema back to the database and schema_manager
-        db_ops.store_schema(&schema.name, &schema)?;
+        let schema_name = schema.name.clone();
+        log::info!("🔄 Persisting schema '{}' with updated field molecule UUIDs", schema_name);
+        db_ops.store_schema(&schema_name, &schema)?;
         schema_manager.load_schema_internal(schema)?;
+        log::info!("✅ Schema '{}' persisted successfully", schema_name);
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -235,6 +247,12 @@ impl MutationManager {
         if let Err(e) = message_bus.publish(event) {
             log::warn!("Failed to publish MutationExecuted event: {}", e);
             // Don't fail the mutation if event publishing fails
+        }
+
+        // Flush database to ensure mutation is persisted to disk
+        if let Err(e) = db_ops.flush() {
+            log::warn!("Failed to flush database after mutation completion: {}", e);
+            // Don't fail the mutation if flush fails, but log the warning
         }
 
         info!(

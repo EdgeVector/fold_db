@@ -227,4 +227,19 @@ impl DbOperations {
         tree.contains_key(key.as_bytes())
             .map_err(|e| SchemaError::InvalidData(format!("Existence check failed: {}", e)))
     }
+
+    /// Flush the database to ensure all data is persisted to disk
+    pub fn flush(&self) -> Result<(), SchemaError> {
+        log::info!("🔄 Flushing database to disk...");
+        match self.db.flush() {
+            Ok(_) => {
+                log::info!("✅ Database flush completed successfully");
+                Ok(())
+            }
+            Err(e) => {
+                log::error!("❌ Database flush failed: {}", e);
+                Err(SchemaError::InvalidData(format!("Database flush failed: {}", e)))
+            }
+        }
+    }
 }

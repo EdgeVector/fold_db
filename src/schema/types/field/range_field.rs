@@ -130,9 +130,21 @@ impl crate::schema::types::field::Field for RangeField {
         // If we have a molecule_uuid, look up the corresponding MoleculeRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            if let Ok(Some(molecule)) = db_ops.get_item::<MoleculeRange>(&ref_key) {
-                self.molecule = Some(molecule);
+            log::info!("🔄 RangeField refreshing from DB with molecule_uuid: {}, ref_key: {}", molecule_uuid, ref_key);
+            match db_ops.get_item::<MoleculeRange>(&ref_key) {
+                Ok(Some(molecule)) => {
+                    log::info!("✅ RangeField found molecule in DB: {}", molecule_uuid);
+                    self.molecule = Some(molecule);
+                }
+                Ok(None) => {
+                    log::warn!("⚠️ RangeField molecule not found in DB: {}", molecule_uuid);
+                }
+                Err(e) => {
+                    log::error!("❌ RangeField error loading molecule from DB: {}", e);
+                }
             }
+        } else {
+            log::warn!("⚠️ RangeField has no molecule_uuid to refresh from DB");
         }
     }
 

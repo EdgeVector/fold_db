@@ -4,6 +4,7 @@ use datafold::{
     datafold_node::{load_node_config, DataFoldHttpServer, DataFoldNode},
 };
 use log::info;
+use tokio::signal;
 
 /// Command line options for the HTTP server binary.
 #[derive(Parser, Debug)]
@@ -63,8 +64,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind_address = format!("127.0.0.1:{}", http_port);
     let http_server = DataFoldHttpServer::new(node, &bind_address).await?;
 
-    // Run the HTTP server
-    http_server.run().await?;
+    // Set up graceful shutdown
+    let shutdown_signal = async {
+        let _ = signal::ctrl_c().await;
+        info!("SIGTERM received; starting graceful shutdown");
+    };
+
+    // Run the HTTP server with graceful shutdown
+    tokio::select! {
+        result = http_server.run() => {
+            match result {
+                Ok(_) => info!("HTTP server stopped normally"),
+                Err(e) => info!("HTTP server stopped with error: {}", e),
+            }
+        }
+        _ = shutdown_signal => {
+            info!("Shutdown signal received, stopping server...");
+        }
+    }
+
+    // Ensure database is properly closed
+    info!("Closing database connections...");
+    // The database will be automatically closed when the node is dropped
 
     Ok(())
 }

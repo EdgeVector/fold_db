@@ -157,7 +157,43 @@ impl DataFoldNode {
     pub fn get_node_id(&self) -> &str {
         &self.node_id
     }
+}
 
+impl Drop for DataFoldNode {
+    fn drop(&mut self) {
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "DataFoldNode being dropped, closing database..."
+        );
+        
+        // Try to close the database gracefully
+        if let Ok(db) = self.db.lock() {
+            if let Err(e) = db.close() {
+                log_feature!(
+                    LogFeature::Database,
+                    error,
+                    "Failed to close database during node drop: {}",
+                    e
+                );
+            } else {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Database closed successfully during node drop"
+                );
+            }
+        } else {
+            log_feature!(
+                LogFeature::Database,
+                warn,
+                "Could not acquire database lock during node drop"
+            );
+        }
+    }
+}
+
+impl DataFoldNode {
     /// Gets the node's private key.
     pub fn get_node_private_key(&self) -> &str {
         &self.private_key

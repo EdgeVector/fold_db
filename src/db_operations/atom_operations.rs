@@ -135,7 +135,11 @@ impl DbOperations {
         
         // Persist the updated molecule to the database
         if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
+            log::info!("🔄 Persisting molecule with UUID: {}", molecule_uuid);
             self.persist_field_molecule(schema_field, molecule_uuid)?;
+            log::info!("✅ Molecule persisted successfully");
+        } else {
+            log::warn!("⚠️ No molecule_uuid found in field after mutation");
         }
         
         Ok(())

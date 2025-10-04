@@ -20,12 +20,16 @@ impl ResultStorage {
         key_value: KeyValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
     ) -> Result<(), SchemaError> {
-        // TODO: Map Transform's declarative schema's field_to_hash_code to the result of the execution.
+        // Create reverse mapping from hash code to field name
         let field_to_hash_code = transform.get_declarative_schema().unwrap().get_field_to_hash_code();
+        let hash_code_to_field: HashMap<String, String> = field_to_hash_code
+            .iter()
+            .map(|(field_name, hash_code)| (hash_code.clone(), field_name.clone()))
+            .collect();
 
         let mut fields_and_values = HashMap::new();
         for (code_hash, result) in code_hash_to_result {
-            if let Some(field_name) = field_to_hash_code.get(&code_hash) {
+            if let Some(field_name) = hash_code_to_field.get(&code_hash) {
                 fields_and_values.insert(field_name.clone(), result);
             } else {
                 warn!("Field mapping not found for code hash: {}", code_hash);

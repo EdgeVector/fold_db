@@ -43,7 +43,22 @@ impl SchemaCore {
     ) -> Result<Self, SchemaError> {
         // load schemas from db
         // TODO: implement get_all_schemas and get_all_schema_states
+        log::info!("🔄 Loading schemas from database...");
         let schemas = db_ops.get_all_schemas()?;
+        log::info!("✅ Loaded {} schemas from database", schemas.len());
+        
+        // Debug: Check if schemas have molecule_uuid values
+        for (schema_name, schema) in &schemas {
+            log::info!("🔍 Schema '{}' loaded with {} fields", schema_name, schema.fields.len());
+            for (field_name, field) in &schema.fields {
+                if let Some(molecule_uuid) = field.common().molecule_uuid() {
+                    log::info!("  📋 Field '{}' has molecule_uuid: {}", field_name, molecule_uuid);
+                } else {
+                    log::warn!("  ⚠️ Field '{}' has NO molecule_uuid", field_name);
+                }
+            }
+        }
+        
         let schema_states = db_ops.get_all_schema_states()?;
 
         Ok(Self {
@@ -119,9 +134,27 @@ impl SchemaCore {
         let existing_schema = self.db_ops.get_schema(&name)?;
         
         if let Some(_existing) = existing_schema {
-            // Schema exists in DB - always update in-memory to preserve molecule_uuids and runtime state
+            // Schema exists in DB - preserve molecule_uuids from existing schema
             let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
-            schemas.insert(name.clone(), schema); // Use the updated schema, not the existing one
+            
+            // Get the existing schema from memory (which has molecule_uuids)
+            let existing_in_memory = schemas.get(&name).cloned();
+            
+            // Use the new schema structure but preserve molecule_uuids from existing schema
+            let mut updated_schema = schema;
+            if let Some(existing) = existing_in_memory {
+                // Preserve molecule_uuids from existing schema
+                for (field_name, existing_field) in existing.fields {
+                    if let Some(new_field) = updated_schema.fields.get_mut(&field_name) {
+                        if let Some(molecule_uuid) = existing_field.common().molecule_uuid() {
+                            new_field.common_mut().set_molecule_uuid(molecule_uuid.clone());
+                            log::info!("🔄 Preserved molecule_uuid {} for field '{}' in schema '{}'", molecule_uuid, field_name, name);
+                        }
+                    }
+                }
+            }
+            
+            schemas.insert(name.clone(), updated_schema);
             
             // Preserve existing state
             let existing_state = self.db_ops.get_schema_state(&name)?;
