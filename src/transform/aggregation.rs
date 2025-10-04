@@ -10,6 +10,7 @@ use crate::schema::types::schema::SchemaType;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 use crate::transform::result_types::{ExecutionResult, IndexEntry};
 use crate::transform::shared_utilities::resolve_field_value_from_chain;
+use crate::fold_db_core::query::formatter::Record;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -210,6 +211,39 @@ pub fn aggregate_results_unified_typed(
         &json_input,
         all_expressions,
     )
+}
+
+/// Variant of aggregation that returns structured Record instead of JSON
+pub fn aggregate_results_unified_typed_as_records(
+    schema: &DeclarativeSchemaDefinition,
+    parsed_chains: &[(String, ParsedChain)],
+    execution_result: &ExecutionResult,
+    input_values: &HashMap<String, HashMap<KeyValue, FieldValue>>,
+    all_expressions: &[(String, String)],
+) -> Result<Vec<Record>, SchemaError> {
+    let json_result = aggregate_results_unified_typed(
+        schema,
+        parsed_chains,
+        execution_result,
+        input_values,
+        all_expressions,
+    )?;
+    
+    // Convert JSON array to Vec<Record>
+    let mut records = Vec::new();
+    if let Some(result_array) = json_result.as_array() {
+        for row in result_array {
+            if let Some(fields_obj) = row.get("fields").and_then(|f| f.as_object()) {
+                let mut fields = HashMap::new();
+                for (field_name, field_value) in fields_obj {
+                    fields.insert(field_name.clone(), field_value.clone());
+                }
+                records.push(Record { fields });
+            }
+        }
+    }
+    
+    Ok(records)
 }
 
 /// Processes direct value resolution when no execution results are available.

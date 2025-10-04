@@ -93,14 +93,14 @@ impl TransformEventMonitor {
         let result = manager.execute_transform_with_context(&event.transform_id, &event.mutation_context);
 
         match result {
-            Ok(result) => {
-                info!("Transform {} executed successfully: {}", event.transform_id, result);
+            Ok(transform_result) => {
+                info!("Transform {} executed successfully: {} records", event.transform_id, transform_result.records.len());
 
                 // Publish TransformExecuted event
                 Self::publish_transform_executed(
                     message_bus,
                     &event.transform_id,
-                    &result.to_string(),
+                    &format!("{} records produced", transform_result.records.len()),
                 )?;
 
                 Ok(())

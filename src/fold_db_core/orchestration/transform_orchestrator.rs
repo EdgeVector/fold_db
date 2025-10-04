@@ -5,12 +5,11 @@
 //! and improved maintainability.
 
 use log::{error, info};
-use serde_json::Value as JsonValue;
 use sled::Tree;
 use std::sync::Arc;
 
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::transform::manager::TransformManager;
+use crate::transform::manager::{TransformManager, types::TransformResult};
 use crate::schema::SchemaError;
 
 // Import the new specialized components
@@ -170,7 +169,7 @@ impl TransformOrchestrator {
     }
 
     /// Process a single task from the queue
-    pub fn process_one(&self) -> Option<Result<JsonValue, SchemaError>> {
+    pub fn process_one(&self) -> Option<Result<TransformResult, SchemaError>> {
         info!("🔄 PROCESS_ONE - Checking queue for items");
 
         // Pop item from queue

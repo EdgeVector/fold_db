@@ -1,11 +1,10 @@
-use super::types::TransformRunner;
+use super::types::{TransformRunner, TransformResult};
 use super::result_storage::ResultStorage;
 use crate::schema::types::SchemaError;
 use crate::schema::types::key_value::KeyValue;
-use serde_json::Value as JsonValue;
 use std::collections::{HashSet, HashMap};
 use super::input_fetcher::InputFetcher;
-use crate::transform::aggregation::{aggregate_results_unified_typed};
+use crate::transform::aggregation::{aggregate_results_unified_typed_as_records};
 use crate::transform::iterator_stack_typed::adapter::execute_fields_typed;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 // Legacy ExecutionEngine removed; using typed engine via adapter
@@ -22,7 +21,7 @@ impl TransformRunner for super::TransformManager {
         mutation_context: &Option<
             crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
         >,
-    ) -> Result<JsonValue, SchemaError> {
+    ) -> Result<TransformResult, SchemaError> {
         // Load the transform from in-memory registered transforms
         let transforms = self.registered_transforms.read()
             .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
@@ -64,7 +63,7 @@ impl TransformRunner for super::TransformManager {
             .iter()
             .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
             .collect();
-        let result = aggregate_results_unified_typed(
+        let records = aggregate_results_unified_typed_as_records(
             schema,
             &parsed_chains,
             &execution_result,
@@ -73,37 +72,32 @@ impl TransformRunner for super::TransformManager {
         )?;
 
         // Store each result row as a separate mutation
-        if let Some(result_array) = result.as_array() {
-            let field_to_hash_code = schema.get_field_to_hash_code();
+        let field_to_hash_code = schema.get_field_to_hash_code();
+        
+        for record in &records {
+            // For storage, we need to create a key - using the first field's key or a default
+            let key_config = schema.key.clone();
+            let row_key = KeyValue::from_mutation(&record.fields, key_config.as_ref().unwrap());
             
-            for row in result_array {
-                // Extract the key from each row
-                let row_key = row.get("key")
-                    .and_then(|k| serde_json::from_value::<KeyValue>(k.clone()).ok())
-                    .unwrap_or_else(|| KeyValue::new(None, None));
-                
-                // Extract fields from the row and convert field names to hash codes
-                if let Some(fields_obj) = row.get("fields").and_then(|f| f.as_object()) {
-                    let mut code_hash_to_result = std::collections::HashMap::new();
-                    for (field_name, field_value) in fields_obj {
-                        // Convert field name to hash code for storage
-                        if let Some(hash_code) = field_to_hash_code.get(field_name) {
-                            code_hash_to_result.insert(hash_code.clone(), field_value.clone());
-                        }
-                    }
-                    
-                    // Store this row as a mutation
-                    ResultStorage::store_transform_result_generic(
-                        &transform,
-                        code_hash_to_result,
-                        row_key,
-                        Some(&self.message_bus)
-                    )?;
+            // Convert field names to hash codes for storage
+            let mut code_hash_to_result = std::collections::HashMap::new();
+            for (field_name, field_value) in &record.fields {
+                // Convert field name to hash code for storage
+                if let Some(hash_code) = field_to_hash_code.get(field_name) {
+                    code_hash_to_result.insert(hash_code.clone(), field_value.clone());
                 }
             }
+            
+            // Store this row as a mutation
+            ResultStorage::store_transform_result_generic(
+                &transform,
+                code_hash_to_result,
+                row_key,
+                Some(&self.message_bus)
+            )?;
         }
 
-        Ok(result)
+        Ok(TransformResult::new(records))
     }
 
     fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
