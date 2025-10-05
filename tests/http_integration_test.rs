@@ -70,13 +70,12 @@ async fn test_datafold_http_integration() {
     // Step 3: Run tests
     if helper.load_schemas(&mut results).await {
         let expected_schemas = get_available_schema_files();
-        if helper.verify_schemas_available(&expected_schemas, &mut results).await {
-            if helper.approve_schema("BlogPost", &mut results).await {
+        if helper.verify_schemas_available(&expected_schemas, &mut results).await
+            && helper.approve_schema("BlogPost", &mut results).await {
                 if let Some(date) = helper.create_blogpost_mutation(&mut results).await {
                     helper.query_blogpost_data(&date, &mut results).await;
                 }
             }
-        }
     }
 
     // Cleanup

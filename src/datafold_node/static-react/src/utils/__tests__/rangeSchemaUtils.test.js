@@ -3,8 +3,8 @@ import {
   isRangeSchema,
   getRangeKey,
   getNonRangeKeyFields,
-  formatRangeSchemaQuery,
-  validateRangeKeyForMutation,
+  formatRangeQuery,
+  validateRangeKey,
   getRangeSchemaInfo
 } from '../rangeSchemaHelpers'
 
@@ -184,7 +184,7 @@ describe('rangeSchemaUtils', () => {
     })
   })
 
-  describe('formatRangeSchemaQuery', () => {
+  describe('formatRangeQuery', () => {
     const schema = {
       name: 'UserScores',
       schema_type: { Range: { range_key: 'user_id' } }
@@ -192,7 +192,7 @@ describe('rangeSchemaUtils', () => {
 
     it('should format basic query without range filter', () => {
       const fields = ['game_scores', 'achievements']
-      const result = formatRangeSchemaQuery(schema, fields, '')
+      const result = formatRangeQuery(schema, fields, '')
       
       expect(result).toEqual({
         type: 'query',
@@ -204,7 +204,7 @@ describe('rangeSchemaUtils', () => {
     it('should format query with range filter', () => {
       const fields = ['game_scores', 'achievements']
       const rangeFilterValue = 'user123'
-      const result = formatRangeSchemaQuery(schema, fields, rangeFilterValue)
+      const result = formatRangeQuery(schema, fields, rangeFilterValue)
       
       expect(result).toEqual({
         type: 'query',
@@ -217,47 +217,47 @@ describe('rangeSchemaUtils', () => {
     it('should trim whitespace from range filter value', () => {
       const fields = ['game_scores']
       const rangeFilterValue = '  user123  '
-      const result = formatRangeSchemaQuery(schema, fields, rangeFilterValue)
+      const result = formatRangeQuery(schema, fields, rangeFilterValue)
       
       expect(result.filter).toEqual({ HashKey: 'user123' })
     })
 
     it('should not include range_filter for empty string', () => {
       const fields = ['game_scores']
-      const result = formatRangeSchemaQuery(schema, fields, '')
+      const result = formatRangeQuery(schema, fields, '')
       
       expect(result).not.toHaveProperty('range_filter')
     })
 
     it('should not include range_filter for whitespace-only string', () => {
       const fields = ['game_scores']
-      const result = formatRangeSchemaQuery(schema, fields, '   ')
+      const result = formatRangeQuery(schema, fields, '   ')
       
       expect(result).not.toHaveProperty('range_filter')
     })
   })
 
 
-  describe('validateRangeKeyForMutation', () => {
+  describe('validateRangeKey', () => {
     it('should return null for valid string when required', () => {
-      expect(validateRangeKeyForMutation('user123', true)).toBe(null)
+      expect(validateRangeKey('user123', true)).toBe(null)
     })
 
     it('should return error for empty string when required', () => {
-      expect(validateRangeKeyForMutation('', true)).toBe('Range key is required')
-      expect(validateRangeKeyForMutation(null, true)).toBe('Range key is required')
-      expect(validateRangeKeyForMutation(undefined, true)).toBe('Range key is required')
+      expect(validateRangeKey('', true)).toBe('Range key is required')
+      expect(validateRangeKey(null, true)).toBe('Range key is required')
+      expect(validateRangeKey(undefined, true)).toBe('Range key is required')
     })
 
     it('should return null for empty string when not required', () => {
-      expect(validateRangeKeyForMutation('', false)).toBe(null)
-      expect(validateRangeKeyForMutation(null, false)).toBe(null)
-      expect(validateRangeKeyForMutation(undefined, false)).toBe(null)
+      expect(validateRangeKey('', false)).toBe(null)
+      expect(validateRangeKey(null, false)).toBe(null)
+      expect(validateRangeKey(undefined, false)).toBe(null)
     })
 
     it('should allow whitespace strings (backend validates)', () => {
       // Backend is authoritative - it will validate whitespace
-      expect(validateRangeKeyForMutation('   ', true)).toBe(null)
+      expect(validateRangeKey('   ', true)).toBe(null)
     })
   })
 
@@ -385,7 +385,7 @@ describe('rangeSchemaUtils', () => {
       expect(nonRangeKeyFields).toHaveProperty('game_scores')
       expect(nonRangeKeyFields).not.toHaveProperty('user_id')
       
-      const query = formatRangeSchemaQuery(userScoresSchema, ['game_scores'], 'user123')
+      const query = formatRangeQuery(userScoresSchema, ['game_scores'], 'user123')
       expect(query).toEqual({
         type: 'query',
         schema: 'UserScores',

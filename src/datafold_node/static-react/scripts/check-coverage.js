@@ -6,7 +6,6 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 
 const COVERAGE_FILE = './coverage/coverage-summary.json';
 const MIN_COVERAGE = 80;

@@ -13,7 +13,7 @@
 // Import all utilities from the consolidated testUtilities.jsx
 import testUtilities, {
   createTestStore,
-  renderWithRedux as renderWithProviders, // Alias for backward compatibility
+  renderWithRedux as renderWithProviders,
   createMockSchema,
   createMockRangeSchema,
   createMockSchemaList,
@@ -30,7 +30,7 @@ import testUtilities, {
   cleanupTestEnvironment
 } from './testUtilities.jsx';
 
-// Re-export for backward compatibility
+// Re-export utilities
 export {
   createTestStore,
   renderWithProviders,

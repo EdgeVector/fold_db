@@ -33,11 +33,7 @@ import {
   READABLE_SCHEMA_STATES
 } from '../constants/redux';
 import { 
-  schemaClient,
-  approveSchema as approveSchemaMethod,
-  blockSchema as blockSchemaMethod,
-  loadSchema as loadSchemaMethod,
-  unloadSchema as unloadSchemaMethod
+  schemaClient
 } from '../api/clients/schemaClient';
 import {
   SCHEMA_OPERATION_TYPES,
@@ -222,28 +218,28 @@ export const fetchSchemas = createAsyncThunk<
  */
 export const approveSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.APPROVE_SCHEMA,
-  approveSchemaMethod,
+  schemaClient.approveSchema.bind(schemaClient),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.APPROVE_FAILED
 );
 
 export const blockSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.BLOCK_SCHEMA,
-  blockSchemaMethod,
+  schemaClient.blockSchema.bind(schemaClient),
   SCHEMA_STATES.BLOCKED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.BLOCK_FAILED
 );
 
 export const unloadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.UNLOAD_SCHEMA,
-  unloadSchemaMethod,
+  schemaClient.unloadSchema.bind(schemaClient),
   SCHEMA_STATES.AVAILABLE as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED
 );
 
 export const loadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.LOAD_SCHEMA,
-  loadSchemaMethod,
+  schemaClient.loadSchema.bind(schemaClient),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.LOAD_FAILED
 );

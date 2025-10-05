@@ -291,16 +291,6 @@ export function createIngestionClient(client?: ApiClient): UnifiedIngestionClien
   return new UnifiedIngestionClient(client);
 }
 
-// Named exports for backward compatibility and convenience
-export const getStatus = ingestionClient.getStatus.bind(ingestionClient);
-export const getConfig = ingestionClient.getConfig.bind(ingestionClient);
-export const saveConfig = ingestionClient.saveConfig.bind(ingestionClient);
-export const validateData = ingestionClient.validateData.bind(ingestionClient);
-export const processIngestion = ingestionClient.processIngestion.bind(ingestionClient);
-
-// Helper exports
-export const validateIngestionRequest = ingestionClient.validateIngestionRequest.bind(ingestionClient);
-export const createIngestionRequest = ingestionClient.createIngestionRequest.bind(ingestionClient);
 
 // Type exports
 export type {

@@ -40,7 +40,6 @@ export {
   VALIDATION_MESSAGES,
   SUCCESS_MESSAGES,
   VALIDATION_CONFIG,
-  VALIDATION_FUNCTIONS
 } from './validation.js';
 
 // ============================================================================

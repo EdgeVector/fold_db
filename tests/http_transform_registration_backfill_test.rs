@@ -48,33 +48,30 @@ async fn test_transform_registration_backfill_http_integration() {
     }
     
     // Step 3: Run HTTP API tests
-    if helper.load_schemas(&mut results).await {
-        if helper.verify_schemas_available(&["BlogPost".to_string()], &mut results).await {
-            if helper.approve_schema("BlogPost", &mut results).await {
-                let publish_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-                if let Some(_) = helper.create_custom_blogpost_mutation(
-                    &format!("Test Post {}", publish_date),
-                    "This is test content for transform backfill testing",
-                    "Test Author",
-                    &publish_date,
-                    vec!["test", "integration", "transform"],
-                    &mut results
-                ).await {
-                    if helper.load_schemas(&mut results).await {
-                        // Wait for transform registration
-                        sleep(Duration::from_secs(2)).await;
-                        if helper.verify_transforms_registered(&["BlogPostWordIndex".to_string()], &mut results).await {
-                            // Wait for backfill to complete
-                            sleep(Duration::from_secs(3)).await;
-                            helper.query_transform_results("BlogPostWordIndex", 
-                                vec!["word", "publish_date", "content", "author", "title", "tags"], 
-                                &mut results).await;
-                        }
+    if helper.load_schemas(&mut results).await
+        && helper.verify_schemas_available(&["BlogPost".to_string()], &mut results).await
+        && helper.approve_schema("BlogPost", &mut results).await {
+            let publish_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            if (helper.create_custom_blogpost_mutation(
+                &format!("Test Post {}", publish_date),
+                "This is test content for transform backfill testing",
+                "Test Author",
+                &publish_date,
+                vec!["test", "integration", "transform"],
+                &mut results
+            ).await).is_some()
+                && helper.load_schemas(&mut results).await {
+                    // Wait for transform registration
+                    sleep(Duration::from_secs(2)).await;
+                    if helper.verify_transforms_registered(&["BlogPostWordIndex".to_string()], &mut results).await {
+                        // Wait for backfill to complete
+                        sleep(Duration::from_secs(3)).await;
+                        helper.query_transform_results("BlogPostWordIndex", 
+                            vec!["word", "publish_date", "content", "author", "title", "tags"], 
+                            &mut results).await;
                     }
                 }
-            }
         }
-    }
     
     // Cleanup
     helper.cleanup_server(&mut server_process);

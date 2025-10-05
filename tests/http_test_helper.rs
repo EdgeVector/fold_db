@@ -1,4 +1,3 @@
-use reqwest;
 use serde_json::{json, Value};
 use std::process::Command;
 use std::thread;
@@ -16,11 +15,16 @@ use tokio::time::sleep;
 /// - Test result tracking and reporting
 /// - Common test operations (schema loading, mutations, queries)
 /// - Consistent logging and output formatting
-
 pub struct HttpTestResults {
     passed: u32,
     failed: u32,
     tests: Vec<(String, String)>,
+}
+
+impl Default for HttpTestResults {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HttpTestResults {
@@ -61,6 +65,12 @@ impl HttpTestResults {
 pub struct HttpTestHelper {
     base_url: String,
     client: reqwest::Client,
+}
+
+impl Default for HttpTestHelper {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HttpTestHelper {
@@ -160,7 +170,7 @@ impl HttpTestHelper {
             }
             Err(e) => {
                 results.add_fail("Start HTTP server", &format!("Failed to start server: {}", e));
-                false
+                return false;
             }
         }
     }
@@ -182,7 +192,7 @@ impl HttpTestHelper {
                 println!("  Attempt {} - Elapsed: {:.1}s", attempt, elapsed.as_secs_f64());
             }
 
-            match self.client.get(&format!("{}/api/system/status", self.base_url))
+            match self.client.get(format!("{}/api/system/status", self.base_url))
                 .timeout(Duration::from_secs(5))
                 .send()
                 .await
@@ -264,7 +274,7 @@ impl HttpTestHelper {
     pub async fn load_schemas(&self, results: &mut HttpTestResults) -> bool {
         println!("\n📋 Loading schemas...");
 
-        match self.client.post(&format!("{}/api/schemas/load", self.base_url))
+        match self.client.post(format!("{}/api/schemas/load", self.base_url))
             .header("Content-Type", "application/json")
             .send()
             .await
@@ -307,7 +317,7 @@ impl HttpTestHelper {
         }
 
         results.add_fail("Load schemas", "Invalid response format");
-        false
+        return false;
     }
 
     /// Verify that expected schemas are available
@@ -321,7 +331,7 @@ impl HttpTestHelper {
 
         println!("  Expected schemas: {}", expected_schemas.join(", "));
 
-        match self.client.get(&format!("{}/api/schemas", self.base_url))
+        match self.client.get(format!("{}/api/schemas", self.base_url))
             .send()
             .await
         {
@@ -402,7 +412,7 @@ impl HttpTestHelper {
     pub async fn approve_schema(&self, schema_name: &str, results: &mut HttpTestResults) -> bool {
         println!("\n✅ Approving {} schema...", schema_name);
 
-        match self.client.post(&format!("{}/api/schema/{}/approve", self.base_url, schema_name))
+        match self.client.post(format!("{}/api/schema/{}/approve", self.base_url, schema_name))
             .header("Content-Type", "application/json")
             .send()
             .await
@@ -464,7 +474,7 @@ impl HttpTestHelper {
         println!("  Author: {}", mutation_data["fields_and_values"]["author"]);
         println!("  Publish date: {}", publish_date);
 
-        match self.client.post(&format!("{}/api/mutation", self.base_url))
+        match self.client.post(format!("{}/api/mutation", self.base_url))
             .header("Content-Type", "application/json")
             .json(&mutation_data)
             .send()
@@ -480,28 +490,28 @@ impl HttpTestHelper {
                         if is_success {
                             println!("  Mutation created successfully");
                             results.add_pass("Create blog post mutation");
-                            return Some(publish_date);
+                            Some(publish_date)
                         } else {
                             let error_msg = data.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
                             results.add_fail("Create blog post mutation", &format!("Mutation failed: {}", error_msg));
                             println!("  Full response: {}", serde_json::to_string_pretty(&data).unwrap_or_default());
-                            return None;
+                            None
                         }
                     }
                     Err(e) => {
                         results.add_fail("Create blog post mutation", &format!("Failed to parse response: {}", e));
-                        return None;
+                        None
                     }
                 }
             }
             Ok(response) => {
                 let error_msg = format!("Expected status 200, got {}", response.status());
                 results.add_fail("Create blog post mutation", &error_msg);
-                return None;
+                None
             }
             Err(e) => {
                 results.add_fail("Create blog post mutation", &format!("Request failed: {}", e));
-                return None;
+                None
             }
         }
     }
@@ -532,7 +542,7 @@ impl HttpTestHelper {
         println!("  Author: {}", author);
         println!("  Publish date: {}", publish_date);
 
-        match self.client.post(&format!("{}/api/mutation", self.base_url))
+        match self.client.post(format!("{}/api/mutation", self.base_url))
             .header("Content-Type", "application/json")
             .json(&mutation_data)
             .send()
@@ -547,26 +557,26 @@ impl HttpTestHelper {
                         if is_success {
                             println!("  Custom mutation created successfully");
                             results.add_pass("Create custom blog post mutation");
-                            return Some(publish_date.to_string());
+                            Some(publish_date.to_string())
                         } else {
                             let error_msg = data.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
                             results.add_fail("Create custom blog post mutation", &format!("Mutation failed: {}", error_msg));
-                            return None;
+                            None
                         }
                     }
                     Err(e) => {
                         results.add_fail("Create custom blog post mutation", &format!("Failed to parse response: {}", e));
-                        return None;
+                        None
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail("Create custom blog post mutation", &format!("Expected status 200, got {}", response.status()));
-                return None;
+                None
             }
             Err(e) => {
                 results.add_fail("Create custom blog post mutation", &format!("Request failed: {}", e));
-                return None;
+                None
             }
         }
     }
@@ -583,7 +593,7 @@ impl HttpTestHelper {
 
         println!("  Querying all blog posts...");
 
-        match self.client.post(&format!("{}/api/query", self.base_url))
+        match self.client.post(format!("{}/api/query", self.base_url))
             .header("Content-Type", "application/json")
             .json(&query_data)
             .send()
@@ -672,7 +682,7 @@ impl HttpTestHelper {
             "filter": null
         });
 
-        match self.client.post(&format!("{}/api/query", self.base_url))
+        match self.client.post(format!("{}/api/query", self.base_url))
             .header("Content-Type", "application/json")
             .json(&query_data)
             .send()
@@ -756,7 +766,7 @@ impl HttpTestHelper {
     pub async fn verify_transforms_registered(&self, expected_transforms: &[String], results: &mut HttpTestResults) -> bool {
         println!("\n📋 Verifying transforms are registered...");
 
-        match self.client.get(&format!("{}/api/transforms", self.base_url))
+        match self.client.get(format!("{}/api/transforms", self.base_url))
             .send()
             .await
         {
@@ -859,9 +869,7 @@ pub fn get_available_schema_files() -> Vec<String> {
 
 /// Helper function to sort a HashSet into a Vec
 #[allow(dead_code)]
-pub fn sorted_vec<T: Ord>(set: &std::collections::HashSet<T>) -> Vec<T> 
-where 
-    T: Clone,
+pub fn sorted_vec<T: Ord + Clone>(set: &std::collections::HashSet<T>) -> Vec<T>
 {
     let mut vec: Vec<T> = set.iter().cloned().collect();
     vec.sort();

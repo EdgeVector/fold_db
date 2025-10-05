@@ -239,21 +239,5 @@ export function createMutationClient(client?: ApiClient): UnifiedMutationClient 
   return new UnifiedMutationClient(client);
 }
 
-// Backward compatibility exports - these will be deprecated
-export const MutationClient = class {
-  static async executeMutation(mutation: any): Promise<EnhancedApiResponse<MutationResponse>> {
-    return mutationClient.executeMutation(mutation);
-  }
-
-  static async executeQuery(query: any): Promise<EnhancedApiResponse<QueryResponse>> {
-    return mutationClient.executeQuery(query);
-  }
-};
-
-// Export individual functions for backward compatibility
-export const executeMutation = mutationClient.executeMutation.bind(mutationClient);
-export const executeQuery = mutationClient.executeQuery.bind(mutationClient);
-export const validateMutation = mutationClient.validateMutation.bind(mutationClient);
-export const validateSchemaForMutation = mutationClient.validateSchemaForMutation.bind(mutationClient);
 
 export default mutationClient;

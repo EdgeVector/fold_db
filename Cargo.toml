@@ -20,7 +20,6 @@ mock = []  # Feature flag for mock network implementation
 
 [dependencies]
 # Utilities
-dirs = "5.0"
 
 # Cryptography
 ring = "0.16.20"
@@ -45,15 +44,11 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 rand = "0.8"
 tempfile = "3.8"
 clap = { version = "4.4", features = ["derive"] }
-pest = "2.7"
-pest_derive = "2.7"
 log = "0.4"
-env_logger = "0.10"
 # Enhanced logging dependencies
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "chrono", "ansi"] }
 tracing-appender = "0.2"
-colored = "2.0"
 toml = "0.8"
 # P2P Networking
 libp2p = { version = "0.55", features = [
@@ -78,8 +73,6 @@ reqwest = { version = "0.11", features = ["json"] }
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "full"] }
 reqwest = { version = "0.11", features = ["json"] }
-tokio-test = "0.4"
-serial_test = "3.0"
 
 [lib]
 name = "datafold"
