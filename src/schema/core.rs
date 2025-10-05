@@ -36,6 +36,7 @@ impl SchemaCore {
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
+
         // load schemas from db
         let schemas = db_ops.get_all_schemas()?;
         

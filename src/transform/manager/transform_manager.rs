@@ -62,6 +62,13 @@ impl TransformManager {
         Ok(transforms.clone())
     }
 
+    /// Check if a transform is already registered.
+    pub fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
+        let transforms = self.registered_transforms.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        Ok(transforms.contains_key(transform_id))
+    }
+
     /// Gets all transforms that should run when the specified field is updated.
     pub fn get_transforms_for_field(
         &self,

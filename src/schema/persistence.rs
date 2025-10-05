@@ -31,7 +31,6 @@ impl SchemaCore {
         declarative_schema: DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
 
-
         let default_field_mappers = HashMap::new();
         let default_inner_field = FieldCommon::new(
             default_field_mappers.clone(),
@@ -83,7 +82,6 @@ impl SchemaCore {
         }
 
         if let Some(transform_fields) = &declarative_schema.transform_fields {
-            // Register declarative transforms using the event bus
             self.register_declarative_transforms(&declarative_schema, transform_fields)?;
         }
 

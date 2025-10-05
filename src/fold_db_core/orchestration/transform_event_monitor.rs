@@ -214,6 +214,13 @@ impl TransformEventMonitor {
     ) -> Result<(), SchemaError> {
         info!("🔧 TransformEventMonitor: Handling TransformRegistrationRequest for '{}'", event.registration.transform_id);
         
+        // Check if transform already exists
+        let transform_exists = manager.transform_exists(&event.registration.transform_id)?;
+        if transform_exists {
+            info!("ℹ️  TransformEventMonitor: Transform '{}' already registered, skipping re-registration", event.registration.transform_id);
+            return Ok(());
+        }
+        
         // Handle the transform registration using the TransformManager instance
         match manager.handle_transform_registration(&event.registration) {
             Ok(()) => {
