@@ -84,11 +84,22 @@ impl HttpTestHelper {
         println!("🚀 Starting HTTP server on port 9001...");
 
         // First, kill any existing server processes
-        let _ = Command::new("pkill")
+        println!("  Cleaning up any existing server processes...");
+        let kill_output = Command::new("pkill")
             .args(["-f", "datafold_http_server"])
             .output();
+        
+        if let Ok(output) = kill_output {
+            if !output.status.success() && !output.stderr.is_empty() {
+                println!("  Note: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+
+        // Give processes time to terminate
+        sleep(Duration::from_secs(2)).await;
 
         // Run the server startup script
+        println!("  Running server startup script...");
         match Command::new("./run_http_server.sh")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -96,14 +107,51 @@ impl HttpTestHelper {
         {
             Ok(mut process) => {
                 // Wait for the script to complete (it runs the server in background and exits)
-                let _ = process.wait();
+                let exit_status = process.wait();
                 
-                // Give the server time to start
-                sleep(Duration::from_secs(5)).await;
-                
-                println!("✅ Server startup script completed");
-                results.add_pass("Start HTTP server");
-                true
+                if let Ok(status) = exit_status {
+                    if status.success() {
+                        println!("✅ Server startup script completed successfully");
+                        
+                        // Give the server additional time to fully initialize
+                        println!("  Waiting for server initialization...");
+                        sleep(Duration::from_secs(8)).await;
+                        
+                        // Check if server is actually running by looking for the process
+                        let ps_output = Command::new("pgrep")
+                            .args(["-f", "datafold_http_server"])
+                            .output();
+                        
+                        match ps_output {
+                            Ok(output) if output.status.success() => {
+                                let stdout_str = String::from_utf8_lossy(&output.stdout);
+                                let pid = stdout_str.trim();
+                                if !pid.is_empty() {
+                                    println!("✅ Server process confirmed running (PID: {})", pid);
+                                    results.add_pass("Start HTTP server");
+                                    return true;
+                                } else {
+                                    results.add_fail("Start HTTP server", "Server process not found after startup");
+                                    return false;
+                                }
+                            }
+                            Ok(_) => {
+                                results.add_fail("Start HTTP server", "Server process not found after startup");
+                                return false;
+                            }
+                            Err(e) => {
+                                results.add_fail("Start HTTP server", &format!("Failed to check server process: {}", e));
+                                return false;
+                            }
+                        }
+                    } else {
+                        results.add_fail("Start HTTP server", &format!("Startup script failed with status: {:?}", status.code()));
+                        return false;
+                    }
+                } else {
+                    results.add_fail("Start HTTP server", "Failed to wait for startup script");
+                    return false;
+                }
             }
             Err(e) => {
                 results.add_fail("Start HTTP server", &format!("Failed to start server: {}", e));
@@ -114,41 +162,87 @@ impl HttpTestHelper {
 
     /// Wait for the server to be ready with health check
     pub async fn wait_for_server_ready(&self, results: &mut HttpTestResults) -> bool {
-        println!("⏳ Waiting for server to be ready (timeout: 30s)...");
+        println!("⏳ Waiting for server to be ready (timeout: 60s)...");
 
         let start_time = std::time::Instant::now();
-        let timeout_duration = Duration::from_secs(30);
+        let timeout_duration = Duration::from_secs(60);
+        let mut attempt = 0;
 
         while start_time.elapsed() < timeout_duration {
+            attempt += 1;
+            let elapsed = start_time.elapsed();
+            
+            // Log progress every 10 seconds
+            if attempt % 10 == 1 {
+                println!("  Attempt {} - Elapsed: {:.1}s", attempt, elapsed.as_secs_f64());
+            }
+
             match self.client.get(&format!("{}/api/system/status", self.base_url))
                 .timeout(Duration::from_secs(5))
                 .send()
                 .await
             {
                 Ok(response) if response.status() == 200 => {
-                    let elapsed = start_time.elapsed();
-                    println!("✅ Server is ready (took {:.1}s)", elapsed.as_secs_f64());
+                    println!("✅ Server is ready (took {:.1}s after {} attempts)", elapsed.as_secs_f64(), attempt);
                     results.add_pass("Wait for server ready");
                     return true;
                 }
-                Ok(_) => {
+                Ok(response) => {
                     // Server responded but not with 200
+                    if attempt % 10 == 1 {
+                        println!("  Server responded with status: {} (attempt {})", response.status(), attempt);
+                    }
                 }
-                Err(_) => {
-                    // Server not ready yet
+                Err(e) => {
+                    // Server not ready yet - log error details every 10 attempts
+                    if attempt % 10 == 1 {
+                        println!("  Connection error on attempt {}: {}", attempt, e);
+                    }
                 }
             }
 
             sleep(Duration::from_secs(1)).await;
         }
 
-        results.add_fail("Wait for server ready", "Server failed to become ready within timeout");
+        let elapsed = start_time.elapsed();
+        let error_msg = format!("Server failed to become ready within {}s ({} attempts)", elapsed.as_secs(), attempt);
+        println!("❌ {}", error_msg);
+        
+        // Check server logs for debugging when readiness check fails
+        self.check_server_logs();
+        
+        results.add_fail("Wait for server ready", &error_msg);
         false
+    }
+
+    /// Check server logs for debugging
+    pub fn check_server_logs(&self) {
+        println!("\n📋 Checking server logs for debugging...");
+        
+        // Check if server.log exists and show recent entries
+        if let Ok(log_content) = std::fs::read_to_string("server.log") {
+            let lines: Vec<&str> = log_content.lines().collect();
+            let recent_lines = if lines.len() > 20 {
+                &lines[lines.len() - 20..]
+            } else {
+                &lines
+            };
+            
+            println!("  Recent server log entries (last {} lines):", recent_lines.len());
+            for line in recent_lines {
+                println!("    {}", line);
+            }
+        } else {
+            println!("  No server.log file found");
+        }
     }
 
     /// Clean up server process
     pub fn cleanup_server(&self, _server_process: &mut Option<std::process::Child>) {
         println!("\n🛑 Stopping HTTP server...");
+
+        // Check logs before cleanup for debugging
+        self.check_server_logs();
 
         // Kill any running datafold server processes
         let _ = Command::new("pkill")
