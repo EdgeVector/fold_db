@@ -69,6 +69,14 @@ fi
 # Build the React frontend (prebuild will read OPENAPI_URL file)
 echo "Building the React frontend..."
 cd src/datafold_node/static-react
+echo "Installing frontend dependencies..."
+npm ci
+
+if [ $? -ne 0 ]; then
+    echo "Failed to install frontend dependencies. Exiting."
+    exit 1
+fi
+
 OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
 
 if [ $? -ne 0 ]; then
