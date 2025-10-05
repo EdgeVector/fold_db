@@ -1,8 +1,0 @@
-{
-    "type": "mutation",
-    "schema": "UserProfile",
-    "mutation_type": "create",
-    "data": {
-        "username": "johndoe"
-    }
-}

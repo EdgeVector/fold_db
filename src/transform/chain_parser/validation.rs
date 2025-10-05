@@ -3,11 +3,11 @@
 //! Contains validation algorithms and compatibility analysis for
 //! chain expressions and multiple chain coordination.
 
-use crate::transform::iterator_stack::chain_parser::parser::ChainParser;
-use crate::transform::iterator_stack::chain_parser::types::{
+use crate::transform::chain_parser::parser::ChainParser;
+use crate::transform::chain_parser::types::{
     ChainOperation, CompatibilityAnalysis, ParsedChain,
 };
-use crate::transform::iterator_stack::errors::{IteratorStackError, IteratorStackResult};
+use crate::transform::chain_parser::errors::{IteratorStackError, IteratorStackResult};
 use std::collections::HashMap;
 
 impl ChainParser {

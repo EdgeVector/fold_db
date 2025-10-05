@@ -60,7 +60,7 @@ fn test_blogpost_mutation_triggers_transforms() {
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for schema registration and transform registration to complete
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(50));
     
     // Get message bus for publishing and subscribing to events
     let message_bus = fold_db.message_bus();
@@ -87,7 +87,6 @@ fn test_blogpost_mutation_triggers_transforms() {
         ],
     );
     
-    println!("📤 Publishing MutationExecuted event for BlogPost with fields: content, tags, publish_date, author, title");
     message_bus.publish(mutation_event)
         .expect("Failed to publish MutationExecuted event");
     
@@ -98,13 +97,11 @@ fn test_blogpost_mutation_triggers_transforms() {
     
     while start.elapsed() < timeout {
         if let Ok(event) = transform_triggered_consumer.try_recv() {
-            println!("🔔 Received TransformTriggered event: {}", event.transform_id);
             triggered_transform_ids.push(event.transform_id);
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(5));
     }
     
-    println!("📋 Triggered transforms: {:?}", triggered_transform_ids);
     
     // Verify that the BlogPostWordIndex transform was triggered
     // The single transform handles all fields referenced in BlogPostWordIndex transform_fields
@@ -126,7 +123,6 @@ fn test_blogpost_mutation_triggers_transforms() {
         triggered_transform_ids
     );
     
-    println!("✅ All expected transforms were triggered by the BlogPost mutation");
     
     // Optional: Verify that transforms are executed (TransformExecuted events)
     // Note: This may not always complete in test time, but we can check if any executed
@@ -136,14 +132,12 @@ fn test_blogpost_mutation_triggers_transforms() {
     
     while execution_start.elapsed() < execution_timeout {
         if let Ok(event) = transform_executed_consumer.try_recv() {
-            println!("✅ Transform executed: {} - result: {}", event.transform_id, event.result);
             executed_transform_ids.push(event.transform_id);
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(5));
     }
     
     if !executed_transform_ids.is_empty() {
-        println!("📊 {} transforms were executed: {:?}", executed_transform_ids.len(), executed_transform_ids);
         
         // Verify executed transforms are a subset of triggered transforms
         for executed_id in &executed_transform_ids {
@@ -154,10 +148,8 @@ fn test_blogpost_mutation_triggers_transforms() {
             );
         }
     } else {
-        println!("ℹ️  No transforms completed execution within the test timeout (this is expected if source data is empty)");
     }
     
-    println!("✅ BlogPost mutation transform triggering test completed successfully!");
 }
 
 /// Test to verify that only affected fields trigger their corresponding transforms
@@ -215,7 +207,7 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for schema registration
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(50));
     
     // Get message bus
     let message_bus = fold_db.message_bus();
@@ -231,7 +223,6 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
         vec!["title".to_string()],
     );
     
-    println!("📤 Publishing MutationExecuted event for BlogPost with only 'title' field");
     message_bus.publish(mutation_event)
         .expect("Failed to publish MutationExecuted event");
     
@@ -242,13 +233,11 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
     
     while start.elapsed() < timeout {
         if let Ok(event) = transform_triggered_consumer.try_recv() {
-            println!("🔔 Received TransformTriggered event: {}", event.transform_id);
             triggered_transform_ids.push(event.transform_id);
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(5));
     }
     
-    println!("📋 Triggered transforms: {:?}", triggered_transform_ids);
     
     // Verify that the BlogPostWordIndex transform was triggered
     assert!(
@@ -265,7 +254,6 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
         triggered_transform_ids
     );
     
-    println!("✅ Partial mutation correctly triggered only the affected transform!");
 }
 
 /// Test to verify that the word transform is triggered when content field changes
@@ -318,7 +306,7 @@ fn test_content_mutation_triggers_word_transform() {
     ).expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for registration
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(50));
     
     let message_bus = fold_db.message_bus();
     let mut transform_triggered_consumer = message_bus.subscribe::<TransformTriggered>();
@@ -331,7 +319,6 @@ fn test_content_mutation_triggers_word_transform() {
         vec!["content".to_string()],
     );
     
-    println!("📤 Publishing MutationExecuted event for BlogPost with 'content' field");
     message_bus.publish(mutation_event)
         .expect("Failed to publish MutationExecuted event");
     
@@ -342,13 +329,11 @@ fn test_content_mutation_triggers_word_transform() {
     
     while start.elapsed() < timeout {
         if let Ok(event) = transform_triggered_consumer.try_recv() {
-            println!("🔔 Received TransformTriggered event: {}", event.transform_id);
             triggered_transform_ids.push(event.transform_id);
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(5));
     }
     
-    println!("📋 Triggered transforms: {:?}", triggered_transform_ids);
     
     // Verify that the BlogPostWordIndex transform is triggered
     assert!(
@@ -365,6 +350,5 @@ fn test_content_mutation_triggers_word_transform() {
         triggered_transform_ids
     );
     
-    println!("✅ Content mutation correctly triggered both content and word transforms!");
 }
 

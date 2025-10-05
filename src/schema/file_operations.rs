@@ -1,5 +1,4 @@
 use crate::schema::{types::DeclarativeSchemaDefinition, SchemaError};
-use log::info;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -27,11 +26,9 @@ impl SchemaFileOperations {
         let mut schema_with_hash = serde_json::to_value(declarative_schema)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to serialize schema: {}", e)))?;
 
-        let hash = super::hasher::SchemaHasher::add_hash_to_schema(&mut schema_with_hash).map_err(
+        let _hash = super::hasher::SchemaHasher::add_hash_to_schema(&mut schema_with_hash).map_err(
             |e| SchemaError::InvalidData(format!("Failed to add hash to schema: {}", e)),
         )?;
-
-        info!("Added hash to schema '{}': {}", final_name, hash);
 
         // Write the schema file with hash and proper formatting
         let formatted_json = serde_json::to_string_pretty(&schema_with_hash)
@@ -39,12 +36,6 @@ impl SchemaFileOperations {
 
         std::fs::write(&target_path, formatted_json)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to write schema file: {}", e)))?;
-
-        info!(
-            "Schema '{}' successfully written to {}",
-            final_name,
-            target_path.display()
-        );
         Ok(())
     }
 

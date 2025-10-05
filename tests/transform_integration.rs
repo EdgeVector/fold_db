@@ -57,7 +57,7 @@ fn execute_engine_and_convert_to_records() {
         .map(|(field, hash)| (field.clone(), hash_to_code.get(hash).unwrap().clone()))
         .collect();
     let parsed = datafold::transform::shared_utilities::parse_expressions_batch(&expressions).unwrap();
-    let chains_map: HashMap<String, datafold::transform::iterator_stack::chain_parser::ParsedChain> = parsed
+    let chains_map: HashMap<String, datafold::transform::chain_parser::ParsedChain> = parsed
         .iter()
         .map(|(field, chain)| (field.clone(), chain.clone()))
         .collect();

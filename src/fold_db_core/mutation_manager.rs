@@ -15,7 +15,7 @@ use crate::schema::{SchemaCore, SchemaError};
 use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 use super::infrastructure::message_bus::request_events::MutationRequest;
 use super::infrastructure::MessageBus;
-use log::{error, info, warn};
+use log::{error, warn};
 
 /// Manages mutation operations for the FoldDB system
 pub struct MutationManager {
@@ -73,10 +73,8 @@ impl MutationManager {
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
-        log::info!("🔄 Persisting schema '{}' with updated field molecule UUIDs", schema_name);
         self.db_ops.store_schema(&schema_name, &schema)?;
         self.schema_manager.load_schema_internal(schema)?;
-        log::info!("✅ Schema '{}' persisted successfully", schema_name);
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -97,16 +95,10 @@ impl MutationManager {
             mutation_context,
         );
         
-        if let Err(e) = self.message_bus.publish(event) {
-            log::warn!("Failed to publish MutationExecuted event: {}", e);
-            // Don't fail the mutation if event publishing fails
-        }
+        self.message_bus.publish(event)?;
         
         // Flush database to ensure mutation is persisted to disk
-        if let Err(e) = self.db_ops.flush() {
-            log::warn!("Failed to flush database after mutation completion: {}", e);
-            // Don't fail the mutation if flush fails, but log the warning
-        }
+        self.db_ops.flush()?;
         
         // Return the mutation ID
         Ok(mutation_id)
@@ -127,21 +119,15 @@ impl MutationManager {
         is_listening.store(true, std::sync::atomic::Ordering::Release);
 
         thread::spawn(move || {
-            info!("🔄 Starting MutationManager event listener background thread");
-            
             // Subscribe to MutationRequest events
             let mut consumer = message_bus.subscribe::<MutationRequest>();
-
-            info!("✅ MutationManager subscribed to MutationRequest events");
 
             // Main event processing loop
             while is_listening.load(std::sync::atomic::Ordering::Acquire) {
                 match consumer.try_recv() {
                     Ok(mutation_request) => {
-                        info!("📨 MutationManager received MutationRequest event: {:?}", mutation_request);
-                        
                         if let Err(e) = Self::handle_mutation_request_event(&mutation_request, &db_ops, &schema_manager, &message_bus) {
-                            error!("❌ MutationManager failed to handle mutation request: {}", e);
+                            error!("MutationManager failed to handle mutation request: {}", e);
                         }
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -149,23 +135,18 @@ impl MutationManager {
                         thread::sleep(Duration::from_millis(10));
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        error!("❌ MutationManager message bus consumer disconnected");
+                        error!("MutationManager message bus consumer disconnected");
                         break;
                     }
                 }
             }
-
-            info!("🛑 MutationManager event listener background thread stopped");
         });
-
-        info!("✅ MutationManager event listener started successfully");
         Ok(())
     }
 
     /// Stop the event listener
     pub fn stop_event_listener(&self) {
         self.is_listening.store(false, std::sync::atomic::Ordering::Release);
-        info!("🛑 MutationManager event listener stop requested");
     }
 
     /// Check if the event listener is currently running
@@ -182,18 +163,6 @@ impl MutationManager {
     ) -> Result<(), SchemaError> {
         let start_time = std::time::Instant::now();
         
-        info!(
-            "🔧 MutationManager processing MutationRequest event for schema: {}, correlation_id: {}",
-            mutation_request.mutation.schema_name, mutation_request.correlation_id
-        );
-
-        // Log mutation details
-        info!(
-            "📊 MutationManager mutation details - Schema: {}, Type: {:?}, Fields: {:?}",
-            mutation_request.mutation.schema_name,
-            mutation_request.mutation.mutation_type,
-            mutation_request.mutation.fields_and_values.keys().collect::<Vec<_>>()
-        );
 
         // Get the schema definition
         let mut schema = schema_manager.get_schema(&mutation_request.mutation.schema_name)?
@@ -220,10 +189,8 @@ impl MutationManager {
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
-        log::info!("🔄 Persisting schema '{}' with updated field molecule UUIDs", schema_name);
         db_ops.store_schema(&schema_name, &schema)?;
         schema_manager.load_schema_internal(schema)?;
-        log::info!("✅ Schema '{}' persisted successfully", schema_name);
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -244,21 +211,11 @@ impl MutationManager {
             mutation_context,
         );
         
-        if let Err(e) = message_bus.publish(event) {
-            log::warn!("Failed to publish MutationExecuted event: {}", e);
-            // Don't fail the mutation if event publishing fails
-        }
+        message_bus.publish(event)?;
 
         // Flush database to ensure mutation is persisted to disk
-        if let Err(e) = db_ops.flush() {
-            log::warn!("Failed to flush database after mutation completion: {}", e);
-            // Don't fail the mutation if flush fails, but log the warning
-        }
+        db_ops.flush()?;
 
-        info!(
-            "✅ MutationManager successfully executed mutation from event. Mutation ID: {}, Execution time: {}ms",
-            mutation_id, execution_time_ms
-        );
         Ok(())
     }
 }

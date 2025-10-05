@@ -3,20 +3,20 @@
 //! Provides a field type that combines hash and range functionality for
 //! efficient indexing with complex fan-out operations.
 
-use crate::impl_field;
+// Removed unused impl_field import
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{FilterApplicator, HashRangeOperations, apply_hash_range_filter, fetch_atoms_for_matches};
+use crate::schema::types::field::{FilterApplicator, apply_hash_range_filter, fetch_atoms_for_matches};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperations;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+// Removed unused JsonValue import
 use crate::atom::{MoleculeHashRange, MoleculeBehavior};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
-use log::{info, error};
+// Removed unused log imports
 
 /// Field that combines hash and range functionality for indexing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,7 +89,6 @@ impl crate::schema::types::field::Field for HashRangeField {
         if let (Some(hash_key), Some(range_key)) = (&key_value.hash, &key_value.range) {
             if let Some(molecule) = &mut self.molecule {
                 molecule.set_atom_uuid_from_values(hash_key.clone(), range_key.clone(), atom.uuid().to_string());
-                log::debug!("Writing atom to HashRangeField with pub_key '{}', hash '{}' and range '{}': {:?}", pub_key, hash_key, range_key, atom);
             }
         }
     }

@@ -1,8 +1,0 @@
-{
-  "type": "mutation",
-  "schema": "BlogPost",
-  "mutation_type": "delete",
-  "data": {
-    "title": "Getting Started with DataFold"
-  }
-}

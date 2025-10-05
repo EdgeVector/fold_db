@@ -84,8 +84,5 @@ path = "src/lib.rs"
 name = "datafold_http_server"
 path = "src/bin/datafold_http_server.rs"
 
-[[bin]]
-name = "datafold_node"
-path = "src/bin/datafold_node.rs"
 
 

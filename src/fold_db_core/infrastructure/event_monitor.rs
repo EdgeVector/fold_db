@@ -751,12 +751,10 @@ impl EventMonitor {
     /// and executing the transform for each key-value pair
     fn handle_transform_backfill(
         transform_id: &str,
-        source_schema_name: &str,
+        _source_schema_name: &str,
         transform_manager: &Arc<TransformManager>,
     ) -> Result<(), crate::schema::SchemaError> {
         use crate::transform::manager::types::TransformRunner;
-
-        log::info!("🔄 Starting backfill for transform '{}' from source schema '{}'", transform_id, source_schema_name);
 
         // We need to access the database operations through a different approach
         // Since db_ops is private, we'll need to create a new SchemaCore instance
@@ -764,13 +762,10 @@ impl EventMonitor {
         
         // For now, let's use a simpler approach by executing the transform without context
         // This will process all existing data in the source schema
-        log::info!("📋 Executing backfill for transform '{}' without specific context", transform_id);
 
         // Execute the transform without mutation context to process all existing data
         match transform_manager.execute_transform_with_context(transform_id, &None) {
-            Ok(result) => {
-                log::info!("✅ Backfill completed successfully for transform '{}': {} records processed", 
-                           transform_id, result.records.len());
+            Ok(_result) => {
             }
             Err(e) => {
                 log::error!("❌ Failed to execute backfill for transform '{}': {}", transform_id, e);

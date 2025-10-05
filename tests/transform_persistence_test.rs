@@ -16,11 +16,7 @@ use tempfile::TempDir;
 
 #[test]
 fn test_transform_registration_persistence_across_restart() {
-    println!("==================================================================================");
-    println!("Transform Persistence Test - Cross Restart");
-    println!("==================================================================================");
-    println!("Date: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"));
-    println!("==================================================================================");
+    // Transform Persistence Test - Cross Restart
 
     // Create separate temporary directories for each database instance to avoid lock issues
     let temp_dir_1 = TempDir::new().expect("Failed to create temp directory 1");
@@ -31,10 +27,9 @@ fn test_transform_registration_persistence_across_restart() {
     let test_db_path_2 = temp_dir_2.path().to_str().expect("Failed to convert path to string");
     let test_db_path_3 = temp_dir_3.path().to_str().expect("Failed to convert path to string");
     
-    println!("📁 Using test database paths: {}, {}, {}", test_db_path_1, test_db_path_2, test_db_path_3);
+    // Using test database paths
 
-    // ========== PHASE 1: Initial Node Startup and Transform Registration ==========
-    println!("\n🚀 PHASE 1: Initial node startup and transform registration");
+    // PHASE 1: Initial Node Startup and Transform Registration
     
     // Create first FoldDB instance
     let fold_db_1 = FoldDB::new(test_db_path_1).expect("Failed to create first FoldDB instance");
@@ -92,14 +87,14 @@ fn test_transform_registration_persistence_across_restart() {
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for async event processing
-    thread::sleep(Duration::from_millis(200));
+    thread::sleep(Duration::from_millis(50));
     
     // Verify transform is registered in first instance
     let transform_manager_1 = fold_db_1.transform_manager();
     let registered_transforms_1 = transform_manager_1.list_transforms()
         .expect("Failed to list transforms from first instance");
     
-    println!("📋 Transforms registered in first instance: {:?}", registered_transforms_1.keys().collect::<Vec<_>>());
+    // Transforms registered in first instance
     
     let expected_transform_id = "BlogPostWordIndex";
     assert!(
@@ -135,10 +130,9 @@ fn test_transform_registration_persistence_across_restart() {
         );
     }
     
-    println!("✅ Transform registration verified in first instance");
+    // Transform registration verified in first instance
     
-    // ========== PHASE 2: Verify Direct Database Persistence ==========
-    println!("\n🔍 PHASE 2: Verify direct database persistence");
+    // PHASE 2: Verify Direct Database Persistence
     
     // Get direct access to the database operations to verify persistence
     let db_ops = fold_db_1.get_db_ops();
@@ -161,10 +155,9 @@ fn test_transform_registration_persistence_across_restart() {
     assert!(content_mappings.is_some(), "BlogPost.content should have field mappings");
     assert!(content_mappings.unwrap().contains("BlogPostWordIndex"), "BlogPost.content should map to BlogPostWordIndex");
     
-    println!("✅ Direct database persistence verified");
+    // Direct database persistence verified
     
-    // ========== PHASE 3: Test Additional Transform Registration ==========
-    println!("\n➕ PHASE 3: Test additional transform registration");
+    // PHASE 3: Test Additional Transform Registration
     
     // Load another schema to register a second transform
     let authorindex_schema_json = json!({
@@ -194,13 +187,13 @@ fn test_transform_registration_persistence_across_restart() {
         .expect("Failed to load BlogPostAuthorIndex schema");
     
     // Wait for async event processing
-    thread::sleep(Duration::from_millis(200));
+    thread::sleep(Duration::from_millis(50));
     
     // Verify both transforms are now registered
     let final_transforms = transform_manager_1.list_transforms()
         .expect("Failed to list final transforms");
     
-    println!("📋 Final transforms registered: {:?}", final_transforms.keys().collect::<Vec<_>>());
+    // Final transforms registered
     
     assert_eq!(
         final_transforms.len(),
@@ -218,10 +211,9 @@ fn test_transform_registration_persistence_across_restart() {
         "BlogPostAuthorIndex transform should be registered"
     );
     
-    println!("✅ Additional transform registration verified");
+    // Additional transform registration verified
     
-    // ========== PHASE 4: Verify Both Transforms Persist in Database ==========
-    println!("\n💾 PHASE 4: Verify both transforms persist in database");
+    // PHASE 4: Verify Both Transforms Persist in Database
     
     // Verify both transforms are stored in the database
     let (final_loaded_transforms, final_loaded_mappings) = db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
@@ -252,24 +244,17 @@ fn test_transform_registration_persistence_across_restart() {
     assert!(author_mappings.is_some(), "BlogPost.author should have field mappings");
     assert!(author_mappings.unwrap().contains("BlogPostAuthorIndex"), "BlogPost.author should map to BlogPostAuthorIndex");
     
-    println!("✅ Both transforms persist in database");
+    // Both transforms persist in database
     
     // Close first instance
     fold_db_1.close().expect("Failed to close first FoldDB instance");
     
-    println!("\n🎉 Transform persistence test completed successfully!");
-    println!("✅ Transform registrations are properly flushed to sled");
-    println!("✅ Transform registrations are loaded when node starts");
-    println!("✅ Transform registrations persist across node restarts");
+    // Transform persistence test completed successfully
 }
 
 #[test]
 fn test_transform_persistence_with_direct_db_verification() {
-    println!("==================================================================================");
-    println!("Transform Persistence Test - Direct Database Verification");
-    println!("==================================================================================");
-    println!("Date: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"));
-    println!("==================================================================================");
+    // Transform Persistence Test - Direct Database Verification
 
     // Create separate temporary directories to avoid database lock issues
     let temp_dir_1 = TempDir::new().expect("Failed to create temp directory 1");
@@ -278,10 +263,9 @@ fn test_transform_persistence_with_direct_db_verification() {
     let test_db_path_1 = temp_dir_1.path().to_str().expect("Failed to convert path to string");
     let test_db_path_2 = temp_dir_2.path().to_str().expect("Failed to convert path to string");
     
-    println!("📁 Using test database paths: {}, {}", test_db_path_1, test_db_path_2);
+    // Using test database paths
 
-    // ========== PHASE 1: Register Transform and Verify Direct Storage ==========
-    println!("\n🚀 PHASE 1: Register transform and verify direct storage");
+    // PHASE 1: Register Transform and Verify Direct Storage
     
     // Create FoldDB instance and register transform
     let fold_db = FoldDB::new(test_db_path_1).expect("Failed to create FoldDB instance");
@@ -341,8 +325,7 @@ fn test_transform_persistence_with_direct_db_verification() {
     
     assert!(registered_transforms.contains_key("BlogPostWordIndex"), "Transform should be registered");
     
-    // ========== PHASE 2: Direct Database Verification ==========
-    println!("\n🔍 PHASE 2: Direct database verification");
+    // PHASE 2: Direct Database Verification
     
     // Get direct access to the database operations
     let db_ops = fold_db.get_db_ops();
@@ -366,10 +349,9 @@ fn test_transform_persistence_with_direct_db_verification() {
     assert!(content_mappings.is_some(), "BlogPost.content should have field mappings");
     assert!(content_mappings.unwrap().contains("BlogPostWordIndex"), "BlogPost.content should map to BlogPostWordIndex");
     
-    println!("✅ Direct database verification passed");
+    // Direct database verification passed
     
-    // ========== PHASE 3: Verify Flush Operation ==========
-    println!("\n💾 PHASE 3: Verify flush operation");
+    // PHASE 3: Verify Flush Operation
     
     // Verify that the sync operation properly flushes data to storage
     // by calling sync again and ensuring data persists
@@ -387,13 +369,10 @@ fn test_transform_persistence_with_direct_db_verification() {
     assert!(content_mappings.is_some(), "BlogPost.content should have persistent field mappings");
     assert!(content_mappings.unwrap().contains("BlogPostWordIndex"), "BlogPost.content should map to BlogPostWordIndex");
     
-    println!("✅ Flush operation verification passed");
+    // Flush operation verification passed
     
     // Close the database
     fold_db.close().expect("Failed to close FoldDB");
     
-    println!("\n🎉 Direct database verification test completed successfully!");
-    println!("✅ Transform data is properly stored in sled database");
-    println!("✅ Field mappings are properly stored in sled database");
-    println!("✅ Data persists across database close/reopen cycles");
+    // Direct database verification test completed successfully
 }

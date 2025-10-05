@@ -4,7 +4,7 @@
 //! executor modules to eliminate code duplication and improve maintainability.
 
 use crate::schema::types::SchemaError;
-use crate::transform::iterator_stack::chain_parser::{ChainParser, ParsedChain};
+use crate::transform::chain_parser::{ChainParser, ParsedChain};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -102,7 +102,7 @@ pub fn resolve_field_value_from_chain(
 
     for operation in &parsed_chain.operations {
         match operation {
-            crate::transform::iterator_stack::chain_parser::ChainOperation::FieldAccess(
+            crate::transform::chain_parser::ChainOperation::FieldAccess(
                 field_name,
             ) => {
                 path_parts.push(field_name.clone());

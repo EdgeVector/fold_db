@@ -1,16 +1,15 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::schema::types::field::{
-    Field, FieldCommon, FieldType, HashRangeField, RangeField, SingleField,
-    HashRangeFilter, HashRangeFilterResult, FilterApplicator, fetch_atoms_for_matches,
+    Field, FieldCommon, HashRangeField, RangeField, SingleField,
+    HashRangeFilter, FilterApplicator, fetch_atoms_for_matches,
 };
 use crate::db_operations::DbOperations;
-use crate::schema::types::{Transform, SchemaError};
+use crate::schema::types::SchemaError;
 use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
-use log::{info, error};
 
 /// Enumeration over all field variants.
 #[derive(Debug, Clone, Serialize, Deserialize)]

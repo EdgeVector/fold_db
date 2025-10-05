@@ -39,13 +39,13 @@ impl HttpTestResults {
     pub fn add_pass(&mut self, test_name: &str) {
         self.passed += 1;
         self.tests.push(("✅ PASS".to_string(), test_name.to_string()));
-        println!("✅ PASS: {}", test_name);
+        // Test passed: test_name
     }
 
     pub fn add_fail(&mut self, test_name: &str, error_msg: &str) {
         self.failed += 1;
         self.tests.push(("❌ FAIL".to_string(), format!("{} - {}", test_name, error_msg)));
-        println!("❌ FAIL: {} - {}", test_name, error_msg);
+        // Test failed: test_name - error_msg
     }
 
     pub fn get_passed(&self) -> u32 {
@@ -91,44 +91,44 @@ impl HttpTestHelper {
 
     /// Start the HTTP server using the run_http_server.sh script
     pub async fn start_http_server(&self, _server_process: &mut Option<std::process::Child>, results: &mut HttpTestResults) -> bool {
-        println!("🚀 Starting HTTP server on port 9001...");
+        // Starting HTTP server on port 9001
 
         // First, kill any existing server processes
-        println!("  Cleaning up any existing server processes...");
+        // Cleaning up any existing server processes
         let kill_output = Command::new("pkill")
             .args(["-f", "datafold_http_server"])
             .output();
         
         if let Ok(output) = kill_output {
             if !output.status.success() && !output.stderr.is_empty() {
-                println!("  Note: {}", String::from_utf8_lossy(&output.stderr));
+                // Note: server cleanup message
             }
         }
 
         // Give processes time to terminate
-        sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_millis(500)).await;
 
         // Run the server startup script
-        println!("  Running server startup script...");
+        // Running server startup script
         match Command::new("./run_http_server.sh").output() {
             Ok(output) => {
                 let stdout_str = String::from_utf8_lossy(&output.stdout);
                 let stderr_str = String::from_utf8_lossy(&output.stderr);
 
                 if !stdout_str.trim().is_empty() {
-                    println!("  Startup script stdout:\n{}", stdout_str);
+                    // Startup script stdout
                 }
 
                 if !stderr_str.trim().is_empty() {
-                    println!("  Startup script stderr:\n{}", stderr_str);
+                    // Startup script stderr
                 }
 
                 if output.status.success() {
-                    println!("✅ Server startup script completed successfully");
+                    // Server startup script completed successfully
 
                     // Give the server additional time to fully initialize
-                    println!("  Waiting for server initialization...");
-                    sleep(Duration::from_secs(8)).await;
+                    // Waiting for server initialization
+                    sleep(Duration::from_secs(3)).await;
 
                     // Check if server is actually running by looking for the process
                     let ps_output = Command::new("pgrep")
@@ -140,7 +140,7 @@ impl HttpTestHelper {
                             let stdout_str = String::from_utf8_lossy(&output.stdout);
                             let pid = stdout_str.trim();
                             if !pid.is_empty() {
-                                println!("✅ Server process confirmed running (PID: {})", pid);
+                                // Server process confirmed running
                                 results.add_pass("Start HTTP server");
                                 return true;
                             } else {
@@ -177,10 +177,10 @@ impl HttpTestHelper {
 
     /// Wait for the server to be ready with health check
     pub async fn wait_for_server_ready(&self, results: &mut HttpTestResults) -> bool {
-        println!("⏳ Waiting for server to be ready (timeout: 60s)...");
+        // Waiting for server to be ready (timeout: 60s)
 
         let start_time = std::time::Instant::now();
-        let timeout_duration = Duration::from_secs(60);
+        let timeout_duration = Duration::from_secs(15);
         let mut attempt = 0;
 
         while start_time.elapsed() < timeout_duration {
@@ -189,7 +189,7 @@ impl HttpTestHelper {
             
             // Log progress every 10 seconds
             if attempt % 10 == 1 {
-                println!("  Attempt {} - Elapsed: {:.1}s", attempt, elapsed.as_secs_f64());
+                // Attempt with elapsed time
             }
 
             match self.client.get(format!("{}/api/system/status", self.base_url))
@@ -198,30 +198,30 @@ impl HttpTestHelper {
                 .await
             {
                 Ok(response) if response.status() == 200 => {
-                    println!("✅ Server is ready (took {:.1}s after {} attempts)", elapsed.as_secs_f64(), attempt);
+                    // Server is ready
                     results.add_pass("Wait for server ready");
                     return true;
                 }
                 Ok(response) => {
                     // Server responded but not with 200
                     if attempt % 10 == 1 {
-                        println!("  Server responded with status: {} (attempt {})", response.status(), attempt);
+                        // Server responded with status
                     }
                 }
                 Err(e) => {
                     // Server not ready yet - log error details every 10 attempts
                     if attempt % 10 == 1 {
-                        println!("  Connection error on attempt {}: {}", attempt, e);
+                        // Connection error on attempt
                     }
                 }
             }
 
-            sleep(Duration::from_secs(1)).await;
+            sleep(Duration::from_millis(200)).await;
         }
 
         let elapsed = start_time.elapsed();
         let error_msg = format!("Server failed to become ready within {}s ({} attempts)", elapsed.as_secs(), attempt);
-        println!("❌ {}", error_msg);
+        // Server failed to become ready
         
         // Check server logs for debugging when readiness check fails
         self.check_server_logs();
@@ -232,7 +232,7 @@ impl HttpTestHelper {
 
     /// Check server logs for debugging
     pub fn check_server_logs(&self) {
-        println!("\n📋 Checking server logs for debugging...");
+        // Checking server logs for debugging
         
         // Check if server.log exists and show recent entries
         if let Ok(log_content) = std::fs::read_to_string("server.log") {
@@ -243,18 +243,15 @@ impl HttpTestHelper {
                 &lines
             };
             
-            println!("  Recent server log entries (last {} lines):", recent_lines.len());
-            for line in recent_lines {
-                println!("    {}", line);
-            }
+            // Recent server log entries
         } else {
-            println!("  No server.log file found");
+            // No server.log file found
         }
     }
 
     /// Clean up server process
     pub fn cleanup_server(&self, _server_process: &mut Option<std::process::Child>) {
-        println!("\n🛑 Stopping HTTP server...");
+        // Stopping HTTP server
 
         // Check logs before cleanup for debugging
         self.check_server_logs();
@@ -265,14 +262,14 @@ impl HttpTestHelper {
             .output();
 
         // Wait a bit for cleanup
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_millis(500));
 
-        println!("✅ Server stopped");
+        // Server stopped
     }
 
     /// Load schemas from the available_schemas directory
     pub async fn load_schemas(&self, results: &mut HttpTestResults) -> bool {
-        println!("\n📋 Loading schemas...");
+        // Loading schemas
 
         match self.client.post(format!("{}/api/schemas/load", self.base_url))
             .header("Content-Type", "application/json")
@@ -287,9 +284,7 @@ impl HttpTestHelper {
                             let data_loaded = response_data.get("data_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
                             let total_loaded = available_loaded + data_loaded;
 
-                            println!("  Available schemas loaded: {}", available_loaded);
-                            println!("  Data schemas loaded: {}", data_loaded);
-                            println!("  Total schemas loaded: {}", total_loaded);
+                            // Schemas loaded successfully
 
                             if total_loaded == 0 {
                                 results.add_fail("Load schemas", "No schemas were loaded");
@@ -322,14 +317,14 @@ impl HttpTestHelper {
 
     /// Verify that expected schemas are available
     pub async fn verify_schemas_available(&self, expected_schemas: &[String], results: &mut HttpTestResults) -> bool {
-        println!("\n🔍 Verifying schemas are available...");
+        // Verifying schemas are available
 
         if expected_schemas.is_empty() {
             results.add_fail("Verify schemas available", "No expected schemas provided");
             return false;
         }
 
-        println!("  Expected schemas: {}", expected_schemas.join(", "));
+        // Expected schemas
 
         match self.client.get(format!("{}/api/schemas", self.base_url))
             .send()
@@ -339,7 +334,7 @@ impl HttpTestHelper {
                 match response.json::<Value>().await {
                     Ok(data) => {
                         if let Some(schemas_data) = data.get("data").and_then(|d| d.as_array()) {
-                            println!("  Discovered {} schema(s) in database", schemas_data.len());
+                            // Discovered schemas in database
 
                             // Extract schema names from the list
                             let mut discovered_schema_names = Vec::new();
@@ -359,15 +354,14 @@ impl HttpTestHelper {
                                     {
                                         if let Some(fields) = schema_obj.get("fields").and_then(|f| f.as_object()) {
                                             let field_count = fields.len();
-                                            println!("  ✅ {} (with {} field(s))", expected_name, field_count);
+                                            // Schema found with fields
                                         } else {
-                                            println!("  ✅ {} (loaded)", expected_name);
+                                            // Schema found and loaded
                                         }
                                     } else {
-                                        println!("  ✅ {} (loaded)", expected_name);
                                     }
                                 } else {
-                                    println!("  ❌ {}: NOT FOUND", expected_name);
+                                    // Schema not found
                                     results.add_fail("Verify schemas available", 
                                         &format!("Schema '{}' not found in API response", expected_name));
                                     all_found = false;

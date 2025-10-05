@@ -23,12 +23,7 @@ use http_test_helper::{HttpTestHelper, HttpTestResults};
 
 #[tokio::test]
 async fn test_transform_registration_backfill_http_integration() {
-    println!("==================================================================================");
-    println!("Transform Registration and Backfill HTTP Integration Test (Rust)");
-    println!("==================================================================================");
-    println!("Date: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"));
-    println!("Base URL: http://localhost:9001");
-    println!("==================================================================================");
+    // Transform Registration and Backfill HTTP Integration Test (Rust)
 
     let mut results = HttpTestResults::new();
     let mut server_process: Option<Child> = None;
@@ -62,10 +57,10 @@ async fn test_transform_registration_backfill_http_integration() {
             ).await).is_some()
                 && helper.load_schemas(&mut results).await {
                     // Wait for transform registration
-                    sleep(Duration::from_secs(2)).await;
+                    sleep(Duration::from_millis(500)).await;
                     if helper.verify_transforms_registered(&["BlogPostWordIndex".to_string()], &mut results).await {
                         // Wait for backfill to complete
-                        sleep(Duration::from_secs(3)).await;
+                        sleep(Duration::from_millis(1000)).await;
                         helper.query_transform_results("BlogPostWordIndex", 
                             vec!["word", "publish_date", "content", "author", "title", "tags"], 
                             &mut results).await;

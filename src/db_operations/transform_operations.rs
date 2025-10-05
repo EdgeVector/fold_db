@@ -1,7 +1,6 @@
 use super::core::DbOperations;
 use crate::schema::types::transform::Transform;
 use crate::schema::SchemaError;
-use log::info;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 const SCHEMA_FIELD_TO_TRANSFORMS_KEY: &str = "map_schema_field_to_transforms";
@@ -44,11 +43,7 @@ impl DbOperations {
 
         let storage_field_mappings = match bytes {
             Some(data) => {
-                let loaded_map = deserialize_mapping(&data, "field_to_transforms")?;
-                for (field_key, transforms) in &loaded_map {
-                    info!("  📋 Loaded '{}' -> {:?}", field_key, transforms);
-                }
-                loaded_map
+                deserialize_mapping(&data, "field_to_transforms")?
             }
             None => BTreeMap::new(),
         };

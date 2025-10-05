@@ -1,6 +1,0 @@
-{
-  "type": "query",
-  "schema": "UserProfile",
-  "fields": ["username", "email", "full_name"],
-  "filter": null
-}

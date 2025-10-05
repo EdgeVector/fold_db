@@ -6,7 +6,7 @@ use std::collections::{HashSet, HashMap};
 use super::input_fetcher::InputFetcher;
 // Removed aggregation dependency - using direct conversion from ExecutionResult
 use crate::transform::iterator_stack_typed::adapter::execute_fields_typed;
-use crate::transform::iterator_stack::chain_parser::ParsedChain;
+use crate::transform::chain_parser::ParsedChain;
 // Legacy ExecutionEngine removed; using typed engine via adapter
 use crate::transform::shared_utilities::parse_expressions_batch;
 use crate::fold_db_core::query::formatter::Record;

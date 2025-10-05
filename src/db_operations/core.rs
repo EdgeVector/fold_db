@@ -230,10 +230,8 @@ impl DbOperations {
 
     /// Flush the database to ensure all data is persisted to disk
     pub fn flush(&self) -> Result<(), SchemaError> {
-        log::info!("🔄 Flushing database to disk...");
         match self.db.flush() {
             Ok(_) => {
-                log::info!("✅ Database flush completed successfully");
                 Ok(())
             }
             Err(e) => {
