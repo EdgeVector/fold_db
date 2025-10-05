@@ -4,11 +4,13 @@ use crate::schema::types::SchemaError;
 use crate::schema::types::key_value::KeyValue;
 use std::collections::{HashSet, HashMap};
 use super::input_fetcher::InputFetcher;
-use crate::transform::aggregation::{aggregate_results_unified_typed_as_records};
+// Removed aggregation dependency - using direct conversion from ExecutionResult
 use crate::transform::iterator_stack_typed::adapter::execute_fields_typed;
 use crate::transform::iterator_stack::chain_parser::ParsedChain;
 // Legacy ExecutionEngine removed; using typed engine via adapter
 use crate::transform::shared_utilities::parse_expressions_batch;
+use crate::fold_db_core::query::formatter::Record;
+use crate::transform::result_types::ExecutionResult;
 
 
 impl TransformRunner for super::TransformManager {
@@ -58,18 +60,8 @@ impl TransformRunner for super::TransformManager {
         // Use the new typed engine end-to-end
         let execution_result = execute_fields_typed(&chains_map, &input_values);
         
-        // Reconstruct expressions from parsed chains for unified aggregation
-        let all_expressions: Vec<(String, String)> = parsed_chains
-            .iter()
-            .map(|(field_name, parsed_chain)| (field_name.clone(), parsed_chain.expression.clone()))
-            .collect();
-        let records = aggregate_results_unified_typed_as_records(
-            schema,
-            &parsed_chains,
-            &execution_result,
-            &input_values,
-            &all_expressions,
-        )?;
+        // Convert execution result directly to records
+        let records = convert_execution_result_to_records(&execution_result)?;
 
         // Store each result row as a separate mutation
         let field_to_hash_code = schema.get_field_to_hash_code();
@@ -117,4 +109,37 @@ impl TransformRunner for super::TransformManager {
         Ok(mappings.get(&key).cloned().unwrap_or_default())
     }
 
+}
+
+/// Convert ExecutionResult directly to Vec<Record> without complex aggregation logic.
+/// The iterator stack should already handle proper field inheritance and alignment.
+fn convert_execution_result_to_records(execution_result: &ExecutionResult) -> Result<Vec<Record>, SchemaError> {
+    let mut records = Vec::new();
+    
+    // Group entries by row_id
+    let mut rows: HashMap<String, HashMap<String, Vec<serde_json::Value>>> = HashMap::new();
+    
+    for (field_name, entries) in &execution_result.index_entries {
+        for entry in entries {
+            let row = rows.entry(entry.row_id.clone()).or_default();
+            row.entry(field_name.clone()).or_default().push(entry.value.clone());
+        }
+    }
+    
+    // Convert each row to a Record
+    for (_, fields_map) in rows {
+        let mut record_fields = HashMap::new();
+        for (field_name, values) in fields_map {
+            // Use single value if only one, otherwise create array
+            let value = if values.len() == 1 {
+                values[0].clone()
+            } else {
+                serde_json::Value::Array(values)
+            };
+            record_fields.insert(field_name, value);
+        }
+        records.push(Record { fields: record_fields });
+    }
+    
+    Ok(records)
 }

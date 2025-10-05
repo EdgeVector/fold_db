@@ -11,9 +11,8 @@
 //! * `executor` - High-level executor for applying transforms to field values
 //! * `validation` - Validation utilities for transform execution
 //! * `coordination` - Multi-chain coordination for complex schemas
-//! * `aggregation` - Result aggregation for different schema types
-//! * `executor` - Unified executor for all schema types (Single, Range, HashRange)
 //! * `iterator_stack` - Sophisticated execution model for complex nested iterations and fan-out operations
+//! * `executor` - Unified executor for all schema types (Single, Range, HashRange)
 //! * `restricted_access` - Enforces mutation-only data persistence
 //!
 //! ## Architecture
@@ -47,7 +46,6 @@
 //! - [Iterator Stack Flow Diagram](../../docs/design/iterator_stack_flow_diagram.md)
 
 // Execution coordination components
-pub mod aggregation;
 pub mod iterator_stack;
 pub mod iterator_stack_typed;
 pub mod result_types;
