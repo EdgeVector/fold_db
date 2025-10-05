@@ -1,6 +1,6 @@
 use reqwest;
 use serde_json::{json, Value};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -100,56 +100,61 @@ impl HttpTestHelper {
 
         // Run the server startup script
         println!("  Running server startup script...");
-        match Command::new("./run_http_server.sh")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(mut process) => {
-                // Wait for the script to complete (it runs the server in background and exits)
-                let exit_status = process.wait();
-                
-                if let Ok(status) = exit_status {
-                    if status.success() {
-                        println!("✅ Server startup script completed successfully");
-                        
-                        // Give the server additional time to fully initialize
-                        println!("  Waiting for server initialization...");
-                        sleep(Duration::from_secs(8)).await;
-                        
-                        // Check if server is actually running by looking for the process
-                        let ps_output = Command::new("pgrep")
-                            .args(["-f", "datafold_http_server"])
-                            .output();
-                        
-                        match ps_output {
-                            Ok(output) if output.status.success() => {
-                                let stdout_str = String::from_utf8_lossy(&output.stdout);
-                                let pid = stdout_str.trim();
-                                if !pid.is_empty() {
-                                    println!("✅ Server process confirmed running (PID: {})", pid);
-                                    results.add_pass("Start HTTP server");
-                                    return true;
-                                } else {
-                                    results.add_fail("Start HTTP server", "Server process not found after startup");
-                                    return false;
-                                }
-                            }
-                            Ok(_) => {
+        match Command::new("./run_http_server.sh").output() {
+            Ok(output) => {
+                let stdout_str = String::from_utf8_lossy(&output.stdout);
+                let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+                if !stdout_str.trim().is_empty() {
+                    println!("  Startup script stdout:\n{}", stdout_str);
+                }
+
+                if !stderr_str.trim().is_empty() {
+                    println!("  Startup script stderr:\n{}", stderr_str);
+                }
+
+                if output.status.success() {
+                    println!("✅ Server startup script completed successfully");
+
+                    // Give the server additional time to fully initialize
+                    println!("  Waiting for server initialization...");
+                    sleep(Duration::from_secs(8)).await;
+
+                    // Check if server is actually running by looking for the process
+                    let ps_output = Command::new("pgrep")
+                        .args(["-f", "datafold_http_server"])
+                        .output();
+
+                    match ps_output {
+                        Ok(output) if output.status.success() => {
+                            let stdout_str = String::from_utf8_lossy(&output.stdout);
+                            let pid = stdout_str.trim();
+                            if !pid.is_empty() {
+                                println!("✅ Server process confirmed running (PID: {})", pid);
+                                results.add_pass("Start HTTP server");
+                                return true;
+                            } else {
                                 results.add_fail("Start HTTP server", "Server process not found after startup");
                                 return false;
                             }
-                            Err(e) => {
-                                results.add_fail("Start HTTP server", &format!("Failed to check server process: {}", e));
-                                return false;
-                            }
                         }
-                    } else {
-                        results.add_fail("Start HTTP server", &format!("Startup script failed with status: {:?}", status.code()));
-                        return false;
+                        Ok(_) => {
+                            results.add_fail("Start HTTP server", "Server process not found after startup");
+                            return false;
+                        }
+                        Err(e) => {
+                            results.add_fail("Start HTTP server", &format!("Failed to check server process: {}", e));
+                            return false;
+                        }
                     }
                 } else {
-                    results.add_fail("Start HTTP server", "Failed to wait for startup script");
+                    results.add_fail(
+                        "Start HTTP server",
+                        &format!(
+                            "Startup script failed with status: {:?}",
+                            output.status.code()
+                        ),
+                    );
                     return false;
                 }
             }
