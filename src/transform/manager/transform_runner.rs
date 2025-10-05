@@ -111,8 +111,8 @@ impl TransformRunner for super::TransformManager {
 
 }
 
-/// Convert ExecutionResult directly to Vec<Record> without complex aggregation logic.
-/// The iterator stack should already handle proper field inheritance and alignment.
+/// Convert ExecutionResult directly to Vec<Record> with proper field inheritance.
+/// This handles the complex field inheritance logic that was in the aggregation module.
 fn convert_execution_result_to_records(execution_result: &ExecutionResult) -> Result<Vec<Record>, SchemaError> {
     let mut records = Vec::new();
     
@@ -126,8 +126,64 @@ fn convert_execution_result_to_records(execution_result: &ExecutionResult) -> Re
         }
     }
     
+    // Handle field inheritance for HashRange schemas with word splitting
+    // This ensures child rows inherit fields from parent rows
+    let mut row_ids: Vec<String> = rows.keys().cloned().collect();
+    // Sort by depth (number of segments) ascending so parents come first
+    row_ids.sort_by_key(|id| id.split('/').count());
+    
+    // Build a quick lookup to avoid multiple clones
+    let rows_clone = rows.clone();
+    for child_id in row_ids.iter() {
+        let child_fields = rows.get_mut(child_id).unwrap();
+        let segments: Vec<&str> = child_id.split('/').collect();
+        if segments.len() <= 1 { continue; }
+        
+        // Try to inherit from all possible parent prefixes
+        for prefix_len in (1..segments.len()).rev() {
+            let prefix = segments[..prefix_len].join("/");
+            if let Some(parent_fields) = rows_clone.get(&prefix) {
+                for (fname, fvals) in parent_fields {
+                    child_fields.entry(fname.clone()).or_insert_with(|| fvals.clone());
+                }
+            }
+        }
+        
+        // Special case: also try to inherit from the root parent (first segment only)
+        if segments.len() > 1 {
+            let root_parent = segments[0].to_string();
+            if let Some(parent_fields) = rows_clone.get(&root_parent) {
+                for (fname, fvals) in parent_fields {
+                    child_fields.entry(fname.clone()).or_insert_with(|| fvals.clone());
+                }
+            }
+        }
+    }
+    
+    
+    // For HashRange schemas, filter out parent rows that have children
+    // This prevents duplicates in word-splitting scenarios where parent rows are just containers
+    let mut filtered_rows = HashMap::new();
+    for (row_id, row_fields) in rows.iter() {
+        let segments: Vec<&str> = row_id.split('/').collect();
+        
+        // Check if this is a parent row (single segment) that has children
+        if segments.len() == 1 {
+            let has_children = rows.keys().any(|id| id.starts_with(&format!("{}/", row_id)));
+            
+            if has_children {
+                // This is a parent row with children - skip it as the children will inherit its fields
+                // This prevents duplicates in word-splitting scenarios
+                continue;
+            }
+        }
+        
+        // Keep this row (either child rows or parent rows without children)
+        filtered_rows.insert(row_id.clone(), row_fields.clone());
+    }
+    
     // Convert each row to a Record
-    for (_, fields_map) in rows {
+    for (_, fields_map) in filtered_rows {
         let mut record_fields = HashMap::new();
         for (field_name, values) in fields_map {
             // Use single value if only one, otherwise create array

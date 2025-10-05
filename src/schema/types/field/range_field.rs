@@ -143,9 +143,9 @@ impl crate::schema::types::field::Field for RangeField {
                     log::error!("❌ RangeField error loading molecule from DB: {}", e);
                 }
             }
-        } else {
-            log::warn!("⚠️ RangeField has no molecule_uuid to refresh from DB");
         }
+        // Note: It's normal for fields to not have a molecule_uuid if no data has been written yet
+        // No warning needed in this case
     }
 
     fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
