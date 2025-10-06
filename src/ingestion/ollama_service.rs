@@ -485,7 +485,7 @@ That should work."###;
         let sample = serde_json::json!({"a": 1});
         let schemas = serde_json::json!({"test": {"field": "string"}});
 
-        let prompt = service.create_prompt(&sample, &schemas);
+        let prompt = service.create_prompt(&sample, &schemas, false);
         assert!(prompt.contains("Sample JSON Data:"));
         assert!(prompt.contains("\"a\": 1"));
         assert!(prompt.contains("Available Schemas:"));
