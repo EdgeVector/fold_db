@@ -129,6 +129,8 @@ pub trait HashRangeOperations {
     /// Get atoms with prefix for a specific hash
     fn get_atoms_with_prefix_for_hash(&self, hash: &str, prefix: &str) -> Vec<(String, String)>;
     
+    /// Get a deterministic sample of n KeyValues from the update order
+    fn sample(&self, n: usize) -> Vec<KeyValue>;
     
     /// Get all hash values
     fn get_hash_values(&self) -> Vec<String>;
@@ -227,9 +229,12 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, optional_
 
     match filter {
         HashRangeFilter::SampleN(n) => {
-            for (hash_value, range_key, atom_uuid) in operations.get_all_atoms().into_iter().take(n) {
-                let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
-                matches.insert(composite_key, atom_uuid);
+            for key_value in operations.sample(n) {
+                if let (Some(hash), Some(range)) = (&key_value.hash, &key_value.range) {
+                    if let Some(atom_uuid) = operations.get_atom_uuid(hash, range) {
+                        matches.insert(key_value, atom_uuid);
+                    }
+                }
             }
         }
         HashRangeFilter::HashRangeKey { hash, range } => {
@@ -377,6 +382,10 @@ impl HashRangeOperations for MoleculeHashRange {
                     .collect()
             })
             .unwrap_or_default()
+    }
+    
+    fn sample(&self, n: usize) -> Vec<KeyValue> {
+        self.sample(n)
     }
     
     

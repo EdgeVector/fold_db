@@ -9,6 +9,7 @@ use crate::schema::types::key_config::KeyConfig;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use crate::schema::types::key_value::KeyValue;
 use uuid::Uuid;
 
 /// A hash-range-based collection of atom references stored in a nested HashMap<BTreeMap> structure.
@@ -31,6 +32,8 @@ pub struct MoleculeHashRange {
     status: MoleculeStatus,
     /// History of status updates
     update_history: Vec<MoleculeUpdate>,
+
+    update_order: Vec<KeyValue>,
 }
 
 impl MoleculeHashRange {
@@ -47,6 +50,7 @@ impl MoleculeHashRange {
                 status: MoleculeStatus::Active,
                 source_pub_key,
             }],
+            update_order: vec![],
         }
     }
 
@@ -56,6 +60,15 @@ impl MoleculeHashRange {
         source_pub_key: String,
         atom_uuids: HashMap<String, BTreeMap<String, String>>,
     ) -> Self {
+        let update_order = atom_uuids
+            .iter()
+            .flat_map(|(hash_value, range_map)| {
+                range_map.keys().map(move |range_value| {
+                    KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()))
+                })
+            })
+            .collect();
+        
         Self {
             uuid: Uuid::new_v4().to_string(),
             atom_uuids,
@@ -66,6 +79,7 @@ impl MoleculeHashRange {
                 status: MoleculeStatus::Active,
                 source_pub_key,
             }],
+            update_order,
         }
     }
 
@@ -75,6 +89,11 @@ impl MoleculeHashRange {
     /// * `atom_uuid` - The UUID of the atom to store
     /// * `key_config` - Configuration specifying which fields to use as hash and range
     pub fn set_atom_uuid(&mut self, key_config: &KeyConfig, atom_uuid: String) {
+        let key_value = KeyValue::new(
+            key_config.hash_field.clone(),
+            key_config.range_field.clone(),
+        );
+        self.update_order.push(key_value);
         self.atom_uuids
             .entry(key_config.hash_field.clone().unwrap())
             .or_default()
@@ -84,6 +103,8 @@ impl MoleculeHashRange {
 
     /// Adds an atom UUID using explicit hash and range values.
     pub fn set_atom_uuid_from_values(&mut self, hash_value: String, range_value: String, atom_uuid: String) {
+        let key_value = KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()));
+        self.update_order.push(key_value);
         self.atom_uuids
             .entry(hash_value)
             .or_default()
@@ -170,6 +191,17 @@ impl MoleculeHashRange {
                     (hash_value, range_value, atom_uuid)
                 })
             })
+    }
+
+    /// Returns a deterministic sample of n KeyValues from the update order.
+    /// If n is greater than the number of KeyValues, returns all KeyValues.
+    #[must_use]
+    pub fn sample(&self, n: usize) -> Vec<KeyValue> {
+        self.update_order
+            .iter()
+            .take(n)
+            .cloned()
+            .collect()
     }
 }
 
