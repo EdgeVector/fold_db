@@ -8,7 +8,6 @@ use crate::schema::types::field::HashRangeFilter;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use crate::schema::types::field::FieldValue;
-use serde_json::Value as JsonValue;
 /// Common interface for all schema fields.
 ///
 /// The `Field` trait exposes accessors for properties shared by all field

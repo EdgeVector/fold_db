@@ -3,3 +3,7 @@ use ./run_http_server to start the server, it will kill all other db proccesses 
 No silent failures.  Throw errors if anything goes wrong.
 
 No branching logic -- think harder if it seems like there's going to be branching logic.
+
+Don't use JSON return types.
+
+Don't make assumptions that test failures were preexisting.  Assume all tests were passing before.

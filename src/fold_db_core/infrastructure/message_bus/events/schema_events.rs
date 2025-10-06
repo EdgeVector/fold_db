@@ -93,3 +93,19 @@ impl EventType for DataPersisted {
         "DataPersisted"
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TransformRegistered {
+    /// The transform ID that was registered
+    pub transform_id: String,
+    /// The source schema name for backfill
+    pub source_schema_name: String,
+    /// The correlation ID from the registration request
+    pub correlation_id: String,
+}
+
+impl EventType for TransformRegistered {
+    fn type_id() -> &'static str {
+        "TransformRegistered"
+    }
+}

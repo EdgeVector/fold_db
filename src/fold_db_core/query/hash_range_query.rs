@@ -29,18 +29,14 @@ impl HashRangeQueryProcessor {
         fields: &[String],
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        log::info!("🔍 HashRangeQueryProcessor querying schema '{}' with fields: {:?}", schema.name, fields);
         let mut result = HashMap::new();
         for (field_name, field) in schema.fields.iter_mut() {
             if !fields.contains(field_name) {
                 continue;
             }
-            log::info!("🔍 Resolving field '{}' for schema '{}'", field_name, schema.name);
             let field_value = field.resolve_value(&self.db_ops, filter.clone())?;
-            log::info!("✅ Field '{}' resolved with {} entries", field_name, field_value.len());
             result.insert(field_name.clone(), field_value);
         }
-        log::info!("✅ HashRangeQueryProcessor query completed with {} fields", result.len());
         Ok(result)
     }
 }

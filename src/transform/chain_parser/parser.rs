@@ -3,10 +3,10 @@
 //! Contains the main parsing algorithms and logic for converting
 //! chain expressions into structured representations.
 
-use crate::transform::iterator_stack::chain_parser::types::{
+use crate::transform::chain_parser::types::{
     ChainOperation, IteratorScope, ParsedChain,
 };
-use crate::transform::iterator_stack::errors::{
+use crate::transform::chain_parser::errors::{
     constants, IteratorStackError, IteratorStackResult,
 };
 

@@ -33,3 +33,9 @@ impl From<sled::Error> for SchemaError {
         SchemaError::InvalidData(format!("Database error: {}", error))
     }
 }
+
+impl From<crate::fold_db_core::infrastructure::message_bus::MessageBusError> for SchemaError {
+    fn from(error: crate::fold_db_core::infrastructure::message_bus::MessageBusError) -> Self {
+        SchemaError::InvalidData(format!("Message bus error: {}", error))
+    }
+}

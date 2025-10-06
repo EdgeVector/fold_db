@@ -198,9 +198,6 @@ export const VALIDATION_CONFIG = {
  * Backend is authoritative for all validation
  * Frontend only prevents obviously pointless API calls
  */
-export const VALIDATION_FUNCTIONS = {
-  // All validation functions removed - backend handles validation
-};
 
 // ============================================================================
 // DEFAULT EXPORT
@@ -211,6 +208,5 @@ export default {
   VALIDATION_PATTERNS,
   VALIDATION_MESSAGES,
   SUCCESS_MESSAGES,
-  VALIDATION_CONFIG,
-  VALIDATION_FUNCTIONS
+  VALIDATION_CONFIG
 };

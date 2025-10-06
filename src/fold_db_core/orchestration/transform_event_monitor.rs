@@ -5,7 +5,7 @@
 
 use super::persistence_manager::PersistenceManager;
 use crate::fold_db_core::infrastructure::message_bus::{
-    schema_events::{TransformExecuted, TransformRegistrationRequest, TransformTriggered},
+    schema_events::{TransformExecuted, TransformRegistrationRequest, TransformTriggered, TransformRegistered},
     MessageBus,
 };
 use crate::transform::manager::{TransformManager, types::TransformRunner};
@@ -93,14 +93,14 @@ impl TransformEventMonitor {
         let result = manager.execute_transform_with_context(&event.transform_id, &event.mutation_context);
 
         match result {
-            Ok(result) => {
-                info!("Transform {} executed successfully: {}", event.transform_id, result);
+            Ok(transform_result) => {
+                info!("Transform {} executed successfully: {} records", event.transform_id, transform_result.records.len());
 
                 // Publish TransformExecuted event
                 Self::publish_transform_executed(
                     message_bus,
                     &event.transform_id,
-                    &result.to_string(),
+                    &format!("{} records produced", transform_result.records.len()),
                 )?;
 
                 Ok(())
@@ -214,6 +214,13 @@ impl TransformEventMonitor {
     ) -> Result<(), SchemaError> {
         info!("🔧 TransformEventMonitor: Handling TransformRegistrationRequest for '{}'", event.registration.transform_id);
         
+        // Check if transform already exists
+        let transform_exists = manager.transform_exists(&event.registration.transform_id)?;
+        if transform_exists {
+            info!("ℹ️  TransformEventMonitor: Transform '{}' already registered, skipping re-registration", event.registration.transform_id);
+            return Ok(());
+        }
+        
         // Handle the transform registration using the TransformManager instance
         match manager.handle_transform_registration(&event.registration) {
             Ok(()) => {
@@ -230,6 +237,31 @@ impl TransformEventMonitor {
                     error!("Failed to publish TransformRegistrationResponse: {}", e);
                     return Err(SchemaError::InvalidData(format!(
                         "Failed to publish TransformRegistrationResponse: {}", e
+                    )));
+                }
+
+                // Publish TransformRegistered event to trigger backfill
+                // Extract source schema name from the transform's input fields
+                let source_schema_name = event.registration.transform.get_declarative_schema()
+                    .ok_or_else(|| SchemaError::InvalidData("Transform has no declarative schema".to_string()))?
+                    .get_inputs()
+                    .first()
+                    .ok_or_else(|| SchemaError::InvalidData("Transform has no input schema fields".to_string()))?
+                    .split('.')
+                    .next()
+                    .ok_or_else(|| SchemaError::InvalidData("Invalid input schema field format".to_string()))?
+                    .to_string();
+                
+                let transform_registered = TransformRegistered {
+                    transform_id: event.registration.transform_id.clone(),
+                    source_schema_name,
+                    correlation_id: event.correlation_id.clone(),
+                };
+                
+                if let Err(e) = message_bus.publish(transform_registered) {
+                    error!("Failed to publish TransformRegistered event: {}", e);
+                    return Err(SchemaError::InvalidData(format!(
+                        "Failed to publish TransformRegistered event: {}", e
                     )));
                 }
                 

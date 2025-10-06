@@ -1,12 +1,7 @@
-use super::{schema_lock_error, SchemaCore, SchemaState};
-use crate::logging::features::{log_feature, LogFeature};
-use crate::schema::constants::{
-    ATOM_UUID_FIELD, DEFAULT_OUTPUT_FIELD_NAME, DEFAULT_TRANSFORM_ID_SUFFIX, KEY_FIELD_NAME,
-};
+use super::{SchemaCore};
 use crate::schema::types::{Schema, SchemaError, DeclarativeSchemaDefinition};
-use log::info;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use crate::schema::types::schema::SchemaType;
 use crate::schema::types::field::RangeField;
 use crate::schema::types::field::HashRangeField;
@@ -35,7 +30,6 @@ impl SchemaCore {
         &self,
         declarative_schema: DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
-
 
         let default_field_mappers = HashMap::new();
         let default_inner_field = FieldCommon::new(
@@ -88,7 +82,6 @@ impl SchemaCore {
         }
 
         if let Some(transform_fields) = &declarative_schema.transform_fields {
-            // Register declarative transforms using the event bus
             self.register_declarative_transforms(&declarative_schema, transform_fields)?;
         }
 

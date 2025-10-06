@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::atom::{MoleculeRange, MoleculeBehavior};
-use crate::impl_field;
+// Removed unused impl_field import
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, RangeOperations, apply_range_filter, fetch_atoms_for_matches};
+use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, apply_range_filter, fetch_atoms_for_matches};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperations;
 use crate::schema::types::key_value::KeyValue;
-use log::{info, error};
+// Removed unused log imports
 
 // RangeFilter has been unified into HashRangeFilter
 /// Field storing a range of values.
@@ -130,22 +130,20 @@ impl crate::schema::types::field::Field for RangeField {
         // If we have a molecule_uuid, look up the corresponding MoleculeRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            log::info!("🔄 RangeField refreshing from DB with molecule_uuid: {}, ref_key: {}", molecule_uuid, ref_key);
             match db_ops.get_item::<MoleculeRange>(&ref_key) {
                 Ok(Some(molecule)) => {
-                    log::info!("✅ RangeField found molecule in DB: {}", molecule_uuid);
                     self.molecule = Some(molecule);
                 }
                 Ok(None) => {
-                    log::warn!("⚠️ RangeField molecule not found in DB: {}", molecule_uuid);
+                    // Molecule not found in DB - this is normal for new fields
                 }
                 Err(e) => {
                     log::error!("❌ RangeField error loading molecule from DB: {}", e);
                 }
             }
-        } else {
-            log::warn!("⚠️ RangeField has no molecule_uuid to refresh from DB");
         }
+        // Note: It's normal for fields to not have a molecule_uuid if no data has been written yet
+        // No warning needed in this case
     }
 
     fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
@@ -162,7 +160,6 @@ impl crate::schema::types::field::Field for RangeField {
         if let Some(range_key) = &key_value.range {
             if let Some(molecule) = &mut self.molecule {
                 molecule.set_atom_uuid(range_key.clone(), atom.uuid().to_string());
-                log::debug!("Writing atom to RangeField with pub_key '{}' and range key '{}': {:?}", pub_key, range_key, atom);
             }
         }
     }

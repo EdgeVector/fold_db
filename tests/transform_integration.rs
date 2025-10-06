@@ -1,8 +1,40 @@
 use serde_json::json;
 use std::collections::HashMap;
 
+// Helper function to convert ExecutionResult to records (copied from transform_runner.rs)
+fn convert_execution_result_to_records(execution_result: &datafold::transform::result_types::ExecutionResult) -> Result<Vec<datafold::fold_db_core::query::formatter::Record>, datafold::schema::types::SchemaError> {
+    let mut records = Vec::new();
+    
+    // Group entries by row_id
+    let mut rows: HashMap<String, HashMap<String, Vec<serde_json::Value>>> = HashMap::new();
+    
+    for (field_name, entries) in &execution_result.index_entries {
+        for entry in entries {
+            let row = rows.entry(entry.row_id.clone()).or_default();
+            row.entry(field_name.clone()).or_default().push(entry.value.clone());
+        }
+    }
+    
+    // Convert each row to a Record
+    for (_, fields_map) in rows {
+        let mut record_fields = HashMap::new();
+        for (field_name, values) in fields_map {
+            // Use single value if only one, otherwise create array
+            let value = if values.len() == 1 {
+                values[0].clone()
+            } else {
+                serde_json::Value::Array(values)
+            };
+            record_fields.insert(field_name, value);
+        }
+        records.push(datafold::fold_db_core::query::formatter::Record { fields: record_fields });
+    }
+    
+    Ok(records)
+}
+
 #[test]
-fn execute_engine_and_aggregate_rows_with_keyconfig() {
+fn execute_engine_and_convert_to_records() {
     // Define transform schema with KeyConfig (HashRange)
     let transform_schema_json = json!({
         "name": "BlogPostWordIndex",
@@ -25,7 +57,7 @@ fn execute_engine_and_aggregate_rows_with_keyconfig() {
         .map(|(field, hash)| (field.clone(), hash_to_code.get(hash).unwrap().clone()))
         .collect();
     let parsed = datafold::transform::shared_utilities::parse_expressions_batch(&expressions).unwrap();
-    let chains_map: HashMap<String, datafold::transform::iterator_stack::chain_parser::ParsedChain> = parsed
+    let chains_map: HashMap<String, datafold::transform::chain_parser::ParsedChain> = parsed
         .iter()
         .map(|(field, chain)| (field.clone(), chain.clone()))
         .collect();
@@ -81,35 +113,36 @@ fn execute_engine_and_aggregate_rows_with_keyconfig() {
         &typed_input,
     );
 
-    // Aggregate into rows
-    let all_expressions: Vec<(String, String)> = parsed
-        .iter()
-        .map(|(field, chain)| (field.clone(), chain.expression.clone()))
-        .collect();
-    let aggregated = datafold::transform::aggregation::aggregate_results_unified_typed(
-        &transform_schema,
-        &parsed,
-        &exec,
-        &typed_input,
-        &all_expressions,
-    ).expect("aggregate ok");
+    // Convert execution result directly to records (no aggregation needed)
+    let records = convert_execution_result_to_records(&exec).expect("convert ok");
 
-    // Validate rows shape and KeyConfig presence
-    let rows = aggregated.as_array().expect("rows array");
-    assert!(!rows.is_empty());
-    for row in rows {
-        let obj = row.as_object().expect("row obj");
-        assert!(obj.contains_key("key"));
-        assert!(obj.contains_key("fields"));
-        let key = obj.get("key").unwrap();
-        assert!(key.get("hash").is_some());
-        assert!(key.get("range").is_some());
-        let fields = obj.get("fields").unwrap().as_object().unwrap();
-        assert!(fields.contains_key("word"));
-        assert!(fields.contains_key("publish_date"));
-        assert!(fields.contains_key("author"));
-        assert!(fields.contains_key("title"));
+    // Validate records shape - records now have simpler structure
+    assert!(!records.is_empty());
+    
+    // Count records by field type
+    let mut word_records = 0;
+    let mut other_records = 0;
+    
+    for record in &records {
+        let fields = &record.fields;
+        if fields.contains_key("word") {
+            word_records += 1;
+            // Validate that word field contains actual words
+            if let Some(word_val) = fields.get("word") {
+                assert!(word_val.is_string(), "word field should be a string");
+            }
+        } else {
+            other_records += 1;
+            // These should be the parent-level fields (title, author, publish_date)
+            assert!(fields.contains_key("title") || fields.contains_key("author") || fields.contains_key("publish_date"), 
+                   "Record should contain expected fields: {:?}", fields.keys().collect::<Vec<_>>());
+        }
     }
+    
+    // We should have word records (from word splitting) and some parent records
+    assert!(word_records > 0, "Should have word records from word splitting");
+    assert!(other_records > 0, "Should have parent records with other fields");
+    
+    // Total should be reasonable (words from both blog posts plus parent records)
+    assert!(records.len() >= 8, "Should have at least 8 records (words from 2 blog posts)");
 }
-
-

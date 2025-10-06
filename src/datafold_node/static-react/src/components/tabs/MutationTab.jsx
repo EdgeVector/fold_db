@@ -3,7 +3,7 @@ import SchemaSelector from './mutation/SchemaSelector'
 import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
-import { MutationClient } from '../../api'
+import { mutationClient } from '../../api'
 // Removed hook dependencies - using Redux state management instead (TASK-003)
 // Temporarily bypass constants to break circular dependency
 const BUTTON_TEXT = { executeMutation: 'Execute Mutation', confirm: 'Confirm', cancel: 'Cancel' };
@@ -12,8 +12,8 @@ const RANGE_SCHEMA_CONFIG = { FIELD_TYPE: 'Range', MUTATION_WRAPPER_KEY: 'value'
 const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
 import {
   isRangeSchema,
-  formatEnhancedRangeSchemaMutation,
-  validateRangeKeyForMutation,
+  formatRangeMutation,
+  validateRangeKey,
   getRangeKey,
   getNonRangeKeyFields
 } from '../../utils/rangeSchemaHelpers'
@@ -51,7 +51,7 @@ function MutationTab({ onResult }) {
     // Simple local validation - replaced hook with Redux state management (TASK-003)
     const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
     if (selectedSchemaObj && isRangeSchema(selectedSchemaObj)) {
-      const error = validateRangeKeyForMutation(value, mutationType !== 'Delete')
+      const error = validateRangeKey(value, mutationType !== 'Delete')
       setErrors(prev => ({ ...prev, rangeKey: error }))
     }
   }
@@ -65,7 +65,7 @@ function MutationTab({ onResult }) {
 
     // Backend handles all validation
     if (isRangeSchema(selectedSchemaObj)) {
-      mutation = formatEnhancedRangeSchemaMutation(selectedSchemaObj, mutationType, rangeKeyValue, mutationData)
+      mutation = formatRangeMutation(selectedSchemaObj, mutationType, rangeKeyValue, mutationData)
     } else {
       mutation = {
         type: 'mutation',
@@ -78,7 +78,7 @@ function MutationTab({ onResult }) {
 
     try {
       // Send the mutation directly to the API (no signing required)
-      const response = await MutationClient.executeMutation(mutation)
+      const response = await mutationClient.executeMutation(mutation)
       
       if (!response.success) {
         throw new Error(response.error || 'Mutation failed')

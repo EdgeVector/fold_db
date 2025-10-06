@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::impl_field;
+// Removed unused impl_field import
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, fetch_atoms_for_matches, FilterApplicator};
 use crate::schema::types::SchemaError;
@@ -10,8 +10,8 @@ use crate::atom::{Molecule, MoleculeBehavior};
 use crate::db_operations::DbOperations;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
-use serde_json::Value as JsonValue;
-use log::{info, error};
+// Removed unused JsonValue import
+// Removed unused log imports
 /// Field storing a single value.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SingleField {
@@ -62,7 +62,6 @@ impl crate::schema::types::field::Field for SingleField {
         // For SingleField, we store the atom using the pub_key
         if let Some(molecule) = &mut self.molecule {
             molecule.set_atom_uuid(atom.uuid().to_string());
-            log::debug!("Writing atom to SingleField with pub_key '{}': {:?}", pub_key, atom);
         }
     }
 

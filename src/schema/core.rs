@@ -1,17 +1,12 @@
-use super::{schema_lock_error};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::logging::features::{log_feature, LogFeature};
-use crate::schema::types::{Schema, SchemaError, FieldVariant, Field};
+use crate::schema::types::{Schema, SchemaError, Field};
 use crate::schema::{
     SchemaState,
     SchemaWithState,
 };
-use log::{info};
-use serde::{Serialize};
 use serde_json;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Core schema management system that combines schema interpretation, validation, and management.
@@ -41,23 +36,9 @@ impl SchemaCore {
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
+
         // load schemas from db
-        // TODO: implement get_all_schemas and get_all_schema_states
-        log::info!("🔄 Loading schemas from database...");
         let schemas = db_ops.get_all_schemas()?;
-        log::info!("✅ Loaded {} schemas from database", schemas.len());
-        
-        // Debug: Check if schemas have molecule_uuid values
-        for (schema_name, schema) in &schemas {
-            log::info!("🔍 Schema '{}' loaded with {} fields", schema_name, schema.fields.len());
-            for (field_name, field) in &schema.fields {
-                if let Some(molecule_uuid) = field.common().molecule_uuid() {
-                    log::info!("  📋 Field '{}' has molecule_uuid: {}", field_name, molecule_uuid);
-                } else {
-                    log::warn!("  ⚠️ Field '{}' has NO molecule_uuid", field_name);
-                }
-            }
-        }
         
         let schema_states = db_ops.get_all_schema_states()?;
 
@@ -148,7 +129,6 @@ impl SchemaCore {
                     if let Some(new_field) = updated_schema.fields.get_mut(&field_name) {
                         if let Some(molecule_uuid) = existing_field.common().molecule_uuid() {
                             new_field.common_mut().set_molecule_uuid(molecule_uuid.clone());
-                            log::info!("🔄 Preserved molecule_uuid {} for field '{}' in schema '{}'", molecule_uuid, field_name, name);
                         }
                     }
                 }
@@ -196,7 +176,6 @@ impl SchemaCore {
     /// Load schema from file (creates Available schema)
     /// Only supports declarative schema format
     pub fn load_schema_from_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), SchemaError> {
-        use std::path::Path;
         
         // Use the existing parse_schema_file method which handles declarative schemas
         if let Some(schema) = self.parse_schema_file(path.as_ref())? {

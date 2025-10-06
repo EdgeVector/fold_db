@@ -467,15 +467,6 @@ export function isValueEmpty(value) {
   return value === null || value === undefined;
 }
 
-/**
- * Legacy function names for backward compatibility
- * These maintain the original function names from the separate files
- */
-
-// From rangeSchemaUtils.js
-export const formatEnhancedRangeSchemaMutation = formatRangeMutation;
-export const validateRangeKeyForMutation = validateRangeKey;
-export const formatRangeSchemaQuery = formatRangeQuery;
 
 // From useRangeSchema.js hook - alias exports
 export const isRange = isRangeSchema;
@@ -497,5 +488,3 @@ export function getHashRangeSchemaInfo(schema) {
     totalFields: Object.keys(schema.fields || {}).length
   };
 }
-
-// Note: formatRangeQuery and formatRangeMutation already exported above as formatRangeSchemaQuery and formatEnhancedRangeSchemaMutation

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::transform::iterator_stack::chain_parser::types::{ChainOperation, ParsedChain};
+use crate::transform::chain_parser::types::{ChainOperation, ParsedChain};
 use crate::transform::result_types::{ExecutionResult, IndexEntry};
 use crate::transform::iterator_stack_typed::engine::TypedEngine;
 use crate::transform::iterator_stack_typed::types::{IteratorSpec, TypedInput};

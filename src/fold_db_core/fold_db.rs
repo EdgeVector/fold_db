@@ -130,14 +130,17 @@ impl FoldDB {
 
         // Create managers using event-driven initialization only
         let db_ops_arc = Arc::new(db_ops.clone());
+
+        // Use standard initialization but with deprecated closures that recommend events
+        let transform_manager =
+            init_transform_manager(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))?;
+
         let schema_manager = Arc::new(
             SchemaCore::new(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
                 .map_err(|e| sled::Error::Unsupported(e.to_string()))?,
         );
 
-        // Use standard initialization but with deprecated closures that recommend events
-        let transform_manager =
-            init_transform_manager(Arc::new(db_ops.clone()), Arc::clone(&message_bus))?;
+
 
         // Create and start EventMonitor for system-wide observability
         let event_monitor = Arc::new(EventMonitor::new(&message_bus, Arc::clone(&transform_manager)));

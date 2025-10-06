@@ -5,10 +5,9 @@
 
 use super::queue_manager::QueueItem;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::transform::manager::{TransformManager, types::TransformRunner};
+use crate::transform::manager::{TransformManager, types::{TransformRunner, TransformResult}};
 use crate::schema::SchemaError;
 use log::{error, info};
-use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -38,7 +37,7 @@ impl ExecutionCoordinator {
         &self,
         item: &QueueItem,
         already_processed: bool,
-    ) -> Result<JsonValue, SchemaError> {
+    ) -> Result<TransformResult, SchemaError> {
         let transform_id = &item.id;
         let mutation_hash = &item.mutation_hash;
 
@@ -53,11 +52,8 @@ impl ExecutionCoordinator {
                 "⏭️ Transform {} already processed, skipping execution",
                 transform_id
             );
-            return Ok(serde_json::json!({
-                "status": "skipped_already_processed",
-                "transform_id": transform_id,
-                "mutation_hash": mutation_hash
-            }));
+            // Return empty TransformResult for already processed transforms
+            return Ok(TransformResult::new(vec![]));
         }
 
         // Execute the transform
@@ -65,7 +61,7 @@ impl ExecutionCoordinator {
     }
 
     /// Execute a transform with consolidated execution logic (no helper dependency)
-    fn execute_transform_with_context(&self, transform_id: &str, _mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>) -> Result<JsonValue, SchemaError> {
+    fn execute_transform_with_context(&self, transform_id: &str, _mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>) -> Result<TransformResult, SchemaError> {
         info!(
             "🔧 ExecutionCoordinator: Executing transform directly: {}",
             transform_id
@@ -75,24 +71,17 @@ impl ExecutionCoordinator {
 
         // Execute transform using the TransformRunner interface
         match self.manager.execute_transform_with_context(transform_id, _mutation_context) {
-            Ok(result) => {
+            Ok(transform_result) => {
                 let duration = execution_start_time.elapsed();
                 info!(
-                    "✅ Transform {} executed successfully in {:?}: {}",
-                    transform_id, duration, result
+                    "✅ Transform {} executed successfully in {:?}: {} records",
+                    transform_id, duration, transform_result.records.len()
                 );
 
                 // Publish success event
-                self.publish_success_event(transform_id, &result.to_string())?;
+                self.publish_success_event(transform_id, &format!("{} records produced", transform_result.records.len()))?;
 
-                Ok(serde_json::json!({
-                    "status": "executed_from_queue",
-                    "transform_id": transform_id,
-                    "result": result,
-                    "method": "delegated_execution",
-                    "duration_ms": duration.as_millis(),
-                    "execution_time": chrono::Utc::now().to_rfc3339()
-                }))
+                Ok(transform_result)
             }
             Err(e) => {
                 let duration = execution_start_time.elapsed();
@@ -176,7 +165,7 @@ impl ExecutionCoordinator {
     pub fn execute_transforms_batch(
         &self,
         items: Vec<(QueueItem, bool)>,
-    ) -> Vec<Result<JsonValue, SchemaError>> {
+    ) -> Vec<Result<TransformResult, SchemaError>> {
         info!(
             "🚀 BATCH EXECUTION START - executing {} transforms",
             items.len()
@@ -224,7 +213,7 @@ impl ExecutionCoordinator {
         item: &QueueItem,
         already_processed: bool,
         max_retries: u32,
-    ) -> Result<JsonValue, SchemaError> {
+    ) -> Result<TransformResult, SchemaError> {
         let mut attempts = 0;
         let mut last_error = None;
 

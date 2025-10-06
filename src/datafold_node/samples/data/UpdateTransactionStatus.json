@@ -1,9 +1,0 @@
-{
-  "type": "mutation",
-  "schema": "FinancialTransaction",
-  "mutation_type": "update",
-  "data": {
-    "transaction_id": "TRX-789012",
-    "status": "completed"
-  }
-}

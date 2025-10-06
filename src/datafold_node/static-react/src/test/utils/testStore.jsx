@@ -16,7 +16,7 @@ import {
   createMockAuthState
 } from './testUtilities.jsx';
 
-// Re-export for backward compatibility
+// Re-export utilities
 export {
   createTestStore,
   renderWithRedux,

@@ -1,7 +1,6 @@
 use crate::schema::types::field::FieldVariant;
 use crate::schema::types::key_config::KeyConfig;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use ts_rs::TS;
 use utoipa::ToSchema;

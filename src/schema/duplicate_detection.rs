@@ -1,5 +1,4 @@
 use crate::schema::{types::DeclarativeSchemaDefinition, SchemaError};
-use log::info;
 
 /// Handles duplicate detection and conflict resolution for schemas
 pub struct SchemaDuplicateDetector;
@@ -66,16 +65,8 @@ impl SchemaDuplicateDetector {
         final_name: &str,
     ) -> Result<(), SchemaError> {
         if new_hash == existing_hash {
-            info!(
-                "Schema '{}' already exists with identical content (hash: {}) - skipping",
-                final_name, new_hash
-            );
             Ok(()) // Allow identical schemas
         } else {
-            info!(
-                "Schema '{}' exists but content differs (existing: {}, new: {})",
-                final_name, existing_hash, new_hash
-            );
             Err(SchemaError::InvalidData(format!(
                 "Schema '{}' already exists with different content. Existing hash: {}, new hash: {}. Use a different name or remove the existing schema first.",
                 final_name, existing_hash, new_hash

@@ -85,22 +85,6 @@ impl MutationGenerator {
 
 
 
-    /// Generate mutations for collection fields (arrays) - DEPRECATED
-    pub fn generate_collection_mutations(
-        &self,
-        _schema_name: &str,
-        _json_data: &Value,
-        _mutation_mappers: &HashMap<String, String>,
-        _trust_distance: u32,
-        _pub_key: String,
-    ) -> IngestionResult<Vec<Mutation>> {
-        log_feature!(
-            LogFeature::Ingestion,
-            warn,
-            "Collection mutations are no longer supported - collections have been removed from the schema system"
-        );
-        Ok(Vec::new())
-    }
 }
 
 
