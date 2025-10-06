@@ -13,12 +13,8 @@ pub enum ChainOperation {
     FieldAccess(String),
     /// Map operation that creates an iterator scope
     Map,
-    /// Split array operation
-    SplitArray,
-    /// Split by word operation
-    SplitByWord,
-    /// Apply a reducer function
-    Reducer(String),
+    /// Apply a registered function (iterator or reducer)
+    Function { name: String, params: Vec<String> },
     /// Access special field like `$atom_uuid`
     SpecialField(String),
 }

@@ -11,6 +11,8 @@ pub type TypedInput = HashMap<String, HashMap<KeyValue, FieldValue>>;
 pub struct IterationItem {
     pub key: KeyValue,
     pub value: FieldValue,
+    /// Whether this item was generated from text tokens (should emit as value_text)
+    pub is_text_token: bool,
 }
 
 /// An emitted entry from evaluation
@@ -27,10 +29,18 @@ pub struct EmittedEntry {
 pub enum IteratorSpec {
     /// Iterate over items of a source field (schema.map())
     Schema { field_name: String },
-    /// Split an array field into its elements (field.split_array())
-    ArraySplit { field_name: String },
-    /// Split a string value into words (field.split_by_word())
-    WordSplit { field_name: String },
+    /// Apply a registered iterator function
+    IteratorFunction { 
+        name: String, 
+        params: Vec<String>,
+        field_name: String,
+    },
+    /// Apply a registered reducer function
+    ReducerFunction { 
+        name: String, 
+        params: Vec<String>,
+        field_name: String,
+    },
 }
 
 

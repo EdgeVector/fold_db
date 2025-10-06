@@ -54,17 +54,28 @@ pub fn execute_fields_typed(
     ExecutionResult { index_entries, warnings }
 }
 
-fn map_chain_to_specs(chain: &ParsedChain) -> Vec<IteratorSpec> {
+pub fn map_chain_to_specs(chain: &ParsedChain) -> Vec<IteratorSpec> {
     let target_field = target_field_from_chain(chain);
     let mut specs = Vec::new();
     specs.push(IteratorSpec::Schema { field_name: target_field.clone() });
 
-    // Append split operations based on presence in the chain
+    // Append functions from the chain (both iterators and reducers)
     for op in &chain.operations {
-        if let ChainOperation::SplitByWord = op {
-            specs.push(IteratorSpec::WordSplit { field_name: target_field.clone() });
-        } else if let ChainOperation::SplitArray = op {
-            specs.push(IteratorSpec::ArraySplit { field_name: target_field.clone() });
+        if let ChainOperation::Function { name, params } = op {
+            let reg = crate::transform::functions::registry();
+            if reg.is_iterator(name) {
+                specs.push(IteratorSpec::IteratorFunction { 
+                    name: name.clone(),
+                    params: params.clone(),
+                    field_name: target_field.clone(),
+                });
+            } else if reg.is_reducer(name) {
+                specs.push(IteratorSpec::ReducerFunction { 
+                    name: name.clone(),
+                    params: params.clone(),
+                    field_name: target_field.clone(),
+                });
+            }
         }
     }
     specs

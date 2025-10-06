@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::schema::types::field::FieldValue;
-// use crate::schema::types::key_value::KeyValue;
-
 use super::types::{EmittedEntry, IterationItem, IteratorSpec, TypedInput};
+use crate::transform::functions::{registry, IteratorExecutionResult};
+use crate::schema::types::field::FieldValue;
+use crate::schema::types::key_value::KeyValue;
 
 /// A minimal typed iterator engine that supports:
 /// - Schema iteration over a field's items
@@ -12,6 +12,13 @@ use super::types::{EmittedEntry, IterationItem, IteratorSpec, TypedInput};
 ///
 /// This engine does not use serde_json internally. It works directly with
 /// FieldValue and preserves atom_uuid for persistence when not splitting.
+///
+/// TODO: Reducer functions (first, last, count, join, sum, max, min) are registered
+/// in the function registry but not yet executed by this engine. Need to:
+/// - Detect reducer operations in the chain
+/// - Collect items at the appropriate depth level
+/// - Call the registered reducer function
+/// - Convert ReducerResult to field values
 pub struct TypedEngine;
 
 impl TypedEngine {
@@ -49,7 +56,11 @@ impl TypedEngine {
             IteratorSpec::Schema { field_name } => {
                 if let Some(map) = input.get(field_name) {
                     for (key, value) in map.iter() {
-                        current_items.push(IterationItem { key: key.clone(), value: value.clone() });
+                        current_items.push(IterationItem { 
+                            key: key.clone(), 
+                            value: value.clone(),
+                            is_text_token: false,
+                        });
                     }
                 }
             }
@@ -97,7 +108,7 @@ impl TypedEngine {
         emitted: &mut Vec<EmittedEntry>,
     ) {
         if specs.is_empty() {
-            // At a leaf: emit the current items, preserving atom_uuid when not split
+            // At a leaf: emit the current items
             for (i, item) in items.iter().enumerate() {
                 let row_id = if depth_path.is_empty() {
                     i.to_string()
@@ -107,10 +118,21 @@ impl TypedEngine {
                     p.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("/")
                 };
 
+                // For text tokens (like from split_by_word), use the text as value_text
+                let value_text = if item.is_text_token {
+                    if let serde_json::Value::String(text) = &item.value.value {
+                        Some(text.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
                 emitted.push(EmittedEntry {
                     row_id,
                     atom_uuid: item.value.atom_uuid.clone(),
-                    value_text: None,
+                    value_text,
                 });
             }
             return;
@@ -120,32 +142,113 @@ impl TypedEngine {
         let tail = &specs[1..];
 
         match head {
-            IteratorSpec::ArraySplit { .. } => {
-                // For now treat as identity over items; array payload not represented
-                let snapshot = items.to_owned();
-                for (i, _item) in snapshot.iter().enumerate() {
-                    depth_path.push(i);
-                    self.recurse_specs(tail, _input, _field_key, &mut snapshot.clone(), depth_path, emitted);
-                    depth_path.pop();
-                }
-            }
-            IteratorSpec::WordSplit { .. } => {
-                // For each item, split its textual value into words; emit per word
-                for (i, item) in items.iter().enumerate() {
-                    let text = extract_text_value(&item.value);
-                    let words = split_words(&text);
-                    for (j, w) in words.iter().enumerate() {
-                        let mut path = depth_path.clone();
-                        path.push(i);
-                        path.push(j);
-                        emitted.push(EmittedEntry {
-                            row_id: path.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("/"),
-                            atom_uuid: item.value.atom_uuid.clone(),
-                            value_text: Some(w.clone()),
-                        });
+            IteratorSpec::IteratorFunction { name, .. } => {
+                let reg = registry();
+                
+                // Get the iterator function from registry and execute it
+                if let Some(func) = reg.get_iterator(name) {
+                    for (i, item) in items.iter().enumerate() {
+                        match func.execute(item) {
+                            IteratorExecutionResult::TextTokens(tokens) => {
+                                // Convert text tokens to IterationItems for further processing
+                                let new_items: Vec<IterationItem> = tokens.iter()
+                                    .map(|token| IterationItem {
+                                        key: KeyValue::new(Some(format!("{}_{}", i, token.len())), None),
+                                        value: FieldValue {
+                                            value: serde_json::Value::String(token.clone()),
+                                            atom_uuid: item.value.atom_uuid.clone(),
+                                        },
+                                        is_text_token: true,
+                                    })
+                                    .collect();
+                                
+                                // Check if the next spec is a reducer
+                                if let Some(next_spec) = tail.first() {
+                                    if matches!(next_spec, IteratorSpec::ReducerFunction { .. }) {
+                                        // For reducers, process all tokens as a group
+                                        depth_path.push(i);
+                                        let mut new_items_mut = new_items.clone();
+                                        self.recurse_specs(tail, _input, _field_key, &mut new_items_mut, depth_path, emitted);
+                                        depth_path.pop();
+                                    } else {
+                                        // For other specs, process each token individually
+                                        for (j, new_item) in new_items.iter().enumerate() {
+                                            depth_path.push(i);
+                                            depth_path.push(j);
+                                            self.recurse_specs(tail, _input, _field_key, &mut [new_item.clone()], depth_path, emitted);
+                                            depth_path.pop();
+                                            depth_path.pop();
+                                        }
+                                    }
+                                } else {
+                                    // No more specs, emit each token individually
+                                    for (j, new_item) in new_items.iter().enumerate() {
+                                        let mut path = depth_path.clone();
+                                        path.push(i);
+                                        path.push(j);
+                                        emitted.push(EmittedEntry {
+                                            row_id: path.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("/"),
+                                            atom_uuid: new_item.value.atom_uuid.clone(),
+                                            value_text: Some(new_item.value.value.as_str().unwrap().to_string()),
+                                        });
+                                    }
+                                }
+                            }
+                            IteratorExecutionResult::Items(new_items) => {
+                                // Handle item-producing functions (like split_array)
+                                for (j, new_item) in new_items.iter().enumerate() {
+                                    depth_path.push(i);
+                                    depth_path.push(j);
+                                    self.recurse_specs(tail, _input, _field_key, &mut [new_item.clone()], depth_path, emitted);
+                                    depth_path.pop();
+                                    depth_path.pop();
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Function not found - pass through as identity
+                    let snapshot = items.to_owned();
+                    for (i, _item) in snapshot.iter().enumerate() {
+                        depth_path.push(i);
+                        self.recurse_specs(tail, _input, _field_key, &mut snapshot.clone(), depth_path, emitted);
+                        depth_path.pop();
                     }
                 }
-                // No deeper recursion after a terminal split
+            }
+            IteratorSpec::ReducerFunction { name, .. } => {
+                let reg = registry();
+                
+                // Get the reducer function from registry and execute it on all items
+                if let Some(reducer) = reg.get_reducer(name) {
+                    let result = reducer.execute(items);
+                    
+                    // Create a single emitted entry for the reducer result
+                    let row_id = if depth_path.is_empty() {
+                        "0".to_string()
+                    } else {
+                        depth_path.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("/")
+                    };
+                    
+                    // Use the first item's atom_uuid for traceability
+                    let atom_uuid = items.first()
+                        .map(|item| item.value.atom_uuid.clone())
+                        .unwrap_or_else(|| "reducer-result".to_string());
+                    
+                    emitted.push(EmittedEntry {
+                        row_id,
+                        atom_uuid,
+                        value_text: Some(result),
+                    });
+                } else {
+                    // Reducer not found - pass through as identity
+                    let snapshot = items.to_owned();
+                    for (i, _item) in snapshot.iter().enumerate() {
+                        depth_path.push(i);
+                        self.recurse_specs(tail, _input, _field_key, &mut snapshot.clone(), depth_path, emitted);
+                        depth_path.pop();
+                    }
+                }
             }
             IteratorSpec::Schema { .. } => {
                 // Nested schema iteration is not needed for initial parallel version
@@ -165,28 +268,4 @@ impl Default for TypedEngine {
         Self::new()
     }
 }
-
-fn extract_text_value(field_value: &FieldValue) -> String {
-    // FieldValue.value is serde_json::Value; extract best-effort string
-    match &field_value.value {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Object(map) => map
-            .get("value")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        serde_json::Value::Array(arr) => arr
-            .first()
-            .and_then(|v| v.get("value"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        _ => String::new(),
-    }
-}
-
-fn split_words(text: &str) -> Vec<String> {
-    text.split_whitespace().map(|s| s.to_string()).collect()
-}
-
 

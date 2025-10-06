@@ -33,8 +33,8 @@ impl ChainParser {
                         break;
                     }
                 }
-                ChainOperation::SplitArray | ChainOperation::SplitByWord => {
-                    // These are part of the branch definition but don't increase depth
+                ChainOperation::Function { .. } => {
+                    // Functions are part of the branch definition but don't increase depth
                     continue;
                 }
                 _ => {}

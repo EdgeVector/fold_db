@@ -9,6 +9,7 @@ use crate::transform::chain_parser::types::{
 use crate::transform::chain_parser::errors::{
     constants, IteratorStackError, IteratorStackResult,
 };
+use crate::transform::functions::registry;
 
 /// Parser for chain syntax expressions
 pub struct ChainParser {
@@ -74,23 +75,28 @@ impl ChainParser {
     fn tokenize(&self, expression: &str) -> IteratorStackResult<Vec<ChainOperation>> {
         let mut operations = Vec::new();
         let parts: Vec<&str> = expression.split('.').collect();
+        let reg = registry();
 
         for part in parts {
             let operation = match part {
                 "map()" => ChainOperation::Map,
-                "split_array()" => ChainOperation::SplitArray,
-                "split_by_word()" => ChainOperation::SplitByWord,
                 part if part.starts_with('$') => ChainOperation::SpecialField(part.to_string()),
                 part if part.ends_with("()") => {
-                    // Check if it's a reducer function
+                    // Extract function name and check registry
                     let func_name = &part[..part.len() - 2];
-                    if self.is_reducer_function(func_name) {
-                        ChainOperation::Reducer(func_name.to_string())
-                    } else {
+                    
+                    if !reg.is_registered(func_name) {
                         return Err(IteratorStackError::InvalidChainSyntax {
                             expression: expression.to_string(),
                             reason: format!("Unknown function: {}", part),
                         });
+                    }
+                    
+                    // TODO: Parse function parameters from syntax like split_by_word(sep: ",")
+                    // For now, no parameters supported - params field exists for future use
+                    ChainOperation::Function { 
+                        name: func_name.to_string(),
+                        params: Vec::new(),
                     }
                 }
                 part if !part.is_empty() => ChainOperation::FieldAccess(part.to_string()),
@@ -128,8 +134,8 @@ impl ChainParser {
                     // Stop at the first map - everything before defines the branch
                     break;
                 }
-                ChainOperation::SplitArray | ChainOperation::SplitByWord => {
-                    // These are part of the branch definition
+                ChainOperation::Function { .. } => {
+                    // Functions are part of the branch definition
                     continue;
                 }
                 _ => {}
@@ -187,14 +193,6 @@ impl ChainParser {
         Ok(scopes)
     }
 
-    /// Checks if a function name is a valid reducer
-    fn is_reducer_function(&self, func_name: &str) -> bool {
-        matches!(
-            func_name,
-            "first" | "last" | "count" | "join" | "sum" | "max" | "min"
-        )
-    }
-
     /// Validates that the sequence of operations is valid
     fn validate_operation_sequence(
         &self,
@@ -221,22 +219,55 @@ impl ChainParser {
             let prev = &window[0];
             let current = &window[1];
 
+            let reg = registry();
+            
             match (prev, current) {
                 // Valid transitions
                 (ChainOperation::FieldAccess(_), ChainOperation::Map) => {}
                 (ChainOperation::FieldAccess(_), ChainOperation::FieldAccess(_)) => {}
-                (ChainOperation::FieldAccess(_), ChainOperation::SplitArray) => {}
-                (ChainOperation::FieldAccess(_), ChainOperation::SplitByWord) => {}
+                (ChainOperation::FieldAccess(_), ChainOperation::Function { name, .. }) => {
+                    // Iterator functions can follow field access
+                    if !reg.is_iterator(name) && !reg.is_reducer(name) {
+                        return Err(IteratorStackError::InvalidChainSyntax {
+                            expression: expression.to_string(),
+                            reason: format!("Function after field access must be registered: {}", name),
+                        });
+                    }
+                }
                 (ChainOperation::FieldAccess(_), ChainOperation::SpecialField(_)) => {}
                 (ChainOperation::Map, ChainOperation::FieldAccess(_)) => {}
-                (ChainOperation::SplitArray, ChainOperation::Map) => {}
-                (ChainOperation::SplitByWord, ChainOperation::Map) => {}
-                (ChainOperation::Map, ChainOperation::Reducer(_)) => {}
+                (ChainOperation::Function { name, .. }, ChainOperation::Map) => {
+                    // Iterator functions can be followed by map
+                    if !reg.is_iterator(name) {
+                        return Err(IteratorStackError::InvalidChainSyntax {
+                            expression: expression.to_string(),
+                            reason: format!("Only iterator functions can be followed by map(): {}", name),
+                        });
+                    }
+                }
+                (ChainOperation::Map, ChainOperation::Function { name, .. }) => {
+                    // Both iterator and reducer functions can follow map
+                    if !reg.is_iterator(name) && !reg.is_reducer(name) {
+                        return Err(IteratorStackError::InvalidChainSyntax {
+                            expression: expression.to_string(),
+                            reason: format!("Function after map must be registered: {}", name),
+                        });
+                    }
+                }
                 // Allow Map -> SpecialField for accessing special fields after map operations
                 (ChainOperation::Map, ChainOperation::SpecialField(_)) => {}
-                // Allow Map -> SplitArray and Map -> SplitByWord for nested splitting
-                (ChainOperation::Map, ChainOperation::SplitArray) => {}
-                (ChainOperation::Map, ChainOperation::SplitByWord) => {}
+                
+                (ChainOperation::Function { name: prev_name, .. }, ChainOperation::Function { name: curr_name, .. }) => {
+                    // Iterator functions can be followed by reducer functions
+                    if reg.is_iterator(prev_name) && reg.is_reducer(curr_name) {
+                        // Valid: iterator -> reducer
+                    } else {
+                        return Err(IteratorStackError::InvalidChainSyntax {
+                            expression: expression.to_string(),
+                            reason: format!("Invalid function sequence: {} -> {}. Only iterator functions can be followed by reducer functions.", prev_name, curr_name),
+                        });
+                    }
+                }
 
                 // Invalid transitions
                 _ => {
