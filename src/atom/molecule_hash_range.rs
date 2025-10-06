@@ -32,7 +32,8 @@ pub struct MoleculeHashRange {
     status: MoleculeStatus,
     /// History of status updates
     update_history: Vec<MoleculeUpdate>,
-
+    /// Order in which atoms were added (for deterministic sampling)
+    #[serde(default)]
     update_order: Vec<KeyValue>,
 }
 
