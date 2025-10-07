@@ -181,6 +181,23 @@ impl DataFoldHttpServer {
                             "/transforms/queue/{id}",
                             web::post().to(query_routes::add_to_transform_queue),
                         )
+                        // Backfill monitoring endpoints
+                        .route(
+                            "/transforms/backfills",
+                            web::get().to(query_routes::get_all_backfills),
+                        )
+                        .route(
+                            "/transforms/backfills/active",
+                            web::get().to(query_routes::get_active_backfills),
+                        )
+                        .route(
+                            "/transforms/backfills/{id}",
+                            web::get().to(query_routes::get_backfill),
+                        )
+                        .route(
+                            "/transforms/statistics",
+                            web::get().to(query_routes::get_transform_statistics),
+                        )
                         // Log endpoints
                         .route("/logs", web::get().to(log_routes::list_logs))
                         .route("/logs/stream", web::get().to(log_routes::stream_logs))

@@ -5,7 +5,9 @@
 //! - System initialization utilities
 //! - Async API for async operations
 //! - Event monitoring and observability
+//! - Backfill tracking for transform operations
 
+pub mod backfill_tracker;
 pub mod event_monitor;
 pub mod init;
 pub mod message_bus;

@@ -140,5 +140,88 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/transforms/backfills",
+    tag = "query",
+    responses(
+        (status = 200, description = "All backfill information", body = Vec<serde_json::Value>),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
+    let node = state.node.lock().await;
+    match node.get_all_backfills() {
+        Ok(backfills) => HttpResponse::Ok().json(backfills),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({ "error": format!("Failed to get backfills: {}", e) })),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/transforms/backfills/active",
+    tag = "query",
+    responses(
+        (status = 200, description = "Active backfill information", body = Vec<serde_json::Value>),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder {
+    let node = state.node.lock().await;
+    match node.get_active_backfills() {
+        Ok(backfills) => HttpResponse::Ok().json(backfills),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({ "error": format!("Failed to get active backfills: {}", e) })),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/transforms/backfills/{id}",
+    tag = "query",
+    params(
+        ("id" = String, Path, description = "Transform ID")
+    ),
+    responses(
+        (status = 200, description = "Backfill information", body = serde_json::Value),
+        (status = 404, description = "Backfill not found"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_backfill(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let transform_id = path.into_inner();
+    let node = state.node.lock().await;
+    
+    match node.get_backfill(&transform_id) {
+        Ok(Some(backfill)) => HttpResponse::Ok().json(backfill),
+        Ok(None) => HttpResponse::NotFound()
+            .json(json!({ "error": format!("Backfill not found for transform: {}", transform_id) })),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({ "error": format!("Failed to get backfill: {}", e) })),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/transforms/statistics",
+    tag = "query",
+    responses(
+        (status = 200, description = "Transform statistics", body = serde_json::Value),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Responder {
+    let node = state.node.lock().await;
+    match node.get_event_statistics() {
+        Ok(stats) => HttpResponse::Ok().json(stats),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({ "error": format!("Failed to get statistics: {}", e) })),
+    }
+}
+
 #[cfg(test)]
 mod tests {}

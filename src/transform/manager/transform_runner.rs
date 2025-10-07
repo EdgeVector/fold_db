@@ -24,6 +24,18 @@ impl TransformRunner for super::TransformManager {
             crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
         >,
     ) -> Result<TransformResult, SchemaError> {
+        // Check if the target schema is in Approved state before running transform
+        use crate::schema::SchemaState;
+        let schema_state = self.db_ops.get_schema_state(transform_id)?
+            .unwrap_or(SchemaState::Available);
+        
+        if schema_state != SchemaState::Approved {
+            return Err(SchemaError::InvalidData(
+                format!("Transform '{}' cannot run: target schema is not approved (current state: {:?})", 
+                    transform_id, schema_state)
+            ));
+        }
+        
         // Load the transform from in-memory registered transforms
         let transforms = self.registered_transforms.read()
             .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
@@ -139,20 +151,10 @@ fn convert_execution_result_to_records(execution_result: &ExecutionResult) -> Re
         let segments: Vec<&str> = child_id.split('/').collect();
         if segments.len() <= 1 { continue; }
         
-        // Try to inherit from all possible parent prefixes
+        // Try to inherit from all possible parent prefixes (includes root parent when prefix_len == 1)
         for prefix_len in (1..segments.len()).rev() {
             let prefix = segments[..prefix_len].join("/");
             if let Some(parent_fields) = rows_clone.get(&prefix) {
-                for (fname, fvals) in parent_fields {
-                    child_fields.entry(fname.clone()).or_insert_with(|| fvals.clone());
-                }
-            }
-        }
-        
-        // Special case: also try to inherit from the root parent (first segment only)
-        if segments.len() > 1 {
-            let root_parent = segments[0].to_string();
-            if let Some(parent_fields) = rows_clone.get(&root_parent) {
                 for (fname, fvals) in parent_fields {
                     child_fields.entry(fname.clone()).or_insert_with(|| fvals.clone());
                 }

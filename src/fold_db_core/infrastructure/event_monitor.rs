@@ -4,10 +4,11 @@
 //! Demonstrates how event-driven architecture enables comprehensive observability
 //! with a single component that can see all system activity.
 
+use super::backfill_tracker::{BackfillTracker, BackfillInfo};
 use super::message_bus::{
     atom_events::{AtomCreated, AtomUpdated, FieldValueSet, MoleculeCreated, MoleculeUpdated},
     query_events::{MutationExecuted, QueryExecuted},
-    schema_events::{SchemaChanged, SchemaLoaded, TransformExecuted, TransformTriggered, TransformRegistered, TransformRegistrationRequest},
+    schema_events::{SchemaChanged, SchemaLoaded, TransformExecuted, TransformTriggered, TransformRegistered, TransformRegistrationRequest, SchemaApproved},
     Consumer, MessageBus,
 };
 use crate::transform::manager::TransformManager;
@@ -17,7 +18,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Statistics about system activity tracked by the event monitor
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct EventStatistics {
     pub field_value_sets: u64,
     pub atom_creations: u64,
@@ -46,7 +47,7 @@ pub struct EventStatistics {
 }
 
 /// Statistics for individual transforms
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TransformStats {
     pub executions: u64,
     pub successes: u64,
@@ -57,7 +58,7 @@ pub struct TransformStats {
 }
 
 /// Statistics for query operations
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct QueryStats {
     pub executions: u64,
     pub total_execution_time_ms: u64,
@@ -68,7 +69,7 @@ pub struct QueryStats {
 }
 
 /// Statistics for mutation operations
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MutationStats {
     pub executions: u64,
     pub total_execution_time_ms: u64,
@@ -297,6 +298,7 @@ impl EventStatistics {
 /// Centralized event monitor that provides system-wide observability
 pub struct EventMonitor {
     statistics: Arc<Mutex<EventStatistics>>,
+    backfill_tracker: Arc<BackfillTracker>,
     _field_value_thread: thread::JoinHandle<()>,
     _atom_created_thread: thread::JoinHandle<()>,
     _atom_updated_thread: thread::JoinHandle<()>,
@@ -308,6 +310,7 @@ pub struct EventMonitor {
     _transform_executed_thread: thread::JoinHandle<()>,
     _transform_registered_thread: thread::JoinHandle<()>,
     _transform_registration_thread: thread::JoinHandle<()>,
+    _schema_approved_thread: thread::JoinHandle<()>,
     _query_executed_thread: thread::JoinHandle<()>,
     _mutation_executed_thread: thread::JoinHandle<()>,
 }
@@ -323,6 +326,8 @@ impl EventMonitor {
             ..Default::default()
         }));
 
+        let backfill_tracker = Arc::new(BackfillTracker::new());
+
         info!("🔍 EventMonitor: Starting system-wide event monitoring");
 
         // Create consumers for all event types
@@ -337,6 +342,7 @@ impl EventMonitor {
         let mut transform_executed_consumer = message_bus.subscribe::<TransformExecuted>();
         let mut transform_registered_consumer = message_bus.subscribe::<TransformRegistered>();
         let mut transform_registration_consumer = message_bus.subscribe::<TransformRegistrationRequest>();
+        let mut schema_approved_consumer = message_bus.subscribe::<SchemaApproved>();
         let mut query_executed_consumer = message_bus.subscribe::<QueryExecuted>();
         let mut mutation_executed_consumer = message_bus.subscribe::<MutationExecuted>();
 
@@ -390,9 +396,8 @@ impl EventMonitor {
         });
 
         let stats_clone = statistics.clone();
-        let transform_manager_clone = Arc::clone(&transform_manager);
         let transform_registered_thread = thread::spawn(move || {
-            Self::monitor_transform_registered_events(&mut transform_registered_consumer, stats_clone, transform_manager_clone);
+            Self::monitor_transform_registered_events(&mut transform_registered_consumer, stats_clone);
         });
 
         let stats_clone = statistics.clone();
@@ -407,12 +412,20 @@ impl EventMonitor {
         });
 
         let stats_clone = statistics.clone();
+        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
+        let transform_manager_clone = Arc::clone(&transform_manager);
+        let schema_approved_thread = thread::spawn(move || {
+            Self::monitor_schema_approved_events(&mut schema_approved_consumer, stats_clone, backfill_tracker_clone, transform_manager_clone);
+        });
+
+        let stats_clone = statistics.clone();
         let mutation_executed_thread = thread::spawn(move || {
             Self::monitor_mutation_executed_events(&mut mutation_executed_consumer, stats_clone);
         });
 
         Self {
             statistics,
+            backfill_tracker,
             _field_value_thread: field_value_thread,
             _atom_created_thread: atom_created_thread,
             _atom_updated_thread: atom_updated_thread,
@@ -424,6 +437,7 @@ impl EventMonitor {
             _transform_executed_thread: transform_executed_thread,
             _transform_registered_thread: transform_registered_thread,
             _transform_registration_thread: transform_registration_thread,
+            _schema_approved_thread: schema_approved_thread,
             _query_executed_thread: query_executed_thread,
             _mutation_executed_thread: mutation_executed_thread,
         }
@@ -432,6 +446,21 @@ impl EventMonitor {
     /// Get current event statistics
     pub fn get_statistics(&self) -> EventStatistics {
         self.statistics.lock().unwrap().clone()
+    }
+
+    /// Get all backfill information
+    pub fn get_all_backfills(&self) -> Vec<BackfillInfo> {
+        self.backfill_tracker.get_all_backfills()
+    }
+
+    /// Get active (in-progress) backfills
+    pub fn get_active_backfills(&self) -> Vec<BackfillInfo> {
+        self.backfill_tracker.get_active_backfills()
+    }
+
+    /// Get specific backfill info
+    pub fn get_backfill(&self, transform_id: &str) -> Option<BackfillInfo> {
+        self.backfill_tracker.get_backfill(transform_id)
     }
 
     /// Log a summary of all activity since monitoring started
@@ -641,14 +670,11 @@ impl EventMonitor {
                     // Determine success from result field
                     let success = event.result == "success";
 
-                    // For now, use a default execution time since the event doesn't contain timing info
-                    // In a production system, this could be enhanced to track actual execution times
-                    let execution_time_ms = 10; // Default placeholder value
-
+                    // Note: Execution time tracking would require adding timing info to TransformExecuted event
                     statistics.lock().unwrap().increment_transform_executions(
                         &event.transform_id,
                         success,
-                        execution_time_ms,
+                        0, // No timing info available in event
                     );
                 }
                 Err(_) => continue,
@@ -659,7 +685,6 @@ impl EventMonitor {
     fn monitor_transform_registered_events(
         consumer: &mut Consumer<TransformRegistered>,
         statistics: Arc<Mutex<EventStatistics>>,
-        transform_manager: Arc<TransformManager>,
     ) {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
@@ -672,13 +697,92 @@ impl EventMonitor {
                     // Update statistics
                     statistics.lock().unwrap().increment_transform_registrations();
 
-                    // Handle the transform backfill
-                    if let Err(e) = Self::handle_transform_backfill(
-                        &event.transform_id,
-                        &event.source_schema_name,
-                        &transform_manager,
-                    ) {
-                        log::error!("Failed to handle transform backfill for '{}': {}", event.transform_id, e);
+                    // NOTE: Backfill is now triggered when schema is approved, not when transform is registered
+                    info!(
+                        "ℹ️  Transform '{}' registered. Backfill will run when schema is approved.",
+                        event.transform_id
+                    );
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    fn monitor_schema_approved_events(
+        consumer: &mut Consumer<SchemaApproved>,
+        _statistics: Arc<Mutex<EventStatistics>>,
+        backfill_tracker: Arc<BackfillTracker>,
+        transform_manager: Arc<TransformManager>,
+    ) {
+        loop {
+            match consumer.recv_timeout(Duration::from_millis(100)) {
+                Ok(event) => {
+                    info!(
+                        "🔍 EventMonitor: SchemaApproved - schema_name: {}",
+                        event.schema_name
+                    );
+
+                    // Check if this schema has a registered transform (i.e., it's a transform/derived schema)
+                    match transform_manager.transform_exists(&event.schema_name) {
+                        Ok(true) => {
+                            info!(
+                                "✅ Schema '{}' has a registered transform, triggering backfill",
+                                event.schema_name
+                            );
+
+                            // Get the transform to find the source schema name
+                            match transform_manager.list_transforms() {
+                                Ok(transforms) => {
+                                    if let Some(transform) = transforms.get(&event.schema_name) {
+                                        // Extract source schema name from the transform's input fields
+                                        match transform.get_declarative_schema() {
+                                            Some(schema) => {
+                                                let inputs = schema.get_inputs();
+                                                if let Some(first_input) = inputs.first() {
+                                                    if let Some(source_schema_name) = first_input.split('.').next() {
+                                                        // Start tracking the backfill
+                                                        backfill_tracker.start_backfill(
+                                                            event.schema_name.clone(),
+                                                            source_schema_name.to_string(),
+                                                        );
+
+                                                        // Handle the transform backfill
+                                                        if let Err(e) = Self::handle_transform_backfill(
+                                                            &event.schema_name,
+                                                            source_schema_name,
+                                                            &transform_manager,
+                                                            &backfill_tracker,
+                                                        ) {
+                                                            log::error!("Failed to handle transform backfill for '{}': {}", event.schema_name, e);
+                                                            backfill_tracker.fail_backfill(&event.schema_name, e.to_string());
+                                                        }
+                                                    } else {
+                                                        log::error!("Failed to extract source schema from input field: {}", first_input);
+                                                    }
+                                                } else {
+                                                    log::warn!("Transform '{}' has no input fields, skipping backfill", event.schema_name);
+                                                }
+                                            }
+                                            None => {
+                                                log::error!("Transform '{}' has no declarative schema", event.schema_name);
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to list transforms: {}", e);
+                                }
+                            }
+                        }
+                        Ok(false) => {
+                            info!(
+                                "ℹ️  Schema '{}' has no registered transform, no backfill needed",
+                                event.schema_name
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("Failed to check if transform exists for '{}': {}", event.schema_name, e);
+                        }
                     }
                 }
                 Err(_) => continue,
@@ -688,14 +792,12 @@ impl EventMonitor {
 
     fn monitor_transform_registration_events(
         consumer: &mut Consumer<TransformRegistrationRequest>,
-        statistics: Arc<Mutex<EventStatistics>>,
+        _statistics: Arc<Mutex<EventStatistics>>,
         transform_manager: Arc<TransformManager>,
     ) {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
                 Ok(event) => {
-                    statistics.lock().unwrap().increment_transform_registrations();
-                    
                     // Handle the transform registration
                     if let Err(e) = transform_manager.handle_transform_registration(&event.registration) {
                         log::error!("Failed to handle transform registration: {}", e);
@@ -753,27 +855,28 @@ impl EventMonitor {
         transform_id: &str,
         _source_schema_name: &str,
         transform_manager: &Arc<TransformManager>,
+        backfill_tracker: &Arc<BackfillTracker>,
     ) -> Result<(), crate::schema::SchemaError> {
         use crate::transform::manager::types::TransformRunner;
 
-        // We need to access the database operations through a different approach
-        // Since db_ops is private, we'll need to create a new SchemaCore instance
-        // This is a temporary solution - ideally we'd have a public method to access db_ops
-        
-        // For now, let's use a simpler approach by executing the transform without context
-        // This will process all existing data in the source schema
+        info!("🔄 Starting backfill for transform '{}'", transform_id);
 
         // Execute the transform without mutation context to process all existing data
         match transform_manager.execute_transform_with_context(transform_id, &None) {
-            Ok(_result) => {
+            Ok(result) => {
+                let records_produced = result.records.len() as u64;
+                info!(
+                    "✅ Backfill completed for transform '{}': {} records produced",
+                    transform_id, records_produced
+                );
+                backfill_tracker.complete_backfill(transform_id, records_produced);
+                Ok(())
             }
             Err(e) => {
                 log::error!("❌ Failed to execute backfill for transform '{}': {}", transform_id, e);
-                return Err(e);
+                Err(e)
             }
         }
-
-        Ok(())
     }
 }
 

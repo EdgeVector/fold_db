@@ -28,6 +28,42 @@ impl DataFoldNode {
             "isEmpty": is_empty
         }))
     }
+
+    /// Get all backfill information
+    pub fn get_all_backfills(&self) -> FoldDbResult<Vec<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+        Ok(db.get_all_backfills())
+    }
+
+    /// Get active backfills
+    pub fn get_active_backfills(&self) -> FoldDbResult<Vec<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+        Ok(db.get_active_backfills())
+    }
+
+    /// Get specific backfill info
+    pub fn get_backfill(&self, transform_id: &str) -> FoldDbResult<Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+        Ok(db.get_backfill(transform_id))
+    }
+
+    /// Get event statistics
+    pub fn get_event_statistics(&self) -> FoldDbResult<crate::fold_db_core::infrastructure::event_monitor::EventStatistics> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+        Ok(db.get_event_statistics())
+    }
 }
 
 #[cfg(test)]

@@ -48,6 +48,39 @@ export interface AddToQueueResponse {
   estimatedWaitTime?: number;
 }
 
+export type BackfillStatus = 'InProgress' | 'Completed' | 'Failed';
+
+export interface BackfillInfo {
+  transform_id: string;
+  source_schema: string;
+  status: BackfillStatus;
+  items_processed: number;
+  items_total?: number;
+  start_time: number;
+  end_time?: number;
+  error?: string;
+  records_produced: number;
+}
+
+export interface TransformStatistics {
+  field_value_sets: number;
+  atom_creations: number;
+  atom_updates: number;
+  molecule_creations: number;
+  molecule_updates: number;
+  schema_loads: number;
+  schema_changes: number;
+  transform_triggers: number;
+  transform_executions: number;
+  transform_successes: number;
+  transform_failures: number;
+  transform_registrations: number;
+  query_executions: number;
+  mutation_executions: number;
+  total_events: number;
+  monitoring_start_time: number;
+}
+
 /**
  * Unified Transform API Client Implementation
  */
@@ -132,6 +165,71 @@ export class UnifiedTransformClient {
   }
 
   /**
+   * Get all backfill information
+   * UNPROTECTED - No authentication required for backfill monitoring
+   * 
+   * @returns Promise resolving to all backfill information
+   */
+  async getAllBackfills(): Promise<EnhancedApiResponse<BackfillInfo[]>> {
+    return this.client.get<BackfillInfo[]>(API_ENDPOINTS.GET_ALL_BACKFILLS, {
+      requiresAuth: false,
+      timeout: 5000,
+      retries: 2,
+      cacheable: false
+    });
+  }
+
+  /**
+   * Get active (in-progress) backfills
+   * UNPROTECTED - No authentication required for backfill monitoring
+   * 
+   * @returns Promise resolving to active backfill information
+   */
+  async getActiveBackfills(): Promise<EnhancedApiResponse<BackfillInfo[]>> {
+    return this.client.get<BackfillInfo[]>(API_ENDPOINTS.GET_ACTIVE_BACKFILLS, {
+      requiresAuth: false,
+      timeout: 5000,
+      retries: 2,
+      cacheable: false
+    });
+  }
+
+  /**
+   * Get backfill information for a specific transform
+   * UNPROTECTED - No authentication required for backfill monitoring
+   * 
+   * @param transformId - The ID of the transform
+   * @returns Promise resolving to backfill information
+   */
+  async getBackfill(transformId: string): Promise<EnhancedApiResponse<BackfillInfo>> {
+    if (!transformId || typeof transformId !== 'string') {
+      throw new Error('Transform ID is required and must be a string');
+    }
+
+    return this.client.get<BackfillInfo>(API_ENDPOINTS.GET_BACKFILL(transformId), {
+      requiresAuth: false,
+      timeout: 5000,
+      retries: 2,
+      cacheable: false
+    });
+  }
+
+  /**
+   * Get transform execution statistics
+   * UNPROTECTED - No authentication required for statistics monitoring
+   * 
+   * @returns Promise resolving to transform statistics
+   */
+  async getStatistics(): Promise<EnhancedApiResponse<TransformStatistics>> {
+    return this.client.get<TransformStatistics>(API_ENDPOINTS.GET_TRANSFORM_STATISTICS, {
+      requiresAuth: false,
+      timeout: 5000,
+      retries: 2,
+      cacheable: false
+    });
+  }
+
+  /**
    * Get a specific transform by ID
    * UNPROTECTED - No authentication required for reading transform details
    * Future enhancement for detailed transform inspection
@@ -152,67 +250,6 @@ export class UnifiedTransformClient {
       cacheTtl: 300000, // Cache individual transforms for 5 minutes
       cacheKey: `transform:${transformId}`
     });
-  }
-
-  /**
-   * Remove a transform from the queue
-   * UNPROTECTED - No authentication required for transform operations
-   * Future enhancement for queue management
-   * 
-   * @param transformId - The ID of the transform to remove from queue
-   * @returns Promise resolving to removal result
-   */
-  async removeFromQueue(transformId: string): Promise<EnhancedApiResponse<AddToQueueResponse>> {
-    if (!transformId || typeof transformId !== 'string') {
-      throw new Error('Transform ID is required and must be a string');
-    }
-
-    return this.client.delete<AddToQueueResponse>(
-      API_ENDPOINTS.ADD_TO_TRANSFORM_QUEUE(transformId),
-      {
-        timeout: 8000,
-        retries: 1,
-        cacheable: false // Never cache queue modification operations
-      }
-    );
-  }
-
-  /**
-   * Validate transform ID format
-   * Client-side validation helper for transform operations
-   * 
-   * @param transformId - Transform ID to validate
-   * @returns Validation result with error details
-   */
-  validateTransformId(transformId: string): {
-    isValid: boolean;
-    errors: string[];
-  } {
-    const errors: string[] = [];
-
-    if (!transformId) {
-      errors.push('Transform ID is required');
-      return { isValid: false, errors };
-    }
-
-    if (typeof transformId !== 'string') {
-      errors.push('Transform ID must be a string');
-    } else {
-      // Expected format: schemaName.fieldName
-      if (!transformId.includes('.')) {
-        errors.push('Transform ID must be in format "schemaName.fieldName"');
-      } else {
-        const parts = transformId.split('.');
-        if (parts.length !== 2 || !parts[0] || !parts[1]) {
-          errors.push('Transform ID must have both schema name and field name');
-        }
-      }
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
   }
 
   /**
@@ -246,7 +283,5 @@ export const getQueue = transformClient.getQueue.bind(transformClient);
 export const addToQueue = transformClient.addToQueue.bind(transformClient);
 export const refreshQueue = transformClient.refreshQueue.bind(transformClient);
 export const getTransform = transformClient.getTransform.bind(transformClient);
-export const removeFromQueue = transformClient.removeFromQueue.bind(transformClient);
-export const validateTransformId = transformClient.validateTransformId.bind(transformClient);
 
 export default transformClient;
