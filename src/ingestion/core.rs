@@ -27,7 +27,7 @@ pub struct IngestionCore {
 }
 
 /// Request for processing JSON ingestion
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct IngestionRequest {
     /// JSON data to ingest
     pub data: Value,

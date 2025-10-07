@@ -395,7 +395,13 @@ export function createSchemaClient(client?: ApiClient): UnifiedSchemaClient {
 }
 
 
-// New exports
+// Exported standalone functions
+export const getSchemasByState = schemaClient.getSchemasByState.bind(schemaClient);
+export const getAllSchemasWithState = schemaClient.getAllSchemasWithState.bind(schemaClient);
+export const getSchemaStatus = schemaClient.getSchemaStatus.bind(schemaClient);
+export const getSchema = schemaClient.getSchema.bind(schemaClient);
+export const approveSchema = schemaClient.approveSchema.bind(schemaClient);
+export const blockSchema = schemaClient.blockSchema.bind(schemaClient);
 export const loadSchema = schemaClient.loadSchema.bind(schemaClient);
 export const unloadSchema = schemaClient.unloadSchema.bind(schemaClient);
 export const getApprovedSchemas = schemaClient.getApprovedSchemas.bind(schemaClient);

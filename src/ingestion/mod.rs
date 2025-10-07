@@ -46,7 +46,7 @@ pub use error::IngestionError;
 pub type IngestionResult<T> = Result<T, IngestionError>;
 
 /// Response from the ingestion process
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub struct IngestionResponse {
     /// Whether the ingestion was successful
     pub success: bool,

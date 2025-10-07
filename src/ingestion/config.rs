@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 
 /// Specifies the AI provider to use for ingestion.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, utoipa::ToSchema)]
 pub enum AIProvider {
     #[default]
     OpenRouter,
@@ -12,7 +12,7 @@ pub enum AIProvider {
 }
 
 /// Configuration for the OpenRouter AI provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct OpenRouterConfig {
     pub api_key: String,
     pub model: String,
@@ -51,7 +51,7 @@ impl OpenRouterConfig {
 }
 
 /// Configuration for the Ollama AI provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct OllamaConfig {
     pub model: String,
     pub base_url: String,
@@ -83,7 +83,7 @@ impl OllamaConfig {
 }
 
 /// Configuration for the ingestion module.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct IngestionConfig {
     /// The AI provider to use.
     pub provider: AIProvider,
@@ -240,7 +240,7 @@ impl IngestionConfig {
 }
 
 /// Structure for saving AI provider configuration.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, utoipa::ToSchema)]
 pub struct SavedConfig {
     pub provider: AIProvider,
     pub openrouter: OpenRouterConfig,

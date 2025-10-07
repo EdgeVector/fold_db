@@ -22,7 +22,7 @@
     "lint:fix": "eslint . --ext ts,tsx,js,jsx --fix",
     "ci:test": "npm run lint && npm run test:coverage:threshold",
     "ci:coverage-check": "node scripts/check-coverage.js",
-    "generate:api": "npx -y openapi-typescript http://localhost:9001/api/openapi.json -o src/types/openapi.ts",
+    "generate:api": "npx -y openapi-typescript ../../../target/openapi.json -o src/types/openapi.ts",
     "generate:endpoints": "node scripts/generate-endpoints.js"
   },
   "dependencies": {

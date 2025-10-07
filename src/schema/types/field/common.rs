@@ -41,7 +41,7 @@ pub enum FieldType {
     HashRange,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FieldCommon {
     pub molecule_uuid: Option<String>,
     pub field_mappers: HashMap<String, String>,

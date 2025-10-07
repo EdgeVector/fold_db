@@ -19,7 +19,7 @@ use std::sync::Arc;
 // Removed unused log imports
 
 /// Field that combines hash and range functionality for indexing
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct HashRangeField {
     pub inner: FieldCommon,
     pub molecule: Option<MoleculeHashRange>,

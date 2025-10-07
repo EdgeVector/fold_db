@@ -19,7 +19,7 @@ use uuid::Uuid;
 /// - Range field: Provides ordered access within each hash group
 /// 
 /// Structure: HashMap<hash_value, BTreeMap<range_value, atom_uuid>>
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct MoleculeHashRange {
     /// Unique identifier for this molecule
     uuid: String,
@@ -27,6 +27,7 @@ pub struct MoleculeHashRange {
     /// Structure: HashMap<hash_value, BTreeMap<range_value, atom_uuid>>
     atom_uuids: HashMap<String, BTreeMap<String, String>>,
     /// Timestamp when this molecule was last updated
+    #[schema(value_type = String, format = "date-time")]
     updated_at: DateTime<Utc>,
     /// Current status of this molecule
     status: MoleculeStatus,

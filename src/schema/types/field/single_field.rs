@@ -13,7 +13,7 @@ use crate::schema::types::field::FieldValue;
 // Removed unused JsonValue import
 // Removed unused log imports
 /// Field storing a single value.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SingleField {
     pub inner: FieldCommon,
     pub molecule: Option<Molecule>,

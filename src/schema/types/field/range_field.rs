@@ -15,7 +15,7 @@ use crate::schema::types::key_value::KeyValue;
 
 // RangeFilter has been unified into HashRangeFilter
 /// Field storing a range of values.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RangeField {
     pub inner: FieldCommon,
     pub molecule: Option<MoleculeRange>,

@@ -5,7 +5,7 @@ import tseslint from '@typescript-eslint/eslint-plugin'
 import tsparser from '@typescript-eslint/parser'
 
 export default [
-  { ignores: ['dist', 'node_modules'] },
+  { ignores: ['dist', 'node_modules', 'src/types/openapi.ts'] },
   // JavaScript and JSX files
   {
     files: ['**/*.{js,jsx}'],

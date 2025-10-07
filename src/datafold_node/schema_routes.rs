@@ -47,7 +47,7 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
         ("name" = String, Path, description = "Schema name")
     ),
     responses(
-        (status = 200, description = "Schema", body = crate::schema::types::schema::Schema),
+        (status = 200, description = "Schema", body = Schema),
         (status = 404, description = "Schema not found"),
         (status = 500, description = "Server error")
     )

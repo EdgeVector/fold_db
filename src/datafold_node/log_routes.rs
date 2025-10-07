@@ -5,13 +5,13 @@ use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream; // Keep for backward compatibility
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 pub struct LogLevelUpdate {
     pub feature: String,
     pub level: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 pub struct LogConfigResponse {
     pub message: String,
     pub current_level: String,

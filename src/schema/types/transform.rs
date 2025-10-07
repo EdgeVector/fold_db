@@ -27,7 +27,7 @@ pub struct TransformRegistration {
     pub trigger_fields: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct Transform {
     /// The declarative schema definition
     #[serde(flatten)]

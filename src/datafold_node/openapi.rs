@@ -35,7 +35,32 @@ use utoipa::OpenApi;
         schemas(
             crate::schema::types::schema::Schema,
             crate::schema::types::schema::SchemaType,
-            crate::schema::types::key_config::KeyConfig
+            crate::schema::types::key_config::KeyConfig,
+            crate::schema::types::key_value::KeyValue,
+            crate::schema::types::field::variant::FieldVariant,
+            crate::schema::types::field::single_field::SingleField,
+            crate::schema::types::field::range_field::RangeField,
+            crate::schema::types::field::hash_range_field::HashRangeField,
+            crate::schema::types::field::common::FieldCommon,
+            crate::schema::types::transform::Transform,
+            crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
+            crate::schema::types::declarative_schemas::FieldDefinition,
+            crate::atom::Molecule,
+            crate::atom::MoleculeRange,
+            crate::atom::MoleculeHashRange,
+            crate::atom::MoleculeStatus,
+            crate::atom::MoleculeUpdate,
+            crate::ingestion::config::IngestionConfig,
+            crate::ingestion::config::SavedConfig,
+            crate::ingestion::config::AIProvider,
+            crate::ingestion::config::OpenRouterConfig,
+            crate::ingestion::config::OllamaConfig,
+            crate::ingestion::core::IngestionRequest,
+            crate::ingestion::IngestionResponse,
+            crate::datafold_node::log_routes::LogLevelUpdate,
+            crate::datafold_node::log_routes::LogConfigResponse,
+            crate::datafold_node::system_routes::ResetDatabaseRequest,
+            crate::datafold_node::system_routes::ResetDatabaseResponse
         )
     ),
     tags(

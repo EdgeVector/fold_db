@@ -86,13 +86,13 @@ pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
 }
 
 /// Request body for database reset
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, utoipa::ToSchema)]
 pub struct ResetDatabaseRequest {
     pub confirm: bool,
 }
 
 /// Response for database reset
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ResetDatabaseResponse {
     pub success: bool,
     pub message: String,

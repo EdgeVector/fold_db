@@ -6,10 +6,11 @@ use std::collections::BTreeMap;
 use uuid::Uuid;
 
 /// A range-based collection of atom references stored in a BTreeMap.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct MoleculeRange {
     uuid: String,
     pub(crate) atom_uuids: BTreeMap<String, String>,
+    #[schema(value_type = String, format = "date-time")]
     updated_at: DateTime<Utc>,
     status: MoleculeStatus,
     update_history: Vec<MoleculeUpdate>,

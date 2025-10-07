@@ -12,7 +12,7 @@ use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
 
 /// Enumeration over all field variants.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum FieldVariant {
     /// Single value field
     Single(SingleField),

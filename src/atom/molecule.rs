@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A reference to a single atom version.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Molecule {
     molecule_uuid: String,
     atom_uuid: String,
+    #[schema(value_type = String, format = "date-time")]
     updated_at: DateTime<Utc>,
     status: MoleculeStatus,
     update_history: Vec<MoleculeUpdate>,

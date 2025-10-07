@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
 use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::schema::SchemaType;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct FieldDefinition {
     pub field_expression: Option<String>,
 }
@@ -21,7 +22,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         struct DeclarativeSchemaDefinitionHelper {
             name: String,
             // Allow schema_type to be omitted; we will derive from key if missing
-            schema_type: Option<crate::schema::types::schema::SchemaType>,
+            schema_type: Option<SchemaType>,
             #[serde(skip_serializing_if = "Option::is_none")]
             key: Option<KeyConfig>,
             // Accept either an array of strings or an object map and normalize later
@@ -64,7 +65,6 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         let normalized_schema_type = match (&helper.schema_type, &helper.key) {
             (Some(st), _) => st.clone(),
             (None, Some(k)) => {
-                use crate::schema::types::schema::SchemaType;
                 let has_hash = k.hash_field.is_some();
                 let has_range = k.range_field.is_some();
                 if has_hash && has_range {
@@ -77,7 +77,6 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                 }
             }
             (None, None) => {
-                use crate::schema::types::schema::SchemaType;
                 SchemaType::Single
             }
         };
@@ -95,12 +94,12 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 
 
 /// Declarative schema definition used by declarative transforms.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, utoipa::ToSchema)]
 pub struct DeclarativeSchemaDefinition {
         /// Schema name (same as transform name)
         pub name: String,
         /// Schema type ("Single" | "HashRange")
-        pub schema_type: crate::schema::types::schema::SchemaType,
+        pub schema_type: SchemaType,
         /// Key configuration (required when schema_type == "HashRange")
         #[serde(skip_serializing_if = "Option::is_none")]
         pub key: Option<KeyConfig>,
@@ -141,7 +140,7 @@ impl DeclarativeSchemaDefinition {
     /// A new DeclarativeSchemaDefinition with all hash mappings populated
     pub fn new(
         name: String,
-        schema_type: crate::schema::types::schema::SchemaType,
+        schema_type: SchemaType,
         key: Option<KeyConfig>,
         fields: Option<Vec<String>>,
         transform_fields: Option<HashMap<String, String>>,

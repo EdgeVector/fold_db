@@ -18,8 +18,8 @@ use std::sync::Arc;
     post,
     path = "/api/ingestion/process",
     tag = "ingestion",
-    request_body = crate::ingestion::core::IngestionRequest,
-    responses((status = 200, description = "Ingestion response", body = crate::ingestion::IngestionResponse))
+    request_body = IngestionRequest,
+    responses((status = 200, description = "Ingestion response", body = IngestionResponse))
 )]
 pub async fn process_json(
     request: web::Json<IngestionRequest>,
@@ -228,7 +228,7 @@ pub async fn validate_json(
     get,
     path = "/api/ingestion/config",
     tag = "ingestion",
-    responses((status = 200, description = "Ingestion config", body = crate::ingestion::config::IngestionConfig))
+    responses((status = 200, description = "Ingestion config", body = IngestionConfig))
 )]
 pub async fn get_ingestion_config(_state: web::Data<AppState>) -> impl Responder {
     log_feature!(
@@ -252,7 +252,7 @@ pub async fn get_ingestion_config(_state: web::Data<AppState>) -> impl Responder
     post,
     path = "/api/ingestion/config",
     tag = "ingestion",
-    request_body = crate::ingestion::config::SavedConfig,
+    request_body = SavedConfig,
     responses((status = 200, description = "Saved"), (status = 500, description = "Failed"))
 )]
 pub async fn save_ingestion_config(
