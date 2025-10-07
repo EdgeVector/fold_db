@@ -232,6 +232,21 @@ impl FoldDB {
         self.event_monitor.get_statistics()
     }
 
+    /// Get all backfill information
+    pub fn get_all_backfills(&self) -> Vec<super::infrastructure::backfill_tracker::BackfillInfo> {
+        self.event_monitor.get_all_backfills()
+    }
+
+    /// Get active (in-progress) backfills
+    pub fn get_active_backfills(&self) -> Vec<super::infrastructure::backfill_tracker::BackfillInfo> {
+        self.event_monitor.get_active_backfills()
+    }
+
+    /// Get specific backfill info
+    pub fn get_backfill(&self, transform_id: &str) -> Option<super::infrastructure::backfill_tracker::BackfillInfo> {
+        self.event_monitor.get_backfill(transform_id)
+    }
+
     /// Log a summary of all system activity since FoldDB was created
     pub fn log_event_summary(&self) {
         self.event_monitor.log_summary()

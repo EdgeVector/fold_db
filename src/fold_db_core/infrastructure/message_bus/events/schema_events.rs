@@ -109,3 +109,15 @@ impl EventType for TransformRegistered {
         "TransformRegistered"
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SchemaApproved {
+    /// The schema name that was approved
+    pub schema_name: String,
+}
+
+impl EventType for SchemaApproved {
+    fn type_id() -> &'static str {
+        "SchemaApproved"
+    }
+}

@@ -82,6 +82,16 @@ impl SchemaCore {
         // Update in-memory cache only after successful persistence
         self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?.insert(schema_name.to_string(), schema_state);
         
+        // If schema is being approved, publish SchemaApproved event to trigger backfill
+        if schema_state == SchemaState::Approved {
+            use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
+            let event = SchemaApproved {
+                schema_name: schema_name.to_string(),
+            };
+            self.message_bus.publish(event)
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to publish SchemaApproved event: {}", e)))?;
+        }
+        
         Ok(())
     }
 
