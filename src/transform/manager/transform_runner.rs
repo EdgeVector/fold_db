@@ -1,17 +1,18 @@
-use super::types::{TransformRunner, TransformResult};
-use super::result_storage::ResultStorage;
-use crate::schema::types::SchemaError;
-use crate::schema::types::key_value::KeyValue;
-use std::collections::{HashSet, HashMap};
-use super::input_fetcher::InputFetcher;
-// Removed aggregation dependency - using direct conversion from ExecutionResult
-use crate::transform::iterator_stack_typed::adapter::execute_fields_typed;
-use crate::transform::chain_parser::ParsedChain;
-// Legacy ExecutionEngine removed; using typed engine via adapter
-use crate::transform::shared_utilities::parse_expressions_batch;
-use crate::fold_db_core::query::formatter::Record;
-use crate::transform::result_types::ExecutionResult;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+use crate::fold_db_core::infrastructure::message_bus::events::request_events::BackfillExpectedMutations;
+use crate::fold_db_core::query::formatter::Record;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::SchemaError;
+use crate::transform::chain_parser::ParsedChain;
+use crate::transform::iterator_stack_typed::adapter::execute_fields_typed;
+use crate::transform::result_types::ExecutionResult;
+use crate::transform::shared_utilities::parse_expressions_batch;
+
+use super::input_fetcher::InputFetcher;
+use super::result_storage::ResultStorage;
+use super::types::{TransformRunner, TransformResult};
 
 
 impl TransformRunner for super::TransformManager {
@@ -74,11 +75,7 @@ impl TransformRunner for super::TransformManager {
         // If we're running a backfill with fan-out, announce the expected mutation count
         if let Some(ref hash) = backfill_hash {
             let expected = records.len() as u64;
-            log::info!(
-                "📣 Emitting BackfillExpectedMutations for '{}' with count {}",
-                hash, expected
-            );
-            let evt = crate::fold_db_core::infrastructure::message_bus::events::request_events::BackfillExpectedMutations {
+            let evt = BackfillExpectedMutations {
                 transform_id: transform_id.to_string(),
                 backfill_hash: hash.clone(),
                 count: expected,

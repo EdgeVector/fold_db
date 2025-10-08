@@ -9,3 +9,7 @@ Don't use JSON return types.
 Don't make assumptions that test failures were preexisting.  Assume all tests were passing before.
 
 use TODO format for anything not fully implemented.
+
+Don't use inline crate imports, import in headers only to keep code clean.
+
+Keep imports organized.
