@@ -37,7 +37,7 @@ const BackfillCard = ({ backfill }) => {
           <span className="text-xl">{statusConfig.icon}</span>
           <div>
             <div className="font-semibold">{backfill.transform_id}</div>
-            <div className="text-xs opacity-80">Source: {backfill.source_schema}</div>
+            <div className="text-xs opacity-80">Source: {backfill.schema_name}</div>
           </div>
         </div>
         <div className="text-xs text-right">

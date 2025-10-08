@@ -221,22 +221,7 @@ pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppSt
     };
     
     match backfill_info {
-        Some(info) => HttpResponse::Ok().json(json!({
-            "data": {
-                "backfill_hash": info.backfill_hash,
-                "transform_id": info.transform_id,
-                "source_schema": info.source_schema,
-                "status": format!("{:?}", info.status),
-                "records_produced": info.records_produced,
-                "mutations_expected": info.mutations_expected,
-                "mutations_completed": info.mutations_completed,
-                "mutations_failed": info.mutations_failed,
-                "start_time": info.start_time,
-                "end_time": info.end_time,
-                "duration_seconds": info.duration_seconds(),
-                "error": info.error,
-            }
-        })),
+        Some(info) => HttpResponse::Ok().json(json!({"data": info})),
         None => HttpResponse::NotFound().json(json!({"error": "Backfill not found"})),
     }
 }

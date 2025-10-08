@@ -46,8 +46,8 @@ pub struct BackfillInfo {
     pub backfill_hash: String,
     /// Transform ID being backfilled
     pub transform_id: String,
-    /// Source schema name
-    pub source_schema: String,
+    /// Schema name
+    pub schema_name: String,
     /// Current status
     pub status: BackfillStatus,
     /// When the backfill started (Unix timestamp in seconds)
@@ -74,24 +74,24 @@ pub struct BackfillInfo {
 
 impl BackfillInfo {
     /// Generate a unique hash for this backfill operation
-    /// Uses transform_id, source_schema, and timestamp to ensure uniqueness
+    /// Uses transform_id, schema_name, and timestamp to ensure uniqueness
     /// Uses seahash for stable, high-quality hashing across Rust versions
-    fn generate_backfill_hash(transform_id: &str, source_schema: &str) -> String {
+    fn generate_backfill_hash(transform_id: &str, schema_name: &str) -> String {
         let timestamp = current_timestamp_nanos();
         
         // Concatenate inputs for hashing
-        let input = format!("{}:{}:{}", transform_id, source_schema, timestamp);
+        let input = format!("{}:{}:{}", transform_id, schema_name, timestamp);
         let hash = seahash::hash(input.as_bytes());
         
         format!("backfill_{:016x}", hash)
     }
 
     /// Create a new backfill info with a specific hash (used when hash is pre-generated)
-    pub fn new_with_hash(backfill_hash: String, transform_id: String, source_schema: String) -> Self {
+    pub fn new_with_hash(backfill_hash: String, transform_id: String, schema_name: String) -> Self {
         Self {
             backfill_hash,
             transform_id,
-            source_schema,
+            schema_name,
             status: BackfillStatus::InProgress,
             start_time: current_timestamp_secs(),
             end_time: None,
@@ -136,8 +136,8 @@ impl BackfillTracker {
     }
 
     /// Start tracking a backfill with a pre-generated hash
-    pub fn start_backfill_with_hash(&self, backfill_hash: String, transform_id: String, source_schema: String) {
-        let info = BackfillInfo::new_with_hash(backfill_hash.clone(), transform_id.clone(), source_schema);
+    pub fn start_backfill_with_hash(&self, backfill_hash: String, transform_id: String, schema_name: String) {
+        let info = BackfillInfo::new_with_hash(backfill_hash.clone(), transform_id.clone(), schema_name);
         
         // Store by hash
         self.backfills.lock().unwrap().insert(backfill_hash.clone(), info);
@@ -147,8 +147,8 @@ impl BackfillTracker {
     }
 
     /// Generate a backfill hash without starting a backfill (for pre-generation)
-    pub fn generate_hash(transform_id: &str, source_schema: &str) -> String {
-        BackfillInfo::generate_backfill_hash(transform_id, source_schema)
+    pub fn generate_hash(transform_id: &str, schema_name: &str) -> String {
+        BackfillInfo::generate_backfill_hash(transform_id, schema_name)
     }
 
     /// Set the expected number of mutations for this backfill

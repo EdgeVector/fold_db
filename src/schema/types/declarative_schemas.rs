@@ -108,20 +108,24 @@ pub struct DeclarativeSchemaDefinition {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub transform_fields: Option<HashMap<String, String>>,
 
-        #[serde(skip)]
-        inputs_schema_fields: Vec<String>,
+    #[serde(skip)]
+    inputs_schema_fields: Vec<String>,
 
-        // Key to hash code.  Used for unique resolution of keys.
-        #[serde(skip)]
-        key_to_hash_code: HashMap<String, String>,
+    // Source schemas extracted from input fields
+    #[serde(skip)]
+    source_schemas: Vec<String>,
 
-        // Field to hash code.  Used for unique resolution of fields.
-        #[serde(skip)]
-        field_to_hash_code: HashMap<String, String>,
+    // Key to hash code.  Used for unique resolution of keys.
+    #[serde(skip)]
+    key_to_hash_code: HashMap<String, String>,
 
-        // Hash of the code to the code itself.  Used for unique resolution of transforms.
-        #[serde(skip)]
-        hash_to_code: HashMap<String, String>,
+    // Field to hash code.  Used for unique resolution of fields.
+    #[serde(skip)]
+    field_to_hash_code: HashMap<String, String>,
+
+    // Hash of the code to the code itself.  Used for unique resolution of transforms.
+    #[serde(skip)]
+    hash_to_code: HashMap<String, String>,
     }
 
 impl DeclarativeSchemaDefinition {
@@ -152,6 +156,7 @@ impl DeclarativeSchemaDefinition {
             fields,
             transform_fields,
             inputs_schema_fields: Vec::new(),
+            source_schemas: Vec::new(),
             key_to_hash_code: HashMap::new(),
             field_to_hash_code: HashMap::new(),
             hash_to_code: HashMap::new(),
@@ -160,6 +165,7 @@ impl DeclarativeSchemaDefinition {
         // Generate all mappings after creation
         schema.generate_hash_to_code_mappings();
         schema.generate_inputs();
+        schema.fetch_source_schemas();
         schema
     }
 
@@ -191,6 +197,22 @@ impl DeclarativeSchemaDefinition {
 
     pub fn get_inputs(&self) -> Vec<String> {
         self.inputs_schema_fields.clone()
+    }
+
+    fn fetch_source_schemas(&mut self) {
+        let mut source_schemas = std::collections::HashSet::new();
+        for input in &self.inputs_schema_fields {
+            if let Some(source_schema) = input.split('.').next() {
+                source_schemas.insert(source_schema.to_string());
+            }
+        }
+        let mut source_schemas_vec: Vec<String> = source_schemas.into_iter().collect();
+        source_schemas_vec.sort();
+        self.source_schemas = source_schemas_vec;
+    }
+
+    pub fn get_source_schemas(&self) -> Vec<String> {
+        self.source_schemas.clone()
     }
 
     pub fn get_field_to_hash_code(&self) -> HashMap<String, String> {
