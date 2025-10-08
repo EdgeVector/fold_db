@@ -7,27 +7,11 @@
 import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import type { EnhancedApiResponse } from '../core/types';
-// Import generated types from Rust (using re-export from types/generated)
-import type { BackfillInfo as RustBackfillInfo, BackfillStatus } from '../../types/generated';
+// Import generated types from Rust - u64 fields are exported as numbers via #[ts(type = "number")]
+import type { BackfillInfo, BackfillStatus } from '../../types/generated';
 
-// Type adapter: Convert Rust's bigint fields to JavaScript numbers for UI consumption
-// The Rust u64 fields become bigint in TypeScript, but we convert them to numbers in the API layer
-export interface BackfillInfo {
-  backfill_hash: string;
-  transform_id: string;
-  source_schema: string;
-  status: BackfillStatus;
-  start_time: number;
-  end_time: number | null;
-  error: string | null;
-  records_produced: number;
-  mutations_expected: number;
-  mutations_completed: number;
-  mutations_failed: number;
-}
-
-// Re-export BackfillStatus directly
-export type { BackfillStatus };
+// Re-export for convenience
+export type { BackfillInfo, BackfillStatus };
 
 // Transform-specific response types
 export interface Transform {

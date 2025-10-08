@@ -8,6 +8,24 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use ts_rs::TS;
 
+/// Get current Unix timestamp in seconds
+#[inline]
+fn current_timestamp_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time before Unix epoch")
+        .as_secs()
+}
+
+/// Get current Unix timestamp in nanoseconds
+#[inline]
+fn current_timestamp_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time before Unix epoch")
+        .as_nanos()
+}
+
 /// Status of a backfill operation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
@@ -32,19 +50,25 @@ pub struct BackfillInfo {
     pub source_schema: String,
     /// Current status
     pub status: BackfillStatus,
-    /// When the backfill started
+    /// When the backfill started (Unix timestamp in seconds)
+    #[ts(type = "number")]
     pub start_time: u64,
     /// When the backfill completed (if finished)
+    #[ts(type = "number")]
     pub end_time: Option<u64>,
     /// Error message if failed
     pub error: Option<String>,
     /// Records produced by the backfill
+    #[ts(type = "number")]
     pub records_produced: u64,
     /// Expected number of mutations to be created (for completion tracking)
+    #[ts(type = "number")]
     pub mutations_expected: u64,
     /// Number of mutations completed so far
+    #[ts(type = "number")]
     pub mutations_completed: u64,
     /// Number of mutations that failed
+    #[ts(type = "number")]
     pub mutations_failed: u64,
 }
 
@@ -53,10 +77,7 @@ impl BackfillInfo {
     /// Uses transform_id, source_schema, and timestamp to ensure uniqueness
     /// Uses seahash for stable, high-quality hashing across Rust versions
     fn generate_backfill_hash(transform_id: &str, source_schema: &str) -> String {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("System time error")
-            .as_nanos();
+        let timestamp = current_timestamp_nanos();
         
         // Concatenate inputs for hashing
         let input = format!("{}:{}:{}", transform_id, source_schema, timestamp);
@@ -72,10 +93,7 @@ impl BackfillInfo {
             transform_id,
             source_schema,
             status: BackfillStatus::InProgress,
-            start_time: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            start_time: current_timestamp_secs(),
             end_time: None,
             error: None,
             records_produced: 0,
@@ -89,22 +107,12 @@ impl BackfillInfo {
     pub fn mark_failed(&mut self, error: String) {
         self.status = BackfillStatus::Failed;
         self.error = Some(error);
-        self.end_time = Some(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        );
+        self.end_time = Some(current_timestamp_secs());
     }
 
     /// Calculate duration in seconds
     pub fn duration_seconds(&self) -> u64 {
-        let end = self.end_time.unwrap_or_else(|| {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        });
+        let end = self.end_time.unwrap_or_else(current_timestamp_secs);
         end.saturating_sub(self.start_time)
     }
 }
@@ -153,12 +161,7 @@ impl BackfillTracker {
             // If no mutations are expected, immediately mark as completed
             if count == 0 && info.status == BackfillStatus::InProgress {
                 info.status = BackfillStatus::Completed;
-                info.end_time = Some(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("System time error")
-                        .as_secs(),
-                );
+                info.end_time = Some(current_timestamp_secs());
             }
         }
     }
@@ -173,12 +176,7 @@ impl BackfillTracker {
             // Check if all mutations are complete
             if info.mutations_completed >= info.mutations_expected && info.mutations_expected > 0 && info.status == BackfillStatus::InProgress {
                 info.status = BackfillStatus::Completed;
-                info.end_time = Some(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                );
+                info.end_time = Some(current_timestamp_secs());
                 return true;
             }
         }
@@ -204,12 +202,7 @@ impl BackfillTracker {
                 info.status = BackfillStatus::Failed;
                 info.error = Some(format!("Backfill failed: {} mutations failed ({:.1}% failure rate). Last error: {}", 
                     info.mutations_failed, failure_rate * 100.0, error));
-                info.end_time = Some(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                );
+                info.end_time = Some(current_timestamp_secs());
             }
         }
     }
