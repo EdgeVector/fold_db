@@ -1,8 +1,9 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, RwLock};
+
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{SchemaError, Transform};
-use std::collections::{HashMap, HashSet, BTreeMap};
-use std::sync::{Arc, RwLock};
 
 /// TransformManager: Handles transform registration, execution, and field-to-transform mapping
 ///
@@ -36,7 +37,6 @@ impl TransformManager {
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
-        log::info!("🧭 TransformManager::new using MessageBus at {:p}", Arc::as_ptr(&message_bus));
         // Load persisted state from storage by syncing with empty in-memory state
         let empty_transforms = HashMap::new();
         let empty_mappings = BTreeMap::new();

@@ -9,8 +9,10 @@
 
 pub mod backfill_tracker;
 pub mod event_monitor;
+pub mod event_statistics;
 pub mod init;
 pub mod message_bus;
+pub mod schema_approval_handler;
 
 pub use event_monitor::EventMonitor;
 pub use message_bus::{

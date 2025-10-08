@@ -21,7 +21,6 @@ use super::infrastructure::message_bus::request_events::SystemInitializationRequ
 use super::infrastructure::{EventMonitor, MessageBus};
 use super::orchestration::TransformOrchestrator;
 use super::query::QueryExecutor;
-use super::mutation_completion_handler::MutationCompletionHandler;
 use super::mutation_manager::MutationManager;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
@@ -36,8 +35,6 @@ pub struct FoldDB {
     pub(crate) message_bus: Arc<MessageBus>,
     /// Event monitor for system-wide observability
     pub(crate) event_monitor: Arc<EventMonitor>,
-    /// Mutation completion handler for tracking async mutation completion
-    pub(crate) completion_handler: Arc<MutationCompletionHandler>,
     /// Transform orchestrator for managing transform execution
     pub(crate) transform_orchestrator: Arc<TransformOrchestrator>,
     /// Mutation manager for handling all mutation operations
@@ -111,7 +108,6 @@ impl FoldDB {
 
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
-        log::debug!("Created MessageBus at {:p}", Arc::as_ptr(&message_bus));
 
         // Initialize components via event-driven system initialization
         let correlation_id = uuid::Uuid::new_v4().to_string();
@@ -147,10 +143,6 @@ impl FoldDB {
         let event_monitor = Arc::new(EventMonitor::new(Arc::clone(&message_bus), Arc::clone(&transform_manager)));
         info!("Started EventMonitor for system-wide event tracking");
 
-        // Create MutationCompletionHandler for tracking async mutation completion
-        let completion_handler = Arc::new(MutationCompletionHandler::new(Arc::clone(&message_bus)));
-        info!("Created MutationCompletionHandler for mutation completion tracking");
-
         // Create QueryExecutor for handling all query operations
         let query_executor = QueryExecutor::new(
             Arc::new(db_ops.clone()),
@@ -174,7 +166,7 @@ impl FoldDB {
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
         );
-        log::info!("🧭 FoldDB::new wiring MutationManager with MessageBus at {:p}", Arc::as_ptr(&message_bus));
+        
         info!("Created MutationManager for mutation operations");
 
         // Start the MutationManager event listener
@@ -186,17 +178,10 @@ impl FoldDB {
         }
         info!("Started MutationManager event listener");
         
-        // Log subscriber count for diagnostics (debug level)
-        log::debug!(
-            "MutationRequest subscribers: {}",
-            message_bus.subscriber_count::<crate::fold_db_core::infrastructure::message_bus::request_events::MutationRequest>()
-        );
-
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
         // - TransformOrchestrator: Automatic transform triggering based on field changes
-        // - MutationCompletionHandler: Tracks async mutation completion
 
         Ok(Self {
             schema_manager,
@@ -205,7 +190,6 @@ impl FoldDB {
             query_executor,
             message_bus,
             event_monitor,
-            completion_handler,
             transform_orchestrator,
             mutation_manager,
         })
@@ -228,11 +212,6 @@ impl FoldDB {
     /// Provides access to the underlying database operations
     pub fn get_db_ops(&self) -> Arc<DbOperations> {
         Arc::clone(&self.db_ops)
-    }
-
-    /// Provides access to the event monitor for observability
-    pub fn event_monitor(&self) -> Arc<EventMonitor> {
-        Arc::clone(&self.event_monitor)
     }
 
     /// Get current event statistics from the event monitor
@@ -260,11 +239,6 @@ impl FoldDB {
         self.event_monitor.get_backfill(transform_id)
     }
 
-    /// Log a summary of all system activity since FoldDB was created
-    pub fn log_event_summary(&self) {
-        self.event_monitor.log_summary()
-    }
-
     /// Get the message bus for publishing events (for testing)
     pub fn message_bus(&self) -> Arc<MessageBus> {
         Arc::clone(&self.message_bus)
@@ -283,36 +257,5 @@ impl FoldDB {
     /// Get the transform orchestrator for managing transform execution
     pub fn transform_orchestrator(&self) -> Arc<TransformOrchestrator> {
         Arc::clone(&self.transform_orchestrator)
-    }
-
-    /// Provides access to the mutation completion handler for tracking async mutation completion.
-    ///
-    /// This method returns a shared reference to the MutationCompletionHandler, allowing other
-    /// parts of the system to register mutations for completion tracking and wait for their completion.
-    ///
-    /// # Returns
-    ///
-    /// A shared reference to the MutationCompletionHandler wrapped in Arc
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use datafold::fold_db_core::FoldDB;
-    /// # let mut db = FoldDB::new("test_db").unwrap();
-    /// let completion_handler = db.get_completion_handler();
-    /// // Use the completion handler to track mutations
-    /// ```
-    pub fn get_completion_handler(&self) -> Arc<MutationCompletionHandler> {
-        Arc::clone(&self.completion_handler)
-    }
-
-    /// Get the mutation manager for handling mutation operations
-    pub fn mutation_manager(&self) -> &MutationManager {
-        &self.mutation_manager
-    }
-
-    /// Check if the MutationManager event listener is running
-    pub fn is_mutation_listener_running(&self) -> bool {
-        self.mutation_manager.is_listening()
     }
 }

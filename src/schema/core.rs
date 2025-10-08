@@ -1,13 +1,13 @@
-use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::schema::types::{Schema, SchemaError, Field};
-use crate::schema::{
-    SchemaState,
-    SchemaWithState,
-};
-use serde_json;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
+
+use serde_json;
+
+use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
+use crate::fold_db_core::infrastructure::message_bus::MessageBus;
+use crate::schema::types::{DeclarativeSchemaDefinition, Field, Schema, SchemaError};
+use crate::schema::{SchemaState, SchemaWithState};
 
 /// Core schema management system that combines schema interpretation, validation, and management.
 ///
@@ -88,7 +88,6 @@ impl SchemaCore {
         
         // If schema is being approved, publish SchemaApproved event to trigger backfill
         if schema_state == SchemaState::Approved {
-            use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
             let event = SchemaApproved {
                 schema_name: schema_name.to_string(),
                 backfill_hash,
@@ -175,8 +174,6 @@ impl SchemaCore {
     /// Load schema from JSON string (creates Available schema)
     /// Only supports declarative schema format
     pub fn load_schema_from_json(&self, json_str: &str) -> Result<(), SchemaError> {
-        use crate::schema::types::DeclarativeSchemaDefinition;
-        
         // Parse JSON string to DeclarativeSchemaDefinition
         let declarative_schema: DeclarativeSchemaDefinition = serde_json::from_str(json_str)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to parse declarative schema: {}", e)))?;
