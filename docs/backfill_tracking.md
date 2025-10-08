@@ -241,8 +241,6 @@ Response:
     "transform_id": "BlogPostWordIndex",
     "source_schema": "BlogPost",
     "status": "Completed",
-    "items_processed": 100,
-    "items_total": 100,
     "records_produced": 450,
     "mutations_expected": 450,
     "mutations_completed": 450,
@@ -250,7 +248,6 @@ Response:
     "start_time": 1696723200,
     "end_time": 1696723205,
     "duration_seconds": 5,
-    "progress_percentage": 100.0,
     "error": null
   }
 }

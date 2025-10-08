@@ -214,59 +214,6 @@ impl EventStatistics {
             .as_secs();
     }
 
-    /// Get success rate for a specific transform
-    pub fn get_transform_success_rate(&self, transform_id: &str) -> f64 {
-        if let Some(stats) = self.transform_stats.get(transform_id) {
-            if stats.executions > 0 {
-                stats.successes as f64 / stats.executions as f64
-            } else {
-                0.0
-            }
-        } else {
-            0.0
-        }
-    }
-
-    /// Get average execution time for queries on a specific schema
-    pub fn get_query_avg_execution_time(&self, schema: &str, query_type: &str) -> f64 {
-        let key = format!("{}:{}", schema, query_type);
-        if let Some(stats) = self.query_stats.get(&key) {
-            stats.avg_execution_time_ms
-        } else {
-            0.0
-        }
-    }
-
-    /// Get average execution time for mutations on a specific schema
-    pub fn get_mutation_avg_execution_time(&self, schema: &str, operation: &str) -> f64 {
-        let key = format!("{}:{}", schema, operation);
-        if let Some(stats) = self.mutation_stats.get(&key) {
-            stats.avg_execution_time_ms
-        } else {
-            0.0
-        }
-    }
-
-    /// Get query statistics for a specific schema and type
-    pub fn get_query_stats(&self, schema: &str, query_type: &str) -> Option<&QueryStats> {
-        let key = format!("{}:{}", schema, query_type);
-        self.query_stats.get(&key)
-    }
-
-    /// Get mutation statistics for a specific schema and operation
-    pub fn get_mutation_stats(&self, schema: &str, operation: &str) -> Option<&MutationStats> {
-        let key = format!("{}:{}", schema, operation);
-        self.mutation_stats.get(&key)
-    }
-
-    /// Get average execution time for a specific transform
-    pub fn get_transform_avg_execution_time(&self, transform_id: &str) -> f64 {
-        self.transform_stats
-            .get(transform_id)
-            .map(|stats| stats.avg_execution_time_ms)
-            .unwrap_or(0.0)
-    }
-
     /// Get overall transform performance metrics
     pub fn get_transform_performance_summary(&self) -> (f64, f64, u64, u64) {
         let overall_success_rate = if self.transform_executions > 0 {
@@ -791,21 +738,20 @@ impl EventMonitor {
                                                 let inputs = schema.get_inputs();
                                                 if let Some(first_input) = inputs.first() {
                                                     if let Some(source_schema_name) = first_input.split('.').next() {
-                                                        // Start tracking the backfill and get the unique hash
-                                                        let backfill_hash = if let Some(hash) = event.backfill_hash.as_ref() {
-                                                            // Use hash from event if provided
-                                                            backfill_tracker.start_backfill_with_hash(
-                                                                hash.clone(),
-                                                                event.schema_name.clone(),
-                                                                source_schema_name.to_string(),
-                                                            );
-                                                            hash.clone()
-                                                        } else {
-                                                            // Generate new hash if not in event
-                                                            backfill_tracker.start_backfill(
-                                                                event.schema_name.clone(),
-                                                                source_schema_name.to_string(),
-                                                            )
+                                                        // Get backfill hash from event - it must be present for transform schemas
+                                                        let backfill_hash = match event.backfill_hash.as_ref() {
+                                                            Some(hash) => {
+                                                                backfill_tracker.start_backfill_with_hash(
+                                                                    hash.clone(),
+                                                                    event.schema_name.clone(),
+                                                                    source_schema_name.to_string(),
+                                                                );
+                                                                hash.clone()
+                                                            }
+                                                            None => {
+                                                                log::error!("SchemaApproved event for transform '{}' missing required backfill_hash", event.schema_name);
+                                                                return;
+                                                            }
                                                         };
 
                                                         // Handle the transform backfill with the backfill_hash

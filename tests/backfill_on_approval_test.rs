@@ -82,9 +82,14 @@ fn test_backfill_triggered_on_schema_approval() {
     let backfill_before_count = backfills_before.len();
     println!("📋 Backfills before approval: {}", backfill_before_count);
     
-    // Now approve the BlogPostWordIndex schema - this should trigger a backfill
+    // Generate backfill hash for the transform
+    use datafold::fold_db_core::infrastructure::backfill_tracker::BackfillTracker;
+    let backfill_hash = BackfillTracker::generate_hash("BlogPostWordIndex", "BlogPost");
+    println!("🔄 Generated backfill hash: {}", backfill_hash);
+    
+    // Now approve the BlogPostWordIndex schema with backfill hash - this should trigger a backfill
     println!("🔄 Approving BlogPostWordIndex schema...");
-    fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+    fold_db.schema_manager().set_schema_state_with_backfill("BlogPostWordIndex", SchemaState::Approved, Some(backfill_hash))
         .expect("Failed to approve BlogPostWordIndex schema");
     
     // Wait for the SchemaApproved event to be processed and backfill to run
