@@ -510,7 +510,6 @@ impl HttpTestHelper {
                                 if backfill.get("backfill_hash").and_then(|h| h.as_str()) == Some(backfill_hash) {
                                     let status = backfill.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown");
                                     let records = backfill.get("records_produced").and_then(|r| r.as_u64()).unwrap_or(0);
-                                    let items_total = backfill.get("items_total").and_then(|t| t.as_u64());
                                     let mutations_expected = backfill.get("mutations_expected").and_then(|m| m.as_u64()).unwrap_or(0);
                                     let mutations_completed = backfill.get("mutations_completed").and_then(|m| m.as_u64()).unwrap_or(0);
                                     
@@ -519,9 +518,6 @@ impl HttpTestHelper {
                                     println!("     Records produced: {}", records);
                                     println!("     Mutations expected: {}", mutations_expected);
                                     println!("     Mutations completed: {}", mutations_completed);
-                                    if let Some(total) = items_total {
-                                        println!("     Items total: {}", total);
-                                    }
 
                                     if status == "Completed" {
                                         println!("  ✅ Backfill completed successfully");

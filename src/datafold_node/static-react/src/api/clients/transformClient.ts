@@ -17,8 +17,6 @@ export interface BackfillInfo {
   transform_id: string;
   source_schema: string;
   status: BackfillStatus;
-  items_processed: number;
-  items_total: number | null;
   start_time: number;
   end_time: number | null;
   error: string | null;

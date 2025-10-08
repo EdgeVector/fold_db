@@ -21,14 +21,6 @@ source_schema: string,
  */
 status: BackfillStatus, 
 /**
- * Items processed so far
- */
-items_processed: bigint, 
-/**
- * Total items to process (if known)
- */
-items_total: bigint | null, 
-/**
  * When the backfill started
  */
 start_time: bigint, 

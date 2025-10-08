@@ -177,10 +177,6 @@ const BackfillMonitor = () => {
                       <div>
                         <span className="font-medium">Mutations:</span> {backfill.mutations_completed} / {backfill.mutations_expected}
                       </div>
-                      <div>
-                        <span className="font-medium">Items:</span> {backfill.items_processed}
-                        {backfill.items_total && ` / ${backfill.items_total}`}
-                      </div>
                       {backfill.mutations_failed > 0 && (
                         <div className="text-red-600">
                           <span className="font-medium">Failed:</span> {backfill.mutations_failed}

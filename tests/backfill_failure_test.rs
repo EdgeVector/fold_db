@@ -9,8 +9,10 @@ fn test_backfill_failure_threshold_detection() {
     // Create a backfill tracker
     let tracker = BackfillTracker::new();
     
-    // Start a backfill
-    let backfill_hash = tracker.start_backfill(
+    // Generate and start a backfill
+    let backfill_hash = BackfillTracker::generate_hash("TestTransform", "TestSource");
+    tracker.start_backfill_with_hash(
+        backfill_hash.clone(),
         "TestTransform".to_string(),
         "TestSource".to_string()
     );
@@ -69,8 +71,10 @@ fn test_backfill_low_failure_rate_completes() {
     // Create a backfill tracker
     let tracker = BackfillTracker::new();
     
-    // Start a backfill
-    let backfill_hash = tracker.start_backfill(
+    // Generate and start a backfill
+    let backfill_hash = BackfillTracker::generate_hash("TestTransform", "TestSource");
+    tracker.start_backfill_with_hash(
+        backfill_hash.clone(),
         "TestTransform".to_string(),
         "TestSource".to_string()
     );
