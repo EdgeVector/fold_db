@@ -110,7 +110,7 @@ impl HttpTestHelper {
 
         // Run the server startup script
         // Running server startup script
-        match Command::new("./run_http_server.sh").output() {
+        match Command::new("./run_http_server.sh").arg("--empty-db").output() {
             Ok(output) => {
                 let stdout_str = String::from_utf8_lossy(&output.stdout);
                 let stderr_str = String::from_utf8_lossy(&output.stderr);
@@ -142,19 +142,19 @@ impl HttpTestHelper {
                             if !pid.is_empty() {
                                 // Server process confirmed running
                                 results.add_pass("Start HTTP server");
-                                return true;
+                                true
                             } else {
                                 results.add_fail("Start HTTP server", "Server process not found after startup");
-                                return false;
+                                false
                             }
                         }
                         Ok(_) => {
                             results.add_fail("Start HTTP server", "Server process not found after startup");
-                            return false;
+                            false
                         }
                         Err(e) => {
                             results.add_fail("Start HTTP server", &format!("Failed to check server process: {}", e));
-                            return false;
+                            false
                         }
                     }
                 } else {
@@ -165,12 +165,12 @@ impl HttpTestHelper {
                             output.status.code()
                         ),
                     );
-                    return false;
+                    false
                 }
             }
             Err(e) => {
                 results.add_fail("Start HTTP server", &format!("Failed to start server: {}", e));
-                return false;
+                false
             }
         }
     }
@@ -185,7 +185,6 @@ impl HttpTestHelper {
 
         while start_time.elapsed() < timeout_duration {
             attempt += 1;
-            let elapsed = start_time.elapsed();
             
             // Log progress every 10 seconds
             if attempt % 10 == 1 {
@@ -202,13 +201,13 @@ impl HttpTestHelper {
                     results.add_pass("Wait for server ready");
                     return true;
                 }
-                Ok(response) => {
+                Ok(_response) => {
                     // Server responded but not with 200
                     if attempt % 10 == 1 {
                         // Server responded with status
                     }
                 }
-                Err(e) => {
+                Err(_e) => {
                     // Server not ready yet - log error details every 10 attempts
                     if attempt % 10 == 1 {
                         // Connection error on attempt
@@ -237,7 +236,7 @@ impl HttpTestHelper {
         // Check if server.log exists and show recent entries
         if let Ok(log_content) = std::fs::read_to_string("server.log") {
             let lines: Vec<&str> = log_content.lines().collect();
-            let recent_lines = if lines.len() > 20 {
+            let _recent_lines = if lines.len() > 20 {
                 &lines[lines.len() - 20..]
             } else {
                 &lines
@@ -312,7 +311,7 @@ impl HttpTestHelper {
         }
 
         results.add_fail("Load schemas", "Invalid response format");
-        return false;
+        false
     }
 
     /// Verify that expected schemas are available
@@ -353,12 +352,11 @@ impl HttpTestHelper {
                                         .find(|s| s.get("name").and_then(|n| n.as_str()) == Some(expected_name))
                                     {
                                         if let Some(fields) = schema_obj.get("fields").and_then(|f| f.as_object()) {
-                                            let field_count = fields.len();
+                                            let _field_count = fields.len();
                                             // Schema found with fields
                                         } else {
                                             // Schema found and loaded
                                         }
-                                    } else {
                                     }
                                 } else {
                                     // Schema not found
@@ -416,6 +414,12 @@ impl HttpTestHelper {
                     Ok(data) => {
                         if data.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
                             println!("  {} schema approved successfully", schema_name);
+                            
+                            // Check if a backfill hash was returned (for transform schemas)
+                            if let Some(hash) = data.get("backfill_hash").and_then(|h| h.as_str()) {
+                                println!("  🔄 Backfill hash: {}", hash);
+                            }
+                            
                             results.add_pass(&format!("Approve {} schema", schema_name));
                             return true;
                         }
@@ -437,6 +441,132 @@ impl HttpTestHelper {
         }
 
         results.add_fail(&format!("Approve {} schema", schema_name), "Schema approval failed");
+        false
+    }
+
+    /// Approve a schema and return the backfill hash if present (for transform schemas)
+    #[allow(dead_code)]
+    pub async fn approve_schema_with_hash(&self, schema_name: &str, results: &mut HttpTestResults) -> Option<String> {
+        println!("\n✅ Approving {} schema and capturing backfill hash...", schema_name);
+
+        match self.client.post(format!("{}/api/schema/{}/approve", self.base_url, schema_name))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(data) => {
+                        if data.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
+                            println!("  {} schema approved successfully", schema_name);
+                            
+                            // Extract backfill hash if present
+                            if let Some(hash) = data.get("backfill_hash").and_then(|h| h.as_str()) {
+                                println!("  🔄 Backfill hash: {}", hash);
+                                results.add_pass(&format!("Approve {} schema with hash", schema_name));
+                                return Some(hash.to_string());
+                            } else {
+                                println!("  ℹ️  No backfill hash (not a transform schema)");
+                                results.add_pass(&format!("Approve {} schema", schema_name));
+                                return None;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        results.add_fail(&format!("Approve {} schema with hash", schema_name), &format!("Failed to parse response: {}", e));
+                        return None;
+                    }
+                }
+            }
+            Ok(response) => {
+                results.add_fail(&format!("Approve {} schema with hash", schema_name), &format!("Expected status 200, got {}", response.status()));
+                return None;
+            }
+            Err(e) => {
+                results.add_fail(&format!("Approve {} schema with hash", schema_name), &format!("Request failed: {}", e));
+                return None;
+            }
+        }
+
+        results.add_fail(&format!("Approve {} schema with hash", schema_name), "Schema approval failed");
+        None
+    }
+
+    /// Verify backfill completion by backfill hash
+    #[allow(dead_code)]
+    pub async fn verify_backfill_by_hash(&self, backfill_hash: &str, min_records: u64, results: &mut HttpTestResults) -> bool {
+        println!("\n🔍 Verifying backfill completion for hash {}...", backfill_hash);
+
+        match self.client.get(format!("{}/api/transforms/backfills", self.base_url))
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(backfills) => {
+                        if let Some(backfills_array) = backfills.as_array() {
+                            // Find the backfill with matching hash
+                            for backfill in backfills_array {
+                                if backfill.get("backfill_hash").and_then(|h| h.as_str()) == Some(backfill_hash) {
+                                    let status = backfill.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown");
+                                    let records = backfill.get("records_produced").and_then(|r| r.as_u64()).unwrap_or(0);
+                                    let items_total = backfill.get("items_total").and_then(|t| t.as_u64());
+                                    let mutations_expected = backfill.get("mutations_expected").and_then(|m| m.as_u64()).unwrap_or(0);
+                                    let mutations_completed = backfill.get("mutations_completed").and_then(|m| m.as_u64()).unwrap_or(0);
+                                    
+                                    println!("  ✅ Found backfill with hash: {}", backfill_hash);
+                                    println!("     Status: {}", status);
+                                    println!("     Records produced: {}", records);
+                                    println!("     Mutations expected: {}", mutations_expected);
+                                    println!("     Mutations completed: {}", mutations_completed);
+                                    if let Some(total) = items_total {
+                                        println!("     Items total: {}", total);
+                                    }
+
+                                    if status == "Completed" {
+                                        println!("  ✅ Backfill completed successfully");
+                                        
+                                        if records >= min_records {
+                                            println!("  ✅ Produced {} records (expected at least {})", records, min_records);
+                                            results.add_pass(&format!("Verify backfill by hash {}", backfill_hash));
+                                            return true;
+                                        } else {
+                                            results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
+                                                &format!("Only {} records produced, expected at least {}", records, min_records));
+                                            return false;
+                                        }
+                                    } else {
+                                        results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
+                                            &format!("Backfill status is '{}', expected 'Completed'", status));
+                                        return false;
+                                    }
+                                }
+                            }
+
+                            results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
+                                "Backfill with hash not found");
+                            return false;
+                        }
+                    }
+                    Err(e) => {
+                        results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
+                            &format!("Failed to parse backfills response: {}", e));
+                        return false;
+                    }
+                }
+            }
+            Ok(response) => {
+                results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
+                    &format!("Expected status 200, got {}", response.status()));
+                return false;
+            }
+            Err(e) => {
+                results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
+                    &format!("Request failed: {}", e));
+                return false;
+            }
+        }
+
         false
     }
 
@@ -642,25 +772,25 @@ impl HttpTestHelper {
                             }
 
                             results.add_pass("Query blog post data");
-                            return true;
+                            true
                         } else {
                             results.add_fail("Query blog post data", "No data returned from query");
-                            return false;
+                            false
                         }
                     }
                     Err(e) => {
                         results.add_fail("Query blog post data", &format!("Failed to parse response: {}", e));
-                        return false;
+                        false
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail("Query blog post data", &format!("Expected status 200, got {}", response.status()));
-                return false;
+                false
             }
             Err(e) => {
                 results.add_fail("Query blog post data", &format!("Request failed: {}", e));
-                return false;
+                false
             }
         }
     }
@@ -732,25 +862,25 @@ impl HttpTestHelper {
                             }
 
                             results.add_pass("Query transform results");
-                            return true;
+                            true
                         } else {
                             results.add_fail("Query transform results", "No data returned from query");
-                            return false;
+                            false
                         }
                     }
                     Err(e) => {
                         results.add_fail("Query transform results", &format!("Failed to parse response: {}", e));
-                        return false;
+                        false
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail("Query transform results", &format!("Expected status 200, got {}", response.status()));
-                return false;
+                false
             }
             Err(e) => {
                 results.add_fail("Query transform results", &format!("Request failed: {}", e));
-                return false;
+                false
             }
         }
     }
@@ -783,28 +913,254 @@ impl HttpTestHelper {
 
                             if all_found {
                                 results.add_pass("Verify transforms registered");
-                                return true;
+                                true
                             } else {
-                                return false;
+                                false
                             }
                         } else {
                             results.add_fail("Verify transforms registered", "Invalid response format");
-                            return false;
+                            false
                         }
                     }
                     Err(e) => {
                         results.add_fail("Verify transforms registered", &format!("Failed to parse response: {}", e));
-                        return false;
+                        false
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail("Verify transforms registered", &format!("Expected status 200, got {}", response.status()));
-                return false;
+                false
             }
             Err(e) => {
                 results.add_fail("Verify transforms registered", &format!("Request failed: {}", e));
+                false
+            }
+        }
+    }
+
+    /// Run a Python script with optional arguments
+    #[allow(dead_code)]
+    pub async fn run_python_script(&self, script_path: &str, args: Vec<&str>, results: &mut HttpTestResults) -> bool {
+        println!("\n🐍 Running Python script: {}...", script_path);
+
+        // Build command with python3 and arguments
+        let mut cmd = Command::new("python3");
+        cmd.arg(script_path);
+        for arg in &args {
+            cmd.arg(arg);
+        }
+
+        match cmd.output() {
+            Ok(output) => {
+                let stdout_str = String::from_utf8_lossy(&output.stdout);
+                let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+                if !stdout_str.trim().is_empty() {
+                    println!("  Script output:\n{}", stdout_str);
+                }
+
+                if !stderr_str.trim().is_empty() {
+                    println!("  Script stderr:\n{}", stderr_str);
+                }
+
+                if output.status.success() {
+                    println!("  ✅ Python script completed successfully");
+                    results.add_pass(&format!("Run Python script: {}", script_path));
+                    true
+                } else {
+                    results.add_fail(&format!("Run Python script: {}", script_path), 
+                        &format!("Script failed with status: {:?}", output.status.code()));
+                    false
+                }
+            }
+            Err(e) => {
+                results.add_fail(&format!("Run Python script: {}", script_path), 
+                    &format!("Failed to execute: {}", e));
+                false
+            }
+        }
+    }
+
+    /// Check backfill status for a given transform/schema
+    #[allow(dead_code)]
+    pub async fn check_backfill_status(&self, schema_name: &str, results: &mut HttpTestResults) -> Option<Value> {
+        println!("\n🔄 Checking backfill status for {}...", schema_name);
+
+        match self.client.get(format!("{}/api/transforms/backfills", self.base_url))
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(backfills) => {
+                        if let Some(backfills_array) = backfills.as_array() {
+                            println!("  Found {} total backfill(s)", backfills_array.len());
+
+                            // Find the backfill for this schema
+                            for backfill in backfills_array {
+                                if backfill.get("transform_id").and_then(|t| t.as_str()) == Some(schema_name) {
+                                    println!("  ✅ Found backfill for {}", schema_name);
+                                    
+                                    let status = backfill.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown");
+                                    let records = backfill.get("records_produced").and_then(|r| r.as_u64()).unwrap_or(0);
+                                    let hash = backfill.get("backfill_hash").and_then(|h| h.as_str()).unwrap_or("Unknown");
+                                    
+                                    println!("     Status: {}", status);
+                                    println!("     Records produced: {}", records);
+                                    println!("     Backfill hash: {}", hash);
+
+                                    results.add_pass(&format!("Check backfill status for {}", schema_name));
+                                    return Some(backfill.clone());
+                                }
+                            }
+
+                            results.add_fail(&format!("Check backfill status for {}", schema_name), 
+                                "Backfill not found");
+                            return None;
+                        }
+                    }
+                    Err(e) => {
+                        results.add_fail(&format!("Check backfill status for {}", schema_name), 
+                            &format!("Failed to parse response: {}", e));
+                        return None;
+                    }
+                }
+            }
+            Ok(response) => {
+                results.add_fail(&format!("Check backfill status for {}", schema_name), 
+                    &format!("Expected status 200, got {}", response.status()));
+                return None;
+            }
+            Err(e) => {
+                results.add_fail(&format!("Check backfill status for {}", schema_name), 
+                    &format!("Request failed: {}", e));
+                return None;
+            }
+        }
+
+        results.add_fail(&format!("Check backfill status for {}", schema_name), "Invalid response format");
+        None
+    }
+
+    /// Verify backfill completed successfully
+    #[allow(dead_code)]
+    pub async fn verify_backfill_completed(&self, schema_name: &str, min_records: u64, results: &mut HttpTestResults) -> bool {
+        println!("\n✅ Verifying backfill completed for {}...", schema_name);
+
+        if let Some(backfill) = self.check_backfill_status(schema_name, results).await {
+            let status = backfill.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown");
+            let records = backfill.get("records_produced").and_then(|r| r.as_u64()).unwrap_or(0);
+
+            if status == "Completed" {
+                println!("  ✅ Backfill completed");
+                
+                if records >= min_records {
+                    println!("  ✅ Produced {} records (expected at least {})", records, min_records);
+                    results.add_pass(&format!("Verify backfill completed for {}", schema_name));
+                    return true;
+                } else {
+                    results.add_fail(&format!("Verify backfill completed for {}", schema_name), 
+                        &format!("Only {} records produced, expected at least {}", records, min_records));
+                    return false;
+                }
+            } else {
+                results.add_fail(&format!("Verify backfill completed for {}", schema_name), 
+                    &format!("Backfill status is '{}', expected 'Completed'", status));
                 return false;
+            }
+        }
+
+        false
+    }
+
+    /// Query WordIndex results and verify they contain expected data
+    #[allow(dead_code)]
+    pub async fn verify_wordindex_results(&self, expected_words: Vec<&str>, results: &mut HttpTestResults) -> bool {
+        println!("\n🔍 Verifying BlogPostWordIndex results...");
+
+        let query_data = json!({
+            "schema_name": "BlogPostWordIndex",
+            "fields": ["word", "title", "author", "publish_date"]
+        });
+
+        match self.client.post(format!("{}/api/query", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&query_data)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(data) => {
+                        let results_data = data.get("data").or_else(|| data.get("results"));
+
+                        if let Some(results_array) = results_data.and_then(|d| d.as_array()) {
+                            println!("  Found {} word index entries", results_array.len());
+
+                            if results_array.is_empty() {
+                                results.add_fail("Verify word index results", "No word index entries found");
+                                return false;
+                            }
+
+                            // Extract all words from results
+                            let mut found_words = std::collections::HashSet::new();
+                            for item in results_array {
+                                if let Some(fields) = item.get("fields").and_then(|f| f.as_object()) {
+                                    if let Some(word) = fields.get("word").and_then(|w| w.as_str()) {
+                                        found_words.insert(word.to_string());
+                                    }
+                                }
+                            }
+
+                            println!("  Found {} unique words", found_words.len());
+
+                            // Check if expected words are present
+                            let mut all_found = true;
+                            for expected_word in &expected_words {
+                                if found_words.contains(*expected_word) {
+                                    println!("  ✅ Found expected word: '{}'", expected_word);
+                                } else {
+                                    println!("  ❌ Missing expected word: '{}'", expected_word);
+                                    all_found = false;
+                                }
+                            }
+
+                            // Show some sample results
+                            println!("\n  Sample word index entries:");
+                            for (i, item) in results_array.iter().take(5).enumerate() {
+                                if let Some(fields) = item.get("fields").and_then(|f| f.as_object()) {
+                                    let word = fields.get("word").and_then(|w| w.as_str()).unwrap_or("N/A");
+                                    let title = fields.get("title").and_then(|t| t.as_str()).unwrap_or("N/A");
+                                    println!("    {}. word='{}' from title='{}'", i + 1, word, title);
+                                }
+                            }
+
+                            if all_found {
+                                results.add_pass("Verify word index results");
+                                true
+                            } else {
+                                results.add_fail("Verify word index results", "Some expected words not found");
+                                false
+                            }
+                        } else {
+                            results.add_fail("Verify word index results", "No data returned from query");
+                            false
+                        }
+                    }
+                    Err(e) => {
+                        results.add_fail("Verify word index results", &format!("Failed to parse response: {}", e));
+                        false
+                    }
+                }
+            }
+            Ok(response) => {
+                results.add_fail("Verify word index results", &format!("Expected status 200, got {}", response.status()));
+                false
+            }
+            Err(e) => {
+                results.add_fail("Verify word index results", &format!("Request failed: {}", e));
+                false
             }
         }
     }

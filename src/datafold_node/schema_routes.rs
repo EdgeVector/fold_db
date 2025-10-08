@@ -75,6 +75,59 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
     }
 }
 
+/// Generate a backfill hash for a transform schema by looking up its source schema
+/// Returns None if the schema is not a transform or if any required data is missing
+fn generate_backfill_hash_for_transform(
+    transform_manager: &crate::transform::manager::TransformManager,
+    schema_name: &str,
+) -> Option<String> {
+    let transforms = match transform_manager.list_transforms() {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("Failed to list transforms for {}: {}", schema_name, e);
+            return None;
+        }
+    };
+    
+    let transform = match transforms.get(schema_name) {
+        Some(t) => t,
+        None => {
+            log::debug!("Transform {} not found in transform list", schema_name);
+            return None;
+        }
+    };
+    
+    let declarative_schema = match transform.get_declarative_schema() {
+        Some(s) => s,
+        None => {
+            log::warn!("Transform {} has no declarative schema", schema_name);
+            return None;
+        }
+    };
+    
+    let inputs = declarative_schema.get_inputs();
+    let first_input = match inputs.first() {
+        Some(i) => i,
+        None => {
+            log::warn!("Transform {} has no inputs in declarative schema", schema_name);
+            return None;
+        }
+    };
+    
+    let source_schema_name = match first_input.split('.').next() {
+        Some(s) => s,
+        None => {
+            log::warn!("Failed to parse source schema from input: {}", first_input);
+            return None;
+        }
+    };
+    
+    Some(crate::fold_db_core::infrastructure::backfill_tracker::BackfillTracker::generate_hash(
+        schema_name,
+        source_schema_name,
+    ))
+}
+
 /// List schemas by specific state
 /// Approve a schema for queries and mutations
 #[utoipa::path(
@@ -88,9 +141,36 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let result = with_schema_manager(&state, |db| db.schema_manager.set_schema_state(&schema_name, SchemaState::Approved)).await;
+    let result: Result<Option<String>, SchemaError> = with_schema_manager(&state, |db| {
+        // Check if this is a transform schema and generate backfill hash if needed
+        let is_transform = match db.transform_manager.transform_exists(&schema_name) {
+            Ok(exists) => exists,
+            Err(e) => {
+                log::warn!("Failed to check if {} is a transform, assuming false: {}", schema_name, e);
+                false
+            }
+        };
+        
+        let backfill_hash = if is_transform {
+            generate_backfill_hash_for_transform(&db.transform_manager, &schema_name)
+        } else {
+            None
+        };
+        
+        // Approve the schema with the backfill hash
+        db.schema_manager.set_schema_state_with_backfill(&schema_name, SchemaState::Approved, backfill_hash.clone())?;
+        
+        Ok(backfill_hash)
+    }).await;
+    
     match result {
-        Ok(_) => HttpResponse::Ok().json(json!({"success": true})),
+        Ok(backfill_hash) => {
+            let mut response = json!({"success": true});
+            if let Some(hash) = backfill_hash {
+                response["backfill_hash"] = json!(hash);
+            }
+            HttpResponse::Ok().json(response)
+        },
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to approve schema: {}", e)})),
     }
@@ -113,6 +193,53 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
         Ok(_) => HttpResponse::Ok().json(json!({"success": true})),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to block schema: {}", e)})),
+    }
+}
+
+/// Get backfill status by hash
+#[utoipa::path(
+    get,
+    path = "/api/backfill/{hash}",
+    tag = "backfill",
+    params(
+        ("hash" = String, Path, description = "Backfill hash")
+    ),
+    responses(
+        (status = 200, description = "Backfill status"),
+        (status = 404, description = "Backfill not found"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
+    let backfill_hash = path.into_inner();
+    
+    // Access the backfill tracker through the FoldDB
+    let backfill_info = {
+        let node_guard = state.node.lock().await;
+        let db_guard = node_guard.get_fold_db().unwrap();
+        db_guard.get_backfill_tracker().get_backfill_by_hash(&backfill_hash)
+    };
+    
+    match backfill_info {
+        Some(info) => HttpResponse::Ok().json(json!({
+            "data": {
+                "backfill_hash": info.backfill_hash,
+                "transform_id": info.transform_id,
+                "source_schema": info.source_schema,
+                "status": format!("{:?}", info.status),
+                "items_processed": info.items_processed,
+                "items_total": info.items_total,
+                "records_produced": info.records_produced,
+                "mutations_expected": info.mutations_expected,
+                "mutations_completed": info.mutations_completed,
+                "start_time": info.start_time,
+                "end_time": info.end_time,
+                "duration_seconds": info.duration_seconds(),
+                "progress_percentage": info.progress_percentage(),
+                "error": info.error,
+            }
+        })),
+        None => HttpResponse::NotFound().json(json!({"error": "Backfill not found"})),
     }
 }
 

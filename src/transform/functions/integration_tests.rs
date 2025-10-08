@@ -344,7 +344,7 @@ fn test_engine_executes_all_reducer_types() {
     ];
     
     for (expr, expected) in test_cases {
-        let chain = parser.parse(expr).expect(&format!("Should parse: {}", expr));
+        let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
         
         let result = engine.execute_chain(&specs, &input, "values");
@@ -373,7 +373,7 @@ fn test_engine_executes_numeric_reducers() {
     ];
     
     for (expr, expected) in test_cases {
-        let chain = parser.parse(expr).expect(&format!("Should parse: {}", expr));
+        let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
         
         let result = engine.execute_chain(&specs, &input, "values");
@@ -404,7 +404,7 @@ fn test_engine_handles_empty_collections() {
     ];
     
     for (expr, expected) in test_cases {
-        let chain = parser.parse(expr).expect(&format!("Should parse: {}", expr));
+        let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
         
         let result = engine.execute_chain(&specs, &input, "empty");
@@ -456,7 +456,7 @@ fn test_engine_preserves_atom_traceability() {
     
     // Should preserve atom_uuid from the first item (HashMap iteration order dependent)
     // Just verify it's one of the valid atom_uuids
-    let valid_uuids = vec!["atom-1", "atom-2", "atom-3"];
+    let valid_uuids = ["atom-1", "atom-2", "atom-3"];
     assert!(valid_uuids.contains(&entries[0].atom_uuid.as_str()));
 }
 
@@ -502,7 +502,7 @@ fn test_engine_mixed_data_types() {
     ];
     
     for (expr, expected) in test_cases {
-        let chain = parser.parse(expr).expect(&format!("Should parse: {}", expr));
+        let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
         
         let result = engine.execute_chain(&specs, &input, "values");

@@ -14,6 +14,8 @@ pub struct Mutation {
     pub trust_distance: u32,
     pub mutation_type: MutationType,
     pub synchronous: Option<bool>,
+    /// Optional backfill hash for tracking backfill completion
+    pub backfill_hash: Option<String>,
 }
 
 impl Mutation {
@@ -35,6 +37,52 @@ impl Mutation {
             trust_distance,
             mutation_type,
             synchronous: None,
+            backfill_hash: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_backfill_hash(mut self, backfill_hash: String) -> Self {
+        self.backfill_hash = Some(backfill_hash);
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mutation_clone_preserves_backfill_hash() {
+        let mut mutation = Mutation::new(
+            "TestSchema".to_string(),
+            HashMap::new(),
+            KeyValue::new(None, None),
+            "test_key".to_string(),
+            0,
+            MutationType::Update,
+        );
+        
+        mutation.backfill_hash = Some("test_hash_123".to_string());
+        
+        let cloned = mutation.clone();
+        
+        assert_eq!(cloned.backfill_hash, Some("test_hash_123".to_string()));
+        println!("✅ Clone preserves backfill_hash");
+    }
+    
+    #[test]
+    fn test_with_backfill_hash() {
+        let mutation = Mutation::new(
+            "TestSchema".to_string(),
+            HashMap::new(),
+            KeyValue::new(None, None),
+            "test_key".to_string(),
+            0,
+            MutationType::Update,
+        ).with_backfill_hash("test_hash_456".to_string());
+        
+        assert_eq!(mutation.backfill_hash, Some("test_hash_456".to_string()));
+        println!("✅ with_backfill_hash sets the field correctly");
     }
 }

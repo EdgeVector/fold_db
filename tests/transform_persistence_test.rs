@@ -24,8 +24,8 @@ fn test_transform_registration_persistence_across_restart() {
     let temp_dir_3 = TempDir::new().expect("Failed to create temp directory 3");
     
     let test_db_path_1 = temp_dir_1.path().to_str().expect("Failed to convert path to string");
-    let test_db_path_2 = temp_dir_2.path().to_str().expect("Failed to convert path to string");
-    let test_db_path_3 = temp_dir_3.path().to_str().expect("Failed to convert path to string");
+    let _test_db_path_2 = temp_dir_2.path().to_str().expect("Failed to convert path to string");
+    let _test_db_path_3 = temp_dir_3.path().to_str().expect("Failed to convert path to string");
     
     // Using test database paths
 
@@ -261,7 +261,7 @@ fn test_transform_persistence_with_direct_db_verification() {
     let temp_dir_2 = TempDir::new().expect("Failed to create temp directory 2");
     
     let test_db_path_1 = temp_dir_1.path().to_str().expect("Failed to convert path to string");
-    let test_db_path_2 = temp_dir_2.path().to_str().expect("Failed to convert path to string");
+    let _test_db_path_2 = temp_dir_2.path().to_str().expect("Failed to convert path to string");
     
     // Using test database paths
 

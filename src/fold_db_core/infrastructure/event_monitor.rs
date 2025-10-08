@@ -313,11 +313,14 @@ pub struct EventMonitor {
     _schema_approved_thread: thread::JoinHandle<()>,
     _query_executed_thread: thread::JoinHandle<()>,
     _mutation_executed_thread: thread::JoinHandle<()>,
+    _backfill_expected_thread: thread::JoinHandle<()>,
+    _backfill_cleanup_thread: thread::JoinHandle<()>,
+    _backfill_failed_thread: thread::JoinHandle<()>,
 }
 
 impl EventMonitor {
     /// Create a new EventMonitor that subscribes to all event types
-    pub fn new(message_bus: &MessageBus, transform_manager: Arc<TransformManager>) -> Self {
+    pub fn new(message_bus: Arc<MessageBus>, transform_manager: Arc<TransformManager>) -> Self {
         let statistics = Arc::new(Mutex::new(EventStatistics {
             monitoring_start_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -345,6 +348,7 @@ impl EventMonitor {
         let mut schema_approved_consumer = message_bus.subscribe::<SchemaApproved>();
         let mut query_executed_consumer = message_bus.subscribe::<QueryExecuted>();
         let mut mutation_executed_consumer = message_bus.subscribe::<MutationExecuted>();
+        let mut backfill_expected_consumer = message_bus.subscribe::<crate::fold_db_core::infrastructure::message_bus::events::request_events::BackfillExpectedMutations>();
 
         // Start monitoring threads for each event type
         let stats_clone = statistics.clone();
@@ -419,8 +423,45 @@ impl EventMonitor {
         });
 
         let stats_clone = statistics.clone();
+        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
         let mutation_executed_thread = thread::spawn(move || {
-            Self::monitor_mutation_executed_events(&mut mutation_executed_consumer, stats_clone);
+            Self::monitor_mutation_executed_events(&mut mutation_executed_consumer, stats_clone, backfill_tracker_clone);
+        });
+
+        // Monitor BackfillExpectedMutations to set expected counts per backfill hash
+        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
+        let backfill_expected_thread = thread::spawn(move || {
+            loop {
+                match backfill_expected_consumer.recv_timeout(Duration::from_millis(100)) {
+                    Ok(event) => {
+                        backfill_tracker_clone.set_mutations_expected(&event.backfill_hash, event.count);
+                    }
+                    Err(_) => continue,
+                }
+            }
+        });
+
+        // Periodic cleanup of old completed backfills
+        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
+        let backfill_cleanup_thread = thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(3600)); // Run every hour
+                backfill_tracker_clone.cleanup_old_backfills(100); // Keep last 100 completed backfills
+            }
+        });
+
+        // Monitor BackfillMutationFailed to track failures
+        let mut backfill_failed_consumer = message_bus.subscribe::<crate::fold_db_core::infrastructure::message_bus::request_events::BackfillMutationFailed>();
+        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
+        let backfill_failed_thread = thread::spawn(move || {
+            loop {
+                match backfill_failed_consumer.recv_timeout(Duration::from_millis(100)) {
+                    Ok(event) => {
+                        backfill_tracker_clone.increment_mutation_failed(&event.backfill_hash, event.error);
+                    }
+                    Err(_) => continue,
+                }
+            }
         });
 
         Self {
@@ -440,12 +481,20 @@ impl EventMonitor {
             _schema_approved_thread: schema_approved_thread,
             _query_executed_thread: query_executed_thread,
             _mutation_executed_thread: mutation_executed_thread,
+            _backfill_expected_thread: backfill_expected_thread,
+            _backfill_cleanup_thread: backfill_cleanup_thread,
+            _backfill_failed_thread: backfill_failed_thread,
         }
     }
 
     /// Get current event statistics
     pub fn get_statistics(&self) -> EventStatistics {
         self.statistics.lock().unwrap().clone()
+    }
+
+    /// Get the backfill tracker
+    pub fn get_backfill_tracker(&self) -> Arc<BackfillTracker> {
+        Arc::clone(&self.backfill_tracker)
     }
 
     /// Get all backfill information
@@ -668,7 +717,9 @@ impl EventMonitor {
                     );
 
                     // Determine success from result field
-                    let success = event.result == "success";
+                    let is_error = event.result.contains("error:") || 
+                                  event.result.contains("execution_error:");
+                    let success = !is_error;
 
                     // Note: Execution time tracking would require adding timing info to TransformExecuted event
                     statistics.lock().unwrap().increment_transform_executions(
@@ -740,18 +791,30 @@ impl EventMonitor {
                                                 let inputs = schema.get_inputs();
                                                 if let Some(first_input) = inputs.first() {
                                                     if let Some(source_schema_name) = first_input.split('.').next() {
-                                                        // Start tracking the backfill
-                                                        backfill_tracker.start_backfill(
-                                                            event.schema_name.clone(),
-                                                            source_schema_name.to_string(),
-                                                        );
+                                                        // Start tracking the backfill and get the unique hash
+                                                        let backfill_hash = if let Some(hash) = event.backfill_hash.as_ref() {
+                                                            // Use hash from event if provided
+                                                            backfill_tracker.start_backfill_with_hash(
+                                                                hash.clone(),
+                                                                event.schema_name.clone(),
+                                                                source_schema_name.to_string(),
+                                                            );
+                                                            hash.clone()
+                                                        } else {
+                                                            // Generate new hash if not in event
+                                                            backfill_tracker.start_backfill(
+                                                                event.schema_name.clone(),
+                                                                source_schema_name.to_string(),
+                                                            )
+                                                        };
 
-                                                        // Handle the transform backfill
+                                                        // Handle the transform backfill with the backfill_hash
                                                         if let Err(e) = Self::handle_transform_backfill(
                                                             &event.schema_name,
                                                             source_schema_name,
                                                             &transform_manager,
                                                             &backfill_tracker,
+                                                            &backfill_hash,
                                                         ) {
                                                             log::error!("Failed to handle transform backfill for '{}': {}", event.schema_name, e);
                                                             backfill_tracker.fail_backfill(&event.schema_name, e.to_string());
@@ -834,15 +897,20 @@ impl EventMonitor {
     fn monitor_mutation_executed_events(
         consumer: &mut Consumer<MutationExecuted>,
         statistics: Arc<Mutex<EventStatistics>>,
+        backfill_tracker: Arc<BackfillTracker>,
     ) {
         loop {
             match consumer.recv_timeout(Duration::from_millis(100)) {
                 Ok(event) => {
-                    info!(
-                        "🔍 EventMonitor: MutationExecuted - schema: {}, operation: {}, execution_time: {}ms, fields_affected: {}",
-                        event.schema, event.operation, event.execution_time_ms, event.fields_affected.join(", ")
-                    );
                     statistics.lock().unwrap().increment_mutation_executions(&event);
+                    
+                    // Check if this mutation is part of a backfill
+                    if let Some(context) = &event.mutation_context {
+                        if let Some(backfill_hash) = &context.backfill_hash {
+                            // Increment completed mutation count for this backfill
+                            let _is_complete = backfill_tracker.increment_mutation_completed(backfill_hash);
+                        }
+                    }
                 }
                 Err(_) => continue,
             }
@@ -856,24 +924,25 @@ impl EventMonitor {
         _source_schema_name: &str,
         transform_manager: &Arc<TransformManager>,
         backfill_tracker: &Arc<BackfillTracker>,
+        backfill_hash: &str,
     ) -> Result<(), crate::schema::SchemaError> {
         use crate::transform::manager::types::TransformRunner;
 
-        info!("🔄 Starting backfill for transform '{}'", transform_id);
+        // Create mutation context with backfill_hash for tracking
+        let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+            key_value: None,
+            mutation_hash: None,
+            incremental: false, // Full backfill, not incremental
+            backfill_hash: Some(backfill_hash.to_string()),
+        });
 
-        // Execute the transform without mutation context to process all existing data
-        match transform_manager.execute_transform_with_context(transform_id, &None) {
-            Ok(result) => {
-                let records_produced = result.records.len() as u64;
-                info!(
-                    "✅ Backfill completed for transform '{}': {} records produced",
-                    transform_id, records_produced
-                );
-                backfill_tracker.complete_backfill(transform_id, records_produced);
+        // Execute the transform with backfill context
+        match transform_manager.execute_transform_with_context(transform_id, &mutation_context) {
+            Ok(_result) => {
                 Ok(())
             }
             Err(e) => {
-                log::error!("❌ Failed to execute backfill for transform '{}': {}", transform_id, e);
+                backfill_tracker.fail_backfill(transform_id, e.to_string());
                 Err(e)
             }
         }
@@ -896,7 +965,7 @@ mod tests {
         let db_ops = Arc::new(crate::db_operations::DbOperations::new(db).unwrap());
         let bus_arc = Arc::new(bus);
         let transform_manager = Arc::new(crate::transform::manager::TransformManager::new(db_ops, Arc::clone(&bus_arc)).unwrap());
-        let monitor = EventMonitor::new(&bus_arc, transform_manager);
+        let monitor = EventMonitor::new(Arc::clone(&bus_arc), transform_manager);
 
         // Publish various events
         bus_arc.publish(FieldValueSet::new("test.field", json!("value"), "test"))

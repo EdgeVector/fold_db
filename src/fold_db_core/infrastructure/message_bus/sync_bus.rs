@@ -115,14 +115,19 @@ impl MessageBus {
 
         senders.retain(|boxed_sender| {
             if let Some(sender) = boxed_sender.downcast_ref::<Sender<T>>() {
-                match sender.send(event.clone()) {
-                    Ok(_) => true,
-                    Err(_) => {
+                let cloned_event = event.clone();
+                match sender.send(cloned_event) {
+                    Ok(_) => {
+                        true
+                    }
+                    Err(e) => {
+                        log::error!("❌ MessageBus send failed for {}: {:?}", type_id, e);
                         failed_sends += 1;
                         false
                     }
                 }
             } else {
+                log::error!("❌ MessageBus downcast failed for {}", type_id);
                 failed_sends += 1;
                 false
             }

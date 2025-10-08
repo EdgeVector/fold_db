@@ -19,6 +19,7 @@ impl ResultStorage {
         code_hash_to_result: HashMap<String, JsonValue>,
         key_value: KeyValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
+        backfill_hash: Option<String>,
     ) -> Result<(), SchemaError> {
         // Create reverse mapping from hash code to field name
         let field_to_hash_code = transform.get_declarative_schema().unwrap().get_field_to_hash_code();
@@ -36,7 +37,7 @@ impl ResultStorage {
             }
         }
 
-        let mutation = Mutation::new(
+        let mut mutation = Mutation::new(
             transform.get_declarative_schema().unwrap().name.clone(),
             fields_and_values,
             key_value,
@@ -45,11 +46,17 @@ impl ResultStorage {
             MutationType::Update,
         );
 
+        // Attach backfill_hash if provided
+        if let Some(hash) = backfill_hash {
+            mutation = mutation.with_backfill_hash(hash.clone());
+        }
+
         if let Some(message_bus) = message_bus {
             let mutation_request = MutationRequest {
                 correlation_id: Uuid::new_v4().to_string(),
                 mutation,
             };
+            
             message_bus.publish(mutation_request)
                 .map_err(|e| crate::schema::types::SchemaError::InvalidData(format!("Failed to publish mutation request to message bus: {}", e)))?;
         }

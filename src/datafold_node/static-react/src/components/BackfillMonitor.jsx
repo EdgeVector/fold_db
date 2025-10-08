@@ -24,12 +24,12 @@ const BackfillMonitor = () => {
 
   const fetchStatistics = useCallback(async () => {
     try {
-      const response = await transformClient.getStatistics()
+      const response = await transformClient.getBackfillStatistics()
       if (response?.success && response.data) {
         setStatistics(response.data)
       }
     } catch (err) {
-      console.error('Failed to fetch statistics:', err)
+      console.error('Failed to fetch backfill statistics:', err)
     } finally {
       setLoading(false)
     }
@@ -103,30 +103,30 @@ const BackfillMonitor = () => {
 
   return (
     <div className="space-y-4">
-      {/* Statistics Summary */}
+      {/* Backfill Statistics Summary */}
       {statistics && (
         <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="text-md font-medium text-gray-800 mb-3">Transform Statistics</h3>
+          <h3 className="text-md font-medium text-gray-800 mb-3">Backfill Statistics</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <div className="text-gray-600">Total Executions</div>
-              <div className="text-lg font-semibold text-gray-900">{statistics.transform_executions}</div>
+              <div className="text-gray-600">Total Mutations</div>
+              <div className="text-lg font-semibold text-gray-900">{statistics.total_mutations_completed}</div>
             </div>
             <div>
               <div className="text-gray-600">Success Rate</div>
               <div className="text-lg font-semibold text-green-700">
-                {statistics.transform_executions > 0
-                  ? `${Math.round((statistics.transform_successes / statistics.transform_executions) * 100)}%`
+                {(statistics.total_mutations_completed + statistics.total_mutations_failed) > 0
+                  ? `${Math.round((statistics.total_mutations_completed / (statistics.total_mutations_completed + statistics.total_mutations_failed)) * 100)}%`
                   : 'N/A'}
               </div>
             </div>
             <div>
-              <div className="text-gray-600">Registrations</div>
-              <div className="text-lg font-semibold text-blue-700">{statistics.transform_registrations}</div>
+              <div className="text-gray-600">Backfills</div>
+              <div className="text-lg font-semibold text-blue-700">{statistics.total_backfills}</div>
             </div>
             <div>
               <div className="text-gray-600">Failures</div>
-              <div className="text-lg font-semibold text-red-700">{statistics.transform_failures}</div>
+              <div className="text-lg font-semibold text-red-700">{statistics.total_mutations_failed}</div>
             </div>
           </div>
         </div>
@@ -175,17 +175,25 @@ const BackfillMonitor = () => {
                   {backfill.status === 'InProgress' && (
                     <>
                       <div>
-                        <span className="font-medium">Processing...</span>
+                        <span className="font-medium">Mutations:</span> {backfill.mutations_completed} / {backfill.mutations_expected}
                       </div>
                       <div>
                         <span className="font-medium">Items:</span> {backfill.items_processed}
                         {backfill.items_total && ` / ${backfill.items_total}`}
                       </div>
+                      {backfill.mutations_failed > 0 && (
+                        <div className="text-red-600">
+                          <span className="font-medium">Failed:</span> {backfill.mutations_failed}
+                        </div>
+                      )}
                     </>
                   )}
                   
                   {backfill.status === 'Completed' && (
                     <>
+                      <div>
+                        <span className="font-medium">Mutations:</span> {backfill.mutations_completed}
+                      </div>
                       <div>
                         <span className="font-medium">Records:</span> {backfill.records_produced}
                       </div>
@@ -202,16 +210,16 @@ const BackfillMonitor = () => {
                   )}
                 </div>
 
-                {backfill.items_total && backfill.status === 'InProgress' && (
+                {backfill.mutations_expected > 0 && backfill.status === 'InProgress' && (
                   <div className="mt-2">
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
                         className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${(backfill.items_processed / backfill.items_total) * 100}%` }}
+                        style={{ width: `${(backfill.mutations_completed / backfill.mutations_expected) * 100}%` }}
                       ></div>
                     </div>
                     <div className="text-xs text-right mt-1">
-                      {Math.round((backfill.items_processed / backfill.items_total) * 100)}% complete
+                      {Math.round((backfill.mutations_completed / backfill.mutations_expected) * 100)}% complete
                     </div>
                   </div>
                 )}

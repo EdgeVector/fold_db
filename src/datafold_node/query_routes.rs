@@ -223,5 +223,54 @@ pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Respon
     }
 }
 
+/// Aggregate statistics from all backfills
+#[derive(serde::Serialize)]
+struct BackfillStatistics {
+    total_backfills: usize,
+    active_backfills: usize,
+    completed_backfills: usize,
+    failed_backfills: usize,
+    total_mutations_expected: u64,
+    total_mutations_completed: u64,
+    total_mutations_failed: u64,
+    total_records_produced: u64,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/transforms/backfills/statistics",
+    tag = "query",
+    responses(
+        (status = 200, description = "Backfill statistics", body = serde_json::Value),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Responder {
+    let node = state.node.lock().await;
+    
+    match node.get_all_backfills() {
+        Ok(backfills) => {
+            let active_count = backfills.iter().filter(|b| b.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::InProgress).count();
+            let completed_count = backfills.iter().filter(|b| b.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Completed).count();
+            let failed_count = backfills.iter().filter(|b| b.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Failed).count();
+            
+            let stats = BackfillStatistics {
+                total_backfills: backfills.len(),
+                active_backfills: active_count,
+                completed_backfills: completed_count,
+                failed_backfills: failed_count,
+                total_mutations_expected: backfills.iter().map(|b| b.mutations_expected).sum(),
+                total_mutations_completed: backfills.iter().map(|b| b.mutations_completed).sum(),
+                total_mutations_failed: backfills.iter().map(|b| b.mutations_failed).sum(),
+                total_records_produced: backfills.iter().map(|b| b.records_produced).sum(),
+            };
+            
+            HttpResponse::Ok().json(stats)
+        },
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({ "error": format!("Failed to get backfill statistics: {}", e) })),
+    }
+}
+
 #[cfg(test)]
 mod tests {}

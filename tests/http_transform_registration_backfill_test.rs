@@ -59,11 +59,14 @@ async fn test_transform_registration_backfill_http_integration() {
                     // Wait for transform registration
                     sleep(Duration::from_millis(500)).await;
                     if helper.verify_transforms_registered(&["BlogPostWordIndex".to_string()], &mut results).await {
-                        // Wait for backfill to complete
-                        sleep(Duration::from_millis(1000)).await;
-                        helper.query_transform_results("BlogPostWordIndex", 
-                            vec!["word", "publish_date", "content", "author", "title", "tags"], 
-                            &mut results).await;
+                        // Approve the transform schema to trigger backfill
+                        if helper.approve_schema("BlogPostWordIndex", &mut results).await {
+                            // Wait for backfill to complete
+                            sleep(Duration::from_secs(3)).await;
+                            helper.query_transform_results("BlogPostWordIndex", 
+                                vec!["word", "publish_date", "content", "author", "title", "tags"], 
+                                &mut results).await;
+                        }
                     }
                 }
         }

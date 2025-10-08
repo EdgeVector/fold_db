@@ -256,8 +256,8 @@ export class UnifiedSchemaClient {
    * UNPROTECTED - No authentication required
    * SCHEMA-002 Compliance: Only available schemas can be approved
    */
-  async approveSchema(name: string): Promise<EnhancedApiResponse<void>> {
-    return this.client.post<void>(
+  async approveSchema(name: string): Promise<EnhancedApiResponse<{ backfill_hash?: string }>> {
+    return this.client.post<{ backfill_hash?: string }>(
       API_ENDPOINTS.APPROVE_SCHEMA(name),
       {}, // Empty body, schema name is in URL
       {
@@ -384,6 +384,17 @@ export class UnifiedSchemaClient {
   getMetrics() {
     return this.client.getMetrics();
   }
+
+  /**
+   * Get backfill status by hash
+   * UNPROTECTED - No authentication required
+   */
+  async getBackfillStatus(backfillHash: string): Promise<EnhancedApiResponse<any>> {
+    return this.client.get<any>(`/api/backfill/${backfillHash}`, {
+      cacheable: false, // Don't cache backfill status as it changes frequently
+      timeout: 5000
+    });
+  }
 }
 
 // Create default instance
@@ -406,5 +417,6 @@ export const loadSchema = schemaClient.loadSchema.bind(schemaClient);
 export const unloadSchema = schemaClient.unloadSchema.bind(schemaClient);
 export const getApprovedSchemas = schemaClient.getApprovedSchemas.bind(schemaClient);
 export const validateSchemaForOperation = schemaClient.validateSchemaForOperation.bind(schemaClient);
+export const getBackfillStatus = schemaClient.getBackfillStatus.bind(schemaClient);
 
 export default schemaClient;

@@ -18,6 +18,7 @@ import sys
 import os
 import subprocess
 from datetime import datetime, timedelta
+import argparse
 
 def check_http_server():
     """Check if the HTTP server is running."""
@@ -88,7 +89,7 @@ def create_blog_post_via_curl(title, content, author, publish_date, tags):
         print(f"❌ Error creating '{title}': {e}")
         return False
 
-def add_dummy_blog_posts():
+def add_dummy_blog_posts(num_posts: int | None = None, delay_s: float = 0.5, fast: bool = False):
     """Add dummy blog posts to the database."""
     print("\n📚 Adding dummy blog posts...")
     
@@ -106,27 +107,41 @@ def add_dummy_blog_posts():
         "Deployment Strategies"
     ]
     
-    sample_contents = [
-        "DataFold is a powerful distributed database system that enables efficient data storage and retrieval across multiple nodes. This post will guide you through the basics of getting started with DataFold, including installation, configuration, and your first data operations.",
-        
-        "Range schemas are a key feature of DataFold that allow you to organize data based on a specific field. This post explores how range schemas work, their benefits, and how to implement them effectively in your applications.",
-        
-        "Data ingestion is a critical component of any data system. This post covers best practices for ingesting data into DataFold, including error handling, validation, and performance optimization techniques.",
-        
-        "DataFold supports various query patterns that can help you retrieve data efficiently. This post demonstrates advanced query patterns including filtering, sorting, and aggregation operations.",
-        
-        "Security is paramount in any data system. This post explains how DataFold handles permissions, authentication, and data access control to ensure your data remains secure.",
-        
-        "Building scalable data applications requires careful planning and implementation. This post provides insights into designing and building applications that can handle large-scale data operations with DataFold.",
-        
-        "Real-time data processing is essential for many modern applications. This post explores how DataFold supports real-time data processing and streaming operations.",
-        
-        "Data transformation is a common requirement in data applications. This post covers various techniques for transforming data within DataFold, including custom transforms and data mapping.",
-        
-        "Performance is crucial for data applications. This post provides tips and techniques for optimizing the performance of your DataFold applications.",
-        
-        "Deploying DataFold applications requires careful consideration of infrastructure and configuration. This post covers various deployment strategies and best practices."
-    ]
+    if fast:
+        sample_contents = [
+            "DataFold data",
+            "Range schema",
+            "Ingestion best",
+            "Query patterns",
+            "Security auth",
+            "Scale design",
+            "Realtime stream",
+            "Transform map",
+            "Perf tips",
+            "Deploy conf",
+        ]
+    else:
+        sample_contents = [
+            "DataFold is a powerful distributed database system that enables efficient data storage and retrieval across multiple nodes. This post will guide you through the basics of getting started with DataFold, including installation, configuration, and your first data operations.",
+            
+            "Range schemas are a key feature of DataFold that allow you to organize data based on a specific field. This post explores how range schemas work, their benefits, and how to implement them effectively in your applications.",
+            
+            "Data ingestion is a critical component of any data system. This post covers best practices for ingesting data into DataFold, including error handling, validation, and performance optimization techniques.",
+            
+            "DataFold supports various query patterns that can help you retrieve data efficiently. This post demonstrates advanced query patterns including filtering, sorting, and aggregation operations.",
+            
+            "Security is paramount in any data system. This post explains how DataFold handles permissions, authentication, and data access control to ensure your data remains secure.",
+            
+            "Building scalable data applications requires careful planning and implementation. This post provides insights into designing and building applications that can handle large-scale data operations with DataFold.",
+            
+            "Real-time data processing is essential for many modern applications. This post explores how DataFold supports real-time data processing and streaming operations.",
+            
+            "Data transformation is a common requirement in data applications. This post covers various techniques for transforming data within DataFold, including custom transforms and data mapping.",
+            
+            "Performance is crucial for data applications. This post provides tips and techniques for optimizing the performance of your DataFold applications.",
+            
+            "Deploying DataFold applications requires careful consideration of infrastructure and configuration. This post covers various deployment strategies and best practices."
+        ]
     
     sample_authors = [
         "Alice Johnson",
@@ -154,7 +169,7 @@ def add_dummy_blog_posts():
     
     # Create blog posts
     successful_posts = 0
-    total_posts = len(sample_titles)
+    total_posts = len(sample_titles) if num_posts is None else max(0, min(num_posts, len(sample_titles)))
     
     for i in range(total_posts):
         # Generate a random publish date within the last 30 days
@@ -174,7 +189,7 @@ def add_dummy_blog_posts():
             successful_posts += 1
         
         # Small delay to avoid overwhelming the server
-        time.sleep(0.5)
+        time.sleep(delay_s)
     
     print(f"\n📊 Summary: Created {successful_posts} out of {total_posts} blog posts")
     return successful_posts
@@ -325,12 +340,19 @@ def main():
         print("💡 Start the HTTP server with: ./run_http_server.sh")
         sys.exit(1)
     
+    parser = argparse.ArgumentParser(description="Manage sample BlogPosts via HTTP API")
+    parser.add_argument("--num-posts", type=int, default=None, help="Number of posts to create (default: all samples)")
+    parser.add_argument("--delay", type=float, default=0.5, help="Delay in seconds between posts (default: 0.5)")
+    parser.add_argument("--fast", action="store_true", help="Use very short content for faster tests")
+
+    args = parser.parse_args()
+
     try:
         # Show curl example
         show_curl_example()
         
         # Add blog posts
-        successful_posts = add_dummy_blog_posts()
+        successful_posts = add_dummy_blog_posts(num_posts=args.num_posts, delay_s=args.delay, fast=args.fast)
         
         if successful_posts > 0:
             # Query and display blog posts

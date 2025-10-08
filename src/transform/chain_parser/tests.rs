@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod chain_parser_tests {
     use super::super::parser::ChainParser;
 
     #[test]

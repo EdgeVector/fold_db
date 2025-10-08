@@ -150,13 +150,20 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       if (approveSchemaAction.fulfilled.match(result)) {
         console.log('🟡 SchemaTab: approveSchema fulfilled, calling callbacks')
         
+        // Extract backfill hash if present
+        const backfillHash = result.payload?.backfillHash
+        console.log('🔄 Backfill hash:', backfillHash)
+        
         // Refetch schemas from backend to get updated states
         console.log('🔄 Refetching schemas from backend after approval...')
         await dispatch(fetchSchemas({ forceRefresh: true }))
         console.log('✅ Refetch complete - backend state should be reflected')
         
         if (onResult) {
-          onResult({ success: true, message: `Schema ${schemaName} approved successfully` })
+          const message = backfillHash 
+            ? `Schema ${schemaName} approved successfully. Backfill started with hash: ${backfillHash}` 
+            : `Schema ${schemaName} approved successfully`
+          onResult({ success: true, message, backfillHash })
         }
         if (onSchemaUpdated) {
           onSchemaUpdated()

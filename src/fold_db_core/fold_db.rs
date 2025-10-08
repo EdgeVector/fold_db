@@ -111,6 +111,7 @@ impl FoldDB {
 
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
+        log::debug!("Created MessageBus at {:p}", Arc::as_ptr(&message_bus));
 
         // Initialize components via event-driven system initialization
         let correlation_id = uuid::Uuid::new_v4().to_string();
@@ -143,7 +144,7 @@ impl FoldDB {
 
 
         // Create and start EventMonitor for system-wide observability
-        let event_monitor = Arc::new(EventMonitor::new(&message_bus, Arc::clone(&transform_manager)));
+        let event_monitor = Arc::new(EventMonitor::new(Arc::clone(&message_bus), Arc::clone(&transform_manager)));
         info!("Started EventMonitor for system-wide event tracking");
 
         // Create MutationCompletionHandler for tracking async mutation completion
@@ -173,6 +174,7 @@ impl FoldDB {
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
         );
+        log::info!("🧭 FoldDB::new wiring MutationManager with MessageBus at {:p}", Arc::as_ptr(&message_bus));
         info!("Created MutationManager for mutation operations");
 
         // Start the MutationManager event listener
@@ -183,6 +185,12 @@ impl FoldDB {
             )));
         }
         info!("Started MutationManager event listener");
+        
+        // Log subscriber count for diagnostics (debug level)
+        log::debug!(
+            "MutationRequest subscribers: {}",
+            message_bus.subscriber_count::<crate::fold_db_core::infrastructure::message_bus::request_events::MutationRequest>()
+        );
 
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
@@ -230,6 +238,11 @@ impl FoldDB {
     /// Get current event statistics from the event monitor
     pub fn get_event_statistics(&self) -> super::infrastructure::event_monitor::EventStatistics {
         self.event_monitor.get_statistics()
+    }
+
+    /// Get the backfill tracker
+    pub fn get_backfill_tracker(&self) -> Arc<super::infrastructure::backfill_tracker::BackfillTracker> {
+        self.event_monitor.get_backfill_tracker()
     }
 
     /// Get all backfill information

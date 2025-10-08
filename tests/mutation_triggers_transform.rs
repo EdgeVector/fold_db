@@ -62,6 +62,13 @@ fn test_blogpost_mutation_triggers_transforms() {
     // Wait for schema registration and transform registration to complete
     std::thread::sleep(Duration::from_millis(50));
     
+    // Approve both schemas so transforms can be triggered
+    use datafold::schema::SchemaState;
+    fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .expect("Failed to approve BlogPost schema");
+    fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+        .expect("Failed to approve BlogPostWordIndex schema");
+    
     // Get message bus for publishing and subscribing to events
     let message_bus = fold_db.message_bus();
     
@@ -147,8 +154,7 @@ fn test_blogpost_mutation_triggers_transforms() {
                 executed_id
             );
         }
-    } else {
-    }
+    } 
     
 }
 
@@ -208,6 +214,13 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
     
     // Wait for schema registration
     std::thread::sleep(Duration::from_millis(50));
+    
+    // Approve both schemas so transforms can be triggered
+    use datafold::schema::SchemaState;
+    fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .expect("Failed to approve BlogPost schema");
+    fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+        .expect("Failed to approve BlogPostWordIndex schema");
     
     // Get message bus
     let message_bus = fold_db.message_bus();
@@ -307,6 +320,13 @@ fn test_content_mutation_triggers_word_transform() {
     
     // Wait for registration
     std::thread::sleep(Duration::from_millis(50));
+    
+    // Approve both schemas so transforms can be triggered
+    use datafold::schema::SchemaState;
+    fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .expect("Failed to approve BlogPost schema");
+    fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+        .expect("Failed to approve BlogPostWordIndex schema");
     
     let message_bus = fold_db.message_bus();
     let mut transform_triggered_consumer = message_bus.subscribe::<TransformTriggered>();

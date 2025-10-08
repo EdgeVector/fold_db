@@ -102,12 +102,28 @@ fn test_backfill_triggered_on_schema_approval() {
     
     println!("✅ BlogPostWordIndex is now in Approved state");
     
-    // Check if backfill was triggered
-    let backfills_after = fold_db.get_all_backfills();
+    // Poll for backfill completion with timeout
+    let max_attempts = 50; // 5 seconds total
     
-    println!("📋 Backfills after approval: {}", backfills_after.len());
+    for attempt in 0..max_attempts {
+        let backfills = fold_db.get_all_backfills();
+        
+        if let Some(backfill) = backfills.iter().find(|b| b.transform_id == "BlogPostWordIndex") {
+            println!("📋 Attempt {}/{}: Backfill status = {:?}, records = {}", 
+                     attempt + 1, max_attempts, backfill.status, backfill.records_produced);
+            
+            if backfill.status == datafold::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Completed {
+                break;
+            }
+        }
+        
+        std::thread::sleep(Duration::from_millis(100));
+    }
     
     // Find the backfill for BlogPostWordIndex
+    let backfills_after = fold_db.get_all_backfills();
+    println!("📋 Final backfills count: {}", backfills_after.len());
+    
     let blogpost_backfill = backfills_after.iter()
         .find(|b| b.transform_id == "BlogPostWordIndex");
     
@@ -121,7 +137,7 @@ fn test_backfill_triggered_on_schema_approval() {
         assert_eq!(
             backfill.status,
             datafold::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Completed,
-            "Backfill should be completed"
+            "Backfill should be completed after {} attempts", max_attempts
         );
         
         // Note: records_produced can be 0 if there's no source data, which is fine
