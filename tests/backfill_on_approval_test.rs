@@ -136,7 +136,7 @@ fn test_backfill_triggered_on_schema_approval() {
         println!("✅ Backfill found for BlogPostWordIndex:");
         println!("   - Status: {:?}", backfill.status);
         println!("   - Records produced: {}", backfill.records_produced);
-        println!("   - Source schema: {}", backfill.source_schema);
+        println!("   - Source schema: {}", backfill.schema_name);
         
         // Verify backfill completed successfully
         assert_eq!(

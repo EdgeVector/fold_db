@@ -53,16 +53,34 @@ fn handle_transform_schema_approval(
             format!("Transform '{}' has no declarative schema", event.schema_name)
         ))?;
 
-    let inputs = schema.get_inputs();
-    let first_input = inputs.first()
-        .ok_or_else(|| crate::schema::SchemaError::InvalidTransform(
-            format!("Transform '{}' has no input fields, cannot perform backfill", event.schema_name)
-        ))?;
+    let source_schemas = schema.get_source_schemas();
+    if source_schemas.is_empty() {
+        return Err(crate::schema::SchemaError::InvalidTransform(
+            format!("Transform '{}' has no source schemas, cannot perform backfill", event.schema_name)
+        ));
+    }
 
-    let source_schema_name = first_input.split('.').next()
-        .ok_or_else(|| crate::schema::SchemaError::InvalidTransform(
-            format!("Failed to extract source schema from input field: {}", first_input)
-        ))?;
+    // Ensure all source schemas are in the "approved" state
+    for source_schema in &source_schemas {
+        let state = transform_manager.get_schema_state(source_schema)?;
+        match state {
+            Some(crate::schema::SchemaState::Approved) => {},
+            Some(other) => {
+                return Err(crate::schema::SchemaError::InvalidTransform(
+                    format!("Source schema '{}' is not approved (state: {:?})", source_schema, other)
+                ));
+                // TODO: Allow auto approval of source schemas.
+            },
+            None => {
+                return Err(crate::schema::SchemaError::InvalidTransform(
+                    format!("Source schema '{}' does not exist", source_schema)
+                ));
+            }
+        }
+    }
+
+    // Use the schema name for backfill
+    let schema_name = schema.name.clone();
 
     let backfill_hash = event.backfill_hash.as_ref()
         .ok_or_else(|| crate::schema::SchemaError::InvalidTransform(
@@ -72,12 +90,11 @@ fn handle_transform_schema_approval(
     backfill_tracker.start_backfill_with_hash(
         backfill_hash.clone(),
         event.schema_name.clone(),
-        source_schema_name.to_string(),
+        schema_name.clone(),
     );
 
     handle_transform_backfill(
-        &event.schema_name,
-        source_schema_name,
+        &schema_name,
         transform_manager,
         backfill_tracker,
         backfill_hash,
@@ -88,7 +105,6 @@ fn handle_transform_schema_approval(
 
 fn handle_transform_backfill(
     transform_id: &str,
-    _source_schema_name: &str,
     transform_manager: &Arc<TransformManager>,
     backfill_tracker: &Arc<BackfillTracker>,
     backfill_hash: &str,
