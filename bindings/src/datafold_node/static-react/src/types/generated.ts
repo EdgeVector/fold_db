@@ -21,13 +21,13 @@ source_schema: string,
  */
 status: BackfillStatus, 
 /**
- * When the backfill started
+ * When the backfill started (Unix timestamp in seconds)
  */
-start_time: bigint, 
+start_time: number, 
 /**
  * When the backfill completed (if finished)
  */
-end_time: bigint | null, 
+end_time: number, 
 /**
  * Error message if failed
  */
@@ -35,94 +35,21 @@ error: string | null,
 /**
  * Records produced by the backfill
  */
-records_produced: bigint, 
+records_produced: number, 
 /**
  * Expected number of mutations to be created (for completion tracking)
  */
-mutations_expected: bigint, 
+mutations_expected: number, 
 /**
  * Number of mutations completed so far
  */
-mutations_completed: bigint, 
+mutations_completed: number, 
 /**
  * Number of mutations that failed
  */
-mutations_failed: bigint, };
+mutations_failed: number, };
 
 /**
  * Status of a backfill operation
  */
 export type BackfillStatus = "InProgress" | "Completed" | "Failed";
-
-/**
- * HashRange filter operations for querying hash-range fields
- */
-export type HashRangeFilter = { "HashRangeKey": { hash: string, range: string, } } | { "HashKey": string } | { "HashRangePrefix": { hash: string, prefix: string, } } | { "RangePrefix": string } | { "HashRangeRange": { hash: string, start: string, end: string, } } | { "RangeRange": { start: string, end: string, } } | { "SampleN": number } | { "Value": string } | { "HashRangeKeys": Array<[string, string]> } | { "HashRangePattern": { hash: string, pattern: string, } } | { "RangePattern": string } | { "HashPattern": string } | { "HashRange": { start: string, end: string, } };
-
-/**
- * Result of a hash-range filter operation
- */
-export type HashRangeFilterResult = { 
-/**
- * Matches with composite keys in format "KeyValue" -> atom_uuid
- */
-matches: { [key in KeyValue]?: string }, 
-/**
- * Total count of matches found
- */
-total_count: number, 
-/**
- * Number of hash groups that had matches
- */
-hash_groups_count: number, };
-
-export type KeyConfig = { hash_field: string | null, range_field: string | null, };
-
-/**
- * Represents resolved key values for hash and range components.
- */
-export type KeyValue = { hash: string | null, range: string | null, };
-
-/**
- * Defines the structure, permissions, and payment requirements for a data collection.
- *
- * A Schema is the fundamental building block for data organization in the database.
- * It defines:
- * - The collection's name and identity
- * - Field definitions with their types and constraints
- * - Field-level permission policies
- * - Payment requirements for data access
- * - Field mappings for schema transformation
- *
- * Schemas provide a contract for data storage and access, ensuring:
- * - Consistent data structure
- * - Proper access control
- * - Payment validation
- * - Data transformation rules
- */
-export type Schema = { 
-/**
- * Unique name identifying this schema
- */
-name: string, 
-/**
- * The type of schema. Defaults to a key range schema.
- */
-schema_type: SchemaType, 
-/**
- * Universal key configuration for all schema types
- */
-key: KeyConfig | null, 
-/**
- * Collection of fields with their definitions and configurations
- */
-fields: Record<string, any>, 
-/**
- * SHA256 hash of the schema content for integrity verification
- */
-hash: string | null, };
-
-/**
- * Represents the schema-level type information.
- */
-export type SchemaType = "Single" | { "Range": { keyconfig: KeyConfig, } } | { "HashRange": { keyconfig: KeyConfig, } };
