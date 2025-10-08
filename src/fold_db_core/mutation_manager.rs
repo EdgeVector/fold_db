@@ -48,6 +48,9 @@ impl MutationManager {
     pub fn write_mutation(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
         let start_time = std::time::Instant::now();
         
+        // Capture backfill_hash before mutation is consumed
+        let backfill_hash = mutation.backfill_hash.clone();
+        
         // Get the schema definition
         let mut schema = self.schema_manager.get_schema(&mutation.schema_name)?
             .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name)))?;
@@ -84,6 +87,7 @@ impl MutationManager {
             key_value: Some(key_value.clone()),
             mutation_hash: Some(mutation_id.clone()),
             incremental: true,
+            backfill_hash: backfill_hash.clone(), // Preserve backfill_hash from mutation
         });
         
         // Publish MutationExecuted event to trigger transforms
@@ -126,8 +130,18 @@ impl MutationManager {
             while is_listening.load(std::sync::atomic::Ordering::Acquire) {
                 match consumer.try_recv() {
                     Ok(mutation_request) => {
+                        let backfill_hash = mutation_request.mutation.backfill_hash.clone();
                         if let Err(e) = Self::handle_mutation_request_event(&mutation_request, &db_ops, &schema_manager, &message_bus) {
                             error!("MutationManager failed to handle mutation request: {}", e);
+                            
+                            // If this was part of a backfill, publish a failure event
+                            if let Some(hash) = backfill_hash {
+                                let fail_event = crate::fold_db_core::infrastructure::message_bus::request_events::BackfillMutationFailed {
+                                    backfill_hash: hash,
+                                    error: e.to_string(),
+                                };
+                                let _ = message_bus.publish(fail_event);
+                            }
                         }
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -162,7 +176,6 @@ impl MutationManager {
         message_bus: &MessageBus,
     ) -> Result<(), SchemaError> {
         let start_time = std::time::Instant::now();
-        
 
         // Get the schema definition
         let mut schema = schema_manager.get_schema(&mutation_request.mutation.schema_name)?
@@ -200,6 +213,7 @@ impl MutationManager {
             key_value: Some(key_value.clone()),
             mutation_hash: Some(mutation_id.clone()),
             incremental: true,
+            backfill_hash: mutation_request.mutation.backfill_hash.clone(), // Pass through backfill_hash
         });
         
         // Publish MutationExecuted event to trigger transforms

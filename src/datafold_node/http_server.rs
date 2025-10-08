@@ -144,6 +144,8 @@ impl DataFoldHttpServer {
                             "/schema/{name}/block",
                             web::post().to(schema_routes::block_schema),
                         )
+                        // Backfill endpoints
+                        .route("/backfill/{hash}", web::get().to(schema_routes::get_backfill_status))
                         .route("/query", web::post().to(query_routes::execute_query))
                         .route("/mutation", web::post().to(query_routes::execute_mutation))
                         // Ingestion endpoints
@@ -189,6 +191,10 @@ impl DataFoldHttpServer {
                         .route(
                             "/transforms/backfills/active",
                             web::get().to(query_routes::get_active_backfills),
+                        )
+                        .route(
+                            "/transforms/backfills/statistics",
+                            web::get().to(query_routes::get_backfill_statistics),
                         )
                         .route(
                             "/transforms/backfills/{id}",

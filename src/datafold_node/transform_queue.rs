@@ -47,13 +47,22 @@ impl DataFoldNode {
         Ok(db.get_active_backfills())
     }
 
-    /// Get specific backfill info
+    /// Get specific backfill info by transform ID
     pub fn get_backfill(&self, transform_id: &str) -> FoldDbResult<Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>> {
         let db = self
             .db
             .lock()
             .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
         Ok(db.get_backfill(transform_id))
+    }
+
+    /// Get specific backfill info by backfill hash
+    pub fn get_backfill_by_hash(&self, hash: &str) -> FoldDbResult<Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>> {
+        let db = self
+            .db
+            .lock()
+            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+        Ok(db.get_backfill_tracker().get_backfill_by_hash(hash))
     }
 
     /// Get event statistics

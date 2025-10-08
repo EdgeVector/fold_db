@@ -17,6 +17,7 @@ use utoipa::OpenApi;
         crate::datafold_node::query_routes::get_active_backfills,
         crate::datafold_node::query_routes::get_backfill,
         crate::datafold_node::query_routes::get_transform_statistics,
+        crate::datafold_node::query_routes::get_backfill_statistics,
         crate::datafold_node::security_routes::get_system_public_key,
         crate::datafold_node::system_routes::get_system_status,
         crate::datafold_node::system_routes::get_node_private_key,

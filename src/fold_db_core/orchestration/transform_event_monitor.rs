@@ -47,6 +47,7 @@ impl TransformEventMonitor {
         let mut mutation_executed_consumer = message_bus.subscribe::<crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted>();
         let mut triggered_consumer = message_bus.subscribe::<TransformTriggered>();
         let mut registration_consumer = message_bus.subscribe::<TransformRegistrationRequest>();
+        let manager_clone = Arc::clone(&manager);
         thread::spawn(move || {
             info!("TransformEventMonitor: Starting unified monitoring of MutationExecuted and TransformTriggered events");
 
@@ -54,7 +55,7 @@ impl TransformEventMonitor {
                 // Check MutationExecuted events - trigger transforms after mutation completion
                 if let Ok(event) = mutation_executed_consumer.try_recv() {
                     if let Err(e) =
-                        Self::handle_mutation_executed_event(&event, &manager, &message_bus)
+                        Self::handle_mutation_executed_event(&event, &manager_clone, &message_bus)
                     {
                         error!("Error handling mutation executed event: {}", e);
                     }
@@ -63,7 +64,7 @@ impl TransformEventMonitor {
                 // Check TransformTriggered events
                 if let Ok(event) = triggered_consumer.try_recv() {
                     if let Err(e) =
-                        Self::handle_transform_triggered_event(&event, &manager, &message_bus)
+                        Self::handle_transform_triggered_event(&event, &manager_clone, &message_bus)
                     {
                         error!("Error handling TransformTriggered event: {}", e);
                     }
@@ -72,7 +73,7 @@ impl TransformEventMonitor {
                 // Check TransformRegistrationRequest events
                 if let Ok(event) = registration_consumer.try_recv() {
                     if let Err(e) =
-                        Self::handle_transform_registration_request_event(&event, &manager, &message_bus)
+                        Self::handle_transform_registration_request_event(&event, &manager_clone, &message_bus)
                     {
                         error!("Error handling TransformRegistrationRequest event: {}", e);
                     }
@@ -160,6 +161,7 @@ impl TransformEventMonitor {
         }
         Self::add_transforms_to_queue(
             &unique_transform_ids,
+            manager,
             message_bus,
             &event.mutation_context,
         )?;
@@ -169,15 +171,29 @@ impl TransformEventMonitor {
 
     /// REMOVED: add_transforms_to_queue - TransformEventMonitor should not manage persistence directly
     /// This responsibility belongs to PersistenceManager through TransformOrchestrator
+    /// 
+    /// Filter out unapproved transforms before publishing TransformTriggered events
     fn add_transforms_to_queue(
         transform_ids: &std::collections::HashSet<String>,
+        manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
         mutation_context: &Option<
             crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
         >,
     ) -> Result<(), SchemaError> {
-        // Publish TransformTriggered events for each discovered transform
+        use crate::schema::SchemaState;
+        
+        // Publish TransformTriggered events only for approved transforms
         for transform_id in transform_ids {
+            // Check if the transform's schema is approved before publishing event
+            let schema_state = manager.get_schema_state(transform_id)?
+                .unwrap_or(SchemaState::Available);
+            
+            if schema_state != SchemaState::Approved {
+                // Skip unapproved transforms - don't emit TransformTriggered event
+                continue;
+            }
+            
             let triggered_event = if let Some(ref context) = mutation_context {
                 if context.incremental {
                     TransformTriggered::with_context(transform_id.clone(), context.clone())

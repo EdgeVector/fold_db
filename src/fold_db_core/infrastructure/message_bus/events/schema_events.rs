@@ -114,6 +114,8 @@ impl EventType for TransformRegistered {
 pub struct SchemaApproved {
     /// The schema name that was approved
     pub schema_name: String,
+    /// Optional unique hash for tracking the backfill operation (only for transform schemas)
+    pub backfill_hash: Option<String>,
 }
 
 impl EventType for SchemaApproved {

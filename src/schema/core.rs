@@ -76,6 +76,10 @@ impl SchemaCore {
     }
 
     pub fn set_schema_state(&self, schema_name: &str, schema_state: SchemaState) -> Result<(), SchemaError> {
+        self.set_schema_state_with_backfill(schema_name, schema_state, None)
+    }
+
+    pub fn set_schema_state_with_backfill(&self, schema_name: &str, schema_state: SchemaState, backfill_hash: Option<String>) -> Result<(), SchemaError> {
         // Persist to database first - this is the source of truth
         self.db_ops.store_schema_state(schema_name, schema_state)?;
         
@@ -87,6 +91,7 @@ impl SchemaCore {
             use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
             let event = SchemaApproved {
                 schema_name: schema_name.to_string(),
+                backfill_hash,
             };
             self.message_bus.publish(event)
                 .map_err(|e| SchemaError::InvalidData(format!("Failed to publish SchemaApproved event: {}", e)))?;

@@ -11,6 +11,7 @@ use crate::transform::chain_parser::ParsedChain;
 use crate::transform::shared_utilities::parse_expressions_batch;
 use crate::fold_db_core::query::formatter::Record;
 use crate::transform::result_types::ExecutionResult;
+use std::sync::Arc;
 
 
 impl TransformRunner for super::TransformManager {
@@ -24,18 +25,6 @@ impl TransformRunner for super::TransformManager {
             crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
         >,
     ) -> Result<TransformResult, SchemaError> {
-        // Check if the target schema is in Approved state before running transform
-        use crate::schema::SchemaState;
-        let schema_state = self.db_ops.get_schema_state(transform_id)?
-            .unwrap_or(SchemaState::Available);
-        
-        if schema_state != SchemaState::Approved {
-            return Err(SchemaError::InvalidData(
-                format!("Transform '{}' cannot run: target schema is not approved (current state: {:?})", 
-                    transform_id, schema_state)
-            ));
-        }
-        
         // Load the transform from in-memory registered transforms
         let transforms = self.registered_transforms.read()
             .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
@@ -78,6 +67,27 @@ impl TransformRunner for super::TransformManager {
         // Store each result row as a separate mutation
         let field_to_hash_code = schema.get_field_to_hash_code();
         
+        // Extract backfill_hash from mutation_context if present
+        let backfill_hash = mutation_context.as_ref()
+            .and_then(|ctx| ctx.backfill_hash.clone());
+
+        // If we're running a backfill with fan-out, announce the expected mutation count
+        if let Some(ref hash) = backfill_hash {
+            let expected = records.len() as u64;
+            log::info!(
+                "📣 Emitting BackfillExpectedMutations for '{}' with count {}",
+                hash, expected
+            );
+            let evt = crate::fold_db_core::infrastructure::message_bus::events::request_events::BackfillExpectedMutations {
+                transform_id: transform_id.to_string(),
+                backfill_hash: hash.clone(),
+                count: expected,
+            };
+            // Best-effort publish; upstream handles zero-subscriber case
+            let _ = self.message_bus.publish(evt);
+        }
+        
+        log::info!("🧭 TransformRunner using MessageBus at {:p}", Arc::as_ptr(&self.message_bus));
         for record in &records {
             // For storage, we need to create a key - using the first field's key or a default
             let key_config = schema.key.clone();
@@ -92,12 +102,13 @@ impl TransformRunner for super::TransformManager {
                 }
             }
             
-            // Store this row as a mutation
+            // Store this row as a mutation with backfill_hash if present
             ResultStorage::store_transform_result_generic(
                 &transform,
                 code_hash_to_result,
                 row_key,
-                Some(&self.message_bus)
+                Some(&self.message_bus),
+                backfill_hash.clone(),
             )?;
         }
 

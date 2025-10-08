@@ -465,3 +465,33 @@ impl EventType for MutationRequest {
         "MutationRequest"
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BackfillExpectedMutations {
+    /// The transform/schema id producing mutations (e.g., BlogPostWordIndex)
+    pub transform_id: String,
+    /// Unique backfill hash for this run
+    pub backfill_hash: String,
+    /// Total number of mutations expected to be emitted for this backfill
+    pub count: u64,
+}
+
+impl EventType for BackfillExpectedMutations {
+    fn type_id() -> &'static str {
+        "BackfillExpectedMutations"
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BackfillMutationFailed {
+    /// Unique backfill hash for this run
+    pub backfill_hash: String,
+    /// Error message
+    pub error: String,
+}
+
+impl EventType for BackfillMutationFailed {
+    fn type_id() -> &'static str {
+        "BackfillMutationFailed"
+    }
+}

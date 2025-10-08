@@ -33,6 +33,7 @@ export const API_ENDPOINTS_DERIVED = {
   LIST_TRANSFORMS: '/transforms',
   GET_ALL_BACKFILLS: '/transforms/backfills',
   GET_ACTIVE_BACKFILLS: '/transforms/backfills/active',
+  GET_BACKFILL_STATISTICS: '/transforms/backfills/statistics',
   GET_BACKFILL: (id: PathParams<'/api/transforms/backfills/{id}', 'get'>['id']) => `/transforms/backfills/${id}`,
   GET_TRANSFORM_QUEUE: '/transforms/queue',
   ADD_TO_TRANSFORM_QUEUE: (id: PathParams<'/api/transforms/queue/{id}', 'post'>['id']) => `/transforms/queue/${id}`,

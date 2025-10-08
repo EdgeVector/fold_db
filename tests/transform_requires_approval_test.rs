@@ -6,7 +6,8 @@ use serde_json::json;
 use tempfile::TempDir;
 use std::time::Duration;
 
-/// Test to verify that transforms DO NOT execute when target schema is not approved
+/// Test to verify that TransformTriggered events are NOT emitted for unapproved transforms
+/// This is an optimization that prevents unnecessary event traffic and execution attempts
 #[test]
 fn test_transform_requires_approval_to_execute() {
     // Create a temporary directory for this test
@@ -135,26 +136,22 @@ fn test_transform_requires_approval_to_execute() {
     println!("📋 Triggered transforms: {:?}", triggered_transform_ids);
     println!("📋 Executed transforms: {:?}", executed_results);
     
-    // The transform should be triggered (added to queue)
+    // The transform should NOT be triggered - filtered out before event emission
     assert!(
-        triggered_transform_ids.contains(&"BlogPostWordIndex".to_string()),
-        "Transform should be triggered for unapproved schema"
+        !triggered_transform_ids.contains(&"BlogPostWordIndex".to_string()),
+        "Transform should NOT be triggered for unapproved schema (filtered before event emission)"
     );
     
-    // But execution should FAIL because schema is not approved
+    // And NO execution should occur
     let blogpost_word_index_execution = executed_results.iter()
         .find(|(id, _)| id == "BlogPostWordIndex");
     
-    if let Some((_, result)) = blogpost_word_index_execution {
-        // The result should contain an error message about the schema not being approved
-        assert!(
-            result.contains("not approved") || result.contains("error"),
-            "Transform execution should fail with approval error, got: {}", result
-        );
-        println!("✅ Transform execution correctly failed: {}", result);
-    } else {
-        panic!("Transform should have been executed (even if it failed)");
-    }
+    assert!(
+        blogpost_word_index_execution.is_none(),
+        "Transform should NOT be executed for unapproved schema"
+    );
+    
+    println!("✅ Transform correctly filtered - no TransformTriggered or TransformExecuted events emitted");
 }
 
 /// Test to verify that transforms DO execute when target schema IS approved

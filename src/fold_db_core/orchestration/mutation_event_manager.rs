@@ -129,6 +129,7 @@ impl MutationEventManager {
             key_value: Some(mutation_request.mutation.key_value.clone()),
             mutation_hash: Some(mutation_request.mutation.uuid.clone()),
             incremental: true,
+            backfill_hash: mutation_request.mutation.backfill_hash.clone(),
         });
         
         // Emit a MutationExecuted event for the completed mutation

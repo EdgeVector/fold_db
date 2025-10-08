@@ -210,6 +210,9 @@ export interface SchemaOperationSuccessPayload {
   
   /** Updated schema data */
   updatedSchema?: Partial<Schema>;
+  
+  /** Unique backfill hash for tracking (when applicable) */
+  backfillHash?: string;
 }
 
 /**

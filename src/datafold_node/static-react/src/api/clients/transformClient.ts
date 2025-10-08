@@ -7,6 +7,29 @@
 import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import type { EnhancedApiResponse } from '../core/types';
+// Import generated types from Rust (using re-export from types/generated)
+import type { BackfillInfo as RustBackfillInfo, BackfillStatus } from '../../types/generated';
+
+// Type adapter: Convert Rust's bigint fields to JavaScript numbers for UI consumption
+// The Rust u64 fields become bigint in TypeScript, but we convert them to numbers in the API layer
+export interface BackfillInfo {
+  backfill_hash: string;
+  transform_id: string;
+  source_schema: string;
+  status: BackfillStatus;
+  items_processed: number;
+  items_total: number | null;
+  start_time: number;
+  end_time: number | null;
+  error: string | null;
+  records_produced: number;
+  mutations_expected: number;
+  mutations_completed: number;
+  mutations_failed: number;
+}
+
+// Re-export BackfillStatus directly
+export type { BackfillStatus };
 
 // Transform-specific response types
 export interface Transform {
@@ -48,20 +71,6 @@ export interface AddToQueueResponse {
   estimatedWaitTime?: number;
 }
 
-export type BackfillStatus = 'InProgress' | 'Completed' | 'Failed';
-
-export interface BackfillInfo {
-  transform_id: string;
-  source_schema: string;
-  status: BackfillStatus;
-  items_processed: number;
-  items_total?: number;
-  start_time: number;
-  end_time?: number;
-  error?: string;
-  records_produced: number;
-}
-
 export interface TransformStatistics {
   field_value_sets: number;
   atom_creations: number;
@@ -79,6 +88,17 @@ export interface TransformStatistics {
   mutation_executions: number;
   total_events: number;
   monitoring_start_time: number;
+}
+
+export interface BackfillStatistics {
+  total_backfills: number;
+  active_backfills: number;
+  completed_backfills: number;
+  failed_backfills: number;
+  total_mutations_expected: number;
+  total_mutations_completed: number;
+  total_mutations_failed: number;
+  total_records_produced: number;
 }
 
 /**
@@ -222,6 +242,21 @@ export class UnifiedTransformClient {
    */
   async getStatistics(): Promise<EnhancedApiResponse<TransformStatistics>> {
     return this.client.get<TransformStatistics>(API_ENDPOINTS.GET_TRANSFORM_STATISTICS, {
+      requiresAuth: false,
+      timeout: 5000,
+      retries: 2,
+      cacheable: false
+    });
+  }
+
+  /**
+   * Get backfill-specific statistics aggregated from all backfills
+   * UNPROTECTED - No authentication required for backfill monitoring
+   * 
+   * @returns Promise resolving to backfill statistics
+   */
+  async getBackfillStatistics(): Promise<EnhancedApiResponse<BackfillStatistics>> {
+    return this.client.get<BackfillStatistics>(API_ENDPOINTS.GET_BACKFILL_STATISTICS, {
       requiresAuth: false,
       timeout: 5000,
       retries: 2,

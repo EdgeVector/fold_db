@@ -36,6 +36,7 @@ impl TransformManager {
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
+        log::info!("🧭 TransformManager::new using MessageBus at {:p}", Arc::as_ptr(&message_bus));
         // Load persisted state from storage by syncing with empty in-memory state
         let empty_transforms = HashMap::new();
         let empty_mappings = BTreeMap::new();
@@ -67,6 +68,11 @@ impl TransformManager {
         let transforms = self.registered_transforms.read()
             .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
         Ok(transforms.contains_key(transform_id))
+    }
+
+    /// Get the schema state for a given schema/transform
+    pub fn get_schema_state(&self, schema_name: &str) -> Result<Option<crate::schema::SchemaState>, SchemaError> {
+        self.db_ops.get_schema_state(schema_name)
     }
 
     /// Gets all transforms that should run when the specified field is updated.

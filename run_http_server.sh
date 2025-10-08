@@ -26,12 +26,25 @@ reset_db() {
     echo "Database reset complete."
 }
 
+# Optionally start with an empty database directory
+empty_db() {
+    echo "Initializing empty database directory..."
+    rm -rf data
+    mkdir -p data
+    echo "Empty database directory ready."
+}
+
 # Parse flags
 RESET_DB=false
+EMPTY_DB=false
 for arg in "$@"; do
     case "$arg" in
         --reset-db)
             RESET_DB=true
+            shift
+            ;;
+        --empty-db)
+            EMPTY_DB=true
             shift
             ;;
         *)
@@ -45,6 +58,10 @@ cleanup_locks
 # Reset DB if requested
 if [ "$RESET_DB" = true ]; then
     reset_db
+fi
+
+if [ "$EMPTY_DB" = true ]; then
+    empty_db
 fi
 
 # Build the Rust project first (needed to generate OpenAPI spec)
