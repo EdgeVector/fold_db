@@ -69,11 +69,15 @@ def create_blog_post_via_curl(title, content, author, publish_date, tags):
         
         if result.returncode == 0:
             response = json.loads(result.stdout)
-            if response.get("data") or response.get("success"):
+            # API now returns true for success, or an error object
+            if response is True or (isinstance(response, dict) and response.get("success")):
                 print(f"✅ Created: {title}")
                 return True
+            elif isinstance(response, dict) and "error" in response:
+                print(f"❌ Failed to create '{title}': {response['error']}")
+                return False
             else:
-                print(f"❌ Failed to create '{title}': {response.get('error', 'Unknown error')}")
+                print(f"❌ Unexpected response for '{title}': {response}")
                 return False
         else:
             print(f"❌ Curl command failed for '{title}': {result.stderr}")
@@ -82,8 +86,9 @@ def create_blog_post_via_curl(title, content, author, publish_date, tags):
     except subprocess.TimeoutExpired:
         print(f"❌ Timeout creating '{title}'")
         return False
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         print(f"❌ Invalid JSON response for '{title}': {result.stdout}")
+        print(f"   Parse error: {e}")
         return False
     except Exception as e:
         print(f"❌ Error creating '{title}': {e}")
@@ -216,12 +221,15 @@ def query_blog_posts_via_curl():
         
         if result.returncode == 0:
             response = json.loads(result.stdout)
-            # Check for 'data' field in response
-            if response.get("data"):
-                return response.get("data")
-            else:
-                print(f"❌ Query failed: {response.get('error', 'Unknown error')}")
+            # API now returns data directly as an array, not wrapped in {"data": ...}
+            if isinstance(response, list):
+                return response
+            elif isinstance(response, dict) and "error" in response:
+                print(f"❌ Query failed: {response['error']}")
                 return None
+            else:
+                # Still return the response - might be a dict format for hash->range->fields
+                return response
         else:
             print(f"❌ Curl query command failed: {result.stderr}")
             return None
@@ -229,8 +237,9 @@ def query_blog_posts_via_curl():
     except subprocess.TimeoutExpired:
         print("❌ Query timeout")
         return None
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         print(f"❌ Invalid JSON response: {result.stdout}")
+        print(f"   Parse error: {e}")
         return None
     except Exception as e:
         print(f"❌ Error querying blog posts: {e}")
