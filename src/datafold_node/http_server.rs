@@ -1,4 +1,5 @@
 use super::log_routes;
+use super::llm_query;
 use super::{query_routes, schema_routes, security_routes, system_routes};
 use crate::datafold_node::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
@@ -105,6 +106,9 @@ impl DataFoldHttpServer {
             node: self.node.clone(),
         });
 
+        // Create LLM query state (gracefully handles missing configuration)
+        let llm_query_state = web::Data::new(llm_query::LlmQueryState::new());
+
         // Start the HTTP server
         let server = ActixHttpServer::new(move || {
             // Create CORS middleware
@@ -121,6 +125,7 @@ impl DataFoldHttpServer {
             App::new()
                 .wrap(cors)
                 .app_data(app_state.clone())
+                .app_data(llm_query_state.clone())
                 .app_data(json_config)
                 .service(
                     web::scope("/api")
@@ -233,6 +238,23 @@ impl DataFoldHttpServer {
                         .route(
                             "/system/reset-database",
                             web::post().to(system_routes::reset_database),
+                        )
+                        // LLM Query endpoints
+                        .route(
+                            "/llm-query/analyze",
+                            web::post().to(llm_query::analyze_query),
+                        )
+                        .route(
+                            "/llm-query/execute",
+                            web::post().to(llm_query::execute_query_plan),
+                        )
+                        .route(
+                            "/llm-query/chat",
+                            web::post().to(llm_query::chat),
+                        )
+                        .route(
+                            "/llm-query/backfill/{hash}",
+                            web::get().to(llm_query::get_backfill_status),
                         )
                         // Security endpoints
                         .service(

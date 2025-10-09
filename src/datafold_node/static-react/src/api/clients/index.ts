@@ -76,6 +76,9 @@ export {
   createIngestionRequest
 } from './ingestionClient';
 
+// LLM Query Client
+export { llmQueryClient } from './llmQueryClient';
+
 // Type exports for convenience
 export type {
   SchemasByStateResponse,

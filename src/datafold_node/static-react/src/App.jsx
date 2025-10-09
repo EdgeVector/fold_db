@@ -8,6 +8,7 @@ import ResultsSection from './components/ResultsSection'
 import TabNavigation from './components/TabNavigation'
 import SchemaTab from './components/tabs/SchemaTab'
 import QueryTab from './components/tabs/QueryTab'
+import LlmQueryTab from './components/tabs/LlmQueryTab'
 import MutationTab from './components/tabs/MutationTab'
 import TransformsTab from './components/tabs/TransformsTab'
 import SchemaDependenciesTab from './components/tabs/SchemaDependenciesTab'
@@ -74,6 +75,8 @@ export function AppContent() {
         )
       case 'query':
         return <QueryTab onResult={handleOperationResult} />
+      case 'llm-query':
+        return <LlmQueryTab onResult={handleOperationResult} />
       case 'mutation':
         return (
           <div className="tab-content">

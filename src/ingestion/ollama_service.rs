@@ -202,7 +202,7 @@ impl OllamaService {
     }
 
     /// Call the Ollama API
-    async fn call_ollama_api(&self, prompt: &str) -> IngestionResult<String> {
+    pub async fn call_ollama_api(&self, prompt: &str) -> IngestionResult<String> {
         let request = OllamaRequest {
             model: self.config.model.clone(),
             prompt: prompt.to_string(),

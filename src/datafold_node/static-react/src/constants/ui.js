@@ -15,6 +15,7 @@ export const FORM_FIELD_DEBOUNCE_MS = 300;
 export const DEFAULT_TABS = [
   { id: 'schemas', label: 'Schemas', icon: '📊' },
   { id: 'query', label: 'Query', icon: '🔍' },
+  { id: 'llm-query', label: 'AI Query', icon: '🤖' },
   { id: 'mutation', label: 'Mutation', icon: '✏️' },
   { id: 'ingestion', label: 'Ingestion', icon: '📥' },
   { id: 'transforms', label: 'Transforms', icon: '🔄' },

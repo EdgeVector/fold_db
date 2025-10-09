@@ -227,7 +227,7 @@ impl OpenRouterService {
     }
 
     /// Call the OpenRouter API
-    async fn call_openrouter_api(&self, prompt: &str) -> IngestionResult<String> {
+    pub async fn call_openrouter_api(&self, prompt: &str) -> IngestionResult<String> {
         let request = OpenRouterRequest {
             model: self.config.model.clone(),
             messages: vec![OpenRouterMessage {
