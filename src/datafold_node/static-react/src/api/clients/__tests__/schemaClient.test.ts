@@ -22,8 +22,8 @@ describe('UnifiedSchemaClient', () => {
   });
 
   describe('getSchemas normalization', () => {
-    it('normalizes {data: [...]} to array', async () => {
-      (mockApi.get as any).mockResolvedValue({ success: true, data: { data: [{ name: 'A' }, { name: 'B' }] } });
+    it('handles direct array response', async () => {
+      (mockApi.get as any).mockResolvedValue({ success: true, data: [{ name: 'A' }, { name: 'B' }] });
       const res = await client.getSchemas();
       expect(res.success).toBe(true);
       expect(Array.isArray(res.data)).toBe(true);

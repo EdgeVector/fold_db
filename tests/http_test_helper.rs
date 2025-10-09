@@ -278,40 +278,33 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        if let Some(response_data) = data.get("data") {
-                            let available_loaded = response_data.get("available_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let data_loaded = response_data.get("data_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let total_loaded = available_loaded + data_loaded;
+                        let available_loaded = data.get("available_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let data_loaded = data.get("data_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let total_loaded = available_loaded + data_loaded;
 
-                            // Schemas loaded successfully
-
-                            if total_loaded == 0 {
-                                results.add_fail("Load schemas", "No schemas were loaded");
-                                return false;
-                            }
-
+                        if total_loaded == 0 {
+                            results.add_fail("Load schemas", "No schemas were loaded");
+                            false
+                        } else {
                             results.add_pass("Load schemas");
-                            return true;
+                            true
                         }
                     }
                     Err(e) => {
                         results.add_fail("Load schemas", &format!("Failed to parse response: {}", e));
-                        return false;
+                        false
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail("Load schemas", &format!("Expected status 200, got {}", response.status()));
-                return false;
+                false
             }
             Err(e) => {
                 results.add_fail("Load schemas", &format!("Request failed: {}", e));
-                return false;
+                false
             }
         }
-
-        results.add_fail("Load schemas", "Invalid response format");
-        false
     }
 
     /// Verify that expected schemas are available
@@ -332,7 +325,7 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        if let Some(schemas_data) = data.get("data").and_then(|d| d.as_array()) {
+                        if let Some(schemas_data) = data.as_array() {
                             // Discovered schemas in database
 
                             // Extract schema names from the list
@@ -343,61 +336,61 @@ impl HttpTestHelper {
                                 }
                             }
 
-                            // Verify each expected schema is present
-                            let mut all_found = true;
-                            for expected_name in expected_schemas {
-                                if discovered_schema_names.contains(expected_name) {
-                                    // Find the schema object to get field count
-                                    if let Some(schema_obj) = schemas_data.iter()
-                                        .find(|s| s.get("name").and_then(|n| n.as_str()) == Some(expected_name))
-                                    {
-                                        if let Some(fields) = schema_obj.get("fields").and_then(|f| f.as_object()) {
-                                            let _field_count = fields.len();
-                                            // Schema found with fields
-                                        } else {
-                                            // Schema found and loaded
-                                        }
+                        // Verify each expected schema is present
+                        let mut all_found = true;
+                        for expected_name in expected_schemas {
+                            if discovered_schema_names.contains(expected_name) {
+                                // Find the schema object to get field count
+                                if let Some(schema_obj) = schemas_data.iter()
+                                    .find(|s| s.get("name").and_then(|n| n.as_str()) == Some(expected_name))
+                                {
+                                    if let Some(fields) = schema_obj.get("fields").and_then(|f| f.as_object()) {
+                                        let _field_count = fields.len();
+                                        // Schema found with fields
+                                    } else {
+                                        // Schema found and loaded
                                     }
-                                } else {
-                                    // Schema not found
-                                    results.add_fail("Verify schemas available", 
-                                        &format!("Schema '{}' not found in API response", expected_name));
-                                    all_found = false;
                                 }
+                            } else {
+                                // Schema not found
+                                results.add_fail("Verify schemas available", 
+                                    &format!("Schema '{}' not found in API response", expected_name));
+                                all_found = false;
                             }
-
-                            if !all_found {
-                                println!("\n  Discovered schemas: {}", discovered_schema_names.join(", "));
-                                let missing: Vec<String> = expected_schemas.iter()
-                                    .filter(|s| !discovered_schema_names.contains(s))
-                                    .cloned()
-                                    .collect();
-                                println!("  Missing schemas: {}", missing.join(", "));
-                                return false;
-                            }
-
-                            results.add_pass("Verify schemas available");
-                            return true;
                         }
+
+                        if !all_found {
+                            println!("\n  Discovered schemas: {}", discovered_schema_names.join(", "));
+                            let missing: Vec<String> = expected_schemas.iter()
+                                .filter(|s| !discovered_schema_names.contains(s))
+                                .cloned()
+                                .collect();
+                            println!("  Missing schemas: {}", missing.join(", "));
+                            return false;
+                        }
+
+                        results.add_pass("Verify schemas available");
+                        true
+                    } else {
+                        results.add_fail("Verify schemas available", "Invalid response format");
+                        false
+                    }
                     }
                     Err(e) => {
                         results.add_fail("Verify schemas available", &format!("Failed to parse response: {}", e));
-                        return false;
+                        false
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail("Verify schemas available", &format!("Expected status 200, got {}", response.status()));
-                return false;
+                false
             }
             Err(e) => {
                 results.add_fail("Verify schemas available", &format!("Request failed: {}", e));
-                return false;
+                false
             }
         }
-
-        results.add_fail("Verify schemas available", "Invalid response format");
-        false
     }
 
     /// Approve a schema by name
@@ -412,36 +405,38 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        if data.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
-                            println!("  {} schema approved successfully", schema_name);
-                            
-                            // Check if a backfill hash was returned (for transform schemas)
-                            if let Some(hash) = data.get("backfill_hash").and_then(|h| h.as_str()) {
-                                println!("  🔄 Backfill hash: {}", hash);
-                            }
-                            
-                            results.add_pass(&format!("Approve {} schema", schema_name));
-                            return true;
+                        // Response is now either a string (backfill hash) or null
+                        // Check for error field to determine failure
+                        if data.get("error").is_some() {
+                            results.add_fail(&format!("Approve {} schema", schema_name), "Schema approval failed");
+                            return false;
                         }
+                        
+                        println!("  {} schema approved successfully", schema_name);
+                        
+                        // Check if a backfill hash was returned (for transform schemas)
+                        if let Some(hash) = data.as_str() {
+                            println!("  🔄 Backfill hash: {}", hash);
+                        }
+                        
+                        results.add_pass(&format!("Approve {} schema", schema_name));
+                        true
                     }
                     Err(e) => {
                         results.add_fail(&format!("Approve {} schema", schema_name), &format!("Failed to parse response: {}", e));
-                        return false;
+                        false
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail(&format!("Approve {} schema", schema_name), &format!("Expected status 200, got {}", response.status()));
-                return false;
+                false
             }
             Err(e) => {
                 results.add_fail(&format!("Approve {} schema", schema_name), &format!("Request failed: {}", e));
-                return false;
+                false
             }
         }
-
-        results.add_fail(&format!("Approve {} schema", schema_name), "Schema approval failed");
-        false
     }
 
     /// Approve a schema and return the backfill hash if present (for transform schemas)
@@ -457,39 +452,41 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        if data.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
-                            println!("  {} schema approved successfully", schema_name);
-                            
-                            // Extract backfill hash if present
-                            if let Some(hash) = data.get("backfill_hash").and_then(|h| h.as_str()) {
-                                println!("  🔄 Backfill hash: {}", hash);
-                                results.add_pass(&format!("Approve {} schema with hash", schema_name));
-                                return Some(hash.to_string());
-                            } else {
-                                println!("  ℹ️  No backfill hash (not a transform schema)");
-                                results.add_pass(&format!("Approve {} schema", schema_name));
-                                return None;
-                            }
+                        // Response is now either a string (backfill hash) or null
+                        // Check for error field to determine failure
+                        if data.get("error").is_some() {
+                            results.add_fail(&format!("Approve {} schema with hash", schema_name), "Schema approval failed");
+                            return None;
+                        }
+                        
+                        println!("  {} schema approved successfully", schema_name);
+                        
+                        // Extract backfill hash if present (response is the hash string or null)
+                        if let Some(hash) = data.as_str() {
+                            println!("  🔄 Backfill hash: {}", hash);
+                            results.add_pass(&format!("Approve {} schema with hash", schema_name));
+                            Some(hash.to_string())
+                        } else {
+                            println!("  ℹ️  No backfill hash (not a transform schema)");
+                            results.add_pass(&format!("Approve {} schema", schema_name));
+                            None
                         }
                     }
                     Err(e) => {
                         results.add_fail(&format!("Approve {} schema with hash", schema_name), &format!("Failed to parse response: {}", e));
-                        return None;
+                        None
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail(&format!("Approve {} schema with hash", schema_name), &format!("Expected status 200, got {}", response.status()));
-                return None;
+                None
             }
             Err(e) => {
                 results.add_fail(&format!("Approve {} schema with hash", schema_name), &format!("Request failed: {}", e));
-                return None;
+                None
             }
         }
-
-        results.add_fail(&format!("Approve {} schema with hash", schema_name), "Schema approval failed");
-        None
     }
 
     /// Verify backfill completion by backfill hash
@@ -603,11 +600,10 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        // Check for success in the response data
-                        let is_success = data.get("success").and_then(|s| s.as_bool()).unwrap_or(false) ||
-                            data.get("data").is_some();
+                        // Check if response indicates an error
+                        let is_error = data.get("error").is_some();
 
-                        if is_success {
+                        if !is_error {
                             println!("  Mutation created successfully");
                             results.add_pass("Create blog post mutation");
                             Some(publish_date)
@@ -671,10 +667,10 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        let is_success = data.get("success").and_then(|s| s.as_bool()).unwrap_or(false) ||
-                            data.get("data").is_some();
-
-                        if is_success {
+                        // Check if response indicates success (either a boolean true or any successful data)
+                        let is_error = data.get("error").is_some();
+                        
+                        if !is_error {
                             println!("  Custom mutation created successfully");
                             results.add_pass("Create custom blog post mutation");
                             Some(publish_date.to_string())
@@ -722,10 +718,7 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        // Check response format - could be in 'data' or 'results' field
-                        let results_data = data.get("data").or_else(|| data.get("results"));
-
-                        if let Some(results_array) = results_data.and_then(|d| d.as_array()) {
+                        if let Some(results_array) = data.as_array() {
                             println!("  Query returned {} result(s)", results_array.len());
 
                             // Search for our test post in the returned data
@@ -811,9 +804,7 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        let results_data = data.get("data").or_else(|| data.get("results"));
-
-                        if let Some(results_array) = results_data.and_then(|d| d.as_array()) {
+                        if let Some(results_array) = data.as_array() {
                             println!("  Found {} transform results", results_array.len());
 
                             if results_array.is_empty() {
@@ -893,7 +884,7 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        if let Some(transforms) = data.get("data").and_then(|d| d.as_object()) {
+                        if let Some(transforms) = data.as_object() {
                             println!("  Found {} registered transforms", transforms.len());
 
                             let mut all_found = true;
@@ -1089,9 +1080,7 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        let results_data = data.get("data").or_else(|| data.get("results"));
-
-                        if let Some(results_array) = results_data.and_then(|d| d.as_array()) {
+                        if let Some(results_array) = data.as_array() {
                             println!("  Found {} word index entries", results_array.len());
 
                             if results_array.is_empty() {
@@ -1136,7 +1125,7 @@ impl HttpTestHelper {
                                 results.add_pass("Verify word index results");
                                 true
                             } else {
-                                results.add_fail("Verify word index results", "Some expected words not found");
+                                results.add_fail("Verify word index results", "Not all expected words were found");
                                 false
                             }
                         } else {

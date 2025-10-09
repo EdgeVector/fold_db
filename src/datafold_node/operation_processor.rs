@@ -1,12 +1,12 @@
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::{Mutation, Query, KeyValue};
-use crate::schema::types::field::FieldValue;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::schema::types::operations::MutationType;
 use super::DataFoldNode;
+use super::response_types::QueryResultMap;
 
 /// Centralized operation processor that handles all operation types consistently.
 /// 
@@ -22,13 +22,11 @@ impl OperationProcessor {
         Self { node }
     }
 
-    // Removed generic execute path in favor of explicit query/mutation methods
-
     /// Executes a query and returns raw structured results, not JSON.
     pub async fn execute_query_map(
         &self,
         query: Query,
-    ) -> FoldDbResult<std::collections::HashMap<String, std::collections::HashMap<KeyValue, FieldValue>>> {
+    ) -> FoldDbResult<QueryResultMap> {
         let node_guard = self.node.lock().await;
         let results = DataFoldNode::query(&node_guard, query)?;
         Ok(results)
@@ -42,7 +40,6 @@ impl OperationProcessor {
         key_value: KeyValue,
         mutation_type: MutationType,
     ) -> FoldDbResult<Value> {
-        // Validate that fields_and_values is not empty
         if fields_and_values.is_empty() {
             return Err(FoldDbError::Config("No fields to mutate".to_string()));
         }
@@ -69,7 +66,7 @@ impl OperationProcessor {
         let node_guard = self.node.lock().await;
         node_guard.mutate(mutation)?;
 
-        Ok(serde_json::json!({ "success": true }))
+        Ok(serde_json::json!(true))
     }
 
 

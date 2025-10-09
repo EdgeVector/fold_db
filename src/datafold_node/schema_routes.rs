@@ -23,7 +23,7 @@ where
     path = "/api/schemas",
     tag = "schemas",
     responses(
-        (status = 200, description = "List of schemas"),
+        (status = 200, description = "Array of schemas with states"),
         (status = 500, description = "Server error")
     )
 )]
@@ -32,7 +32,7 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
     let result =
         with_schema_manager(&state, |db| db.schema_manager.get_schemas_with_states()).await;
     match result {
-        Ok(schemas) => HttpResponse::Ok().json(json!({"data": schemas})),
+        Ok(schemas) => HttpResponse::Ok().json(schemas),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to list schemas: {}", e)})),
     }
@@ -128,7 +128,6 @@ fn generate_backfill_hash_for_transform(
     ))
 }
 
-/// List schemas by specific state
 /// Approve a schema for queries and mutations
 #[utoipa::path(
     post,
@@ -137,7 +136,10 @@ fn generate_backfill_hash_for_transform(
     params(
         ("name" = String, Path, description = "Schema name")
     ),
-    responses((status = 200, description = "Approved"), (status = 500, description = "Server error"))
+    responses(
+        (status = 200, description = "Backfill hash if transform, null otherwise"),
+        (status = 500, description = "Server error")
+    )
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
@@ -164,13 +166,7 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
     }).await;
     
     match result {
-        Ok(backfill_hash) => {
-            let mut response = json!({"success": true});
-            if let Some(hash) = backfill_hash {
-                response["backfill_hash"] = json!(hash);
-            }
-            HttpResponse::Ok().json(response)
-        },
+        Ok(backfill_hash) => HttpResponse::Ok().json(backfill_hash),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to approve schema: {}", e)})),
     }
@@ -184,7 +180,10 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
     params(
         ("name" = String, Path, description = "Schema name")
     ),
-    responses((status = 200, description = "Blocked"), (status = 500, description = "Server error"))
+    responses(
+        (status = 200, description = "Success status"),
+        (status = 500, description = "Server error")
+    )
 )]
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
@@ -205,7 +204,7 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
         ("hash" = String, Path, description = "Backfill hash")
     ),
     responses(
-        (status = 200, description = "Backfill status"),
+        (status = 200, description = "Backfill information object"),
         (status = 404, description = "Backfill not found"),
         (status = 500, description = "Server error")
     )
@@ -221,7 +220,7 @@ pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppSt
     };
     
     match backfill_info {
-        Some(info) => HttpResponse::Ok().json(json!({"data": info})),
+        Some(info) => HttpResponse::Ok().json(info),
         None => HttpResponse::NotFound().json(json!({"error": "Backfill not found"})),
     }
 }
@@ -232,7 +231,7 @@ pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppSt
     path = "/api/schemas/load",
     tag = "schemas",
     responses(
-        (status = 200, description = "Load attempt summary"),
+        (status = 200, description = "Load counts for available and data schemas"),
         (status = 500, description = "Server error")
     )
 )]
@@ -261,16 +260,12 @@ pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
     match result {
         Ok((available_loaded, data_loaded)) => {
             HttpResponse::Ok().json(json!({
-                "data": {
-                    "available_schemas_loaded": available_loaded,
-                    "data_schemas_loaded": data_loaded
-                }
+                "available_schemas_loaded": available_loaded,
+                "data_schemas_loaded": data_loaded
             }))
         }
         Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "error": format!("Failed to load schemas: {}", e)
-            }))
+            HttpResponse::InternalServerError().json(json!({"error": format!("Failed to load schemas: {}", e)}))
         }
     }
 }

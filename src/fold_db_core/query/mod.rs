@@ -10,4 +10,4 @@ pub mod formatter;
 // Re-export main query functionality
 pub use hash_range_query::HashRangeQueryProcessor;
 pub use query_executor::QueryExecutor;
-pub use formatter::{format_hash_range_fields, records_from_field_map, Record};
+pub use formatter::{format_hash_range_fields, records_from_field_map, Record, QueryResultRecord};

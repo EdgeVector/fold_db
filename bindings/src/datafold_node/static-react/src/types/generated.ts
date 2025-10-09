@@ -13,9 +13,9 @@ backfill_hash: string,
  */
 transform_id: string, 
 /**
- * Source schema name
+ * Schema name
  */
-source_schema: string, 
+schema_name: string, 
 /**
  * Current status
  */
