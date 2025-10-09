@@ -1,6 +1,5 @@
 use super::http_server::AppState;
-use crate::schema::types::operations::Query;
-use crate::schema::types::operations::Operation;
+use crate::schema::types::operations::{Query, Operation};
 use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;
 use actix_web::{web, HttpResponse, Responder};
@@ -15,7 +14,7 @@ use std::sync::Arc;
     tag = "query",
     request_body = serde_json::Value,
     responses(
-        (status = 200, description = "Query result", body = serde_json::Value),
+        (status = 200, description = "Array of query result records"),
         (status = 400, description = "Bad request"),
         (status = 500, description = "Server error")
     )
@@ -24,15 +23,14 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
     let node_arc = Arc::clone(&state.node);
     let processor = OperationProcessor::new(node_arc);
 
-    match processor.execute_query_map(query.clone()).await {
+    match processor.execute_query_map(query.into_inner()).await {
         Ok(result_map) => {
-            // Return results as array of { key: KeyValue, fields: {...} }
             let records_map = records_from_field_map(&result_map);
             let data: Vec<Value> = records_map
                 .into_iter()
-                .map(|(key, record)| json!({ "key": key, "fields": record.fields }))
+                .map(|(key, record)| json!({"key": key, "fields": record.fields}))
                 .collect();
-            HttpResponse::Ok().json(json!({"data": data}))
+            HttpResponse::Ok().json(data)
         },
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to execute query: {}", e)})),
@@ -46,7 +44,7 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
     tag = "query",
     request_body = serde_json::Value,
     responses(
-        (status = 200, description = "Mutation result", body = serde_json::Value),
+        (status = 200, description = "Success boolean"),
         (status = 400, description = "Bad request"),
         (status = 500, description = "Server error")
     )
@@ -71,29 +69,27 @@ pub async fn execute_mutation(
         .execute_mutation(schema, fields_and_values, key_value, mutation_type)
         .await
     {
-        Ok(result) => HttpResponse::Ok().json(json!({"data": result})),
+        Ok(result) => HttpResponse::Ok().json(result),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to execute mutation: {}", e)})),
     }
 }
-
-// formatting is handled by fold_db_core::query::formatter
 
 #[utoipa::path(
     get,
     path = "/api/transforms",
     tag = "query",
     responses(
-        (status = 200, description = "Transforms list", body = serde_json::Value),
+        (status = 200, description = "Map of transform names to transform objects"),
         (status = 500, description = "Server error")
     )
 )]
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
     match node.list_transforms() {
-        Ok(map) => HttpResponse::Ok().json(json!({ "data": map })),
+        Ok(map) => HttpResponse::Ok().json(map),
         Err(e) => HttpResponse::InternalServerError()
-            .json(json!({ "error": format!("Failed to list transforms: {}", e) })),
+            .json(json!({"error": format!("Failed to list transforms: {}", e)})),
     }
 }
 
@@ -127,7 +123,7 @@ pub async fn add_to_transform_queue(
     path = "/api/transforms/queue",
     tag = "query",
     responses(
-        (status = 200, description = "Queue info", body = serde_json::Value),
+        (status = 200, description = "Transform queue information object"),
         (status = 500, description = "Server error")
     )
 )]
@@ -136,7 +132,7 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     match node.get_transform_queue_info() {
         Ok(info) => HttpResponse::Ok().json(info),
         Err(e) => HttpResponse::InternalServerError()
-            .json(json!({ "error": format!("Failed to get transform queue info: {}", e) })),
+            .json(json!({"error": format!("Failed to get transform queue info: {}", e)})),
     }
 }
 
@@ -145,7 +141,7 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     path = "/api/transforms/backfills",
     tag = "query",
     responses(
-        (status = 200, description = "All backfill information", body = Vec<serde_json::Value>),
+        (status = 200, description = "Array of all backfill information objects"),
         (status = 500, description = "Server error")
     )
 )]
@@ -154,7 +150,7 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
     match node.get_all_backfills() {
         Ok(backfills) => HttpResponse::Ok().json(backfills),
         Err(e) => HttpResponse::InternalServerError()
-            .json(json!({ "error": format!("Failed to get backfills: {}", e) })),
+            .json(json!({"error": format!("Failed to get backfills: {}", e)})),
     }
 }
 
@@ -163,7 +159,7 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
     path = "/api/transforms/backfills/active",
     tag = "query",
     responses(
-        (status = 200, description = "Active backfill information", body = Vec<serde_json::Value>),
+        (status = 200, description = "Array of active backfill information objects"),
         (status = 500, description = "Server error")
     )
 )]
@@ -172,7 +168,7 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
     match node.get_active_backfills() {
         Ok(backfills) => HttpResponse::Ok().json(backfills),
         Err(e) => HttpResponse::InternalServerError()
-            .json(json!({ "error": format!("Failed to get active backfills: {}", e) })),
+            .json(json!({"error": format!("Failed to get active backfills: {}", e)})),
     }
 }
 
@@ -184,7 +180,7 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
         ("id" = String, Path, description = "Transform ID")
     ),
     responses(
-        (status = 200, description = "Backfill information", body = serde_json::Value),
+        (status = 200, description = "Backfill information object"),
         (status = 404, description = "Backfill not found"),
         (status = 500, description = "Server error")
     )
@@ -199,9 +195,9 @@ pub async fn get_backfill(
     match node.get_backfill(&transform_id) {
         Ok(Some(backfill)) => HttpResponse::Ok().json(backfill),
         Ok(None) => HttpResponse::NotFound()
-            .json(json!({ "error": format!("Backfill not found for transform: {}", transform_id) })),
+            .json(json!({"error": format!("Backfill not found for transform: {}", transform_id)})),
         Err(e) => HttpResponse::InternalServerError()
-            .json(json!({ "error": format!("Failed to get backfill: {}", e) })),
+            .json(json!({"error": format!("Failed to get backfill: {}", e)})),
     }
 }
 
@@ -210,7 +206,7 @@ pub async fn get_backfill(
     path = "/api/transforms/statistics",
     tag = "query",
     responses(
-        (status = 200, description = "Transform statistics", body = serde_json::Value),
+        (status = 200, description = "Transform statistics object"),
         (status = 500, description = "Server error")
     )
 )]
@@ -219,12 +215,12 @@ pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Respon
     match node.get_event_statistics() {
         Ok(stats) => HttpResponse::Ok().json(stats),
         Err(e) => HttpResponse::InternalServerError()
-            .json(json!({ "error": format!("Failed to get statistics: {}", e) })),
+            .json(json!({"error": format!("Failed to get statistics: {}", e)})),
     }
 }
 
 /// Aggregate statistics from all backfills
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, utoipa::ToSchema)]
 struct BackfillStatistics {
     total_backfills: usize,
     active_backfills: usize,
@@ -241,7 +237,7 @@ struct BackfillStatistics {
     path = "/api/transforms/backfills/statistics",
     tag = "query",
     responses(
-        (status = 200, description = "Backfill statistics", body = serde_json::Value),
+        (status = 200, description = "Aggregate backfill statistics", body = BackfillStatistics),
         (status = 500, description = "Server error")
     )
 )]
@@ -268,7 +264,7 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
             HttpResponse::Ok().json(stats)
         },
         Err(e) => HttpResponse::InternalServerError()
-            .json(json!({ "error": format!("Failed to get backfill statistics: {}", e) })),
+            .json(json!({"error": format!("Failed to get backfill statistics: {}", e)})),
     }
 }
 

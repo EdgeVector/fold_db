@@ -449,8 +449,7 @@ export class ApiClient implements ApiClientInstance {
     
     try {
       if (contentType?.includes('application/json')) {
-        const jsonResponse = await response.json();
-        data = jsonResponse.data || jsonResponse;
+        data = await response.json();
       } else {
         data = await response.text() as T;
       }

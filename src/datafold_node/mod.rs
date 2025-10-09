@@ -18,6 +18,7 @@ pub mod openapi;
 pub mod log_routes;
 pub mod node;
 pub mod query_routes;
+pub mod response_types;
 pub mod schema_routes;
 pub mod security_routes;
 pub mod system_routes;

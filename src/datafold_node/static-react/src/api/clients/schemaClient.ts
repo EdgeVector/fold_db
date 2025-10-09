@@ -102,16 +102,11 @@ export class UnifiedSchemaClient {
       return { ...response, data: [] } as EnhancedApiResponse<Schema[]>;
     }
 
-    // Normalize various possible shapes into Schema[] to avoid forEach errors downstream
+    // Normalize response into Schema[]
     const raw = (response as any).data;
     let list: Schema[] = [];
     if (Array.isArray(raw)) {
       list = raw as Schema[];
-    } else if (raw && Array.isArray((raw as any).schemas)) {
-      list = (raw as any).schemas as Schema[];
-    } else if (raw && Array.isArray((raw as any).data)) {
-      // Server returns { data: [...] }
-      list = (raw as any).data as Schema[];
     } else if (raw && typeof raw === 'object') {
       // Server may return an object map from name -> Schema
       // Convert to array of Schema objects

@@ -38,8 +38,15 @@ pub fn format_hash_range_fields(
 
 /// Represents a single logical record keyed by `KeyValue`.
 /// The `fields` map stores field_name -> value. Atom metadata is omitted here.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Record {
+    pub fields: HashMap<String, Value>,
+}
+
+/// Represents a query result record with its key and fields
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct QueryResultRecord {
+    pub key: KeyValue,
     pub fields: HashMap<String, Value>,
 }
 
