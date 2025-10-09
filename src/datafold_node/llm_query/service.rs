@@ -119,14 +119,21 @@ impl LlmQueryService {
             - RangePrefix: {\"RangePrefix\": \"prefix\"} - all records with range starting with prefix\n\
             - HashRangePrefix: {\"HashRangePrefix\": {\"hash\": \"value\", \"prefix\": \"prefix\"}}\n\
             - Value: {\"Value\": \"search_term\"} - search across all values\n\
-            - SampleN: {\"SampleN\": 100} - return N random records\n\
+            - SampleN: {\"SampleN\": 100} - return N RANDOM records (NOT sorted)\n\
             - RangePattern: {\"RangePattern\": \"*pattern*\"} - glob pattern matching\n\
             - HashPattern: {\"HashPattern\": \"*pattern*\"} - hash glob pattern\n\
+            - RangeRange: {\"RangeRange\": {\"start\": \"2025-01-01\", \"end\": \"2025-12-31\"}} - range of values\n\
             - null - no filter (return all records)\n\n\
+            IMPORTANT FILTER NOTES:\n\
+            - SampleN returns RANDOM records, NOT sorted or ordered\n\
+            - For \"most recent\" or \"latest\" queries, use null filter to get all records (backend will handle sorting)\n\
+            - For date ranges, use RangeRange with start/end dates\n\
+            - Range keys are stored as strings and compared lexicographically\n\n\
             EXAMPLES:\n\
             - Search for word \"ai\" in BlogPostWordIndex: {\"HashKey\": \"ai\"}\n\
             - Get blog post by ID: {\"RangePrefix\": \"post-123\"}\n\
-            - Get 10 samples: {\"SampleN\": 10}\n\
+            - Get most recent posts: null (returns all, sorted by backend)\n\
+            - Get posts in date range: {\"RangeRange\": {\"start\": \"2025-09-01\", \"end\": \"2025-09-30\"}}\n\
             - Search for \"technology\" anywhere: {\"Value\": \"technology\"}\n\n\
             Respond in JSON format with:\n\
             {\n\
@@ -142,6 +149,7 @@ impl LlmQueryService {
             - Return ONLY the JSON object, no additional text\n\
             - Use the EXACT filter format shown above\n\
             - ALWAYS set index_schema to null (index creation is not yet supported)\n\
+            - For \"most recent\", \"latest\", or \"newest\" queries, use null filter (NOT SampleN)\n\
             - Choose the most efficient existing schema for the query"
         );
 
