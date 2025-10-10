@@ -218,14 +218,24 @@ describe('QueryBuilder Component', () => {
         throw new Error('Hook error');
       });
 
-      // The component should throw the error since it doesn't have error handling
-      expect(() => {
-        render(
-          <QueryBuilder {...mockProps}>
-            {() => <div>Content</div>}
-          </QueryBuilder>
-        );
-      }).toThrow('Hook error');
+      const mockRenderFunction = vi.fn(() => <div data-testid="error-content">Error handled</div>);
+
+      // The component should handle the error gracefully and pass error state to render function
+      render(
+        <QueryBuilder {...mockProps}>
+          {mockRenderFunction}
+        </QueryBuilder>
+      );
+
+      // Should render content (not throw)
+      expect(screen.getByTestId('error-content')).toBeInTheDocument();
+
+      // Should pass error state to render function
+      const callArgs = mockRenderFunction.mock.calls[0][0];
+      expect(callArgs.isValid).toBe(false);
+      expect(callArgs.validationErrors).toContain('Hook error');
+      expect(callArgs.error).toBeInstanceOf(Error);
+      expect(callArgs.error.message).toBe('Hook error');
       
       consoleError.mockRestore();
     });
