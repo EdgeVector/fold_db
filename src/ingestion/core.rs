@@ -339,10 +339,20 @@ impl IngestionCore {
             .ok_or_else(|| IngestionError::schema_parsing_error("Schema definition must have a 'name' field"))?
             .to_string();
 
-        // Set the schema to approved state
-        self.schema_core
-            .set_schema_state(&schema_name, crate::schema::SchemaState::Approved)
-            .map_err(IngestionError::SchemaSystemError)?;
+        // Check if the schema is already approved
+        let current_state = self.schema_core
+            .get_schema_states()
+            .map_err(IngestionError::SchemaSystemError)?
+            .get(&schema_name)
+            .copied()
+            .unwrap_or_default();
+
+        // Only approve if not already approved
+        if current_state != crate::schema::SchemaState::Approved {
+            self.schema_core
+                .set_schema_state(&schema_name, crate::schema::SchemaState::Approved)
+                .map_err(IngestionError::SchemaSystemError)?;
+        }
 
         log_feature!(
             LogFeature::Ingestion,

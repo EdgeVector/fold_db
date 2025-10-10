@@ -144,6 +144,18 @@ fn generate_backfill_hash_for_transform(
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
     let result: Result<Option<String>, SchemaError> = with_schema_manager(&state, |db| {
+        // Check if the schema is already approved
+        let current_state = db.schema_manager.get_schema_states()?
+            .get(&schema_name)
+            .copied()
+            .unwrap_or_default();
+        
+        if current_state == SchemaState::Approved {
+            return Err(SchemaError::InvalidData(
+                format!("Schema '{}' is already approved", schema_name)
+            ));
+        }
+        
         // Check if this is a transform schema and generate backfill hash if needed
         let is_transform = match db.transform_manager.transform_exists(&schema_name) {
             Ok(exists) => exists,
