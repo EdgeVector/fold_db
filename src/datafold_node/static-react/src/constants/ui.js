@@ -55,10 +55,18 @@ export const UI_STATES = {
 
 // Mutation Type Constants
 export const MUTATION_TYPES = [
-  { value: 'Create', label: 'Create' },
+  { value: 'Insert', label: 'Insert' },
   { value: 'Update', label: 'Update' },
   { value: 'Delete', label: 'Delete' }
 ];
+
+// Backend mutation type normalization map
+export const MUTATION_TYPE_API_MAP = {
+  Insert: 'create',
+  Create: 'create',
+  Update: 'update',
+  Delete: 'delete'
+};
 
 // Schema Badge Colors
 export const SCHEMA_BADGE_COLORS = {

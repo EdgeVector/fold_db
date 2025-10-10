@@ -14,10 +14,11 @@
  * - Supports efficient range-based queries and mutations
  */
 
-import { 
-  RANGE_SCHEMA_CONFIG, 
-  VALIDATION_MESSAGES 
+import {
+  RANGE_SCHEMA_CONFIG,
+  VALIDATION_MESSAGES
 } from '../constants/schemas.js';
+import { MUTATION_TYPE_API_MAP } from '../constants/ui.js';
 
 /**
  * @typedef {Object} Schema
@@ -313,16 +314,20 @@ export function validateRangeKey(rangeKeyValue, isRequired = true) {
  * @returns {Object} Formatted mutation object
  */
 export function formatRangeMutation(schema, mutationType, rangeKeyValue, fieldData) {
+  const normalizedMutationType = typeof mutationType === 'string'
+    ? (MUTATION_TYPE_API_MAP[mutationType] || mutationType.toLowerCase())
+    : '';
+  const isDeleteOperation = normalizedMutationType === 'delete';
   const mutation = {
     type: 'mutation',
     schema: schema.name,
-    mutation_type: mutationType.toLowerCase()
+    mutation_type: normalizedMutationType
   };
   
   // Get the actual range key field name from the schema
   const rangeKeyFieldName = getRangeKey(schema);
   
-  if (mutationType === 'Delete') {
+  if (isDeleteOperation) {
     mutation.fields_and_values = {};
     mutation.key_value = { hash: null, range: null };
     // For delete operations, use the actual range key field name

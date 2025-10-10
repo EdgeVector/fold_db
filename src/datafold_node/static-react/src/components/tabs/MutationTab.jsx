@@ -4,6 +4,7 @@ import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
 import { mutationClient } from '../../api'
+import { MUTATION_TYPE_API_MAP } from '../../constants/ui.js'
 // Removed hook dependencies - using Redux state management instead (TASK-003)
 // Temporarily bypass constants to break circular dependency
 const BUTTON_TEXT = { executeMutation: 'Execute Mutation', confirm: 'Confirm', cancel: 'Cancel' };
@@ -27,7 +28,7 @@ function MutationTab({ onResult }) {
   const _authState = useAppSelector(state => state.auth)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [mutationData, setMutationData] = useState({})
-  const [mutationType, setMutationType] = useState('Create')
+  const [mutationType, setMutationType] = useState('')
   const [result, setResult] = useState(null)
   const [rangeKeyValue, setRangeKeyValue] = useState('')
 
@@ -37,6 +38,7 @@ function MutationTab({ onResult }) {
   const handleSchemaChange = (schemaName) => {
     setSelectedSchema(schemaName)
     setMutationData({})
+    setMutationType('')
     setRangeKeyValue('')
   }
 
@@ -61,6 +63,12 @@ function MutationTab({ onResult }) {
     if (!selectedSchema) return
     
     const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
+    const normalizedMutationType = mutationType
+      ? (MUTATION_TYPE_API_MAP[mutationType] || mutationType.toLowerCase())
+      : ''
+    if (!normalizedMutationType) {
+      return
+    }
     let mutation
 
     // Backend handles all validation
@@ -70,7 +78,7 @@ function MutationTab({ onResult }) {
       mutation = {
         type: 'mutation',
         schema: selectedSchema,
-        mutation_type: mutationType.toLowerCase(),
+        mutation_type: normalizedMutationType,
         fields_and_values: mutationType === 'Delete' ? {} : mutationData,
         key_value: { hash: null, range: null }
       }
@@ -106,6 +114,12 @@ function MutationTab({ onResult }) {
   const isCurrentSchemaRangeSchema = selectedSchemaObj ? isRangeSchema(selectedSchemaObj) : false
   const rangeKey = selectedSchemaObj ? getRangeKey(selectedSchemaObj) : null
   const selectedSchemaFields = selectedSchemaObj ? (isCurrentSchemaRangeSchema ? getNonRangeKeyFields(selectedSchemaObj) : selectedSchemaObj.fields || {}) : {}
+
+  const isMutationDisabled =
+    !selectedSchema ||
+    !mutationType ||
+    (mutationType !== 'Delete' && Object.keys(mutationData).length === 0) ||
+    (isCurrentSchemaRangeSchema && mutationType !== 'Delete' && !rangeKeyValue.trim())
 
   return (
     <div className="p-6">
@@ -151,8 +165,12 @@ function MutationTab({ onResult }) {
         <div className="flex justify-end pt-4">
           <button
             type="submit"
-            className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${!selectedSchema || (mutationType !== 'Delete' && Object.keys(mutationData).length === 0) || (isCurrentSchemaRangeSchema && mutationType !== 'Delete' && !rangeKeyValue.trim()) ? 'bg-gray-300 cursor-not-allowed' : 'bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary'}`}
-            disabled={!selectedSchema || (mutationType !== 'Delete' && Object.keys(mutationData).length === 0) || (isCurrentSchemaRangeSchema && mutationType !== 'Delete' && !rangeKeyValue.trim())}
+            className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+              isMutationDisabled
+                ? 'bg-gray-300 cursor-not-allowed'
+                : 'bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary'
+            }`}
+            disabled={isMutationDisabled}
           >
             {BUTTON_TEXT.executeMutation}
           </button>
