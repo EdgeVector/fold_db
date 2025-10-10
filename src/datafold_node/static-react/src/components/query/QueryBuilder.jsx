@@ -123,7 +123,20 @@ function QueryBuilder({
     rangeKey: resolvedRangeKey
   }), [rest, resolvedSchema, queryState, resolvedSchemas, resolvedSchemaObj, resolvedIsRangeSchema, resolvedRangeKey]);
 
-  const queryBuilder = useQueryBuilder(hookArguments);
+  let queryBuilder;
+  try {
+    queryBuilder = useQueryBuilder(hookArguments);
+  } catch (error) {
+    // Handle hook errors gracefully by returning error state
+    queryBuilder = {
+      query: null,
+      validationErrors: [error.message || 'An error occurred while building the query'],
+      isValid: false,
+      buildQuery: () => null,
+      validateQuery: () => false,
+      error: error
+    };
+  }
 
   if (typeof children === 'function') {
     return children(queryBuilder);

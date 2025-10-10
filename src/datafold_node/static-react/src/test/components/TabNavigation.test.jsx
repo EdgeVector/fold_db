@@ -40,7 +40,7 @@ describe('TabNavigation', () => {
   it('renders tabs without authentication labels when not authenticated', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createUnauthenticatedState() })
     DEFAULT_TABS.forEach(tab => {
-      const tabButton = screen.getByRole('button', { name: new RegExp(`${tab.label} tab`, 'i') })
+      const tabButton = screen.getByRole('button', { name: new RegExp(`^${tab.label} tab$`, 'i') })
       expect(tabButton).toBeInTheDocument()
     })
   })
@@ -55,7 +55,7 @@ describe('TabNavigation', () => {
   it('keeps all tabs enabled regardless of authentication', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createUnauthenticatedState() })
     DEFAULT_TABS.forEach(tab => {
-      const tabButton = screen.getByRole('button', { name: new RegExp(`${tab.label} tab`, 'i') })
+      const tabButton = screen.getByRole('button', { name: new RegExp(`^${tab.label} tab$`, 'i') })
       expect(tabButton).toBeEnabled()
     })
   })
@@ -64,7 +64,7 @@ describe('TabNavigation', () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
     
     DEFAULT_TABS.forEach(tab => {
-      const tabButton = screen.getByRole('button', { name: new RegExp(`${tab.label} tab`, 'i') })
+      const tabButton = screen.getByRole('button', { name: new RegExp(`^${tab.label} tab$`, 'i') })
       expect(tabButton).toBeEnabled()
     })
   })
