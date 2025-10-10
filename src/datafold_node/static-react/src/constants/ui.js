@@ -55,7 +55,7 @@ export const UI_STATES = {
 
 // Mutation Type Constants
 export const MUTATION_TYPES = [
-  { value: 'Insert', label: 'Insert' },
+  { value: 'Create', label: 'Create' },
   { value: 'Update', label: 'Update' },
   { value: 'Delete', label: 'Delete' }
 ];

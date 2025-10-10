@@ -1,0 +1,18 @@
+{
+  "name": "UserActivity",
+  "key": {
+    "hash_field": "user_id",
+    "range_field": "timestamp"
+  },
+  "fields": {
+    "activity_id": {},
+    "user_id": {},
+    "activity_type": {},
+    "timestamp": {},
+    "resource_id": {},
+    "metadata": {},
+    "ip_address": {},
+    "user_agent": {}
+  }
+}
+

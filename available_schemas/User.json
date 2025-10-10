@@ -1,0 +1,18 @@
+{
+  "name": "User",
+  "key": {
+    "range_field": "created_at"
+  },
+  "fields": {
+    "user_id": {},
+    "username": {},
+    "email": {},
+    "full_name": {},
+    "created_at": {},
+    "last_login": {},
+    "profile_image_url": {},
+    "bio": {},
+    "status": {}
+  }
+}
+

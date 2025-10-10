@@ -1,0 +1,19 @@
+{
+  "name": "Message",
+  "key": {
+    "hash_field": "conversation_id",
+    "range_field": "sent_at"
+  },
+  "fields": {
+    "message_id": {},
+    "conversation_id": {},
+    "sender_id": {},
+    "recipient_id": {},
+    "content": {},
+    "sent_at": {},
+    "read_at": {},
+    "message_type": {},
+    "attachments": {}
+  }
+}
+

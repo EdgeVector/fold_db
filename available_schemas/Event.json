@@ -1,0 +1,20 @@
+{
+  "name": "Event",
+  "key": {
+    "range_field": "start_time"
+  },
+  "fields": {
+    "event_id": {},
+    "title": {},
+    "description": {},
+    "start_time": {},
+    "end_time": {},
+    "location": {},
+    "organizer_id": {},
+    "attendees": {},
+    "category": {},
+    "status": {},
+    "max_capacity": {}
+  }
+}
+
