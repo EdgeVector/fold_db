@@ -1176,6 +1176,145 @@ impl HttpTestHelper {
 
         println!("{}", "=".repeat(80));
     }
+
+    /// Execute a mutation with JSON payload
+    #[allow(dead_code)]
+    pub async fn execute_mutation_json(&self, mutation_data: Value, results: &mut HttpTestResults) -> bool {
+        match self.client.post(format!("{}/api/mutation", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&mutation_data)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(data) => {
+                        if data == true || (data.is_object() && data.get("success") == Some(&json!(true))) {
+                            return true;
+                        } else if data.is_object() && data.get("error").is_some() {
+                            let error_msg = data.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+                            results.add_fail("Execute mutation", &format!("Mutation failed: {}", error_msg));
+                            return false;
+                        }
+                        true
+                    }
+                    Err(e) => {
+                        results.add_fail("Execute mutation", &format!("Failed to parse response: {}", e));
+                        false
+                    }
+                }
+            }
+            Ok(response) => {
+                let error_msg = format!("Expected status 200, got {}", response.status());
+                results.add_fail("Execute mutation", &error_msg);
+                false
+            }
+            Err(e) => {
+                results.add_fail("Execute mutation", &format!("Request failed: {}", e));
+                false
+            }
+        }
+    }
+
+    /// Execute a query with JSON payload
+    #[allow(dead_code)]
+    pub async fn execute_query_json(&self, query_data: Value) -> Result<Value, String> {
+        match self.client.post(format!("{}/api/query", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&query_data)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                response.json::<Value>().await
+                    .map_err(|e| format!("Failed to parse response: {}", e))
+            }
+            Ok(response) => {
+                Err(format!("Query failed with status {}", response.status()))
+            }
+            Err(e) => {
+                Err(format!("Request failed: {}", e))
+            }
+        }
+    }
+
+    /// Execute AI query analysis
+    #[allow(dead_code)]
+    pub async fn execute_ai_analyze(&self, request: Value) -> Result<Value, String> {
+        match self.client.post(format!("{}/api/llm-query/analyze", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                response.json::<Value>().await
+                    .map_err(|e| format!("Failed to parse response: {}", e))
+            }
+            Ok(response) if response.status() == 503 => {
+                Err("AI service not configured".to_string())
+            }
+            Ok(response) => {
+                Err(format!("AI query failed with status {}", response.status()))
+            }
+            Err(e) => {
+                Err(format!("Request failed: {}", e))
+            }
+        }
+    }
+
+    /// Execute AI query plan
+    #[allow(dead_code)]
+    pub async fn execute_ai_query_plan(&self, request: Value) -> Result<Value, String> {
+        match self.client.post(format!("{}/api/llm-query/execute", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                response.json::<Value>().await
+                    .map_err(|e| format!("Failed to parse response: {}", e))
+            }
+            Ok(response) if response.status() == 503 => {
+                Err("AI service not configured".to_string())
+            }
+            Ok(response) => {
+                Err(format!("AI execute query failed with status {}", response.status()))
+            }
+            Err(e) => {
+                Err(format!("Request failed: {}", e))
+            }
+        }
+    }
+
+    /// Execute AI chat (follow-up question)
+    #[allow(dead_code)]
+    pub async fn execute_ai_chat(&self, request: Value) -> Result<Value, String> {
+        match self.client.post(format!("{}/api/llm-query/chat", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                response.json::<Value>().await
+                    .map_err(|e| format!("Failed to parse response: {}", e))
+            }
+            Ok(response) if response.status() == 404 => {
+                Err("Session not found".to_string())
+            }
+            Ok(response) if response.status() == 503 => {
+                Err("AI service not configured".to_string())
+            }
+            Ok(response) => {
+                Err(format!("AI chat failed with status {}", response.status()))
+            }
+            Err(e) => {
+                Err(format!("Request failed: {}", e))
+            }
+        }
+    }
 }
 
 /// Get available schema files from the available_schemas directory

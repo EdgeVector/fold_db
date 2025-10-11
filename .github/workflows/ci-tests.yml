@@ -8,6 +8,13 @@ jobs:
   rust-tests:
     name: Rust Tests
     runs-on: ubuntu-latest
+    
+    # Environment variables for AI query test (optional)
+    # If not set, AI query test will fail but other tests will pass
+    env:
+      AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+      FOLD_OPENROUTER_API_KEY: ${{ secrets.FOLD_OPENROUTER_API_KEY }}
+      OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
 
     steps:
       - name: Checkout repository
