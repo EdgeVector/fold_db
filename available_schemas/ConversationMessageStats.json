@@ -1,0 +1,16 @@
+{
+  "name": "ConversationMessageStats",
+  "key": {
+    "hash_field": "conversation_id",
+    "range_field": "sent_at"
+  },
+  "transform_fields": {
+    "conversation_id": "Message.map().conversation_id",
+    "sent_at": "Message.map().sent_at",
+    "message_count": "Message.map().message_id.count()",
+    "sender_id": "Message.map().sender_id",
+    "message_id": "Message.map().message_id",
+    "message_type": "Message.map().message_type"
+  }
+}
+

@@ -1,0 +1,17 @@
+{
+  "name": "ProductTagIndex",
+  "key": {
+    "hash_field": "tag",
+    "range_field": "created_at"
+  },
+  "transform_fields": {
+    "tag": "Product.map().tags.split_array().map()",
+    "product_id": "Product.map().product_id",
+    "name": "Product.map().name",
+    "price": "Product.map().price",
+    "category": "Product.map().category",
+    "brand": "Product.map().brand",
+    "created_at": "Product.map().created_at"
+  }
+}
+

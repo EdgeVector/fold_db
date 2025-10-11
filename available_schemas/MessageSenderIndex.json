@@ -1,0 +1,18 @@
+{
+  "name": "MessageSenderIndex",
+  "key": {
+    "hash_field": "sender_id",
+    "range_field": "sent_at"
+  },
+  "transform_fields": {
+    "sender_id": "Message.map().sender_id",
+    "sent_at": "Message.map().sent_at",
+    "message_id": "Message.map().message_id",
+    "conversation_id": "Message.map().conversation_id",
+    "recipient_id": "Message.map().recipient_id",
+    "content": "Message.map().content",
+    "message_type": "Message.map().message_type",
+    "read_at": "Message.map().read_at"
+  }
+}
+

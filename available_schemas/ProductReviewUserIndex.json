@@ -1,0 +1,19 @@
+{
+  "name": "ProductReviewUserIndex",
+  "key": {
+    "hash_field": "user_id",
+    "range_field": "review_date"
+  },
+  "transform_fields": {
+    "user_id": "ProductReview.map().user_id",
+    "review_date": "ProductReview.map().review_date",
+    "review_id": "ProductReview.map().review_id",
+    "product_id": "ProductReview.map().product_id",
+    "rating": "ProductReview.map().rating",
+    "title": "ProductReview.map().title",
+    "content": "ProductReview.map().content",
+    "verified_purchase": "ProductReview.map().verified_purchase",
+    "helpful_count": "ProductReview.map().helpful_count"
+  }
+}
+

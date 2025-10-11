@@ -1,0 +1,21 @@
+{
+  "name": "EventOrganizerIndex",
+  "key": {
+    "hash_field": "organizer_id",
+    "range_field": "start_time"
+  },
+  "transform_fields": {
+    "organizer_id": "Event.map().organizer_id",
+    "event_id": "Event.map().event_id",
+    "title": "Event.map().title",
+    "description": "Event.map().description",
+    "start_time": "Event.map().start_time",
+    "end_time": "Event.map().end_time",
+    "location": "Event.map().location",
+    "category": "Event.map().category",
+    "status": "Event.map().status",
+    "max_capacity": "Event.map().max_capacity",
+    "event_count": "Event.map().event_id.count()"
+  }
+}
+

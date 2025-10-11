@@ -1,0 +1,17 @@
+{
+  "name": "UserOrderStats",
+  "key": {
+    "hash_field": "user_id",
+    "range_field": "order_date"
+  },
+  "transform_fields": {
+    "user_id": "Order.map().user_id",
+    "order_date": "Order.map().order_date",
+    "order_id": "Order.map().order_id",
+    "total_amount": "Order.map().total_amount",
+    "status": "Order.map().status",
+    "payment_method": "Order.map().payment_method",
+    "order_count": "Order.map().order_id.count()"
+  }
+}
+

@@ -1,0 +1,17 @@
+{
+  "name": "OrderStatusIndex",
+  "key": {
+    "hash_field": "status",
+    "range_field": "order_date"
+  },
+  "transform_fields": {
+    "status": "Order.map().status",
+    "order_id": "Order.map().order_id",
+    "user_id": "Order.map().user_id",
+    "order_date": "Order.map().order_date",
+    "total_amount": "Order.map().total_amount",
+    "payment_method": "Order.map().payment_method",
+    "tracking_number": "Order.map().tracking_number"
+  }
+}
+

@@ -1,0 +1,16 @@
+{
+  "name": "ProductReviewStats",
+  "key": {
+    "hash_field": "product_id",
+    "range_field": "review_date"
+  },
+  "transform_fields": {
+    "product_id": "ProductReview.map().product_id",
+    "review_date": "ProductReview.map().review_date",
+    "review_count": "ProductReview.map().rating.count()",
+    "avg_rating": "ProductReview.map().rating",
+    "helpful_total": "ProductReview.map().helpful_count",
+    "review_title": "ProductReview.map().title"
+  }
+}
+
