@@ -30,7 +30,7 @@ impl HashRangeQueryProcessor {
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut result = HashMap::new();
-        for (field_name, field) in schema.fields.iter_mut() {
+        for (field_name, field) in schema.runtime_fields.iter_mut() {
             if !fields.contains(field_name) {
                 continue;
             }

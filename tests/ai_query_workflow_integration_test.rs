@@ -107,7 +107,7 @@ async fn setup_test_data(helper: &HttpTestHelper, results: &mut HttpTestResults)
     
     // Create blog posts by Alice Johnson (matching manage_blogposts.py data)
     println!("\n✍️  Creating blog posts by Alice Johnson...");
-    let posts = vec![
+    let posts = [
         (
             "Getting Started with DataFold",
             "DataFold is a powerful distributed database system that enables efficient data storage and retrieval across multiple nodes. This post will guide you through the basics of getting started with DataFold, including installation, configuration, and your first data operations.",

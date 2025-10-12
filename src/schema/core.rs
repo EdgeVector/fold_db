@@ -138,9 +138,9 @@ impl SchemaCore {
             // Use the new schema structure but preserve molecule_uuids from existing schema
             let mut updated_schema = schema;
             if let Some(existing) = existing_in_memory {
-                // Preserve molecule_uuids from existing schema
-                for (field_name, existing_field) in existing.fields {
-                    if let Some(new_field) = updated_schema.fields.get_mut(&field_name) {
+                // Preserve molecule_uuids from existing schema's runtime_fields
+                for (field_name, existing_field) in existing.runtime_fields {
+                    if let Some(new_field) = updated_schema.runtime_fields.get_mut(&field_name) {
                         if let Some(molecule_uuid) = existing_field.common().molecule_uuid() {
                             new_field.common_mut().set_molecule_uuid(molecule_uuid.clone());
                         }
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn blogpost_wordindex_sets_hashrange_keyconfig() {
-        use crate::schema::types::schema::SchemaType;
+        use crate::schema::types::SchemaType;
 
         let core = SchemaCore::new_for_testing().expect("init core");
         core.load_schema_from_json(&wordindex_schema_json()).expect("load wordindex");

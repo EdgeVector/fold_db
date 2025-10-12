@@ -47,8 +47,16 @@ impl DbOperations {
     }
 
     /// Gets a schema definition using generic tree operations
+    /// Populates runtime_fields from the declarative schema definition
     pub fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
-        self.get_from_tree(&self.schemas_tree, schema_name)
+        let mut schema_opt: Option<Schema> = self.get_from_tree(&self.schemas_tree, schema_name)?;
+        
+        // Populate runtime_fields if schema exists
+        if let Some(schema) = schema_opt.as_mut() {
+            schema.populate_runtime_fields()?;
+        }
+        
+        Ok(schema_opt)
     }
 
     /// Lists all stored schemas using generic tree operations
@@ -93,8 +101,16 @@ impl DbOperations {
     }
 
     /// Gets all schemas as a HashMap
+    /// Populates runtime_fields for all schemas
     pub fn get_all_schemas(&self) -> Result<std::collections::HashMap<String, Schema>, SchemaError> {
         let items: Vec<(String, Schema)> = self.list_items_in_tree(&self.schemas_tree)?;
-        Ok(items.into_iter().collect())
+        let mut schemas = std::collections::HashMap::new();
+        
+        for (name, mut schema) in items {
+            schema.populate_runtime_fields()?;
+            schemas.insert(name, schema);
+        }
+        
+        Ok(schemas)
     }
 }

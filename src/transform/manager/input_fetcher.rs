@@ -20,7 +20,12 @@ impl InputFetcher {
         mutation_context: &Option<MutationContext>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut input_values = HashMap::new();
-        let inputs_to_process = transform.get_declarative_schema().unwrap().get_inputs();
+        
+        // Look up the transform's schema from the database
+        let transform_schema = db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+            SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
+        })?;
+        let inputs_to_process = transform_schema.get_inputs();
 
         for input_field in inputs_to_process {
             if let Some(dot_pos) = input_field.find('.') {
@@ -36,7 +41,7 @@ impl InputFetcher {
                 let schema = db_ops.get_schema(input_schema.as_str())?.ok_or_else(|| {
                     SchemaError::InvalidData(format!("Schema '{}' not found", input_schema))
                 })?;
-                for field_name in schema.fields.keys() {
+                for field_name in schema.runtime_fields.keys() {
                     let value = Self::fetch_input_for_field_with_context(db_ops, &mut schema.clone(), field_name, mutation_context)?;
                     input_values.insert(input_schema.to_string() + "." + field_name, value);
                 }
@@ -54,7 +59,17 @@ impl InputFetcher {
         mutation_context: &Option<MutationContext>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         let key_value_opt = mutation_context.as_ref().and_then(|ctx| ctx.key_value.clone());
-        let field = schema.fields.get_mut(field_name).unwrap();
+        
+        // Check if field exists before getting mutable reference
+        if !schema.runtime_fields.contains_key(field_name) {
+            let available_fields: Vec<&String> = schema.runtime_fields.keys().collect();
+            return Err(SchemaError::InvalidData(format!(
+                "Field '{}' not found in schema '{}'. Available fields: {:?}", 
+                field_name, schema.name, available_fields
+            )));
+        }
+        
+        let field = schema.runtime_fields.get_mut(field_name).unwrap();
         let filter = match key_value_opt {
             Some(kv) => {
                 let hash_opt = kv.hash.clone();

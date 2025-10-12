@@ -129,7 +129,6 @@ fn deserialize_mapping(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::types::DeclarativeSchemaDefinition;
     use std::collections::{BTreeMap, HashMap, HashSet};
     use tempfile::TempDir;
 
@@ -141,17 +140,8 @@ mod tests {
     }
 
     fn create_test_transform(id: &str) -> Transform {
-        let mut transform_fields = HashMap::new();
-        transform_fields.insert("field1".to_string(), "input.value".to_string());
-        
-        let schema = DeclarativeSchemaDefinition::new(
-            format!("TestSchema_{}", id),
-            crate::schema::types::schema::SchemaType::Single,
-            None,
-            Some(vec!["field1".to_string()]),
-            Some(transform_fields),
-        );
-        Transform::from_declarative_schema(schema)
+        // Transform now stores only the schema name reference
+        Transform::from_schema_name(format!("TestSchema_{}", id))
     }
 
     #[test]
@@ -277,10 +267,9 @@ mod tests {
         assert_eq!(merged_transforms.len(), 1);
         let merged_transform = merged_transforms.get("transform_1").unwrap();
         
-        let merged_schema = merged_transform.get_declarative_schema().unwrap();
-        let expected_schema = transform_b.get_declarative_schema().unwrap();
-        assert_eq!(merged_schema.name, expected_schema.name);
-        assert_eq!(merged_schema.name, "TestSchema_B");
+        // Transform now stores only schema_name, compare directly
+        assert_eq!(merged_transform.get_schema_name(), transform_b.get_schema_name());
+        assert_eq!(merged_transform.get_schema_name(), "TestSchema_B");
     }
 
     #[test]

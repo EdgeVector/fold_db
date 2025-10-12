@@ -6,7 +6,6 @@ use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use sled::{Db, Tree};
 use std::sync::Arc;
-use std::collections::HashMap;
 
 /// Consolidated temporary database creation - eliminates 11+ duplicates
 pub struct TestDatabaseFactory;
@@ -39,7 +38,14 @@ impl TestDatabaseFactory {
 
     /// Create test schema (consolidates duplicate create_test_schema functions)
     pub fn create_test_schema(name: &str) -> crate::schema::types::Schema {
-        crate::schema::types::Schema::new(name.to_string(), None, HashMap::new(), None)
+        // Create a simple declarative schema for testing
+        crate::schema::types::Schema::new(
+            name.to_string(),
+            crate::schema::types::SchemaType::Single,
+            None,
+            Some(vec![]),
+            None,
+        )
     }
 
     /// Create test node config (consolidates create_test_config functions)

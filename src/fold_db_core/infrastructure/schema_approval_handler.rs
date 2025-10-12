@@ -48,10 +48,12 @@ fn handle_transform_schema_approval(
     backfill_tracker: &Arc<BackfillTracker>,
     transform_manager: &Arc<TransformManager>,
 ) -> Result<(), crate::schema::SchemaError> {
-    let schema = transform.get_declarative_schema()
-        .ok_or_else(|| crate::schema::SchemaError::InvalidTransform(
-            format!("Transform '{}' has no declarative schema", event.schema_name)
-        ))?;
+    // Look up the transform's schema from the database
+    let schema = transform_manager.db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+        crate::schema::SchemaError::InvalidTransform(
+            format!("Transform schema '{}' not found in database", transform.get_schema_name())
+        )
+    })?;
 
     let source_schemas = schema.get_source_schemas();
     if source_schemas.is_empty() {
