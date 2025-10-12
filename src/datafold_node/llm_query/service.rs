@@ -100,7 +100,7 @@ impl LlmQueryService {
                 schema.schema.name, schema.schema.schema_type, schema.state
             ));
             prompt.push_str("  Fields: ");
-            let field_names: Vec<String> = schema.schema.fields.keys().cloned().collect();
+            let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
             prompt.push('\n');
         }

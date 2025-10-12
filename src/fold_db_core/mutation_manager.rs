@@ -62,7 +62,7 @@ impl MutationManager {
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
         for (field_name, value) in mutation.fields_and_values {
-            if let Some(schema_field) = schema.fields.get_mut(&field_name) {
+            if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
                 // Use the new db_operations method to handle the entire field mutation process
                 self.db_ops.process_mutation_field(
                     &mutation.schema_name,
@@ -188,7 +188,7 @@ impl MutationManager {
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation_request.mutation.fields_and_values.keys().cloned().collect();
         for (field_name, value) in mutation_request.mutation.fields_and_values.clone() {
-            if let Some(schema_field) = schema.fields.get_mut(&field_name) {
+            if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
                 // Use the new db_operations method to handle the entire field mutation process
                 db_ops.process_mutation_field(
                     &mutation_request.mutation.schema_name,

@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition;
 
 /// Represents a transformation that can be applied to field values.
 ///
@@ -27,53 +26,30 @@ pub struct TransformRegistration {
     pub trigger_fields: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, utoipa::ToSchema)]
+/// Transform stores only a schema_name reference to avoid duplication.
+/// The full schema is stored in schemas_tree and looked up when needed.
+/// This saves ~50% storage for transform schemas (previously stored in both trees).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct Transform {
-    /// The declarative schema definition
-    #[serde(flatten)]
-    pub schema: Box<DeclarativeSchemaDefinition>,
-}
-
-// Custom deserialization for declarative transforms only
-impl<'de> serde::Deserialize<'de> for Transform {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Only support declarative schema format now
-        let schema = DeclarativeSchemaDefinition::deserialize(deserializer)?;
-        Ok(Self {
-            schema: Box::new(schema),
-        })
-    }
+    /// The name of the schema (stored in schemas_tree)
+    pub schema_name: String,
 }
 
 impl Transform {
-    /// Creates a new declarative `Transform` from schema definition and output field.
+    /// Creates a new Transform from a schema name.
     #[must_use]
-    pub fn new(
-        schema: DeclarativeSchemaDefinition,
-    ) -> Self {
-        Self {
-            schema: Box::new(schema),
-        }
+    pub fn new(schema_name: String) -> Self {
+        Self { schema_name }
     }
 
-    /// Creates a new declarative `Transform` from schema definition.
+    /// Creates a new Transform from a schema name.
     #[must_use]
-    pub fn from_declarative_schema(
-        schema: DeclarativeSchemaDefinition,
-    ) -> Self {
-        Self {
-            schema: Box::new(schema),
-        }
+    pub fn from_schema_name(schema_name: String) -> Self {
+        Self { schema_name }
     }
 
-    /// Gets the declarative schema.
-    /// Since only declarative transforms are supported, this always returns the schema.
-    pub fn get_declarative_schema(
-        &self,
-    ) -> Option<&DeclarativeSchemaDefinition> {
-        Some(&*self.schema)
+    /// Gets the schema name.
+    pub fn get_schema_name(&self) -> &str {
+        &self.schema_name
     }
 }

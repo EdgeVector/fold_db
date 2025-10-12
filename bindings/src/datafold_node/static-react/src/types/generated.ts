@@ -55,6 +55,11 @@ mutations_failed: number, };
 export type BackfillStatus = "InProgress" | "Completed" | "Failed";
 
 /**
+ * Represents the schema-level type information.
+ */
+export type DeclarativeSchemaType = "Single" | { "Range": { keyconfig: KeyConfig, } } | { "HashRange": { keyconfig: KeyConfig, } };
+
+/**
  * HashRange filter operations for querying hash-range fields
  */
 export type HashRangeFilter = { "HashRangeKey": { hash: string, range: string, } } | { "HashKey": string } | { "HashRangePrefix": { hash: string, prefix: string, } } | { "RangePrefix": string } | { "HashRangeRange": { hash: string, start: string, end: string, } } | { "RangeRange": { start: string, end: string, } } | { "SampleN": number } | { "Value": string } | { "HashRangeKeys": Array<[string, string]> } | { "HashRangePattern": { hash: string, pattern: string, } } | { "RangePattern": string } | { "HashPattern": string } | { "HashRange": { start: string, end: string, } };
@@ -82,47 +87,3 @@ export type KeyConfig = { hash_field: string | null, range_field: string | null,
  * Represents resolved key values for hash and range components.
  */
 export type KeyValue = { hash: string | null, range: string | null, };
-
-/**
- * Defines the structure, permissions, and payment requirements for a data collection.
- *
- * A Schema is the fundamental building block for data organization in the database.
- * It defines:
- * - The collection's name and identity
- * - Field definitions with their types and constraints
- * - Field-level permission policies
- * - Payment requirements for data access
- * - Field mappings for schema transformation
- *
- * Schemas provide a contract for data storage and access, ensuring:
- * - Consistent data structure
- * - Proper access control
- * - Payment validation
- * - Data transformation rules
- */
-export type Schema = { 
-/**
- * Unique name identifying this schema
- */
-name: string, 
-/**
- * The type of schema. Defaults to a key range schema.
- */
-schema_type: SchemaType, 
-/**
- * Universal key configuration for all schema types
- */
-key: KeyConfig | null, 
-/**
- * Collection of fields with their definitions and configurations
- */
-fields: Record<string, any>, 
-/**
- * SHA256 hash of the schema content for integrity verification
- */
-hash: string | null, };
-
-/**
- * Represents the schema-level type information.
- */
-export type SchemaType = "Single" | { "Range": { keyconfig: KeyConfig, } } | { "HashRange": { keyconfig: KeyConfig, } };

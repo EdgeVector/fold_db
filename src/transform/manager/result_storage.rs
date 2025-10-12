@@ -16,13 +16,19 @@ impl ResultStorage {
     /// Generic result storage for any transform using mutations
     pub fn store_transform_result_generic(
         transform: &Transform,
+        db_ops: &Arc<crate::db_operations::DbOperations>,
         code_hash_to_result: HashMap<String, JsonValue>,
         key_value: KeyValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
         backfill_hash: Option<String>,
     ) -> Result<(), SchemaError> {
+        // Look up the transform's schema from the database
+        let transform_schema = db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+            SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
+        })?;
+        
         // Create reverse mapping from hash code to field name
-        let field_to_hash_code = transform.get_declarative_schema().unwrap().get_field_to_hash_code();
+        let field_to_hash_code = transform_schema.get_field_to_hash_code();
         let hash_code_to_field: HashMap<String, String> = field_to_hash_code
             .iter()
             .map(|(field_name, hash_code)| (hash_code.clone(), field_name.clone()))
@@ -38,7 +44,7 @@ impl ResultStorage {
         }
 
         let mut mutation = Mutation::new(
-            transform.get_declarative_schema().unwrap().name.clone(),
+            transform_schema.name.clone(),
             fields_and_values,
             key_value,
             TRANSFORM_SYSTEM_ID.to_string(),

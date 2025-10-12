@@ -25,7 +25,7 @@ use crate::schema::types::{SchemaError, Transform};
 /// - TransformOrchestrator: Orchestration and event handling
 /// - TransformManager: Registration, execution, mapping, and result storage
 pub struct TransformManager {
-    pub(super) db_ops: Arc<DbOperations>,
+    pub db_ops: Arc<DbOperations>,
     pub(super) registered_transforms: RwLock<HashMap<String, Transform>>,
     pub(super) schema_field_to_transforms: RwLock<BTreeMap<String, HashSet<String>>>,
     pub(super) message_bus: Arc<MessageBus>,

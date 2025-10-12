@@ -15,5 +15,5 @@ pub use errors::SchemaError;
 pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};
 pub use mutation::{Mutation};
 pub use operations::{Operation, Query};
-pub use schema::{Schema, SchemaType};
+pub use schema::{Schema, DeclarativeSchemaType as SchemaType};
 pub use transform::{Transform, TransformRegistration};

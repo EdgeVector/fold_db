@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
 use crate::schema::types::key_config::KeyConfig;
-use crate::schema::types::schema::SchemaType;
+use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct FieldDefinition {
@@ -93,42 +93,131 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 }
 
 
-/// Declarative schema definition used by declarative transforms.
-#[derive(Debug, Clone, Serialize, PartialEq, utoipa::ToSchema)]
+/// Declarative schema definition - the primary schema representation.
+/// This is the unified schema type that replaces the old Schema/DeclarativeSchemaDefinition split.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct DeclarativeSchemaDefinition {
-        /// Schema name (same as transform name)
+        /// Schema name
         pub name: String,
-        /// Schema type ("Single" | "HashRange")
+        /// Schema type ("Single" | "Range" | "HashRange")
         pub schema_type: SchemaType,
-        /// Key configuration (required when schema_type == "HashRange")
+        /// Key configuration (required when schema_type == "HashRange" or "Range")
         #[serde(skip_serializing_if = "Option::is_none")]
         pub key: Option<KeyConfig>,
+        /// Field names - plain data fields without transformations
         #[serde(skip_serializing_if = "Option::is_none")]
         pub fields: Option<Vec<String>>,
+        /// Transform fields - computed fields with expressions (optional, only for transform schemas)
         #[serde(skip_serializing_if = "Option::is_none")]
         pub transform_fields: Option<HashMap<String, String>>,
+        /// SHA256 hash of the schema content for integrity verification
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub hash: Option<String>,
 
+    // Runtime state fields (not serialized)
+    
+    /// Runtime field storage with molecules (for database operations)
+    #[serde(skip)]
+    pub runtime_fields: HashMap<String, crate::schema::types::field::FieldVariant>,
+
+    /// Input fields extracted from transform expressions
     #[serde(skip)]
     inputs_schema_fields: Vec<String>,
 
-    // Source schemas extracted from input fields
+    /// Source schemas extracted from input fields (for transforms)
     #[serde(skip)]
     source_schemas: Vec<String>,
 
-    // Key to hash code.  Used for unique resolution of keys.
+    /// Key to hash code mapping for transforms
     #[serde(skip)]
     key_to_hash_code: HashMap<String, String>,
 
-    // Field to hash code.  Used for unique resolution of fields.
+    /// Field to hash code mapping for transforms
     #[serde(skip)]
     field_to_hash_code: HashMap<String, String>,
 
-    // Hash of the code to the code itself.  Used for unique resolution of transforms.
+    /// Hash to code mapping for transforms
     #[serde(skip)]
     hash_to_code: HashMap<String, String>,
     }
 
+// Manual PartialEq implementation that excludes runtime_fields from comparison
+impl PartialEq for DeclarativeSchemaDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.schema_type == other.schema_type
+            && self.key == other.key
+            && self.fields == other.fields
+            && self.transform_fields == other.transform_fields
+            && self.hash == other.hash
+            // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
+            // These are derived/runtime state and don't affect schema identity
+    }
+}
+
 impl DeclarativeSchemaDefinition {
+
+    /// Populates runtime_fields from declarative schema definition
+    /// This is called after deserializing from database to ensure runtime state is initialized
+    /// Also regenerates transform metadata (hash mappings, inputs, source schemas) which are not persisted
+    pub fn populate_runtime_fields(&mut self) -> Result<(), crate::schema::SchemaError> {
+        use crate::schema::types::field::{RangeField, HashRangeField, SingleField, FieldVariant};
+        use crate::schema::types::field::common::FieldCommon;
+        use std::collections::HashMap;
+
+        let default_field_mappers = HashMap::new();
+        let default_inner_field = FieldCommon::new(default_field_mappers.clone());
+
+        let mut runtime_fields = HashMap::new();
+        let mut add_field = |field_name: String| {
+            let schema_type = self.schema_type.clone();
+            match &schema_type {
+                SchemaType::HashRange { .. } => {
+                    let hashrange_field = HashRangeField {
+                        inner: default_inner_field.clone(),
+                        molecule: None,
+                    };
+                    runtime_fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
+                }
+                SchemaType::Range { .. } => {
+                    let range_field = RangeField {
+                        inner: default_inner_field.clone(),
+                        molecule: None,
+                    };
+                    runtime_fields.insert(field_name, FieldVariant::Range(range_field));
+                }
+                SchemaType::Single => {
+                    let single_field = SingleField {
+                        inner: default_inner_field.clone(),
+                        molecule: None,
+                    };
+                    runtime_fields.insert(field_name, FieldVariant::Single(single_field));
+                }
+            }
+        };
+
+        if let Some(field_list) = self.fields.clone() {
+            for field_name in field_list {
+                add_field(field_name);
+            }
+        }
+
+        if let Some(transform_map) = self.transform_fields.clone() {
+            for (field_name, _) in transform_map {
+                add_field(field_name);
+            }
+        }
+
+        self.runtime_fields = runtime_fields;
+        
+        // Regenerate transform metadata that isn't persisted (marked with #[serde(skip)])
+        // This is needed when schemas are loaded from the database
+        self.generate_hash_to_code_mappings();
+        self.generate_inputs();
+        self.fetch_source_schemas();
+        
+        Ok(())
+    }
 
     /// Creates a new DeclarativeSchemaDefinition and generates all hash mappings.
     /// 
@@ -155,6 +244,8 @@ impl DeclarativeSchemaDefinition {
             key,
             fields,
             transform_fields,
+            hash: None,
+            runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
             key_to_hash_code: HashMap::new(),

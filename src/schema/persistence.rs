@@ -1,13 +1,7 @@
-use super::{SchemaCore};
+use super::SchemaCore;
 use crate::schema::types::{Schema, SchemaError, DeclarativeSchemaDefinition};
 use std::collections::HashMap;
 use std::path::Path;
-use crate::schema::types::schema::SchemaType;
-use crate::schema::types::field::RangeField;
-use crate::schema::types::field::HashRangeField;
-use crate::schema::types::field::SingleField;
-use crate::schema::types::field::FieldVariant;
-use crate::schema::types::field::common::FieldCommon;
 
 impl SchemaCore {
 
@@ -25,76 +19,21 @@ impl SchemaCore {
     }
 
 
-    /// Interprets a declarative schema definition and converts it to a Schema.
+    /// Interprets a declarative schema definition and populates runtime fields.
+    /// Now Schema = DeclarativeSchemaDefinition, so we just populate the runtime_fields HashMap
     pub fn interpret_declarative_schema(
         &self,
-        declarative_schema: DeclarativeSchemaDefinition,
+        mut declarative_schema: DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
+        // Populate runtime_fields using the method on DeclarativeSchemaDefinition
+        declarative_schema.populate_runtime_fields()?;
 
-        let default_field_mappers = HashMap::new();
-        let default_inner_field = FieldCommon::new(
-            default_field_mappers.clone(),
-        );
-
-        // Convert fields from FieldDefinition to FieldVariant
-        let mut fields = HashMap::new();
-        let mut add_field = |field_name: String| {    
-            let schema_type = declarative_schema.schema_type.clone();
-            match &schema_type {
-                SchemaType::HashRange { .. } => {
-
-                    let hashrange_field = HashRangeField {
-                        inner: default_inner_field.clone(),
-                        molecule: None,
-                    };
-
-                    fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
-                }
-                SchemaType::Range { .. } => {
-                    let range_field = RangeField {
-                        inner: default_inner_field.clone(),
-                        molecule: None,
-                    };
-                    
-                    fields.insert(field_name, FieldVariant::Range(range_field));
-                }
-                SchemaType::Single => {
-                    let single_field = SingleField {
-                        inner: default_inner_field.clone(),
-                        molecule: None,
-                    };
-
-                    fields.insert(field_name, FieldVariant::Single(single_field));
-                }
-            }
-        };
-
-        if let Some(field_list) = declarative_schema.fields.clone() {
-            for field_name in field_list {
-                add_field(field_name);
-            }
-        }
-
-        if let Some(transform_map) = declarative_schema.transform_fields.clone() {
-            for (field_name, _) in transform_map {
-                add_field(field_name);
-            }
-        }
-
+        // Register transforms if this schema has transform_fields
         if let Some(transform_fields) = &declarative_schema.transform_fields {
             self.register_declarative_transforms(&declarative_schema, transform_fields)?;
         }
 
-        // Create the schema with appropriate type
-        let schema = Schema {
-            name: declarative_schema.name.clone(),
-            schema_type: declarative_schema.schema_type.clone(),
-            key: declarative_schema.key.clone(), // Copy universal key configuration
-            fields,
-            hash: None,
-        };
-
-        Ok(schema)
+        Ok(declarative_schema)
     }
 
     /// Registers declarative transforms using the event bus
@@ -107,9 +46,9 @@ impl SchemaCore {
         use crate::schema::types::transform::{Transform, TransformRegistration};
         use uuid::Uuid;
 
-        // Create ONE transform for the entire schema
+        // Create ONE transform for the entire schema (stores only schema name, not full schema)
         let transform_id = declarative_schema.name.clone();
-        let transform = Transform::from_declarative_schema(declarative_schema.clone());
+        let transform = Transform::from_schema_name(declarative_schema.name.clone());
         
         // Collect ALL trigger fields from ALL field expressions
         let mut all_trigger_fields = Vec::new();

@@ -40,7 +40,10 @@ impl TransformRunner for super::TransformManager {
             mutation_context,
         )?;
         
-        let schema = transform.get_declarative_schema().unwrap();
+        // Look up the transform's schema from the database
+        let schema = self.db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+            SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
+        })?;
 
         // Execute multi-chain coordination
         // Use field names instead of hash codes for proper key derivation
@@ -102,6 +105,7 @@ impl TransformRunner for super::TransformManager {
             // Store this row as a mutation with backfill_hash if present
             ResultStorage::store_transform_result_generic(
                 &transform,
+                &self.db_ops,
                 code_hash_to_result,
                 row_key,
                 Some(&self.message_bus),

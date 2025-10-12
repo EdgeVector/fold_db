@@ -308,6 +308,7 @@ impl HttpTestHelper {
     }
 
     /// Verify that expected schemas are available
+    #[allow(dead_code)]
     pub async fn verify_schemas_available(&self, expected_schemas: &[String], results: &mut HttpTestResults) -> bool {
         // Verifying schemas are available
 

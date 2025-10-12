@@ -97,10 +97,15 @@ fn generate_backfill_hash_for_transform(
         }
     };
     
-    let declarative_schema = match transform.get_declarative_schema() {
-        Some(s) => s,
-        None => {
-            log::warn!("Transform {} has no declarative schema", schema_name);
+    // Look up the transform's schema from the database
+    let declarative_schema = match transform_manager.db_ops.get_schema(transform.get_schema_name()) {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            log::warn!("Transform {} schema not found in database", schema_name);
+            return None;
+        }
+        Err(e) => {
+            log::warn!("Failed to get schema for transform {}: {}", schema_name, e);
             return None;
         }
     };

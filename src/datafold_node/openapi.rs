@@ -39,7 +39,7 @@ use utoipa::OpenApi;
     components(
         schemas(
             crate::schema::types::schema::Schema,
-            crate::schema::types::schema::SchemaType,
+            crate::schema::types::schema::DeclarativeSchemaType,
             crate::schema::types::key_config::KeyConfig,
             crate::schema::types::key_value::KeyValue,
             crate::schema::types::field::variant::FieldVariant,

@@ -258,8 +258,11 @@ impl TransformEventMonitor {
 
                 // Publish TransformRegistered event to trigger backfill
                 // Extract source schema name from the transform's input fields
-                let source_schema_name = event.registration.transform.get_declarative_schema()
-                    .ok_or_else(|| SchemaError::InvalidData("Transform has no declarative schema".to_string()))?
+                // Look up the transform's schema from the database
+                let transform_schema = manager.db_ops.get_schema(event.registration.transform.get_schema_name())?.ok_or_else(|| {
+                    SchemaError::InvalidData(format!("Transform schema '{}' not found", event.registration.transform.get_schema_name()))
+                })?;
+                let source_schema_name = transform_schema
                     .get_inputs()
                     .first()
                     .ok_or_else(|| SchemaError::InvalidData("Transform has no input schema fields".to_string()))?

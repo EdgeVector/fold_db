@@ -130,16 +130,20 @@ fn test_blogpost_wordindex_transform_registration() {
     
     // Verify the transform schema structure
     for (transform_id, transform) in &registered_transforms {
+        // Transform now stores only schema_name, look up the full schema from database
         assert_eq!(
-            transform.schema.name,
+            transform.get_schema_name(),
             "BlogPostWordIndex",
             "Transform '{}' should have schema name 'BlogPostWordIndex'",
             transform_id
         );
         
-        // Verify that the transform has the correct key configuration
-        assert!(transform.schema.key.is_some(), "Transform '{}' should have key configuration", transform_id);
-        let key_config = transform.schema.key.as_ref().unwrap();
+        // Verify that the transform has the correct key configuration by looking up the schema
+        let schema = transform_manager.db_ops.get_schema(transform.get_schema_name())
+            .expect("Failed to get schema")
+            .expect("Schema should exist");
+        assert!(schema.key.is_some(), "Transform '{}' should have key configuration", transform_id);
+        let key_config = schema.key.as_ref().unwrap();
         assert_eq!(key_config.hash_field, Some("word".to_string()));
         assert_eq!(key_config.range_field, Some("publish_date".to_string()));
     }

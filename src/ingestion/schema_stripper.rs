@@ -151,15 +151,18 @@ mod tests {
             None,
         ));
 
-        let mut fields = HashMap::new();
-        fields.insert("test_field".to_string(), field);
+        let mut runtime_fields = HashMap::new();
+        runtime_fields.insert("test_field".to_string(), field);
 
-        Schema::new(
+        let mut schema = Schema::new(
             "test_schema".to_string(),
+            crate::schema::types::SchemaType::Single,
             None,
-            fields,
+            Some(vec!["test_field".to_string()]),
             None,
-        )
+        );
+        schema.runtime_fields = runtime_fields;
+        schema
     }
 
     #[test]
