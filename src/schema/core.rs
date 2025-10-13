@@ -6,7 +6,7 @@ use serde_json;
 
 use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::schema::types::{DeclarativeSchemaDefinition, Field, Schema, SchemaError};
+use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use crate::schema::{SchemaState, SchemaWithState};
 
 /// Core schema management system that combines schema interpretation, validation, and management.
@@ -42,12 +42,22 @@ impl SchemaCore {
         
         let schema_states = db_ops.get_all_schema_states()?;
 
-        Ok(Self {
-            schemas: Arc::new(Mutex::new(schemas)),
+        let schema_core = Self {
+            schemas: Arc::new(Mutex::new(schemas.clone())),
             schema_states: Arc::new(Mutex::new(schema_states)),
             db_ops,
             message_bus,
-        })
+        };
+
+        // Register transforms for all schemas that have transform_fields
+        // This ensures transforms are available when schemas are loaded from database
+        for (_, schema) in schemas {
+            if let Some(transform_fields) = &schema.transform_fields {
+                schema_core.register_declarative_transforms(&schema, transform_fields)?;
+            }
+        }
+
+        Ok(schema_core)
     }
 
     pub fn get_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
@@ -132,23 +142,9 @@ impl SchemaCore {
             // Schema exists in DB - preserve molecule_uuids from existing schema
             let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
             
-            // Get the existing schema from memory (which has molecule_uuids)
-            let existing_in_memory = schemas.get(&name).cloned();
-            
-            // Use the new schema structure but preserve molecule_uuids from existing schema
-            let mut updated_schema = schema;
-            if let Some(existing) = existing_in_memory {
-                // Preserve molecule_uuids from existing schema's runtime_fields
-                for (field_name, existing_field) in existing.runtime_fields {
-                    if let Some(new_field) = updated_schema.runtime_fields.get_mut(&field_name) {
-                        if let Some(molecule_uuid) = existing_field.common().molecule_uuid() {
-                            new_field.common_mut().set_molecule_uuid(molecule_uuid.clone());
-                        }
-                    }
-                }
-            }
-            
-            schemas.insert(name.clone(), updated_schema);
+            // Use the new schema as-is - it already has field_molecule_uuids set if mutations were written
+            // No need to extract from runtime_fields since field_molecule_uuids is now persisted
+            schemas.insert(name.clone(), schema);
             
             // Preserve existing state
             let existing_state = self.db_ops.get_schema_state(&name)?;
