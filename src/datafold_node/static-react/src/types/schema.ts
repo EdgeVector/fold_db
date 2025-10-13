@@ -9,7 +9,8 @@
  */
 
 // Import auto-generated types from Rust backend via ts-rs
-import type { DeclarativeSchemaType, KeyConfig } from './generated';
+// Using @generated alias that points to bindings/ directory where ts-rs writes them
+import type { DeclarativeSchemaType, KeyConfig } from '@generated/generated';
 
 /**
  * Backend schema structure (DeclarativeSchemaDefinition from Rust)

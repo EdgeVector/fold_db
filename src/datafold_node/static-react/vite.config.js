@@ -1,9 +1,16 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import path from 'path'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      // Import TypeScript bindings directly from where ts-rs generates them
+      '@generated': path.resolve(__dirname, '../../../bindings/src/datafold_node/static-react/src/types')
+    }
+  },
   server: {
     proxy: {
       '/api': {
