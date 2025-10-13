@@ -29,7 +29,6 @@ This directory contains comprehensive UI tests for the DataFold Node React appli
 - `components/tabs/SchemaTab.test.jsx` - Schema management tests
 - `integration/AppIntegration.test.jsx` - End-to-end workflow tests
 - `accessibility/AccessibilityTests.test.jsx` - Accessibility compliance tests
-- `../tests/dependencyUtils.test.js` - Utility function tests
 
 ## Testing Framework
 
