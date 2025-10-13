@@ -144,14 +144,6 @@ vi.mock('../../components/tabs/IngestionTab', () => ({
   )
 }));
 
-vi.mock('../../components/tabs/SchemaDependenciesTab', () => ({
-  default: () => (
-    <div data-testid="schema-dependencies-tab">
-      Schema Dependencies Tab
-    </div>
-  )
-}));
-
 // Create stable mock functions
 const mockApprovedSchemas = {
   approvedSchemas: [],

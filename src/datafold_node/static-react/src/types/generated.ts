@@ -13,9 +13,9 @@ backfill_hash: string,
  */
 transform_id: string, 
 /**
- * Source schema name
+ * Schema name
  */
-source_schema: string, 
+schema_name: string, 
 /**
  * Current status
  */
@@ -53,3 +53,37 @@ mutations_failed: number, };
  * Status of a backfill operation
  */
 export type BackfillStatus = "InProgress" | "Completed" | "Failed";
+
+/**
+ * Represents the schema-level type information.
+ */
+export type DeclarativeSchemaType = "Single" | { "Range": { keyconfig: KeyConfig, } } | { "HashRange": { keyconfig: KeyConfig, } };
+
+/**
+ * HashRange filter operations for querying hash-range fields
+ */
+export type HashRangeFilter = { "HashRangeKey": { hash: string, range: string, } } | { "HashKey": string } | { "HashRangePrefix": { hash: string, prefix: string, } } | { "RangePrefix": string } | { "HashRangeRange": { hash: string, start: string, end: string, } } | { "RangeRange": { start: string, end: string, } } | { "SampleN": number } | { "Value": string } | { "HashRangeKeys": Array<[string, string]> } | { "HashRangePattern": { hash: string, pattern: string, } } | { "RangePattern": string } | { "HashPattern": string } | { "HashRange": { start: string, end: string, } };
+
+/**
+ * Result of a hash-range filter operation
+ */
+export type HashRangeFilterResult = { 
+/**
+ * Matches with composite keys in format "KeyValue" -> atom_uuid
+ */
+matches: { [key in KeyValue]?: string }, 
+/**
+ * Total count of matches found
+ */
+total_count: number, 
+/**
+ * Number of hash groups that had matches
+ */
+hash_groups_count: number, };
+
+export type KeyConfig = { hash_field: string | null, range_field: string | null, };
+
+/**
+ * Represents resolved key values for hash and range components.
+ */
+export type KeyValue = { hash: string | null, range: string | null, };

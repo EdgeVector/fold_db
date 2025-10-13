@@ -11,7 +11,6 @@ import QueryTab from './components/tabs/QueryTab'
 import LlmQueryTab from './components/tabs/LlmQueryTab'
 import MutationTab from './components/tabs/MutationTab'
 import TransformsTab from './components/tabs/TransformsTab'
-import SchemaDependenciesTab from './components/tabs/SchemaDependenciesTab'
 import IngestionTab from './components/tabs/IngestionTab'
 import KeyManagementTab from './components/tabs/KeyManagementTab'
 import LogSidebar from './components/LogSidebar'
@@ -89,8 +88,6 @@ export function AppContent() {
         return <IngestionTab onResult={handleOperationResult} />
       case 'transforms':
         return <TransformsTab onResult={handleOperationResult} />
-      case 'dependencies':
-        return <SchemaDependenciesTab />
       case 'keys':
         return (
           <KeyManagementTab

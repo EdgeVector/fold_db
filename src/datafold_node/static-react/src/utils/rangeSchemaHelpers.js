@@ -228,7 +228,7 @@ export function getNonRangeKeyFields(schema) {
   
   // Declarative schema fields are an array of strings - convert to object format
   if (!Array.isArray(schema.fields)) {
-    return {};
+    throw new Error(`Expected schema.fields to be an array for range schema "${schema.name}", got ${typeof schema.fields}`);
   }
   
   return schema.fields.reduce((acc, fieldName) => {
@@ -260,7 +260,15 @@ export function getRangeFields(schema) {
  * @returns {Object} Object containing all fields (declarative schemas don't distinguish by type)
  */
 export function getNonRangeFields(schema) {
-  if (!schema || !schema.fields || !Array.isArray(schema.fields)) return {};
+  if (!schema) {
+    throw new Error('Schema is required for getNonRangeFields');
+  }
+  if (!schema.fields) {
+    throw new Error(`Schema "${schema.name}" is missing fields property`);
+  }
+  if (!Array.isArray(schema.fields)) {
+    throw new Error(`Expected schema.fields to be an array for schema "${schema.name}", got ${typeof schema.fields}`);
+  }
   
   return schema.fields.reduce((acc, fieldName) => {
     acc[fieldName] = {};

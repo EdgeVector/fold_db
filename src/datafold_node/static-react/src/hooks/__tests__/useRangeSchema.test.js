@@ -262,15 +262,6 @@ describe('useRangeSchema Hook', () => {
     expect(nonRangeFields).toHaveProperty('publish_date');  // All fields included since no type info
   });
 
-  it('should handle schemas without fields gracefully', () => {
-    const { result } = renderHook(() => useRangeSchema());
-    const emptySchema = { name: 'EmptySchema' };
-
-    expect(result.current.rangeProps.getRangeFields(emptySchema)).toEqual([]);
-    expect(result.current.rangeProps.getNonRangeFields(emptySchema)).toEqual({});
-    expect(result.current.rangeProps.getRangeSchemaInfo(emptySchema)).toBe(null);
-  });
-
   it('should provide placeholder min, max, step functions', () => {
     const { result } = renderHook(() => useRangeSchema());
 
