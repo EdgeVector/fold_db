@@ -6,7 +6,7 @@
  * through these utilities to ensure no ambiguity or interpretation issues.
  */
 
-import type { HashRangeFilter } from '../types/generated';
+import type { HashRangeFilter } from '@generated/generated';
 
 /**
  * Creates a HashKey filter for exact range key matches

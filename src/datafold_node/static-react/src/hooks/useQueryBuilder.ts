@@ -16,7 +16,7 @@ import {
   type HashRangeFilter,
   type RangeFilterInput
 } from '../utils/filterUtils';
-import type { Schema } from '../types/generated';
+import type { Schema } from '@generated/generated';
 
 interface QueryState {
   queryFields?: string[];

@@ -34,11 +34,6 @@ This directory contains example scripts, management tools, and integration tests
 - **`generate_coverage.sh`** - Generate test coverage reports
 - **`install-hooks.sh`** - Install git hooks for pre-commit checks
 - **`migrate_logging.py`** - Migrate logging configuration
-- **`sync_ts_bindings.sh`** - Sync TypeScript bindings from Rust types to frontend
-  - Generates TypeScript types from Rust using ts-rs
-  - Copies generated types to frontend source directory
-  - Ensures frontend types stay in sync with backend
-  - Usage: `./scripts/sync_ts_bindings.sh`
 
 ## Integration Test
 

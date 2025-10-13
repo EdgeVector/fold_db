@@ -8,7 +8,7 @@ import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import type { EnhancedApiResponse } from '../core/types';
 // Import generated types from Rust - u64 fields are exported as numbers via #[ts(type = "number")]
-import type { BackfillInfo, BackfillStatus } from '../../types/generated';
+import type { BackfillInfo, BackfillStatus } from '@generated/generated';
 
 // Re-export for convenience
 export type { BackfillInfo, BackfillStatus };
