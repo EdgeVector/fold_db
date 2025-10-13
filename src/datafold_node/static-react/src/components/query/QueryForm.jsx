@@ -91,12 +91,16 @@ function QueryForm({
     });
   }, [onFieldToggle]);
 
-  const selectedSchemaFields = queryState?.selectedSchema && approvedSchemas
-    ? approvedSchemas.find(s => s.name === queryState.selectedSchema)?.fields || {}
-    : {};
+  const selectedSchema = queryState?.selectedSchema && approvedSchemas
+    ? approvedSchemas.find(s => s.name === queryState.selectedSchema)
+    : null;
 
-  const rangeFields = Object.entries(selectedSchemaFields)
-    .filter(([__name, field]) => field.field_type === 'Range');
+  // Backend sends fields as an array of strings for regular schemas,
+  // or transform_fields as an object for transform schemas
+  const selectedSchemaFields = selectedSchema?.fields || selectedSchema?.transform_fields || [];
+  const fieldNames = Array.isArray(selectedSchemaFields) 
+    ? selectedSchemaFields 
+    : Object.keys(selectedSchemaFields);
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -123,7 +127,7 @@ function QueryForm({
       </FieldWrapper>
 
       {/* Field Selection - Show for all field types including HashRange */}
-      {queryState?.selectedSchema && Object.entries(selectedSchemaFields).length > 0 && (
+      {queryState?.selectedSchema && fieldNames.length > 0 && (
         <FieldWrapper
           label="Field Selection"
           name="fields"
@@ -133,8 +137,7 @@ function QueryForm({
         >
           <div className="bg-gray-50 rounded-md p-4">
             <div className="space-y-3">
-              {Object.entries(selectedSchemaFields)
-                .map(([fieldName, field]) => (
+              {fieldNames.map(fieldName => (
                 <label key={fieldName} className="relative flex items-start">
                   <div className="flex items-center h-5">
                     <input
@@ -146,12 +149,6 @@ function QueryForm({
                   </div>
                   <div className="ml-3 flex items-center">
                     <span className="text-sm font-medium text-gray-700">{fieldName}</span>
-                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                      {field.field_type || 'HashRange'}
-                    </span>
-                    {field.required && (
-                      <span className="ml-1 text-red-500 text-xs">*</span>
-                    )}
                   </div>
                 </label>
               ))}
@@ -238,77 +235,7 @@ function QueryForm({
         </FieldWrapper>
       )}
 
-      {/* Regular Range Field Filters - only show for non-range schemas */}
-      {!isRangeSchema && rangeFields.length > 0 && queryState?.queryFields?.some(fieldName =>
-        selectedSchemaFields[fieldName]?.field_type === 'Range'
-      ) && (
-        <FieldWrapper
-          label="Range Field Filters"
-          name="rangeFieldFilters"
-          helpText="Configure filters for range fields"
-        >
-          <div className="bg-blue-50 rounded-md p-4 space-y-4">
-            {rangeFields
-              .filter(([fieldName]) => queryState?.queryFields?.includes(fieldName))
-              .map(([fieldName]) => (
-                <div key={fieldName} className="border-b border-blue-200 pb-4 last:border-b-0 last:pb-0">
-                  <h4 className="text-sm font-medium text-gray-800 mb-3">{fieldName}</h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Key Range Filter */}
-                    <div className="space-y-2">
-                      <label className="block text-xs font-medium text-gray-600">Key Range</label>
-                      <input
-                        type="text"
-                        placeholder="Start key"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState?.rangeFilters?.[fieldName]?.start || ''}
-                        onChange={(e) => onRangeFilterChange(fieldName, 'start', e.target.value)}
-                      />
-                      <input
-                        type="text"
-                        placeholder="End key"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState?.rangeFilters?.[fieldName]?.end || ''}
-                        onChange={(e) => onRangeFilterChange(fieldName, 'end', e.target.value)}
-                      />
-                    </div>
-
-                    {/* Single Key Filter */}
-                    <div className="space-y-2">
-                      <label className="block text-xs font-medium text-gray-600">Exact Key</label>
-                      <input
-                        type="text"
-                        placeholder="Exact key to match"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState?.rangeFilters?.[fieldName]?.key || ''}
-                        onChange={(e) => onRangeFilterChange(fieldName, 'key', e.target.value)}
-                      />
-                    </div>
-
-                    {/* Key Prefix Filter */}
-                    <div className="space-y-2">
-                      <label className="block text-xs font-medium text-gray-600">Key Prefix</label>
-                      <input
-                        type="text"
-                        placeholder="Key prefix (e.g., 'user:')"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                        value={queryState?.rangeFilters?.[fieldName]?.keyPrefix || ''}
-                        onChange={(e) => onRangeFilterChange(fieldName, 'keyPrefix', e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-3 text-xs text-gray-500">
-                    <p><strong>Key Range:</strong> Matches keys between start and end (inclusive start, exclusive end)</p>
-                    <p><strong>Exact Key:</strong> Matches a specific key exactly</p>
-                    <p><strong>Key Prefix:</strong> Matches all keys starting with the prefix</p>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </FieldWrapper>
-      )}
+      {/* Note: Regular Range Field Filters section removed - declarative schemas don't have field_type metadata */}
     </div>
   );
 }

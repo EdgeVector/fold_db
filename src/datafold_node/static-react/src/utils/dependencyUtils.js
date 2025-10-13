@@ -5,30 +5,20 @@ export function getSchemaDependencies(schemas) {
   })
 
   schemas.forEach(schema => {
-    if (!schema.fields) return
-    Object.values(schema.fields).forEach(field => {
-      if (field.field_mappers) {
-        Object.keys(field.field_mappers).forEach(srcSchema => {
-          if (srcSchema && srcSchema !== schema.name) {
-            if (!deps[schema.name].has(srcSchema)) {
-              deps[schema.name].set(srcSchema, new Set())
-            }
-            deps[schema.name].get(srcSchema).add('field_mapper')
+    // Declarative schemas: dependencies come from transform_fields
+    if (schema.transform_fields && typeof schema.transform_fields === 'object') {
+      Object.values(schema.transform_fields).forEach(expression => {
+        // Extract schema name from transform expression like "BlogPost.map().content"
+        const match = expression.match(/^(\w+)\./)
+        if (match && match[1] && match[1] !== schema.name) {
+          const sourceSchema = match[1]
+          if (!deps[schema.name].has(sourceSchema)) {
+            deps[schema.name].set(sourceSchema, new Set())
           }
-        })
-      }
-      if (field.transform && Array.isArray(field.transform.inputs)) {
-        field.transform.inputs.forEach(input => {
-          const [schemaName] = input.split('.')
-          if (schemaName && schemaName !== schema.name) {
-            if (!deps[schema.name].has(schemaName)) {
-              deps[schema.name].set(schemaName, new Set())
-            }
-            deps[schema.name].get(schemaName).add('transform')
-          }
-        })
-      }
-    })
+          deps[schema.name].get(sourceSchema).add('transform')
+        }
+      })
+    }
   })
 
   return Object.fromEntries(

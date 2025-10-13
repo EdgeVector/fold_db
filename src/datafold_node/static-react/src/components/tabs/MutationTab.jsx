@@ -8,15 +8,14 @@ import { MUTATION_TYPE_API_MAP } from '../../constants/ui.js'
 // Removed hook dependencies - using Redux state management instead (TASK-003)
 // Temporarily bypass constants to break circular dependency
 const BUTTON_TEXT = { executeMutation: 'Execute Mutation', confirm: 'Confirm', cancel: 'Cancel' };
-const FORM_LABELS = { schema: 'Schema', operationType: 'Operation Type', rangeKeyFilter: 'Range Key Filter' };
-const RANGE_SCHEMA_CONFIG = { FIELD_TYPE: 'Range', MUTATION_WRAPPER_KEY: 'value' };
+const FORM_LABELS = { schema: 'Schema', operationType: 'Operation Type', rangeKeyFilter: 'Range Key Filter', rangeKeyRequired: 'Range key is required', rangeKeyOptional: 'Range key is optional for delete operations' };
+const RANGE_SCHEMA_CONFIG = { FIELD_TYPE: 'Range', MUTATION_WRAPPER_KEY: 'value', label: 'Range Key', backgroundColor: 'bg-blue-50' };
 const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
 import {
   isRangeSchema,
   formatRangeMutation,
   validateRangeKey,
-  getRangeKey,
-  getNonRangeKeyFields
+  getRangeKey
 } from '../../utils/rangeSchemaHelpers'
 import { useAppSelector } from '../../store/hooks'
 import { selectApprovedSchemas } from '../../store/schemaSlice'
@@ -28,7 +27,7 @@ function MutationTab({ onResult }) {
   const _authState = useAppSelector(state => state.auth)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [mutationData, setMutationData] = useState({})
-  const [mutationType, setMutationType] = useState('')
+  const [mutationType, setMutationType] = useState('Insert')
   const [result, setResult] = useState(null)
   const [rangeKeyValue, setRangeKeyValue] = useState('')
 
@@ -38,7 +37,7 @@ function MutationTab({ onResult }) {
   const handleSchemaChange = (schemaName) => {
     setSelectedSchema(schemaName)
     setMutationData({})
-    setMutationType('')
+    setMutationType('Insert')
     setRangeKeyValue('')
   }
 
@@ -113,7 +112,23 @@ function MutationTab({ onResult }) {
   const selectedSchemaObj = selectedSchema ? schemas.find(s => s.name === selectedSchema) : null
   const isCurrentSchemaRangeSchema = selectedSchemaObj ? isRangeSchema(selectedSchemaObj) : false
   const rangeKey = selectedSchemaObj ? getRangeKey(selectedSchemaObj) : null
-  const selectedSchemaFields = selectedSchemaObj ? (isCurrentSchemaRangeSchema ? getNonRangeKeyFields(selectedSchemaObj) : selectedSchemaObj.fields || {}) : {}
+  
+  // Convert declarative schema fields array to object format for MutationEditor
+  // For range schemas, filter out the range key (it's shown separately in Range Schema Configuration)
+  const getFieldsForMutation = () => {
+    if (!selectedSchemaObj || !Array.isArray(selectedSchemaObj.fields)) return {}
+    
+    const fieldsToShow = isCurrentSchemaRangeSchema 
+      ? selectedSchemaObj.fields.filter(field => field !== rangeKey)
+      : selectedSchemaObj.fields
+    
+    return fieldsToShow.reduce((acc, fieldName) => {
+      acc[fieldName] = {}
+      return acc
+    }, {})
+  }
+  
+  const selectedSchemaFields = getFieldsForMutation()
 
   const isMutationDisabled =
     !selectedSchema ||

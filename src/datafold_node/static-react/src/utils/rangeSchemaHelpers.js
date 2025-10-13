@@ -92,13 +92,7 @@ export function isHashRangeSchema(schema) {
  */
 export function getHashField(schema) {
   if (!schema || !isHashRangeSchema(schema)) return null;
-  // Prefer universal key
-  if (schema.key && typeof schema.key?.hash_field === 'string' && schema.key.hash_field.trim()) {
-    return schema.key.hash_field;
-  }
-  // Fallback to first HashRange field definition
-  const hashRangeField = Object.values(schema.fields || {}).find(field => field.field_type === 'HashRange' && field.hash_field);
-  return hashRangeField ? hashRangeField.hash_field : null;
+  return schema.key?.hash_field || null;
 }
 
 /**
@@ -109,13 +103,7 @@ export function getHashField(schema) {
  */
 export function getRangeField(schema) {
   if (!schema || !isHashRangeSchema(schema)) return null;
-  // Prefer universal key
-  if (schema.key && typeof schema.key?.range_field === 'string' && schema.key.range_field.trim()) {
-    return schema.key.range_field;
-  }
-  // Fallback to first HashRange field definition
-  const hashRangeField = Object.values(schema.fields || {}).find(field => field.field_type === 'HashRange' && field.range_field);
-  return hashRangeField ? hashRangeField.range_field : null;
+  return schema.key?.range_field || null;
 }
 
 /**
@@ -206,17 +194,8 @@ export function getRangeKey(schema) {
  */
 export function getHashKey(schema) {
   if (!schema || typeof schema !== 'object') return null;
-  // Prefer universal key when present
   const hf = schema?.key?.hash_field;
-  if (typeof hf === 'string' && hf.trim()) {
-    return lastSegment(hf);
-  }
-  // HashRange fallback: try first field definition
-  if (isHashRangeSchema(schema)) {
-    const hr = Object.values(schema.fields || {}).find(field => field.field_type === 'HashRange' && field.hash_field);
-    return hr ? lastSegment(hr.hash_field) : null;
-  }
-  return null;
+  return hf && typeof hf === 'string' && hf.trim() ? lastSegment(hf) : null;
 }
 
 /**
@@ -246,44 +225,47 @@ export function getNonRangeKeyFields(schema) {
   }
   
   const rangeKey = getRangeKey(schema);
-  const fields = { ...schema.fields };
   
-  // Remove the range key field from the list
-  if (rangeKey && fields[rangeKey]) {
-    delete fields[rangeKey];
+  // Declarative schema fields are an array of strings - convert to object format
+  if (!Array.isArray(schema.fields)) {
+    return {};
   }
   
-  return fields;
+  return schema.fields.reduce((acc, fieldName) => {
+    if (fieldName !== rangeKey) {
+      acc[fieldName] = {};
+    }
+    return acc;
+  }, {});
 }
 
 /**
- * Gets range fields from a schema (fields with field_type: "Range")
+ * Gets range fields from a schema
+ * Note: Declarative schemas don't store field types, so this returns empty array
  * 
  * @param {Schema} schema - Schema object
- * @returns {string[]} Array of range field names
+ * @returns {string[]} Array of range field names (empty for declarative schemas)
  */
 export function getRangeFields(schema) {
   if (!schema || !schema.fields) return [];
-  
-  return Object.entries(schema.fields)
-    .filter(([_, field]) => field.field_type === RANGE_SCHEMA_CONFIG.FIELD_TYPE)
-    .map(([fieldName]) => fieldName);
+  // Declarative schemas don't have field_type metadata
+  return [];
 }
 
 /**
- * Gets non-range fields from a schema (fields without field_type: "Range")
+ * Gets non-range fields from a schema
+ * Note: Declarative schemas don't have field_type metadata
  * 
  * @param {Schema} schema - Schema object
- * @returns {Object} Object containing non-range fields
+ * @returns {Object} Object containing all fields (declarative schemas don't distinguish by type)
  */
 export function getNonRangeFields(schema) {
-  if (!schema || !schema.fields) return {};
+  if (!schema || !schema.fields || !Array.isArray(schema.fields)) return {};
   
-  return Object.fromEntries(
-    Object.entries(schema.fields).filter(
-      ([_, field]) => field.field_type !== RANGE_SCHEMA_CONFIG.FIELD_TYPE
-    )
-  );
+  return schema.fields.reduce((acc, fieldName) => {
+    acc[fieldName] = {};
+    return acc;
+  }, {});
 }
 
 /**
@@ -435,9 +417,9 @@ export function getRangeSchemaInfo(schema) {
   return {
     isRangeSchema: true,
     rangeKey: getRangeKey(schema),
-    rangeFields: Object.entries(schema.fields || {}).filter(([_, field]) => field.field_type === RANGE_SCHEMA_CONFIG.FIELD_TYPE),
+    rangeFields: [],  // Declarative schemas don't store field types
     nonRangeKeyFields: getNonRangeKeyFields(schema),
-    totalFields: Object.keys(schema.fields || {}).length
+    totalFields: Array.isArray(schema.fields) ? schema.fields.length : 0
   };
 }
 
@@ -490,6 +472,6 @@ export function getHashRangeSchemaInfo(schema) {
     isHashRangeSchema: true,
     hashField: getHashKey(schema),
     rangeField: getRangeKey(schema),
-    totalFields: Object.keys(schema.fields || {}).length
+    totalFields: Array.isArray(schema.fields) ? schema.fields.length : 0
   };
 }

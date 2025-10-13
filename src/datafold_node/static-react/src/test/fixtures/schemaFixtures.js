@@ -23,29 +23,8 @@ import { SCHEMA_STATES } from '../../constants/schemas';
 export const basicApprovedSchema = {
   name: 'user_profiles',
   state: SCHEMA_STATES.APPROVED,
-  fields: {
-    id: { 
-      field_type: 'String',
-      description: 'Unique user identifier'
-    },
-    name: { 
-      field_type: 'String',
-      description: 'User full name'
-    },
-    email: { 
-      field_type: 'String',
-      description: 'User email address'
-    },
-    age: { 
-      field_type: 'Number',
-      description: 'User age in years'
-    },
-    active: { 
-      field_type: 'Boolean',
-      description: 'Whether user is active'
-    }
-  },
-  schema_type: 'Standard',
+  fields: ['id', 'name', 'email', 'age', 'active'],
+  schema_type: { Single: {} },
   created_at: '2025-06-24T00:00:00Z',
   updated_at: '2025-06-24T00:00:00Z'
 };
@@ -56,29 +35,8 @@ export const basicApprovedSchema = {
 export const basicAvailableSchema = {
   name: 'product_catalog',
   state: SCHEMA_STATES.AVAILABLE,
-  fields: {
-    product_id: { 
-      field_type: 'String',
-      description: 'Unique product identifier'
-    },
-    name: { 
-      field_type: 'String',
-      description: 'Product name'
-    },
-    price: { 
-      field_type: 'Number',
-      description: 'Product price in cents'
-    },
-    category: { 
-      field_type: 'String',
-      description: 'Product category'
-    },
-    in_stock: { 
-      field_type: 'Boolean',
-      description: 'Whether product is in stock'
-    }
-  },
-  schema_type: 'Standard',
+  fields: ['product_id', 'name', 'price', 'category', 'in_stock'],
+  schema_type: { Single: {} },
   created_at: '2025-06-24T00:00:00Z',
   updated_at: '2025-06-24T00:00:00Z'
 };
@@ -89,21 +47,8 @@ export const basicAvailableSchema = {
 export const basicBlockedSchema = {
   name: 'legacy_orders',
   state: SCHEMA_STATES.BLOCKED,
-  fields: {
-    order_id: { 
-      field_type: 'String',
-      description: 'Legacy order identifier'
-    },
-    customer_id: { 
-      field_type: 'String',
-      description: 'Customer identifier'
-    },
-    total: { 
-      field_type: 'Number',
-      description: 'Order total amount'
-    }
-  },
-  schema_type: 'Standard',
+  fields: ['order_id', 'customer_id', 'total'],
+  schema_type: { Single: {} },
   created_at: '2025-06-23T00:00:00Z',
   updated_at: '2025-06-24T00:00:00Z'
 };
@@ -118,30 +63,11 @@ export const basicBlockedSchema = {
 export const timeSeriesRangeSchema = {
   name: 'time_series_data',
   state: SCHEMA_STATES.APPROVED,
-  fields: {
-    timestamp: { 
-      field_type: 'Range',
-      description: 'Timestamp for data point'
-    },
-    value: { 
-      field_type: 'Range',
-      description: 'Numeric value at timestamp'
-    },
-    metadata: { 
-      field_type: 'Range',
-      description: 'Additional metadata for data point'
-    }
-  },
+  fields: ['timestamp', 'value', 'metadata'],
+  key: { range_field: 'timestamp' },
   schema_type: {
     Range: { 
       range_key: 'timestamp'
-    }
-  },
-  rangeInfo: {
-    isRangeSchema: true,
-    rangeField: {
-      name: 'timestamp',
-      type: 'Range'
     }
   },
   created_at: '2025-06-24T00:00:00Z',
@@ -154,34 +80,11 @@ export const timeSeriesRangeSchema = {
 export const userActivityRangeSchema = {
   name: 'user_activity',
   state: SCHEMA_STATES.APPROVED,
-  fields: {
-    user_id: { 
-      field_type: 'Range',
-      description: 'User identifier for activity'
-    },
-    activity_type: { 
-      field_type: 'Range',
-      description: 'Type of user activity'
-    },
-    session_data: { 
-      field_type: 'Range',
-      description: 'Session information'
-    },
-    metrics: { 
-      field_type: 'Range',
-      description: 'Activity metrics'
-    }
-  },
+  fields: ['user_id', 'activity_type', 'session_data', 'metrics'],
+  key: { range_field: 'user_id' },
   schema_type: {
     Range: { 
       range_key: 'user_id'
-    }
-  },
-  rangeInfo: {
-    isRangeSchema: true,
-    rangeField: {
-      name: 'user_id',
-      type: 'Range'
     }
   },
   created_at: '2025-06-24T00:00:00Z',
@@ -194,30 +97,11 @@ export const userActivityRangeSchema = {
 export const availableRangeSchema = {
   name: 'sensor_readings',
   state: SCHEMA_STATES.AVAILABLE,
-  fields: {
-    sensor_id: { 
-      field_type: 'Range',
-      description: 'Sensor identifier'
-    },
-    reading_value: { 
-      field_type: 'Range',
-      description: 'Sensor reading value'
-    },
-    calibration_data: { 
-      field_type: 'Range',
-      description: 'Sensor calibration information'
-    }
-  },
+  fields: ['sensor_id', 'reading_value', 'calibration_data'],
+  key: { range_field: 'sensor_id' },
   schema_type: {
     Range: { 
       range_key: 'sensor_id'
-    }
-  },
-  rangeInfo: {
-    isRangeSchema: true,
-    rangeField: {
-      name: 'sensor_id',
-      type: 'Range'
     }
   },
   created_at: '2025-06-24T00:00:00Z',
@@ -234,45 +118,8 @@ export const availableRangeSchema = {
 export const complexMixedSchema = {
   name: 'analytics_events',
   state: SCHEMA_STATES.APPROVED,
-  fields: {
-    event_id: { 
-      field_type: 'String',
-      description: 'Unique event identifier'
-    },
-    user_id: { 
-      field_type: 'String',
-      description: 'User who triggered event'
-    },
-    event_type: { 
-      field_type: 'String',
-      description: 'Type of analytics event'
-    },
-    timestamp: { 
-      field_type: 'String',
-      description: 'ISO timestamp of event'
-    },
-    properties: { 
-      field_type: 'String',
-      description: 'JSON string of event properties'
-    },
-    session_duration: { 
-      field_type: 'Number',
-      description: 'Duration of user session in seconds'
-    },
-    page_views: { 
-      field_type: 'Number',
-      description: 'Number of page views in session'
-    },
-    is_conversion: { 
-      field_type: 'Boolean',
-      description: 'Whether event represents a conversion'
-    },
-    is_bounce: { 
-      field_type: 'Boolean',
-      description: 'Whether event represents a bounce'
-    }
-  },
-  schema_type: 'Standard',
+  fields: ['event_id', 'user_id', 'event_type', 'timestamp', 'properties', 'session_duration', 'page_views', 'is_conversion', 'is_bounce'],
+  schema_type: { Single: {} },
   created_at: '2025-06-24T00:00:00Z',
   updated_at: '2025-06-24T00:00:00Z'
 };
@@ -283,13 +130,8 @@ export const complexMixedSchema = {
 export const minimalSchema = {
   name: 'simple_counter',
   state: SCHEMA_STATES.APPROVED,
-  fields: {
-    count: { 
-      field_type: 'Number',
-      description: 'Simple counter value'
-    }
-  },
-  schema_type: 'Standard',
+  fields: ['count'],
+  schema_type: { Single: {} },
   created_at: '2025-06-24T00:00:00Z',
   updated_at: '2025-06-24T00:00:00Z'
 };
@@ -300,25 +142,8 @@ export const minimalSchema = {
 export const stringOnlySchema = {
   name: 'text_content',
   state: SCHEMA_STATES.APPROVED,
-  fields: {
-    title: { 
-      field_type: 'String',
-      description: 'Content title'
-    },
-    body: { 
-      field_type: 'String',
-      description: 'Content body text'
-    },
-    author: { 
-      field_type: 'String',
-      description: 'Content author'
-    },
-    tags: { 
-      field_type: 'String',
-      description: 'Comma-separated tags'
-    }
-  },
-  schema_type: 'Standard',
+  fields: ['title', 'body', 'author', 'tags'],
+  schema_type: { Single: {} },
   created_at: '2025-06-24T00:00:00Z',
   updated_at: '2025-06-24T00:00:00Z'
 };
@@ -460,19 +285,10 @@ export const createSchemaWithState = (state, overrides = {}) => {
  */
 export const createRangeSchemaWithKey = (rangeKey, overrides = {}) => {
   return createCustomSchema({
-    fields: {
-      [rangeKey]: { field_type: 'Range', description: `Range key: ${rangeKey}` },
-      value: { field_type: 'Range', description: 'Range value' }
-    },
+    fields: [rangeKey, 'value'],
+    key: { range_field: rangeKey },
     schema_type: {
       Range: { range_key: rangeKey }
-    },
-    rangeInfo: {
-      isRangeSchema: true,
-      rangeField: {
-        name: rangeKey,
-        type: 'Range'
-      }
     },
     ...overrides
   }, 'range');
@@ -494,19 +310,10 @@ export const createMixedSchemaList = (count = 6, states = Object.values(SCHEMA_S
       name: `mixed_schema_${index}`,
       state,
       ...(isRange && {
-        fields: {
-          range_key: { field_type: 'Range', description: 'Range key field' },
-          data: { field_type: 'Range', description: 'Range data field' }
-        },
+        fields: ['range_key', 'data'],
+        key: { range_field: 'range_key' },
         schema_type: {
           Range: { range_key: 'range_key' }
-        },
-        rangeInfo: {
-          isRangeSchema: true,
-          rangeField: {
-            name: 'range_key',
-            type: 'Range'
-          }
         }
       })
     }, isRange ? 'range' : 'standard');
@@ -530,9 +337,8 @@ export const isValidSchemaFixture = (schema) => {
   return (
     requiredFields.every(field => field in schema) &&
     validStates.includes(schema.state) &&
-    typeof schema.fields === 'object' &&
-    schema.fields !== null &&
-    Object.keys(schema.fields).length > 0
+    Array.isArray(schema.fields) &&
+    schema.fields.length > 0
   );
 };
 
@@ -546,12 +352,9 @@ export const isValidRangeSchemaFixture = (schema) => {
   if (!isValidSchemaFixture(schema)) return false;
   
   const hasRangeType = schema.schema_type?.Range?.range_key;
-  const hasRangeFields = Object.values(schema.fields).every(
-    field => field.field_type === 'Range'
-  );
-  const hasRangeInfo = schema.rangeInfo?.isRangeSchema;
+  const hasKeyConfig = schema.key?.range_field;
   
-  return hasRangeType && hasRangeFields && hasRangeInfo;
+  return hasRangeType && hasKeyConfig;
 };
 
 // Export all fixtures and utilities

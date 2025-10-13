@@ -23,11 +23,7 @@ describe('useRangeSchema Hook', () => {
         range_key: 'timestamp'
       }
     },
-    fields: {
-      timestamp: { field_type: 'Range' },
-      value: { field_type: 'Range' },
-      metadata: { field_type: 'Range' }
-    }
+    fields: ['timestamp', 'value', 'metadata']
   });
 
   const createMockRegularSchema = () => ({
@@ -232,7 +228,7 @@ describe('useRangeSchema Hook', () => {
 
     expect(info.isRangeSchema).toBe(true);
     expect(info.rangeKey).toBe('timestamp');
-    expect(info.rangeFields).toHaveLength(3);
+    expect(info.rangeFields).toHaveLength(0);  // Declarative schemas don't store field types
     expect(info.totalFields).toBe(3);
     expect(info.nonRangeKeyFields).toHaveProperty('value');
     expect(info.nonRangeKeyFields).not.toHaveProperty('timestamp');
@@ -249,24 +245,21 @@ describe('useRangeSchema Hook', () => {
 
   it('should extract range and non-range fields separately', () => {
     const { result } = renderHook(() => useRangeSchema());
-    const mixedSchema = {
-      name: 'MixedSchema',
-      fields: {
-        range_field1: { field_type: 'Range' },
-        range_field2: { field_type: 'Range' },
-        string_field: { field_type: 'String' },
-        number_field: { field_type: 'Number' }
-      }
+    const schema = {
+      name: 'BlogPost',
+      schema_type: { Range: { range_key: 'publish_date' } },
+      fields: ['publish_date', 'title', 'content', 'author']
     };
 
-    const rangeFields = result.current.rangeProps.getRangeFields(mixedSchema);
-    const nonRangeFields = result.current.rangeProps.getNonRangeFields(mixedSchema);
+    // Declarative schemas don't store field types, so getRangeFields returns empty
+    const rangeFields = result.current.rangeProps.getRangeFields(schema);
+    const nonRangeFields = result.current.rangeProps.getNonRangeFields(schema);
 
-    expect(rangeFields).toEqual(['range_field1', 'range_field2']);
-    expect(nonRangeFields).toHaveProperty('string_field');
-    expect(nonRangeFields).toHaveProperty('number_field');
-    expect(nonRangeFields).not.toHaveProperty('range_field1');
-    expect(nonRangeFields).not.toHaveProperty('range_field2');
+    expect(rangeFields).toEqual([]);  // No field types in declarative schemas
+    expect(nonRangeFields).toHaveProperty('title');
+    expect(nonRangeFields).toHaveProperty('content');
+    expect(nonRangeFields).toHaveProperty('author');
+    expect(nonRangeFields).toHaveProperty('publish_date');  // All fields included since no type info
   });
 
   it('should handle schemas without fields gracefully', () => {

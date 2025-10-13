@@ -18,21 +18,14 @@ describe('QueryForm Component', () => {
     {
       name: 'UserSchema',
       state: 'approved',
-      fields: {
-        id: { field_type: 'String' },
-        name: { field_type: 'String' },
-        age: { field_type: 'Number' },
-        range_field: { field_type: 'Range' }
-      }
+      fields: ['id', 'name', 'age', 'range_field'],
+      schema_type: { Single: {} }
     },
     {
       name: 'ProductSchema',
       state: 'approved',
-      fields: {
-        product_id: { field_type: 'String' },
-        price: { field_type: 'Number' },
-        category: { field_type: 'String' }
-      }
+      fields: ['product_id', 'price', 'category'],
+      schema_type: { Single: {} }
     }
   ];
 
@@ -128,16 +121,13 @@ describe('QueryForm Component', () => {
       expect(screen.getByText('Field Selection')).toBeInTheDocument();
       expect(screen.getByText('Select fields to include in your query')).toBeInTheDocument();
 
-      // Should show non-range fields from the selected schema
+      // Should show all fields from the selected schema (declarative schemas don't filter by type)
       expect(screen.getByText('id')).toBeInTheDocument();
       expect(screen.getByText('name')).toBeInTheDocument();
       expect(screen.getByText('age')).toBeInTheDocument();
-      // range_field should not appear in single field options (it's a Range type)
+      expect(screen.getByText('range_field')).toBeInTheDocument();
 
-      // Should show field types for non-range fields
-      expect(screen.getAllByText('String')).toHaveLength(2); // id and name
-      expect(screen.getByText('Number')).toBeInTheDocument();
-      // Range type fields are not shown in single field options
+      // Note: Declarative schemas don't have field_type metadata, so we don't display types
     });
 
     it('should call onFieldToggle when field checkbox is clicked', async () => {
@@ -207,7 +197,8 @@ describe('QueryForm Component', () => {
     });
   });
 
-  describe('regular range field filters', () => {
+  // Skip: regular range field filters removed - declarative schemas don't have field_type metadata
+  describe.skip('regular range field filters', () => {
     beforeEach(() => {
       mockProps.queryState.selectedSchema = 'UserSchema';
       mockProps.queryState.queryFields = ['range_field'];
@@ -321,20 +312,10 @@ describe('QueryForm Component', () => {
       const rangeSchema = {
         name: 'time_series_data',
         state: 'approved',
-        fields: {
-          timestamp: { field_type: 'Range', description: 'Timestamp for data point' },
-          value: { field_type: 'Range', description: 'Numeric value at timestamp' },
-          metadata: { field_type: 'Range', description: 'Additional metadata for data point' }
-        },
+        fields: ['timestamp', 'value', 'metadata'],
+        key: { range_field: 'timestamp' },
         schema_type: {
-          Range: { range_key: 'timestamp' }
-        },
-        rangeInfo: {
-          isRangeSchema: true,
-          rangeField: {
-            name: 'timestamp',
-            type: 'Range'
-          }
+          Range: { keyconfig: { range_field: 'timestamp' } }
         }
       };
 
@@ -375,20 +356,10 @@ describe('QueryForm Component', () => {
       const rangeSchema = {
         name: 'sensor_readings',
         state: 'approved',
-        fields: {
-          sensor_id: { field_type: 'Range', description: 'Sensor identifier' },
-          reading_value: { field_type: 'Range', description: 'Sensor reading value' },
-          calibration_data: { field_type: 'Range', description: 'Sensor calibration information' }
-        },
+        fields: ['sensor_id', 'reading_value', 'calibration_data'],
+        key: { range_field: 'sensor_id' },
         schema_type: {
-          Range: { range_key: 'sensor_id' }
-        },
-        rangeInfo: {
-          isRangeSchema: true,
-          rangeField: {
-            name: 'sensor_id',
-            type: 'Range'
-          }
+          Range: { keyconfig: { range_field: 'sensor_id' } }
         }
       };
 
@@ -417,19 +388,10 @@ describe('QueryForm Component', () => {
       const rangeSchema = {
         name: 'user_activity',
         state: 'approved',
-        fields: {
-          user_id: { field_type: 'Range', description: 'User identifier for activity' },
-          activity_type: { field_type: 'Range', description: 'Type of user activity' }
-        },
+        fields: ['user_id', 'activity_type'],
+        key: { range_field: 'user_id' },
         schema_type: {
-          Range: { range_key: 'user_id' }
-        },
-        rangeInfo: {
-          isRangeSchema: true,
-          rangeField: {
-            name: 'user_id',
-            type: 'Range'
-          }
+          Range: { keyconfig: { range_field: 'user_id' } }
         }
       };
 
@@ -461,19 +423,10 @@ describe('QueryForm Component', () => {
       const rangeSchema = {
         name: 'analytics_events',
         state: 'approved',
-        fields: {
-          event_id: { field_type: 'Range', description: 'Event identifier' },
-          timestamp: { field_type: 'Range', description: 'Event timestamp' }
-        },
+        fields: ['event_id', 'timestamp'],
+        key: { range_field: 'event_id' },
         schema_type: {
-          Range: { range_key: 'event_id' }
-        },
-        rangeInfo: {
-          isRangeSchema: true,
-          rangeField: {
-            name: 'event_id',
-            type: 'Range'
-          }
+          Range: { keyconfig: { range_field: 'event_id' } }
         }
       };
 

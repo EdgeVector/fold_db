@@ -116,16 +116,17 @@ export const fetchSchemas = createAsyncThunk<
         
         console.log('📁 Raw schemas response:', availableResponse.data);
         
-        // The backend now returns schemas with state information included
+        // The backend returns full SchemaWithState objects - use them directly
         const rawSchemas = availableResponse.data || [];
         
         if (!Array.isArray(rawSchemas)) {
           throw new Error(`Schemas response is not an array: ${typeof rawSchemas}`);
         }
         
-        // Create schemas with states from the backend response
-        const schemasWithStates = rawSchemas.map((schema: any) => {
-          // Use state from backend response, default to Available
+        // Use the backend schema objects directly without transformation
+        // Only normalize the state field to lowercase for consistency
+        const schemas = rawSchemas.map((schema: any) => {
+          // Normalize state to lowercase string if it exists
           let normalizedState = SCHEMA_STATES.AVAILABLE;
           
           if (schema.state) {
@@ -139,58 +140,21 @@ export const fetchSchemas = createAsyncThunk<
             }
           }
           
-          console.log('🟢 fetchSchemas: Using backend state for', schema.name, ':', normalizedState);
+          console.log('🟢 fetchSchemas: Using backend schema for', schema.name, 'with state:', normalizedState);
           
+          // Return the full schema object from backend with normalized state
           return {
-            name: schema.name,
-            state: normalizedState,
-            fields: schema.fields || {} // Include fields from backend response
+            ...schema,
+            state: normalizedState
           };
         });
         
-        console.log('📋 Merged schemas for UI:', schemasWithStates);
-        
-        // Fetch detailed schema information for all schemas using SchemaClient
-        const schemasWithDetails = await Promise.all(
-          schemasWithStates.map(async (schema: any) => {
-            try {
-              const schemaResponse = await schemaClient.getSchema(schema.name);
-              
-              if (schemaResponse.success && schemaResponse.data) {
-                const schemaData = schemaResponse.data;
-                // Check if schema_type is Range (tagged union: { "Range": { keyconfig: {...} } })
-                const isRangeType = typeof (schemaData as any).schema_type === 'object' && 
-                                   (schemaData as any).schema_type !== null &&
-                                   'Range' in (schemaData as any).schema_type;
-                return {
-                  ...schema,
-                  ...schemaData, // Include the full schema data including schema_type
-                  fields: schemaData.fields || {},
-                  // Add range info if this is a range schema
-                  rangeInfo: {
-                    isRangeSchema: isRangeType,
-                    rangeField: isRangeType ? {
-                      name: 'range_key',
-                      type: 'Range'
-                    } : undefined
-                  }
-                };
-              } else {
-                console.log(`⚠️ Schema ${schema.name} not loaded in memory, keeping basic info`);
-              }
-            } catch (err) {
-              console.log(`⚠️ Failed to fetch details for schema ${schema.name}:`, err instanceof Error ? err.message : 'Unknown error');
-            }
-            return schema; // Return original if fetch fails
-          })
-        );
-        
-        console.log('✅ Final schemas for UI:', schemasWithDetails);
+        console.log('✅ Using backend schemas directly:', schemas);
         
         const timestamp = Date.now();
         
         return {
-          schemas: schemasWithDetails as Schema[],
+          schemas: schemas as Schema[],
           timestamp
         };
         

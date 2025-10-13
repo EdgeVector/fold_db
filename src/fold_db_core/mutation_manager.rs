@@ -200,6 +200,13 @@ impl MutationManager {
                     &key_value,
                     schema_field,
                 )?;
+            } else {
+                error!(
+                    "Field '{}' not found in runtime_fields for schema '{}'. Available fields: {:?}",
+                    field_name,
+                    mutation_request.mutation.schema_name,
+                    schema.runtime_fields.keys().collect::<Vec<_>>()
+                );
             }
         }
 

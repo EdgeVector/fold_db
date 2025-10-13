@@ -141,10 +141,7 @@ describe('rangeSchemaUtils', () => {
     it('should return empty object for non-range schema', () => {
       const schema = {
         name: 'TestSchema',
-        fields: {
-          field1: { field_type: 'Single' },
-          field2: { field_type: 'Single' }
-        }
+        fields: ['field1', 'field2']
       }
       expect(getNonRangeKeyFields(schema)).toEqual({})
     })
@@ -153,16 +150,12 @@ describe('rangeSchemaUtils', () => {
       const schema = {
         name: 'UserScores',
         schema_type: { Range: { range_key: 'user_id' } },
-        fields: {
-          user_id: { field_type: 'Range' },
-          game_scores: { field_type: 'Range' },
-          achievements: { field_type: 'Range' }
-        }
+        fields: ['user_id', 'game_scores', 'achievements']
       }
       const result = getNonRangeKeyFields(schema)
       expect(result).toEqual({
-        game_scores: { field_type: 'Range' },
-        achievements: { field_type: 'Range' }
+        game_scores: {},
+        achievements: {}
       })
       expect(result).not.toHaveProperty('user_id')
     })
@@ -171,15 +164,12 @@ describe('rangeSchemaUtils', () => {
       const schema = {
         name: 'UserScores',
         schema_type: { Range: { range_key: 'missing_key' } },
-        fields: {
-          user_id: { field_type: 'Range' },
-          game_scores: { field_type: 'Range' }
-        }
+        fields: ['user_id', 'game_scores']
       }
       const result = getNonRangeKeyFields(schema)
       expect(result).toEqual({
-        user_id: { field_type: 'Range' },
-        game_scores: { field_type: 'Range' }
+        user_id: {},
+        game_scores: {}
       })
     })
   })
@@ -276,11 +266,7 @@ describe('rangeSchemaUtils', () => {
       const schema = {
         name: 'UserScores',
         schema_type: { Range: { range_key: 'user_id' } },
-        fields: {
-          user_id: { field_type: 'Range' },
-          game_scores: { field_type: 'Range' },
-          achievements: { field_type: 'Range' }
-        }
+        fields: ['user_id', 'game_scores', 'achievements']
       }
       
       const result = getRangeSchemaInfo(schema)
@@ -288,14 +274,10 @@ describe('rangeSchemaUtils', () => {
       expect(result).toEqual({
         isRangeSchema: true,
         rangeKey: 'user_id',
-        rangeFields: [
-          ['user_id', { field_type: 'Range' }],
-          ['game_scores', { field_type: 'Range' }],
-          ['achievements', { field_type: 'Range' }]
-        ],
+        rangeFields: [],  // getRangeFields no longer applies to declarative schemas
         nonRangeKeyFields: {
-          game_scores: { field_type: 'Range' },
-          achievements: { field_type: 'Range' }
+          game_scores: {},
+          achievements: {}
         },
         totalFields: 3
       })
@@ -346,51 +328,31 @@ describe('rangeSchemaUtils', () => {
       expect(getRangeKey(schema)).toBe('new_range_key') // Should prefer new format
     })
 
-    it('should work with real UserScores schema structure', () => {
-      const userScoresSchema = {
-        name: 'UserScores',
+    it('should work with real declarative schema structure', () => {
+      const blogPostSchema = {
+        name: 'BlogPost',
         schema_type: {
           Range: {
-            range_key: 'user_id'
+            range_key: 'publish_date'
           }
         },
-        fields: {
-          user_id: {
-            permission_policy: {
-              read_policy: { Distance: 0 },
-              write_policy: { Distance: 2 }
-            },
-            field_type: 'Range',
-            writable: true
-          },
-          game_scores: {
-            permission_policy: {
-              read_policy: { Distance: 0 },
-              write_policy: { Distance: 1 }
-            },
-            field_type: 'Range',
-            writable: true
-          }
-        },
-        payment_config: {
-          base_multiplier: 1.8,
-          min_payment_threshold: 3
-        }
+        fields: ['author', 'content', 'publish_date', 'tags', 'title']
       }
       
-      expect(isRangeSchema(userScoresSchema)).toBe(true)
-      expect(getRangeKey(userScoresSchema)).toBe('user_id')
+      expect(isRangeSchema(blogPostSchema)).toBe(true)
+      expect(getRangeKey(blogPostSchema)).toBe('publish_date')
       
-      const nonRangeKeyFields = getNonRangeKeyFields(userScoresSchema)
-      expect(nonRangeKeyFields).toHaveProperty('game_scores')
-      expect(nonRangeKeyFields).not.toHaveProperty('user_id')
+      const nonRangeKeyFields = getNonRangeKeyFields(blogPostSchema)
+      expect(nonRangeKeyFields).toHaveProperty('author')
+      expect(nonRangeKeyFields).toHaveProperty('content')
+      expect(nonRangeKeyFields).not.toHaveProperty('publish_date')
       
-      const query = formatRangeQuery(userScoresSchema, ['game_scores'], 'user123')
+      const query = formatRangeQuery(blogPostSchema, ['title', 'author'], '2024-01-01')
       expect(query).toEqual({
         type: 'query',
-        schema: 'UserScores',
-        fields: ['game_scores'],
-        filter: { HashKey: 'user123' }
+        schema: 'BlogPost',
+        fields: ['title', 'author'],
+        filter: { HashKey: '2024-01-01' }
       })
     })
   })

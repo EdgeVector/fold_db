@@ -360,16 +360,16 @@ describe('QueryBuilder Component', () => {
     it('derives schema details from provided schemas map when object not given', () => {
       const props = {
         queryState: {
-          selectedSchema: 'MappedSchema',
+          selectedSchema: 'BlogPost',
           queryFields: [],
           fieldValues: {}
         },
         schemas: {
-          MappedSchema: {
-            name: 'MappedSchema',
-            fields: {
-              range_field: { field_type: 'Range' }
-            }
+          BlogPost: {
+            name: 'BlogPost',
+            schema_type: { Range: { range_key: 'publish_date' } },
+            key: { range_field: 'publish_date' },
+            fields: ['publish_date', 'title', 'content']
           }
         }
       };
@@ -381,11 +381,11 @@ describe('QueryBuilder Component', () => {
       );
 
       expect(useQueryBuilder).toHaveBeenCalledWith(expect.objectContaining({
-        schema: 'MappedSchema',
-        selectedSchemaObj: props.schemas.MappedSchema,
+        schema: 'BlogPost',
+        selectedSchemaObj: props.schemas.BlogPost,
         schemas: props.schemas,
         isRangeSchema: true,
-        rangeKey: 'range_field'
+        rangeKey: 'publish_date'
       }));
     });
   });
