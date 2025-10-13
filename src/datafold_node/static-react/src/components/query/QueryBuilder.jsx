@@ -26,23 +26,14 @@ import { useQueryBuilder } from '../../hooks/useQueryBuilder';
  */
 
 /**
- * Range schema utility functions
+ * Range schema utility functions for declarative schemas
  */
 const detectRangeSchema = (schema) => {
-  if (!schema?.fields) {
-    return false;
-  }
-
-  return Object.values(schema.fields).some(field => field?.field_type === 'Range');
+  return schema?.schema_type?.Range !== undefined;
 };
 
 const extractRangeKey = (schema) => {
-  if (!schema?.fields) {
-    return null;
-  }
-
-  const rangeField = Object.entries(schema.fields).find(([, field]) => field?.field_type === 'Range');
-  return rangeField ? rangeField[0] : null;
+  return schema?.schema_type?.Range?.range_key || schema?.key?.range_field || null;
 };
 
 /**

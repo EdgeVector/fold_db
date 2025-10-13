@@ -128,7 +128,11 @@ function useQueryState() {
     // Default to all fields being checked when a schema is selected
     if (schemaName) {
       const selectedSchemaObj = (schemas || []).find(s => s.name === schemaName);
-      const allFieldNames = selectedSchemaObj?.fields ? Object.keys(selectedSchemaObj.fields) : [];
+      // Handle both regular schemas (fields array) and transform schemas (transform_fields object)
+      const schemaFields = selectedSchemaObj?.fields || selectedSchemaObj?.transform_fields || [];
+      const allFieldNames = Array.isArray(schemaFields) 
+        ? schemaFields 
+        : Object.keys(schemaFields);
       setQueryFields(allFieldNames);
       
       // Initialize fieldValues with empty strings for all fields

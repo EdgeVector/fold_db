@@ -329,8 +329,26 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
             )}
             
             <div className="space-y-3">
-              {Object.entries(schema.fields).map(([fieldName, field]) =>
-                renderField(field, fieldName, rangeSchemaInfo?.rangeKey === fieldName)
+              {/* Declarative schema: fields is an array of strings */}
+              {Array.isArray(schema.fields) ? (
+                schema.fields.map(fieldName => (
+                  <div key={fieldName} className="p-3 bg-gray-50 rounded-md border border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium text-gray-900">{fieldName}</span>
+                          {rangeSchemaInfo?.rangeKey === fieldName && (
+                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                              Range Key
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500 italic">No fields defined</p>
               )}
             </div>
           </div>

@@ -207,49 +207,60 @@ export function createTestSchemaState(overrides = {}) {
 
 /**
  * Creates mock schema data for testing
+ * Uses declarative schema format matching the backend
  * @param {Object} overrides - Properties to override in mock schema
  * @returns {Object} Mock schema object
  */
-export const createMockSchema = (overrides = {}) => ({
-  name: 'test_schema',
-  state: SCHEMA_STATES.APPROVED,
-  fields: {
-    id: { field_type: 'String' },
-    name: { field_type: 'String' },
-    created_at: { field_type: 'String' }
-  },
-  schema_type: 'Standard',
-  ...overrides
-});
+export const createMockSchema = (overrides = {}) => {
+  const defaults = {
+    name: 'test_schema',
+    state: SCHEMA_STATES.APPROVED,
+    fields: ['id', 'name', 'created_at'],
+    schema_type: { Single: {} }
+  };
+  
+  // Merge overrides, converting old field format to array if needed
+  const merged = { ...defaults, ...overrides };
+  
+  // Convert fields from object to array if provided in old format
+  if (merged.fields && typeof merged.fields === 'object' && !Array.isArray(merged.fields)) {
+    merged.fields = Object.keys(merged.fields);
+  }
+  
+  return merged;
+};
 
 /**
  * Creates mock range schema data for testing
+ * Uses declarative schema format matching the backend
  * @param {Object} overrides - Properties to override in mock range schema
  * @returns {Object} Mock range schema object
  */
-export const createMockRangeSchema = (overrides = {}) => ({
-  name: 'test_range_schema',
-  state: SCHEMA_STATES.APPROVED,
-  fields: {
-    timestamp: { field_type: 'Range' },
-    value: { field_type: 'Range' },
-    metadata: { field_type: 'Range' }
-  },
-  schema_type: {
-    Range: { range_key: 'timestamp' }
-  },
-  rangeInfo: {
-    isRangeSchema: true,
-    rangeField: {
-      name: 'timestamp',
-      type: 'Range'
+export const createMockRangeSchema = (overrides = {}) => {
+  const defaults = {
+    name: 'test_range_schema',
+    state: SCHEMA_STATES.APPROVED,
+    fields: ['timestamp', 'value', 'metadata'],
+    key: { range_field: 'timestamp' },
+    schema_type: {
+      Range: { keyconfig: { range_field: 'timestamp' } }
     }
-  },
-  ...overrides
-});
+  };
+  
+  // Merge overrides, converting old field format to array if needed
+  const merged = { ...defaults, ...overrides };
+  
+  // Convert fields from object to array if provided in old format
+  if (merged.fields && typeof merged.fields === 'object' && !Array.isArray(merged.fields)) {
+    merged.fields = Object.keys(merged.fields);
+  }
+  
+  return merged;
+};
 
 /**
  * Creates a list of mock schemas with different states for testing
+ * Uses declarative schema format matching the backend
  * @param {number} count - Number of schemas to create
  * @param {Object} baseProps - Base properties for all schemas
  * @returns {Array} Array of mock schema objects
@@ -257,15 +268,22 @@ export const createMockRangeSchema = (overrides = {}) => ({
 export const createMockSchemaList = (count = 3, baseProps = {}) => {
   const states = [SCHEMA_STATES.APPROVED, SCHEMA_STATES.AVAILABLE, SCHEMA_STATES.BLOCKED];
   
-  return Array.from({ length: count }, (_, index) => ({
-    name: `schema_${index}`,
-    state: states[index % states.length],
-    fields: {
-      id: { field_type: 'String' },
-      data: { field_type: index % 2 === 0 ? 'String' : 'Number' }
-    },
-    ...baseProps
-  }));
+  return Array.from({ length: count }, (_, index) => {
+    const schema = {
+      name: `schema_${index}`,
+      state: states[index % states.length],
+      fields: ['id', 'data'],
+      schema_type: { Single: {} },
+      ...baseProps
+    };
+    
+    // Convert fields from object to array if provided in baseProps
+    if (schema.fields && typeof schema.fields === 'object' && !Array.isArray(schema.fields)) {
+      schema.fields = Object.keys(schema.fields);
+    }
+    
+    return schema;
+  });
 };
 
 /**

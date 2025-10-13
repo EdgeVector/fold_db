@@ -5,19 +5,23 @@ describe('dependencyUtils', () => {
   describe('getSchemaDependencies', () => {
     it('computes dependencies with types', () => {
       const schemas = [
-        { name: 'A', fields: { a1: { field_mappers: {}, transform: null } } },
-        { name: 'B', fields: { b1: { field_mappers: { A: 'a1' } } } },
-        { name: 'C', fields: { c1: { transform: { inputs: ['B.b1', 'A.a1'] } } } }
+        { name: 'BlogPost', fields: ['title', 'content', 'author'] },
+        { name: 'BlogPostWordIndex', transform_fields: {
+          word: 'BlogPost.map().content.split_by_word().map()',
+          title: 'BlogPost.map().title'
+        }},
+        { name: 'BlogPostAuthorIndex', transform_fields: {
+          author: 'BlogPost.map().author'
+        }}
       ]
       const deps = getSchemaDependencies(schemas)
       
-      expect(deps.A).toEqual([])
-      expect(deps.B).toEqual([
-        { schema: 'A', types: ['field_mapper'] }
+      expect(deps.BlogPost).toEqual([])
+      expect(deps.BlogPostWordIndex).toEqual([
+        { schema: 'BlogPost', types: ['transform'] }
       ])
-      expect(deps.C.sort((a, b) => a.schema.localeCompare(b.schema))).toEqual([
-        { schema: 'A', types: ['transform'] },
-        { schema: 'B', types: ['transform'] }
+      expect(deps.BlogPostAuthorIndex).toEqual([
+        { schema: 'BlogPost', types: ['transform'] }
       ])
     })
 
@@ -28,56 +32,58 @@ describe('dependencyUtils', () => {
 
     it('handles schemas with no dependencies', () => {
       const schemas = [
-        { name: 'A', fields: { a1: { field_mappers: {}, transform: null } } },
-        { name: 'B', fields: { b1: { field_mappers: {}, transform: null } } }
+        { name: 'User', fields: ['id', 'name', 'email'] },
+        { name: 'Product', fields: ['id', 'name', 'price'] }
       ]
       const deps = getSchemaDependencies(schemas)
       
-      expect(deps.A).toEqual([])
-      expect(deps.B).toEqual([])
+      expect(deps.User).toEqual([])
+      expect(deps.Product).toEqual([])
     })
 
     it('handles complex dependency chains', () => {
       const schemas = [
-        { name: 'A', fields: { a1: { field_mappers: {}, transform: null } } },
-        { name: 'B', fields: { b1: { field_mappers: { A: 'a1' } } } },
-        { name: 'C', fields: { c1: { field_mappers: { B: 'b1' } } } },
-        { name: 'D', fields: { d1: { transform: { inputs: ['C.c1', 'A.a1'] } } } }
-      ]
-      const deps = getSchemaDependencies(schemas)
-      
-      expect(deps.A).toEqual([])
-      expect(deps.B).toEqual([{ schema: 'A', types: ['field_mapper'] }])
-      expect(deps.C).toEqual([{ schema: 'B', types: ['field_mapper'] }])
-      expect(deps.D.sort((a, b) => a.schema.localeCompare(b.schema))).toEqual([
-        { schema: 'A', types: ['transform'] },
-        { schema: 'C', types: ['transform'] }
-      ])
-    })
-
-    it('handles multiple dependency types for same schema', () => {
-      const schemas = [
-        { name: 'A', fields: { a1: { field_mappers: {}, transform: null } } },
-        { name: 'B', fields: {
-          b1: { field_mappers: { A: 'a1' } },
-          b2: { transform: { inputs: ['A.a1'] } }
+        { name: 'User', fields: ['id', 'name'] },
+        { name: 'UserIndex', transform_fields: { name: 'User.map().name' } },
+        { name: 'UserStats', transform_fields: { 
+          user_name: 'UserIndex.map().name',
+          user_id: 'User.map().id'
         }}
       ]
       const deps = getSchemaDependencies(schemas)
       
-      expect(deps.A).toEqual([])
-      expect(deps.B).toEqual([{ schema: 'A', types: ['field_mapper', 'transform'] }])
+      expect(deps.User).toEqual([])
+      expect(deps.UserIndex).toEqual([{ schema: 'User', types: ['transform'] }])
+      expect(deps.UserStats.sort((a, b) => a.schema.localeCompare(b.schema))).toEqual([
+        { schema: 'User', types: ['transform'] },
+        { schema: 'UserIndex', types: ['transform'] }
+      ])
     })
 
-    it('handles schemas with undefined or null fields', () => {
+    it('handles multiple transform fields from same source', () => {
       const schemas = [
-        { name: 'A', fields: { a1: { field_mappers: null, transform: undefined } } },
-        { name: 'B', fields: { b1: { field_mappers: undefined, transform: null } } }
+        { name: 'BlogPost', fields: ['title', 'content', 'author'] },
+        { name: 'BlogPostIndex', transform_fields: {
+          word: 'BlogPost.map().content.split_by_word().map()',
+          author: 'BlogPost.map().author',
+          title: 'BlogPost.map().title'
+        }}
       ]
       const deps = getSchemaDependencies(schemas)
       
-      expect(deps.A).toEqual([])
-      expect(deps.B).toEqual([])
+      expect(deps.BlogPost).toEqual([])
+      expect(deps.BlogPostIndex).toEqual([{ schema: 'BlogPost', types: ['transform'] }])
+    })
+
+    it('handles schemas with no transform_fields', () => {
+      const schemas = [
+        { name: 'User', fields: ['id', 'name'] },
+        { name: 'Product', fields: ['id', 'price'] }
+      ]
+      const deps = getSchemaDependencies(schemas)
+      
+      expect(deps.User).toEqual([])
+      expect(deps.Product).toEqual([])
     })
   })
 })

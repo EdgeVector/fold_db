@@ -189,8 +189,8 @@ describe('MutationTab Component', () => {
     const submitButton = screen.getByRole('button', { name: 'Execute Mutation' })
     expect(submitButton).toBeDisabled()
     
-    // Verify operation type selector
-    const operationSelect = screen.getByDisplayValue('Select an option...')
+    // Verify operation type selector defaults to "Insert"
+    const operationSelect = screen.getByDisplayValue('Insert')
     expect(operationSelect).toBeInTheDocument()
   })
 

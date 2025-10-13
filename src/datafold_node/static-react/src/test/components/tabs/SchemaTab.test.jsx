@@ -224,9 +224,8 @@ describe('SchemaTab Component', () => {
         'approvedSchema': {
           name: 'ApprovedSchema',
           state: 'Approved',
-          fields: {
-            id: { field_type: 'string', writable: true }
-          }
+          schema_type: { Single: {} },
+          fields: ['id', 'name', 'email']
         }
       }
     })
@@ -243,6 +242,8 @@ describe('SchemaTab Component', () => {
     // Verify fields are displayed
     await waitFor(() => {
       expect(screen.getByText('id')).toBeInTheDocument()
+      expect(screen.getByText('name')).toBeInTheDocument()
+      expect(screen.getByText('email')).toBeInTheDocument()
     })
   })
 })
