@@ -118,13 +118,13 @@ pub struct DeclarativeSchemaDefinition {
         /// Transform fields - computed fields with expressions (optional, only for transform schemas)
         #[serde(skip_serializing_if = "Option::is_none")]
         pub transform_fields: Option<HashMap<String, String>>,
-    /// SHA256 hash of the schema content for integrity verification
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hash: Option<String>,
-    
-    /// Molecule UUIDs for each field (persisted for data continuity)
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub field_molecule_uuids: Option<HashMap<String, String>>,
+        /// SHA256 hash of the schema content for integrity verification
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub hash: Option<String>,
+        /// Molecule UUIDs for each field (persisted for data continuity after mutations)
+        /// Maps field_name -> molecule_uuid. Synced from runtime_fields before persistence.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        pub field_molecule_uuids: Option<HashMap<String, String>>,
 
     // Runtime state fields (not serialized)
     
