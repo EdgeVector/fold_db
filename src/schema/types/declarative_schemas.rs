@@ -5,6 +5,7 @@ use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+use crate::schema::types::field::Field;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct FieldDefinition {
@@ -30,6 +31,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             fields: Option<serde_json::Value>,
             #[serde(skip_serializing_if = "Option::is_none")]
             transform_fields: Option<HashMap<String, String>>,
+            #[serde(skip_serializing_if = "Option::is_none", default)]
+            field_molecule_uuids: Option<HashMap<String, String>>,
         }
 
         // Deserialize into the helper struct
@@ -82,13 +85,18 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         };
 
         // Use the constructor to create the actual struct with generated mappings
-        Ok(DeclarativeSchemaDefinition::new(
+        let mut schema = DeclarativeSchemaDefinition::new(
             helper.name,
             normalized_schema_type,
             helper.key,
             normalized_fields,
             helper.transform_fields,
-        ))
+        );
+        
+        // Preserve field_molecule_uuids from deserialization
+        schema.field_molecule_uuids = helper.field_molecule_uuids;
+        
+        Ok(schema)
     }
 }
 
@@ -110,9 +118,13 @@ pub struct DeclarativeSchemaDefinition {
         /// Transform fields - computed fields with expressions (optional, only for transform schemas)
         #[serde(skip_serializing_if = "Option::is_none")]
         pub transform_fields: Option<HashMap<String, String>>,
-        /// SHA256 hash of the schema content for integrity verification
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub hash: Option<String>,
+    /// SHA256 hash of the schema content for integrity verification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
+    
+    /// Molecule UUIDs for each field (persisted for data continuity)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub field_molecule_uuids: Option<HashMap<String, String>>,
 
     // Runtime state fields (not serialized)
     
@@ -150,6 +162,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.fields == other.fields
             && self.transform_fields == other.transform_fields
             && self.hash == other.hash
+            && self.field_molecule_uuids == other.field_molecule_uuids
             // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
             // These are derived/runtime state and don't affect schema identity
     }
@@ -210,6 +223,15 @@ impl DeclarativeSchemaDefinition {
 
         self.runtime_fields = runtime_fields;
         
+        // Restore molecule_uuids from persisted field_molecule_uuids
+        if let Some(molecule_uuids) = &self.field_molecule_uuids {
+            for (field_name, molecule_uuid) in molecule_uuids {
+                if let Some(field) = self.runtime_fields.get_mut(field_name) {
+                    field.common_mut().set_molecule_uuid(molecule_uuid.clone());
+                }
+            }
+        }
+        
         // Regenerate transform metadata that isn't persisted (marked with #[serde(skip)])
         // This is needed when schemas are loaded from the database
         self.generate_hash_to_code_mappings();
@@ -217,6 +239,20 @@ impl DeclarativeSchemaDefinition {
         self.fetch_source_schemas();
         
         Ok(())
+    }
+    
+    /// Syncs molecule UUIDs from runtime_fields to the persisted field_molecule_uuids
+    /// Call this after mutations to ensure molecule_uuids are persisted
+    pub fn sync_molecule_uuids(&mut self) {
+        let mut molecule_uuids = HashMap::new();
+        for (field_name, field) in &self.runtime_fields {
+            if let Some(uuid) = field.common().molecule_uuid() {
+                molecule_uuids.insert(field_name.clone(), uuid.clone());
+            }
+        }
+        if !molecule_uuids.is_empty() {
+            self.field_molecule_uuids = Some(molecule_uuids);
+        }
     }
 
     /// Creates a new DeclarativeSchemaDefinition and generates all hash mappings.
@@ -245,6 +281,7 @@ impl DeclarativeSchemaDefinition {
             fields,
             transform_fields,
             hash: None,
+            field_molecule_uuids: None,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
@@ -396,4 +433,57 @@ impl DeclarativeSchemaDefinition {
         inputs
     }
     
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_schema_metadata_after_serialize_deserialize() {
+        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+        
+        // Create a transform schema like BlogPostWordIndex
+        let mut transform_fields = HashMap::new();
+        transform_fields.insert("word".to_string(), "BlogPost.map().content.split_by_word().map()".to_string());
+        transform_fields.insert("publish_date".to_string(), "BlogPost.map().publish_date".to_string());
+        
+        let schema = DeclarativeSchemaDefinition::new(
+            "BlogPostWordIndex".to_string(),
+            SchemaType::Single,
+            None,
+            None,
+            Some(transform_fields),
+        );
+        
+        // Check metadata was generated in constructor
+        let inputs_before = schema.get_inputs();
+        let source_schemas_before = schema.get_source_schemas();
+        
+        println!("Before serialization: inputs={:?}, sources={:?}", inputs_before, source_schemas_before);
+        assert!(!inputs_before.is_empty(), "Inputs should not be empty after construction");
+        assert!(!source_schemas_before.is_empty(), "Source schemas should not be empty after construction");
+        
+        // Simulate save/load cycle
+        let serialized = serde_json::to_string(&schema).unwrap();
+        let mut loaded: DeclarativeSchemaDefinition = serde_json::from_str(&serialized).unwrap();
+        
+        // Check metadata after deserialization (should be empty due to #[serde(skip)])
+        let inputs_after = loaded.get_inputs();
+        let source_schemas_after = loaded.get_source_schemas();
+        
+        println!("After deserialization (before populate): inputs={:?}, sources={:?}", inputs_after, source_schemas_after);
+        
+        // Now call populate_runtime_fields
+        loaded.populate_runtime_fields().unwrap();
+        
+        let inputs_final = loaded.get_inputs();
+        let source_schemas_final = loaded.get_source_schemas();
+        
+        println!("After populate_runtime_fields: inputs={:?}, sources={:?}", inputs_final, source_schemas_final);
+        
+        assert!(!inputs_final.is_empty(), "Inputs should not be empty after populate");
+        assert!(!source_schemas_final.is_empty(), "Source schemas should not be empty after populate");
+        assert!(source_schemas_final.contains(&"BlogPost".to_string()), "Should have BlogPost as source schema");
+    }
 }

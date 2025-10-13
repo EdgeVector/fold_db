@@ -74,6 +74,9 @@ impl MutationManager {
             }
         }
 
+        // Sync molecule UUIDs to the persisted field before storing
+        schema.sync_molecule_uuids();
+
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
         self.db_ops.store_schema(&schema_name, &schema)?;
@@ -199,6 +202,9 @@ impl MutationManager {
                 )?;
             }
         }
+
+        // Sync molecule UUIDs to the persisted field before storing
+        schema.sync_molecule_uuids();
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();

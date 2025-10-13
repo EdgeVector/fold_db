@@ -37,7 +37,7 @@ impl SchemaCore {
     }
 
     /// Registers declarative transforms using the event bus
-    fn register_declarative_transforms(
+    pub(crate) fn register_declarative_transforms(
         &self,
         declarative_schema: &DeclarativeSchemaDefinition,
         transform_fields: &HashMap<String, String>,
