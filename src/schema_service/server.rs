@@ -1,8 +1,8 @@
 use actix_cors::Cors;
 use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer, Responder};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
+use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use strsim::normalized_levenshtein;
@@ -44,6 +44,7 @@ pub struct SchemaServiceState {
 }
 
 const SCHEMA_SIMILARITY_THRESHOLD: f64 = 0.9;
+const FIELD_OVERLAP_THRESHOLD: f64 = 0.6;
 
 impl SchemaServiceState {
     pub fn new(schemas_directory: String) -> FoldDbResult<Self> {
@@ -148,7 +149,9 @@ impl SchemaServiceState {
         let schema_name = schema_value
             .get("name")
             .and_then(|value| value.as_str())
-            .ok_or_else(|| FoldDbError::Config("Schema payload missing 'name' field".to_string()))?;
+            .ok_or_else(|| {
+                FoldDbError::Config("Schema payload missing 'name' field".to_string())
+            })?;
 
         Self::validate_schema_name(schema_name)?;
 
@@ -181,8 +184,39 @@ impl SchemaServiceState {
             }
         }
 
+        let mut schema_value = schema_value;
+
         if let Some((existing_name, existing_definition, similarity)) = closest_match {
-            if similarity >= SCHEMA_SIMILARITY_THRESHOLD {
+            if let Some((shared_fields, new_count, existing_count)) =
+                Self::field_overlap_stats(&schema_value, &existing_definition)
+            {
+                let counts_differ = new_count != existing_count;
+                let overlap_ratio = if new_count == 0 && existing_count == 0 {
+                    0.0
+                } else {
+                    shared_fields as f64 / new_count.max(existing_count) as f64
+                };
+
+                let should_apply_field_mappers = counts_differ
+                    && (similarity >= SCHEMA_SIMILARITY_THRESHOLD
+                        || overlap_ratio >= FIELD_OVERLAP_THRESHOLD);
+
+                if should_apply_field_mappers {
+                    schema_value = Self::schema_with_field_mappers(
+                        schema_value,
+                        &existing_definition,
+                        &existing_name,
+                    )?;
+                } else if similarity >= SCHEMA_SIMILARITY_THRESHOLD {
+                    return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
+                        similarity,
+                        closest_schema: SchemaResponse {
+                            name: existing_name,
+                            definition: existing_definition,
+                        },
+                    }));
+                }
+            } else if similarity >= SCHEMA_SIMILARITY_THRESHOLD {
                 return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
                     similarity,
                     closest_schema: SchemaResponse {
@@ -236,10 +270,9 @@ impl SchemaServiceState {
             ));
         }
 
-        if schema_name
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
-        {
+        if schema_name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '_' || character == '-'
+        }) {
             return Ok(());
         }
 
@@ -277,6 +310,108 @@ impl SchemaServiceState {
             }
             Value::Array(items) => Value::Array(items.iter().map(Self::normalize_value).collect()),
             _ => value.clone(),
+        }
+    }
+
+    fn extract_field_names(value: &Value) -> Option<Vec<String>> {
+        let fields = value.get("fields")?;
+        match fields {
+            Value::Object(map) => Some(map.keys().cloned().collect()),
+            Value::Array(items) => {
+                let mut names = Vec::new();
+                for item in items {
+                    if let Value::Object(obj) = item {
+                        if let Some(Value::String(name)) = obj.get("name") {
+                            names.push(name.clone());
+                        }
+                    }
+                }
+                Some(names)
+            }
+            _ => None,
+        }
+    }
+
+    fn field_overlap_stats(
+        new_schema: &Value,
+        existing_schema: &Value,
+    ) -> Option<(usize, usize, usize)> {
+        let new_fields = Self::extract_field_names(new_schema)?;
+        let existing_fields = Self::extract_field_names(existing_schema)?;
+
+        let new_count = new_fields.len();
+        let existing_count = existing_fields.len();
+        let existing_set: HashSet<_> = existing_fields.into_iter().collect();
+        let shared_fields = new_fields
+            .into_iter()
+            .filter(|name| existing_set.contains(name))
+            .count();
+
+        Some((shared_fields, new_count, existing_count))
+    }
+
+    fn schema_with_field_mappers(
+        mut schema_value: Value,
+        existing_schema: &Value,
+        existing_name: &str,
+    ) -> FoldDbResult<Value> {
+        let new_field_names = Self::extract_field_names(&schema_value).unwrap_or_default();
+        let existing_field_names: HashSet<_> = Self::extract_field_names(existing_schema)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+
+        let shared_fields: Vec<_> = new_field_names
+            .into_iter()
+            .filter(|name| existing_field_names.contains(name))
+            .collect();
+
+        let mut mapper_entries = Map::new();
+        for field_name in shared_fields {
+            mapper_entries.insert(
+                field_name.clone(),
+                Value::String(format!("{}.{}", existing_name, field_name)),
+            );
+        }
+
+        if mapper_entries.is_empty() {
+            return Ok(schema_value);
+        }
+
+        let map_to_merge = Value::Object(mapper_entries);
+
+        match &mut schema_value {
+            Value::Object(root) => {
+                let updated = match root.get_mut("field_mappers") {
+                    Some(Value::Object(existing_mappers)) => {
+                        Self::merge_field_mappers(existing_mappers, &map_to_merge)
+                    }
+                    Some(other) => {
+                        *other = map_to_merge;
+                        Ok(())
+                    }
+                    None => {
+                        root.insert("field_mappers".to_string(), map_to_merge);
+                        Ok(())
+                    }
+                };
+
+                updated.map(|_| schema_value)
+            }
+            _ => Ok(schema_value),
+        }
+    }
+
+    fn merge_field_mappers(target: &mut Map<String, Value>, source: &Value) -> FoldDbResult<()> {
+        if let Value::Object(map) = source {
+            for (key, value) in map {
+                target.entry(key.clone()).or_insert_with(|| value.clone());
+            }
+            Ok(())
+        } else {
+            Err(FoldDbError::Config(
+                "Field mappers must be a JSON object".to_string(),
+            ))
         }
     }
 }
@@ -590,6 +725,88 @@ mod tests {
     }
 
     #[test]
+    fn add_schema_creates_field_mappers_for_similar_schema_with_different_fields() {
+        let temp_dir = tempdir().expect("failed to create temp directory");
+        let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+
+        let existing_schema = json!({
+            "name": "Existing",
+            "fields": {
+                "id": {},
+                "name": {}
+            }
+        });
+
+        let existing_path = temp_dir.path().join("Existing.json");
+        fs::write(
+            &existing_path,
+            serde_json::to_string_pretty(&existing_schema)
+                .expect("failed to serialize existing schema"),
+        )
+        .expect("failed to write existing schema");
+
+        let state = SchemaServiceState::new(schemas_directory.clone())
+            .expect("failed to initialize schema service state");
+
+        let new_schema = json!({
+            "name": "ExistingPublic",
+            "fields": {
+                "id": {},
+                "name": {},
+                "display_name": {}
+            }
+        });
+
+        let outcome = state
+            .add_schema(new_schema.clone())
+            .expect("failed to add schema with field mapper");
+
+        let added_schema = match outcome {
+            SchemaAddOutcome::Added(response) => response,
+            other => panic!("expected schema addition, got {:?}", other),
+        };
+
+        assert_eq!(added_schema.name, "ExistingPublic");
+
+        let field_mappers = added_schema
+            .definition
+            .get("field_mappers")
+            .and_then(|value| value.as_object())
+            .expect("field mappers should exist");
+
+        assert_eq!(
+            field_mappers.get("id"),
+            Some(&Value::String("Existing.id".to_string()))
+        );
+        assert_eq!(
+            field_mappers.get("name"),
+            Some(&Value::String("Existing.name".to_string()))
+        );
+        assert!(!field_mappers.contains_key("display_name"));
+
+        let stored_schemas = state
+            .schemas
+            .lock()
+            .expect("failed to lock schema map after field mapper addition");
+
+        let stored_schema = stored_schemas
+            .get("ExistingPublic")
+            .expect("schema should be stored");
+
+        assert_eq!(
+            stored_schema
+                .get("field_mappers")
+                .and_then(|value| value.as_object())
+                .and_then(|object| object.get("id"))
+                .and_then(|value| value.as_str()),
+            Some("Existing.id")
+        );
+
+        let expected_path = PathBuf::from(schemas_directory).join("ExistingPublic.json");
+        assert!(expected_path.exists());
+    }
+
+    #[test]
     fn add_schema_rejects_invalid_name() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let schemas_directory = temp_dir.path().to_string_lossy().to_string();
@@ -598,7 +815,7 @@ mod tests {
             .expect("failed to initialize schema service state");
 
         let invalid_schema = json!({
-            "name": "../traversal", 
+            "name": "../traversal",
             "fields": [
                 {"name": "id", "type": "string"}
             ]
