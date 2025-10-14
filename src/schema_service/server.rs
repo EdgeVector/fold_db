@@ -148,8 +148,11 @@ impl SchemaServiceState {
         let schema_name = schema_value
             .get("name")
             .and_then(|value| value.as_str())
-            .ok_or_else(|| FoldDbError::Config("Schema payload missing 'name' field".to_string()))?
-            .to_string();
+            .ok_or_else(|| FoldDbError::Config("Schema payload missing 'name' field".to_string()))?;
+
+        Self::validate_schema_name(schema_name)?;
+
+        let schema_name = schema_name.to_string();
 
         let canonical_new = Self::normalized_json_string_without_name(&schema_value)?;
 
@@ -224,6 +227,26 @@ impl SchemaServiceState {
             name: schema_name,
             definition: schema_value,
         }))
+    }
+
+    fn validate_schema_name(schema_name: &str) -> FoldDbResult<()> {
+        if schema_name.is_empty() {
+            return Err(FoldDbError::Config(
+                "Schema name must not be empty".to_string(),
+            ));
+        }
+
+        if schema_name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+        {
+            return Ok(());
+        }
+
+        Err(FoldDbError::Config(format!(
+            "Schema name '{}' contains invalid characters",
+            schema_name
+        )))
     }
 
     fn normalized_json_string(value: &Value) -> FoldDbResult<String> {
@@ -564,5 +587,37 @@ mod tests {
 
         let duplicate_path = PathBuf::from(schemas_directory).join("PotentialDuplicate.json");
         assert!(!duplicate_path.exists());
+    }
+
+    #[test]
+    fn add_schema_rejects_invalid_name() {
+        let temp_dir = tempdir().expect("failed to create temp directory");
+        let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+
+        let state = SchemaServiceState::new(schemas_directory.clone())
+            .expect("failed to initialize schema service state");
+
+        let invalid_schema = json!({
+            "name": "../traversal", 
+            "fields": [
+                {"name": "id", "type": "string"}
+            ]
+        });
+
+        let error = state
+            .add_schema(invalid_schema)
+            .expect_err("schema with invalid name should be rejected");
+
+        match error {
+            FoldDbError::Config(message) => {
+                assert!(message.contains("invalid characters"));
+            }
+            other => panic!("expected config error, got {:?}", other),
+        }
+
+        let directory_entries = std::fs::read_dir(&schemas_directory)
+            .expect("failed to inspect schemas directory after rejection")
+            .next();
+        assert!(directory_entries.is_none());
     }
 }
