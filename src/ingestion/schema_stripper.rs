@@ -160,6 +160,7 @@ mod tests {
             None,
             Some(vec!["test_field".to_string()]),
             None,
+            None,
         );
         schema.runtime_fields = runtime_fields;
         schema

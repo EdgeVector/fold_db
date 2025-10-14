@@ -45,6 +45,7 @@ impl TestDatabaseFactory {
             None,
             Some(vec![]),
             None,
+            None,
         )
     }
 

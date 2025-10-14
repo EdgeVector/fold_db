@@ -1,16 +1,99 @@
-
-
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
-use ts_rs::TS;
+use crate::schema::types::field::Field;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-use crate::schema::types::field::Field;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct FieldDefinition {
     pub field_expression: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(into = "String", try_from = "String")]
+#[ts(type = "string")]
+pub struct FieldMapper {
+    source_schema: String,
+    source_field: String,
+}
+
+impl FieldMapper {
+    pub fn new<S: Into<String>, F: Into<String>>(source_schema: S, source_field: F) -> Self {
+        Self {
+            source_schema: source_schema.into(),
+            source_field: source_field.into(),
+        }
+    }
+
+    pub fn source_schema(&self) -> &str {
+        &self.source_schema
+    }
+
+    pub fn source_field(&self) -> &str {
+        &self.source_field
+    }
+}
+
+impl TryFrom<String> for FieldMapper {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err("FieldMapper definition cannot be empty".to_string());
+        }
+
+        let mut parts = trimmed.split('.');
+        let source_schema = parts
+            .next()
+            .ok_or_else(|| "FieldMapper must include source schema".to_string())?
+            .trim();
+        let source_field = parts
+            .next()
+            .ok_or_else(|| "FieldMapper must include source field".to_string())?
+            .trim();
+
+        if source_schema.is_empty() || source_field.is_empty() {
+            return Err("FieldMapper must include non-empty source schema and field".to_string());
+        }
+
+        if parts.next().is_some() {
+            return Err("FieldMapper must be in 'schema.field' format".to_string());
+        }
+
+        Ok(Self::new(source_schema, source_field))
+    }
+}
+
+impl TryFrom<&str> for FieldMapper {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::try_from(value.to_string())
+    }
+}
+
+impl From<FieldMapper> for String {
+    fn from(mapper: FieldMapper) -> Self {
+        format!("{}.{}", mapper.source_schema, mapper.source_field)
+    }
+}
+
+impl<'__s> utoipa::ToSchema<'__s> for FieldMapper {
+    fn schema() -> (
+        &'__s str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        (
+            "FieldMapper",
+            utoipa::openapi::schema::ObjectBuilder::new()
+                .schema_type(utoipa::openapi::schema::SchemaType::String)
+                .into(),
+        )
+    }
 }
 
 // Custom deserializer for DeclarativeSchemaDefinition that uses the constructor
@@ -33,12 +116,14 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(skip_serializing_if = "Option::is_none")]
             transform_fields: Option<HashMap<String, String>>,
             #[serde(skip_serializing_if = "Option::is_none", default)]
+            field_mappers: Option<HashMap<String, FieldMapper>>,
+            #[serde(skip_serializing_if = "Option::is_none", default)]
             field_molecule_uuids: Option<HashMap<String, String>>,
         }
 
         // Deserialize into the helper struct
         let helper = DeclarativeSchemaDefinitionHelper::deserialize(deserializer)?;
-        
+
         // Normalize fields into Option<Vec<String>> supporting multiple shapes
         let normalized_fields: Option<Vec<String>> = match helper.fields {
             None => None,
@@ -50,7 +135,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                         if let Some(s) = item.as_str() {
                             out.push(s.to_string());
                         } else {
-                            return Err(serde::de::Error::custom("Invalid fields array; expected strings"));
+                            return Err(serde::de::Error::custom(
+                                "Invalid fields array; expected strings",
+                            ));
                         }
                     }
                     Some(out)
@@ -60,7 +147,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                     names.sort();
                     Some(names)
                 } else {
-                    return Err(serde::de::Error::custom("Invalid fields; expected array or object map"));
+                    return Err(serde::de::Error::custom(
+                        "Invalid fields; expected array or object map",
+                    ));
                 }
             }
         };
@@ -80,9 +169,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                     SchemaType::Single
                 }
             }
-            (None, None) => {
-                SchemaType::Single
-            }
+            (None, None) => SchemaType::Single,
         };
 
         // Use the constructor to create the actual struct with generated mappings
@@ -92,44 +179,48 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             helper.key,
             normalized_fields,
             helper.transform_fields,
+            helper.field_mappers,
         );
-        
+
         // Preserve field_molecule_uuids from deserialization
         schema.field_molecule_uuids = helper.field_molecule_uuids;
-        
+
         Ok(schema)
     }
 }
 
-
 /// Declarative schema definition - the primary schema representation.
 /// This is the unified schema type that replaces the old Schema/DeclarativeSchemaDefinition split.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema, TS)]
-#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
+#[ts(
+    export,
+    export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+)]
 pub struct DeclarativeSchemaDefinition {
-        /// Schema name
-        pub name: String,
-        /// Schema type ("Single" | "Range" | "HashRange")
-        pub schema_type: SchemaType,
-        /// Key configuration (required when schema_type == "HashRange" or "Range")
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub key: Option<KeyConfig>,
-        /// Field names - plain data fields without transformations
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub fields: Option<Vec<String>>,
-        /// Transform fields - computed fields with expressions (optional, only for transform schemas)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub transform_fields: Option<HashMap<String, String>>,
-        /// SHA256 hash of the schema content for integrity verification
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub hash: Option<String>,
-        /// Molecule UUIDs for each field (persisted for data continuity after mutations)
-        /// Maps field_name -> molecule_uuid. Synced from runtime_fields before persistence.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        pub field_molecule_uuids: Option<HashMap<String, String>>,
+    /// Schema name
+    pub name: String,
+    /// Schema type ("Single" | "Range" | "HashRange")
+    pub schema_type: SchemaType,
+    /// Key configuration (required when schema_type == "HashRange" or "Range")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<KeyConfig>,
+    /// Field names - plain data fields without transformations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<String>>,
+    /// Transform fields - computed fields with expressions (optional, only for transform schemas)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform_fields: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub field_mappers: Option<HashMap<String, FieldMapper>>,
+    /// SHA256 hash of the schema content for integrity verification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
+    /// Molecule UUIDs for each field (persisted for data continuity after mutations)
+    /// Maps field_name -> molecule_uuid. Synced from runtime_fields before persistence.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub field_molecule_uuids: Option<HashMap<String, String>>,
 
     // Runtime state fields (not serialized)
-    
     /// Runtime field storage with molecules (for database operations)
     #[serde(skip)]
     #[ts(skip)]
@@ -159,7 +250,7 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(skip)]
     #[ts(skip)]
     hash_to_code: HashMap<String, String>,
-    }
+}
 
 // Manual PartialEq implementation that excludes runtime_fields from comparison
 impl PartialEq for DeclarativeSchemaDefinition {
@@ -169,21 +260,21 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.key == other.key
             && self.fields == other.fields
             && self.transform_fields == other.transform_fields
+            && self.field_mappers == other.field_mappers
             && self.hash == other.hash
             && self.field_molecule_uuids == other.field_molecule_uuids
-            // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
-            // These are derived/runtime state and don't affect schema identity
+        // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
+        // These are derived/runtime state and don't affect schema identity
     }
 }
 
 impl DeclarativeSchemaDefinition {
-
     /// Populates runtime_fields from declarative schema definition
     /// This is called after deserializing from database to ensure runtime state is initialized
     /// Also regenerates transform metadata (hash mappings, inputs, source schemas) which are not persisted
     pub fn populate_runtime_fields(&mut self) -> Result<(), crate::schema::SchemaError> {
-        use crate::schema::types::field::{RangeField, HashRangeField, SingleField, FieldVariant};
         use crate::schema::types::field::common::FieldCommon;
+        use crate::schema::types::field::{FieldVariant, HashRangeField, RangeField, SingleField};
         use std::collections::HashMap;
 
         let default_field_mappers = HashMap::new();
@@ -230,7 +321,17 @@ impl DeclarativeSchemaDefinition {
         }
 
         self.runtime_fields = runtime_fields;
-        
+
+        if let Some(field_mappers) = &self.field_mappers {
+            for (field_name, mapper) in field_mappers {
+                if let Some(field) = self.runtime_fields.get_mut(field_name) {
+                    let mut mapper_map = HashMap::new();
+                    mapper_map.insert(field_name.clone(), mapper.clone());
+                    field.common_mut().set_field_mappers(mapper_map);
+                }
+            }
+        }
+
         // Restore molecule_uuids from persisted field_molecule_uuids
         if let Some(molecule_uuids) = &self.field_molecule_uuids {
             for (field_name, molecule_uuid) in molecule_uuids {
@@ -239,16 +340,16 @@ impl DeclarativeSchemaDefinition {
                 }
             }
         }
-        
+
         // Regenerate transform metadata that isn't persisted (marked with #[serde(skip)])
         // This is needed when schemas are loaded from the database
         self.generate_hash_to_code_mappings();
         self.generate_inputs();
         self.fetch_source_schemas();
-        
+
         Ok(())
     }
-    
+
     /// Syncs molecule UUIDs from runtime_fields to the persisted field_molecule_uuids
     /// Call this after mutations to ensure molecule_uuids are persisted
     pub fn sync_molecule_uuids(&mut self) {
@@ -264,16 +365,16 @@ impl DeclarativeSchemaDefinition {
     }
 
     /// Creates a new DeclarativeSchemaDefinition and generates all hash mappings.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `name` - The schema name (same as transform name)
     /// * `schema_type` - The schema type ("Single" | "HashRange")
     /// * `key` - Optional key configuration (required when schema_type == "HashRange")
     /// * `fields` - Field definitions with their mapping expressions
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new DeclarativeSchemaDefinition with all hash mappings populated
     pub fn new(
         name: String,
@@ -281,6 +382,7 @@ impl DeclarativeSchemaDefinition {
         key: Option<KeyConfig>,
         fields: Option<Vec<String>>,
         transform_fields: Option<HashMap<String, String>>,
+        field_mappers: Option<HashMap<String, FieldMapper>>,
     ) -> Self {
         let mut schema = Self {
             name,
@@ -288,6 +390,7 @@ impl DeclarativeSchemaDefinition {
             key,
             fields,
             transform_fields,
+            field_mappers,
             hash: None,
             field_molecule_uuids: None,
             runtime_fields: HashMap::new(),
@@ -297,7 +400,7 @@ impl DeclarativeSchemaDefinition {
             field_to_hash_code: HashMap::new(),
             hash_to_code: HashMap::new(),
         };
-        
+
         // Generate all mappings after creation
         schema.generate_hash_to_code_mappings();
         schema.generate_inputs();
@@ -305,18 +408,22 @@ impl DeclarativeSchemaDefinition {
         schema
     }
 
+    pub fn field_mappers(&self) -> Option<&HashMap<String, FieldMapper>> {
+        self.field_mappers.as_ref()
+    }
+
     fn generate_inputs(&mut self) {
         let mut inputs_schema_fields = Vec::new();
         for code_def in self.hash_to_code.keys() {
             let expression = self.hash_to_code.get(code_def).unwrap();
-            
+
             // Split expression by "." and filter out elements containing "(" or ")"
             // This handles .map(), .filter(), .reduce(), etc.
             let parts: Vec<&str> = expression
                 .split(".")
                 .filter(|part| !part.contains("(") && !part.contains(")"))
                 .collect();
-            
+
             // Take the first two valid parts to form the field reference
             if parts.len() >= 2 {
                 inputs_schema_fields.push(format!("{}.{}", parts[0], parts[1]));
@@ -360,14 +467,14 @@ impl DeclarativeSchemaDefinition {
     }
 
     /// Generates hash-to-code mappings for all keys and fields in the declarative schema.
-    /// 
-    /// This function hashes every line from the keys (hash_field and range_field) and every 
+    ///
+    /// This function hashes every line from the keys (hash_field and range_field) and every
     /// field expression (atom_uuid expressions) and stores them in the hash_to_code HashMap.
-    /// 
+    ///
     /// # Adds mappings to key_to_hash_code, field_to_hash_code, and hash_to_code.
     fn generate_hash_to_code_mappings(&mut self) {
         let mut hash_to_code = HashMap::new();
-        
+
         // Hash field expressions if provided; tolerate missing transform_fields
         if let Some(map) = self.transform_fields.as_ref() {
             for (field_name, field_def) in map.iter() {
@@ -379,18 +486,18 @@ impl DeclarativeSchemaDefinition {
                 }
             }
         }
-        
+
         self.hash_to_code = hash_to_code;
     }
-    
+
     /// Generates a SHA256 hash for a given expression.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `expression` - The expression string to hash
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A hex-encoded SHA256 hash of the expression
     fn hash_expression(expression: &str) -> String {
         let mut hasher = Sha256::new();
@@ -418,14 +525,14 @@ impl DeclarativeSchemaDefinition {
     /// Example: "BlogPost.map().content.split_by_word().map()" -> ["BlogPost.content"]
     pub fn extract_inputs_from_expression(expression: &str) -> Vec<String> {
         let mut inputs = Vec::new();
-        
+
         // Split expression by "." and filter out elements containing "(" or ")"
         // This handles .map(), .filter(), .reduce(), etc.
         let parts: Vec<&str> = expression
             .split(".")
             .filter(|part| !part.contains("(") && !part.contains(")"))
             .collect();
-        
+
         // Take the first two valid parts to form the field reference
         if parts.len() >= 2 {
             inputs.push(format!("{}.{}", parts[0], parts[1]));
@@ -433,14 +540,13 @@ impl DeclarativeSchemaDefinition {
             // Fallback: if only one part, use it as-is
             inputs.push(parts[0].to_string());
         }
-        
+
         // Remove duplicates and sort
         inputs.sort();
         inputs.dedup();
-        
+
         inputs
     }
-    
 }
 
 #[cfg(test)]
@@ -450,48 +556,79 @@ mod tests {
     #[test]
     fn test_schema_metadata_after_serialize_deserialize() {
         use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-        
+
         // Create a transform schema like BlogPostWordIndex
         let mut transform_fields = HashMap::new();
-        transform_fields.insert("word".to_string(), "BlogPost.map().content.split_by_word().map()".to_string());
-        transform_fields.insert("publish_date".to_string(), "BlogPost.map().publish_date".to_string());
-        
+        transform_fields.insert(
+            "word".to_string(),
+            "BlogPost.map().content.split_by_word().map()".to_string(),
+        );
+        transform_fields.insert(
+            "publish_date".to_string(),
+            "BlogPost.map().publish_date".to_string(),
+        );
+
         let schema = DeclarativeSchemaDefinition::new(
             "BlogPostWordIndex".to_string(),
             SchemaType::Single,
             None,
             None,
             Some(transform_fields),
+            None,
         );
-        
+
         // Check metadata was generated in constructor
         let inputs_before = schema.get_inputs();
         let source_schemas_before = schema.get_source_schemas();
-        
-        println!("Before serialization: inputs={:?}, sources={:?}", inputs_before, source_schemas_before);
-        assert!(!inputs_before.is_empty(), "Inputs should not be empty after construction");
-        assert!(!source_schemas_before.is_empty(), "Source schemas should not be empty after construction");
-        
+
+        println!(
+            "Before serialization: inputs={:?}, sources={:?}",
+            inputs_before, source_schemas_before
+        );
+        assert!(
+            !inputs_before.is_empty(),
+            "Inputs should not be empty after construction"
+        );
+        assert!(
+            !source_schemas_before.is_empty(),
+            "Source schemas should not be empty after construction"
+        );
+
         // Simulate save/load cycle
         let serialized = serde_json::to_string(&schema).unwrap();
         let mut loaded: DeclarativeSchemaDefinition = serde_json::from_str(&serialized).unwrap();
-        
+
         // Check metadata after deserialization (should be empty due to #[serde(skip)])
         let inputs_after = loaded.get_inputs();
         let source_schemas_after = loaded.get_source_schemas();
-        
-        println!("After deserialization (before populate): inputs={:?}, sources={:?}", inputs_after, source_schemas_after);
-        
+
+        println!(
+            "After deserialization (before populate): inputs={:?}, sources={:?}",
+            inputs_after, source_schemas_after
+        );
+
         // Now call populate_runtime_fields
         loaded.populate_runtime_fields().unwrap();
-        
+
         let inputs_final = loaded.get_inputs();
         let source_schemas_final = loaded.get_source_schemas();
-        
-        println!("After populate_runtime_fields: inputs={:?}, sources={:?}", inputs_final, source_schemas_final);
-        
-        assert!(!inputs_final.is_empty(), "Inputs should not be empty after populate");
-        assert!(!source_schemas_final.is_empty(), "Source schemas should not be empty after populate");
-        assert!(source_schemas_final.contains(&"BlogPost".to_string()), "Should have BlogPost as source schema");
+
+        println!(
+            "After populate_runtime_fields: inputs={:?}, sources={:?}",
+            inputs_final, source_schemas_final
+        );
+
+        assert!(
+            !inputs_final.is_empty(),
+            "Inputs should not be empty after populate"
+        );
+        assert!(
+            !source_schemas_final.is_empty(),
+            "Source schemas should not be empty after populate"
+        );
+        assert!(
+            source_schemas_final.contains(&"BlogPost".to_string()),
+            "Should have BlogPost as source schema"
+        );
     }
 }
