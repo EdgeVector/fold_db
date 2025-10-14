@@ -38,7 +38,7 @@ fn execute_engine_and_convert_to_records() {
     // Define transform schema with KeyConfig (HashRange)
     let transform_schema_json = json!({
         "name": "BlogPostWordIndex",
-        "schema_type": {"HashRange": {"keyconfig": {"hash_field": null, "range_field": null}}},
+        "schema_type": "HashRange",
         "key": {"hash_field": "word", "range_field": "publish_date"},
         "transform_fields": {
             "word": "BlogPost.map().content.split_by_word().map()",

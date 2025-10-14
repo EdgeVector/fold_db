@@ -72,10 +72,10 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                 let has_hash = k.hash_field.is_some();
                 let has_range = k.range_field.is_some();
                 if has_hash && has_range {
-                    SchemaType::HashRange { keyconfig: k.clone() }
+                    SchemaType::HashRange
                 } else if has_range || has_hash {
                     // If either key exists (but not both), treat as Range
-                    SchemaType::Range { keyconfig: k.clone() }
+                    SchemaType::Range
                 } else {
                     SchemaType::Single
                 }
@@ -193,14 +193,14 @@ impl DeclarativeSchemaDefinition {
         let mut add_field = |field_name: String| {
             let schema_type = self.schema_type.clone();
             match &schema_type {
-                SchemaType::HashRange { .. } => {
+                SchemaType::HashRange => {
                     let hashrange_field = HashRangeField {
                         inner: default_inner_field.clone(),
                         molecule: None,
                     };
                     runtime_fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
                 }
-                SchemaType::Range { .. } => {
+                SchemaType::Range => {
                     let range_field = RangeField {
                         inner: default_inner_field.clone(),
                         molecule: None,

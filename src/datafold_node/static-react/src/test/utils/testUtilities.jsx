@@ -242,9 +242,7 @@ export const createMockRangeSchema = (overrides = {}) => {
     state: SCHEMA_STATES.APPROVED,
     fields: ['timestamp', 'value', 'metadata'],
     key: { range_field: 'timestamp' },
-    schema_type: {
-      Range: { keyconfig: { range_field: 'timestamp' } }
-    }
+    schema_type: 'Range'
   };
   
   // Merge overrides, converting old field format to array if needed

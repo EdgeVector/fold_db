@@ -287,9 +287,7 @@ export const createRangeSchemaWithKey = (rangeKey, overrides = {}) => {
   return createCustomSchema({
     fields: [rangeKey, 'value'],
     key: { range_field: rangeKey },
-    schema_type: {
-      Range: { range_key: rangeKey }
-    },
+    schema_type: 'Range',
     ...overrides
   }, 'range');
 };
@@ -312,9 +310,7 @@ export const createMixedSchemaList = (count = 6, states = Object.values(SCHEMA_S
       ...(isRange && {
         fields: ['range_key', 'data'],
         key: { range_field: 'range_key' },
-        schema_type: {
-          Range: { range_key: 'range_key' }
-        }
+        schema_type: 'Range'
       })
     }, isRange ? 'range' : 'standard');
   });
@@ -351,7 +347,7 @@ export const isValidSchemaFixture = (schema) => {
 export const isValidRangeSchemaFixture = (schema) => {
   if (!isValidSchemaFixture(schema)) return false;
   
-  const hasRangeType = schema.schema_type?.Range?.range_key;
+  const hasRangeType = schema.schema_type === 'Range';
   const hasKeyConfig = schema.key?.range_field;
   
   return hasRangeType && hasKeyConfig;

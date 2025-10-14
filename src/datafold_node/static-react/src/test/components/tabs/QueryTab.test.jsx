@@ -270,7 +270,8 @@ describe('QueryTab Component', () => {
       approvedSchemas: [
         { 
           name: 'BlogPost', 
-          schema_type: { Range: { range_key: 'publish_date' } },
+          schema_type: 'Range',
+          key: { range_field: 'publish_date' },
           fields: { 
             title: { field_type: 'String' },
             author: { field_type: 'String' },

@@ -18,7 +18,8 @@ describe('rangeSchemaUtils', () => {
     it('should return true for schema with Range schema_type even without fields', () => {
       const schema = {
         name: 'TestSchema',
-        schema_type: { Range: { range_key: 'test_id' } }
+        schema_type: 'Range',
+        key: { range_field: 'test_id' }
       }
       expect(isRangeSchema(schema)).toBe(true) // Backend schema_type is authoritative
     })
@@ -26,7 +27,8 @@ describe('rangeSchemaUtils', () => {
     it('should return true for schema with Range schema_type even with empty fields', () => {
       const schema = {
         name: 'TestSchema',
-        schema_type: { Range: { range_key: 'test_id' } },
+        schema_type: 'Range',
+        key: { range_field: 'test_id' },
         fields: {}
       }
       expect(isRangeSchema(schema)).toBe(true) // Backend schema_type is authoritative
@@ -46,7 +48,8 @@ describe('rangeSchemaUtils', () => {
     it('should return true when schema_type is Range (backend is authoritative)', () => {
       const schema = {
         name: 'TestSchema',
-        schema_type: { Range: { range_key: 'test_id' } },
+        schema_type: 'Range',
+        key: { range_field: 'test_id' },
         fields: {
           test_id: { field_type: 'Range' },
           field1: { field_type: 'Range' },
@@ -59,7 +62,8 @@ describe('rangeSchemaUtils', () => {
     it('should return true for valid range schema with new format', () => {
       const schema = {
         name: 'UserScores',
-        schema_type: { Range: { range_key: 'user_id' } },
+        schema_type: 'Range',
+        key: { range_field: 'user_id' },
         fields: {
           user_id: { field_type: 'Range' },
           game_scores: { field_type: 'Range' },
@@ -87,7 +91,8 @@ describe('rangeSchemaUtils', () => {
       const schema = {
         name: 'UserScores',
         range_key: 'old_key', // Old format
-        schema_type: { Range: { range_key: 'new_key' } }, // New format
+        schema_type: 'Range',
+        key: { range_field: 'new_key' }, // New format
         fields: {
           new_key: { field_type: 'Range' },
           data: { field_type: 'Range' }
@@ -106,7 +111,8 @@ describe('rangeSchemaUtils', () => {
     it('should return range_key from new format', () => {
       const schema = {
         name: 'TestSchema',
-        schema_type: { Range: { range_key: 'test_id' } }
+        schema_type: 'Range',
+        key: { range_field: 'test_id' }
       }
       expect(getRangeKey(schema)).toBe('test_id')
     })
@@ -123,7 +129,8 @@ describe('rangeSchemaUtils', () => {
       const schema = {
         name: 'TestSchema',
         range_key: 'old_key',
-        schema_type: { Range: { range_key: 'new_key' } }
+        schema_type: 'Range',
+        key: { range_field: 'new_key' }
       }
       expect(getRangeKey(schema)).toBe('new_key')
     })
@@ -149,7 +156,8 @@ describe('rangeSchemaUtils', () => {
     it('should return all fields except range_key for range schema', () => {
       const schema = {
         name: 'UserScores',
-        schema_type: { Range: { range_key: 'user_id' } },
+        schema_type: 'Range',
+        key: { range_field: 'user_id' },
         fields: ['user_id', 'game_scores', 'achievements']
       }
       const result = getNonRangeKeyFields(schema)
@@ -163,7 +171,8 @@ describe('rangeSchemaUtils', () => {
     it('should handle case where range_key field does not exist in fields', () => {
       const schema = {
         name: 'UserScores',
-        schema_type: { Range: { range_key: 'missing_key' } },
+        schema_type: 'Range',
+        key: { range_field: 'missing_key' },
         fields: ['user_id', 'game_scores']
       }
       const result = getNonRangeKeyFields(schema)
@@ -177,7 +186,8 @@ describe('rangeSchemaUtils', () => {
   describe('formatRangeQuery', () => {
     const schema = {
       name: 'UserScores',
-      schema_type: { Range: { range_key: 'user_id' } }
+      schema_type: 'Range',
+        key: { range_field: 'user_id' }
     }
 
     it('should format basic query without range filter', () => {
@@ -265,7 +275,8 @@ describe('rangeSchemaUtils', () => {
     it('should return comprehensive info for range schema', () => {
       const schema = {
         name: 'UserScores',
-        schema_type: { Range: { range_key: 'user_id' } },
+        schema_type: 'Range',
+        key: { range_field: 'user_id' },
         fields: ['user_id', 'game_scores', 'achievements']
       }
       
@@ -317,7 +328,8 @@ describe('rangeSchemaUtils', () => {
       const schema = {
         name: 'HybridSchema',
         range_key: 'old_range_key',
-        schema_type: { Range: { range_key: 'new_range_key' } },
+        schema_type: 'Range',
+        key: { range_field: 'new_range_key' },
         fields: {
           new_range_key: { field_type: 'Range' },
           data_field: { field_type: 'Range' }
@@ -331,11 +343,8 @@ describe('rangeSchemaUtils', () => {
     it('should work with real declarative schema structure', () => {
       const blogPostSchema = {
         name: 'BlogPost',
-        schema_type: {
-          Range: {
-            range_key: 'publish_date'
-          }
-        },
+        schema_type: 'Range',
+        key: { range_field: 'publish_date' },
         fields: ['author', 'content', 'publish_date', 'tags', 'title']
       }
       

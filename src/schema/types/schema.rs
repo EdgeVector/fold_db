@@ -1,4 +1,3 @@
-use crate::schema::types::key_config::KeyConfig;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use utoipa::ToSchema;
@@ -10,9 +9,9 @@ pub enum DeclarativeSchemaType {
     /// Single schema without range semantics
     Single,
     /// Schema that stores data in a key range
-    Range { keyconfig: KeyConfig },
+    Range,
     /// Schema that uses hashed and ranged keys for partitioning
-    HashRange { keyconfig: KeyConfig },
+    HashRange,
 }
 
 

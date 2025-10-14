@@ -86,10 +86,8 @@ export function useQueryBuilder({
       return false;
     }
 
-    // Check for Range schema_type (tagged union format: { "Range": { keyconfig: {...} } })
-    const isRangeType = typeof selectedSchemaObj.schema_type === 'object' && 
-                       selectedSchemaObj.schema_type !== null &&
-                       'Range' in selectedSchemaObj.schema_type;
+    // Check for Range schema_type
+    const isRangeType = selectedSchemaObj.schema_type === 'Range';
     
     if (isRangeType) {
       return true;
