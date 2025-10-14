@@ -18,11 +18,8 @@ describe('useRangeSchema Hook', () => {
 
   const createMockRangeSchema = () => ({
     name: 'TestRangeSchema',
-    schema_type: {
-      Range: {
-        range_key: 'timestamp'
-      }
-    },
+    schema_type: 'Range',
+    key: { range_field: 'timestamp' },
     fields: ['timestamp', 'value', 'metadata']
   });
 
@@ -95,7 +92,8 @@ describe('useRangeSchema Hook', () => {
     const oldFormatSchema = createMockOldFormatRangeSchema();
 
     expect(result.current.rangeProps.getRangeKey(rangeSchema)).toBe('timestamp');
-    expect(result.current.rangeProps.getRangeKey(oldFormatSchema)).toBe('date_key');
+    // Old format is no longer supported - should return null
+    expect(result.current.rangeProps.getRangeKey(oldFormatSchema)).toBe(null);
     expect(result.current.rangeProps.getRangeKey(createMockRegularSchema())).toBe(null);
   });
 
