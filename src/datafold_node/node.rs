@@ -108,7 +108,9 @@ impl DataFoldNode {
         // Require schema service to be configured
         if let Some(schema_service_url) = &config.schema_service_url {
             // Check if this is a mock/test schema service
-            if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
+            if schema_service_url.starts_with("test://")
+                || schema_service_url.starts_with("mock://")
+            {
                 log_feature!(
                     LogFeature::Database,
                     info,
@@ -139,7 +141,6 @@ impl DataFoldNode {
         Ok(node)
     }
 
-
     /// Get a reference to the underlying FoldDB instance
     pub fn get_fold_db(&self) -> FoldDbResult<std::sync::MutexGuard<'_, FoldDB>> {
         self.db
@@ -151,6 +152,11 @@ impl DataFoldNode {
     pub fn get_node_id(&self) -> &str {
         &self.node_id
     }
+
+    /// Gets the configured schema service URL, if present.
+    pub fn schema_service_url(&self) -> Option<String> {
+        self.config.schema_service_url.clone()
+    }
 }
 
 impl Drop for DataFoldNode {
@@ -160,7 +166,7 @@ impl Drop for DataFoldNode {
             info,
             "DataFoldNode being dropped, closing database..."
         );
-        
+
         // Try to close the database gracefully
         if let Ok(db) = self.db.lock() {
             if let Err(e) = db.close() {
@@ -213,8 +219,8 @@ mod tests {
     #[test]
     fn test_node_private_key_generation() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
+        let config =
+            NodeConfig::new(temp_dir.path().to_path_buf()).with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         // Verify that private and public keys were generated

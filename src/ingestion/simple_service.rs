@@ -1,6 +1,6 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
 
-use crate::datafold_node::{DataFoldNode, OperationProcessor};
+use crate::datafold_node::{DataFoldNode, OperationProcessor, SchemaServiceClient};
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;
@@ -83,7 +83,9 @@ impl SimpleIngestionService {
         self.validate_input(&request.data)?;
 
         // Step 2: Get available schemas and strip them
-        let available_schemas = self.get_stripped_available_schemas_from_node(node.clone()).await?;
+        let available_schemas = self
+            .get_stripped_available_schemas_from_node(node.clone())
+            .await?;
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -105,7 +107,9 @@ impl SimpleIngestionService {
         );
 
         // Step 4: Determine schema to use
-        let schema_name = self.determine_schema_to_use(&ai_response, node.clone()).await?;
+        let schema_name = self
+            .determine_schema_to_use(&ai_response, node.clone())
+            .await?;
         let new_schema_created = ai_response.new_schemas.is_some();
 
         // Step 5: Generate mutations
@@ -118,7 +122,7 @@ impl SimpleIngestionService {
                 "JSON data is an array with {} items, generating mutation for each",
                 array.len()
             );
-            
+
             let mut all_mutations = Vec::new();
             for (idx, item) in array.iter().enumerate() {
                 let fields_and_values = if let Some(obj) = item.as_object() {
@@ -141,12 +145,15 @@ impl SimpleIngestionService {
                     request
                         .trust_distance
                         .unwrap_or(self.config.default_trust_distance),
-                    request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+                    request
+                        .pub_key
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string()),
                 )?;
-                
+
                 all_mutations.extend(mutations);
             }
-            
+
             all_mutations
         } else {
             // Handle single object
@@ -155,7 +162,7 @@ impl SimpleIngestionService {
             } else {
                 std::collections::HashMap::new()
             };
-            
+
             self.mutation_generator.generate_mutations(
                 &schema_name,
                 &std::collections::HashMap::new(),
@@ -180,7 +187,8 @@ impl SimpleIngestionService {
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
         {
-            self.execute_mutations_with_node(&mutations, node.clone()).await?
+            self.execute_mutations_with_node(&mutations, node.clone())
+                .await?
         } else {
             0
         };
@@ -274,10 +282,11 @@ impl SimpleIngestionService {
                 e.to_string(),
             ))
         })?;
-        
-        let schema_states = db_guard.schema_manager.get_schema_states().map_err(
-            IngestionError::SchemaSystemError,
-        )?;
+
+        let schema_states = db_guard
+            .schema_manager
+            .get_schema_states()
+            .map_err(IngestionError::SchemaSystemError)?;
 
         let mut schemas = Vec::new();
         for schema_name in schema_states.keys() {
@@ -311,7 +320,9 @@ impl SimpleIngestionService {
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
-            let schema_name = self.create_new_schema_with_node(new_schema_def, node.clone()).await?;
+            let schema_name = self
+                .create_new_schema_with_node(new_schema_def, node.clone())
+                .await?;
             log_feature!(
                 LogFeature::Ingestion,
                 info,
@@ -338,35 +349,60 @@ impl SimpleIngestionService {
             "Creating new schema from AI definition"
         );
 
-        // Convert JSON Value back to string for SchemaCore to parse
-        let json_str = serde_json::to_string(schema_def)
-            .map_err(|e| IngestionError::schema_parsing_error(format!("Failed to serialize schema definition: {}", e)))?;
+        let schema_service_url = {
+            let node_guard = node.lock().await;
+            node_guard.schema_service_url().ok_or_else(|| {
+                IngestionError::SchemaCreationError(
+                    "Schema service URL is not configured for the node".to_string(),
+                )
+            })?
+        };
 
-        // Extract schema name from the definition
-        let schema_name = schema_def.get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| IngestionError::schema_parsing_error("Schema definition must have a 'name' field"))?
-            .to_string();
+        if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
+            return Err(IngestionError::SchemaCreationError(
+                "Schema service URL must point to an accessible HTTP endpoint".to_string(),
+            ));
+        }
 
-        // Load the schema using the node through the schema manager
-        let node_guard = node.lock().await;
-        let db_guard = node_guard.get_fold_db().map_err(|e| {
-            IngestionError::SchemaCreationError(e.to_string())
+        let schema_response = SchemaServiceClient::new(&schema_service_url)
+            .add_schema(schema_def)
+            .await
+            .map_err(|error| {
+                IngestionError::SchemaCreationError(format!(
+                    "Failed to create schema via schema service: {}",
+                    error
+                ))
+            })?;
+
+        let json_str = serde_json::to_string(&schema_response.definition).map_err(|error| {
+            IngestionError::schema_parsing_error(format!(
+                "Failed to serialize schema definition: {}",
+                error
+            ))
         })?;
-        
-        db_guard.schema_manager.load_schema_from_json(&json_str)
-            .map_err(|e| IngestionError::SchemaCreationError(e.to_string()))?;
+
+        let schema_manager = {
+            let node_guard = node.lock().await;
+            let db_guard = node_guard
+                .get_fold_db()
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            let manager = db_guard.schema_manager.clone();
+            drop(db_guard);
+            manager
+        };
+
+        schema_manager
+            .load_schema_from_json(&json_str)
+            .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
 
         log_feature!(
             LogFeature::Ingestion,
             info,
             "New schema '{}' created and approved",
-            schema_name
+            schema_response.name
         );
-        Ok(schema_name)
+        Ok(schema_response.name)
     }
-
-
 
     /// Execute mutations using the OperationProcessor
     async fn execute_mutations_with_node(
@@ -388,11 +424,19 @@ impl SimpleIngestionService {
 
             // Execute mutation asynchronously
             let exec_result: Result<serde_json::Value, IngestionError> = match operation {
-                Operation::Mutation { schema, fields_and_values, key_value, mutation_type } => {
-                    processor.execute_mutation(schema, fields_and_values, key_value, mutation_type)
-                        .await
-                        .map_err(|e| IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(e.to_string())))
-                }
+                Operation::Mutation {
+                    schema,
+                    fields_and_values,
+                    key_value,
+                    mutation_type,
+                } => processor
+                    .execute_mutation(schema, fields_and_values, key_value, mutation_type)
+                    .await
+                    .map_err(|e| {
+                        IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                            e.to_string(),
+                        ))
+                    }),
             };
 
             match exec_result {

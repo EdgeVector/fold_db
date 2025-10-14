@@ -1,5 +1,6 @@
 //! Core ingestion orchestrator
 
+use crate::datafold_node::SchemaServiceClient;
 use crate::fold_db_core::FoldDB;
 use crate::ingestion::{
     config::AIProvider, mutation_generator::MutationGenerator, ollama_service::OllamaService,
@@ -8,8 +9,8 @@ use crate::ingestion::{
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::{Mutation};
-use crate::schema::{SchemaCore};
+use crate::schema::types::Mutation;
+use crate::schema::SchemaCore;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,6 +25,7 @@ pub struct IngestionCore {
     mutation_generator: MutationGenerator,
     schema_core: Arc<SchemaCore>,
     fold_db: Arc<std::sync::Mutex<FoldDB>>,
+    schema_service_client: SchemaServiceClient,
 }
 
 /// Request for processing JSON ingestion
@@ -45,6 +47,7 @@ impl IngestionCore {
         config: IngestionConfig,
         schema_core: Arc<SchemaCore>,
         fold_db: Arc<std::sync::Mutex<FoldDB>>,
+        schema_service_client: SchemaServiceClient,
     ) -> IngestionResult<Self> {
         let openrouter_service = if config.provider == AIProvider::OpenRouter {
             Some(OpenRouterService::new(
@@ -77,6 +80,7 @@ impl IngestionCore {
             mutation_generator,
             schema_core,
             fold_db,
+            schema_service_client,
         })
     }
 
@@ -325,22 +329,33 @@ impl IngestionCore {
         );
 
         // Convert JSON Value back to string for SchemaCore to parse
-        let json_str = serde_json::to_string(schema_def)
-            .map_err(|e| IngestionError::schema_parsing_error(format!("Failed to serialize schema definition: {}", e)))?;
+        let schema_response = self
+            .schema_service_client
+            .add_schema(schema_def)
+            .await
+            .map_err(|error| {
+                IngestionError::SchemaCreationError(format!(
+                    "Failed to create schema via schema service: {}",
+                    error
+                ))
+            })?;
 
-        // Load the schema using SchemaCore's JSON loading method
+        let json_str = serde_json::to_string(&schema_response.definition).map_err(|error| {
+            IngestionError::schema_parsing_error(format!(
+                "Failed to serialize schema definition: {}",
+                error
+            ))
+        })?;
+
         self.schema_core
             .load_schema_from_json(&json_str)
             .map_err(IngestionError::SchemaSystemError)?;
 
-        // Extract schema name from the definition
-        let schema_name = schema_def.get("name")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| IngestionError::schema_parsing_error("Schema definition must have a 'name' field"))?
-            .to_string();
+        let schema_name = schema_response.name;
 
         // Check if the schema is already approved
-        let current_state = self.schema_core
+        let current_state = self
+            .schema_core
             .get_schema_states()
             .map_err(IngestionError::SchemaSystemError)?
             .get(&schema_name)
@@ -363,9 +378,6 @@ impl IngestionCore {
         Ok(schema_name)
     }
 
-
-
-
     /// Generate mutations for the data
     fn generate_mutations_for_data(
         &self,
@@ -384,7 +396,7 @@ impl IngestionCore {
                 "JSON data is an array with {} items, generating mutation for each",
                 array.len()
             );
-            
+
             let mut all_mutations = Vec::new();
             for (idx, item) in array.iter().enumerate() {
                 let fields_and_values = if let Some(obj) = item.as_object() {
@@ -407,10 +419,10 @@ impl IngestionCore {
                     trust_distance,
                     pub_key.clone(),
                 )?;
-                
+
                 all_mutations.extend(mutations);
             }
-            
+
             Ok(all_mutations)
         } else {
             // Handle single object
@@ -468,7 +480,8 @@ impl IngestionCore {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 
-        db.mutation_manager.write_mutation(mutation.clone())
+        db.mutation_manager
+            .write_mutation(mutation.clone())
             .map_err(IngestionError::SchemaSystemError)?;
 
         Ok(())
@@ -521,16 +534,20 @@ mod tests {
 
     #[test]
     fn test_ingestion_core_new_with_ollama_provider() {
-        let config = IngestionConfig { provider: AIProvider::Ollama, ..Default::default() };
+        let config = IngestionConfig {
+            provider: AIProvider::Ollama,
+            ..Default::default()
+        };
 
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path();
 
-        let schema_core =
-            Arc::new(SchemaCore::new_for_testing().unwrap());
+        let schema_core = Arc::new(SchemaCore::new_for_testing().unwrap());
         let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).unwrap()));
 
-        let ingestion_core = IngestionCore::new(config, schema_core, fold_db).unwrap();
+        let schema_client = SchemaServiceClient::new("http://localhost:0");
+        let ingestion_core =
+            IngestionCore::new(config, schema_core, fold_db, schema_client).unwrap();
 
         assert!(ingestion_core.ollama_service.is_some());
         assert!(ingestion_core.openrouter_service.is_none());
@@ -567,7 +584,8 @@ mod tests {
             }
         };
 
-        let core = match IngestionCore::new(config, schema_core, fold_db) {
+        let schema_client = SchemaServiceClient::new("http://localhost:0");
+        let core = match IngestionCore::new(config, schema_core, fold_db, schema_client) {
             Ok(core) => core,
             Err(_) => {
                 eprintln!("Skipping test_validate_input: Could not create ingestion core");
