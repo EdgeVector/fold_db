@@ -314,9 +314,7 @@ describe('QueryForm Component', () => {
         state: 'approved',
         fields: ['timestamp', 'value', 'metadata'],
         key: { range_field: 'timestamp' },
-        schema_type: {
-          Range: { keyconfig: { range_field: 'timestamp' } }
-        }
+        schema_type: 'Range'
       };
 
       mockProps.approvedSchemas = [rangeSchema];
@@ -358,9 +356,7 @@ describe('QueryForm Component', () => {
         state: 'approved',
         fields: ['sensor_id', 'reading_value', 'calibration_data'],
         key: { range_field: 'sensor_id' },
-        schema_type: {
-          Range: { keyconfig: { range_field: 'sensor_id' } }
-        }
+        schema_type: 'Range'
       };
 
       mockProps.approvedSchemas = [rangeSchema];
@@ -390,9 +386,7 @@ describe('QueryForm Component', () => {
         state: 'approved',
         fields: ['user_id', 'activity_type'],
         key: { range_field: 'user_id' },
-        schema_type: {
-          Range: { keyconfig: { range_field: 'user_id' } }
-        }
+        schema_type: 'Range'
       };
 
       mockProps.approvedSchemas = [rangeSchema];
@@ -425,9 +419,7 @@ describe('QueryForm Component', () => {
         state: 'approved',
         fields: ['event_id', 'timestamp'],
         key: { range_field: 'event_id' },
-        schema_type: {
-          Range: { keyconfig: { range_field: 'event_id' } }
-        }
+        schema_type: 'Range'
       };
 
       mockProps.approvedSchemas = [rangeSchema];

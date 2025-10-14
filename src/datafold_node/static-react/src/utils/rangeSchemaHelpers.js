@@ -69,7 +69,7 @@ export function getSchemaType(schema) {
 
 /**
  * Detects if a schema is a HashRange schema
- * HashRange schemas have schema_type: { "HashRange": { keyconfig: {...} } }
+ * HashRange schemas have schema_type: "HashRange"
  * Backend is authoritative - no front-end validation
  * 
  * @param {Schema} schema - Schema object to check
@@ -119,7 +119,7 @@ function lastSegment(expr) {
 
 /**
  * Detects if a schema is a range schema
- * Range schemas have schema_type: { "Range": { keyconfig: {...} } }
+ * Range schemas have schema_type: "Range"
  * Backend is authoritative - no front-end validation
  * 
  * @param {Schema} schema - Schema object to check
@@ -143,45 +143,7 @@ export function isRangeSchema(schema) {
 export function getRangeKey(schema) {
   if (!schema || typeof schema !== 'object') return null;
   
-  const schemaType = getSchemaType(schema);
-  
-  // HashRange: derive from universal key if present
-  if (schemaType === 'HashRange') {
-    const rf = schema?.key?.range_field;
-    if (typeof rf === 'string' && rf.trim()) {
-      return lastSegment(rf);
-    }
-    // Fallback: check keyconfig in schema_type
-    const keyconfig = schema?.schema_type?.HashRange?.keyconfig;
-    if (keyconfig?.range_field && typeof keyconfig.range_field === 'string' && keyconfig.range_field.trim()) {
-      return lastSegment(keyconfig.range_field);
-    }
-  }
-  
-  // Range: prefer universal key
-  if (schemaType === 'Range') {
-    const universalRange = schema?.key?.range_field;
-    if (typeof universalRange === 'string' && universalRange.trim()) {
-      return lastSegment(universalRange);
-    }
-    // Check keyconfig in schema_type (Rust format)
-    const keyconfig = schema?.schema_type?.Range?.keyconfig;
-    if (keyconfig?.range_field && typeof keyconfig.range_field === 'string' && keyconfig.range_field.trim()) {
-      return lastSegment(keyconfig.range_field);
-    }
-    // Legacy format: check range_key directly in Range object
-    const legacyRangeKey = schema?.schema_type?.Range?.range_key;
-    if (typeof legacyRangeKey === 'string' && legacyRangeKey.trim()) {
-      return legacyRangeKey;
-    }
-  }
-  
-  // Legacy format: check for range_key at top level (old schema format)
-  if (schema.range_key && typeof schema.range_key === 'string' && schema.range_key.trim()) {
-    return schema.range_key;
-  }
-  
-  // Single: optional universal range_field may exist
+  // Use the unified key field for all schema types
   const rf = schema?.key?.range_field;
   return (typeof rf === 'string' && rf.trim()) ? lastSegment(rf) : null;
 }

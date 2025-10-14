@@ -367,7 +367,7 @@ describe('QueryBuilder Component', () => {
         schemas: {
           BlogPost: {
             name: 'BlogPost',
-            schema_type: { Range: { range_key: 'publish_date' } },
+            schema_type: 'Range',
             key: { range_field: 'publish_date' },
             fields: ['publish_date', 'title', 'content']
           }

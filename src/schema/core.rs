@@ -331,13 +331,14 @@ mod tests {
 
         let schemas = core.get_schemas().expect("get_schemas");
         let s = schemas.get("BlogPostWordIndex").expect("schema exists");
-        match &s.schema_type {
-            SchemaType::HashRange { keyconfig } => {
-                assert_eq!(keyconfig.hash_field.as_deref(), Some("word"));
-                assert_eq!(keyconfig.range_field.as_deref(), Some("publish_date"));
-            }
-            other => panic!("expected HashRange schema_type, got {:?}", other),
-        }
+        
+        // Verify schema_type is HashRange
+        assert_eq!(s.schema_type, SchemaType::HashRange);
+        
+        // Verify key configuration
+        let key = s.key.as_ref().expect("key should be present");
+        assert_eq!(key.hash_field.as_deref(), Some("word"));
+        assert_eq!(key.range_field.as_deref(), Some("publish_date"));
     }
 
     #[test]

@@ -27,7 +27,7 @@ start_time: number,
 /**
  * When the backfill completed (if finished)
  */
-end_time: number | null, 
+end_time: number, 
 /**
  * Error message if failed
  */
@@ -52,40 +52,39 @@ mutations_failed: number, };
 /**
  * Aggregate statistics from all backfills
  */
-export type BackfillStatistics = {
+export type BackfillStatistics = { 
 /**
  * Total number of backfills
  */
-total_backfills: number,
+total_backfills: number, 
 /**
  * Number of backfills currently in progress
  */
-active_backfills: number,
+active_backfills: number, 
 /**
  * Number of completed backfills
  */
-completed_backfills: number,
+completed_backfills: number, 
 /**
  * Number of failed backfills
  */
-failed_backfills: number,
+failed_backfills: number, 
 /**
  * Total mutations expected across all backfills
  */
-total_mutations_expected: number,
+total_mutations_expected: number, 
 /**
  * Total mutations completed across all backfills
  */
-total_mutations_completed: number,
+total_mutations_completed: number, 
 /**
  * Total mutations failed across all backfills
  */
-total_mutations_failed: number,
+total_mutations_failed: number, 
 /**
  * Total records produced across all backfills
  */
-total_records_produced: number,
-};
+total_records_produced: number, };
 
 /**
  * Status of a backfill operation
@@ -94,37 +93,38 @@ export type BackfillStatus = "InProgress" | "Completed" | "Failed";
 
 /**
  * Declarative schema definition - the primary schema representation.
+ * This is the unified schema type that replaces the old Schema/DeclarativeSchemaDefinition split.
  */
-export type DeclarativeSchemaDefinition = {
+export type DeclarativeSchemaDefinition = { 
 /**
  * Schema name
  */
-name: string,
+name: string, 
 /**
  * Schema type ("Single" | "Range" | "HashRange")
  */
-schema_type: DeclarativeSchemaType,
+schema_type: DeclarativeSchemaType, 
 /**
  * Key configuration (required when schema_type == "HashRange" or "Range")
  */
-key?: KeyConfig,
+key: KeyConfig | null, 
 /**
  * Field names - plain data fields without transformations
  */
-fields?: Array<string>,
+fields: Array<string> | null, 
 /**
  * Transform fields - computed fields with expressions (optional, only for transform schemas)
  */
-transform_fields?: Record<string, string>,
+transform_fields: { [key in string]?: string } | null, 
 /**
  * SHA256 hash of the schema content for integrity verification
  */
-hash?: string,
+hash: string | null, 
 /**
  * Molecule UUIDs for each field (persisted for data continuity after mutations)
+ * Maps field_name -> molecule_uuid. Synced from runtime_fields before persistence.
  */
-field_molecule_uuids?: Record<string, string>,
-};
+field_molecule_uuids: { [key in string]?: string } | null, };
 
 /**
  * Represents the schema-level type information.
@@ -162,11 +162,11 @@ export type KeyValue = { hash: string | null, range: string | null, };
 
 /**
  * Transform stores only a schema_name reference to avoid duplication.
+ * The full schema is stored in schemas_tree and looked up when needed.
+ * This saves ~50% storage for transform schemas (previously stored in both trees).
  */
-export type Transform = {
+export type Transform = { 
 /**
  * The name of the schema (stored in schemas_tree)
  */
-schema_name: string,
-};
-
+schema_name: string, };
