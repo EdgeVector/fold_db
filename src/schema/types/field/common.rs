@@ -2,12 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::schema::types::Transform;
 use crate::db_operations::DbOperations;
+use crate::schema::types::declarative_schemas::FieldMapper;
+use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::HashRangeFilter;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
-use crate::schema::types::field::FieldValue;
+use crate::schema::types::Transform;
 /// Common interface for all schema fields.
 ///
 /// The `Field` trait exposes accessors for properties shared by all field
@@ -16,7 +17,7 @@ use crate::schema::types::field::FieldValue;
 pub trait Field {
     /// Gets the common field data
     fn common(&self) -> &FieldCommon;
-    
+
     /// Gets the common field data mutably
     fn common_mut(&mut self) -> &mut FieldCommon;
 
@@ -44,7 +45,7 @@ pub enum FieldType {
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FieldCommon {
     pub molecule_uuid: Option<String>,
-    pub field_mappers: HashMap<String, String>,
+    pub field_mappers: HashMap<String, FieldMapper>,
     pub transform: Option<Transform>,
     #[serde(default = "default_writable")]
     pub writable: bool,
@@ -55,9 +56,7 @@ fn default_writable() -> bool {
 }
 
 impl FieldCommon {
-    pub fn new(
-        field_mappers: HashMap<String, String>,
-    ) -> Self {
+    pub fn new(field_mappers: HashMap<String, FieldMapper>) -> Self {
         Self {
             molecule_uuid: None,
             field_mappers,
@@ -75,11 +74,11 @@ impl FieldCommon {
         self.molecule_uuid = Some(uuid);
     }
 
-    pub fn field_mappers(&self) -> &HashMap<String, String> {
+    pub fn field_mappers(&self) -> &HashMap<String, FieldMapper> {
         &self.field_mappers
     }
 
-    pub fn set_field_mappers(&mut self, mappers: HashMap<String, String>) {
+    pub fn set_field_mappers(&mut self, mappers: HashMap<String, FieldMapper>) {
         self.field_mappers = mappers;
     }
 
@@ -107,7 +106,7 @@ macro_rules! impl_field {
             fn common(&self) -> &$crate::schema::types::field::FieldCommon {
                 &self.inner
             }
-            
+
             fn common_mut(&mut self) -> &mut $crate::schema::types::field::FieldCommon {
                 &mut self.inner
             }
@@ -116,13 +115,25 @@ macro_rules! impl_field {
                 log::error!("refresh_from_db not implemented for {}", stringify!($t));
             }
 
-            fn write_mutation(&mut self, key_value: &$crate::schema::types::key_value::KeyValue, atom: $crate::atom::Atom, pub_key: String) {
+            fn write_mutation(
+                &mut self,
+                key_value: &$crate::schema::types::key_value::KeyValue,
+                atom: $crate::atom::Atom,
+                pub_key: String,
+            ) {
                 log::error!("write_mutation not implemented for {}", stringify!($t));
             }
 
-            fn resolve_value(&mut self, db_ops: &std::sync::Arc<$crate::db_operations::DbOperations>, filter: Option<$crate::schema::types::field::HashRangeFilter>) -> Result<serde_json::Value, $crate::schema::types::SchemaError> {
+            fn resolve_value(
+                &mut self,
+                db_ops: &std::sync::Arc<$crate::db_operations::DbOperations>,
+                filter: Option<$crate::schema::types::field::HashRangeFilter>,
+            ) -> Result<serde_json::Value, $crate::schema::types::SchemaError> {
                 log::error!("resolve_value not implemented for {}", stringify!($t));
-                Err($crate::schema::types::SchemaError::InvalidField(format!("resolve_value not implemented for {}", stringify!($t))))
+                Err($crate::schema::types::SchemaError::InvalidField(format!(
+                    "resolve_value not implemented for {}",
+                    stringify!($t)
+                )))
             }
         }
     };

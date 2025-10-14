@@ -6,6 +6,7 @@ use serde_json;
 
 use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
+use crate::schema::types::field::Field;
 use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use crate::schema::{SchemaState, SchemaWithState};
 
@@ -36,10 +37,9 @@ impl SchemaCore {
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
-
         // load schemas from db
         let schemas = db_ops.get_all_schemas()?;
-        
+
         let schema_states = db_ops.get_all_schema_states()?;
 
         let schema_core = Self {
@@ -61,14 +61,20 @@ impl SchemaCore {
     }
 
     pub fn get_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
-        Ok(self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?.clone())
+        Ok(self
+            .schemas
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?
+            .clone())
     }
 
     pub fn get_schema_states(&self) -> Result<HashMap<String, SchemaState>, SchemaError> {
         Ok(self
             .schema_states
             .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?
+            .map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
+            })?
             .clone())
     }
 
@@ -85,27 +91,141 @@ impl SchemaCore {
         Ok(with_states)
     }
 
-    pub fn set_schema_state(&self, schema_name: &str, schema_state: SchemaState) -> Result<(), SchemaError> {
+    pub fn set_schema_state(
+        &self,
+        schema_name: &str,
+        schema_state: SchemaState,
+    ) -> Result<(), SchemaError> {
         self.set_schema_state_with_backfill(schema_name, schema_state, None)
     }
 
-    pub fn set_schema_state_with_backfill(&self, schema_name: &str, schema_state: SchemaState, backfill_hash: Option<String>) -> Result<(), SchemaError> {
+    pub fn set_schema_state_with_backfill(
+        &self,
+        schema_name: &str,
+        schema_state: SchemaState,
+        backfill_hash: Option<String>,
+    ) -> Result<(), SchemaError> {
+        if schema_state == SchemaState::Approved {
+            self.apply_field_mappers(schema_name)?;
+        }
+
         // Persist to database first - this is the source of truth
         self.db_ops.store_schema_state(schema_name, schema_state)?;
-        
+
         // Update in-memory cache only after successful persistence
-        self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?.insert(schema_name.to_string(), schema_state);
-        
+        self.schema_states
+            .lock()
+            .map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
+            })?
+            .insert(schema_name.to_string(), schema_state);
+
         // If schema is being approved, publish SchemaApproved event to trigger backfill
         if schema_state == SchemaState::Approved {
             let event = SchemaApproved {
                 schema_name: schema_name.to_string(),
                 backfill_hash,
             };
-            self.message_bus.publish(event)
-                .map_err(|e| SchemaError::InvalidData(format!("Failed to publish SchemaApproved event: {}", e)))?;
+            self.message_bus.publish(event).map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to publish SchemaApproved event: {}", e))
+            })?;
         }
-        
+
+        Ok(())
+    }
+
+    fn apply_field_mappers(&self, schema_name: &str) -> Result<(), SchemaError> {
+        let mut schema = self.db_ops.get_schema(schema_name)?.ok_or_else(|| {
+            SchemaError::InvalidData(format!("Schema '{}' not found", schema_name))
+        })?;
+
+        let Some(field_mappers) = schema.field_mappers().cloned() else {
+            return Ok(());
+        };
+
+        if field_mappers.is_empty() {
+            return Ok(());
+        }
+
+        let mut source_cache: HashMap<String, Schema> = HashMap::new();
+        let mut updated = false;
+
+        for (target_field, mapper) in field_mappers {
+            let source_schema_name = mapper.source_schema().to_string();
+            let source_schema = if let Some(schema) = source_cache.get(&source_schema_name) {
+                schema
+            } else {
+                let fetched = self
+                    .db_ops
+                    .get_schema(&source_schema_name)?
+                    .ok_or_else(|| {
+                        SchemaError::InvalidData(format!(
+                            "Source schema '{}' for field mapper not found",
+                            source_schema_name
+                        ))
+                    })?;
+                source_cache.insert(source_schema_name.clone(), fetched);
+                source_cache
+                    .get(&source_schema_name)
+                    .expect("source schema inserted")
+            };
+
+            let source_field = source_schema
+                .runtime_fields
+                .get(mapper.source_field())
+                .ok_or_else(|| {
+                    SchemaError::InvalidData(format!(
+                        "Source field '{}.{}' not found for mapper",
+                        source_schema_name,
+                        mapper.source_field()
+                    ))
+                })?;
+
+            let molecule_uuid =
+                source_field
+                    .common()
+                    .molecule_uuid()
+                    .cloned()
+                    .ok_or_else(|| {
+                        SchemaError::InvalidData(format!(
+                            "Source field '{}.{}' is missing a molecule UUID",
+                            source_schema_name,
+                            mapper.source_field()
+                        ))
+                    })?;
+
+            let target_runtime_field =
+                schema
+                    .runtime_fields
+                    .get_mut(&target_field)
+                    .ok_or_else(|| {
+                        SchemaError::InvalidData(format!(
+                            "Target field '{}' not found while applying field mapper",
+                            target_field
+                        ))
+                    })?;
+
+            target_runtime_field
+                .common_mut()
+                .set_molecule_uuid(molecule_uuid.clone());
+            target_runtime_field
+                .common_mut()
+                .set_field_mappers(HashMap::from([(target_field.clone(), mapper.clone())]));
+
+            updated = true;
+        }
+
+        if updated {
+            schema.sync_molecule_uuids();
+            self.db_ops.store_schema(schema_name, &schema)?;
+            self.schemas
+                .lock()
+                .map_err(|_| {
+                    SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
+                })?
+                .insert(schema_name.to_string(), schema);
+        }
+
         Ok(())
     }
 
@@ -118,12 +238,22 @@ impl SchemaCore {
     }
 
     pub fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
-        Ok(self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?.get(schema_name).cloned())
+        Ok(self
+            .schemas
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?
+            .get(schema_name)
+            .cloned())
     }
 
     pub fn add_schema_available(&self, schema: Schema) -> Result<(), SchemaError> {
-        let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
-        let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
+        let mut schemas = self
+            .schemas
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
+        let mut schema_states = self.schema_states.lock().map_err(|_| {
+            SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
+        })?;
         schemas.insert(schema.name.clone(), schema.clone());
         schema_states.insert(schema.name.clone(), SchemaState::Available);
         Ok(())
@@ -131,33 +261,42 @@ impl SchemaCore {
 
     pub fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
         let name = schema.name.clone();
-        
+
         // Check if schema exists in database
         let existing_schema = self.db_ops.get_schema(&name)?;
-        
+
         if existing_schema.is_some() {
             // Existing schema - update in-memory cache with new schema
             // The schema already has field_molecule_uuids persisted and restored
-            let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
+            let mut schemas = self.schemas.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
+            })?;
             schemas.insert(name.clone(), schema);
-            
+
             // Preserve existing state from database
             let existing_state = self.db_ops.get_schema_state(&name)?;
-            let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
+            let mut schema_states = self.schema_states.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
+            })?;
             let state = existing_state.unwrap_or(SchemaState::Available);
             schema_states.insert(name.clone(), state);
         } else {
             // New schema - persist to database and update in-memory caches
             self.db_ops.store_schema(&name, &schema)?;
-            self.db_ops.store_schema_state(&name, SchemaState::Available)?;
-            
-            let mut schemas = self.schemas.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
+            self.db_ops
+                .store_schema_state(&name, SchemaState::Available)?;
+
+            let mut schemas = self.schemas.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
+            })?;
             schemas.insert(name.clone(), schema);
-            
-            let mut schema_states = self.schema_states.lock().map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))?;
+
+            let mut schema_states = self.schema_states.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
+            })?;
             schema_states.insert(name.clone(), SchemaState::Available);
         }
-        
+
         Ok(())
     }
 
@@ -166,24 +305,30 @@ impl SchemaCore {
     pub fn load_schema_from_json(&self, json_str: &str) -> Result<(), SchemaError> {
         // Parse JSON string to DeclarativeSchemaDefinition
         let declarative_schema: DeclarativeSchemaDefinition = serde_json::from_str(json_str)
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to parse declarative schema: {}", e)))?;
-        
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to parse declarative schema: {}", e))
+            })?;
+
         // Convert declarative schema to Schema
         let schema = self.interpret_declarative_schema(declarative_schema)?;
-        
+
         // Load the schema using the existing method
         self.load_schema_internal(schema)
     }
 
     /// Load schema from file (creates Available schema)
     /// Only supports declarative schema format
-    pub fn load_schema_from_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), SchemaError> {
-        
+    pub fn load_schema_from_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> Result<(), SchemaError> {
         // Use the existing parse_schema_file method which handles declarative schemas
         if let Some(schema) = self.parse_schema_file(path.as_ref())? {
             self.load_schema_internal(schema)
         } else {
-            Err(SchemaError::InvalidData("No schema found in file".to_string()))
+            Err(SchemaError::InvalidData(
+                "No schema found in file".to_string(),
+            ))
         }
     }
 
@@ -200,12 +345,20 @@ impl SchemaCore {
 
         let mut loaded_count: usize = 0;
         let entries = fs::read_dir(dir_path).map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to read directory {}: {}", dir_path.display(), e))
+            SchemaError::InvalidData(format!(
+                "Failed to read directory {}: {}",
+                dir_path.display(),
+                e
+            ))
         })?;
 
         for entry in entries {
             let entry = entry.map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to read entry in {}: {}", dir_path.display(), e))
+                SchemaError::InvalidData(format!(
+                    "Failed to read entry in {}: {}",
+                    dir_path.display(),
+                    e
+                ))
             })?;
             let path = entry.path();
             if path.extension().map(|ext| ext == "json").unwrap_or(false) {
@@ -248,7 +401,8 @@ mod tests {
                 "author": {},
                 "publish_date": {}
             }
-        }"#.to_string()
+        }"#
+        .to_string()
     }
 
     fn wordindex_schema_json() -> String {
@@ -259,7 +413,8 @@ mod tests {
                 "word": {},
                 "publish_date": {}
             }
-        }"#.to_string()
+        }"#
+        .to_string()
     }
 
     #[test]
@@ -272,10 +427,14 @@ mod tests {
     #[test]
     fn load_schema_from_json_adds_available_schema() {
         let core = SchemaCore::new_for_testing().expect("init core");
-        core.load_schema_from_json(&blogpost_schema_json()).expect("load blogpost");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .expect("load blogpost");
 
         let schemas = core.get_schemas().expect("get_schemas");
-        assert!(schemas.contains_key("BlogPost"), "BlogPost should be loaded");
+        assert!(
+            schemas.contains_key("BlogPost"),
+            "BlogPost should be loaded"
+        );
 
         let states = core.get_schema_states().expect("get states");
         assert_eq!(states.get("BlogPost"), Some(&SchemaState::Available));
@@ -284,7 +443,8 @@ mod tests {
     #[test]
     fn get_schemas_with_states_returns_default_available() {
         let core = SchemaCore::new_for_testing().expect("init core");
-        core.load_schema_from_json(&blogpost_schema_json()).expect("load blogpost");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .expect("load blogpost");
 
         let schemas_with_states = core.get_schemas_with_states().expect("get with states");
         assert_eq!(schemas_with_states.len(), 1);
@@ -298,8 +458,10 @@ mod tests {
     #[test]
     fn load_multiple_schemas_from_json() {
         let core = SchemaCore::new_for_testing().expect("init core");
-        core.load_schema_from_json(&blogpost_schema_json()).expect("load blogpost");
-        core.load_schema_from_json(&wordindex_schema_json()).expect("load wordindex");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .expect("load blogpost");
+        core.load_schema_from_json(&wordindex_schema_json())
+            .expect("load wordindex");
 
         let schemas = core.get_schemas().expect("get_schemas");
         assert!(schemas.contains_key("BlogPost"));
@@ -307,7 +469,10 @@ mod tests {
 
         let states = core.get_schema_states().expect("get states");
         assert_eq!(states.get("BlogPost"), Some(&SchemaState::Available));
-        assert_eq!(states.get("BlogPostWordIndex"), Some(&SchemaState::Available));
+        assert_eq!(
+            states.get("BlogPostWordIndex"),
+            Some(&SchemaState::Available)
+        );
     }
 
     #[test]
@@ -327,14 +492,15 @@ mod tests {
         use crate::schema::types::SchemaType;
 
         let core = SchemaCore::new_for_testing().expect("init core");
-        core.load_schema_from_json(&wordindex_schema_json()).expect("load wordindex");
+        core.load_schema_from_json(&wordindex_schema_json())
+            .expect("load wordindex");
 
         let schemas = core.get_schemas().expect("get_schemas");
         let s = schemas.get("BlogPostWordIndex").expect("schema exists");
-        
+
         // Verify schema_type is HashRange
         assert_eq!(s.schema_type, SchemaType::HashRange);
-        
+
         // Verify key configuration
         let key = s.key.as_ref().expect("key should be present");
         assert_eq!(key.hash_field.as_deref(), Some("word"));

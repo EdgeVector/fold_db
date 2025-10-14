@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::atom::{MoleculeRange, MoleculeBehavior};
 // Removed unused impl_field import
+use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, apply_range_filter, fetch_atoms_for_matches};
@@ -23,9 +24,7 @@ pub struct RangeField {
 
 impl RangeField {
     #[must_use]
-    pub fn new(
-        field_mappers: HashMap<String, String>,
-    ) -> Self {
+    pub fn new(field_mappers: HashMap<String, FieldMapper>) -> Self {
         Self {
             inner: FieldCommon::new(field_mappers),
             molecule: None,
@@ -35,7 +34,7 @@ impl RangeField {
     /// Creates a new RangeField with a MoleculeRange
     #[must_use]
     pub fn new_with_range(
-        field_mappers: HashMap<String, String>,
+        field_mappers: HashMap<String, FieldMapper>,
         source_pub_key: String,
     ) -> Self {
         Self {

@@ -8,7 +8,7 @@ pub mod operations;
 pub mod schema;
 pub mod transform;
 
-pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition};
+pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition, FieldMapper};
 pub use key_config::KeyConfig;
 pub use key_value::KeyValue;
 pub use errors::SchemaError;

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 // Removed unused impl_field import
+use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, fetch_atoms_for_matches, FilterApplicator};
 use crate::schema::types::SchemaError;
@@ -22,7 +23,7 @@ pub struct SingleField {
 impl SingleField {
     #[must_use]
     pub fn new(
-        field_mappers: HashMap<String, String>,
+        field_mappers: HashMap<String, FieldMapper>,
         molecule: Option<Molecule>,
     ) -> Self {
         Self {

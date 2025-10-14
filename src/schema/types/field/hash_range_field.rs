@@ -4,6 +4,7 @@
 //! efficient indexing with complex fan-out operations.
 
 // Removed unused impl_field import
+use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
@@ -47,7 +48,7 @@ impl HashRangeField {
     /// Creates a new HashRange field
     #[must_use]
     pub fn new(
-        field_mappers: HashMap<String, String>,
+        field_mappers: HashMap<String, FieldMapper>,
         molecule: Option<MoleculeHashRange>,
     ) -> Self {
         Self {
