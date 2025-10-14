@@ -11,6 +11,10 @@ struct Cli {
     /// Port for the HTTP server
     #[arg(long, default_value_t = DEFAULT_HTTP_PORT)]
     port: u16,
+    
+    /// Schema service URL (if provided, node will fetch schemas from this service)
+    #[arg(long)]
+    schema_service_url: Option<String>,
 }
 
 /// Main entry point for the DataFold HTTP server.
@@ -42,10 +46,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     datafold::web_logger::init().ok();
 
     // Parse command-line arguments using clap
-    let Cli { port: http_port } = Cli::parse();
+    let Cli { port: http_port, schema_service_url } = Cli::parse();
 
     // Load node configuration
-    let config = load_node_config(None, None)?;
+    let mut config = load_node_config(None, None)?;
+    
+    // Set schema service URL if provided
+    if let Some(url) = schema_service_url {
+        config.schema_service_url = Some(url);
+    }
 
     // Create node
     let node = DataFoldNode::new(config)?;

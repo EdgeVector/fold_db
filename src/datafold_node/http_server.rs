@@ -101,6 +101,61 @@ impl DataFoldHttpServer {
             self.bind_address
         );
 
+        // Load schemas from schema service if configured
+        let schema_service_url = {
+            let node_guard = self.node.lock().await;
+            node_guard.config.schema_service_url.clone()
+        };
+        
+        if let Some(url) = schema_service_url {
+            // Skip loading for mock/test schema services
+            if url.starts_with("test://") || url.starts_with("mock://") {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Mock schema service detected ({}). Skipping automatic schema loading. Schemas must be loaded manually in tests.",
+                    url
+                );
+            } else {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Loading schemas from schema service at {}...",
+                    url
+                );
+                
+                let schema_manager = {
+                    let node_guard = self.node.lock().await;
+                    let db_guard = node_guard.get_fold_db()?;
+                    let manager = db_guard.schema_manager.clone();
+                    drop(db_guard);
+                    drop(node_guard);
+                    manager
+                };
+                
+                let client = crate::datafold_node::SchemaServiceClient::new(&url);
+                
+                match client.load_all_schemas(&schema_manager).await {
+                    Ok(loaded_count) => {
+                        log_feature!(
+                            LogFeature::Database,
+                            info,
+                            "Loaded {} schemas from schema service",
+                            loaded_count
+                        );
+                    }
+                    Err(e) => {
+                        log_feature!(
+                            LogFeature::Database,
+                            error,
+                            "Failed to load schemas from schema service: {}. Server will start but no schemas will be available.",
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
         // Create shared application state
         let app_state = web::Data::new(AppState {
             node: self.node.clone(),

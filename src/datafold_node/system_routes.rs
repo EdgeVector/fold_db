@@ -207,7 +207,8 @@ mod tests {
     #[tokio::test]
     async fn test_system_status() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         let state = web::Data::new(AppState {
@@ -222,7 +223,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_node_private_key() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         let state = web::Data::new(AppState {
@@ -246,7 +248,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_node_public_key() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         let state = web::Data::new(AppState {
@@ -270,7 +273,8 @@ mod tests {
     #[tokio::test]
     async fn test_private_and_public_keys_are_different() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         let state = web::Data::new(AppState {
@@ -302,7 +306,8 @@ mod tests {
     #[tokio::test]
     async fn test_reset_database_without_confirmation() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         let state = web::Data::new(AppState {
@@ -323,7 +328,8 @@ mod tests {
     #[tokio::test]
     async fn test_reset_database_with_confirmation() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         let state = web::Data::new(AppState {

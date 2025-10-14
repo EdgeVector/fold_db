@@ -7,6 +7,8 @@ cleanup_locks() {
     # Kill any existing datafold processes
     pkill -f datafold_http_server 2>/dev/null || true
     pkill -f "cargo run.*datafold_http_server" 2>/dev/null || true
+    pkill -f schema_service 2>/dev/null || true
+    pkill -f "cargo run.*schema_service" 2>/dev/null || true
     
     # Wait a moment for processes to terminate
     sleep 2
@@ -14,6 +16,8 @@ cleanup_locks() {
     # Force kill if still running
     pkill -9 -f datafold_http_server 2>/dev/null || true
     pkill -9 -f "cargo run.*datafold_http_server" 2>/dev/null || true
+    pkill -9 -f schema_service 2>/dev/null || true
+    pkill -9 -f "cargo run.*schema_service" 2>/dev/null || true
     
     echo "Cleaned up existing processes."
 }
@@ -104,23 +108,71 @@ fi
 # Go back to root directory
 cd ../../..
 
-# Run the HTTP server in the background
+# Start the schema service first
+echo "Starting the schema service on port 9002 in the background..."
+nohup cargo run --bin schema_service -- --port 9002 --schemas-dir available_schemas > schema_service.log 2>&1 &
+
+# Get the schema service process ID
+SCHEMA_SERVICE_PID=$!
+
+# Wait for schema service to be healthy with proper health check
+echo "Waiting for schema service to be ready..."
+SCHEMA_READY=false
+for i in {1..30}; do
+    if kill -0 $SCHEMA_SERVICE_PID 2>/dev/null; then
+        if curl -s http://127.0.0.1:9002/api/health > /dev/null 2>&1; then
+            SCHEMA_READY=true
+            break
+        fi
+        sleep 1
+    else
+        echo "Schema service process died. Check schema_service.log for details."
+        exit 1
+    fi
+done
+
+if [ "$SCHEMA_READY" = true ]; then
+    echo "Schema service started successfully with PID: $SCHEMA_SERVICE_PID"
+    echo "Schema service logs are being written to: schema_service.log"
+else
+    echo "Schema service failed to become healthy within 30 seconds. Check schema_service.log for details."
+    kill $SCHEMA_SERVICE_PID 2>/dev/null
+    exit 1
+fi
+
+# Run the HTTP server in the background with schema service URL
 echo "Starting the HTTP server on port 9001 in the background..."
-nohup cargo run --bin datafold_http_server -- --port 9001 > server.log 2>&1 &
+nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
 
 # Get the process ID
 SERVER_PID=$!
 
-# Wait a moment to check if the server started successfully
-sleep 3
+# Wait for HTTP server to be healthy with proper health check
+echo "Waiting for HTTP server to be ready..."
+HTTP_READY=false
+for i in {1..30}; do
+    if kill -0 $SERVER_PID 2>/dev/null; then
+        if curl -s http://127.0.0.1:9001/api/system/status > /dev/null 2>&1; then
+            HTTP_READY=true
+            break
+        fi
+        sleep 1
+    else
+        echo "HTTP server process died. Check server.log for details."
+        kill $SCHEMA_SERVICE_PID 2>/dev/null
+        exit 1
+    fi
+done
 
-# Check if the process is still running
-if kill -0 $SERVER_PID 2>/dev/null; then
+if [ "$HTTP_READY" = true ]; then
     echo "HTTP server started successfully with PID: $SERVER_PID"
     echo "Server logs are being written to: server.log"
-    echo "To stop the server, run: kill $SERVER_PID"
-    echo "To view logs, run: tail -f server.log"
+    echo "To stop both servers, run: kill $SCHEMA_SERVICE_PID $SERVER_PID"
+    echo "To view server logs, run: tail -f server.log"
+    echo "To view schema service logs, run: tail -f schema_service.log"
 else
-    echo "Failed to start HTTP server. Check server.log for details."
+    echo "HTTP server failed to become healthy within 30 seconds. Check server.log for details."
+    kill $SCHEMA_SERVICE_PID 2>/dev/null
+    kill $SERVER_PID 2>/dev/null
     exit 1
 fi

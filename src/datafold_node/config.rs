@@ -18,6 +18,9 @@ pub struct NodeConfig {
     /// Security configuration
     #[serde(default)]
     pub security_config: SecurityConfig,
+    /// URL of the schema service (optional, if not provided will load from local directories)
+    #[serde(default)]
+    pub schema_service_url: Option<String>,
 }
 
 fn default_network_listen_address() -> String {
@@ -31,6 +34,7 @@ impl Default for NodeConfig {
             default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
+            schema_service_url: None,
         }
     }
 }
@@ -43,12 +47,19 @@ impl NodeConfig {
             default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
+            schema_service_url: None,
         }
     }
 
     /// Set the network listening address
     pub fn with_network_listen_address(mut self, address: &str) -> Self {
         self.network_listen_address = address.to_string();
+        self
+    }
+    
+    /// Set the schema service URL
+    pub fn with_schema_service_url(mut self, url: &str) -> Self {
+        self.schema_service_url = Some(url.to_string());
         self
     }
 }

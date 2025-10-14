@@ -18,10 +18,23 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let temp_db_path = temp_dir.path().to_str().unwrap();
     
-    // Initialize node with temporary database
-    let config = NodeConfig::new(temp_db_path.into());
+    // Initialize node with temporary database and mock schema service
+    let config = NodeConfig::new(temp_db_path.into())
+        .with_schema_service_url("test://mock");
     let node = DataFoldNode::new(config)
         .expect("Failed to create DataFoldNode");
+    
+    // Load BlogPost schema from file
+    let blogpost_schema_path = std::env::current_dir()
+        .expect("Failed to get current directory")
+        .join("available_schemas")
+        .join("BlogPost.json");
+    
+    {
+        let mut fold_db = node.get_fold_db().expect("Failed to get FoldDB");
+        fold_db.load_schema_from_file(&blogpost_schema_path)
+            .expect("Failed to load BlogPost schema");
+    }
     
     // Wrap node in Arc<Mutex<>> for OperationProcessor
     let node_arc = Arc::new(tokio::sync::Mutex::new(node));
@@ -148,10 +161,23 @@ async fn test_range_key_set_in_query_object() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let temp_db_path = temp_dir.path().to_str().unwrap();
     
-    // Initialize node with temporary database
-    let config = NodeConfig::new(temp_db_path.into());
+    // Initialize node with temporary database and mock schema service
+    let config = NodeConfig::new(temp_db_path.into())
+        .with_schema_service_url("test://mock");
     let node = DataFoldNode::new(config)
         .expect("Failed to create DataFoldNode");
+    
+    // Load BlogPost schema from file
+    let blogpost_schema_path = std::env::current_dir()
+        .expect("Failed to get current directory")
+        .join("available_schemas")
+        .join("BlogPost.json");
+    
+    {
+        let mut fold_db = node.get_fold_db().expect("Failed to get FoldDB");
+        fold_db.load_schema_from_file(&blogpost_schema_path)
+            .expect("Failed to load BlogPost schema");
+    }
     
     // Wrap node in Arc<Mutex<>> for OperationProcessor
     let node_arc = Arc::new(tokio::sync::Mutex::new(node));
