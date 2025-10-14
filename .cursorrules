@@ -13,3 +13,5 @@ use TODO format for anything not fully implemented.
 Don't use inline crate imports, import in headers only to keep code clean.
 
 Keep imports organized.
+
+Don't create fallbacks.

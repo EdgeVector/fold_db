@@ -37,6 +37,7 @@ pub mod ingestion;
 pub mod logging;
 pub mod network;
 pub mod schema;
+pub mod schema_service;
 pub mod security;
 pub mod testing_utils;
 pub mod transform;

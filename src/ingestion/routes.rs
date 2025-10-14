@@ -340,7 +340,8 @@ mod tests {
 
     async fn create_test_app_state() -> web::Data<AppState> {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         web::Data::new(AppState {

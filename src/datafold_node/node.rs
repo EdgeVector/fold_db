@@ -98,43 +98,37 @@ impl DataFoldNode {
 
         let node = Self {
             db,
-            config,
+            config: config.clone(),
             node_id,
             security_manager,
             private_key,
             public_key,
         };
 
-        // Automatically load schemas from available_schemas directory
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "Auto-loading schemas from available_schemas directory..."
-        );
-        
-        let db_guard = node.get_fold_db()?;
-        let schema_manager = db_guard.schema_manager.clone();
-        drop(db_guard); // Release the lock before schema loading
-        
-        // Load schemas from available_schemas directory
-        match schema_manager.load_schemas_from_directory("available_schemas") {
-            Ok(loaded_count) => {
+        // Require schema service to be configured
+        if let Some(schema_service_url) = &config.schema_service_url {
+            // Check if this is a mock/test schema service
+            if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
                 log_feature!(
                     LogFeature::Database,
                     info,
-                    "Auto-loaded {} schemas from available_schemas directory",
-                    loaded_count
+                    "Mock schema service configured: {}. Schemas must be loaded manually.",
+                    schema_service_url
                 );
-            }
-            Err(e) => {
+            } else {
                 log_feature!(
                     LogFeature::Database,
-                    error,
-                    "Failed to auto-load schemas from available_schemas directory: {}. Node will start but no schemas will be available until manually loaded.",
-                    e
+                    info,
+                    "Schema service URL configured: {}. Schemas will be loaded asynchronously after node startup.",
+                    schema_service_url
                 );
-                // Don't fail node creation if schema loading fails - directory might not exist or be empty
+                // Note: Schema loading from service is deferred to avoid runtime nesting issues
+                // It will be performed by the HTTP server after node initialization
             }
+        } else {
+            return Err(FoldDbError::Config(
+                "Schema service URL is required. Please configure schema_service_url in NodeConfig.".to_string()
+            ));
         }
 
         log_feature!(
@@ -219,7 +213,8 @@ mod tests {
     #[test]
     fn test_node_private_key_generation() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf());
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
 
         // Verify that private and public keys were generated

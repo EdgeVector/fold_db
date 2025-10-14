@@ -57,6 +57,7 @@ impl TestDatabaseFactory {
             default_trust_distance: 1,
             network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
             security_config: crate::security::SecurityConfig::default(),
+            schema_service_url: None,
         }
     }
 
