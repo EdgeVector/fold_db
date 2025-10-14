@@ -219,25 +219,12 @@ pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Respon
     }
 }
 
-/// Aggregate statistics from all backfills
-#[derive(serde::Serialize, utoipa::ToSchema)]
-struct BackfillStatistics {
-    total_backfills: usize,
-    active_backfills: usize,
-    completed_backfills: usize,
-    failed_backfills: usize,
-    total_mutations_expected: u64,
-    total_mutations_completed: u64,
-    total_mutations_failed: u64,
-    total_records_produced: u64,
-}
-
 #[utoipa::path(
     get,
     path = "/api/transforms/backfills/statistics",
     tag = "query",
     responses(
-        (status = 200, description = "Aggregate backfill statistics", body = BackfillStatistics),
+        (status = 200, description = "Aggregate backfill statistics", body = crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatistics),
         (status = 500, description = "Server error")
     )
 )]
@@ -246,9 +233,11 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
     
     match node.get_all_backfills() {
         Ok(backfills) => {
-            let active_count = backfills.iter().filter(|b| b.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::InProgress).count();
-            let completed_count = backfills.iter().filter(|b| b.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Completed).count();
-            let failed_count = backfills.iter().filter(|b| b.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Failed).count();
+            use crate::fold_db_core::infrastructure::backfill_tracker::{BackfillStatistics, BackfillStatus};
+            
+            let active_count = backfills.iter().filter(|b| b.status == BackfillStatus::InProgress).count();
+            let completed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Completed).count();
+            let failed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Failed).count();
             
             let stats = BackfillStatistics {
                 total_backfills: backfills.len(),
