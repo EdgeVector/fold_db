@@ -39,7 +39,7 @@ import { MUTATION_TYPE_API_MAP } from '../constants/ui.js';
 
 /**
  * Gets the schema type from a schema object.
- * Handles the tagged union format from Rust: "Single" | { "Range": {...} } | { "HashRange": {...} }
+ * Handles the simple string format from Rust: "Single" | "Range" | "HashRange"
  * 
  * @param {Schema} schema - Schema object
  * @returns {'Single'|'Range'|'HashRange'|null} Schema type or null if not determinable
@@ -49,12 +49,18 @@ export function getSchemaType(schema) {
   
   const schemaType = schema.schema_type;
   
-  // Handle string type (Single)
+  // Handle string types (simplified format)
   if (schemaType === 'Single') {
     return 'Single';
   }
+  if (schemaType === 'Range') {
+    return 'Range';
+  }
+  if (schemaType === 'HashRange') {
+    return 'HashRange';
+  }
   
-  // Handle object types (Range or HashRange)
+  // Legacy: Handle old object types for backward compatibility
   if (typeof schemaType === 'object' && schemaType !== null) {
     if ('HashRange' in schemaType) {
       return 'HashRange';

@@ -29,11 +29,11 @@ import { useQueryBuilder } from '../../hooks/useQueryBuilder';
  * Range schema utility functions for declarative schemas
  */
 const detectRangeSchema = (schema) => {
-  return schema?.schema_type?.Range !== undefined;
+  return schema?.schema_type === 'Range';
 };
 
 const extractRangeKey = (schema) => {
-  return schema?.schema_type?.Range?.range_key || schema?.key?.range_field || null;
+  return schema?.key?.range_field || null;
 };
 
 /**

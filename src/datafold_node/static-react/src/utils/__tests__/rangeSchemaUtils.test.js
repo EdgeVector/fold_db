@@ -117,12 +117,13 @@ describe('rangeSchemaUtils', () => {
       expect(getRangeKey(schema)).toBe('test_id')
     })
 
-    it('should return range_key from old format', () => {
+    it('should return null for old format (no longer supported)', () => {
       const schema = {
         name: 'TestSchema',
         range_key: 'test_id'
       }
-      expect(getRangeKey(schema)).toBe('test_id')
+      // Old top-level range_key format is no longer supported
+      expect(getRangeKey(schema)).toBe(null)
     })
 
     it('should prioritize new format over old format', () => {
