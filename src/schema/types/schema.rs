@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 /// Represents the schema-level type information.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS, ToSchema)]
-#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
+#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
 pub enum DeclarativeSchemaType {
     /// Single schema without range semantics
     Single,

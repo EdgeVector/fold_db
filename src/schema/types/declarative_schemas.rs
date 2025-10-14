@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
+use ts_rs::TS;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use crate::schema::types::field::Field;
@@ -103,7 +104,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 
 /// Declarative schema definition - the primary schema representation.
 /// This is the unified schema type that replaces the old Schema/DeclarativeSchemaDefinition split.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema, TS)]
+#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
 pub struct DeclarativeSchemaDefinition {
         /// Schema name
         pub name: String,
@@ -130,26 +132,32 @@ pub struct DeclarativeSchemaDefinition {
     
     /// Runtime field storage with molecules (for database operations)
     #[serde(skip)]
+    #[ts(skip)]
     pub runtime_fields: HashMap<String, crate::schema::types::field::FieldVariant>,
 
     /// Input fields extracted from transform expressions
     #[serde(skip)]
+    #[ts(skip)]
     inputs_schema_fields: Vec<String>,
 
     /// Source schemas extracted from input fields (for transforms)
     #[serde(skip)]
+    #[ts(skip)]
     source_schemas: Vec<String>,
 
     /// Key to hash code mapping for transforms
     #[serde(skip)]
+    #[ts(skip)]
     key_to_hash_code: HashMap<String, String>,
 
     /// Field to hash code mapping for transforms
     #[serde(skip)]
+    #[ts(skip)]
     field_to_hash_code: HashMap<String, String>,
 
     /// Hash to code mapping for transforms
     #[serde(skip)]
+    #[ts(skip)]
     hash_to_code: HashMap<String, String>,
     }
 

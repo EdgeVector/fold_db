@@ -8,29 +8,13 @@ import { ApiClient, createApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import type { EnhancedApiResponse } from '../core/types';
 // Import generated types from Rust - u64 fields are exported as numbers via #[ts(type = "number")]
-import type { BackfillInfo, BackfillStatus } from '@generated/generated';
+import type { BackfillInfo, BackfillStatus, Transform, BackfillStatistics } from '@generated/generated';
 
 // Re-export for convenience
-export type { BackfillInfo, BackfillStatus };
+export type { BackfillInfo, BackfillStatus, Transform, BackfillStatistics };
 
-// Transform-specific response types
-export interface Transform {
-  id: string;
-  schemaName: string;
-  fieldName: string;
-  logic: string;
-  output: string;
-  inputs?: string[];
-  status?: 'pending' | 'processing' | 'completed' | 'failed';
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface TransformsResponse {
-  data: Record<string, Transform> | Transform[];
-  count?: number;
-  timestamp?: number;
-}
+// API response wrapper (the backend returns HashMap<String, Transform>)
+export type TransformsResponse = Record<string, Transform>;
 
 export interface QueueInfo {
   queue: string[];
@@ -53,6 +37,7 @@ export interface AddToQueueResponse {
   estimatedWaitTime?: number;
 }
 
+// Transform execution statistics (not yet derived from backend - TODO if needed)
 export interface TransformStatistics {
   field_value_sets: number;
   atom_creations: number;
@@ -70,17 +55,6 @@ export interface TransformStatistics {
   mutation_executions: number;
   total_events: number;
   monitoring_start_time: number;
-}
-
-export interface BackfillStatistics {
-  total_backfills: number;
-  active_backfills: number;
-  completed_backfills: number;
-  failed_backfills: number;
-  total_mutations_expected: number;
-  total_mutations_completed: number;
-  total_mutations_failed: number;
-  total_records_produced: number;
 }
 
 /**
@@ -247,26 +221,27 @@ export class UnifiedTransformClient {
   }
 
   /**
-   * Get a specific transform by ID
-   * UNPROTECTED - No authentication required for reading transform details
-   * Future enhancement for detailed transform inspection
+   * Get a specific transform by ID from the transforms map
+   * Note: The backend returns a map, so individual transform fetching
+   * requires fetching all transforms and extracting the specific one
    * 
    * @param transformId - The ID of the transform to retrieve
    * @returns Promise resolving to transform details
    */
-  async getTransform(transformId: string): Promise<EnhancedApiResponse<Transform>> {
+  async getTransform(transformId: string): Promise<EnhancedApiResponse<Transform | null>> {
     if (!transformId || typeof transformId !== 'string') {
       throw new Error('Transform ID is required and must be a string');
     }
 
-    return this.client.get<Transform>(`${API_ENDPOINTS.LIST_TRANSFORMS}/${transformId}`, {
-      requiresAuth: false, // Transform reading is public
-      timeout: 5000,
-      retries: 2,
-      cacheable: true,
-      cacheTtl: 300000, // Cache individual transforms for 5 minutes
-      cacheKey: `transform:${transformId}`
-    });
+    const result = await this.getTransforms();
+    if (result.success && result.data) {
+      const transform = result.data[transformId] || null;
+      return {
+        ...result,
+        data: transform
+      };
+    }
+    return result as EnhancedApiResponse<null>;
   }
 
   /**

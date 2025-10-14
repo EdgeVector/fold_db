@@ -10,34 +10,14 @@
 
 // Import auto-generated types from Rust backend via ts-rs
 // Using @generated alias that points to bindings/ directory where ts-rs writes them
-import type { DeclarativeSchemaType, KeyConfig } from '@generated/generated';
+import type { 
+  DeclarativeSchemaType, 
+  KeyConfig, 
+  DeclarativeSchemaDefinition 
+} from '@generated/generated';
 
-/**
- * Backend schema structure (DeclarativeSchemaDefinition from Rust)
- * This matches the structure returned by the backend API
- */
-export interface BackendSchema {
-  /** Schema name */
-  name: string;
-  
-  /** Schema type */
-  schema_type?: DeclarativeSchemaType;
-  
-  /** Key configuration (for Range/HashRange schemas) */
-  key?: KeyConfig;
-  
-  /** Field names - can be array of strings or object with field definitions */
-  fields?: string[] | Record<string, any>;
-  
-  /** Transform field expressions (for transform schemas) */
-  transform_fields?: Record<string, string>;
-  
-  /** SHA256 hash of schema content */
-  hash?: string;
-  
-  /** Molecule UUIDs for each field */
-  field_molecule_uuids?: Record<string, string>;
-}
+// Re-export backend type as BackendSchema for backward compatibility
+export type BackendSchema = DeclarativeSchemaDefinition;
 
 // ============================================================================
 // CORE SCHEMA TYPES

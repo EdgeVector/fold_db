@@ -6,7 +6,7 @@ use super::key_config::KeyConfig;
 
 /// Represents resolved key values for hash and range components.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, TS, utoipa::ToSchema)]
-#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
+#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
 pub struct KeyValue {
     pub hash: Option<String>,
     pub range: Option<String>,

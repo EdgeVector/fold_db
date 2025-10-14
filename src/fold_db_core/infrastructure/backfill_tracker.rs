@@ -28,7 +28,7 @@ fn current_timestamp_nanos() -> u128 {
 
 /// Status of a backfill operation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
+#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
 pub enum BackfillStatus {
     /// Backfill is currently in progress
     InProgress,
@@ -40,7 +40,7 @@ pub enum BackfillStatus {
 
 /// Information about a backfill operation
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "src/datafold_node/static-react/src/types/generated.ts")]
+#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
 pub struct BackfillInfo {
     /// Unique hash identifying this specific backfill operation
     pub backfill_hash: String,
@@ -70,6 +70,32 @@ pub struct BackfillInfo {
     /// Number of mutations that failed
     #[ts(type = "number")]
     pub mutations_failed: u64,
+}
+
+/// Aggregate statistics from all backfills
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
+pub struct BackfillStatistics {
+    /// Total number of backfills
+    pub total_backfills: usize,
+    /// Number of backfills currently in progress
+    pub active_backfills: usize,
+    /// Number of completed backfills
+    pub completed_backfills: usize,
+    /// Number of failed backfills
+    pub failed_backfills: usize,
+    /// Total mutations expected across all backfills
+    #[ts(type = "number")]
+    pub total_mutations_expected: u64,
+    /// Total mutations completed across all backfills
+    #[ts(type = "number")]
+    pub total_mutations_completed: u64,
+    /// Total mutations failed across all backfills
+    #[ts(type = "number")]
+    pub total_mutations_failed: u64,
+    /// Total records produced across all backfills
+    #[ts(type = "number")]
+    pub total_records_produced: u64,
 }
 
 impl BackfillInfo {
