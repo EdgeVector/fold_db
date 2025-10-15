@@ -151,9 +151,14 @@ impl TypedEngine {
                         match func.execute(item) {
                             IteratorExecutionResult::TextTokens(tokens) => {
                                 // Convert text tokens to IterationItems for further processing
-                                let new_items: Vec<IterationItem> = tokens.iter()
-                                    .map(|token| IterationItem {
-                                        key: KeyValue::new(Some(format!("{}_{}", i, token.len())), None),
+                                let new_items: Vec<IterationItem> = tokens
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(j, token)| IterationItem {
+                                        key: KeyValue::new(
+                                            Some(format!("{}_{}", i, j)),
+                                            None,
+                                        ),
                                         value: FieldValue {
                                             value: serde_json::Value::String(token.clone()),
                                             atom_uuid: item.value.atom_uuid.clone(),

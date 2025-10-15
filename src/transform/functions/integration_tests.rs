@@ -87,7 +87,7 @@ fn create_array_input() -> TypedInput {
             atom_uuid: "atom-3".to_string(),
         }
     );
-    input.insert("Tags.values".to_string(), tags_data);
+    input.insert("Scores.values".to_string(), tags_data);
     
     input
 }
@@ -220,45 +220,69 @@ fn test_adapter_generates_correct_specs() {
     let parser = ChainParser::new();
     
     // Test iterator-only chain
-    let iterator_chain = parser.parse("content.split_by_word()").expect("Should parse");
+    let iterator_chain = parser
+        .parse("BlogPost.content.split_by_word()")
+        .expect("Should parse");
     let iterator_specs = map_chain_to_specs(&iterator_chain);
-    
-    assert_eq!(iterator_specs.len(), 1);
+
+    assert_eq!(iterator_specs.len(), 2);
     match &iterator_specs[0] {
+        IteratorSpec::Schema { field_name } => {
+            assert_eq!(field_name, "BlogPost.content");
+        }
+        _ => panic!("Expected Schema spec"),
+    }
+    match &iterator_specs[1] {
         IteratorSpec::IteratorFunction { name, .. } => {
             assert_eq!(name, "split_by_word");
         }
         _ => panic!("Expected IteratorFunction spec"),
     }
-    
+
     // Test reducer-only chain
-    let reducer_chain = parser.parse("content.count()").expect("Should parse");
+    let reducer_chain = parser
+        .parse("BlogPost.content.count()")
+        .expect("Should parse");
     let reducer_specs = map_chain_to_specs(&reducer_chain);
-    
-    assert_eq!(reducer_specs.len(), 1);
+
+    assert_eq!(reducer_specs.len(), 2);
     match &reducer_specs[0] {
+        IteratorSpec::Schema { field_name } => {
+            assert_eq!(field_name, "BlogPost.content");
+        }
+        _ => panic!("Expected Schema spec"),
+    }
+    match &reducer_specs[1] {
         IteratorSpec::ReducerFunction { name, .. } => {
             assert_eq!(name, "count");
         }
         _ => panic!("Expected ReducerFunction spec"),
     }
-    
+
     // Test iterator -> reducer chain
-    let combined_chain = parser.parse("content.split_by_word().count()").expect("Should parse");
+    let combined_chain = parser
+        .parse("BlogPost.content.split_by_word().count()")
+        .expect("Should parse");
     let combined_specs = map_chain_to_specs(&combined_chain);
-    
-    assert_eq!(combined_specs.len(), 2);
+
+    assert_eq!(combined_specs.len(), 3);
     match &combined_specs[0] {
+        IteratorSpec::Schema { field_name } => {
+            assert_eq!(field_name, "BlogPost.content");
+        }
+        _ => panic!("Expected Schema spec"),
+    }
+    match &combined_specs[1] {
         IteratorSpec::IteratorFunction { name, .. } => {
             assert_eq!(name, "split_by_word");
         }
-        _ => panic!("Expected IteratorFunction as first spec"),
+        _ => panic!("Expected IteratorFunction as second spec"),
     }
-    match &combined_specs[1] {
+    match &combined_specs[2] {
         IteratorSpec::ReducerFunction { name, .. } => {
             assert_eq!(name, "count");
         }
-        _ => panic!("Expected ReducerFunction as second spec"),
+        _ => panic!("Expected ReducerFunction as third spec"),
     }
 }
 
@@ -315,14 +339,16 @@ fn test_engine_executes_reducer_functions() {
     let engine = TypedEngine::new();
     
     // Test count reducer
-    let count_chain = parser.parse("content.split_by_word().count()").expect("Should parse");
+    let count_chain = parser
+        .parse("BlogPost.content.split_by_word().count()")
+        .expect("Should parse");
     let count_specs = map_chain_to_specs(&count_chain);
     let input = create_test_input();
-    
-    let result = engine.execute_chain(&count_specs, &input, "content");
-    
-    assert!(result.contains_key("content"));
-    let entries = &result["content"];
+
+    let result = engine.execute_chain(&count_specs, &input, "BlogPostSummary.count");
+
+    assert!(result.contains_key("BlogPostSummary.count"));
+    let entries = &result["BlogPostSummary.count"];
     assert_eq!(entries.len(), 1); // Single count result
     assert_eq!(entries[0].value_text, Some("3".to_string()));
 }
@@ -337,20 +363,26 @@ fn test_engine_executes_all_reducer_types() {
     
     // Test each reducer type
     let test_cases = vec![
-        ("values.count()", "3"),
-        ("values.join()", "rust, database, transforms"),
-        ("values.first()", "\"rust\""),
-        ("values.last()", "\"transforms\""),
+        ("Scores.values.count()", "3"),
+        ("Scores.values.join()", "rust, database, transforms"),
+        ("Scores.values.first()", "rust"),
+        ("Scores.values.last()", "transforms"),
     ];
-    
+
     for (expr, expected) in test_cases {
         let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
-        
-        let result = engine.execute_chain(&specs, &input, "values");
-        
-        assert!(result.contains_key("values"), "Result should contain key 'values' for: {}", expr);
-        let entries = &result["values"];
+
+        let output_key = format!("{}_result", expr.replace('.', "_").replace("()", ""));
+        let result = engine.execute_chain(&specs, &input, &output_key);
+
+        assert!(
+            result.contains_key(&output_key),
+            "Result should contain key '{}' for: {}",
+            output_key,
+            expr
+        );
+        let entries = &result[&output_key];
         assert_eq!(entries.len(), 1, "Should have single result for: {}", expr);
         assert_eq!(entries[0].value_text, Some(expected.to_string()), "Wrong result for: {}", expr);
     }
@@ -366,20 +398,26 @@ fn test_engine_executes_numeric_reducers() {
     
     // Test numeric reducers
     let test_cases = vec![
-        ("values.sum()", "60"),    // 10 + 20 + 30
-        ("values.max()", "30"),    // max(10, 20, 30)
-        ("values.min()", "10"),    // min(10, 20, 30)
-        ("values.count()", "3"),   // count
+        ("Scores.values.sum()", "60"),    // 10 + 20 + 30
+        ("Scores.values.max()", "30"),    // max(10, 20, 30)
+        ("Scores.values.min()", "10"),    // min(10, 20, 30)
+        ("Scores.values.count()", "3"),   // count
     ];
-    
+
     for (expr, expected) in test_cases {
         let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
-        
-        let result = engine.execute_chain(&specs, &input, "values");
-        
-        assert!(result.contains_key("values"), "Result should contain key 'values' for: {}", expr);
-        let entries = &result["values"];
+
+        let output_key = format!("{}_result", expr.replace('.', "_").replace("()", ""));
+        let result = engine.execute_chain(&specs, &input, &output_key);
+
+        assert!(
+            result.contains_key(&output_key),
+            "Result should contain key '{}' for: {}",
+            output_key,
+            expr
+        );
+        let entries = &result[&output_key];
         assert_eq!(entries.len(), 1, "Should have single result for: {}", expr);
         assert_eq!(entries[0].value_text, Some(expected.to_string()), "Wrong result for: {}", expr);
     }
@@ -395,22 +433,28 @@ fn test_engine_handles_empty_collections() {
     let mut input: TypedInput = HashMap::new();
     let empty_data = HashMap::new(); // Empty HashMap
     input.insert("Empty.empty".to_string(), empty_data);
-    
+
     // Test reducers on empty collections
     let test_cases = vec![
-        ("empty.count()", "0"),
-        ("empty.join()", ""),
-        ("empty.sum()", "0"),
+        ("Empty.empty.count()", "0"),
+        ("Empty.empty.join()", ""),
+        ("Empty.empty.sum()", "0"),
     ];
-    
+
     for (expr, expected) in test_cases {
         let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
-        
-        let result = engine.execute_chain(&specs, &input, "empty");
-        
-        assert!(result.contains_key("empty"), "Result should contain key 'empty' for: {}", expr);
-        let entries = &result["empty"];
+
+        let output_key = format!("{}_result", expr.replace('.', "_").replace("()", ""));
+        let result = engine.execute_chain(&specs, &input, &output_key);
+
+        assert!(
+            result.contains_key(&output_key),
+            "Result should contain key '{}' for: {}",
+            output_key,
+            expr
+        );
+        let entries = &result[&output_key];
         assert_eq!(entries.len(), 1, "Should have single result for: {}", expr);
         assert_eq!(entries[0].value_text, Some(expected.to_string()), "Wrong result for: {}", expr);
     }
@@ -425,13 +469,15 @@ fn test_engine_complex_chains() {
     let input = create_test_input();
     
     // Test complex chain: split words, then join them back
-    let chain = parser.parse("content.split_by_word().join()").expect("Should parse");
+    let chain = parser
+        .parse("BlogPost.content.split_by_word().join()")
+        .expect("Should parse");
     let specs = map_chain_to_specs(&chain);
-    
-    let result = engine.execute_chain(&specs, &input, "content");
-    
-    assert!(result.contains_key("content"));
-    let entries = &result["content"];
+
+    let result = engine.execute_chain(&specs, &input, "BlogPostSummary.join");
+
+    assert!(result.contains_key("BlogPostSummary.join"));
+    let entries = &result["BlogPostSummary.join"];
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].value_text, Some("hello, world, test".to_string()));
 }
@@ -445,13 +491,15 @@ fn test_engine_preserves_atom_traceability() {
     let input = create_test_input();
     
     // Test that reducer preserves atom_uuid from source
-    let chain = parser.parse("content.split_by_word().count()").expect("Should parse");
+    let chain = parser
+        .parse("BlogPost.content.split_by_word().count()")
+        .expect("Should parse");
     let specs = map_chain_to_specs(&chain);
-    
-    let result = engine.execute_chain(&specs, &input, "content");
-    
-    assert!(result.contains_key("content"));
-    let entries = &result["content"];
+
+    let result = engine.execute_chain(&specs, &input, "BlogPostSummary.count");
+
+    assert!(result.contains_key("BlogPostSummary.count"));
+    let entries = &result["BlogPostSummary.count"];
     assert_eq!(entries.len(), 1);
     
     // Should preserve atom_uuid from the first item (HashMap iteration order dependent)
@@ -494,21 +542,27 @@ fn test_engine_mixed_data_types() {
     
     // Test numeric reducers with mixed data
     let test_cases = vec![
-        ("values.sum()", "30"),    // Only numeric values: 10 + 20
-        ("values.max()", "20"),    // Max of numeric values
-        ("values.min()", "10"),    // Min of numeric values
-        ("values.count()", "3"),   // Count all items
-        ("values.join()", "10, not_a_number, 20"), // Join all as strings
+        ("Mixed.values.sum()", "30"),    // Only numeric values: 10 + 20
+        ("Mixed.values.max()", "20"),    // Max of numeric values
+        ("Mixed.values.min()", "10"),    // Min of numeric values
+        ("Mixed.values.count()", "3"),   // Count all items
+        ("Mixed.values.join()", "10, not_a_number, 20"), // Join all as strings
     ];
-    
+
     for (expr, expected) in test_cases {
         let chain = parser.parse(expr).unwrap_or_else(|_| panic!("Should parse: {}", expr));
         let specs = map_chain_to_specs(&chain);
-        
-        let result = engine.execute_chain(&specs, &input, "values");
-        
-        assert!(result.contains_key("values"), "Result should contain key 'values' for: {}", expr);
-        let entries = &result["values"];
+
+        let output_key = format!("{}_result", expr.replace('.', "_").replace("()", ""));
+        let result = engine.execute_chain(&specs, &input, &output_key);
+
+        assert!(
+            result.contains_key(&output_key),
+            "Result should contain key '{}' for: {}",
+            output_key,
+            expr
+        );
+        let entries = &result[&output_key];
         assert_eq!(entries.len(), 1, "Should have single result for: {}", expr);
         assert_eq!(entries[0].value_text, Some(expected.to_string()), "Wrong result for: {}", expr);
     }

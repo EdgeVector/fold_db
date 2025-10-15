@@ -259,7 +259,7 @@ fn test_sum_reducer_empty() {
     let items = vec![];
     
     let result = reducer.execute(&items);
-    assert_eq!(result, "-0");
+    assert_eq!(result, "0");
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn test_sum_reducer_no_numeric() {
     ];
     
     let result = reducer.execute(&items);
-    assert_eq!(result, "-0"); // No numeric values to sum
+    assert_eq!(result, "0"); // No numeric values to sum
 }
 
 #[test]
@@ -325,7 +325,7 @@ fn test_first_reducer_basic() {
     ];
     
     let result = reducer.execute(&items);
-    assert_eq!(result, "String(\"first\")");
+    assert_eq!(result, "first");
 }
 
 #[test]
@@ -351,7 +351,7 @@ fn test_last_reducer_basic() {
     ];
     
     let result = reducer.execute(&items);
-    assert_eq!(result, "String(\"third\")");
+    assert_eq!(result, "third");
 }
 
 #[test]
