@@ -10,6 +10,7 @@ use strsim::normalized_levenshtein;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::schema::types::Schema;
 
 /// Response containing a list of available schema names
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +22,7 @@ pub struct SchemasListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaResponse {
     pub name: String,
-    pub definition: Value,
+    pub definition: Schema,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,6 +146,51 @@ impl SchemaServiceState {
         Ok(())
     }
 
+    fn prepare_schema_value_for_response(value: Value) -> FoldDbResult<Value> {
+        if let Value::Object(mut map) = value {
+            if let Some(fields_value) = map.get_mut("fields") {
+                if let Value::Array(items) = fields_value {
+                    if items.iter().all(|item| matches!(item, Value::Object(_))) {
+                        let mut field_names = Vec::with_capacity(items.len());
+                        for item in items.iter() {
+                            if let Value::Object(field_obj) = item {
+                                if let Some(Value::String(name)) = field_obj.get("name") {
+                                    field_names.push(Value::String(name.clone()));
+                                } else {
+                                    return Err(FoldDbError::Serialization(
+                                        "Field definition missing 'name' property".to_string(),
+                                    ));
+                                }
+                            }
+                        }
+
+                        *fields_value = Value::Array(field_names);
+                    }
+                }
+            }
+
+            Ok(Value::Object(map))
+        } else {
+            Ok(value)
+        }
+    }
+
+    fn deserialize_schema(value: Value) -> FoldDbResult<Schema> {
+        let prepared = Self::prepare_schema_value_for_response(value)?;
+
+        serde_json::from_value(prepared).map_err(|error| {
+            FoldDbError::Serialization(format!(
+                "Failed to deserialize schema definition: {}",
+                error
+            ))
+        })
+    }
+
+    fn schema_response_from_value(name: String, value: Value) -> FoldDbResult<SchemaResponse> {
+        let definition = Self::deserialize_schema(value)?;
+        Ok(SchemaResponse { name, definition })
+    }
+
     pub fn add_schema(&self, schema_value: Value) -> FoldDbResult<SchemaAddOutcome> {
         let schema_name = schema_value
             .get("name")
@@ -210,19 +256,19 @@ impl SchemaServiceState {
                 } else if similarity >= SCHEMA_SIMILARITY_THRESHOLD {
                     return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
                         similarity,
-                        closest_schema: SchemaResponse {
-                            name: existing_name,
-                            definition: existing_definition,
-                        },
+                        closest_schema: Self::schema_response_from_value(
+                            existing_name,
+                            existing_definition,
+                        )?,
                     }));
                 }
             } else if similarity >= SCHEMA_SIMILARITY_THRESHOLD {
                 return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
                     similarity,
-                    closest_schema: SchemaResponse {
-                        name: existing_name,
-                        definition: existing_definition,
-                    },
+                    closest_schema: Self::schema_response_from_value(
+                        existing_name,
+                        existing_definition,
+                    )?,
                 }));
             }
         }
@@ -257,10 +303,9 @@ impl SchemaServiceState {
 
         schemas.insert(schema_name.clone(), schema_value.clone());
 
-        Ok(SchemaAddOutcome::Added(SchemaResponse {
-            name: schema_name,
-            definition: schema_value,
-        }))
+        let response = Self::schema_response_from_value(schema_name, schema_value)?;
+
+        Ok(SchemaAddOutcome::Added(response))
     }
 
     fn validate_schema_name(schema_name: &str) -> FoldDbResult<()> {
@@ -469,10 +514,24 @@ async fn get_schema(
     };
 
     match schemas.get(&schema_name) {
-        Some(definition) => HttpResponse::Ok().json(SchemaResponse {
-            name: schema_name,
-            definition: definition.clone(),
-        }),
+        Some(definition) => match SchemaServiceState::schema_response_from_value(
+            schema_name.clone(),
+            definition.clone(),
+        ) {
+            Ok(schema) => HttpResponse::Ok().json(schema),
+            Err(error) => {
+                log_feature!(
+                    LogFeature::Schema,
+                    error,
+                    "Failed to deserialize schema '{}': {}",
+                    schema_name,
+                    error
+                );
+                HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": "Failed to load schema"
+                }))
+            }
+        },
         None => {
             log_feature!(
                 LogFeature::Schema,
@@ -636,6 +695,8 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::tempdir;
 
+    use crate::schema::types::FieldMapper;
+
     #[test]
     fn add_schema_adds_new_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
@@ -656,10 +717,15 @@ mod tests {
             .add_schema(new_schema.clone())
             .expect("failed to add schema");
 
+        let expected_schema =
+            SchemaServiceState::schema_response_from_value("NewSchema".to_string(), new_schema)
+                .expect("failed to build expected schema")
+                .definition;
+
         match outcome {
             SchemaAddOutcome::Added(response) => {
                 assert_eq!(response.name, "NewSchema");
-                assert_eq!(response.definition, new_schema);
+                assert_eq!(response.definition, expected_schema);
             }
             SchemaAddOutcome::TooSimilar(_) => panic!("schema should have been added"),
         }
@@ -696,6 +762,11 @@ mod tests {
         )
         .expect("failed to write existing schema");
 
+        let expected_existing =
+            SchemaServiceState::schema_response_from_value("Existing".to_string(), existing_schema)
+                .expect("failed to deserialize existing schema")
+                .definition;
+
         let state = SchemaServiceState::new(schemas_directory.clone())
             .expect("failed to initialize schema service state");
 
@@ -715,7 +786,7 @@ mod tests {
             SchemaAddOutcome::TooSimilar(conflict) => {
                 assert!(conflict.similarity >= SCHEMA_SIMILARITY_THRESHOLD);
                 assert_eq!(conflict.closest_schema.name, "Existing");
-                assert_eq!(conflict.closest_schema.definition, existing_schema);
+                assert_eq!(conflict.closest_schema.definition, expected_existing);
             }
             SchemaAddOutcome::Added(_) => panic!("schema should have been rejected as similar"),
         }
@@ -770,17 +841,17 @@ mod tests {
 
         let field_mappers = added_schema
             .definition
-            .get("field_mappers")
-            .and_then(|value| value.as_object())
+            .field_mappers
+            .as_ref()
             .expect("field mappers should exist");
 
         assert_eq!(
             field_mappers.get("id"),
-            Some(&Value::String("Existing.id".to_string()))
+            Some(&FieldMapper::new("Existing", "id"))
         );
         assert_eq!(
             field_mappers.get("name"),
-            Some(&Value::String("Existing.name".to_string()))
+            Some(&FieldMapper::new("Existing", "name"))
         );
         assert!(!field_mappers.contains_key("display_name"));
 
