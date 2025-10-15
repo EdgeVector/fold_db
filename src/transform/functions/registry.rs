@@ -213,8 +213,9 @@ struct FirstReducer;
 
 impl ReducerFunction for FirstReducer {
     fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        items.first()
-            .map(|item| format!("{:?}", item.value.value))
+        sorted_items(items)
+            .first()
+            .map(|item| extract_text_value(&item.value))
             .unwrap_or_default()
     }
     
@@ -231,8 +232,9 @@ struct LastReducer;
 
 impl ReducerFunction for LastReducer {
     fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        items.last()
-            .map(|item| format!("{:?}", item.value.value))
+        sorted_items(items)
+            .last()
+            .map(|item| extract_text_value(&item.value))
             .unwrap_or_default()
     }
     
@@ -265,7 +267,8 @@ struct JoinReducer;
 
 impl ReducerFunction for JoinReducer {
     fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        items.iter()
+        sorted_items(items)
+            .into_iter()
             .map(|item| extract_text_value(&item.value))
             .collect::<Vec<_>>()
             .join(", ")
@@ -292,7 +295,15 @@ impl ReducerFunction for SumReducer {
                 }
             })
             .sum();
-        sum.to_string()
+        if sum.abs() < f64::EPSILON {
+            "0".to_string()
+        } else {
+            let mut value = sum.to_string();
+            if value.ends_with(".0") {
+                value.truncate(value.len() - 2);
+            }
+            value
+        }
     }
     
     fn metadata(&self) -> FunctionMetadata {
@@ -361,18 +372,28 @@ impl ReducerFunction for MinReducer {
 fn extract_text_value(field_value: &FieldValue) -> String {
     match &field_value.value {
         serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Object(map) => map
             .get("value")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string(),
+            .map(|v| match v {
+                serde_json::Value::String(s) => s.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                _ => String::new(),
+            })
+            .unwrap_or_default(),
         serde_json::Value::Array(arr) => arr
             .first()
             .and_then(|v| v.get("value"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        _ => String::new(),
+            .map(|v| match v {
+                serde_json::Value::String(s) => s.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                _ => String::new(),
+            })
+            .unwrap_or_default(),
+        serde_json::Value::Null => String::new(),
     }
 }
 
@@ -388,6 +409,22 @@ pub fn split_text_into_words(text: &str) -> Vec<String> {
 /// Public helper to extract text - used by engine
 pub fn extract_field_text(field_value: &FieldValue) -> String {
     extract_text_value(field_value)
+}
+
+fn sorted_items(items: &[IterationItem]) -> Vec<&IterationItem> {
+    let mut sorted: Vec<&IterationItem> = items.iter().collect();
+    sorted.sort_by(|a, b| {
+        let a_key = (
+            a.key.hash.as_deref().unwrap_or(""),
+            a.key.range.as_deref().unwrap_or(""),
+        );
+        let b_key = (
+            b.key.hash.as_deref().unwrap_or(""),
+            b.key.range.as_deref().unwrap_or(""),
+        );
+        a_key.cmp(&b_key)
+    });
+    sorted
 }
 
 #[cfg(test)]
