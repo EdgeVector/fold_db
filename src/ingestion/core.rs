@@ -348,7 +348,7 @@ impl IngestionCore {
                 ))
             })?;
 
-        let json_str = serde_json::to_string(&schema_response.definition).map_err(|error| {
+        let json_str = serde_json::to_string(&schema_response).map_err(|error| {
             IngestionError::schema_parsing_error(format!(
                 "Failed to serialize schema definition: {}",
                 error

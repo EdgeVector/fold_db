@@ -34,12 +34,26 @@ Health check endpoint
 ```
 
 ### GET `/api/schemas`
-List all available schemas
+List all available schema names
 
 **Response:**
 ```json
 {
   "schemas": ["User", "Product", "Order", ...]
+}
+```
+
+### GET `/api/schemas/available`
+Get all available schemas with their full definitions
+
+**Response:**
+```json
+{
+  "schemas": [
+    { /* schema definition for User */ },
+    { /* schema definition for Product */ },
+    { /* schema definition for Order */ }
+  ]
 }
 ```
 
@@ -50,7 +64,9 @@ Get a specific schema by name
 ```json
 {
   "name": "User",
-  "definition": { /* schema definition */ }
+  "schema_type": "Single",
+  "fields": ["id", "name", "email"]
+  /* ... other schema properties */
 }
 ```
 
@@ -83,7 +99,9 @@ Add a new schema to the database
 ```json
 {
   "name": "MySchema",
-  "definition": { /* schema definition */ }
+  "schema_type": "Single",
+  "fields": ["id", "value"]
+  /* ... schema definition */
 }
 ```
 
@@ -94,7 +112,9 @@ Add a new schema to the database
   "similarity": 0.95,
   "closest_schema": {
     "name": "ExistingSchema",
-    "definition": { /* schema definition */ }
+    "schema_type": "Single",
+    "fields": ["id", "value"]
+    /* ... schema definition */
   }
 }
 ```

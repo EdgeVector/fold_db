@@ -14,7 +14,7 @@ fn verify_outcome_has_schema(outcome: &SchemaAddOutcome) {
         SchemaAddOutcome::Added(response) => {
             assert!(!response.name.is_empty(), "added schema must have a name");
             assert!(
-                response.definition.fields.is_some(),
+                response.fields.is_some(),
                 "added schema must have fields defined"
             );
         }
@@ -24,7 +24,7 @@ fn verify_outcome_has_schema(outcome: &SchemaAddOutcome) {
                 "closest schema must have a name"
             );
             assert!(
-                conflict.closest_schema.definition.fields.is_some(),
+                conflict.closest_schema.fields.is_some(),
                 "closest schema must have fields defined"
             );
             assert!(
@@ -94,7 +94,7 @@ fn closeness_always_returns_schema_on_success() {
     match outcome {
         SchemaAddOutcome::Added(response) => {
             assert_eq!(response.name, "TestSchema");
-            assert!(response.definition.fields.is_some());
+            assert!(response.fields.is_some());
         }
         SchemaAddOutcome::TooSimilar(_) => {
             panic!("new unique schema should be added, not rejected")
@@ -139,7 +139,7 @@ fn closeness_always_returns_schema_on_rejection() {
     match outcome {
         SchemaAddOutcome::TooSimilar(conflict) => {
             assert_eq!(conflict.closest_schema.name, "Original");
-            assert!(conflict.closest_schema.definition.fields.is_some());
+            assert!(conflict.closest_schema.fields.is_some());
             assert!(conflict.similarity >= 0.9);
         }
         SchemaAddOutcome::Added(_) => {
@@ -232,8 +232,8 @@ fn closeness_handles_similar_but_slightly_different_schemas() {
     match outcome {
         SchemaAddOutcome::Added(response) => {
             assert_eq!(response.name, "UserExtended");
-            assert!(response.definition.field_mappers.is_some());
-            let mappers = response.definition.field_mappers.as_ref().unwrap();
+            assert!(response.field_mappers.is_some());
+            let mappers = response.field_mappers.as_ref().unwrap();
             assert!(mappers.contains_key("id"));
             assert!(mappers.contains_key("name"));
             assert!(mappers.contains_key("email"));
@@ -419,8 +419,8 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
     match outcome {
         SchemaAddOutcome::Added(response) => {
             assert_eq!(response.name, "ExtendedEntity");
-            assert!(response.definition.field_mappers.is_some());
-            let mappers = response.definition.field_mappers.as_ref().unwrap();
+            assert!(response.field_mappers.is_some());
+            let mappers = response.field_mappers.as_ref().unwrap();
             assert_eq!(mappers.len(), 5);
             assert!(mappers.contains_key("id"));
             assert!(mappers.contains_key("created_at"));
@@ -660,7 +660,6 @@ fn closeness_respects_field_mapper_preservation() {
         SchemaAddOutcome::Added(response) => {
             assert_eq!(response.name, "Extended");
             let mappers = response
-                .definition
                 .field_mappers
                 .as_ref()
                 .expect("field mappers should exist");

@@ -12,12 +12,7 @@ pub struct SchemaServiceClient {
     client: reqwest::Client,
 }
 
-/// Response returned when a schema is successfully added via the schema service.
-#[derive(Debug, Deserialize)]
-pub struct SchemaAddResponse {
-    pub name: String,
-    pub definition: Schema,
-}
+// No longer needed - the server returns Schema directly
 
 impl SchemaServiceClient {
     /// Create a new schema service client
@@ -29,7 +24,7 @@ impl SchemaServiceClient {
     }
 
     /// Add a schema definition to the schema service.
-    pub async fn add_schema(&self, schema: &Schema) -> FoldDbResult<SchemaAddResponse> {
+    pub async fn add_schema(&self, schema: &Schema) -> FoldDbResult<Schema> {
         let url = format!("{}/api/schemas", self.base_url);
 
         log_feature!(
@@ -54,7 +49,7 @@ impl SchemaServiceClient {
 
         if response.status() == StatusCode::CREATED {
             let schema = response
-                .json::<SchemaAddResponse>()
+                .json::<Schema>()
                 .await
                 .map_err(|error| {
                     FoldDbError::Config(format!(
@@ -143,6 +138,47 @@ impl SchemaServiceClient {
         Ok(schemas_response.schemas)
     }
 
+    /// Get all available schemas with their full definitions from the schema service
+    pub async fn get_available_schemas(&self) -> FoldDbResult<Vec<Schema>> {
+        let url = format!("{}/api/schemas/available", self.base_url);
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Fetching all available schemas from {}",
+            url
+        );
+
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            FoldDbError::Config(format!("Failed to fetch available schemas: {}", e))
+        })?;
+
+        if !response.status().is_success() {
+            return Err(FoldDbError::Config(format!(
+                "Schema service returned error: {}",
+                response.status()
+            )));
+        }
+
+        #[derive(Deserialize)]
+        struct AvailableSchemasResponse {
+            schemas: Vec<Schema>,
+        }
+
+        let schemas_response: AvailableSchemasResponse = response.json().await.map_err(|e| {
+            FoldDbError::Config(format!("Failed to parse available schemas response: {}", e))
+        })?;
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Received {} available schemas from schema service",
+            schemas_response.schemas.len()
+        );
+
+        Ok(schemas_response.schemas)
+    }
+
     /// Get a specific schema definition from the schema service
     pub async fn get_schema(&self, name: &str) -> FoldDbResult<Schema> {
         let url = format!("{}/api/schema/{}", self.base_url, name);
@@ -167,12 +203,7 @@ impl SchemaServiceClient {
             )));
         }
 
-        #[derive(Deserialize)]
-        struct SchemaResponse {
-            definition: Schema,
-        }
-
-        let schema_response: SchemaResponse = response.json().await.map_err(|e| {
+        let schema: Schema = response.json().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to parse schema '{}' response: {}", name, e))
         })?;
 
@@ -183,7 +214,7 @@ impl SchemaServiceClient {
             name
         );
 
-        Ok(schema_response.definition)
+        Ok(schema)
     }
 
     /// Load all schemas from the schema service into the node
@@ -307,7 +338,6 @@ mod tests {
             .expect("schema addition should succeed");
 
         assert_eq!(response.name, "TestSchema");
-        assert_eq!(response.definition.name, "TestSchema");
 
         handle.stop(true).await;
     }
