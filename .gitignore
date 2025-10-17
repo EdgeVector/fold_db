@@ -48,6 +48,7 @@ data/schema_states/
 fold_node/data/db/
 fold_node/data/schema_states/
 *.sled
+schema_registry/
 
 # Test data directories
 /test_db/

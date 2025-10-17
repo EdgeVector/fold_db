@@ -1,9 +1,9 @@
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::schema::types::Schema;
 use reqwest::StatusCode;
 use serde::Deserialize;
-use serde_json::Value;
 
 /// Client for communicating with the schema service
 #[derive(Clone)]
@@ -16,7 +16,7 @@ pub struct SchemaServiceClient {
 #[derive(Debug, Deserialize)]
 pub struct SchemaAddResponse {
     pub name: String,
-    pub definition: Value,
+    pub definition: Schema,
 }
 
 impl SchemaServiceClient {
@@ -29,7 +29,7 @@ impl SchemaServiceClient {
     }
 
     /// Add a schema definition to the schema service.
-    pub async fn add_schema(&self, schema_definition: &Value) -> FoldDbResult<SchemaAddResponse> {
+    pub async fn add_schema(&self, schema: &Schema) -> FoldDbResult<SchemaAddResponse> {
         let url = format!("{}/api/schemas", self.base_url);
 
         log_feature!(
@@ -42,7 +42,7 @@ impl SchemaServiceClient {
         let response = self
             .client
             .post(&url)
-            .json(schema_definition)
+            .json(schema)
             .send()
             .await
             .map_err(|error| {
@@ -74,15 +74,20 @@ impl SchemaServiceClient {
         }
 
         if response.status() == StatusCode::CONFLICT {
-            let body: Value = response.json().await.unwrap_or(Value::Null);
-            let message = body
-                .get("error")
-                .and_then(|value| value.as_str())
-                .unwrap_or("Schema service reported a conflict when adding schema");
+            #[derive(Deserialize)]
+            struct ErrorBody {
+                error: String,
+            }
+            
+            let error_message = response
+                .json::<ErrorBody>()
+                .await
+                .map(|body| body.error)
+                .unwrap_or_else(|_| "Schema service reported a conflict when adding schema".to_string());
 
             return Err(FoldDbError::Config(format!(
                 "Schema service conflict: {}",
-                message
+                error_message
             )));
         }
 
@@ -119,32 +124,27 @@ impl SchemaServiceClient {
             )));
         }
 
-        let json: serde_json::Value = response.json().await.map_err(|e| {
+        #[derive(Deserialize)]
+        struct SchemasListResponse {
+            schemas: Vec<String>,
+        }
+
+        let schemas_response: SchemasListResponse = response.json().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to parse schema list response: {}", e))
         })?;
-
-        let schemas = json
-            .get("schemas")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| FoldDbError::Config("Invalid schema list response".to_string()))?;
-
-        let schema_names: Vec<String> = schemas
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
 
         log_feature!(
             LogFeature::Schema,
             info,
             "Received {} schemas from schema service",
-            schema_names.len()
+            schemas_response.schemas.len()
         );
 
-        Ok(schema_names)
+        Ok(schemas_response.schemas)
     }
 
     /// Get a specific schema definition from the schema service
-    pub async fn get_schema(&self, name: &str) -> FoldDbResult<Value> {
+    pub async fn get_schema(&self, name: &str) -> FoldDbResult<Schema> {
         let url = format!("{}/api/schema/{}", self.base_url, name);
 
         log_feature!(
@@ -167,14 +167,14 @@ impl SchemaServiceClient {
             )));
         }
 
-        let json: serde_json::Value = response.json().await.map_err(|e| {
+        #[derive(Deserialize)]
+        struct SchemaResponse {
+            definition: Schema,
+        }
+
+        let schema_response: SchemaResponse = response.json().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to parse schema '{}' response: {}", name, e))
         })?;
-
-        let definition = json
-            .get("definition")
-            .ok_or_else(|| FoldDbError::Config(format!("Invalid schema response for '{}'", name)))?
-            .clone();
 
         log_feature!(
             LogFeature::Schema,
@@ -183,7 +183,7 @@ impl SchemaServiceClient {
             name
         );
 
-        Ok(definition)
+        Ok(schema_response.definition)
     }
 
     /// Load all schemas from the schema service into the node
@@ -195,9 +195,9 @@ impl SchemaServiceClient {
         let mut loaded_count = 0;
 
         for name in schema_names {
-            let definition = self.get_schema(&name).await?;
+            let schema = self.get_schema(&name).await?;
 
-            let json_str = serde_json::to_string(&definition).map_err(|e| {
+            let json_str = serde_json::to_string(&schema).map_err(|e| {
                 FoldDbError::Config(format!("Failed to serialize schema '{}': {}", name, e))
             })?;
 
@@ -223,9 +223,9 @@ impl SchemaServiceClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema_service::server::{SchemaAddOutcome, SchemaServiceState};
+    use crate::schema::types::SchemaType;
+    use crate::schema_service::server::{SchemaAddOutcome, SchemaServiceState, ErrorResponse, ConflictResponse};
     use actix_web::{rt::time::sleep, web, App, HttpResponse, HttpServer};
-    use serde_json::{json, Value};
     use std::net::TcpListener;
     use std::time::Duration;
     use tempfile::tempdir;
@@ -248,19 +248,23 @@ mod tests {
                 .service(web::scope("/api").route(
                 "/schemas",
                 web::post().to(
-                    |payload: web::Json<Value>, state: web::Data<SchemaServiceState>| async move {
-                        match state.add_schema(payload.into_inner()) {
+                    |payload: web::Json<Schema>, state: web::Data<SchemaServiceState>| async move {
+                        let schema = payload.into_inner();
+                        
+                        match state.add_schema(schema) {
                             Ok(SchemaAddOutcome::Added(schema)) => {
                                 HttpResponse::Created().json(schema)
                             }
                             Ok(SchemaAddOutcome::TooSimilar(conflict)) => HttpResponse::Conflict()
-                                .json(json!({
-                                    "error": "Schema too similar to existing schema",
-                                    "similarity": conflict.similarity,
-                                    "closest_schema": conflict.closest_schema
-                                })),
+                                .json(ConflictResponse {
+                                    error: "Schema too similar to existing schema".to_string(),
+                                    similarity: conflict.similarity,
+                                    closest_schema: conflict.closest_schema,
+                                }),
                             Err(error) => HttpResponse::BadRequest()
-                                .json(json!({"error": format!("Failed to add schema: {}", error)})),
+                                .json(ErrorResponse {
+                                    error: format!("Failed to add schema: {}", error),
+                                }),
                         }
                     },
                 ),
@@ -281,18 +285,21 @@ mod tests {
     #[actix_web::test]
     async fn add_schema_succeeds() {
         let temp_dir = tempdir().expect("failed to create tempdir");
-        let state = SchemaServiceState::new(temp_dir.path().to_string_lossy().to_string())
+        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+        let state = SchemaServiceState::new(db_path)
             .expect("failed to create schema service state");
 
         let (base_url, handle) = spawn_schema_service(state).await;
 
         let client = SchemaServiceClient::new(&base_url);
-        let schema = json!({
-            "name": "TestSchema",
-            "fields": [
-                {"name": "id", "type": "string"}
-            ]
-        });
+        let schema = Schema::new(
+            "TestSchema".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec!["id".to_string()]),
+            None,
+            None,
+        );
 
         let response = client
             .add_schema(&schema)
@@ -300,7 +307,7 @@ mod tests {
             .expect("schema addition should succeed");
 
         assert_eq!(response.name, "TestSchema");
-        assert_eq!(response.definition.get("name").unwrap(), "TestSchema");
+        assert_eq!(response.definition.name, "TestSchema");
 
         handle.stop(true).await;
     }
@@ -308,18 +315,21 @@ mod tests {
     #[actix_web::test]
     async fn add_schema_conflict_is_reported() {
         let temp_dir = tempdir().expect("failed to create tempdir");
-        let state = SchemaServiceState::new(temp_dir.path().to_string_lossy().to_string())
+        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+        let state = SchemaServiceState::new(db_path)
             .expect("failed to create schema service state");
 
         let (base_url, handle) = spawn_schema_service(state).await;
 
         let client = SchemaServiceClient::new(&base_url);
-        let schema = json!({
-            "name": "ExistingSchema",
-            "fields": [
-                {"name": "id", "type": "string"}
-            ]
-        });
+        let schema = Schema::new(
+            "ExistingSchema".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec!["id".to_string()]),
+            None,
+            None,
+        );
 
         client
             .add_schema(&schema)
