@@ -16,22 +16,21 @@ pub struct SchemasListResponse {
     pub schemas: Vec<String>,
 }
 
-/// Response containing a single schema definition
+/// Response containing all available schemas with their definitions
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaResponse {
-    pub name: String,
-    pub definition: Schema,
+pub struct AvailableSchemasResponse {
+    pub schemas: Vec<Schema>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaSimilarityResponse {
     pub similarity: f64,
-    pub closest_schema: SchemaResponse,
+    pub closest_schema: Schema,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SchemaAddOutcome {
-    Added(SchemaResponse),
+    Added(Schema),
     TooSimilar(SchemaSimilarityResponse),
 }
 
@@ -59,7 +58,7 @@ pub struct HealthResponse {
 pub struct ConflictResponse {
     pub error: String,
     pub similarity: f64,
-    pub closest_schema: SchemaResponse,
+    pub closest_schema: Schema,
 }
 
 /// Shared state for the schema service
@@ -140,10 +139,6 @@ impl SchemaServiceState {
         );
 
         Ok(())
-    }
-
-    fn schema_response(name: String, schema: Schema) -> SchemaResponse {
-        SchemaResponse { name, definition: schema }
     }
 
     pub fn add_schema(&self, mut schema: Schema) -> FoldDbResult<SchemaAddOutcome> {
@@ -248,7 +243,7 @@ impl SchemaServiceState {
             } else if similarity >= SCHEMA_SIMILARITY_THRESHOLD {
                 return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
                     similarity,
-                    closest_schema: Self::schema_response(existing_name, existing_schema),
+                    closest_schema: existing_schema,
                 }));
             }
         }
@@ -275,12 +270,7 @@ impl SchemaServiceState {
 
         schemas.insert(schema_name.clone(), schema.clone());
 
-        let response = SchemaResponse {
-            name: schema_name,
-            definition: schema,
-        };
-
-        Ok(SchemaAddOutcome::Added(response))
+        Ok(SchemaAddOutcome::Added(schema))
     }
 
     fn validate_schema_name(schema_name: &str) -> FoldDbResult<()> {
@@ -362,6 +352,33 @@ async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
     })
 }
 
+/// Get all available schemas with their full definitions
+async fn get_available_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
+    log_feature!(LogFeature::Schema, info, "Schema service: getting all available schemas");
+
+    let schemas = match state.schemas.lock() {
+        Ok(s) => s,
+        Err(e) => {
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to acquire schemas lock: {}",
+                e
+            );
+            return HttpResponse::InternalServerError()
+                .json(ErrorResponse {
+                    error: "Failed to acquire schemas lock".to_string(),
+                });
+        }
+    };
+
+    let schema_list: Vec<Schema> = schemas.values().cloned().collect();
+
+    HttpResponse::Ok().json(AvailableSchemasResponse {
+        schemas: schema_list,
+    })
+}
+
 /// Get a specific schema by name
 async fn get_schema(
     path: web::Path<String>,
@@ -392,13 +409,7 @@ async fn get_schema(
     };
 
     match schemas.get(&schema_name) {
-        Some(schema) => {
-            let response = SchemaResponse {
-                name: schema_name.clone(),
-                definition: schema.clone(),
-            };
-            HttpResponse::Ok().json(response)
-        }
+        Some(schema) => HttpResponse::Ok().json(schema),
         None => {
             log_feature!(
                 LogFeature::Schema,
@@ -543,6 +554,7 @@ impl SchemaServiceServer {
                             .route(web::post().to(add_schema)),
                     )
                     .route("/schemas/reload", web::post().to(reload_schemas))
+                    .route("/schemas/available", web::get().to(get_available_schemas))
                     .route("/schema/{name}", web::get().to(get_schema)),
             )
         })
@@ -587,9 +599,9 @@ mod tests {
             .expect("failed to add schema");
 
         match outcome {
-            SchemaAddOutcome::Added(response) => {
-                assert_eq!(response.name, "NewSchema");
-                assert_eq!(response.definition, new_schema);
+            SchemaAddOutcome::Added(schema) => {
+                assert_eq!(schema.name, "NewSchema");
+                assert_eq!(schema, new_schema);
             }
             SchemaAddOutcome::TooSimilar(_) => panic!("schema should have been added"),
         }
@@ -651,7 +663,7 @@ mod tests {
             SchemaAddOutcome::TooSimilar(conflict) => {
                 assert!(conflict.similarity >= SCHEMA_SIMILARITY_THRESHOLD);
                 assert_eq!(conflict.closest_schema.name, "Existing");
-                assert_eq!(conflict.closest_schema.definition, existing_schema);
+                assert_eq!(conflict.closest_schema, existing_schema);
             }
             SchemaAddOutcome::Added(_) => panic!("schema should have been rejected as similar"),
         }
@@ -698,14 +710,13 @@ mod tests {
             .expect("failed to add schema with field mapper");
 
         let added_schema = match outcome {
-            SchemaAddOutcome::Added(response) => response,
+            SchemaAddOutcome::Added(schema) => schema,
             other => panic!("expected schema addition, got {:?}", other),
         };
 
         assert_eq!(added_schema.name, "ExistingPublic");
 
         let field_mappers = added_schema
-            .definition
             .field_mappers
             .as_ref()
             .expect("field mappers should exist");
@@ -780,5 +791,43 @@ mod tests {
             .get(b"../traversal")
             .expect("failed to query database")
             .is_none());
+    }
+
+    #[test]
+    fn get_available_schemas_returns_all_schemas() {
+        let temp_dir = tempdir().expect("failed to create temp directory");
+        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+
+        let state = SchemaServiceState::new(db_path.clone())
+            .expect("failed to initialize schema service state");
+
+        let schema1 = Schema::new(
+            "UserSchema".to_string(),
+            crate::schema::types::SchemaType::Single,
+            None,
+            Some(vec!["user_id".to_string(), "username".to_string(), "email".to_string()]),
+            None,
+            None,
+        );
+
+        let schema2 = Schema::new(
+            "ProductSchema".to_string(),
+            crate::schema::types::SchemaType::Single,
+            None,
+            Some(vec!["product_id".to_string(), "title".to_string(), "price".to_string(), "description".to_string()]),
+            None,
+            None,
+        );
+
+        state.add_schema(schema1.clone()).expect("failed to add schema1");
+        state.add_schema(schema2.clone()).expect("failed to add schema2");
+
+        let schemas = state.schemas.lock().expect("failed to lock schemas");
+        assert_eq!(schemas.len(), 2);
+        assert!(schemas.contains_key("UserSchema"));
+        assert!(schemas.contains_key("ProductSchema"));
+
+        assert_eq!(schemas.get("UserSchema").unwrap().name, "UserSchema");
+        assert_eq!(schemas.get("ProductSchema").unwrap().name, "ProductSchema");
     }
 }
