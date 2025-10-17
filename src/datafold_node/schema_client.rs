@@ -3,7 +3,8 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Schema;
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Client for communicating with the schema service
 #[derive(Clone)]
@@ -12,7 +13,19 @@ pub struct SchemaServiceClient {
     client: reqwest::Client,
 }
 
-// No longer needed - the server returns Schema directly
+/// Request structure for adding a schema with mutation mappers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AddSchemaRequest {
+    schema: Schema,
+    mutation_mappers: HashMap<String, String>,
+}
+
+/// Response structure for adding a schema with mutation mappers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddSchemaResponse {
+    pub schema: Schema,
+    pub mutation_mappers: HashMap<String, String>,
+}
 
 impl SchemaServiceClient {
     /// Create a new schema service client
@@ -24,20 +37,26 @@ impl SchemaServiceClient {
     }
 
     /// Add a schema definition to the schema service.
-    pub async fn add_schema(&self, schema: &Schema) -> FoldDbResult<Schema> {
+    pub async fn add_schema(&self, schema: &Schema, mutation_mappers: HashMap<String, String>) -> FoldDbResult<AddSchemaResponse> {
         let url = format!("{}/api/schemas", self.base_url);
 
         log_feature!(
             LogFeature::Schema,
             info,
-            "Adding schema via schema service at {}",
-            url
+            "Adding schema via schema service at {} with {} mutation mappers",
+            url,
+            mutation_mappers.len()
         );
+
+        let request = AddSchemaRequest {
+            schema: schema.clone(),
+            mutation_mappers,
+        };
 
         let response = self
             .client
             .post(&url)
-            .json(schema)
+            .json(&request)
             .send()
             .await
             .map_err(|error| {
@@ -48,8 +67,8 @@ impl SchemaServiceClient {
             })?;
 
         if response.status() == StatusCode::CREATED {
-            let schema = response
-                .json::<Schema>()
+            let add_schema_response = response
+                .json::<AddSchemaResponse>()
                 .await
                 .map_err(|error| {
                     FoldDbError::Config(format!(
@@ -61,11 +80,12 @@ impl SchemaServiceClient {
             log_feature!(
                 LogFeature::Schema,
                 info,
-                "Schema '{}' added via schema service",
-                schema.name
+                "Schema '{}' added via schema service with {} mutation mappers",
+                add_schema_response.schema.name,
+                add_schema_response.mutation_mappers.len()
             );
 
-            return Ok(schema);
+            return Ok(add_schema_response);
         }
 
         if response.status() == StatusCode::CONFLICT {
@@ -279,12 +299,15 @@ mod tests {
                 .service(web::scope("/api").route(
                 "/schemas",
                 web::post().to(
-                    |payload: web::Json<Schema>, state: web::Data<SchemaServiceState>| async move {
-                        let schema = payload.into_inner();
+                    |payload: web::Json<AddSchemaRequest>, state: web::Data<SchemaServiceState>| async move {
+                        let request = payload.into_inner();
                         
-                        match state.add_schema(schema) {
-                            Ok(SchemaAddOutcome::Added(schema)) => {
-                                HttpResponse::Created().json(schema)
+                        match state.add_schema(request.schema, request.mutation_mappers) {
+                            Ok(SchemaAddOutcome::Added(schema, mutation_mappers)) => {
+                                HttpResponse::Created().json(AddSchemaResponse {
+                                    schema,
+                                    mutation_mappers,
+                                })
                             }
                             Ok(SchemaAddOutcome::TooSimilar(conflict)) => HttpResponse::Conflict()
                                 .json(ConflictResponse {
@@ -333,11 +356,11 @@ mod tests {
         );
 
         let response = client
-            .add_schema(&schema)
+            .add_schema(&schema, HashMap::new())
             .await
             .expect("schema addition should succeed");
 
-        assert_eq!(response.name, "TestSchema");
+        assert_eq!(response.schema.name, "TestSchema");
 
         handle.stop(true).await;
     }
@@ -362,12 +385,12 @@ mod tests {
         );
 
         client
-            .add_schema(&schema)
+            .add_schema(&schema, HashMap::new())
             .await
             .expect("initial schema creation should succeed");
 
         let error = client
-            .add_schema(&schema)
+            .add_schema(&schema, HashMap::new())
             .await
             .expect_err("duplicate schema creation should fail");
 

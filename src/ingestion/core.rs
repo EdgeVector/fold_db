@@ -107,10 +107,16 @@ impl IngestionCore {
             .await?;
 
         // Step 4: Determine and setup schema
-        let (schema_name, new_schema_created) = self.setup_schema(&ai_response).await?;
+        let (schema_name, new_schema_created, mutation_mappers) = self.setup_schema(&ai_response).await?;
 
-        // Step 5: Generate mutations
-        let mutations = self.generate_mutations(&schema_name, &request, &ai_response)?;
+        // Step 5: Generate mutations using the returned mutation_mappers (which may have been updated by schema service)
+        let mutations = self.generate_mutations_for_data(
+            &schema_name,
+            &request.data,
+            &mutation_mappers,
+            request.trust_distance.unwrap_or(self.config.default_trust_distance),
+            request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+        )?;
 
         // Step 6: Execute mutations if requested
         let mutations_executed = self
@@ -173,39 +179,10 @@ impl IngestionCore {
     async fn setup_schema(
         &self,
         ai_response: &AISchemaResponse,
-    ) -> IngestionResult<(String, bool)> {
-        let schema_name = self.determine_schema_to_use(ai_response).await?;
+    ) -> IngestionResult<(String, bool, HashMap<String, String>)> {
+        let (schema_name, mutation_mappers) = self.determine_schema_to_use(ai_response).await?;
         let new_schema_created = ai_response.new_schemas.is_some();
-        Ok((schema_name, new_schema_created))
-    }
-
-    /// Generates mutations for the data using the determined schema.
-    fn generate_mutations(
-        &self,
-        schema_name: &str,
-        request: &IngestionRequest,
-        ai_response: &AISchemaResponse,
-    ) -> IngestionResult<Vec<Mutation>> {
-        let mutations = self.generate_mutations_for_data(
-            schema_name,
-            &request.data,
-            &ai_response.mutation_mappers,
-            request
-                .trust_distance
-                .unwrap_or(self.config.default_trust_distance),
-            request
-                .pub_key
-                .clone()
-                .unwrap_or_else(|| "default".to_string()),
-        )?;
-
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Generated {} mutations",
-            mutations.len()
-        );
-        Ok(mutations)
+        Ok((schema_name, new_schema_created, mutation_mappers))
     }
 
     /// Executes mutations if auto-execution is enabled.
@@ -302,7 +279,7 @@ impl IngestionCore {
     async fn determine_schema_to_use(
         &self,
         ai_response: &AISchemaResponse,
-    ) -> IngestionResult<String> {
+    ) -> IngestionResult<(String, HashMap<String, String>)> {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
             let schema_name = &ai_response.existing_schemas[0];
@@ -312,19 +289,20 @@ impl IngestionCore {
                 "Using existing schema: {}",
                 schema_name
             );
-            return Ok(schema_name.clone());
+            return Ok((schema_name.clone(), ai_response.mutation_mappers.clone()));
         }
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
-            let schema_name = self.create_new_schema(new_schema_def).await?;
+            let (schema_name, mutation_mappers) = self.create_new_schema(new_schema_def, ai_response.mutation_mappers.clone()).await?;
             log_feature!(
                 LogFeature::Ingestion,
                 info,
-                "Created new schema: {}",
-                schema_name
+                "Created new schema: {} with {} mutation mappers",
+                schema_name,
+                mutation_mappers.len()
             );
-            return Ok(schema_name);
+            return Ok((schema_name, mutation_mappers));
         }
 
         Err(IngestionError::ai_response_validation_error(
@@ -332,12 +310,13 @@ impl IngestionCore {
         ))
     }
 
-    /// Create a new schema from AI response
-    async fn create_new_schema(&self, schema_def: &Value) -> IngestionResult<String> {
+    /// Create a new schema from AI response with mutation mappers
+    async fn create_new_schema(&self, schema_def: &Value, mutation_mappers: HashMap<String, String>) -> IngestionResult<(String, HashMap<String, String>)> {
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "Creating new schema from AI definition"
+            "Creating new schema from AI definition with {} mutation mappers",
+            mutation_mappers.len()
         );
 
         // Deserialize Value to Schema
@@ -349,9 +328,9 @@ impl IngestionCore {
                 ))
             })?;
 
-        let schema_response = self
+        let add_schema_response = self
             .schema_service_client
-            .add_schema(&schema)
+            .add_schema(&schema, mutation_mappers)
             .await
             .map_err(|error| {
                 IngestionError::SchemaCreationError(format!(
@@ -360,7 +339,7 @@ impl IngestionCore {
                 ))
             })?;
 
-        let json_str = serde_json::to_string(&schema_response).map_err(|error| {
+        let json_str = serde_json::to_string(&add_schema_response.schema).map_err(|error| {
             IngestionError::schema_parsing_error(format!(
                 "Failed to serialize schema definition: {}",
                 error
@@ -371,7 +350,8 @@ impl IngestionCore {
             .load_schema_from_json(&json_str)
             .map_err(IngestionError::SchemaSystemError)?;
 
-        let schema_name = schema_response.name;
+        let schema_name = add_schema_response.schema.name.clone();
+        let returned_mutation_mappers = add_schema_response.mutation_mappers;
 
         // Check if the schema is already approved
         let current_state = self
@@ -392,10 +372,11 @@ impl IngestionCore {
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "New schema '{}' created and approved",
-            schema_name
+            "New schema '{}' created and approved with {} mutation mappers",
+            schema_name,
+            returned_mutation_mappers.len()
         );
-        Ok(schema_name)
+        Ok((schema_name, returned_mutation_mappers))
     }
 
     /// Generate mutations for the data

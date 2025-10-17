@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use datafold::schema_service::server::{SchemaAddOutcome, SchemaServiceState};
 use serde_json::json;
 use tempfile::tempdir;
@@ -11,7 +12,7 @@ fn json_to_schema(value: serde_json::Value) -> datafold::schema::types::Schema {
 /// Helper function to verify that every outcome returns a valid schema
 fn verify_outcome_has_schema(outcome: &SchemaAddOutcome) {
     match outcome {
-        SchemaAddOutcome::Added(response) => {
+        SchemaAddOutcome::Added(response, _) => {
             assert!(!response.name.is_empty(), "added schema must have a name");
             assert!(
                 response.fields.is_some(),
@@ -49,7 +50,7 @@ fn closeness_rejects_identical_schema_with_different_name() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let duplicate_schema = json_to_schema(json!({
@@ -58,7 +59,7 @@ fn closeness_rejects_identical_schema_with_different_name() {
     }));
 
     let outcome = state
-        .add_schema(duplicate_schema)
+        .add_schema(duplicate_schema, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     verify_outcome_has_schema(&outcome);
@@ -68,7 +69,7 @@ fn closeness_rejects_identical_schema_with_different_name() {
             assert_eq!(conflict.closest_schema.name, "UserProfile");
             assert!(conflict.similarity >= 0.9);
         }
-        SchemaAddOutcome::Added(_) => panic!("identical schema should have been rejected"),
+        SchemaAddOutcome::Added(_, _) => panic!("identical schema should have been rejected"),
     }
 }
 
@@ -86,13 +87,13 @@ fn closeness_always_returns_schema_on_success() {
     }));
 
     let outcome = state
-        .add_schema(new_schema)
+        .add_schema(new_schema, HashMap::new())
         .expect("failed to add schema");
 
     verify_outcome_has_schema(&outcome);
 
     match outcome {
-        SchemaAddOutcome::Added(response) => {
+        SchemaAddOutcome::Added(response, _) => {
             assert_eq!(response.name, "TestSchema");
             assert!(response.fields.is_some());
         }
@@ -119,7 +120,7 @@ fn closeness_always_returns_schema_on_rejection() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let duplicate_schema = json_to_schema(json!({
@@ -131,7 +132,7 @@ fn closeness_always_returns_schema_on_rejection() {
     }));
 
     let outcome = state
-        .add_schema(duplicate_schema)
+        .add_schema(duplicate_schema, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     verify_outcome_has_schema(&outcome);
@@ -142,7 +143,7 @@ fn closeness_always_returns_schema_on_rejection() {
             assert!(conflict.closest_schema.fields.is_some());
             assert!(conflict.similarity >= 0.9);
         }
-        SchemaAddOutcome::Added(_) => {
+        SchemaAddOutcome::Added(_, _) => {
             panic!("duplicate schema should be rejected with closest schema returned")
         }
     }
@@ -165,7 +166,7 @@ fn closeness_allows_dissimilar_schemas() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let different_schema = json_to_schema(json!({
@@ -179,13 +180,13 @@ fn closeness_allows_dissimilar_schemas() {
     }));
 
     let outcome = state
-        .add_schema(different_schema)
+        .add_schema(different_schema, HashMap::new())
         .expect("failed to add dissimilar schema");
 
     verify_outcome_has_schema(&outcome);
 
     match outcome {
-        SchemaAddOutcome::Added(response) => {
+        SchemaAddOutcome::Added(response, _) => {
             assert_eq!(response.name, "ProductCatalog");
         }
         SchemaAddOutcome::TooSimilar(_) => panic!("dissimilar schema should have been accepted"),
@@ -210,7 +211,7 @@ fn closeness_handles_similar_but_slightly_different_schemas() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let similar_schema_with_extra_field = json_to_schema(json!({
@@ -224,13 +225,13 @@ fn closeness_handles_similar_but_slightly_different_schemas() {
     }));
 
     let outcome = state
-        .add_schema(similar_schema_with_extra_field)
+        .add_schema(similar_schema_with_extra_field, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     verify_outcome_has_schema(&outcome);
 
     match outcome {
-        SchemaAddOutcome::Added(response) => {
+        SchemaAddOutcome::Added(response, _) => {
             assert_eq!(response.name, "UserExtended");
             assert!(response.field_mappers.is_some());
             let mappers = response.field_mappers.as_ref().unwrap();
@@ -263,7 +264,7 @@ fn closeness_uses_normalized_comparison_for_properties() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let reordered_properties_schema = json_to_schema(json!({
@@ -276,7 +277,7 @@ fn closeness_uses_normalized_comparison_for_properties() {
     }));
 
     let outcome = state
-        .add_schema(reordered_properties_schema)
+        .add_schema(reordered_properties_schema, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     match outcome {
@@ -284,7 +285,7 @@ fn closeness_uses_normalized_comparison_for_properties() {
             assert_eq!(conflict.closest_schema.name, "First");
             assert!(conflict.similarity >= 0.9);
         }
-        SchemaAddOutcome::Added(_) => {
+        SchemaAddOutcome::Added(_, _) => {
             panic!("schemas should be detected as identical despite property ordering")
         }
     }
@@ -306,7 +307,7 @@ fn closeness_ignores_schema_name_in_comparison() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let same_content_different_name = json_to_schema(json!({
@@ -317,7 +318,7 @@ fn closeness_ignores_schema_name_in_comparison() {
     }));
 
     let outcome = state
-        .add_schema(same_content_different_name)
+        .add_schema(same_content_different_name, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     match outcome {
@@ -325,7 +326,7 @@ fn closeness_ignores_schema_name_in_comparison() {
             assert_eq!(conflict.closest_schema.name, "VeryLongDescriptiveSchemaName");
             assert!(conflict.similarity >= 0.9);
         }
-        SchemaAddOutcome::Added(_) => {
+        SchemaAddOutcome::Added(_, _) => {
             panic!("schemas should be detected as identical despite different names")
         }
     }
@@ -349,7 +350,7 @@ fn closeness_with_object_style_fields() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let similar_object_schema = json_to_schema(json!({
@@ -362,7 +363,7 @@ fn closeness_with_object_style_fields() {
     }));
 
     let outcome = state
-        .add_schema(similar_object_schema)
+        .add_schema(similar_object_schema, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     match outcome {
@@ -370,7 +371,7 @@ fn closeness_with_object_style_fields() {
             assert_eq!(conflict.closest_schema.name, "ExistingObject");
             assert!(conflict.similarity >= 0.9);
         }
-        SchemaAddOutcome::Added(_) => {
+        SchemaAddOutcome::Added(_, _) => {
             panic!("identical object-style schemas should be detected as similar")
         }
     }
@@ -396,7 +397,7 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let extended_schema = json_to_schema(json!({
@@ -413,11 +414,11 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
     }));
 
     let outcome = state
-        .add_schema(extended_schema)
+        .add_schema(extended_schema, HashMap::new())
         .expect("failed to add schema with high field overlap");
 
     match outcome {
-        SchemaAddOutcome::Added(response) => {
+        SchemaAddOutcome::Added(response, _) => {
             assert_eq!(response.name, "ExtendedEntity");
             assert!(response.field_mappers.is_some());
             let mappers = response.field_mappers.as_ref().unwrap();
@@ -466,9 +467,9 @@ fn closeness_with_multiple_existing_schemas_finds_closest() {
         ]
     }));
 
-    state.add_schema(schema1).expect("failed to add schema1");
-    state.add_schema(schema2).expect("failed to add schema2");
-    state.add_schema(schema3).expect("failed to add schema3");
+    state.add_schema(schema1, HashMap::new()).expect("failed to add schema1");
+    state.add_schema(schema2, HashMap::new()).expect("failed to add schema2");
+    state.add_schema(schema3, HashMap::new()).expect("failed to add schema3");
 
     let new_schema = json_to_schema(json!({
         "name": "NewSchema",
@@ -479,7 +480,7 @@ fn closeness_with_multiple_existing_schemas_finds_closest() {
     }));
 
     let outcome = state
-        .add_schema(new_schema)
+        .add_schema(new_schema, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     match outcome {
@@ -487,7 +488,7 @@ fn closeness_with_multiple_existing_schemas_finds_closest() {
             assert_eq!(conflict.closest_schema.name, "Schema2");
             assert!(conflict.similarity >= 0.9);
         }
-        SchemaAddOutcome::Added(_) => {
+        SchemaAddOutcome::Added(_, _) => {
             panic!("schema should match Schema2 as closest duplicate")
         }
     }
@@ -507,7 +508,7 @@ fn closeness_with_nested_objects() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let duplicate_nested = json_to_schema(json!({
@@ -516,7 +517,7 @@ fn closeness_with_nested_objects() {
     }));
 
     let outcome = state
-        .add_schema(duplicate_nested)
+        .add_schema(duplicate_nested, HashMap::new())
         .expect("failed to evaluate schema similarity");
 
     match outcome {
@@ -524,7 +525,7 @@ fn closeness_with_nested_objects() {
             assert_eq!(conflict.closest_schema.name, "NestedSchema");
             assert!(conflict.similarity >= 0.9);
         }
-        SchemaAddOutcome::Added(_) => {
+        SchemaAddOutcome::Added(_, _) => {
             panic!("identical nested schemas should be detected as similar")
         }
     }
@@ -552,7 +553,7 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let new_schema = json_to_schema(json!({
@@ -569,11 +570,11 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
     }));
 
     let outcome = state
-        .add_schema(new_schema)
+        .add_schema(new_schema, HashMap::new())
         .expect("failed to add schema with low overlap");
 
     match outcome {
-        SchemaAddOutcome::Added(response) => {
+        SchemaAddOutcome::Added(response, _) => {
             assert_eq!(response.name, "DifferentSchema");
         }
         SchemaAddOutcome::TooSimilar(_) => {
@@ -596,10 +597,10 @@ fn closeness_with_empty_schemas() {
     }));
 
     let outcome1 = state
-        .add_schema(first_empty)
+        .add_schema(first_empty, HashMap::new())
         .expect("failed to add first empty schema");
 
-    assert!(matches!(outcome1, SchemaAddOutcome::Added(_)));
+    assert!(matches!(outcome1, SchemaAddOutcome::Added(_, _)));
 
     let second_empty = json_to_schema(json!({
         "name": "Empty2",
@@ -607,14 +608,14 @@ fn closeness_with_empty_schemas() {
     }));
 
     let outcome2 = state
-        .add_schema(second_empty)
+        .add_schema(second_empty, HashMap::new())
         .expect("failed to evaluate empty schema similarity");
 
     match outcome2 {
         SchemaAddOutcome::TooSimilar(conflict) => {
             assert_eq!(conflict.closest_schema.name, "Empty1");
         }
-        SchemaAddOutcome::Added(_) => {
+        SchemaAddOutcome::Added(_, _) => {
             panic!("two empty schemas should be detected as similar")
         }
     }
@@ -637,7 +638,7 @@ fn closeness_respects_field_mapper_preservation() {
     }));
 
     state
-        .add_schema(existing_schema)
+        .add_schema(existing_schema, HashMap::new())
         .expect("failed to add existing schema");
 
     let new_schema_with_existing_mappers = json_to_schema(json!({
@@ -653,11 +654,11 @@ fn closeness_respects_field_mapper_preservation() {
     }));
 
     let outcome = state
-        .add_schema(new_schema_with_existing_mappers)
+        .add_schema(new_schema_with_existing_mappers, HashMap::new())
         .expect("failed to add schema with existing mappers");
 
     match outcome {
-        SchemaAddOutcome::Added(response) => {
+        SchemaAddOutcome::Added(response, _) => {
             assert_eq!(response.name, "Extended");
             let mappers = response
                 .field_mappers
@@ -669,6 +670,71 @@ fn closeness_respects_field_mapper_preservation() {
         }
         SchemaAddOutcome::TooSimilar(_) => {
             panic!("schema with extra field should be accepted")
+        }
+    }
+}
+
+#[test]
+fn mutation_mappers_updated_when_field_mappers_added() {
+    let temp_dir = tempdir().expect("failed to create temp directory");
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+
+    let state = SchemaServiceState::new(db_path.clone())
+        .expect("failed to initialize schema service state");
+
+    // Add an existing schema
+    let existing_schema = json_to_schema(json!({
+        "name": "UserProfile",
+        "schema_type": "Single",
+        "fields": ["user_id", "username", "email"]
+    }));
+
+    state
+        .add_schema(existing_schema, HashMap::new())
+        .expect("failed to add existing schema");
+
+    // Propose a new schema with mutation_mappers that map JSON fields to schema fields
+    let mut mutation_mappers = HashMap::new();
+    mutation_mappers.insert("id".to_string(), "UserProfilePublic.user_id".to_string());
+    mutation_mappers.insert("name".to_string(), "UserProfilePublic.username".to_string());
+    mutation_mappers.insert("email".to_string(), "UserProfilePublic.email".to_string());
+    mutation_mappers.insert("display_name".to_string(), "UserProfilePublic.display_name".to_string());
+
+    let new_schema = json_to_schema(json!({
+        "name": "UserProfilePublic",
+        "schema_type": "Single",
+        "fields": ["user_id", "username", "email", "display_name"]
+    }));
+
+    let outcome = state
+        .add_schema(new_schema, mutation_mappers)
+        .expect("failed to add schema with mutation mappers");
+
+    match outcome {
+        SchemaAddOutcome::Added(response, updated_mutation_mappers) => {
+            assert_eq!(response.name, "UserProfilePublic");
+            
+            // Verify field_mappers were created for shared fields
+            let field_mappers = response
+                .field_mappers
+                .as_ref()
+                .expect("field mappers should exist");
+            assert!(field_mappers.contains_key("user_id"));
+            assert!(field_mappers.contains_key("username"));
+            assert!(field_mappers.contains_key("email"));
+            assert!(!field_mappers.contains_key("display_name"), "display_name is new, should not have field mapper");
+
+            // Verify mutation_mappers were updated to point to existing schema
+            assert_eq!(updated_mutation_mappers.get("id").unwrap(), "UserProfile.user_id");
+            assert_eq!(updated_mutation_mappers.get("name").unwrap(), "UserProfile.username");
+            assert_eq!(updated_mutation_mappers.get("email").unwrap(), "UserProfile.email");
+            // display_name is a new field, so it should remain unchanged
+            assert_eq!(updated_mutation_mappers.get("display_name").unwrap(), "UserProfilePublic.display_name");
+            
+            println!("Updated mutation_mappers: {:?}", updated_mutation_mappers);
+        }
+        SchemaAddOutcome::TooSimilar(_) => {
+            panic!("schema with extra field should be accepted with field mappers")
         }
     }
 }
