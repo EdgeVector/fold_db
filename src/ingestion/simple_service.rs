@@ -1,19 +1,20 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
 
-use crate::datafold_node::{DataFoldNode, OperationProcessor, SchemaServiceClient};
+use crate::datafold_node::{DataFoldNode, OperationProcessor};
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;
 use crate::ingestion::ollama_service::OllamaService;
 use crate::ingestion::openrouter_service::OpenRouterService;
-use crate::ingestion::schema_stripper::SchemaStripper;
 use crate::ingestion::{
     AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
+    IngestionStatus, SimplifiedSchema, SimplifiedSchemaMap,
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::{Mutation, Operation};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -22,7 +23,6 @@ pub struct SimpleIngestionService {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,
     ollama_service: Option<OllamaService>,
-    schema_stripper: SchemaStripper,
     mutation_generator: MutationGenerator,
 }
 
@@ -49,14 +49,12 @@ impl SimpleIngestionService {
             None
         };
 
-        let schema_stripper = SchemaStripper::new();
         let mutation_generator = MutationGenerator::new();
 
         Ok(Self {
             config,
             openrouter_service,
             ollama_service,
-            schema_stripper,
             mutation_generator,
         })
     }
@@ -90,7 +88,7 @@ impl SimpleIngestionService {
             LogFeature::Ingestion,
             info,
             "Retrieved {} available schemas",
-            available_schemas.as_object().map(|o| o.len()).unwrap_or(0)
+            available_schemas.len()
         );
 
         // Step 3: Get AI recommendation
@@ -139,7 +137,7 @@ impl SimpleIngestionService {
 
                 let mutations = self.mutation_generator.generate_mutations(
                     &schema_name,
-                    &std::collections::HashMap::new(),
+                    &HashMap::new(),
                     &fields_and_values,
                     &ai_response.mutation_mappers,
                     request
@@ -160,12 +158,12 @@ impl SimpleIngestionService {
             let fields_and_values = if let Some(obj) = request.data.as_object() {
                 obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
             } else {
-                std::collections::HashMap::new()
+                HashMap::new()
             };
 
             self.mutation_generator.generate_mutations(
                 &schema_name,
-                &std::collections::HashMap::new(),
+                &HashMap::new(),
                 &fields_and_values,
                 &ai_response.mutation_mappers,
                 request
@@ -214,8 +212,9 @@ impl SimpleIngestionService {
     async fn get_ai_recommendation(
         &self,
         json_data: &Value,
-        available_schemas: &Value,
+        available_schemas: &SimplifiedSchemaMap,
     ) -> IngestionResult<AISchemaResponse> {
+        let schemas_json = available_schemas.to_json_value();
         match self.config.provider {
             AIProvider::OpenRouter => {
                 self.openrouter_service
@@ -223,7 +222,7 @@ impl SimpleIngestionService {
                     .ok_or_else(|| {
                         IngestionError::configuration_error("OpenRouter service not initialized")
                     })?
-                    .get_schema_recommendation(json_data, available_schemas)
+                    .get_schema_recommendation(json_data, &schemas_json)
                     .await
             }
             AIProvider::Ollama => {
@@ -232,7 +231,7 @@ impl SimpleIngestionService {
                     .ok_or_else(|| {
                         IngestionError::configuration_error("Ollama service not initialized")
                     })?
-                    .get_schema_recommendation(json_data, available_schemas)
+                    .get_schema_recommendation(json_data, &schemas_json)
                     .await
             }
         }
@@ -254,50 +253,59 @@ impl SimpleIngestionService {
     }
 
     /// Get status information
-    pub fn get_status(&self) -> IngestionResult<Value> {
+    pub fn get_status(&self) -> IngestionResult<IngestionStatus> {
         let (provider_name, model) = match self.config.provider {
-            AIProvider::OpenRouter => ("OpenRouter", self.config.openrouter.model.clone()),
-            AIProvider::Ollama => ("Ollama", self.config.ollama.model.clone()),
+            AIProvider::OpenRouter => ("OpenRouter".to_string(), self.config.openrouter.model.clone()),
+            AIProvider::Ollama => ("Ollama".to_string(), self.config.ollama.model.clone()),
         };
 
-        Ok(serde_json::json!({
-            "enabled": self.config.enabled,
-            "configured": self.config.is_ready(),
-            "provider": provider_name,
-            "model": model,
-            "auto_execute_mutations": self.config.auto_execute_mutations,
-            "default_trust_distance": self.config.default_trust_distance
-        }))
+        Ok(IngestionStatus {
+            enabled: self.config.enabled,
+            configured: self.config.is_ready(),
+            provider: provider_name,
+            model,
+            auto_execute_mutations: self.config.auto_execute_mutations,
+            default_trust_distance: self.config.default_trust_distance,
+        })
     }
 
-    /// Get available schemas stripped of payment and permission data
+    /// Get available schemas from the schema service via node
     async fn get_stripped_available_schemas_from_node(
         &self,
         node: Arc<Mutex<DataFoldNode>>,
-    ) -> IngestionResult<Value> {
-        // Get all available schemas from the node through the schema manager
-        let node_guard = node.lock().await;
-        let db_guard = node_guard.get_fold_db().map_err(|e| {
-            IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                e.to_string(),
-            ))
-        })?;
+    ) -> IngestionResult<SimplifiedSchemaMap> {
+        // Fetch available schemas from the schema service via the node
+        let schemas = {
+            let node_guard = node.lock().await;
+            node_guard
+                .fetch_available_schemas()
+                .await
+                .map_err(|e| {
+                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                        format!("Failed to fetch schemas from schema service: {}", e),
+                    ))
+                })?
+        };
 
-        let schema_states = db_guard
-            .schema_manager
-            .get_schema_states()
-            .map_err(IngestionError::SchemaSystemError)?;
+        // Create a simplified schema representation for AI analysis
+        let mut schema_map = SimplifiedSchemaMap::new();
 
-        let mut schemas = Vec::new();
-        for schema_name in schema_states.keys() {
-            if let Ok(Some(schema)) = db_guard.schema_manager.get_schema(schema_name) {
-                schemas.push(schema);
-            }
+        for schema in schemas {
+            let fields = if let Ok(Value::Object(fields_obj)) = serde_json::to_value(&schema.fields) {
+                fields_obj.into_iter().collect()
+            } else {
+                HashMap::new()
+            };
+
+            let simplified = SimplifiedSchema {
+                name: schema.name.clone(),
+                fields,
+            };
+
+            schema_map.insert(schema.name.clone(), simplified);
         }
 
-        // Strip payment and permission data
-        self.schema_stripper
-            .create_ai_schema_representation(&schemas)
+        Ok(schema_map)
     }
 
     /// Determine which schema to use based on AI response
@@ -349,21 +357,6 @@ impl SimpleIngestionService {
             "Creating new schema from AI definition"
         );
 
-        let schema_service_url = {
-            let node_guard = node.lock().await;
-            node_guard.schema_service_url().ok_or_else(|| {
-                IngestionError::SchemaCreationError(
-                    "Schema service URL is not configured for the node".to_string(),
-                )
-            })?
-        };
-
-        if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
-            return Err(IngestionError::SchemaCreationError(
-                "Schema service URL must point to an accessible HTTP endpoint".to_string(),
-            ));
-        }
-
         // Deserialize Value to Schema
         let schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
             .map_err(|error| {
@@ -373,15 +366,19 @@ impl SimpleIngestionService {
                 ))
             })?;
 
-        let schema_response = SchemaServiceClient::new(&schema_service_url)
-            .add_schema(&schema)
-            .await
-            .map_err(|error| {
-                IngestionError::SchemaCreationError(format!(
-                    "Failed to create schema via schema service: {}",
-                    error
-                ))
-            })?;
+        // Add schema to the schema service via the node
+        let schema_response = {
+            let node_guard = node.lock().await;
+            node_guard
+                .add_schema_to_service(&schema)
+                .await
+                .map_err(|error| {
+                    IngestionError::SchemaCreationError(format!(
+                        "Failed to create schema via schema service: {}",
+                        error
+                    ))
+                })?
+        };
 
         let json_str = serde_json::to_string(&schema_response).map_err(|error| {
             IngestionError::schema_parsing_error(format!(

@@ -4,16 +4,19 @@ use crate::datafold_node::SchemaServiceClient;
 use crate::fold_db_core::FoldDB;
 use crate::ingestion::{
     config::AIProvider, mutation_generator::MutationGenerator, ollama_service::OllamaService,
-    openrouter_service::OpenRouterService, schema_stripper::SchemaStripper, AISchemaResponse,
+    openrouter_service::OpenRouterService, AISchemaResponse,
     IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
+    IngestionStatus, SimplifiedSchema, SimplifiedSchemaMap,
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Mutation;
 use crate::schema::SchemaCore;
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use utoipa::ToSchema;
 
 /// Core ingestion service that orchestrates the entire ingestion process
 /// TODO: Ingestion needs to be able to create new schemas and persist them to the 'available_schemas' folder.
@@ -21,15 +24,14 @@ pub struct IngestionCore {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,
     ollama_service: Option<OllamaService>,
-    schema_stripper: SchemaStripper,
     mutation_generator: MutationGenerator,
     schema_core: Arc<SchemaCore>,
-    fold_db: Arc<std::sync::Mutex<FoldDB>>,
+    fold_db: Arc<Mutex<FoldDB>>,
     schema_service_client: SchemaServiceClient,
 }
 
 /// Request for processing JSON ingestion
-#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct IngestionRequest {
     /// JSON data to ingest
     pub data: Value,
@@ -46,7 +48,7 @@ impl IngestionCore {
     pub fn new(
         config: IngestionConfig,
         schema_core: Arc<SchemaCore>,
-        fold_db: Arc<std::sync::Mutex<FoldDB>>,
+        fold_db: Arc<Mutex<FoldDB>>,
         schema_service_client: SchemaServiceClient,
     ) -> IngestionResult<Self> {
         let openrouter_service = if config.provider == AIProvider::OpenRouter {
@@ -69,14 +71,12 @@ impl IngestionCore {
             None
         };
 
-        let schema_stripper = SchemaStripper::new();
         let mutation_generator = MutationGenerator::new();
 
         Ok(Self {
             config,
             openrouter_service,
             ollama_service,
-            schema_stripper,
             mutation_generator,
             schema_core,
             fold_db,
@@ -138,18 +138,13 @@ impl IngestionCore {
     }
 
     /// Prepares available schemas for AI recommendation.
-    async fn prepare_schemas(&self) -> IngestionResult<Value> {
+    async fn prepare_schemas(&self) -> IngestionResult<SimplifiedSchemaMap> {
         let available_schemas = self.get_stripped_available_schemas().await?;
-        let schema_count = if let Some(obj) = available_schemas.as_object() {
-            obj.len()
-        } else {
-            0
-        };
         log_feature!(
             LogFeature::Ingestion,
             info,
             "Retrieved {} available schemas",
-            schema_count
+            available_schemas.len()
         );
         Ok(available_schemas)
     }
@@ -158,10 +153,11 @@ impl IngestionCore {
     async fn get_ai_recommendation(
         &self,
         data: &Value,
-        available_schemas: &Value,
+        available_schemas: &SimplifiedSchemaMap,
     ) -> IngestionResult<AISchemaResponse> {
+        let schemas_json = available_schemas.to_json_value();
         let ai_response = self
-            .get_ai_schema_recommendation(data, available_schemas)
+            .get_ai_schema_recommendation(data, &schemas_json)
             .await?;
         log_feature!(
             LogFeature::Ingestion,
@@ -240,22 +236,38 @@ impl IngestionCore {
         );
     }
 
-    /// Get available schemas stripped of payment and permission data
-    async fn get_stripped_available_schemas(&self) -> IngestionResult<Value> {
-        // Get all available schemas from SchemaCore
-        let available_schemas = self
-            .schema_core
-            .get_schemas()
-            .map_err(IngestionError::SchemaSystemError)?;
+    /// Get available schemas from the schema service
+    async fn get_stripped_available_schemas(&self) -> IngestionResult<SimplifiedSchemaMap> {
+        // Fetch available schemas from the schema service
+        let schemas = self
+            .schema_service_client
+            .get_available_schemas()
+            .await
+            .map_err(|e| {
+                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                    format!("Failed to fetch schemas from schema service: {}", e),
+                ))
+            })?;
 
-        let mut schemas = Vec::new();
-        for (_schema_name, schema) in available_schemas {
-            schemas.push(schema);
+        // Create a simplified schema representation for AI analysis
+        let mut schema_map = SimplifiedSchemaMap::new();
+
+        for schema in schemas {
+            let fields = if let Ok(Value::Object(fields_obj)) = serde_json::to_value(&schema.fields) {
+                fields_obj.into_iter().collect()
+            } else {
+                HashMap::new()
+            };
+
+            let simplified = SimplifiedSchema {
+                name: schema.name.clone(),
+                fields,
+            };
+
+            schema_map.insert(schema.name.clone(), simplified);
         }
 
-        // Strip payment and permission data
-        self.schema_stripper
-            .create_ai_schema_representation(&schemas)
+        Ok(schema_map)
     }
 
     /// Get AI schema recommendation
@@ -391,7 +403,7 @@ impl IngestionCore {
         &self,
         schema_name: &str,
         json_data: &Value,
-        mutation_mappers: &std::collections::HashMap<String, String>,
+        mutation_mappers: &HashMap<String, String>,
         trust_distance: u32,
         pub_key: String,
     ) -> IngestionResult<Vec<Mutation>> {
@@ -496,20 +508,20 @@ impl IngestionCore {
     }
 
     /// Get ingestion status
-    pub fn get_status(&self) -> IngestionResult<Value> {
+    pub fn get_status(&self) -> IngestionResult<IngestionStatus> {
         let (provider_name, model) = match self.config.provider {
-            AIProvider::OpenRouter => ("OpenRouter", self.config.openrouter.model.clone()),
-            AIProvider::Ollama => ("Ollama", self.config.ollama.model.clone()),
+            AIProvider::OpenRouter => ("OpenRouter".to_string(), self.config.openrouter.model.clone()),
+            AIProvider::Ollama => ("Ollama".to_string(), self.config.ollama.model.clone()),
         };
 
-        Ok(serde_json::json!({
-            "enabled": self.config.enabled,
-            "configured": self.config.is_ready(),
-            "provider": provider_name,
-            "model": model,
-            "auto_execute_mutations": self.config.auto_execute_mutations,
-            "default_trust_distance": self.config.default_trust_distance
-        }))
+        Ok(IngestionStatus {
+            enabled: self.config.enabled,
+            configured: self.config.is_ready(),
+            provider: provider_name,
+            model,
+            auto_execute_mutations: self.config.auto_execute_mutations,
+            default_trust_distance: self.config.default_trust_distance,
+        })
     }
 
     /// Validate JSON input

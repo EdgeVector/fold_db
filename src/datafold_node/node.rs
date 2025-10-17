@@ -1,7 +1,7 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::datafold_node::config::NodeConfig;
 use crate::error::{FoldDbError, FoldDbResult};
@@ -142,7 +142,7 @@ impl DataFoldNode {
     }
 
     /// Get a reference to the underlying FoldDB instance
-    pub fn get_fold_db(&self) -> FoldDbResult<std::sync::MutexGuard<'_, FoldDB>> {
+    pub fn get_fold_db(&self) -> FoldDbResult<MutexGuard<'_, FoldDB>> {
         self.db
             .lock()
             .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))
@@ -156,6 +156,40 @@ impl DataFoldNode {
     /// Gets the configured schema service URL, if present.
     pub fn schema_service_url(&self) -> Option<String> {
         self.config.schema_service_url.clone()
+    }
+
+    /// Fetch available schemas from the schema service.
+    /// Returns an error if the schema service URL is not configured or if the fetch fails.
+    pub async fn fetch_available_schemas(&self) -> FoldDbResult<Vec<crate::schema::types::Schema>> {
+        let schema_service_url = self.schema_service_url().ok_or_else(|| {
+            FoldDbError::Config("Schema service URL is not configured".to_string())
+        })?;
+
+        if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
+            return Err(FoldDbError::Config(
+                "Cannot fetch schemas from test/mock schema service".to_string(),
+            ));
+        }
+
+        let client = crate::datafold_node::SchemaServiceClient::new(&schema_service_url);
+        client.get_available_schemas().await
+    }
+
+    /// Add a new schema to the schema service.
+    /// Returns an error if the schema service URL is not configured or if the operation fails.
+    pub async fn add_schema_to_service(&self, schema: &crate::schema::types::Schema) -> FoldDbResult<crate::schema::types::Schema> {
+        let schema_service_url = self.schema_service_url().ok_or_else(|| {
+            FoldDbError::Config("Schema service URL is not configured".to_string())
+        })?;
+
+        if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
+            return Err(FoldDbError::Config(
+                "Cannot add schemas to test/mock schema service".to_string(),
+            ));
+        }
+
+        let client = crate::datafold_node::SchemaServiceClient::new(&schema_service_url);
+        client.add_schema(schema).await
     }
 }
 
