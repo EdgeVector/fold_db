@@ -8,7 +8,6 @@
 //!
 //! * `core` - Main ingestion orchestrator
 //! * `openrouter_service` - OpenRouter API integration for AI-powered schema analysis
-//! * `schema_stripper` - Removes payment and permission data from schemas for AI analysis
 //! * `mutation_generator` - Creates mutations from AI responses and JSON data
 //! * `error` - Custom error types for ingestion operations
 //! * `config` - Configuration structures for ingestion settings
@@ -18,8 +17,8 @@
 //!
 //! The ingestion process follows these steps:
 //! 1. Accept JSON input data
-//! 2. Retrieve and strip available schemas (remove payment/permissions)
-//! 3. Send data and schemas to OpenRouter AI for analysis
+//! 2. Retrieve available schemas from schema service
+//! 3. Send data and schemas to AI for analysis
 //! 4. Process AI response to determine schema usage or creation
 //! 5. Create new schema if needed and set to approved
 //! 6. Generate mutations to store the JSON data
@@ -33,8 +32,11 @@ pub mod mutation_generator;
 pub mod ollama_service;
 pub mod openrouter_service;
 pub mod routes;
-pub mod schema_stripper;
 pub mod simple_service;
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use utoipa::ToSchema;
 
 // Public re-exports
 pub use ai_schema_response::AISchemaResponse;
@@ -46,7 +48,7 @@ pub use error::IngestionError;
 pub type IngestionResult<T> = Result<T, IngestionError>;
 
 /// Response from the ingestion process
-#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct IngestionResponse {
     /// Whether the ingestion was successful
     pub success: bool,
@@ -96,5 +98,73 @@ impl IngestionResponse {
     pub fn add_error(&mut self, error: String) {
         self.errors.push(error);
         self.success = false;
+    }
+}
+
+/// Status information for the ingestion service
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
+pub struct IngestionStatus {
+    /// Whether ingestion is enabled
+    pub enabled: bool,
+    /// Whether ingestion is properly configured and ready
+    pub configured: bool,
+    /// AI provider being used (OpenRouter or Ollama)
+    pub provider: String,
+    /// Model name being used
+    pub model: String,
+    /// Whether mutations are auto-executed by default
+    pub auto_execute_mutations: bool,
+    /// Default trust distance for mutations
+    pub default_trust_distance: u32,
+}
+
+/// Simplified schema representation for AI analysis
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SimplifiedSchema {
+    /// Schema name
+    pub name: String,
+    /// Schema fields
+    pub fields: HashMap<String, serde_json::Value>,
+}
+
+/// Map of simplified schemas keyed by schema name
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SimplifiedSchemaMap {
+    /// Schemas keyed by name
+    pub schemas: HashMap<String, SimplifiedSchema>,
+}
+
+impl SimplifiedSchemaMap {
+    /// Create a new empty schema map
+    pub fn new() -> Self {
+        Self {
+            schemas: HashMap::new(),
+        }
+    }
+
+    /// Add a schema to the map
+    pub fn insert(&mut self, name: String, schema: SimplifiedSchema) {
+        self.schemas.insert(name, schema);
+    }
+
+    /// Get the number of schemas in the map
+    pub fn len(&self) -> usize {
+        self.schemas.len()
+    }
+
+    /// Check if the map is empty
+    pub fn is_empty(&self) -> bool {
+        self.schemas.is_empty()
+    }
+
+    /// Convert to JSON Value for AI API calls
+    pub fn to_json_value(&self) -> serde_json::Value {
+        serde_json::to_value(&self.schemas).unwrap_or(serde_json::Value::Object(serde_json::Map::new()))
+    }
+}
+
+impl Default for SimplifiedSchemaMap {
+    fn default() -> Self {
+        Self::new()
     }
 }

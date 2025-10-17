@@ -8,9 +8,10 @@ use crate::ingestion::IngestionResponse;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use actix_web::{web, HttpResponse, Responder};
-use serde_json::json;
+use serde_json::{json, Value};
+use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Process JSON ingestion request
@@ -90,7 +91,7 @@ pub async fn process_json(
     get,
     path = "/api/ingestion/status",
     tag = "ingestion",
-    responses((status = 200, description = "Ingestion status", body = serde_json::Value))
+    responses((status = 200, description = "Ingestion status", body = crate::ingestion::IngestionStatus))
 )]
 pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
     log_feature!(
@@ -138,39 +139,36 @@ pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
     get,
     path = "/api/ingestion/health",
     tag = "ingestion",
-    responses((status = 200, description = "Health OK", body = serde_json::Value), (status = 503, description = "Health not OK", body = serde_json::Value))
+    responses((status = 200, description = "Health OK", body = Value), (status = 503, description = "Health not OK", body = Value))
 )]
 pub async fn health_check(_state: web::Data<AppState>) -> impl Responder {
     match create_simple_ingestion_service().await {
         Ok(service) => {
-            let status = service.get_status().unwrap_or_else(|_| {
-                json!({
-                    "enabled": false,
-                    "configured": false
-                })
-            });
+            let status = service.get_status();
 
-            let is_healthy = status
-                .get("enabled")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-                && status
-                    .get("configured")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+            match status {
+                Ok(ingestion_status) => {
+                    let is_healthy = ingestion_status.enabled && ingestion_status.configured;
 
-            if is_healthy {
-                HttpResponse::Ok().json(json!({
-                    "status": "healthy",
+                    if is_healthy {
+                        HttpResponse::Ok().json(json!({
+                            "status": "healthy",
+                            "service": "ingestion",
+                            "details": ingestion_status
+                        }))
+                    } else {
+                        HttpResponse::ServiceUnavailable().json(json!({
+                            "status": "unhealthy",
+                            "service": "ingestion",
+                            "details": ingestion_status
+                        }))
+                    }
+                }
+                Err(e) => HttpResponse::ServiceUnavailable().json(json!({
+                    "status": "error",
                     "service": "ingestion",
-                    "details": status
-                }))
-            } else {
-                HttpResponse::ServiceUnavailable().json(json!({
-                    "status": "unhealthy",
-                    "service": "ingestion",
-                    "details": status
-                }))
+                    "error": e.to_string()
+                })),
             }
         }
         Err(e) => HttpResponse::ServiceUnavailable().json(json!({
@@ -186,11 +184,11 @@ pub async fn health_check(_state: web::Data<AppState>) -> impl Responder {
     post,
     path = "/api/ingestion/validate",
     tag = "ingestion",
-    request_body = serde_json::Value,
-    responses((status = 200, description = "Validation result", body = serde_json::Value), (status = 400, description = "Invalid"))
+    request_body = Value,
+    responses((status = 200, description = "Validation result", body = Value), (status = 400, description = "Invalid"))
 )]
 pub async fn validate_json(
-    request: web::Json<serde_json::Value>,
+    request: web::Json<Value>,
     _state: web::Data<AppState>,
 ) -> impl Responder {
     log_feature!(
@@ -295,7 +293,7 @@ pub async fn save_ingestion_config(
 }
 
 /// Save Ingestion configuration to file
-fn save_config_to_file(config: &SavedConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn save_config_to_file(config: &SavedConfig) -> Result<(), Box<dyn Error>> {
     let config_path = get_config_file_path();
 
     // Create directory if it doesn't exist
@@ -316,7 +314,7 @@ fn save_config_to_file(config: &SavedConfig) -> Result<(), Box<dyn std::error::E
 }
 
 /// Get the path to the ingestion configuration file
-fn get_config_file_path() -> std::path::PathBuf {
+fn get_config_file_path() -> PathBuf {
     let config_dir =
         std::env::var("DATAFOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
 
