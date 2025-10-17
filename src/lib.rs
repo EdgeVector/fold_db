@@ -11,7 +11,6 @@
 //! * `error` - Error types and handling
 //! * `fees` - Payment and fee calculation system
 //! * `fold_db_core` - Core database functionality
-//! * `network` - P2P networking layer for node communication
 //! * `permissions` - Access control and permission management
 //! * `schema` - Schema definition, validation, and execution
 //!
@@ -35,7 +34,6 @@ pub mod error_handling;
 pub mod fold_db_core;
 pub mod ingestion;
 pub mod logging;
-pub mod network;
 pub mod schema;
 pub mod schema_service;
 pub mod security;
@@ -49,7 +47,6 @@ pub use datafold_node::config::NodeConfig;
 pub use datafold_node::DataFoldNode;
 pub use error::{FoldDbError, FoldDbResult};
 pub use fold_db_core::FoldDB;
-pub use network::{NetworkConfig, NetworkCore, NetworkError, NetworkResult, PeerId, SchemaService};
 
 // Re-export schema types needed for CLI
 pub use schema::types::operations::Operation;

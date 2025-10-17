@@ -429,7 +429,7 @@ impl SimpleIngestionService {
             };
 
             // Execute mutation asynchronously
-            let exec_result: Result<serde_json::Value, IngestionError> = match operation {
+            let exec_result: Result<(), IngestionError> = match operation {
                 Operation::Mutation {
                     schema,
                     fields_and_values,

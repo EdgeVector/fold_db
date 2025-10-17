@@ -1,5 +1,13 @@
 use super::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TransformQueueInfo {
+    pub queue: Vec<String>,
+    pub length: usize,
+    pub is_empty: bool,
+}
 
 impl DataFoldNode {
     /// Add a transform to the queue
@@ -14,7 +22,7 @@ impl DataFoldNode {
     }
 
     /// Get information about the transform queue
-    pub fn get_transform_queue_info(&self) -> FoldDbResult<serde_json::Value> {
+    pub fn get_transform_queue_info(&self) -> FoldDbResult<TransformQueueInfo> {
         let db = self
             .db
             .lock()
@@ -22,11 +30,11 @@ impl DataFoldNode {
         let queue = db.transform_orchestrator.list_queued_transforms()?;
         let queue_length = queue.len();
         let is_empty = db.transform_orchestrator.is_empty()?;
-        Ok(serde_json::json!({
-            "queue": queue,
-            "length": queue_length,
-            "isEmpty": is_empty
-        }))
+        Ok(TransformQueueInfo {
+            queue,
+            length: queue_length,
+            is_empty,
+        })
     }
 
     /// Get all backfill information
@@ -94,6 +102,7 @@ mod tests {
         };
         let node = DataFoldNode::new(config).unwrap();
         let info = node.get_transform_queue_info().unwrap();
-        assert!(info.get("queue").is_some());
+        assert!(info.is_empty);
+        assert_eq!(info.length, 0);
     }
 }

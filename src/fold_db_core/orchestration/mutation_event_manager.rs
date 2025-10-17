@@ -9,10 +9,19 @@ use crate::fold_db_core::infrastructure::message_bus::{
 use crate::schema::SchemaError;
 use crate::schema::types::Mutation;
 use log::{error, info, warn};
-use serde_json::Value;
+use serde::Serialize;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MutationStatistics {
+    pub schema_name: String,
+    pub total_mutations: u64,
+    pub create_count: u64,
+    pub update_count: u64,
+    pub delete_count: u64,
+}
 
 /// Manages mutation events from transform completion and provides database operations access
 pub struct MutationEventManager {
@@ -238,17 +247,15 @@ impl MutationEventManager {
     }
 
     /// Get mutation statistics for a schema
-    pub fn get_mutation_statistics(&self, _schema_name: &str) -> Result<Option<Value>, SchemaError> {
-        // This is a simplified implementation - in practice you might want to
-        // store and retrieve statistics from the database
+    pub fn get_mutation_statistics(&self, _schema_name: &str) -> Result<Option<MutationStatistics>, SchemaError> {
+        // TODO: Implement full statistics tracking with database persistence
         info!("📊 Getting mutation statistics (simplified implementation)");
         Ok(None)
     }
 
     /// List all schemas with mutation statistics
-    pub fn list_mutation_statistics(&self) -> Result<Vec<(String, Value)>, SchemaError> {
-        // This is a simplified implementation - in practice you might want to
-        // iterate through the database to find all mutation_stats:* keys
+    pub fn list_mutation_statistics(&self) -> Result<Vec<MutationStatistics>, SchemaError> {
+        // TODO: Implement full statistics tracking with database persistence
         info!("📊 Listing mutation statistics (simplified implementation)");
         Ok(Vec::new())
     }
