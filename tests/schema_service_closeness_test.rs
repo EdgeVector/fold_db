@@ -1,7 +1,12 @@
 use datafold::schema_service::server::{SchemaAddOutcome, SchemaServiceState};
 use serde_json::json;
-use std::fs;
 use tempfile::tempdir;
+
+/// Helper function to convert JSON to Schema
+fn json_to_schema(value: serde_json::Value) -> datafold::schema::types::Schema {
+    serde_json::from_value(value)
+        .expect("failed to deserialize schema from JSON")
+}
 
 /// Helper function to verify that every outcome returns a valid schema
 fn verify_outcome_has_schema(outcome: &SchemaAddOutcome) {
@@ -33,35 +38,24 @@ fn verify_outcome_has_schema(outcome: &SchemaAddOutcome) {
 #[test]
 fn closeness_rejects_identical_schema_with_different_name() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
-        "name": "UserProfile",
-        "fields": [
-            {"name": "user_id", "type": "string"},
-            {"name": "email", "type": "string"},
-            {"name": "created_at", "type": "number"}
-        ]
-    });
-
-    let existing_path = temp_dir.path().join("UserProfile.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
-
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let duplicate_schema = json!({
+    let existing_schema = json_to_schema(json!({
+        "name": "UserProfile",
+        "fields": ["user_id", "email", "created_at"]
+    }));
+
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
+
+    let duplicate_schema = json_to_schema(json!({
         "name": "UserAccount",
-        "fields": [
-            {"name": "user_id", "type": "string"},
-            {"name": "email", "type": "string"},
-            {"name": "created_at", "type": "number"}
-        ]
-    });
+        "fields": ["user_id", "email", "created_at"]
+    }));
 
     let outcome = state
         .add_schema(duplicate_schema)
@@ -81,17 +75,15 @@ fn closeness_rejects_identical_schema_with_different_name() {
 #[test]
 fn closeness_always_returns_schema_on_success() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let new_schema = json!({
+    let new_schema = json_to_schema(json!({
         "name": "TestSchema",
-        "fields": [
-            {"name": "id", "type": "string"}
-        ]
-    });
+        "fields": ["id"]
+    }));
 
     let outcome = state
         .add_schema(new_schema)
@@ -113,33 +105,30 @@ fn closeness_always_returns_schema_on_success() {
 #[test]
 fn closeness_always_returns_schema_on_rejection() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
-        "name": "Original",
-        "fields": [
-            {"name": "field1", "type": "string"},
-            {"name": "field2", "type": "number"}
-        ]
-    });
-
-    let existing_path = temp_dir.path().join("Original.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
-
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let duplicate_schema = json!({
+    let existing_schema = json_to_schema(json!({
+        "name": "Original",
+        "fields": [
+            "field1",
+            "field2"
+        ]
+    }));
+
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
+
+    let duplicate_schema = json_to_schema(json!({
         "name": "Duplicate",
         "fields": [
-            {"name": "field1", "type": "string"},
-            {"name": "field2", "type": "number"}
+            "field1",
+            "field2"
         ]
-    });
+    }));
 
     let outcome = state
         .add_schema(duplicate_schema)
@@ -162,35 +151,32 @@ fn closeness_always_returns_schema_on_rejection() {
 #[test]
 fn closeness_allows_dissimilar_schemas() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
-        "name": "UserProfile",
-        "fields": [
-            {"name": "user_id", "type": "string"},
-            {"name": "email", "type": "string"}
-        ]
-    });
-
-    let existing_path = temp_dir.path().join("UserProfile.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
-
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let different_schema = json!({
+    let existing_schema = json_to_schema(json!({
+        "name": "UserProfile",
+        "fields": [
+            "user_id",
+            "email"
+        ]
+    }));
+
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
+
+    let different_schema = json_to_schema(json!({
         "name": "ProductCatalog",
         "fields": [
-            {"name": "product_id", "type": "string"},
-            {"name": "product_name", "type": "string"},
-            {"name": "price", "type": "number"},
-            {"name": "inventory_count", "type": "number"}
+            "product_id",
+            "product_name",
+            "price",
+            "inventory_count"
         ]
-    });
+    }));
 
     let outcome = state
         .add_schema(different_schema)
@@ -209,36 +195,33 @@ fn closeness_allows_dissimilar_schemas() {
 #[test]
 fn closeness_handles_similar_but_slightly_different_schemas() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
-        "name": "User",
-        "fields": [
-            {"name": "id", "type": "string"},
-            {"name": "name", "type": "string"},
-            {"name": "email", "type": "string"}
-        ]
-    });
-
-    let existing_path = temp_dir.path().join("User.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
-
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let similar_schema_with_extra_field = json!({
+    let existing_schema = json_to_schema(json!({
+        "name": "User",
+        "fields": [
+            "id",
+            "name",
+            "email"
+        ]
+    }));
+
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
+
+    let similar_schema_with_extra_field = json_to_schema(json!({
         "name": "UserExtended",
         "fields": [
-            {"name": "id", "type": "string"},
-            {"name": "name", "type": "string"},
-            {"name": "email", "type": "string"},
-            {"name": "phone", "type": "string"}
+            "id",
+            "name",
+            "email",
+            "phone"
         ]
-    });
+    }));
 
     let outcome = state
         .add_schema(similar_schema_with_extra_field)
@@ -265,35 +248,32 @@ fn closeness_handles_similar_but_slightly_different_schemas() {
 #[test]
 fn closeness_uses_normalized_comparison_for_properties() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
+    let state = SchemaServiceState::new(db_path.clone())
+        .expect("failed to initialize schema service state");
+
+    let existing_schema = json_to_schema(json!({
         "name": "First",
         "type": "object",
         "description": "test schema",
         "fields": [
-            {"name": "field_a", "type": "string"}
+            "field_a"
         ]
-    });
+    }));
 
-    let existing_path = temp_dir.path().join("First.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
 
-    let state = SchemaServiceState::new(schemas_directory.clone())
-        .expect("failed to initialize schema service state");
-
-    let reordered_properties_schema = json!({
+    let reordered_properties_schema = json_to_schema(json!({
         "description": "test schema",
         "name": "Second",
         "fields": [
-            {"name": "field_a", "type": "string"}
+            "field_a"
         ],
         "type": "object"
-    });
+    }));
 
     let outcome = state
         .add_schema(reordered_properties_schema)
@@ -313,31 +293,28 @@ fn closeness_uses_normalized_comparison_for_properties() {
 #[test]
 fn closeness_ignores_schema_name_in_comparison() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
-        "name": "VeryLongDescriptiveSchemaName",
-        "fields": [
-            {"name": "field1", "type": "string"}
-        ]
-    });
-
-    let existing_path = temp_dir.path().join("VeryLongDescriptiveSchemaName.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
-
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let same_content_different_name = json!({
+    let existing_schema = json_to_schema(json!({
+        "name": "VeryLongDescriptiveSchemaName",
+        "fields": [
+            "field1"
+        ]
+    }));
+
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
+
+    let same_content_different_name = json_to_schema(json!({
         "name": "X",
         "fields": [
-            {"name": "field1", "type": "string"}
+            "field1"
         ]
-    });
+    }));
 
     let outcome = state
         .add_schema(same_content_different_name)
@@ -357,35 +334,32 @@ fn closeness_ignores_schema_name_in_comparison() {
 #[test]
 fn closeness_with_object_style_fields() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
+    let state = SchemaServiceState::new(db_path.clone())
+        .expect("failed to initialize schema service state");
+
+    let existing_schema = json_to_schema(json!({
         "name": "ExistingObject",
         "fields": {
             "field_a": {},
             "field_b": {},
             "field_c": {}
         }
-    });
+    }));
 
-    let existing_path = temp_dir.path().join("ExistingObject.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
 
-    let state = SchemaServiceState::new(schemas_directory.clone())
-        .expect("failed to initialize schema service state");
-
-    let similar_object_schema = json!({
+    let similar_object_schema = json_to_schema(json!({
         "name": "NewObject",
         "fields": {
             "field_a": {},
             "field_b": {},
             "field_c": {}
         }
-    });
+    }));
 
     let outcome = state
         .add_schema(similar_object_schema)
@@ -405,9 +379,12 @@ fn closeness_with_object_style_fields() {
 #[test]
 fn closeness_creates_field_mappers_for_high_field_overlap() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
+    let state = SchemaServiceState::new(db_path.clone())
+        .expect("failed to initialize schema service state");
+
+    let existing_schema = json_to_schema(json!({
         "name": "BaseEntity",
         "fields": {
             "id": {},
@@ -416,19 +393,13 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
             "name": {},
             "description": {}
         }
-    });
+    }));
 
-    let existing_path = temp_dir.path().join("BaseEntity.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
 
-    let state = SchemaServiceState::new(schemas_directory.clone())
-        .expect("failed to initialize schema service state");
-
-    let extended_schema = json!({
+    let extended_schema = json_to_schema(json!({
         "name": "ExtendedEntity",
         "fields": {
             "id": {},
@@ -439,7 +410,7 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
             "extra_field_1": {},
             "extra_field_2": {}
         }
-    });
+    }));
 
     let outcome = state
         .add_schema(extended_schema)
@@ -466,60 +437,46 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
 #[test]
 fn closeness_with_multiple_existing_schemas_finds_closest() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let schema1 = json!({
-        "name": "Schema1",
-        "fields": [
-            {"name": "a", "type": "string"}
-        ]
-    });
-
-    let schema2 = json!({
-        "name": "Schema2",
-        "fields": [
-            {"name": "x", "type": "string"},
-            {"name": "y", "type": "string"}
-        ]
-    });
-
-    let schema3 = json!({
-        "name": "Schema3",
-        "fields": [
-            {"name": "x", "type": "string"},
-            {"name": "y", "type": "string"},
-            {"name": "z", "type": "string"}
-        ]
-    });
-
-    fs::write(
-        temp_dir.path().join("Schema1.json"),
-        serde_json::to_string_pretty(&schema1).expect("failed to serialize"),
-    )
-    .expect("failed to write schema1");
-
-    fs::write(
-        temp_dir.path().join("Schema2.json"),
-        serde_json::to_string_pretty(&schema2).expect("failed to serialize"),
-    )
-    .expect("failed to write schema2");
-
-    fs::write(
-        temp_dir.path().join("Schema3.json"),
-        serde_json::to_string_pretty(&schema3).expect("failed to serialize"),
-    )
-    .expect("failed to write schema3");
-
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let new_schema = json!({
+    let schema1 = json_to_schema(json!({
+        "name": "Schema1",
+        "fields": [
+            "a"
+        ]
+    }));
+
+    let schema2 = json_to_schema(json!({
+        "name": "Schema2",
+        "fields": [
+            "x",
+            "y"
+        ]
+    }));
+
+    let schema3 = json_to_schema(json!({
+        "name": "Schema3",
+        "fields": [
+            "x",
+            "y",
+            "z"
+        ]
+    }));
+
+    state.add_schema(schema1).expect("failed to add schema1");
+    state.add_schema(schema2).expect("failed to add schema2");
+    state.add_schema(schema3).expect("failed to add schema3");
+
+    let new_schema = json_to_schema(json!({
         "name": "NewSchema",
         "fields": [
-            {"name": "x", "type": "string"},
-            {"name": "y", "type": "string"}
+            "x",
+            "y"
         ]
-    });
+    }));
 
     let outcome = state
         .add_schema(new_schema)
@@ -539,45 +496,24 @@ fn closeness_with_multiple_existing_schemas_finds_closest() {
 #[test]
 fn closeness_with_nested_objects() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
-        "name": "NestedSchema",
-        "fields": [
-            {
-                "name": "user",
-                "type": "object",
-                "properties": {
-                    "id": {"type": "string"},
-                    "name": {"type": "string"}
-                }
-            }
-        ]
-    });
-
-    let existing_path = temp_dir.path().join("NestedSchema.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
-
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let duplicate_nested = json!({
+    let existing_schema = json_to_schema(json!({
+        "name": "NestedSchema",
+        "fields": ["user_id", "user_name", "metadata"]
+    }));
+
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
+
+    let duplicate_nested = json_to_schema(json!({
         "name": "NestedSchemaCopy",
-        "fields": [
-            {
-                "name": "user",
-                "type": "object",
-                "properties": {
-                    "id": {"type": "string"},
-                    "name": {"type": "string"}
-                }
-            }
-        ]
-    });
+        "fields": ["user_id", "user_name", "metadata"]
+    }));
 
     let outcome = state
         .add_schema(duplicate_nested)
@@ -597,9 +533,12 @@ fn closeness_with_nested_objects() {
 #[test]
 fn closeness_field_overlap_below_threshold_without_high_similarity() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
+    let state = SchemaServiceState::new(db_path.clone())
+        .expect("failed to initialize schema service state");
+
+    let existing_schema = json_to_schema(json!({
         "name": "LowOverlap",
         "fields": {
             "common_a": {},
@@ -610,19 +549,13 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
             "unique_4": {},
             "unique_5": {}
         }
-    });
+    }));
 
-    let existing_path = temp_dir.path().join("LowOverlap.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
 
-    let state = SchemaServiceState::new(schemas_directory.clone())
-        .expect("failed to initialize schema service state");
-
-    let new_schema = json!({
+    let new_schema = json_to_schema(json!({
         "name": "DifferentSchema",
         "fields": {
             "common_a": {},
@@ -633,7 +566,7 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
             "different_4": {},
             "different_5": {}
         }
-    });
+    }));
 
     let outcome = state
         .add_schema(new_schema)
@@ -652,15 +585,15 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
 #[test]
 fn closeness_with_empty_schemas() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let state = SchemaServiceState::new(schemas_directory.clone())
+    let state = SchemaServiceState::new(db_path.clone())
         .expect("failed to initialize schema service state");
 
-    let first_empty = json!({
+    let first_empty = json_to_schema(json!({
         "name": "Empty1",
         "fields": []
-    });
+    }));
 
     let outcome1 = state
         .add_schema(first_empty)
@@ -668,10 +601,10 @@ fn closeness_with_empty_schemas() {
 
     assert!(matches!(outcome1, SchemaAddOutcome::Added(_)));
 
-    let second_empty = json!({
+    let second_empty = json_to_schema(json!({
         "name": "Empty2",
         "fields": []
-    });
+    }));
 
     let outcome2 = state
         .add_schema(second_empty)
@@ -690,27 +623,24 @@ fn closeness_with_empty_schemas() {
 #[test]
 fn closeness_respects_field_mapper_preservation() {
     let temp_dir = tempdir().expect("failed to create temp directory");
-    let schemas_directory = temp_dir.path().to_string_lossy().to_string();
+    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let existing_schema = json!({
+    let state = SchemaServiceState::new(db_path.clone())
+        .expect("failed to initialize schema service state");
+
+    let existing_schema = json_to_schema(json!({
         "name": "Original",
         "fields": {
             "id": {},
             "name": {}
         }
-    });
+    }));
 
-    let existing_path = temp_dir.path().join("Original.json");
-    fs::write(
-        &existing_path,
-        serde_json::to_string_pretty(&existing_schema).expect("failed to serialize"),
-    )
-    .expect("failed to write existing schema");
+    state
+        .add_schema(existing_schema)
+        .expect("failed to add existing schema");
 
-    let state = SchemaServiceState::new(schemas_directory.clone())
-        .expect("failed to initialize schema service state");
-
-    let new_schema_with_existing_mappers = json!({
+    let new_schema_with_existing_mappers = json_to_schema(json!({
         "name": "Extended",
         "fields": {
             "id": {},
@@ -720,7 +650,7 @@ fn closeness_respects_field_mapper_preservation() {
         "field_mappers": {
             "email": "SomeOtherSchema.email"
         }
-    });
+    }));
 
     let outcome = state
         .add_schema(new_schema_with_existing_mappers)
@@ -743,4 +673,3 @@ fn closeness_respects_field_mapper_preservation() {
         }
     }
 }
-

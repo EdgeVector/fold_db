@@ -12,20 +12,20 @@ struct Cli {
     #[arg(long, default_value_t = DEFAULT_SCHEMA_SERVICE_PORT)]
     port: u16,
     
-    /// Directory containing schema JSON files
-    #[arg(long, default_value = "available_schemas")]
-    schemas_dir: String,
+    /// Path to the sled database for storing schemas
+    #[arg(long, default_value = "schema_registry")]
+    db_path: String,
 }
 
 /// Main entry point for the Schema Service.
 ///
 /// This service provides HTTP endpoints for schema discovery and retrieval.
-/// It reads schemas from a configured directory and serves them via REST API.
+/// It stores schemas in a sled database and serves them via REST API.
 ///
 /// # Command-Line Arguments
 ///
 /// * `--port <PORT>` - Port for the schema service (default: 9002)
-/// * `--schemas-dir <DIR>` - Directory containing schema JSON files (default: available_schemas)
+/// * `--db-path <PATH>` - Path to the sled database for storing schemas (default: schema_registry)
 ///
 /// # Returns
 ///
@@ -34,18 +34,18 @@ struct Cli {
 /// # Errors
 ///
 /// Returns an error if:
-/// * The schema directory cannot be read
+/// * The database cannot be opened
 /// * The HTTP server cannot be started
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     datafold::web_logger::init().ok();
     
     // Parse command-line arguments
-    let Cli { port, schemas_dir } = Cli::parse();
+    let Cli { port, db_path } = Cli::parse();
     
     // Create and run the schema service
     let bind_address = format!("127.0.0.1:{}", port);
-    let server = SchemaServiceServer::new(schemas_dir, &bind_address)?;
+    let server = SchemaServiceServer::new(db_path, &bind_address)?;
     
     server.run().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
@@ -60,14 +60,14 @@ mod tests {
     fn defaults() {
         let cli = Cli::parse_from(["test"]);
         assert_eq!(cli.port, DEFAULT_SCHEMA_SERVICE_PORT);
-        assert_eq!(cli.schemas_dir, "available_schemas");
+        assert_eq!(cli.db_path, "schema_registry");
     }
     
     #[test]
     fn custom_args() {
-        let cli = Cli::parse_from(["test", "--port", "8000", "--schemas-dir", "my_schemas"]);
+        let cli = Cli::parse_from(["test", "--port", "8000", "--db-path", "my_schema_db"]);
         assert_eq!(cli.port, 8000);
-        assert_eq!(cli.schemas_dir, "my_schemas");
+        assert_eq!(cli.db_path, "my_schema_db");
     }
 }
 

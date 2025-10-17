@@ -328,10 +328,18 @@ impl IngestionCore {
             "Creating new schema from AI definition"
         );
 
-        // Convert JSON Value back to string for SchemaCore to parse
+        // Deserialize Value to Schema
+        let schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
+            .map_err(|error| {
+                IngestionError::SchemaCreationError(format!(
+                    "Failed to deserialize schema from AI response: {}",
+                    error
+                ))
+            })?;
+
         let schema_response = self
             .schema_service_client
-            .add_schema(schema_def)
+            .add_schema(&schema)
             .await
             .map_err(|error| {
                 IngestionError::SchemaCreationError(format!(

@@ -110,7 +110,7 @@ cd ../../..
 
 # Start the schema service first
 echo "Starting the schema service on port 9002 in the background..."
-nohup cargo run --bin schema_service -- --port 9002 --schemas-dir available_schemas > schema_service.log 2>&1 &
+nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
 
 # Get the schema service process ID
 SCHEMA_SERVICE_PID=$!
@@ -138,6 +138,15 @@ else
     echo "Schema service failed to become healthy within 30 seconds. Check schema_service.log for details."
     kill $SCHEMA_SERVICE_PID 2>/dev/null
     exit 1
+fi
+
+# Migrate schemas from available_schemas to the database
+echo "Migrating schemas from available_schemas to database..."
+python3 scripts/migrate_schemas_to_db.py --schemas-dir available_schemas --service-url http://127.0.0.1:9002
+
+if [ $? -ne 0 ]; then
+    echo "Warning: Schema migration had issues. Check output above."
+    echo "Continuing with server startup..."
 fi
 
 # Run the HTTP server in the background with schema service URL
