@@ -3,7 +3,13 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::{SchemaError, SchemaState, SchemaWithState};
 use actix_web::{web, HttpResponse, Responder};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimpleSuccessResponse {
+    pub success: bool,
+}
 
 /// Helper closure to execute schema operations with lock management
 async fn with_schema_manager<F, R>(state: &web::Data<AppState>, operation: F) -> R
@@ -206,7 +212,7 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
     let schema_name = path.into_inner();
     let result = with_schema_manager(&state, |db| db.schema_manager.block_schema(&schema_name)).await;
     match result {
-        Ok(_) => HttpResponse::Ok().json(json!({"success": true})),
+        Ok(_) => HttpResponse::Ok().json(SimpleSuccessResponse { success: true }),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to block schema: {}", e)})),
     }

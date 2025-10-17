@@ -39,7 +39,7 @@ impl OperationProcessor {
         fields_and_values: HashMap<String, Value>,
         key_value: KeyValue,
         mutation_type: MutationType,
-    ) -> FoldDbResult<Value> {
+    ) -> FoldDbResult<()> {
         if fields_and_values.is_empty() {
             return Err(FoldDbError::Config("No fields to mutate".to_string()));
         }
@@ -66,7 +66,7 @@ impl OperationProcessor {
         let node_guard = self.node.lock().await;
         node_guard.mutate(mutation)?;
 
-        Ok(serde_json::json!(true))
+        Ok(())
     }
 
 

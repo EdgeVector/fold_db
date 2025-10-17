@@ -132,23 +132,6 @@ impl From<sled::Error> for FoldDbError {
     }
 }
 
-/// Conversion from NetworkError to NetworkErrorKind
-impl From<crate::network::NetworkError> for NetworkErrorKind {
-    fn from(error: crate::network::NetworkError) -> Self {
-        match error {
-            crate::network::NetworkError::ConnectionError(msg) => NetworkErrorKind::Connection(msg),
-            crate::network::NetworkError::ProtocolError(msg) => NetworkErrorKind::Protocol(msg),
-            crate::network::NetworkError::RequestFailed(msg) => NetworkErrorKind::Message(msg),
-            crate::network::NetworkError::RemoteError(msg) => NetworkErrorKind::Protocol(msg),
-            crate::network::NetworkError::TimeoutError => {
-                NetworkErrorKind::Timeout("Request timed out".to_string())
-            }
-            crate::network::NetworkError::InvalidPeerId(msg) => NetworkErrorKind::Connection(msg),
-            crate::network::NetworkError::Libp2pError(msg) => NetworkErrorKind::Protocol(msg),
-        }
-    }
-}
-
 /// Conversion from &str to NetworkErrorKind
 impl From<&str> for NetworkErrorKind {
     fn from(msg: &str) -> Self {

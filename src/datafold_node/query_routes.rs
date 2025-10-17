@@ -3,8 +3,15 @@ use crate::schema::types::operations::{Query, Operation};
 use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;
 use actix_web::{web, HttpResponse, Responder};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuccessResponse {
+    pub success: bool,
+    pub message: String,
+}
 
 
 /// Execute a query.
@@ -69,7 +76,7 @@ pub async fn execute_mutation(
         .execute_mutation(schema, fields_and_values, key_value, mutation_type)
         .await
     {
-        Ok(result) => HttpResponse::Ok().json(result),
+        Ok(()) => HttpResponse::Ok().json(true),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to execute mutation: {}", e)})),
     }
@@ -113,7 +120,10 @@ pub async fn add_to_transform_queue(
     let node = state.node.lock().await;
 
     match node.add_transform_to_queue(&transform_id) {
-        Ok(_) => HttpResponse::Ok().json(json!({"success": true, "message": format!("Transform '{}' added to queue", transform_id)})),
+        Ok(_) => HttpResponse::Ok().json(SuccessResponse {
+            success: true,
+            message: format!("Transform '{}' added to queue", transform_id),
+        }),
         Err(e) => HttpResponse::InternalServerError().json(json!({"error": format!("Failed to add transform to queue: {}", e)})),
     }
 }

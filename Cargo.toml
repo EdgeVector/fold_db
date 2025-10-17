@@ -13,10 +13,8 @@ keywords = ["database", "distributed", "schema", "ingestion", "ai"]
 categories = ["database", "data-structures", "network-programming"]
 
 [features]
-default = ["mock"]  # Enable mock feature by default
+default = []
 test-utils = []  # Feature flag for test utilities
-simulate-peers = []  # Feature flag for simulating peer discovery
-mock = []  # Feature flag for mock network implementation
 
 [dependencies]
 # Utilities
@@ -52,14 +50,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "chrono", "ansi"] }
 tracing-appender = "0.2"
 toml = "0.8"
-# P2P Networking
-libp2p = { version = "0.55", features = [
-    "mdns",
-    "noise",
-    "tcp",
-    "request-response",
-    "tokio"
-]}
 
 # HTTP Server
 actix-web = "4.3"
