@@ -30,26 +30,66 @@ impl MutationGenerator {
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "Generating mutations for schema '{}' with {} mappers",
+            "Generating mutations for schema '{}' with {} mappers, {} input fields",
             schema_name,
-            mutation_mappers.len()
+            mutation_mappers.len(),
+            fields_and_values.len()
         );
 
         let mut mutations = Vec::new();
 
-        // Process each mutation mapper
-        for (json_path, schema_path) in mutation_mappers {
+        // Apply mutation mappers to transform JSON fields to schema fields
+        let mapped_fields = if mutation_mappers.is_empty() {
+            // If no mappers provided, use fields as-is (backward compatibility)
             log_feature!(
                 LogFeature::Ingestion,
-                debug,
-                "Processing mapper: {} -> {}",
-                json_path,
-                schema_path
+                info,
+                "No mutation mappers provided, using all {} fields directly",
+                fields_and_values.len()
             );
-        }
+            fields_and_values.clone()
+        } else {
+            // Apply mappers to transform JSON field names to schema field names
+            let mut result = HashMap::new();
+            for (json_field, schema_field) in mutation_mappers {
+                if let Some(value) = fields_and_values.get(json_field) {
+                    // Extract just the field name from schema path (e.g., "UserSchema.name" -> "name")
+                    let field_name = if schema_field.contains('.') {
+                        schema_field.rsplit('.').next().unwrap_or(schema_field)
+                    } else {
+                        schema_field.as_str()
+                    };
+                    
+                    result.insert(field_name.to_string(), value.clone());
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        debug,
+                        "Mapped field: {} -> {}",
+                        json_field,
+                        field_name
+                    );
+                } else {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "Mapper references missing JSON field: {}",
+                        json_field
+                    );
+                }
+            }
+            
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Applied mutation mappers: {} JSON fields -> {} schema fields",
+                fields_and_values.len(),
+                result.len()
+            );
+            result
+        };
 
         // If we have fields to mutate, create a mutation
-        if !fields_and_values.is_empty() {
+        if !mapped_fields.is_empty() {
             // Build KeyValue from keys
             let key_value = KeyValue::new(
                 keys_and_values.get("hash_field").cloned(),
@@ -58,7 +98,7 @@ impl MutationGenerator {
             
             let mutation = Mutation::new(
                 schema_name.to_string(),
-                fields_and_values.clone(),
+                mapped_fields,
                 key_value,
                 pub_key,
                 trust_distance,

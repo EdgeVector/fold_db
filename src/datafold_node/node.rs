@@ -189,7 +189,7 @@ impl DataFoldNode {
         }
 
         let client = crate::datafold_node::SchemaServiceClient::new(&schema_service_url);
-        client.add_schema(schema).await
+        client.add_schema(schema, std::collections::HashMap::new()).await.map(|response| response.schema)
     }
 }
 

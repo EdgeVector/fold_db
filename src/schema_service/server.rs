@@ -30,7 +30,7 @@ pub struct SchemaSimilarityResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SchemaAddOutcome {
-    Added(Schema),
+    Added(Schema, HashMap<String, String>), // Schema and mutation_mappers
     TooSimilar(SchemaSimilarityResponse),
 }
 
@@ -38,6 +38,20 @@ pub enum SchemaAddOutcome {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
+}
+
+/// Request structure for adding a schema with mutation mappers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddSchemaRequest {
+    pub schema: Schema,
+    pub mutation_mappers: HashMap<String, String>,
+}
+
+/// Response structure for adding a schema with mutation mappers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddSchemaResponse {
+    pub schema: Schema,
+    pub mutation_mappers: HashMap<String, String>,
 }
 
 /// Reload response structure
@@ -141,7 +155,7 @@ impl SchemaServiceState {
         Ok(())
     }
 
-    pub fn add_schema(&self, mut schema: Schema) -> FoldDbResult<SchemaAddOutcome> {
+    pub fn add_schema(&self, mut schema: Schema, mut mutation_mappers: HashMap<String, String>) -> FoldDbResult<SchemaAddOutcome> {
         let schema_name = &schema.name;
 
         Self::validate_schema_name(schema_name)?;
@@ -237,6 +251,29 @@ impl SchemaServiceState {
                         field_mappers
                             .entry(field_name.clone())
                             .or_insert_with(|| crate::schema::types::FieldMapper::new(&existing_name, &field_name));
+                        
+                        // Update mutation_mappers: any mapper pointing to this field should now point to existing schema
+                        let target_value = format!("{}.{}", existing_name, field_name);
+                        for (json_field, schema_field) in mutation_mappers.iter_mut() {
+                            // Check if the mutation mapper points to this field
+                            let field_to_check = if schema_field.contains('.') {
+                                schema_field.rsplit('.').next().unwrap_or(schema_field)
+                            } else {
+                                schema_field.as_str()
+                            };
+                            
+                            if field_to_check == field_name {
+                                log_feature!(
+                                    LogFeature::Schema,
+                                    info,
+                                    "Updating mutation mapper: {} -> {} (was: {})",
+                                    json_field,
+                                    target_value,
+                                    schema_field
+                                );
+                                *schema_field = target_value.clone();
+                            }
+                        }
                     }
                 }
                 schema.field_mappers = Some(field_mappers);
@@ -270,7 +307,7 @@ impl SchemaServiceState {
 
         schemas.insert(schema_name.clone(), schema.clone());
 
-        Ok(SchemaAddOutcome::Added(schema))
+        Ok(SchemaAddOutcome::Added(schema, mutation_mappers))
     }
 
     fn validate_schema_name(schema_name: &str) -> FoldDbResult<()> {
@@ -466,21 +503,27 @@ async fn reload_schemas(state: web::Data<SchemaServiceState>) -> impl Responder 
 }
 
 async fn add_schema(
-    payload: web::Json<Schema>,
+    payload: web::Json<AddSchemaRequest>,
     state: web::Data<SchemaServiceState>,
 ) -> impl Responder {
-    let schema = payload.into_inner();
-    let schema_name = schema.name.clone();
+    let request = payload.into_inner();
+    let schema_name = request.schema.name.clone();
 
     log_feature!(
         LogFeature::Schema,
         info,
-        "Schema service: adding schema '{}'",
-        schema_name
+        "Schema service: adding schema '{}' with {} mutation mappers",
+        schema_name,
+        request.mutation_mappers.len()
     );
 
-    match state.add_schema(schema) {
-        Ok(SchemaAddOutcome::Added(schema)) => HttpResponse::Created().json(schema),
+    match state.add_schema(request.schema, request.mutation_mappers) {
+        Ok(SchemaAddOutcome::Added(schema, mutation_mappers)) => {
+            HttpResponse::Created().json(AddSchemaResponse {
+                schema,
+                mutation_mappers,
+            })
+        }
         Ok(SchemaAddOutcome::TooSimilar(conflict)) => {
             HttpResponse::Conflict().json(ConflictResponse {
                 error: "Schema too similar to existing schema".to_string(),
@@ -595,11 +638,11 @@ mod tests {
         );
 
         let outcome = state
-            .add_schema(new_schema.clone())
+            .add_schema(new_schema.clone(), HashMap::new())
             .expect("failed to add schema");
 
         match outcome {
-            SchemaAddOutcome::Added(schema) => {
+            SchemaAddOutcome::Added(schema, _mutation_mappers) => {
                 assert_eq!(schema.name, "NewSchema");
                 assert_eq!(schema, new_schema);
             }
@@ -643,7 +686,7 @@ mod tests {
         );
 
         state
-            .add_schema(existing_schema.clone())
+            .add_schema(existing_schema.clone(), HashMap::new())
             .expect("failed to add existing schema");
 
         let similar_schema = Schema::new(
@@ -656,7 +699,7 @@ mod tests {
         );
 
         let outcome = state
-            .add_schema(similar_schema.clone())
+            .add_schema(similar_schema.clone(), HashMap::new())
             .expect("failed to evaluate schema similarity");
 
         match outcome {
@@ -665,7 +708,7 @@ mod tests {
                 assert_eq!(conflict.closest_schema.name, "Existing");
                 assert_eq!(conflict.closest_schema, existing_schema);
             }
-            SchemaAddOutcome::Added(_) => panic!("schema should have been rejected as similar"),
+            SchemaAddOutcome::Added(_, _) => panic!("schema should have been rejected as similar"),
         }
 
         assert!(state
@@ -693,7 +736,7 @@ mod tests {
         );
 
         state
-            .add_schema(existing_schema)
+            .add_schema(existing_schema, HashMap::new())
             .expect("failed to add existing schema");
 
         let new_schema = Schema::new(
@@ -706,11 +749,11 @@ mod tests {
         );
 
         let outcome = state
-            .add_schema(new_schema.clone())
+            .add_schema(new_schema.clone(), HashMap::new())
             .expect("failed to add schema with field mapper");
 
         let added_schema = match outcome {
-            SchemaAddOutcome::Added(schema) => schema,
+            SchemaAddOutcome::Added(schema, _mutation_mappers) => schema,
             other => panic!("expected schema addition, got {:?}", other),
         };
 
@@ -776,7 +819,7 @@ mod tests {
         );
 
         let error = state
-            .add_schema(invalid_schema)
+            .add_schema(invalid_schema, HashMap::new())
             .expect_err("schema with invalid name should be rejected");
 
         match error {
@@ -819,8 +862,8 @@ mod tests {
             None,
         );
 
-        state.add_schema(schema1.clone()).expect("failed to add schema1");
-        state.add_schema(schema2.clone()).expect("failed to add schema2");
+        state.add_schema(schema1.clone(), HashMap::new()).expect("failed to add schema1");
+        state.add_schema(schema2.clone(), HashMap::new()).expect("failed to add schema2");
 
         let schemas = state.schemas.lock().expect("failed to lock schemas");
         assert_eq!(schemas.len(), 2);
