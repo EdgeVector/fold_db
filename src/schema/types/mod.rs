@@ -6,6 +6,7 @@ pub mod key_value;
 pub mod mutation;
 pub mod operations;
 pub mod schema;
+pub mod topology;
 pub mod transform;
 
 pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition, FieldMapper};
@@ -16,4 +17,5 @@ pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};
 pub use mutation::{Mutation};
 pub use operations::{Operation, Query};
 pub use schema::{Schema, DeclarativeSchemaType as SchemaType};
+pub use topology::{JsonTopology, TopologyNode, PrimitiveType};
 pub use transform::{Transform, TransformRegistration};
