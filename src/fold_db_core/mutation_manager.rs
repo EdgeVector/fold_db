@@ -59,6 +59,11 @@ impl MutationManager {
         let key_value = KeyValue::from_mutation(&mutation.fields_and_values, key_config.as_ref().unwrap());
         let mutation_id = mutation.uuid.clone();
         
+        // Validate all field values against their topologies before processing
+        for (field_name, value) in &mutation.fields_and_values {
+            schema.validate_field_value(field_name, value)?;
+        }
+        
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
         for (field_name, value) in mutation.fields_and_values {
@@ -187,6 +192,11 @@ impl MutationManager {
         let key_config = schema.key.clone();
         let key_value = KeyValue::from_mutation(&mutation_request.mutation.fields_and_values, key_config.as_ref().unwrap());
         let mutation_id = mutation_request.mutation.uuid.clone();
+        
+        // Validate all field values against their topologies before processing
+        for (field_name, value) in &mutation_request.mutation.fields_and_values {
+            schema.validate_field_value(field_name, value)?;
+        }
         
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation_request.mutation.fields_and_values.keys().cloned().collect();

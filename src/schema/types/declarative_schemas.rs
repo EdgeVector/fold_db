@@ -1,6 +1,7 @@
 use crate::schema::types::field::Field;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+use crate::schema::types::topology::JsonTopology;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -119,6 +120,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             field_mappers: Option<HashMap<String, FieldMapper>>,
             #[serde(skip_serializing_if = "Option::is_none", default)]
             field_molecule_uuids: Option<HashMap<String, String>>,
+            #[serde(skip_serializing_if = "Option::is_none", default)]
+            field_topologies: Option<HashMap<String, JsonTopology>>,
         }
 
         // Deserialize into the helper struct
@@ -182,8 +185,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             helper.field_mappers,
         );
 
-        // Preserve field_molecule_uuids from deserialization
+        // Preserve field_molecule_uuids and field_topologies from deserialization
         schema.field_molecule_uuids = helper.field_molecule_uuids;
+        schema.field_topologies = helper.field_topologies;
 
         Ok(schema)
     }
@@ -219,6 +223,10 @@ pub struct DeclarativeSchemaDefinition {
     /// Maps field_name -> molecule_uuid. Synced from runtime_fields before persistence.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub field_molecule_uuids: Option<HashMap<String, String>>,
+    /// Topology definitions for each field (defines JSON structure)
+    /// Maps field_name -> JsonTopology. One topology per field.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub field_topologies: Option<HashMap<String, JsonTopology>>,
 
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
@@ -263,6 +271,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.field_mappers == other.field_mappers
             && self.hash == other.hash
             && self.field_molecule_uuids == other.field_molecule_uuids
+            && self.field_topologies == other.field_topologies
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
     }
@@ -393,6 +402,7 @@ impl DeclarativeSchemaDefinition {
             field_mappers,
             hash: None,
             field_molecule_uuids: None,
+            field_topologies: None,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
@@ -410,6 +420,46 @@ impl DeclarativeSchemaDefinition {
 
     pub fn field_mappers(&self) -> Option<&HashMap<String, FieldMapper>> {
         self.field_mappers.as_ref()
+    }
+
+    /// Get topology for a specific field
+    pub fn get_field_topology(&self, field_name: &str) -> Option<&JsonTopology> {
+        self.field_topologies
+            .as_ref()
+            .and_then(|topologies| topologies.get(field_name))
+    }
+
+    /// Set topology for a specific field
+    pub fn set_field_topology(&mut self, field_name: String, topology: JsonTopology) {
+        if self.field_topologies.is_none() {
+            self.field_topologies = Some(HashMap::new());
+        }
+        if let Some(topologies) = self.field_topologies.as_mut() {
+            topologies.insert(field_name, topology);
+        }
+    }
+
+    /// Validate a field value against its topology
+    pub fn validate_field_value(
+        &self,
+        field_name: &str,
+        value: &serde_json::Value,
+    ) -> Result<(), crate::schema::types::errors::SchemaError> {
+        if let Some(topology) = self.get_field_topology(field_name) {
+            topology.validate(value)?;
+        }
+        // If no topology defined, allow any value
+        Ok(())
+    }
+
+    /// Infer and set topologies from sample data
+    pub fn infer_topologies_from_data(&mut self, data: &HashMap<String, serde_json::Value>) {
+        let mut topologies = HashMap::new();
+        for (field_name, value) in data {
+            let topology = JsonTopology::infer_from_value(value);
+            topologies.insert(field_name.clone(), topology);
+        }
+        self.field_topologies = Some(topologies);
     }
 
     fn generate_inputs(&mut self) {
