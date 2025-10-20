@@ -10,7 +10,9 @@ use crate::schema::{
 use serde_json::Value;
 
 impl DbOperations {
-    /// Creates a new atom and stores it in the database
+    /// Creates a new atom and stores it in the database.
+    /// If an atom with the same content already exists (content-based deduplication),
+    /// returns the existing atom instead of creating a duplicate.
     pub fn create_atom(
         &self,
         schema_name: &str,
@@ -20,6 +22,12 @@ impl DbOperations {
         status: Option<AtomStatus>,
     ) -> Result<Atom, SchemaError> {
         let mut atom = Atom::new(schema_name.to_string(), source_pub_key, content);
+
+        // Check if atom with this content-based UUID already exists
+        let atom_key = format!("atom:{}", atom.uuid());
+        if let Some(existing_atom) = self.get_item::<Atom>(&atom_key)? {
+            return Ok(existing_atom);
+        }
 
         // Only set prev_atom_uuid if it's Some
         if let Some(prev_uuid) = prev_atom_uuid {
@@ -31,7 +39,7 @@ impl DbOperations {
         atom = atom.with_status(status.unwrap_or(AtomStatus::Active));
         // Persist with an "atom:" prefix so we can easily distinguish entries
         // when reloading from disk
-        self.store_item(&format!("atom:{}", atom.uuid()), &atom)?;
+        self.store_item(&atom_key, &atom)?;
         Ok(atom)
     }
 
@@ -73,7 +81,9 @@ impl DbOperations {
         Ok(molecule_range)
     }
 
-    /// Creates and stores an atom for a mutation field
+    /// Creates and stores an atom for a mutation field.
+    /// If an atom with the same content already exists (content-based deduplication),
+    /// returns the existing atom instead of creating a duplicate.
     pub fn create_and_store_atom_for_mutation(
         &self,
         schema_name: &str,
@@ -82,8 +92,14 @@ impl DbOperations {
     ) -> Result<Atom, SchemaError> {
         let new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
         
+        // Check if atom with this content-based UUID already exists
+        let atom_key = format!("atom:{}", new_atom.uuid());
+        if let Some(existing_atom) = self.get_item::<Atom>(&atom_key)? {
+            return Ok(existing_atom);
+        }
+        
         // Persist the atom to the database
-        self.store_item(&format!("atom:{}", new_atom.uuid()), &new_atom)?;
+        self.store_item(&atom_key, &new_atom)?;
         
         Ok(new_atom)
     }
