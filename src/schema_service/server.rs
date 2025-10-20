@@ -3,7 +3,6 @@ use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer, Responder
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use strsim::normalized_levenshtein;
 
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
@@ -83,7 +82,6 @@ pub struct SchemaServiceState {
     schemas_tree: sled::Tree,
 }
 
-const SCHEMA_SIMILARITY_THRESHOLD: f64 = 0.9;
 const FIELD_OVERLAP_THRESHOLD: f64 = 0.6;
 
 impl SchemaServiceState {
@@ -155,135 +153,115 @@ impl SchemaServiceState {
         Ok(())
     }
 
-    pub fn add_schema(&self, mut schema: Schema, mut mutation_mappers: HashMap<String, String>) -> FoldDbResult<SchemaAddOutcome> {
-        let schema_name = &schema.name;
+    pub fn add_schema(&self, mut schema: Schema, mutation_mappers: HashMap<String, String>) -> FoldDbResult<SchemaAddOutcome> {
+        // Validate that all fields have topologies defined
+        if let Some(ref fields) = schema.fields {
+            for field_name in fields {
+                if !schema.field_topologies.contains_key(field_name) {
+                    return Err(FoldDbError::Config(format!(
+                        "Field '{}' is missing a topology definition. All fields must have a topology.",
+                        field_name
+                    )));
+                }
+            }
+        }
 
-        Self::validate_schema_name(schema_name)?;
+        // Ensure topology_hash is computed
+        if schema.topology_hash.is_none() {
+            schema.compute_schema_topology_hash();
+        }
 
-        let schema_name = schema_name.to_string();
+        // Get the original schema name before we modify it
+        let original_schema_name = schema.name.clone();
 
-        // Serialize Schema to JSON for similarity comparison
-        let normalized_new_value = serde_json::to_value(&schema).map_err(|e| {
-            FoldDbError::Serialization(format!(
-                "Failed to serialize new schema for comparison: {}",
-                e
-            ))
-        })?;
-        let canonical_new = Self::normalized_json_string_without_name(&normalized_new_value)?;
+        // Use topology_hash as the schema identifier
+        let topology_hash = schema.get_topology_hash()
+            .ok_or_else(|| FoldDbError::Config(
+                "Schema must have topology_hash computed".to_string()
+            ))?
+            .clone();
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Schema '{}' topology_hash: {}",
+            original_schema_name,
+            topology_hash
+        );
 
         let mut schemas = self
             .schemas
             .lock()
             .map_err(|_| FoldDbError::Config("Failed to acquire schemas lock".to_string()))?;
 
-        let mut closest_match: Option<(String, Schema, f64)> = None;
+        // Find all schemas with the same topology_hash
+        let schemas_with_same_topology: Vec<(String, Schema)> = schemas
+            .iter()
+            .filter(|(_, s)| {
+                s.get_topology_hash() == Some(&topology_hash)
+            })
+            .map(|(name, schema)| (name.clone(), schema.clone()))
+            .collect();
 
-        for (existing_name, existing_schema) in schemas.iter() {
-            // Convert Schema to JSON for similarity comparison
-            let existing_value = serde_json::to_value(existing_schema).map_err(|e| {
-                FoldDbError::Serialization(format!(
-                    "Failed to serialize existing schema for comparison: {}",
-                    e
-                ))
-            })?;
-            // Serialize existing Schema to JSON for comparison
-            let canonical_existing =
-                Self::normalized_json_string_without_name(&existing_value)?;
-            let similarity = normalized_levenshtein(&canonical_new, &canonical_existing);
-
-            if closest_match
-                .as_ref()
-                .map(|(_, _, current_similarity)| similarity > *current_similarity)
-                .unwrap_or(true)
-            {
-                closest_match = Some((
-                    existing_name.clone(),
-                    existing_schema.clone(),
-                    similarity,
-                ));
-            }
-        }
-
-        if let Some((existing_name, existing_schema, similarity)) = closest_match {
-            // Combine fields with field_mappers keys for similarity checking
-            let mut new_all_fields: std::collections::HashSet<String> = schema.fields
+        // If schemas with same topology exist, check field name similarity
+        if !schemas_with_same_topology.is_empty() {
+            let new_field_names: std::collections::HashSet<_> = schema.fields
                 .as_ref()
                 .map(|f| f.iter().cloned().collect())
                 .unwrap_or_default();
-            if let Some(ref mappers) = schema.field_mappers {
-                new_all_fields.extend(mappers.keys().cloned());
-            }
-            
-            let mut existing_all_fields: std::collections::HashSet<String> = existing_schema.fields
-                .as_ref()
-                .map(|f| f.iter().cloned().collect())
-                .unwrap_or_default();
-            if let Some(ref mappers) = existing_schema.field_mappers {
-                existing_all_fields.extend(mappers.keys().cloned());
-            }
-            
-            let shared_fields: Vec<_> = new_all_fields.intersection(&existing_all_fields).cloned().collect();
-            let shared_count = shared_fields.len();
-            
-            let new_field_count = new_all_fields.len();
-            let existing_field_count = existing_all_fields.len();
-            let counts_differ = new_field_count != existing_field_count;
-            
-            let overlap_ratio = if new_field_count == 0 && existing_field_count == 0 {
-                0.0
-            } else {
-                shared_count as f64 / new_field_count.max(existing_field_count) as f64
-            };
 
-            let should_apply_field_mappers = counts_differ
-                && (similarity >= SCHEMA_SIMILARITY_THRESHOLD
-                    || overlap_ratio >= FIELD_OVERLAP_THRESHOLD);
-
-            if should_apply_field_mappers {
-                // Add field mappers for shared fields (only for fields, not already mapped fields)
-                let new_fields_only: std::collections::HashSet<_> = schema.fields
+            for (existing_name, existing_schema) in &schemas_with_same_topology {
+                let existing_field_names: std::collections::HashSet<_> = existing_schema.fields
                     .as_ref()
                     .map(|f| f.iter().cloned().collect())
                     .unwrap_or_default();
-                let mut field_mappers = schema.field_mappers.take().unwrap_or_default();
-                for field_name in shared_fields {
-                    if new_fields_only.contains(&field_name) {
-                        field_mappers
-                            .entry(field_name.clone())
-                            .or_insert_with(|| crate::schema::types::FieldMapper::new(&existing_name, &field_name));
-                        
-                        // Update mutation_mappers: any mapper pointing to this field should now point to existing schema
-                        let target_value = format!("{}.{}", existing_name, field_name);
-                        for (json_field, schema_field) in mutation_mappers.iter_mut() {
-                            // Check if the mutation mapper points to this field
-                            let field_to_check = if schema_field.contains('.') {
-                                schema_field.rsplit('.').next().unwrap_or(schema_field)
-                            } else {
-                                schema_field.as_str()
-                            };
-                            
-                            if field_to_check == field_name {
-                                log_feature!(
-                                    LogFeature::Schema,
-                                    info,
-                                    "Updating mutation mapper: {} -> {} (was: {})",
-                                    json_field,
-                                    target_value,
-                                    schema_field
-                                );
-                                *schema_field = target_value.clone();
-                            }
-                        }
-                    }
+
+                let shared_fields: Vec<_> = new_field_names.intersection(&existing_field_names).cloned().collect();
+                let overlap_ratio = if new_field_names.len().max(existing_field_names.len()) == 0 {
+                    0.0
+                } else {
+                    shared_fields.len() as f64 / new_field_names.len().max(existing_field_names.len()) as f64
+                };
+
+                // If field names are very similar, reject as duplicate
+                if overlap_ratio >= FIELD_OVERLAP_THRESHOLD {
+                    log_feature!(
+                        LogFeature::Schema,
+                        info,
+                        "Schema '{}' has same topology as '{}' and similar field names ({}% overlap) - rejecting as duplicate",
+                        original_schema_name,
+                        existing_name,
+                        (overlap_ratio * 100.0) as u32
+                    );
+                    
+                    return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
+                        similarity: 1.0,
+                        closest_schema: existing_schema.clone(),
+                    }));
                 }
-                schema.field_mappers = Some(field_mappers);
-            } else if similarity >= SCHEMA_SIMILARITY_THRESHOLD {
-                return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
-                    similarity,
-                    closest_schema: existing_schema,
-                }));
             }
         }
+
+        // Use topology_hash as unique identifier (already includes field names)
+        let schema_name = topology_hash.clone();
+
+        // Check if this exact combination already exists
+        if schemas.contains_key(&schema_name) {
+            let existing_schema = schemas.get(&schema_name).unwrap();
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema '{}' already exists - exact duplicate",
+                schema_name
+            );
+            
+            return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
+                similarity: 1.0,
+                closest_schema: existing_schema.clone(),
+            }));
+        }
+
+        schema.name = schema_name.clone();
 
         let serialized_schema = serde_json::to_vec(&schema).map_err(|error| {
             FoldDbError::Serialization(format!(
@@ -310,6 +288,7 @@ impl SchemaServiceState {
         Ok(SchemaAddOutcome::Added(schema, mutation_mappers))
     }
 
+    #[allow(dead_code)]
     fn validate_schema_name(schema_name: &str) -> FoldDbResult<()> {
         if schema_name.is_empty() {
             return Err(FoldDbError::Config(
@@ -329,6 +308,7 @@ impl SchemaServiceState {
         )))
     }
 
+    #[allow(dead_code)]
     fn normalized_json_string(value: &serde_json::Value) -> FoldDbResult<String> {
         let normalized = Self::normalize_value(value);
         serde_json::to_string(&normalized).map_err(|error| {
@@ -336,6 +316,7 @@ impl SchemaServiceState {
         })
     }
 
+    #[allow(dead_code)]
     fn normalized_json_string_without_name(value: &serde_json::Value) -> FoldDbResult<String> {
         let mut sanitized = value.clone();
         if let serde_json::Value::Object(map) = &mut sanitized {
@@ -344,6 +325,7 @@ impl SchemaServiceState {
         Self::normalized_json_string(&sanitized)
     }
 
+    #[allow(dead_code)]
     fn normalize_value(value: &serde_json::Value) -> serde_json::Value {
         match value {
             serde_json::Value::Object(map) => {
@@ -618,7 +600,6 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    use crate::schema::types::FieldMapper;
 
     #[test]
     fn add_schema_adds_new_schema() {
@@ -628,7 +609,7 @@ mod tests {
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
 
-        let new_schema = Schema::new(
+        let mut new_schema = Schema::new(
             "NewSchema".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
@@ -637,35 +618,54 @@ mod tests {
             None,
         );
 
+        // Add required topologies
+        new_schema.set_field_topology(
+            "id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        new_schema.set_field_topology(
+            "value".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+
         let outcome = state
             .add_schema(new_schema.clone(), HashMap::new())
             .expect("failed to add schema");
 
-        match outcome {
-            SchemaAddOutcome::Added(schema, _mutation_mappers) => {
-                assert_eq!(schema.name, "NewSchema");
-                assert_eq!(schema, new_schema);
-            }
+        let added_schema = match outcome {
+            SchemaAddOutcome::Added(schema, _mutation_mappers) => schema,
             SchemaAddOutcome::TooSimilar(_) => panic!("schema should have been added"),
-        }
+        };
+
+        // Schema name should be the topology_hash (64 char hex string)
+        assert_eq!(added_schema.name.len(), 64); // 64 char hash
+        assert_eq!(&added_schema.name, new_schema.get_topology_hash().unwrap());
+        
+        // Topology should match
+        assert_eq!(added_schema.field_topologies, new_schema.field_topologies);
 
         let stored_schemas = state
             .schemas
             .lock()
             .expect("failed to lock schema map after addition");
 
-        assert!(stored_schemas.contains_key("NewSchema"));
+        // Check stored by combined name
+        assert!(stored_schemas.contains_key(&added_schema.name));
 
         let db_value = state
             .schemas_tree
-            .get(b"NewSchema")
+            .get(added_schema.name.as_bytes())
             .expect("failed to query database")
             .expect("schema should exist in database");
         
         let stored_schema: Schema = serde_json::from_slice(&db_value)
             .expect("failed to deserialize stored schema");
         
-        assert_eq!(stored_schema.name, "NewSchema");
+        assert_eq!(stored_schema.name, added_schema.name);
     }
 
     #[test]
@@ -676,7 +676,7 @@ mod tests {
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
 
-        let existing_schema = Schema::new(
+        let mut existing_schema = Schema::new(
             "Existing".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
@@ -685,11 +685,22 @@ mod tests {
             None,
         );
 
-        state
-            .add_schema(existing_schema.clone(), HashMap::new())
-            .expect("failed to add existing schema");
+        // Add required topologies
+        existing_schema.set_field_topology(
+            "id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        existing_schema.set_field_topology(
+            "value".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
 
-        let similar_schema = Schema::new(
+
+        let mut similar_schema = Schema::new(
             "PotentialDuplicate".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
@@ -698,36 +709,60 @@ mod tests {
             None,
         );
 
-        let outcome = state
+        // Add required topologies
+        similar_schema.set_field_topology(
+            "id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        similar_schema.set_field_topology(
+            "value".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+
+        // First schema gets added
+        let outcome1 = state
+            .add_schema(existing_schema.clone(), HashMap::new())
+            .expect("failed to add existing schema");
+        
+        let existing_name = match outcome1 {
+            SchemaAddOutcome::Added(schema, _) => {
+                // Should be topology_hash (64 char hex string)
+                assert_eq!(schema.name.len(), 64);
+                schema.name
+            },
+            SchemaAddOutcome::TooSimilar(_) => panic!("first schema should be added"),
+        };
+
+        // Second schema with SAME topology and SAME name should be detected as exact duplicate
+        let outcome2 = state
             .add_schema(similar_schema.clone(), HashMap::new())
             .expect("failed to evaluate schema similarity");
 
-        match outcome {
+        match outcome2 {
             SchemaAddOutcome::TooSimilar(conflict) => {
-                assert!(conflict.similarity >= SCHEMA_SIMILARITY_THRESHOLD);
-                assert_eq!(conflict.closest_schema.name, "Existing");
-                assert_eq!(conflict.closest_schema, existing_schema);
+                assert_eq!(conflict.similarity, 1.0); // Exact duplicate
+                assert_eq!(conflict.closest_schema.name, existing_name);
+                assert_eq!(conflict.closest_schema.field_topologies, existing_schema.field_topologies);
             }
-            SchemaAddOutcome::Added(_, _) => panic!("schema should have been rejected as similar"),
+            SchemaAddOutcome::Added(_, _) => panic!("schema with same name and topology should be rejected as duplicate"),
         }
-
-        assert!(state
-            .schemas_tree
-            .get(b"PotentialDuplicate")
-            .expect("failed to query database")
-            .is_none());
     }
 
     #[test]
-    fn add_schema_creates_field_mappers_for_similar_schema_with_different_fields() {
+    fn add_schema_with_different_topology_creates_separate_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
 
-        let existing_schema = Schema::new(
-            "Existing".to_string(),
+        // First schema: 2 fields
+        let mut schema1 = Schema::new(
+            "UserBasic".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
             Some(vec!["id".to_string(), "name".to_string()]),
@@ -735,82 +770,85 @@ mod tests {
             None,
         );
 
-        state
-            .add_schema(existing_schema, HashMap::new())
-            .expect("failed to add existing schema");
-
-        let new_schema = Schema::new(
-            "ExistingPublic".to_string(),
-            crate::schema::types::SchemaType::Single,
-            None,
-            Some(vec!["id".to_string(), "name".to_string(), "display_name".to_string()]),
-            None,
-            None,
+        schema1.set_field_topology(
+            "id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        schema1.set_field_topology(
+            "name".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
         );
 
-        let outcome = state
-            .add_schema(new_schema.clone(), HashMap::new())
-            .expect("failed to add schema with field mapper");
+        let outcome1 = state
+            .add_schema(schema1.clone(), HashMap::new())
+            .expect("failed to add first schema");
 
-        let added_schema = match outcome {
-            SchemaAddOutcome::Added(schema, _mutation_mappers) => schema,
+        let schema1_name = match outcome1 {
+            SchemaAddOutcome::Added(schema, _) => schema.name,
             other => panic!("expected schema addition, got {:?}", other),
         };
 
-        assert_eq!(added_schema.name, "ExistingPublic");
-
-        let field_mappers = added_schema
-            .field_mappers
-            .as_ref()
-            .expect("field mappers should exist");
-
-        assert_eq!(
-            field_mappers.get("id"),
-            Some(&FieldMapper::new("Existing", "id"))
+        // Second schema: 3 fields (different topology!)
+        let mut schema2 = Schema::new(
+            "UserExtended".to_string(),
+            crate::schema::types::SchemaType::Single,
+            None,
+            Some(vec!["id".to_string(), "name".to_string(), "email".to_string()]),
+            None,
+            None,
         );
-        assert_eq!(
-            field_mappers.get("name"),
-            Some(&FieldMapper::new("Existing", "name"))
+
+        schema2.set_field_topology(
+            "id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
         );
-        assert!(!field_mappers.contains_key("display_name"));
+        schema2.set_field_topology(
+            "name".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        schema2.set_field_topology(
+            "email".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
 
-        let stored_schemas = state
-            .schemas
-            .lock()
-            .expect("failed to lock schema map after field mapper addition");
+        let outcome2 = state
+            .add_schema(schema2.clone(), HashMap::new())
+            .expect("failed to add second schema");
 
-        let stored_schema = stored_schemas
-            .get("ExistingPublic")
-            .expect("schema should be stored");
+        let schema2_name = match outcome2 {
+            SchemaAddOutcome::Added(schema, _) => schema.name,
+            other => panic!("expected schema addition, got {:?}", other),
+        };
 
-        assert!(stored_schema.field_mappers.is_some());
-        let mappers = stored_schema.field_mappers.as_ref().unwrap();
-        assert_eq!(mappers.get("id"), Some(&FieldMapper::new("Existing", "id")));
+        // Should be topology hashes (64 char hex strings)
+        assert_eq!(schema1_name.len(), 64);
+        assert_eq!(schema2_name.len(), 64);
 
-        let db_value = state
-            .schemas_tree
-            .get(b"ExistingPublic")
-            .expect("failed to query database")
-            .expect("schema should exist in database");
-        
-        let stored_db_schema: Schema = serde_json::from_slice(&db_value)
-            .expect("failed to deserialize stored schema");
-        
-        assert!(stored_db_schema.field_mappers.is_some());
-        let mappers = stored_db_schema.field_mappers.as_ref().unwrap();
-        assert_eq!(mappers.get("id"), Some(&FieldMapper::new("Existing", "id")));
+        // Different topologies should produce different names
+        assert_ne!(schema1_name, schema2_name);
     }
 
     #[test]
-    fn add_schema_rejects_invalid_name() {
+    fn add_schema_rejects_missing_topology() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
 
+        // Schema without topology
         let invalid_schema = Schema::new(
-            "../traversal".to_string(),
+            "TestSchema".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
             Some(vec!["id".to_string()]),
@@ -820,20 +858,14 @@ mod tests {
 
         let error = state
             .add_schema(invalid_schema, HashMap::new())
-            .expect_err("schema with invalid name should be rejected");
+            .expect_err("schema without topology should be rejected");
 
         match error {
             FoldDbError::Config(message) => {
-                assert!(message.contains("invalid characters"));
+                assert!(message.contains("missing a topology definition"));
             }
             other => panic!("expected config error, got {:?}", other),
         }
-
-        assert!(state
-            .schemas_tree
-            .get(b"../traversal")
-            .expect("failed to query database")
-            .is_none());
     }
 
     #[test]
@@ -844,7 +876,7 @@ mod tests {
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
 
-        let schema1 = Schema::new(
+        let mut schema1 = Schema::new(
             "UserSchema".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
@@ -853,7 +885,27 @@ mod tests {
             None,
         );
 
-        let schema2 = Schema::new(
+        // Add required topologies for schema1
+        schema1.set_field_topology(
+            "user_id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        schema1.set_field_topology(
+            "username".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        schema1.set_field_topology(
+            "email".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+
+        let mut schema2 = Schema::new(
             "ProductSchema".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
@@ -862,15 +914,52 @@ mod tests {
             None,
         );
 
-        state.add_schema(schema1.clone(), HashMap::new()).expect("failed to add schema1");
-        state.add_schema(schema2.clone(), HashMap::new()).expect("failed to add schema2");
+        // Add required topologies for schema2
+        schema2.set_field_topology(
+            "product_id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        schema2.set_field_topology(
+            "title".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+        schema2.set_field_topology(
+            "price".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::Number)
+            ),
+        );
+        schema2.set_field_topology(
+            "description".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+
+        let outcome1 = state.add_schema(schema1.clone(), HashMap::new()).expect("failed to add schema1");
+        let schema1_name = match outcome1 {
+            SchemaAddOutcome::Added(s, _) => s.name,
+            _ => panic!("schema1 should be added"),
+        };
+        
+        let outcome2 = state.add_schema(schema2.clone(), HashMap::new()).expect("failed to add schema2");
+        let schema2_name = match outcome2 {
+            SchemaAddOutcome::Added(s, _) => s.name,
+            _ => panic!("schema2 should be added"),
+        };
 
         let schemas = state.schemas.lock().expect("failed to lock schemas");
         assert_eq!(schemas.len(), 2);
-        assert!(schemas.contains_key("UserSchema"));
-        assert!(schemas.contains_key("ProductSchema"));
-
-        assert_eq!(schemas.get("UserSchema").unwrap().name, "UserSchema");
-        assert_eq!(schemas.get("ProductSchema").unwrap().name, "ProductSchema");
+        
+        // Schemas are now stored by topology_hash
+        assert!(schemas.contains_key(&schema1_name));
+        assert!(schemas.contains_key(&schema2_name));
+        
+        // Different topologies should produce different names
+        assert_ne!(schema1_name, schema2_name);
     }
 }

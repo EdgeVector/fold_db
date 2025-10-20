@@ -3,16 +3,71 @@
   "key": {
     "range_field": "created_at"
   },
-  "fields": {
-    "user_id": {},
-    "username": {},
-    "email": {},
-    "full_name": {},
-    "created_at": {},
-    "last_login": {},
-    "profile_image_url": {},
-    "bio": {},
-    "status": {}
+  "fields": [
+    "user_id",
+    "username",
+    "email",
+    "full_name",
+    "created_at",
+    "last_login",
+    "profile_image_url",
+    "bio",
+    "status"
+  ],
+  "field_topologies": {
+    "user_id": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "username": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "email": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "full_name": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "created_at": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "last_login": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "profile_image_url": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "bio": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "status": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    }
   }
 }
-

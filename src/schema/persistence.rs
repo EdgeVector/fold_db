@@ -25,6 +25,21 @@ impl SchemaCore {
         &self,
         mut declarative_schema: DeclarativeSchemaDefinition,
     ) -> Result<Schema, SchemaError> {
+        // Auto-generate missing topologies as "Any" for backward compatibility with legacy schema files
+        let fields_to_check: Vec<String> = declarative_schema
+            .fields
+            .clone()
+            .unwrap_or_default();
+        
+        for field_name in fields_to_check {
+            if !declarative_schema.field_topologies.contains_key(&field_name) {
+                declarative_schema.set_field_topology(
+                    field_name,
+                    crate::schema::types::JsonTopology::new(crate::schema::types::TopologyNode::Any)
+                );
+            }
+        }
+
         // Populate runtime_fields using the method on DeclarativeSchemaDefinition
         declarative_schema.populate_runtime_fields()?;
 

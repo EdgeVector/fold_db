@@ -28,16 +28,23 @@ IMPORTANT - Schema Types:
 - If the user is providing an ARRAY of objects, you MUST use a Range schema with a "key"
 - The range_field should be a unique identifier field (like "name", "id", "email")
 
+IMPORTANT - Schema Name and Descriptive Name:
+- You MUST include "name": use any simple name like "Schema" (it will be replaced automatically)
+- ALWAYS include "descriptive_name": a clear, human-readable description of what this schema stores
+- Example: "descriptive_name": "User Profile Information" or "Customer Order Records"
+
 Example Range schema (for multiple records):
 {
-  "name": "MySchema",
+  "name": "Schema",
+  "descriptive_name": "User Profile Information",
   "key": {"range_field": "id"},
   "fields": {"id": {}, "name": {}, "age": {}}
 }
 
 Example Single schema (for one global value):
 {
-  "name": "MySchema",
+  "name": "Schema",
+  "descriptive_name": "Global Counter Statistics",
   "fields": {"count": {}, "total": {}}
 }
 "#;

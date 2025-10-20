@@ -106,7 +106,7 @@ impl SimpleIngestionService {
 
         // Step 4: Determine schema to use
         let schema_name = self
-            .determine_schema_to_use(&ai_response, node.clone())
+            .determine_schema_to_use(&ai_response, &request.data, node.clone())
             .await?;
         let new_schema_created = ai_response.new_schemas.is_some();
 
@@ -291,11 +291,13 @@ impl SimpleIngestionService {
         let mut schema_map = SimplifiedSchemaMap::new();
 
         for schema in schemas {
-            let fields = if let Ok(Value::Object(fields_obj)) = serde_json::to_value(&schema.fields) {
-                fields_obj.into_iter().collect()
-            } else {
-                HashMap::new()
-            };
+            let mut fields: HashMap<String, Value> = HashMap::new();
+            
+            for (field_name, topology) in &schema.field_topologies {
+                if let Ok(topology_value) = serde_json::to_value(topology) {
+                    fields.insert(field_name.clone(), topology_value);
+                }
+            }
 
             let simplified = SimplifiedSchema {
                 name: schema.name.clone(),
@@ -312,6 +314,7 @@ impl SimpleIngestionService {
     async fn determine_schema_to_use(
         &self,
         ai_response: &AISchemaResponse,
+        sample_data: &Value,
         node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<String> {
         // If existing schemas were recommended, use the first one
@@ -323,13 +326,17 @@ impl SimpleIngestionService {
                 "Using existing schema: {}",
                 schema_name
             );
+            
+            // Ensure existing schema has topologies - add them if missing
+            self.ensure_schema_has_topologies_with_node(schema_name, sample_data, &ai_response.mutation_mappers, node.clone()).await?;
+            
             return Ok(schema_name.clone());
         }
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
             let schema_name = self
-                .create_new_schema_with_node(new_schema_def, node.clone())
+                .create_new_schema_with_node(new_schema_def, sample_data, node.clone())
                 .await?;
             log_feature!(
                 LogFeature::Ingestion,
@@ -349,6 +356,7 @@ impl SimpleIngestionService {
     async fn create_new_schema_with_node(
         &self,
         schema_def: &Value,
+        sample_data: &Value,
         node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<String> {
         log_feature!(
@@ -358,13 +366,49 @@ impl SimpleIngestionService {
         );
 
         // Deserialize Value to Schema
-        let schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
+        let mut schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
             .map_err(|error| {
                 IngestionError::SchemaCreationError(format!(
                     "Failed to deserialize schema from AI response: {}",
                     error
                 ))
             })?;
+
+        // Infer topologies from sample data
+        let sample_for_topology = if let Some(array) = sample_data.as_array() {
+            // Use first element if array
+            array.first().unwrap_or(sample_data)
+        } else {
+            sample_data
+        };
+
+        if let Some(sample_obj) = sample_for_topology.as_object() {
+            let sample_map: std::collections::HashMap<String, serde_json::Value> = 
+                sample_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            schema.infer_topologies_from_data(&sample_map);
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Inferred topologies for {} fields from sample data",
+                sample_map.len()
+            );
+        }
+
+        // Use topology_hash as schema name for structure-based deduplication
+        let topology_hash = schema.get_topology_hash()
+            .ok_or_else(|| IngestionError::SchemaCreationError(
+                "Schema must have topology_hash computed".to_string()
+            ))?
+            .clone();
+        
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Using topology_hash as schema name: {}",
+            topology_hash
+        );
+        
+        schema.name = topology_hash.clone();
 
         // Add schema to the schema service via the node
         let schema_response = {
@@ -401,6 +445,21 @@ impl SimpleIngestionService {
             .load_schema_from_json(&json_str)
             .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
 
+        // Check if the schema is already approved
+        let current_state = schema_manager
+            .get_schema_states()
+            .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?
+            .get(&schema_response.name)
+            .copied()
+            .unwrap_or_default();
+
+        // Only approve if not already approved
+        if current_state != crate::schema::SchemaState::Approved {
+            schema_manager
+                .set_schema_state(&schema_response.name, crate::schema::SchemaState::Approved)
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+        }
+
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -408,6 +467,139 @@ impl SimpleIngestionService {
             schema_response.name
         );
         Ok(schema_response.name)
+    }
+
+    /// Ensure existing schema has topologies for all fields, adding them if missing
+    async fn ensure_schema_has_topologies_with_node(
+        &self,
+        schema_name: &str,
+        sample_data: &Value,
+        mutation_mappers: &HashMap<String, String>,
+        node: Arc<Mutex<DataFoldNode>>,
+    ) -> IngestionResult<()> {
+        // Get the schema from the schema manager
+        let mut schema = {
+            let node_guard = node.lock().await;
+            let db_guard = node_guard
+                .get_fold_db()
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            let schema = db_guard.schema_manager
+                .get_schema(schema_name)
+                .map_err(|e| {
+                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                        format!("Failed to fetch schema '{}': {}", schema_name, e),
+                    ))
+                })?
+                .ok_or_else(|| {
+                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                        format!("Schema '{}' not found", schema_name),
+                    ))
+                })?
+                .clone();
+            drop(db_guard);
+            schema
+        };
+
+        // Check if schema already has all required topologies
+        let fields_to_check: Vec<String> = mutation_mappers
+            .values()
+            .filter_map(|mapper| {
+                // Extract field name from mapper (format: SchemaName.field_name)
+                mapper.split('.').nth(1).map(|s| s.to_string())
+            })
+            .collect();
+
+        let mut needs_update = false;
+        for field_name in &fields_to_check {
+            if !schema.has_field_topology(field_name) {
+                needs_update = true;
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Schema '{}' is missing topology for field '{}'",
+                    schema_name,
+                    field_name
+                );
+                break;
+            }
+        }
+
+        // If all fields have topologies, no update needed
+        if !needs_update {
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Schema '{}' already has topologies for all required fields",
+                schema_name
+            );
+            return Ok(());
+        }
+
+        // Infer topologies from sample data
+        let sample_for_topology = if let Some(array) = sample_data.as_array() {
+            array.first().unwrap_or(sample_data)
+        } else {
+            sample_data
+        };
+
+        if let Some(sample_obj) = sample_for_topology.as_object() {
+            let sample_map: std::collections::HashMap<String, serde_json::Value> = 
+                sample_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            
+            schema.infer_topologies_from_data(&sample_map);
+            
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Inferred topologies for {} fields in schema '{}' from sample data",
+                sample_map.len(),
+                schema_name
+            );
+
+            // Update the schema in the schema service via node
+            {
+                let node_guard = node.lock().await;
+                node_guard
+                    .add_schema_to_service(&schema)
+                    .await
+                    .map_err(|e| {
+                        IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                            format!("Failed to update schema '{}' with topologies: {}", schema_name, e),
+                        ))
+                    })?;
+            }
+
+            // Reload the schema
+            let json_str = serde_json::to_string(&schema).map_err(|error| {
+                IngestionError::schema_parsing_error(format!(
+                    "Failed to serialize updated schema: {}",
+                    error
+                ))
+            })?;
+
+            let schema_manager = {
+                let node_guard = node.lock().await;
+                let db_guard = node_guard
+                    .get_fold_db()
+                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+                let manager = db_guard.schema_manager.clone();
+                drop(db_guard);
+                manager
+            };
+
+            schema_manager
+                .load_schema_from_json(&json_str)
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Updated schema '{}' with inferred topologies",
+                schema_name
+            );
+        }
+
+        Ok(())
     }
 
     /// Execute mutations using the OperationProcessor

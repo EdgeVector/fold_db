@@ -11,5 +11,46 @@
     "author": "BlogPost.map().author",
     "title": "BlogPost.map().title",
     "tags": "BlogPost.map().tags"
+  },
+  "field_topologies": {
+    "word": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "publish_date": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "content": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "author": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "title": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "tags": {
+      "root": {
+        "type": "Array",
+        "value": {
+          "type": "Primitive",
+          "value": "String"
+        }
+      }
+    }
   }
 }
