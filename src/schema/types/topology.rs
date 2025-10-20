@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use ts_rs::TS;
 
@@ -61,6 +62,16 @@ impl JsonTopology {
         Self {
             root: TopologyNode::infer_from_value(value),
         }
+    }
+
+    /// Compute a SHA256 hash of this topology
+    /// This creates a unique fingerprint of the topology structure
+    pub fn compute_hash(&self) -> String {
+        let canonical = serde_json::to_string(&self.root)
+            .unwrap_or_else(|_| "{}".to_string());
+        let mut hasher = Sha256::new();
+        hasher.update(canonical.as_bytes());
+        format!("{:x}", hasher.finalize())
     }
 }
 

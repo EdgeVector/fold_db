@@ -141,13 +141,15 @@ else
 fi
 
 # Migrate schemas from available_schemas to the database
-echo "Migrating schemas from available_schemas to database..."
-python3 scripts/migrate_schemas_to_db.py --schemas-dir available_schemas --service-url http://127.0.0.1:9002
-
-if [ $? -ne 0 ]; then
-    echo "Warning: Schema migration had issues. Check output above."
-    echo "Continuing with server startup..."
-fi
+# DISABLED: Migration is commented out - schema service will start with empty database
+# echo "Migrating schemas from available_schemas to database..."
+# python3 scripts/migrate_schemas_to_db.py --schemas-dir available_schemas --service-url http://127.0.0.1:9002
+# 
+# if [ $? -ne 0 ]; then
+#     echo "Warning: Schema migration had issues. Check output above."
+#     echo "Continuing with server startup..."
+# fi
+echo "Schema migration is disabled. Schema service will start with an empty database."
 
 # Run the HTTP server in the background with schema service URL
 echo "Starting the HTTP server on port 9001 in the background..."

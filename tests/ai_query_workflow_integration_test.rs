@@ -187,13 +187,14 @@ async fn setup_test_data(helper: &HttpTestHelper, results: &mut HttpTestResults)
             "product_id": "TEST-PROD-001",
             "name": "Wireless Mouse",
             "description": "High-quality wireless mouse",
-            "price": "29.99",
+            "price": 29.99,
             "category": "Electronics",
             "brand": "TechBrand",
-            "stock_quantity": "50",
+            "stock_quantity": 50,
             "sku": "WM-001",
             "tags": ["electronics", "computer", "wireless"],
-            "created_at": created_at
+            "created_at": created_at.clone(),
+            "updated_at": created_at
         },
         "key_value": {
             "hash": null,

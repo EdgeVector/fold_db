@@ -107,6 +107,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         #[derive(serde::Deserialize)]
         struct DeclarativeSchemaDefinitionHelper {
             name: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            descriptive_name: Option<String>,
             // Allow schema_type to be omitted; we will derive from key if missing
             schema_type: Option<SchemaType>,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -120,8 +122,12 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             field_mappers: Option<HashMap<String, FieldMapper>>,
             #[serde(skip_serializing_if = "Option::is_none", default)]
             field_molecule_uuids: Option<HashMap<String, String>>,
+            #[serde(default)]
+            field_topologies: HashMap<String, JsonTopology>,
             #[serde(skip_serializing_if = "Option::is_none", default)]
-            field_topologies: Option<HashMap<String, JsonTopology>>,
+            field_topology_hashes: Option<HashMap<String, String>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            topology_hash: Option<String>,
         }
 
         // Deserialize into the helper struct
@@ -185,9 +191,18 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             helper.field_mappers,
         );
 
-        // Preserve field_molecule_uuids and field_topologies from deserialization
+        // Preserve descriptive_name and field_molecule_uuids from deserialization
+        schema.descriptive_name = helper.descriptive_name;
         schema.field_molecule_uuids = helper.field_molecule_uuids;
-        schema.field_topologies = helper.field_topologies;
+        
+        // Merge topologies from helper with schema's default topologies
+        for (field_name, topology) in helper.field_topologies {
+            schema.field_topologies.insert(field_name, topology);
+        }
+        
+        // Preserve topology hashes
+        schema.field_topology_hashes = helper.field_topology_hashes;
+        schema.topology_hash = helper.topology_hash;
 
         Ok(schema)
     }
@@ -203,6 +218,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 pub struct DeclarativeSchemaDefinition {
     /// Schema name
     pub name: String,
+    /// Human-readable descriptive name for the schema (used in AI-generated proposals)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub descriptive_name: Option<String>,
     /// Schema type ("Single" | "Range" | "HashRange")
     pub schema_type: SchemaType,
     /// Key configuration (required when schema_type == "HashRange" or "Range")
@@ -224,9 +242,16 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub field_molecule_uuids: Option<HashMap<String, String>>,
     /// Topology definitions for each field (defines JSON structure)
-    /// Maps field_name -> JsonTopology. One topology per field.
+    /// Maps field_name -> JsonTopology. Every field MUST have a topology.
+    #[serde(default)]
+    pub field_topologies: HashMap<String, JsonTopology>,
+    /// Hash of each field's topology for change detection
+    /// Maps field_name -> topology_hash
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub field_topologies: Option<HashMap<String, JsonTopology>>,
+    pub field_topology_hashes: Option<HashMap<String, String>>,
+    /// Hash of all field topologies combined - unique fingerprint of schema structure
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topology_hash: Option<String>,
 
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
@@ -264,6 +289,7 @@ pub struct DeclarativeSchemaDefinition {
 impl PartialEq for DeclarativeSchemaDefinition {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
+            && self.descriptive_name == other.descriptive_name
             && self.schema_type == other.schema_type
             && self.key == other.key
             && self.fields == other.fields
@@ -272,6 +298,8 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.hash == other.hash
             && self.field_molecule_uuids == other.field_molecule_uuids
             && self.field_topologies == other.field_topologies
+            && self.field_topology_hashes == other.field_topology_hashes
+            && self.topology_hash == other.topology_hash
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
     }
@@ -395,6 +423,7 @@ impl DeclarativeSchemaDefinition {
     ) -> Self {
         let mut schema = Self {
             name,
+            descriptive_name: None,
             schema_type,
             key,
             fields,
@@ -402,7 +431,9 @@ impl DeclarativeSchemaDefinition {
             field_mappers,
             hash: None,
             field_molecule_uuids: None,
-            field_topologies: None,
+            field_topologies: HashMap::new(),
+            field_topology_hashes: None,
+            topology_hash: None,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
@@ -424,19 +455,30 @@ impl DeclarativeSchemaDefinition {
 
     /// Get topology for a specific field
     pub fn get_field_topology(&self, field_name: &str) -> Option<&JsonTopology> {
-        self.field_topologies
-            .as_ref()
-            .and_then(|topologies| topologies.get(field_name))
+        self.field_topologies.get(field_name)
     }
 
-    /// Set topology for a specific field
+    /// Check if a field has a topology defined
+    pub fn has_field_topology(&self, field_name: &str) -> bool {
+        self.field_topologies.contains_key(field_name)
+    }
+
+    /// Set topology for a specific field and compute its hash
     pub fn set_field_topology(&mut self, field_name: String, topology: JsonTopology) {
-        if self.field_topologies.is_none() {
-            self.field_topologies = Some(HashMap::new());
+        // Compute and store individual field topology hash
+        let topology_hash = topology.compute_hash();
+        
+        if self.field_topology_hashes.is_none() {
+            self.field_topology_hashes = Some(HashMap::new());
         }
-        if let Some(topologies) = self.field_topologies.as_mut() {
-            topologies.insert(field_name, topology);
+        if let Some(hashes) = self.field_topology_hashes.as_mut() {
+            hashes.insert(field_name.clone(), topology_hash);
         }
+        
+        self.field_topologies.insert(field_name, topology);
+        
+        // Recompute schema-level topology hash
+        self.compute_schema_topology_hash();
     }
 
     /// Validate a field value against its topology
@@ -447,19 +489,59 @@ impl DeclarativeSchemaDefinition {
     ) -> Result<(), crate::schema::types::errors::SchemaError> {
         if let Some(topology) = self.get_field_topology(field_name) {
             topology.validate(value)?;
+            Ok(())
+        } else {
+            Err(crate::schema::types::errors::SchemaError::InvalidData(
+                format!("No topology defined for field '{}'", field_name)
+            ))
         }
-        // If no topology defined, allow any value
-        Ok(())
     }
 
     /// Infer and set topologies from sample data
     pub fn infer_topologies_from_data(&mut self, data: &HashMap<String, serde_json::Value>) {
-        let mut topologies = HashMap::new();
         for (field_name, value) in data {
             let topology = JsonTopology::infer_from_value(value);
-            topologies.insert(field_name.clone(), topology);
+            self.set_field_topology(field_name.clone(), topology);
         }
-        self.field_topologies = Some(topologies);
+    }
+
+    /// Compute schema-level topology hash from all field topology hashes
+    /// This creates a unique fingerprint for the entire schema's structure
+    pub fn compute_schema_topology_hash(&mut self) {
+        if self.field_topologies.is_empty() {
+            self.topology_hash = None;
+            return;
+        }
+
+        // Collect and sort field topology hashes for deterministic hashing
+        let mut sorted_fields: Vec<_> = self.field_topologies.keys().collect();
+        sorted_fields.sort();
+
+        let mut combined = String::new();
+        for field_name in sorted_fields {
+            if let Some(topology) = self.field_topologies.get(field_name) {
+                combined.push_str(field_name);
+                combined.push(':');
+                combined.push_str(&topology.compute_hash());
+                combined.push(';');
+            }
+        }
+
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(combined.as_bytes());
+        self.topology_hash = Some(format!("{:x}", hasher.finalize()));
+    }
+
+    /// Get the schema-level topology hash
+    pub fn get_topology_hash(&self) -> Option<&String> {
+        self.topology_hash.as_ref()
+    }
+
+    /// Get topology hash for a specific field
+    pub fn get_field_topology_hash(&self, field_name: &str) -> Option<&String> {
+        self.field_topology_hashes
+            .as_ref()
+            .and_then(|hashes| hashes.get(field_name))
     }
 
     fn generate_inputs(&mut self) {
@@ -679,6 +761,75 @@ mod tests {
         assert!(
             source_schemas_final.contains(&"BlogPost".to_string()),
             "Should have BlogPost as source schema"
+        );
+    }
+
+    #[test]
+    fn test_descriptive_name_serialization() {
+        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+
+        // Create a schema with descriptive_name
+        let mut schema = DeclarativeSchemaDefinition::new(
+            "UserProfile".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec!["name".to_string(), "email".to_string()]),
+            None,
+            None,
+        );
+        schema.descriptive_name = Some("User Profile Information".to_string());
+
+        // Serialize to JSON
+        let serialized = serde_json::to_string(&schema).unwrap();
+        assert!(
+            serialized.contains("User Profile Information"),
+            "Serialized JSON should contain descriptive_name"
+        );
+
+        // Deserialize back
+        let deserialized: DeclarativeSchemaDefinition = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(
+            deserialized.descriptive_name,
+            Some("User Profile Information".to_string()),
+            "Descriptive name should be preserved after deserialization"
+        );
+        assert_eq!(
+            deserialized.name, "UserProfile",
+            "Schema name should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_descriptive_name_optional() {
+        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+
+        // Create a schema without descriptive_name
+        let schema = DeclarativeSchemaDefinition::new(
+            "UserProfile".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec!["name".to_string(), "email".to_string()]),
+            None,
+            None,
+        );
+
+        assert_eq!(
+            schema.descriptive_name, None,
+            "Descriptive name should be None by default"
+        );
+
+        // Serialize to JSON
+        let serialized = serde_json::to_string(&schema).unwrap();
+        assert!(
+            !serialized.contains("descriptive_name"),
+            "Serialized JSON should not contain descriptive_name field when None"
+        );
+
+        // Deserialize back
+        let deserialized: DeclarativeSchemaDefinition = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(
+            deserialized.descriptive_name, None,
+            "Descriptive name should remain None after deserialization"
         );
     }
 }

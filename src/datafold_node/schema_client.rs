@@ -346,7 +346,7 @@ mod tests {
         let (base_url, handle) = spawn_schema_service(state).await;
 
         let client = SchemaServiceClient::new(&base_url);
-        let schema = Schema::new(
+        let mut schema = Schema::new(
             "TestSchema".to_string(),
             SchemaType::Single,
             None,
@@ -355,12 +355,21 @@ mod tests {
             None,
         );
 
+        // Add required topology
+        schema.set_field_topology(
+            "id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
+        );
+
         let response = client
             .add_schema(&schema, HashMap::new())
             .await
             .expect("schema addition should succeed");
 
-        assert_eq!(response.schema.name, "TestSchema");
+        // Schema name should be the topology_hash (64 char hex string)
+        assert_eq!(response.schema.name.len(), 64);
 
         handle.stop(true).await;
     }
@@ -375,13 +384,21 @@ mod tests {
         let (base_url, handle) = spawn_schema_service(state).await;
 
         let client = SchemaServiceClient::new(&base_url);
-        let schema = Schema::new(
+        let mut schema = Schema::new(
             "ExistingSchema".to_string(),
             SchemaType::Single,
             None,
             Some(vec!["id".to_string()]),
             None,
             None,
+        );
+
+        // Add required topology
+        schema.set_field_topology(
+            "id".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+            ),
         );
 
         client

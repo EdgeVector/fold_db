@@ -103,6 +103,10 @@ export type DeclarativeSchemaDefinition = {
  */
 name: string, 
 /**
+ * Human-readable descriptive name for the schema (used in AI-generated proposals)
+ */
+descriptive_name: string | null, 
+/**
  * Schema type ("Single" | "Range" | "HashRange")
  */
 schema_type: DeclarativeSchemaType, 
@@ -129,9 +133,18 @@ hash: string | null,
 field_molecule_uuids: { [key in string]?: string } | null, 
 /**
  * Topology definitions for each field (defines JSON structure)
- * Maps field_name -> JsonTopology. One topology per field.
+ * Maps field_name -> JsonTopology. Every field MUST have a topology.
  */
-field_topologies: { [key in string]?: JsonTopology } | null, };
+field_topologies: { [key in string]?: JsonTopology }, 
+/**
+ * Hash of each field's topology for change detection
+ * Maps field_name -> topology_hash
+ */
+field_topology_hashes: { [key in string]?: string } | null, 
+/**
+ * Hash of all field topologies combined - unique fingerprint of schema structure
+ */
+topology_hash: string | null, };
 
 /**
  * Represents the schema-level type information.

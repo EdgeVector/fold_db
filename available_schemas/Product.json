@@ -3,18 +3,88 @@
   "key": {
     "range_field": "created_at"
   },
-  "fields": {
-    "product_id": {},
-    "name": {},
-    "description": {},
-    "price": {},
-    "category": {},
-    "brand": {},
-    "stock_quantity": {},
-    "created_at": {},
-    "updated_at": {},
-    "tags": {},
-    "sku": {}
+  "fields": [
+    "product_id",
+    "name",
+    "description",
+    "price",
+    "category",
+    "brand",
+    "stock_quantity",
+    "created_at",
+    "updated_at",
+    "tags",
+    "sku"
+  ],
+  "field_topologies": {
+    "product_id": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "name": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "description": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "price": {
+      "root": {
+        "type": "Primitive",
+        "value": "Number"
+      }
+    },
+    "category": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "brand": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "stock_quantity": {
+      "root": {
+        "type": "Primitive",
+        "value": "Number"
+      }
+    },
+    "created_at": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "updated_at": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "tags": {
+      "root": {
+        "type": "Array",
+        "value": {
+          "type": "Primitive",
+          "value": "String"
+        }
+      }
+    },
+    "sku": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    }
   }
 }
-

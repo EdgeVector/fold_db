@@ -12,6 +12,49 @@
     "category": "Product.map().category",
     "brand": "Product.map().brand",
     "created_at": "Product.map().created_at"
+  },
+  "field_topologies": {
+    "tag": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "product_id": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "name": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "price": {
+      "root": {
+        "type": "Primitive",
+        "value": "Number"
+      }
+    },
+    "category": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "brand": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    },
+    "created_at": {
+      "root": {
+        "type": "Primitive",
+        "value": "String"
+      }
+    }
   }
 }
-

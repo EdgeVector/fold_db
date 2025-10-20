@@ -101,6 +101,10 @@ export type DeclarativeSchemaDefinition = {
  */
 name: string,
 /**
+ * Human-readable descriptive name for the schema (used in AI-generated proposals)
+ */
+descriptive_name?: string,
+/**
  * Schema type ("Single" | "Range" | "HashRange")
  */
 schema_type: DeclarativeSchemaType,

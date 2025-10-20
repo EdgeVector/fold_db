@@ -188,19 +188,17 @@ fn test_schema_serialization_includes_topology() {
         .expect("Failed to deserialize");
 
     // Verify topology was preserved
-    assert!(deserialized.field_topologies.is_some());
-    let topologies = deserialized.field_topologies.as_ref().unwrap();
-    assert!(topologies.contains_key("name"));
-    assert!(topologies.contains_key("age"));
+    assert!(deserialized.field_topologies.contains_key("name"));
+    assert!(deserialized.field_topologies.contains_key("age"));
 
     // Verify the actual topology values
-    let name_topology = topologies.get("name").unwrap();
+    let name_topology = deserialized.field_topologies.get("name").unwrap();
     assert_eq!(
         name_topology.root,
         TopologyNode::Primitive(PrimitiveType::String)
     );
 
-    let age_topology = topologies.get("age").unwrap();
+    let age_topology = deserialized.field_topologies.get("age").unwrap();
     assert_eq!(
         age_topology.root,
         TopologyNode::Primitive(PrimitiveType::Number)
@@ -208,8 +206,8 @@ fn test_schema_serialization_includes_topology() {
 }
 
 #[test]
-fn test_no_topology_allows_any_value() {
-    // Create schema WITHOUT topology
+fn test_missing_topology_fails_validation() {
+    // Create schema WITHOUT topology for "data" field
     let schema = DeclarativeSchemaDefinition::new(
         "TestSchema".to_string(),
         SchemaType::Range,
@@ -222,7 +220,40 @@ fn test_no_topology_allows_any_value() {
         None,
     );
 
-    // Should accept any type of data when no topology is defined
+    // Should reject data when no topology is defined (topology is required)
+    let result = schema.validate_field_value("data", &json!("any value"));
+    assert!(result.is_err(), "Expected validation to fail without topology");
+    
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("No topology defined for field"),
+        "Error message should mention missing topology: {}",
+        err_msg
+    );
+}
+
+#[test]
+fn test_any_topology_allows_any_value() {
+    // Create schema with "Any" topology - explicitly allows any structure
+    let mut schema = DeclarativeSchemaDefinition::new(
+        "TestSchema".to_string(),
+        SchemaType::Range,
+        Some(KeyConfig {
+            hash_field: None,
+            range_field: Some("id".to_string()),
+        }),
+        Some(vec!["id".to_string(), "data".to_string()]),
+        None,
+        None,
+    );
+
+    // Set topology to Any
+    schema.set_field_topology(
+        "data".to_string(),
+        JsonTopology::new(TopologyNode::Any),
+    );
+
+    // Should accept any type of data with Any topology
     let test_cases = vec![
         json!("string"),
         json!(42),
@@ -235,7 +266,7 @@ fn test_no_topology_allows_any_value() {
         let result = schema.validate_field_value("data", &data);
         assert!(
             result.is_ok(),
-            "Expected validation to succeed without topology (test case {}): {:?}",
+            "Expected validation to succeed with Any topology (test case {}): {:?}",
             idx,
             result
         );

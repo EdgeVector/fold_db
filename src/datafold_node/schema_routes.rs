@@ -12,15 +12,15 @@ pub struct SimpleSuccessResponse {
 }
 
 /// Helper closure to execute schema operations with lock management
-async fn with_schema_manager<F, R>(state: &web::Data<AppState>, operation: F) -> R
+async fn with_schema_manager<F, R>(state: &web::Data<AppState>, operation: F) -> Result<R, crate::error::FoldDbError>
 where
     F: FnOnce(std::sync::MutexGuard<'_, crate::fold_db_core::FoldDB>) -> R,
 {
     let node_guard = state.node.lock().await;
-    let db_guard = node_guard.get_fold_db().unwrap();
+    let db_guard = node_guard.get_fold_db()?;
     let result = operation(db_guard);
     drop(node_guard);
-    result
+    Ok(result)
 }
 
 /// List all schemas.
@@ -35,12 +35,13 @@ where
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
     log_feature!(LogFeature::Schema, info, "Received request to list schemas");
-    let result =
-        with_schema_manager(&state, |db| db.schema_manager.get_schemas_with_states()).await;
+    let result = with_schema_manager(&state, |db| db.schema_manager.get_schemas_with_states()).await;
     match result {
-        Ok(schemas) => HttpResponse::Ok().json(schemas),
-        Err(e) => HttpResponse::InternalServerError()
+        Ok(Ok(schemas)) => HttpResponse::Ok().json(schemas),
+        Ok(Err(e)) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to list schemas: {}", e)})),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to access database: {}", e)})),
     }
 }
 
@@ -60,23 +61,21 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
-    let result: Result<Option<SchemaWithState>, SchemaError> =
-        with_schema_manager(&state, |db| {
-            let schema = db.schema_manager.get_schema(&name)?;
-            if let Some(schema) = schema {
-                let state = db.schema_manager.get_schema_states()?;
-                let schema_state = state.get(&name).copied().unwrap_or_default();
-                Ok(Some(SchemaWithState::new(schema, schema_state)))
-            } else {
-                Ok(None)
-            }
-        })
-        .await;
+    let result = with_schema_manager(&state, |db| {
+        let schema = db.schema_manager.get_schema(&name)?;
+        if let Some(schema) = schema {
+            let state = db.schema_manager.get_schema_states()?;
+            let schema_state = state.get(&name).copied().unwrap_or_default();
+            Ok(Some(SchemaWithState::new(schema, schema_state)))
+        } else {
+            Ok(None)
+        }
+    }).await;
 
     match result {
-        Ok(Some(schema)) => HttpResponse::Ok().json(schema),
-        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Schema not found"})),
-        Err(e) => HttpResponse::InternalServerError()
+        Ok(Ok(Some(schema))) => HttpResponse::Ok().json(schema),
+        Ok(Ok(None)) => HttpResponse::NotFound().json(json!({"error": "Schema not found"})),
+        Ok(Err(e)) | Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to get schema: {}", e)})),
     }
 }
@@ -154,7 +153,7 @@ fn generate_backfill_hash_for_transform(
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let result: Result<Option<String>, SchemaError> = with_schema_manager(&state, |db| {
+    let result = with_schema_manager(&state, |db| {
         // Check if the schema is already approved
         let current_state = db.schema_manager.get_schema_states()?
             .get(&schema_name)
@@ -189,9 +188,11 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
     }).await;
     
     match result {
-        Ok(backfill_hash) => HttpResponse::Ok().json(backfill_hash),
-        Err(e) => HttpResponse::InternalServerError()
+        Ok(Ok(backfill_hash)) => HttpResponse::Ok().json(backfill_hash),
+        Ok(Err(e)) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to approve schema: {}", e)})),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to access database: {}", e)})),
     }
 }
 
@@ -260,7 +261,7 @@ pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppSt
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
     log_feature!(LogFeature::Schema, info, "Received request to load schemas from directories");
-    let result: Result<(usize, usize), crate::error::FoldDbError> = with_schema_manager(&state, |db| {
+    let result = with_schema_manager(&state, |db| {
         // Try available_schemas and data/schemas
         let available_loaded = db
             .schema_manager
@@ -281,13 +282,13 @@ pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
     .await;
 
     match result {
-        Ok((available_loaded, data_loaded)) => {
+        Ok(Ok((available_loaded, data_loaded))) => {
             HttpResponse::Ok().json(json!({
                 "available_schemas_loaded": available_loaded,
                 "data_schemas_loaded": data_loaded
             }))
         }
-        Err(e) => {
+        Ok(Err(e)) | Err(e) => {
             HttpResponse::InternalServerError().json(json!({"error": format!("Failed to load schemas: {}", e)}))
         }
     }

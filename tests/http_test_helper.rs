@@ -494,51 +494,50 @@ impl HttpTestHelper {
     #[allow(dead_code)]
     pub async fn verify_backfill_by_hash(&self, backfill_hash: &str, min_records: u64, results: &mut HttpTestResults) -> bool {
         println!("\n🔍 Verifying backfill completion for hash {}...", backfill_hash);
+        
+        // First, list all backfills to see what's registered
+        println!("  📋 Listing all backfills for debugging...");
+        if let Ok(response) = self.client.get(format!("{}/api/transforms/backfills", self.base_url)).send().await {
+            if response.status() == 200 {
+                if let Ok(all_backfills) = response.json::<Value>().await {
+                    println!("  📋 All backfills: {}", serde_json::to_string_pretty(&all_backfills).unwrap_or_else(|_| "unable to format".to_string()));
+                }
+            }
+        }
 
-        match self.client.get(format!("{}/api/transforms/backfills", self.base_url))
+        match self.client.get(format!("{}/api/backfill/{}", self.base_url, backfill_hash))
             .send()
             .await
         {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
-                    Ok(backfills) => {
-                        if let Some(backfills_array) = backfills.as_array() {
-                            // Find the backfill with matching hash
-                            for backfill in backfills_array {
-                                if backfill.get("backfill_hash").and_then(|h| h.as_str()) == Some(backfill_hash) {
-                                    let status = backfill.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown");
-                                    let records = backfill.get("records_produced").and_then(|r| r.as_u64()).unwrap_or(0);
-                                    let mutations_expected = backfill.get("mutations_expected").and_then(|m| m.as_u64()).unwrap_or(0);
-                                    let mutations_completed = backfill.get("mutations_completed").and_then(|m| m.as_u64()).unwrap_or(0);
-                                    
-                                    println!("  ✅ Found backfill with hash: {}", backfill_hash);
-                                    println!("     Status: {}", status);
-                                    println!("     Records produced: {}", records);
-                                    println!("     Mutations expected: {}", mutations_expected);
-                                    println!("     Mutations completed: {}", mutations_completed);
+                    Ok(backfill) => {
+                        let status = backfill.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown");
+                        let records = backfill.get("records_produced").and_then(|r| r.as_u64()).unwrap_or(0);
+                        let mutations_expected = backfill.get("mutations_expected").and_then(|m| m.as_u64()).unwrap_or(0);
+                        let mutations_completed = backfill.get("mutations_completed").and_then(|m| m.as_u64()).unwrap_or(0);
+                        
+                        println!("  ✅ Found backfill with hash: {}", backfill_hash);
+                        println!("     Status: {}", status);
+                        println!("     Records produced: {}", records);
+                        println!("     Mutations expected: {}", mutations_expected);
+                        println!("     Mutations completed: {}", mutations_completed);
 
-                                    if status == "Completed" {
-                                        println!("  ✅ Backfill completed successfully");
-                                        
-                                        if records >= min_records {
-                                            println!("  ✅ Produced {} records (expected at least {})", records, min_records);
-                                            results.add_pass(&format!("Verify backfill by hash {}", backfill_hash));
-                                            return true;
-                                        } else {
-                                            results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
-                                                &format!("Only {} records produced, expected at least {}", records, min_records));
-                                            return false;
-                                        }
-                                    } else {
-                                        results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
-                                            &format!("Backfill status is '{}', expected 'Completed'", status));
-                                        return false;
-                                    }
-                                }
+                        if status == "Completed" {
+                            println!("  ✅ Backfill completed successfully");
+                            
+                            if records >= min_records {
+                                println!("  ✅ Produced {} records (expected at least {})", records, min_records);
+                                results.add_pass(&format!("Verify backfill by hash {}", backfill_hash));
+                                return true;
+                            } else {
+                                results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
+                                    &format!("Only {} records produced, expected at least {}", records, min_records));
+                                return false;
                             }
-
+                        } else {
                             results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
-                                "Backfill with hash not found");
+                                &format!("Backfill status is '{}', expected 'Completed'", status));
                             return false;
                         }
                     }
@@ -557,11 +556,9 @@ impl HttpTestHelper {
             Err(e) => {
                 results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
                     &format!("Request failed: {}", e));
-                return false;
+                false
             }
         }
-
-        false
     }
 
     /// Create a blog post mutation with test data
@@ -1313,6 +1310,163 @@ impl HttpTestHelper {
             }
             Err(e) => {
                 Err(format!("Request failed: {}", e))
+            }
+        }
+    }
+
+    /// Ingest data to create schema through the ingestion API
+    #[allow(dead_code)]
+    pub async fn ingest_data(&self, data: Value, results: &mut HttpTestResults) -> bool {
+        self.ingest_data_with_label(data, "Ingest data", results).await
+    }
+
+    /// Ingest data and return the schema name
+    #[allow(dead_code)]
+    pub async fn ingest_data_and_get_schema_name(&self, data: Value, results: &mut HttpTestResults) -> Option<String> {
+        let request_body = json!({
+            "data": data,
+            "options": {
+                "auto_execute_mutations": true
+            }
+        });
+
+        match self.client.post(format!("{}/api/ingestion/process", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(data) => {
+                        let schema_name = data.get("schema_used").and_then(|s| s.as_str()).map(|s| s.to_string());
+                        if let Some(ref name) = schema_name {
+                            println!("    ✅ Schema: {}", name);
+                        }
+                        results.add_pass("Ingest data");
+                        schema_name
+                    }
+                    Err(e) => {
+                        results.add_fail("Ingest data", &format!("Failed to parse response: {}", e));
+                        None
+                    }
+                }
+            }
+            Ok(response) => {
+                results.add_fail("Ingest data", &format!("Expected status 200, got {}", response.status()));
+                None
+            }
+            Err(e) => {
+                results.add_fail("Ingest data", &format!("Request failed: {}", e));
+                None
+            }
+        }
+    }
+
+    pub async fn ingest_data_with_label(&self, data: Value, label: &str, results: &mut HttpTestResults) -> bool {
+        let request_body = json!({
+            "data": data,
+            "options": {
+                "auto_execute_mutations": true
+            }
+        });
+
+        match self.client.post(format!("{}/api/ingestion/process", self.base_url))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(data) => {
+                        if let Some(schema_name) = data.get("schema_used").and_then(|s| s.as_str()) {
+                            println!("    ✅ Schema: {}", schema_name);
+                        }
+                        results.add_pass(label);
+                        true
+                    }
+                    Err(e) => {
+                        results.add_fail(label, &format!("Failed to parse response: {}", e));
+                        false
+                    }
+                }
+            }
+            Ok(response) => {
+                results.add_fail(label, &format!("Expected status 200, got {}", response.status()));
+                false
+            }
+            Err(e) => {
+                results.add_fail(label, &format!("Request failed: {}", e));
+                false
+            }
+        }
+    }
+
+    /// Save a schema to file and load it through the HTTP API
+    #[allow(dead_code)]
+    pub async fn save_and_load_schema(&self, schema_name: &str, schema: Value, results: &mut HttpTestResults) -> bool {
+        use std::fs;
+        use std::path::Path;
+        
+        println!("  📝 Saving schema to file: {}", schema_name);
+        
+        // Save schema to test_db/schemas directory
+        let schema_dir = Path::new("test_db/schemas");
+        if !schema_dir.exists() {
+            if let Err(e) = fs::create_dir_all(schema_dir) {
+                results.add_fail("Save schema", &format!("Failed to create schema directory: {}", e));
+                return false;
+            }
+        }
+        
+        let schema_file = schema_dir.join(format!("{}.json", schema_name));
+        let schema_json = match serde_json::to_string_pretty(&schema) {
+            Ok(json) => json,
+            Err(e) => {
+                results.add_fail("Save schema", &format!("Failed to serialize schema: {}", e));
+                return false;
+            }
+        };
+        
+        if let Err(e) = fs::write(&schema_file, schema_json) {
+            results.add_fail("Save schema", &format!("Failed to write schema file: {}", e));
+            return false;
+        }
+        
+        println!("  💾 Schema saved to {:?}", schema_file);
+        println!("  📥 Loading schemas from directory...");
+        
+        // Call the load schemas endpoint
+        match self.client.post(format!("{}/api/schemas/load", self.base_url))
+            .send()
+            .await
+        {
+            Ok(response) if response.status() == 200 => {
+                match response.json::<Value>().await {
+                    Ok(data) => {
+                        println!("  ✅ Schemas loaded successfully");
+                        if let Some(available) = data.get("available_loaded") {
+                            println!("    Available loaded: {}", available);
+                        }
+                        results.add_pass("Load schema");
+                        true
+                    }
+                    Err(e) => {
+                        results.add_fail("Load schema", &format!("Failed to parse response: {}", e));
+                        false
+                    }
+                }
+            }
+            Ok(response) => {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                results.add_fail("Load schema", &format!("Expected status 200, got {} - {}", status, body));
+                false
+            }
+            Err(e) => {
+                results.add_fail("Load schema", &format!("Request failed: {}", e));
+                false
             }
         }
     }
