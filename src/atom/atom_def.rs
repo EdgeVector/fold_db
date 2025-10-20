@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uuid::Uuid;
+use sha2::{Sha256, Digest};
 
 /// An immutable data container that represents a single version of content in the database.
 ///
@@ -35,6 +35,25 @@ pub enum AtomStatus {
 }
 
 impl Atom {
+    /// Generates a deterministic UUID based on atom content.
+    /// This enables content-based deduplication at the atom level.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_schema_name` - Name of the schema that defines this Atom's structure
+    /// * `content` - The actual data content stored in this Atom
+    ///
+    /// # Returns
+    ///
+    /// A deterministic UUID string based on SHA256 hash of schema name and content
+    fn generate_content_uuid(source_schema_name: &str, content: &Value) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(source_schema_name.as_bytes());
+        hasher.update(content.to_string().as_bytes());
+        let hash = hasher.finalize();
+        format!("{:x}", hash)
+    }
+
     /// Creates a new Atom with the given parameters.
     ///
     /// # Arguments
@@ -45,11 +64,12 @@ impl Atom {
     ///
     /// # Returns
     ///
-    /// A new Atom instance with a generated UUID and current timestamp
+    /// A new Atom instance with a content-based UUID and current timestamp
     #[must_use]
     pub fn new(source_schema_name: String, source_pub_key: String, content: Value) -> Self {
+        let uuid = Self::generate_content_uuid(&source_schema_name, &content);
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid,
             source_schema_name,
             source_pub_key,
             created_at: Utc::now(),
