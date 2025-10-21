@@ -14,7 +14,7 @@ describe('Footer Component', () => {
     
     const footer = screen.getByRole('contentinfo');
     expect(footer).toBeInTheDocument();
-    expect(footer).toHaveClass('bg-white', 'border-t', 'border-gray-200', 'py-6', 'mt-auto');
+    expect(footer).toHaveClass('bg-white', 'border-t', 'border-gray-200', 'py-3');
   });
 
   it('displays current year in copyright text', () => {

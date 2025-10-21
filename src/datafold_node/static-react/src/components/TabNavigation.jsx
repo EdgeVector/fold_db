@@ -150,36 +150,60 @@ function TabNavigation({
     return styles;
   };
 
+  // Group tabs
+  const mainTabs = tabs.filter(tab => tab.group === 'main');
+  const advancedTabs = tabs.filter(tab => tab.group === 'advanced');
+
+  const renderTab = (tab) => {
+    const isDisabled = tab.disabled || false;
+    
+    return (
+      <button
+        key={tab.id}
+        className={getTabStyles(tab)}
+        onClick={() => handleTabClick(tab.id, tab.requiresAuth)}
+        disabled={isDisabled}
+        aria-current={activeTab === tab.id ? 'page' : undefined}
+        aria-label={`${tab.label} tab`}
+        style={{
+          transitionDuration: `${TAB_TRANSITION_DURATION_MS}ms`
+        }}
+      >
+        {/* Tab Icon */}
+        {tab.icon && (
+          <span className="mr-2" aria-hidden="true">
+            {tab.icon}
+          </span>
+        )}
+        
+        {/* Tab Label */}
+        <span>{tab.label}</span>
+      </button>
+    );
+  };
+
   return (
     <div className={`border-b border-gray-200 ${className}`}>
-      <div className="flex space-x-8">
-        {tabs.map((tab) => {
-          const isDisabled = tab.disabled || false;
-          
-          return (
-            <button
-              key={tab.id}
-              className={getTabStyles(tab)}
-              onClick={() => handleTabClick(tab.id, tab.requiresAuth)}
-              disabled={isDisabled}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-              aria-label={`${tab.label} tab`}
-              style={{
-                transitionDuration: `${TAB_TRANSITION_DURATION_MS}ms`
-              }}
-            >
-              {/* Tab Icon */}
-              {tab.icon && (
-                <span className="mr-2" aria-hidden="true">
-                  {tab.icon}
-                </span>
-              )}
-              
-              {/* Tab Label */}
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      <div className="flex items-center">
+        {/* Main tabs */}
+        <div className="flex space-x-8">
+          {mainTabs.map(renderTab)}
+        </div>
+
+        {/* Separator */}
+        {advancedTabs.length > 0 && (
+          <div className="mx-6 h-6 w-px bg-gray-300" aria-hidden="true"></div>
+        )}
+
+        {/* Advanced tabs with label */}
+        {advancedTabs.length > 0 && (
+          <div className="flex items-center space-x-6">
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Advanced</span>
+            <div className="flex space-x-6">
+              {advancedTabs.map(renderTab)}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

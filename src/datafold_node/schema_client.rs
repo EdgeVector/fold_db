@@ -269,6 +269,53 @@ impl SchemaServiceClient {
 
         Ok(loaded_count)
     }
+
+    /// Reset the schema service database
+    pub async fn reset_schema_service(&self) -> FoldDbResult<()> {
+        let url = format!("{}/api/system/reset", self.base_url);
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Resetting schema service database at {}",
+            url
+        );
+
+        #[derive(Serialize)]
+        struct ResetRequest {
+            confirm: bool,
+        }
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&ResetRequest { confirm: true })
+            .send()
+            .await
+            .map_err(|e| {
+                FoldDbError::Config(format!("Failed to reset schema service: {}", e))
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<empty>".to_string());
+            return Err(FoldDbError::Config(format!(
+                "Schema service reset failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Schema service database reset successfully"
+        );
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

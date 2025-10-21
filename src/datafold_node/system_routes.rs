@@ -98,6 +98,13 @@ pub struct ResetDatabaseResponse {
     pub message: String,
 }
 
+/// Response for schema service reset
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ResetSchemaServiceResponse {
+    pub success: bool,
+    pub message: String,
+}
+
 /// Reset the database and restart the node
 ///
 /// This endpoint completely resets the database by:
@@ -132,6 +139,24 @@ pub async fn reset_database(
 
     // Lock the node and perform the reset
     let mut node = state.node.lock().await;
+
+    // First, reset the schema service database
+    let schema_client = node.get_schema_client();
+    if let Err(e) = schema_client.reset_schema_service().await {
+        log_feature!(
+            LogFeature::HttpServer,
+            warn,
+            "Failed to reset schema service during database reset: {}",
+            e
+        );
+        // Continue anyway - the main database reset is more important
+    } else {
+        log_feature!(
+            LogFeature::HttpServer,
+            info,
+            "Schema service database reset successfully"
+        );
+    }
 
     // Perform the database reset by deleting database files and creating a new node
     let config = node.config.clone();
@@ -174,11 +199,11 @@ pub async fn reset_database(
             log_feature!(
                 LogFeature::HttpServer,
                 info,
-                "Database reset completed successfully"
+                "Database and schema service reset completed successfully"
             );
             HttpResponse::Ok().json(ResetDatabaseResponse {
                 success: true,
-                message: "Database reset successfully. All data has been cleared.".to_string(),
+                message: "Database and schema service reset successfully. All data has been cleared.".to_string(),
             })
         }
         Err(e) => {
@@ -191,6 +216,65 @@ pub async fn reset_database(
             HttpResponse::InternalServerError().json(ResetDatabaseResponse {
                 success: false,
                 message: format!("Database reset failed: {}", e),
+            })
+        }
+    }
+}
+
+/// Reset the schema service database
+///
+/// This endpoint resets the schema service database by calling its reset endpoint.
+/// This is useful when schemas need to be recreated with updated topology inference.
+#[utoipa::path(
+    post,
+    path = "/api/system/reset-schema-service",
+    tag = "system",
+    request_body = ResetDatabaseRequest,
+    responses(
+        (status = 200, description = "Schema service reset result", body = ResetSchemaServiceResponse),
+        (status = 400, description = "Bad request", body = ResetSchemaServiceResponse),
+        (status = 500, description = "Server error", body = ResetSchemaServiceResponse)
+    )
+)]
+pub async fn reset_schema_service(
+    state: web::Data<AppState>,
+    req: web::Json<ResetDatabaseRequest>,
+) -> impl Responder {
+    // Require explicit confirmation
+    if !req.confirm {
+        return HttpResponse::BadRequest().json(ResetSchemaServiceResponse {
+            success: false,
+            message: "Reset confirmation required. Set 'confirm' to true.".to_string(),
+        });
+    }
+
+    // Get the schema service client from the node
+    let node = state.node.lock().await;
+    let schema_client = node.get_schema_client();
+
+    // Call the schema service reset endpoint
+    match schema_client.reset_schema_service().await {
+        Ok(()) => {
+            log_feature!(
+                LogFeature::HttpServer,
+                info,
+                "Schema service database reset completed successfully"
+            );
+            HttpResponse::Ok().json(ResetSchemaServiceResponse {
+                success: true,
+                message: "Schema service database reset successfully. All schemas have been cleared.".to_string(),
+            })
+        }
+        Err(e) => {
+            log_feature!(
+                LogFeature::HttpServer,
+                error,
+                "Schema service reset failed: {}",
+                e
+            );
+            HttpResponse::InternalServerError().json(ResetSchemaServiceResponse {
+                success: false,
+                message: format!("Schema service reset failed: {}", e),
             })
         }
     }

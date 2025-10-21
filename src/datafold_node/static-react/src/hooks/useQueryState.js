@@ -13,8 +13,9 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { useAppSelector } from '../store/hooks.ts';
+import { useAppSelector, useAppDispatch } from '../store/hooks.ts';
 import { selectAllSchemas, selectFetchLoading } from '../store/schemaSlice';
+import { fetchSchemas } from '../store/schemaSlice';
 import { SCHEMA_STATES } from '../constants/redux.js';
 import { isHashRangeSchema, isRangeSchema, getRangeKey } from '../utils/rangeSchemaHelpers.js';
 
@@ -40,6 +41,7 @@ import { isHashRangeSchema, isRangeSchema, getRangeKey } from '../utils/rangeSch
  * @property {Function} clearState - Clear all query state
  * @property {Function} handleSchemaChange - Handle schema selection change
  * @property {Function} handleRangeFilterChange - Handle range filter changes
+ * @property {Function} refetchSchemas - Force refetch schemas from backend
  * @property {Object[]} approvedSchemas - Filtered approved schemas from Redux
  * @property {boolean} schemasLoading - Loading state for schemas
  * @property {Object|null} selectedSchemaObj - Full selected schema object
@@ -77,7 +79,8 @@ import { isHashRangeSchema, isRangeSchema, getRangeKey } from '../utils/rangeSch
  * }
  */
 function useQueryState() {
-  // Redux state - following SchemaTab.jsx pattern (lines 16-21)
+  // Redux state and dispatch - following SchemaTab.jsx pattern (lines 16-21)
+  const dispatch = useAppDispatch();
   const schemas = useAppSelector(selectAllSchemas);
   const schemasLoading = useAppSelector(selectFetchLoading);
 
@@ -214,6 +217,13 @@ function useQueryState() {
     setRangeSchemaFilter({});
   }, []);
 
+  /**
+   * Force refetch schemas from backend
+   */
+  const refetchSchemas = useCallback(() => {
+    dispatch(fetchSchemas({ forceRefresh: true }));
+  }, [dispatch]);
+
   // Aggregate state object
   const state = {
     selectedSchema,
@@ -239,6 +249,7 @@ function useQueryState() {
     clearState,
     handleSchemaChange,
     handleRangeFilterChange,
+    refetchSchemas,
     approvedSchemas,
     schemasLoading,
     selectedSchemaObj,

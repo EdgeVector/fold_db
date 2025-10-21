@@ -18,41 +18,31 @@ import { createTestStore } from '../utils/testUtilities.jsx'
 
 describe('Component Integration Tests', () => {
   describe('TabNavigation with Authentication', () => {
-    it('integrates properly with authentication state changes', async () => {
+    it('integrates properly with different tabs', async () => {
       const onTabChange = vi.fn()
       const { unmount } = await renderWithRedux(
         <TabNavigation
-          activeTab="keys"
+          activeTab="ingestion"
           onTabChange={onTabChange}
         />, { initialState: createUnauthenticatedState() }
       )
 
-      // Tabs are not locked when unauthenticated (public UI)
-      const authRequiredTabs = [
-        { id: 'admin', label: 'Admin', requiresAuth: true, icon: '👑' }
-      ]
-      
-      await renderWithRedux(
-        <TabNavigation
-          tabs={authRequiredTabs}
-          activeTab="admin"
-          onTabChange={onTabChange}
-        />, { initialState: createUnauthenticatedState() }
-      )
-      
-      expect(screen.getByRole('button', { name: /admin tab/i })).toBeEnabled()
+      // All tabs should be enabled
+      expect(screen.getByRole('button', { name: /schemas tab/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /mutation tab/i })).toBeEnabled()
 
-      // Unmount and re-mount with authenticated state
+      // Unmount and re-mount with different active tab
       unmount()
       await renderWithRedux(
         <TabNavigation
-          activeTab="keys"
+          activeTab="schemas"
           onTabChange={onTabChange}
         />, { initialState: createAuthenticatedState() }
       )
 
-      // Tabs remain enabled when authenticated
+      // Tabs remain enabled
       expect(screen.getByRole('button', { name: /schemas tab/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /mutation tab/i })).toBeEnabled()
     })
   })
 

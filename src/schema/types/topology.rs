@@ -86,7 +86,8 @@ impl TopologyNode {
             (TopologyNode::Primitive(PrimitiveType::String), JsonValue::String(_)) => Ok(()),
             (TopologyNode::Primitive(PrimitiveType::Number), JsonValue::Number(_)) => Ok(()),
             (TopologyNode::Primitive(PrimitiveType::Boolean), JsonValue::Bool(_)) => Ok(()),
-            (TopologyNode::Primitive(PrimitiveType::Null), JsonValue::Null) => Ok(()),
+            // Null is always acceptable for any primitive type (nullable fields)
+            (TopologyNode::Primitive(_), JsonValue::Null) => Ok(()),
             (TopologyNode::Primitive(expected), _) => Err(SchemaError::InvalidData(format!(
                 "Topology validation failed at '{}': expected {:?}, got {:?}",
                 path,
@@ -133,7 +134,8 @@ impl TopologyNode {
             JsonValue::String(_) => TopologyNode::Primitive(PrimitiveType::String),
             JsonValue::Number(_) => TopologyNode::Primitive(PrimitiveType::Number),
             JsonValue::Bool(_) => TopologyNode::Primitive(PrimitiveType::Boolean),
-            JsonValue::Null => TopologyNode::Primitive(PrimitiveType::Null),
+            // Null values don't provide type information - use Any to accept any type later
+            JsonValue::Null => TopologyNode::Any,
             JsonValue::Array(arr) => {
                 // Infer from first element, or use Any if empty
                 let element_topology = arr
@@ -273,6 +275,80 @@ mod tests {
             "name": "Charlie",
             "age": "thirty"
         })).is_err());
+    }
+
+    #[test]
+    fn test_nullable_primitives() {
+        // All primitive types should accept null values
+        let string_topology = JsonTopology::new(TopologyNode::Primitive(PrimitiveType::String));
+        assert!(string_topology.validate(&json!(null)).is_ok());
+        assert!(string_topology.validate(&json!("hello")).is_ok());
+        
+        let number_topology = JsonTopology::new(TopologyNode::Primitive(PrimitiveType::Number));
+        assert!(number_topology.validate(&json!(null)).is_ok());
+        assert!(number_topology.validate(&json!(42)).is_ok());
+        
+        let bool_topology = JsonTopology::new(TopologyNode::Primitive(PrimitiveType::Boolean));
+        assert!(bool_topology.validate(&json!(null)).is_ok());
+        assert!(bool_topology.validate(&json!(true)).is_ok());
+    }
+
+    #[test]
+    fn test_nullable_fields_in_object() {
+        let mut fields = HashMap::new();
+        fields.insert("thread_position".to_string(), TopologyNode::Primitive(PrimitiveType::Number));
+        fields.insert("reply_to".to_string(), TopologyNode::Primitive(PrimitiveType::String));
+        
+        let topology = JsonTopology::new(TopologyNode::Object(fields));
+        
+        // Should accept null for numeric field
+        assert!(topology.validate(&json!({"thread_position": null, "reply_to": "tweet_123"})).is_ok());
+        
+        // Should accept null for string field
+        assert!(topology.validate(&json!({"thread_position": 1, "reply_to": null})).is_ok());
+        
+        // Should accept proper types
+        assert!(topology.validate(&json!({"thread_position": 1, "reply_to": "tweet_123"})).is_ok());
+    }
+
+    #[test]
+    fn test_infer_from_null_uses_any() {
+        // When inferring from null, should use Any type (not Null type)
+        let topology = JsonTopology::infer_from_value(&json!(null));
+        
+        // Should accept any value type
+        assert!(topology.validate(&json!(null)).is_ok());
+        assert!(topology.validate(&json!("string")).is_ok());
+        assert!(topology.validate(&json!(42)).is_ok());
+        assert!(topology.validate(&json!(true)).is_ok());
+        assert!(topology.validate(&json!({"key": "value"})).is_ok());
+        assert!(topology.validate(&json!([1, 2, 3])).is_ok());
+    }
+
+    #[test]
+    fn test_infer_from_object_with_null_fields() {
+        // Object with null field should infer that field as Any
+        let sample = json!({
+            "name": "Alice",
+            "optional_field": null
+        });
+        
+        let topology = JsonTopology::infer_from_value(&sample);
+        
+        // Should accept the original
+        assert!(topology.validate(&sample).is_ok());
+        
+        // Should accept when optional_field becomes a string
+        assert!(topology.validate(&json!({
+            "name": "Bob",
+            "optional_field": "now a string"
+        })).is_ok());
+        
+        // Should accept when optional_field becomes a number
+        assert!(topology.validate(&json!({
+            "name": "Charlie",
+            "optional_field": 42
+        })).is_ok());
     }
 }
 

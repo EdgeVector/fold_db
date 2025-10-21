@@ -42,8 +42,8 @@ function LogSidebar() {
   }, [logs])
 
   return (
-    <aside className="w-80 h-screen bg-gray-900 text-white p-4 overflow-y-auto">
-      <div className="flex items-center justify-between mb-2">
+    <aside className="w-80 bg-gray-900 text-white flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b border-gray-700">
         <h2 className="text-lg font-semibold">Logs</h2>
         <button
           onClick={handleCopy}
@@ -52,7 +52,7 @@ function LogSidebar() {
           Copy
         </button>
       </div>
-      <div className="space-y-1 text-xs font-mono">
+      <div className="flex-1 overflow-y-auto p-4 space-y-1 text-xs font-mono">
         {logs.map((line, idx) => (
           <div key={idx}>{line}</div>
         ))}

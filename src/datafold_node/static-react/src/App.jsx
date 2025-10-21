@@ -10,9 +10,8 @@ import SchemaTab from './components/tabs/SchemaTab'
 import QueryTab from './components/tabs/QueryTab'
 import LlmQueryTab from './components/tabs/LlmQueryTab'
 import MutationTab from './components/tabs/MutationTab'
-import TransformsTab from './components/tabs/TransformsTab'
 import IngestionTab from './components/tabs/IngestionTab'
-import KeyManagementTab from './components/tabs/KeyManagementTab'
+import SettingsModal from './components/SettingsModal'
 import LogSidebar from './components/LogSidebar'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useAppSelector, useAppDispatch } from './store/hooks'
@@ -21,7 +20,8 @@ import { useEffect } from 'react'
 import { DEFAULT_TAB } from './constants'
 
 export function AppContent() {
-  const [activeTab, setActiveTab] = useState(DEFAULT_TAB) // Default to keys tab
+  const [activeTab, setActiveTab] = useState(DEFAULT_TAB)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [results, setResults] = useState(null)
   
   // Use the new useApprovedSchemas hook (TASK-001)
@@ -86,27 +86,22 @@ export function AppContent() {
         )
       case 'ingestion':
         return <IngestionTab onResult={handleOperationResult} />
-      case 'transforms':
-        return <TransformsTab onResult={handleOperationResult} />
-      case 'keys':
-        return (
-          <KeyManagementTab
-            onResult={handleOperationResult}
-          />
-        )
       default:
         return null
     }
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
-      <div className="flex flex-col flex-1">
-        <Header />
-        <main className="container mx-auto px-4 py-6 flex-1">
-          <StatusSection />
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
+      <Header onSettingsClick={() => setIsSettingsOpen(true)} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      
+      <div className="flex flex-1 overflow-hidden">
+        <main className="flex-1 overflow-y-auto">
+          <div className="container mx-auto px-4 py-6">
+            <StatusSection />
 
-          <div className="mt-6">
+            <div className="mt-6">
             {/* Schema Loading/Error States */}
             {schemasError && (
               <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -155,16 +150,19 @@ export function AppContent() {
               onTabChange={handleTabChange}
             />
 
-            <div className="mt-4">
-              {renderActiveTab()}
+              <div className="mt-4">
+                {renderActiveTab()}
+              </div>
             </div>
-          </div>
 
-          {results && <ResultsSection results={results} />}
+            {results && <ResultsSection results={results} />}
+          </div>
         </main>
-        <Footer />
+        
+        <LogSidebar />
       </div>
-      <LogSidebar />
+      
+      <Footer />
     </div>
   )
 }

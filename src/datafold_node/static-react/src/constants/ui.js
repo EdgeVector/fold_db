@@ -13,13 +13,13 @@ export const FORM_FIELD_DEBOUNCE_MS = 300;
 
 // Tab Definitions
 export const DEFAULT_TABS = [
-  { id: 'schemas', label: 'Schemas', icon: '📊' },
-  { id: 'query', label: 'Query', icon: '🔍' },
-  { id: 'llm-query', label: 'AI Query', icon: '🤖' },
-  { id: 'mutation', label: 'Mutation', icon: '✏️' },
-  { id: 'ingestion', label: 'Ingestion', icon: '📥' },
-  { id: 'transforms', label: 'Transforms', icon: '🔄' },
-  { id: 'keys', label: 'Key Management', icon: '🔑' }
+  // Main features
+  { id: 'ingestion', label: 'Ingestion', icon: '📥', group: 'main' },
+  { id: 'llm-query', label: 'AI Query', icon: '🤖', group: 'main' },
+  // Developer/Advanced features
+  { id: 'schemas', label: 'Schemas', icon: '📊', group: 'advanced' },
+  { id: 'query', label: 'Query', icon: '🔍', group: 'advanced' },
+  { id: 'mutation', label: 'Mutation', icon: '✏️', group: 'advanced' }
 ];
 
 // Button Text Constants

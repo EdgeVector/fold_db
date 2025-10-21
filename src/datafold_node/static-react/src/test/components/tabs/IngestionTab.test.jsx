@@ -89,11 +89,11 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    expect(screen.getByLabelText('JSON Data')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Enter your JSON data here or load a sample...')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Process Data' })).toBeInTheDocument()
   })
 
-  it('displays OpenRouter configuration section', async () => {
+  it('allows JSON input interaction', async () => {
     const authState = createMockAuthState({ isAuthenticated: true })
     const initialState = {
       auth: authState,
@@ -104,71 +104,11 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    expect(screen.getByText('AI Provider Configuration')).toBeInTheDocument()
-    expect(screen.getByLabelText('OpenRouter API Key')).toBeInTheDocument()
-    expect(screen.getByLabelText('AI Model')).toBeInTheDocument()
-  })
-
-  it('loads saved OpenRouter configuration from localStorage', async () => {
-    const authState = createMockAuthState({ isAuthenticated: true })
-    const initialState = {
-      auth: authState,
-      ...createTestSchemaState()
-    }
-
-    await renderWithRedux(<IngestionTab onResult={mockOnResult} />, {
-      preloadedState: initialState
-    })
-
-    const apiKeyInput = screen.getByLabelText('OpenRouter API Key')
-    expect(apiKeyInput.value).toBe('')
-
-    const modelSelect = screen.getByLabelText('AI Model')
-    expect(modelSelect.value).toBe('anthropic/claude-3.5-sonnet')
-  })
-
-  it('handles OpenRouter configuration updates', async () => {
-    const authState = createMockAuthState({ isAuthenticated: true })
-    const initialState = {
-      auth: authState,
-      ...createTestSchemaState()
-    }
-
-    await renderWithRedux(<IngestionTab onResult={mockOnResult} />, {
-      preloadedState: initialState
-    })
-
-    const apiKeyInput = screen.getByLabelText('OpenRouter API Key')
-    fireEvent.change(apiKeyInput, { target: { value: 'new-api-key' } })
-
-    const modelSelect = screen.getByLabelText('AI Model')
-    fireEvent.change(modelSelect, { target: { value: 'anthropic/claude-3-haiku' } })
-
-    expect(apiKeyInput.value).toBe('new-api-key')
-    expect(modelSelect.value).toBe('anthropic/claude-3-haiku')
-  })
-
-  it('allows JSON input and validation interaction', async () => {
-    const authState = createMockAuthState({ isAuthenticated: true })
-    const initialState = {
-      auth: authState,
-      ...createTestSchemaState()
-    }
-
-    await renderWithRedux(<IngestionTab onResult={mockOnResult} />, {
-      preloadedState: initialState
-    })
-
-    const jsonInput = screen.getByLabelText('JSON Data')
-    const validateButton = screen.getByRole('button', { name: 'Validate JSON' })
+    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
     
-    // Test input and button interaction
+    // Test input interaction
     fireEvent.change(jsonInput, { target: { value: '{"name": "John", "age": 30}' } })
     expect(jsonInput.value).toBe('{"name": "John", "age": 30}')
-    
-    fireEvent.click(validateButton)
-    // Just verify the button can be clicked without error
-    expect(validateButton).toBeInTheDocument()
   })
 
   it('allows data processing button interaction', async () => {
@@ -182,12 +122,12 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    const jsonInput = screen.getByLabelText('JSON Data')
+    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
     fireEvent.change(jsonInput, { target: { value: '{"name": "John", "age": 30}' } })
 
     const processButton = screen.getByRole('button', { name: 'Process Data' })
     expect(processButton).toBeInTheDocument()
-    // The button is disabled initially, so just verify it exists
+    expect(processButton).not.toBeDisabled()
   })
 
   it('provides sample data loading functionality', async () => {
@@ -201,14 +141,14 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    const userProfileButton = screen.getByRole('button', { name: 'User Profile' })
-    fireEvent.click(userProfileButton)
+    const twitterButton = screen.getByRole('button', { name: 'Twitter' })
+    fireEvent.click(twitterButton)
 
-    const jsonInput = screen.getByLabelText('JSON Data')
-    expect(jsonInput.value).toContain('"name":') // Should contain sample data (formatted JSON)
+    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
+    expect(jsonInput.value).toContain('"post_id":') // Should contain sample data (formatted JSON)
   })
 
-  it('saves OpenRouter configuration', async () => {
+  it('loads different social media samples', async () => {
     const authState = createMockAuthState({ isAuthenticated: true })
     const initialState = {
       auth: authState,
@@ -219,12 +159,26 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    const apiKeyInput = screen.getByLabelText('OpenRouter API Key')
-    fireEvent.change(apiKeyInput, { target: { value: 'new-api-key' } })
+    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
 
-    const saveConfigButton = screen.getByRole('button', { name: 'Save Configuration' })
-    fireEvent.click(saveConfigButton)
+    // Test Twitter sample
+    const twitterButton = screen.getByRole('button', { name: 'Twitter' })
+    fireEvent.click(twitterButton)
+    expect(jsonInput.value).toContain('"post_id": "tweet_')
 
-    expect(apiKeyInput.value).toBe('new-api-key')
+    // Test Instagram sample
+    const instagramButton = screen.getByRole('button', { name: 'Instagram' })
+    fireEvent.click(instagramButton)
+    expect(jsonInput.value).toContain('"username":')
+
+    // Test LinkedIn sample
+    const linkedinButton = screen.getByRole('button', { name: 'LinkedIn' })
+    fireEvent.click(linkedinButton)
+    expect(jsonInput.value).toContain('"author":')
+
+    // Test TikTok sample
+    const tiktokButton = screen.getByRole('button', { name: 'TikTok' })
+    fireEvent.click(tiktokButton)
+    expect(jsonInput.value).toContain('"video_id":')
   })
 })

@@ -23,7 +23,7 @@ describe('Constants Integration Tests', () => {
   describe('Configuration Constants', () => {
     test('APP_CONFIG should contain all required properties', () => {
       expect(APP_CONFIG).toBeDefined();
-      expect(APP_CONFIG.DEFAULT_TAB).toBe('keys');
+      expect(APP_CONFIG.DEFAULT_TAB).toBe('ingestion');
       expect(APP_CONFIG.AUTHENTICATION).toBeDefined();
       expect(APP_CONFIG.CACHE).toBeDefined();
       expect(APP_CONFIG.PERFORMANCE).toBeDefined();
@@ -31,7 +31,7 @@ describe('Constants Integration Tests', () => {
     });
 
     test('DEFAULT_TAB should be exported directly', () => {
-      expect(DEFAULT_TAB).toBe('keys');
+      expect(DEFAULT_TAB).toBe('ingestion');
       expect(DEFAULT_TAB).toBe(APP_CONFIG.DEFAULT_TAB);
     });
   });
@@ -158,7 +158,7 @@ describe('Constants Integration Tests', () => {
       
       // These should be the same across all imports
       expect(schemaApprovedValue).toBe('approved');
-      expect(defaultTabValue).toBe('keys');
+      expect(defaultTabValue).toBe('ingestion');
     });
   });
 

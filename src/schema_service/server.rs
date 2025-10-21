@@ -535,6 +535,81 @@ async fn health_check() -> impl Responder {
     })
 }
 
+/// Request for resetting the schema service database
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResetRequest {
+    pub confirm: bool,
+}
+
+/// Response for resetting the schema service database
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResetResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Reset the schema service database
+async fn reset_database(
+    state: web::Data<SchemaServiceState>,
+    req: web::Json<ResetRequest>,
+) -> impl Responder {
+    // Require explicit confirmation
+    if !req.confirm {
+        return HttpResponse::BadRequest().json(ResetResponse {
+            success: false,
+            message: "Reset confirmation required. Set 'confirm' to true.".to_string(),
+        });
+    }
+
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Resetting schema service database"
+    );
+
+    // Clear the in-memory schemas map
+    {
+        let mut schemas = state.schemas.lock().unwrap();
+        schemas.clear();
+    }
+
+    // Clear all entries from the schemas tree instead of dropping it
+    // This preserves the tree handle that the state is using
+    if let Err(e) = state.schemas_tree.clear() {
+        log_feature!(
+            LogFeature::Schema,
+            error,
+            "Failed to clear schemas tree: {}",
+            e
+        );
+        return HttpResponse::InternalServerError().json(ResetResponse {
+            success: false,
+            message: format!("Failed to reset database: {}", e),
+        });
+    }
+
+    // Flush to ensure changes are persisted
+    if let Err(e) = state.schemas_tree.flush() {
+        log_feature!(
+            LogFeature::Schema,
+            warn,
+            "Failed to flush schemas tree after reset: {}",
+            e
+        );
+    }
+
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Schema service database reset successfully"
+    );
+    
+    HttpResponse::Ok().json(ResetResponse {
+        success: true,
+        message: "Schema service database reset successfully. All schemas have been cleared.".to_string(),
+    })
+}
+
 /// Schema Service HTTP Server
 pub struct SchemaServiceServer {
     state: web::Data<SchemaServiceState>,
@@ -580,7 +655,8 @@ impl SchemaServiceServer {
                     )
                     .route("/schemas/reload", web::post().to(reload_schemas))
                     .route("/schemas/available", web::get().to(get_available_schemas))
-                    .route("/schema/{name}", web::get().to(get_schema)),
+                    .route("/schema/{name}", web::get().to(get_schema))
+                    .route("/system/reset", web::post().to(reset_database)),
             )
         })
         .bind(&self.bind_address)
