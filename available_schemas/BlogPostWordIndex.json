@@ -1,5 +1,6 @@
 {
   "name": "BlogPostWordIndex",
+  "descriptive_name": "Blog Post Word Index",
   "key": {
     "hash_field": "word",
     "range_field": "publish_date"

@@ -1,5 +1,6 @@
 {
   "name": "BlogPostAuthorIndex",
+  "descriptive_name": "Blog Post Author Index",
   "key": {
     "hash_field": "author",
     "range_field": "publish_date"

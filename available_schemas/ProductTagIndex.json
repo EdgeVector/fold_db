@@ -1,5 +1,6 @@
 {
   "name": "ProductTagIndex",
+  "descriptive_name": "Product Tag Index",
   "key": {
     "hash_field": "tag",
     "range_field": "created_at"

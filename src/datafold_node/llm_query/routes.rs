@@ -320,6 +320,12 @@ pub async fn execute_query_plan(
     }
 
     // Execute the query
+    log::info!(
+        "Executing AI query - Schema: {}, Fields: {:?}, Filter: {:?}",
+        query_plan.query.schema_name,
+        query_plan.query.fields,
+        query_plan.query.filter
+    );
     let node_arc = Arc::clone(&app_state.node);
     let processor = OperationProcessor::new(node_arc);
     let results = match processor.execute_query_map(query_plan.query.clone()).await {
