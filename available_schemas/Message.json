@@ -1,5 +1,6 @@
 {
   "name": "Message",
+  "descriptive_name": "Message",
   "key": {
     "hash_field": "conversation_id",
     "range_field": "sent_at"

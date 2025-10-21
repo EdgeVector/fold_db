@@ -1,5 +1,6 @@
 {
   "name": "BlogPost",
+  "descriptive_name": "Blog Post",
   "key": {
     "range_field": "publish_date"
   },

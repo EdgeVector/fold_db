@@ -1,5 +1,6 @@
 {
   "name": "User",
+  "descriptive_name": "User",
   "key": {
     "range_field": "created_at"
   },

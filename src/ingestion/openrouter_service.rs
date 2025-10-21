@@ -14,13 +14,19 @@ const PROMPT_HEADER: &str = r#"Tell me which of these schemas to use for this sa
 {
   \"existing_schemas\": [<list_of_schema_names>],
   \"new_schemas\": <single_schema_definition>,
-  \"mutation_mappers\": {json_field_path: schema_field_path}
+  \"mutation_mappers\": {json_field_name: schema_field_name}
 }
 
 Where:
 - existing_schemas is an array of schema names that match the input data
 - new_schemas is a single schema definition if no existing schemas match
-- mutation_mappers maps JSON paths (like \"path.field[0]") to schema paths (like \"schema.field[\\\"key\\\"]\")
+- mutation_mappers maps ONLY TOP-LEVEL JSON field names to schema field names (e.g., {\"id\": \"id\", \"user\": \"user\"})
+
+CRITICAL - Mutation Mappers:
+- ONLY use top-level field names in mutation_mappers (e.g., \"user\", \"comments\", \"id\")
+- DO NOT use nested paths (e.g., \"user.name\", \"comments[*].content\") - they will not work
+- Nested objects and arrays will be stored as-is in their top-level field
+- Example: if JSON has {\"user\": {\"id\": 1, \"name\": \"Tom\"}}, mapper should be {\"user\": \"user\"}, NOT {\"user.id\": \"id\"}
 
 IMPORTANT - Schema Types:
 - For storing MULTIPLE entities/records, use \"key\": {\"range_field\": \"field_name\"}
@@ -33,19 +39,34 @@ IMPORTANT - Schema Name and Descriptive Name:
 - ALWAYS include \"descriptive_name\": a clear, human-readable description of what this schema stores
 - Example: \"descriptive_name\": \"User Profile Information\" or \"Customer Order Records\"
 
+IMPORTANT - Field Topologies:
+- Use proper topologies for nested structures:
+  * For nested objects: {\"type\": \"Object\", \"value\": {\"field_name\": {\"type\": \"Primitive\", \"value\": \"String\"}}}
+  * For arrays of primitives: {\"type\": \"Array\", \"value\": {\"type\": \"Primitive\", \"value\": \"String\"}}
+  * For arrays of objects: {\"type\": \"Array\", \"value\": {\"type\": \"Object\", \"value\": {\"field_name\": {...}}}}
+
 Example Range schema (for multiple records):
 {
   \"name\": \"Schema\",
   \"descriptive_name\": \"User Profile Information\",
   \"key\": {\"range_field\": \"id\"},
-  \"fields\": {\"id\": {}, \"name\": {}, \"age\": {}}
+  \"fields\": [\"id\", \"name\", \"age\"],
+  \"field_topologies\": {
+    \"id\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},
+    \"name\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},
+    \"age\": {\"root\": {\"type\": \"Primitive\", \"value\": \"Int\"}}
+  }
 }
 
 Example Single schema (for one global value):
 {
   \"name\": \"Schema\",
   \"descriptive_name\": \"Global Counter Statistics\",
-  \"fields\": {\"count\": {}, \"total\": {}}
+  \"fields\": [\"count\", \"total\"],
+  \"field_topologies\": {
+    \"count\": {\"root\": {\"type\": \"Primitive\", \"value\": \"Int\"}},
+    \"total\": {\"root\": {\"type\": \"Primitive\", \"value\": \"Int\"}}
+  }
 }
 "#;
 

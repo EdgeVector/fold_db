@@ -21,6 +21,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   const _schemasError = useAppSelector(selectFetchError)
   const [expandedSchemas, setExpandedSchemas] = useState({})
 
+  // Helper to get display name (descriptive_name if available, otherwise name)
+  const getDisplayName = (schema) => schema.descriptive_name || schema.name
+
   // Debug logging
   console.log('🟢 SchemaTab: Current schemas from Redux:', schemas.map(s => ({ name: s.name, state: s.state })))
 
@@ -239,7 +242,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               ) : (
                 <ChevronRightIcon className="icon icon-sm text-gray-400 transition-transform duration-200" />
               )}
-              <h3 className="font-medium text-gray-900">{schema.name}</h3>
+              <h3 className="font-medium text-gray-900">{getDisplayName(schema)}</h3>
+              {schema.descriptive_name && schema.descriptive_name !== schema.name && (
+                <span className="text-xs text-gray-500">({schema.name})</span>
+              )}
               <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStateColor(state)}`}>
                 {state}
               </span>
@@ -419,8 +425,11 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                     return (
                       <div key={schema.name} className="flex items-center justify-between p-3 bg-white rounded border">
                         <div className="flex items-center space-x-3">
-                          <div>
-                            <h4 className="font-medium text-gray-900">{schema.name}</h4>
+                          <div className="flex items-center space-x-2">
+                            <h4 className="font-medium text-gray-900">{getDisplayName(schema)}</h4>
+                            {schema.descriptive_name && schema.descriptive_name !== schema.name && (
+                              <span className="text-xs text-gray-500">({schema.name})</span>
+                            )}
                           </div>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStateColor(schema.state)}`}>
                             {schema.state}

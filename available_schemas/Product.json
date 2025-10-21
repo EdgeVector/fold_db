@@ -1,5 +1,6 @@
 {
   "name": "Product",
+  "descriptive_name": "Product",
   "key": {
     "range_field": "created_at"
   },

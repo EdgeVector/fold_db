@@ -36,6 +36,7 @@ import {
 export const mockSchemas = {
   user_profiles: createMockSchema({
     name: 'user_profiles',
+    descriptive_name: 'User Profiles',
     state: SCHEMA_STATES.APPROVED,
     fields: {
       id: { field_type: 'String' },
@@ -46,10 +47,12 @@ export const mockSchemas = {
   }),
   time_series: createMockRangeSchema({
     name: 'time_series',
+    descriptive_name: 'Time Series',
     state: SCHEMA_STATES.APPROVED
   }),
   events: createMockSchema({
     name: 'events',
+    descriptive_name: 'Events',
     state: SCHEMA_STATES.AVAILABLE,
     fields: {
       event_id: { field_type: 'String' },
@@ -59,6 +62,7 @@ export const mockSchemas = {
   }),
   blocked_schema: createMockSchema({
     name: 'blocked_schema',
+    descriptive_name: 'Blocked Schema',
     state: SCHEMA_STATES.BLOCKED,
     fields: {
       id: { field_type: 'String' },
