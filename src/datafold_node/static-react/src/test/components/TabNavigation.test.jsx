@@ -14,7 +14,7 @@ import { createAuthenticatedState, createUnauthenticatedState } from '../utils/t
 
 describe('TabNavigation', () => {
   const defaultProps = {
-    activeTab: 'keys',
+    activeTab: 'ingestion',
     onTabChange: vi.fn()
   }
 
@@ -30,6 +30,27 @@ describe('TabNavigation', () => {
     })
   })
 
+  it('renders main group tabs', async () => {
+    await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
+    
+    expect(screen.getByText('Ingestion')).toBeInTheDocument()
+    expect(screen.getByText('AI Query')).toBeInTheDocument()
+  })
+
+  it('renders advanced group tabs', async () => {
+    await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
+    
+    expect(screen.getByText('Schemas')).toBeInTheDocument()
+    expect(screen.getByText('Query')).toBeInTheDocument()
+    expect(screen.getByText('Mutation')).toBeInTheDocument()
+  })
+
+  it('displays Advanced label for advanced group', async () => {
+    await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
+    
+    expect(screen.getByText('Advanced')).toBeInTheDocument()
+  })
+
   it('highlights active tab correctly', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} activeTab="schemas" />, { initialState: createAuthenticatedState() })
     
@@ -43,13 +64,6 @@ describe('TabNavigation', () => {
       const tabButton = screen.getByRole('button', { name: new RegExp(`^${tab.label} tab$`, 'i') })
       expect(tabButton).toBeInTheDocument()
     })
-  })
-
-  it('shows check mark for Key Management tab when authenticated', async () => {
-    await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
-    
-    const keysTab = screen.getByRole('button', { name: /key management tab/i })
-    expect(keysTab).toBeInTheDocument()
   })
 
   it('keeps all tabs enabled regardless of authentication', async () => {
@@ -79,34 +93,22 @@ describe('TabNavigation', () => {
   })
 
   it('calls onTabChange when clicking any tab', async () => {
-    const authRequiredTabs = [
-      { id: 'admin', label: 'Admin', requiresAuth: true, icon: '👑' }
+    const customTabs = [
+      { id: 'custom', label: 'Custom', requiresAuth: false, icon: '⚡', group: 'main' }
     ]
     
-    await renderWithRedux(<TabNavigation {...defaultProps} tabs={authRequiredTabs} />, { initialState: createUnauthenticatedState() })
+    await renderWithRedux(<TabNavigation {...defaultProps} tabs={customTabs} />, { initialState: createUnauthenticatedState() })
     
-    const adminTab = screen.getByRole('button', { name: /admin tab/i })
-    fireEvent.click(adminTab)
+    const customTab = screen.getByRole('button', { name: /custom tab/i })
+    fireEvent.click(customTab)
     
-    expect(defaultProps.onTabChange).toHaveBeenCalledWith('admin')
-  })
-
-  it('allows clicking Key Management tab when not authenticated', async () => {
-    await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createUnauthenticatedState() })
-    
-    const keysTab = screen.getByRole('button', { name: /key management tab/i })
-    
-    // Key Management tab should be enabled when not authenticated (doesn't require auth)
-    expect(keysTab).not.toBeDisabled()
-    fireEvent.click(keysTab)
-    
-    expect(defaultProps.onTabChange).toHaveBeenCalledWith('keys')
+    expect(defaultProps.onTabChange).toHaveBeenCalledWith('custom')
   })
 
   it('renders custom tabs when provided', async () => {
     const customTabs = [
-      { id: 'custom1', label: 'Custom Tab 1', requiresAuth: false },
-      { id: 'custom2', label: 'Custom Tab 2', requiresAuth: true }
+      { id: 'custom1', label: 'Custom Tab 1', requiresAuth: false, group: 'main' },
+      { id: 'custom2', label: 'Custom Tab 2', requiresAuth: true, group: 'main' }
     ]
     
     await renderWithRedux(<TabNavigation {...defaultProps} tabs={customTabs} />, { initialState: createAuthenticatedState() })
@@ -120,7 +122,7 @@ describe('TabNavigation', () => {
 
   it('displays tab icons when provided', async () => {
     const tabsWithIcons = [
-      { id: 'test', label: 'Test Tab', requiresAuth: false, icon: '🧪' }
+      { id: 'test', label: 'Test Tab', requiresAuth: false, icon: '🧪', group: 'main' }
     ]
     
     await renderWithRedux(<TabNavigation {...defaultProps} tabs={tabsWithIcons} />, { initialState: createAuthenticatedState() })
@@ -130,8 +132,8 @@ describe('TabNavigation', () => {
 
   it('handles disabled tabs correctly', async () => {
     const tabsWithDisabled = [
-      { id: 'enabled', label: 'Enabled Tab', requiresAuth: false, disabled: false },
-      { id: 'disabled', label: 'Disabled Tab', requiresAuth: false, disabled: true }
+      { id: 'enabled', label: 'Enabled Tab', requiresAuth: false, disabled: false, group: 'main' },
+      { id: 'disabled', label: 'Disabled Tab', requiresAuth: false, disabled: true, group: 'main' }
     ]
     
     await renderWithRedux(<TabNavigation {...defaultProps} tabs={tabsWithDisabled} />, { initialState: createAuthenticatedState() })
@@ -158,7 +160,7 @@ describe('TabNavigation', () => {
     const activeTab = screen.getByRole('button', { name: /schemas tab/i })
     expect(activeTab).toHaveAttribute('aria-current', 'page')
     
-    const inactiveTab = screen.getByRole('button', { name: /key management tab/i })
+    const inactiveTab = screen.getByRole('button', { name: /ingestion tab/i })
     expect(inactiveTab).not.toHaveAttribute('aria-current')
   })
 })

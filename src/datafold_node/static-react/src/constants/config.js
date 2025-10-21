@@ -13,7 +13,7 @@
  */
 export const APP_CONFIG = {
   // Default tab when application loads
-  DEFAULT_TAB: 'keys',
+  DEFAULT_TAB: 'ingestion',
   
   // Authentication configuration
   AUTHENTICATION: {

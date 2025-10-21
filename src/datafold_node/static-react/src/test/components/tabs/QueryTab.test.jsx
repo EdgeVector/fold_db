@@ -34,6 +34,7 @@ vi.mock('../../../hooks/useQueryState', () => ({
     handleRangeFilterChange: vi.fn(),
     setRangeSchemaFilter: vi.fn(),
     clearState: vi.fn(),
+    refetchSchemas: vi.fn(),
     approvedSchemas: [
       { name: 'test_schema', fields: { name: { field_type: 'String' } } }
     ],
@@ -267,6 +268,7 @@ describe('QueryTab Component', () => {
       handleRangeFilterChange: vi.fn(),
       setRangeSchemaFilter: vi.fn(),
       clearState: vi.fn(),
+      refetchSchemas: vi.fn(),
       approvedSchemas: [
         { 
           name: 'BlogPost', 

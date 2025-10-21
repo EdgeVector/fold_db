@@ -193,7 +193,7 @@ export {
 // ============================================================================
 
 // Most commonly used constants for easy access
-export const DEFAULT_TAB = 'keys'; // Direct constant to avoid undefined issues
+export const DEFAULT_TAB = 'ingestion'; // Direct constant to avoid undefined issues
 
 // Export destructured SCHEMA_STATES safely - ensure SCHEMA_STATES is imported first
 export const APPROVED = _SCHEMA_STATES.APPROVED;

@@ -8,20 +8,9 @@ function IngestionTab({ onResult }) {
   const [pubKey, setPubKey] = useState('default')
   const [isLoading, setIsLoading] = useState(false)
   const [ingestionStatus, setIngestionStatus] = useState(null)
-  const [validationResult, setValidationResult] = useState(null)
-  
-  // AI Provider configuration
-  const [aiProvider, setAiProvider] = useState('OpenRouter')
-  const [openrouterApiKey, setOpenrouterApiKey] = useState('')
-  const [openrouterModel, setOpenrouterModel] = useState('anthropic/claude-3.5-sonnet')
-  const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1')
-  const [ollamaModel, setOllamaModel] = useState('llama3')
-  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
-  const [configSaveStatus, setConfigSaveStatus] = useState(null)
 
   useEffect(() => {
     fetchIngestionStatus()
-    loadAiConfig()
   }, [])
 
   const fetchIngestionStatus = async () => {
@@ -29,85 +18,13 @@ function IngestionTab({ onResult }) {
       const response = await ingestionClient.getStatus()
       if (response.success) {
         setIngestionStatus(response.data)
-        setAiProvider(response.data.provider)
       }
     } catch (error) {
       console.error('Failed to fetch ingestion status:', error)
     }
   }
 
-  const loadAiConfig = async () => {
-    try {
-      const response = await ingestionClient.getConfig()
-      if (response.success) {
-        setOpenrouterApiKey(response.data.openrouter.api_key || '')
-        setOpenrouterModel(response.data.openrouter.model || 'anthropic/claude-3.5-sonnet')
-        setOpenrouterBaseUrl(response.data.openrouter.base_url || 'https://openrouter.ai/api/v1')
-        setOllamaModel(response.data.ollama.model || 'llama3')
-        setOllamaBaseUrl(response.data.ollama.base_url || 'http://localhost:11434')
-        setAiProvider(response.data.provider || 'OpenRouter')
-      }
-    } catch (error) {
-      console.error('Failed to load AI config:', error)
-    }
-  }
-
-  const saveAiConfig = async () => {
-    try {
-      const config = {
-        provider: aiProvider,
-        openrouter: {
-          api_key: openrouterApiKey,
-          model: openrouterModel,
-          base_url: openrouterBaseUrl,
-        },
-        ollama: {
-          model: ollamaModel,
-          base_url: ollamaBaseUrl,
-        },
-      }
-
-      const response = await ingestionClient.saveConfig(config)
-      
-      if (response.success) {
-        setConfigSaveStatus({ success: true, message: response.data.message || 'Configuration saved successfully' })
-        // Refresh ingestion status to show updated config
-        fetchIngestionStatus()
-      } else {
-        setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
-      }
-    } catch (error) {
-      setConfigSaveStatus({ success: false, message: error.message || 'Failed to save configuration' })
-    }
-
-    // Clear status after 3 seconds
-    setTimeout(() => setConfigSaveStatus(null), 3000)
-  }
-
-  const validateJson = async () => {
-    // Backend handles all validation - just parse and send
-    try {
-      const parsedData = JSON.parse(jsonData)
-      const response = await ingestionClient.validateData(parsedData)
-      
-      if (response.success) {
-        setValidationResult(response.data)
-      } else {
-        setValidationResult({
-          valid: false,
-          error: response.error || 'Validation failed'
-        })
-      }
-    } catch (error) {
-      setValidationResult({
-        valid: false,
-        error: error.message || 'Invalid JSON format'
-      })
-    }
-  }
-
   const processIngestion = async () => {
-    // Backend handles all validation
     setIsLoading(true)
     try {
       const parsedData = JSON.parse(jsonData)
@@ -123,7 +40,6 @@ function IngestionTab({ onResult }) {
       if (response.success) {
         onResult(response.data)
         setJsonData('') // Clear the form on success
-        setValidationResult(null)
       } else {
         onResult({
           success: false,
@@ -142,365 +58,437 @@ function IngestionTab({ onResult }) {
 
   const loadSampleData = (sampleType) => {
     const samples = {
-      user: {
-        name: "John Doe",
-        email: "john@example.com",
-        age: 30,
-        preferences: {
-          theme: "dark",
-          notifications: true
-        }
-      },
-      product: {
-        product_id: "LAPTOP001",
-        name: "Gaming Laptop",
-        price: 1299.99,
-        category: "Electronics",
-        specs: {
-          cpu: "Intel i7",
-          ram: "16GB",
-          storage: "512GB SSD"
+      twitter: [
+        {
+          post_id: "tweet_1234567890",
+          author: "@techinfluencer",
+          author_id: "user_tech_001",
+          content: "Just launched our new AI-powered database! 🚀 Real-time ingestion, automatic schema mapping, and zero-config setup. Check it out at folddb.io #database #AI #opensource",
+          timestamp: "2024-10-21T14:32:00Z",
+          likes: 342,
+          retweets: 89,
+          replies: 23,
+          views: 12453,
+          media: [
+            {
+              type: "image",
+              url: "https://cdn.example.com/img1.jpg",
+              alt: "FoldDB Dashboard Screenshot"
+            }
+          ],
+          mentions: ["@opensource", "@devtools"],
+          hashtags: ["database", "AI", "opensource"],
+          reply_to: null,
+          thread_position: 1,
+          engagement_rate: 0.034
         },
-        tags: ["gaming", "laptop", "high-performance"]
-      },
-      analytics: {
-        event: "page_view",
-        timestamp: "2024-01-15T10:30:00Z",
-        user_id: "user123",
-        page: "/products/laptop",
-        metadata: {
-          referrer: "google.com",
-          user_agent: "Mozilla/5.0...",
-          session_id: "sess_abc123"
+        {
+          post_id: "tweet_1234567891",
+          author: "@datascientist_pro",
+          author_id: "user_ds_042",
+          content: "Amazing work @techinfluencer! Been testing FoldDB for the past week. The automatic schema inference saved us hours of setup time. Here are my benchmarks:",
+          timestamp: "2024-10-21T15:18:00Z",
+          likes: 156,
+          retweets: 34,
+          replies: 12,
+          views: 5621,
+          media: [
+            {
+              type: "image",
+              url: "https://cdn.example.com/benchmark.png",
+              alt: "Performance Benchmarks"
+            }
+          ],
+          mentions: ["@techinfluencer"],
+          hashtags: ["database", "performance"],
+          reply_to: "tweet_1234567890",
+          thread_position: null,
+          engagement_rate: 0.036
         }
-      }
+      ],
+      instagram: [
+        {
+          post_id: "ig_post_987654321",
+          username: "foodie_adventures",
+          user_id: "ig_user_food_123",
+          caption: "Best ramen in Tokyo! 🍜✨ The broth was simmering for 48 hours and you can taste every minute of it. Swipe for more pics! #tokyo #ramen #foodie #japan #travel",
+          posted_at: "2024-10-20T09:45:00Z",
+          location: {
+            name: "Ichiran Ramen Shibuya",
+            city: "Tokyo",
+            country: "Japan",
+            coordinates: {
+              lat: 35.6595,
+              lng: 139.7004
+            }
+          },
+          media: [
+            {
+              type: "image",
+              url: "https://cdn.instagram.example.com/ramen1.jpg",
+              width: 1080,
+              height: 1350,
+              filter: "Valencia"
+            },
+            {
+              type: "image",
+              url: "https://cdn.instagram.example.com/ramen2.jpg",
+              width: 1080,
+              height: 1350,
+              filter: "Valencia"
+            },
+            {
+              type: "image",
+              url: "https://cdn.instagram.example.com/ramen3.jpg",
+              width: 1080,
+              height: 1350,
+              filter: "Valencia"
+            }
+          ],
+          likes: 8234,
+          comments_count: 456,
+          saves: 892,
+          shares: 234,
+          hashtags: ["tokyo", "ramen", "foodie", "japan", "travel"],
+          tagged_users: ["@ramen_tokyo_guide", "@japan_food_official"],
+          comments: [
+            {
+              comment_id: "ig_comment_111",
+              username: "tokyo_foodie",
+              text: "Omg I was there last week! The tonkotsu broth is incredible 😍",
+              timestamp: "2024-10-20T10:12:00Z",
+              likes: 45
+            },
+            {
+              comment_id: "ig_comment_112",
+              username: "ramen_lover_88",
+              text: "Adding this to my Tokyo bucket list! 📝",
+              timestamp: "2024-10-20T11:30:00Z",
+              likes: 23
+            }
+          ]
+        },
+        {
+          post_id: "ig_post_987654322",
+          username: "fitness_journey_2024",
+          user_id: "ig_user_fit_456",
+          caption: "Day 287 of my fitness journey! 💪 Down 45 lbs and feeling stronger than ever. Remember: progress > perfection. What's your fitness goal? #fitness #transformation #motivation #workout",
+          posted_at: "2024-10-21T06:00:00Z",
+          location: {
+            name: "Gold's Gym",
+            city: "Los Angeles",
+            country: "USA",
+            coordinates: {
+              lat: 34.0522,
+              lng: -118.2437
+            }
+          },
+          media: [
+            {
+              type: "video",
+              url: "https://cdn.instagram.example.com/workout_vid.mp4",
+              thumbnail: "https://cdn.instagram.example.com/workout_thumb.jpg",
+              duration: 45,
+              width: 1080,
+              height: 1920
+            }
+          ],
+          likes: 15672,
+          comments_count: 892,
+          saves: 2341,
+          shares: 567,
+          hashtags: ["fitness", "transformation", "motivation", "workout"],
+          tagged_users: ["@personal_trainer_mike"],
+          comments: [
+            {
+              comment_id: "ig_comment_113",
+              username: "motivation_daily",
+              text: "Incredible transformation! You're an inspiration! 🔥",
+              timestamp: "2024-10-21T06:15:00Z",
+              likes: 234
+            }
+          ]
+        }
+      ],
+      linkedin: [
+        {
+          post_id: "li_post_555666777",
+          author: {
+            name: "Sarah Chen",
+            title: "CTO at TechVentures Inc.",
+            profile_url: "linkedin.com/in/sarah-chen-cto",
+            user_id: "li_user_sarah_123"
+          },
+          content: "Excited to announce that our team has successfully migrated our entire data infrastructure to a real-time event-driven architecture! 🎉\n\nKey achievements:\n• 10x reduction in data latency (from 5 minutes to 30 seconds)\n• 40% cost savings on infrastructure\n• Improved data quality through automated validation\n• Seamless integration with our ML pipelines\n\nHuge shoutout to the engineering team for their incredible work over the past 6 months. This wouldn't have been possible without their dedication and expertise.\n\nHappy to share more details for anyone interested in event-driven architectures. Feel free to reach out!\n\n#DataEngineering #EventDriven #TechLeadership #Innovation",
+          posted_at: "2024-10-21T13:00:00Z",
+          article: null,
+          media: [
+            {
+              type: "document",
+              title: "Event-Driven Architecture: Our Journey",
+              url: "https://cdn.linkedin.example.com/architecture_diagram.pdf",
+              pages: 12
+            }
+          ],
+          reactions: {
+            like: 1247,
+            celebrate: 342,
+            support: 89,
+            insightful: 156,
+            love: 67
+          },
+          comments_count: 87,
+          reposts: 234,
+          comments: [
+            {
+              comment_id: "li_comment_aaa111",
+              author: {
+                name: "Michael Roberts",
+                title: "Senior Data Engineer at DataCorp",
+                user_id: "li_user_mike_456"
+              },
+              text: "Congratulations Sarah! We're looking at a similar migration. Would love to connect and learn from your experience.",
+              timestamp: "2024-10-21T13:45:00Z",
+              reactions: {
+                like: 45
+              }
+            },
+            {
+              comment_id: "li_comment_aaa112",
+              author: {
+                name: "Jennifer Liu",
+                title: "VP Engineering at CloudScale",
+                user_id: "li_user_jen_789"
+              },
+              text: "Impressive results! The 10x latency improvement is remarkable. Did you use Apache Kafka or another streaming platform?",
+              timestamp: "2024-10-21T14:20:00Z",
+              reactions: {
+                like: 23,
+                insightful: 8
+              }
+            }
+          ],
+          industries: ["Technology", "Data Engineering", "Cloud Computing"],
+          skills_mentioned: ["Event-Driven Architecture", "Data Engineering", "ML Pipeline", "Infrastructure"]
+        },
+        {
+          post_id: "li_post_555666778",
+          author: {
+            name: "Marcus Thompson",
+            title: "Product Manager | Ex-Google | Building the Future of Work",
+            profile_url: "linkedin.com/in/marcus-thompson-pm",
+            user_id: "li_user_marcus_234"
+          },
+          content: "5 lessons from shipping 100+ product features:\n\n1. Talk to users BEFORE writing specs\n2. Small iterations > big launches\n3. Metrics don't tell the whole story\n4. Technical debt is real debt\n5. Celebrate wins with your team\n\nWhat would you add to this list?\n\n#ProductManagement #Technology #Leadership",
+          posted_at: "2024-10-21T10:30:00Z",
+          article: null,
+          media: [],
+          reactions: {
+            like: 3421,
+            celebrate: 892,
+            insightful: 567,
+            love: 234
+          },
+          comments_count: 234,
+          reposts: 789,
+          comments: [],
+          industries: ["Product Management", "Technology", "Startups"],
+          skills_mentioned: ["Product Management", "User Research", "Agile"]
+        }
+      ],
+      tiktok: [
+        {
+          video_id: "tt_vid_777888999",
+          username: "coding_tips_daily",
+          user_id: "tt_user_code_001",
+          caption: "3 JavaScript array methods that will blow your mind 🤯 #coding #javascript #programming #webdev #learntocode",
+          posted_at: "2024-10-21T16:45:00Z",
+          video: {
+            url: "https://cdn.tiktok.example.com/video_js_tips.mp4",
+            thumbnail: "https://cdn.tiktok.example.com/thumb_js_tips.jpg",
+            duration: 58,
+            width: 1080,
+            height: 1920,
+            format: "mp4"
+          },
+          audio: {
+            title: "Epic Tech Music",
+            artist: "TechBeats Production",
+            audio_id: "audio_tech_123"
+          },
+          statistics: {
+            views: 2834562,
+            likes: 342891,
+            comments: 12453,
+            shares: 45672,
+            saves: 89234,
+            completion_rate: 0.78
+          },
+          hashtags: ["coding", "javascript", "programming", "webdev", "learntocode"],
+          mentions: [],
+          effects: ["Green Screen", "Text Animation", "Transition Effect"],
+          comments: [
+            {
+              comment_id: "tt_comment_xyz1",
+              username: "dev_beginner_22",
+              text: "Just used .reduce() in my project and it worked perfectly! Thanks!",
+              timestamp: "2024-10-21T17:00:00Z",
+              likes: 1234,
+              replies_count: 45
+            },
+            {
+              comment_id: "tt_comment_xyz2",
+              username: "senior_dev_10yrs",
+              text: "Great explanation! Would love to see more advanced array methods",
+              timestamp: "2024-10-21T17:30:00Z",
+              likes: 892,
+              replies_count: 23
+            }
+          ]
+        },
+        {
+          video_id: "tt_vid_777889000",
+          username: "travel_with_emma",
+          user_id: "tt_user_travel_042",
+          caption: "POV: You visit Santorini for the first time 🇬🇷✨ #travel #santorini #greece #traveltok #wanderlust",
+          posted_at: "2024-10-20T08:20:00Z",
+          video: {
+            url: "https://cdn.tiktok.example.com/video_santorini.mp4",
+            thumbnail: "https://cdn.tiktok.example.com/thumb_santorini.jpg",
+            duration: 43,
+            width: 1080,
+            height: 1920,
+            format: "mp4"
+          },
+          audio: {
+            title: "Summer Vibes",
+            artist: "Chill Beats Co.",
+            audio_id: "audio_summer_456"
+          },
+          statistics: {
+            views: 8923451,
+            likes: 1234567,
+            comments: 34521,
+            shares: 123456,
+            saves: 234567,
+            completion_rate: 0.92
+          },
+          hashtags: ["travel", "santorini", "greece", "traveltok", "wanderlust"],
+          mentions: ["@visit_greece_official"],
+          effects: ["Color Grading", "Slow Motion", "Zoom Transition"],
+          location: {
+            name: "Santorini",
+            country: "Greece",
+            coordinates: {
+              lat: 36.3932,
+              lng: 25.4615
+            }
+          },
+          comments: [
+            {
+              comment_id: "tt_comment_xyz3",
+              username: "greece_lover_89",
+              text: "Adding this to my 2025 bucket list! 😍",
+              timestamp: "2024-10-20T09:00:00Z",
+              likes: 4521,
+              replies_count: 234
+            }
+          ]
+        }
+      ]
     }
     
     setJsonData(JSON.stringify(samples[sampleType], null, 2))
-    setValidationResult(null)
   }
 
   return (
-    <div className="space-y-6">
-      {/* Status Section */}
+    <div className="space-y-4">
+      {/* Status Bar */}
       {ingestionStatus && (
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="text-lg font-medium text-gray-900 mb-3">Ingestion Service Status</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <span className="font-medium">Status:</span>
-              <span className={`ml-2 px-2 py-1 rounded text-xs ${
-                ingestionStatus.enabled && ingestionStatus.configured 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
-                {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Ready'}
-              </span>
-            </div>
-            <div>
-              <span className="font-medium">Provider:</span>
-              <span className="ml-2 text-gray-600">{ingestionStatus.provider}</span>
-            </div>
-            <div>
-              <span className="font-medium">Model:</span>
-              <span className="ml-2 text-gray-600">{ingestionStatus.model}</span>
-            </div>
-            <div>
-              <span className="font-medium">Auto Execute:</span>
-              <span className="ml-2 text-gray-600">{ingestionStatus.auto_execute_mutations ? 'Yes' : 'No'}</span>
-            </div>
+        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-4 text-sm">
+            <span className={`px-2 py-1 rounded text-xs font-medium ${
+              ingestionStatus.enabled && ingestionStatus.configured 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-red-100 text-red-800'
+            }`}>
+              {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Configured'}
+            </span>
+            <span className="text-gray-600">{ingestionStatus.provider} · {ingestionStatus.model}</span>
+            <span className="text-xs text-gray-500">Configure AI settings using the Settings button in the header</span>
           </div>
         </div>
       )}
 
-      {/* Sample Data Section */}
+      {/* Main Input Area */}
       <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-medium text-gray-900 mb-3">Sample Data</h3>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => loadSampleData('user')}
-            className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200"
-          >
-            User Profile
-          </button>
-          <button
-            onClick={() => loadSampleData('product')}
-            className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm hover:bg-green-200"
-          >
-            Product Catalog
-          </button>
-          <button
-            onClick={() => loadSampleData('analytics')}
-            className="px-3 py-1 bg-purple-100 text-purple-800 rounded text-sm hover:bg-purple-200"
-          >
-            Analytics Event
-          </button>
-        </div>
-      </div>
-
-      {/* JSON Input Section */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-medium text-gray-900 mb-3">JSON Data Input</h3>
-        
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="jsonData" className="block text-sm font-medium text-gray-700 mb-2">
-              JSON Data
-            </label>
-            <textarea
-              id="jsonData"
-              value={jsonData}
-              onChange={(e) => {
-                setJsonData(e.target.value)
-                setValidationResult(null)
-              }}
-              placeholder="Enter your JSON data here..."
-              className="w-full h-64 p-3 border border-gray-300 rounded-md font-mono text-sm"
-            />
-          </div>
-
-          {/* Validation Result */}
-          {validationResult && (
-            <div className={`p-3 rounded-md ${
-              validationResult.valid 
-                ? 'bg-green-50 border border-green-200' 
-                : 'bg-red-50 border border-red-200'
-            }`}>
-              <div className={`text-sm font-medium ${
-                validationResult.valid ? 'text-green-800' : 'text-red-800'
-              }`}>
-                {validationResult.valid ? '✓ Valid JSON' : '✗ Invalid JSON'}
-              </div>
-              {validationResult.error && (
-                <div className="text-sm text-red-600 mt-1">{validationResult.error}</div>
-              )}
-              {validationResult.message && (
-                <div className="text-sm text-green-600 mt-1">{validationResult.message}</div>
-              )}
-            </div>
-          )}
-
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-medium text-gray-900">JSON Data</h3>
           <div className="flex gap-2">
             <button
-              onClick={validateJson}
-              className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
+              onClick={() => loadSampleData('twitter')}
+              className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100"
             >
-              Validate JSON
+              Twitter
             </button>
-          </div>
-        </div>
-      </div>
-
-      {/* AI Provider Configuration Section */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-medium text-gray-900 mb-3">AI Provider Configuration</h3>
-
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="aiProvider" className="block text-sm font-medium text-gray-700 mb-1">
-              AI Provider
-            </label>
-            <select
-              id="aiProvider"
-              value={aiProvider}
-              onChange={(e) => setAiProvider(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm"
-            >
-              <option value="OpenRouter">OpenRouter</option>
-              <option value="Ollama">Ollama</option>
-            </select>
-          </div>
-
-          {aiProvider === 'OpenRouter' && (
-            <div className="space-y-4">
-              <h4 className="text-md font-medium text-gray-900">OpenRouter AI Configuration</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="openrouterApiKey" className="block text-sm font-medium text-gray-700 mb-1">
-                    OpenRouter API Key
-                  </label>
-                  <input
-                    type="password"
-                    id="openrouterApiKey"
-                    value={openrouterApiKey}
-                    onChange={(e) => setOpenrouterApiKey(e.target.value)}
-                    placeholder="Enter your OpenRouter API key"
-                    className="w-full p-2 border border-gray-300 rounded text-sm"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">openrouter.ai/keys</a>
-                  </p>
-                </div>
-                
-                <div>
-                  <label htmlFor="openrouterModel" className="block text-sm font-medium text-gray-700 mb-1">
-                    AI Model
-                  </label>
-                  <select
-                    id="openrouterModel"
-                    value={openrouterModel}
-                    onChange={(e) => setOpenrouterModel(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm"
-                  >
-                    <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                    <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
-                    <option value="openai/gpt-4o">GPT-4o</option>
-                    <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                    <option value="meta-llama/llama-3.1-8b-instruct">Llama 3.1 8B</option>
-                    <option value="meta-llama/llama-3.1-70b-instruct">Llama 3.1 70B</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                  <label htmlFor="openrouterBaseUrl" className="block text-sm font-medium text-gray-700 mb-1">
-                    OpenRouter Base URL
-                  </label>
-                  <input
-                    type="text"
-                    id="openrouterBaseUrl"
-                    value={openrouterBaseUrl}
-                    onChange={(e) => setOpenrouterBaseUrl(e.target.value)}
-                    placeholder="e.g., https://openrouter.ai/api/v1"
-                    className="w-full p-2 border border-gray-300 rounded text-sm"
-                  />
-                </div>
-            </div>
-          )}
-
-          {aiProvider === 'Ollama' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="ollamaModel" className="block text-sm font-medium text-gray-700 mb-1">
-                    Ollama Model
-                  </label>
-                  <input
-                    type="text"
-                    id="ollamaModel"
-                    value={ollamaModel}
-                    onChange={(e) => setOllamaModel(e.target.value)}
-                    placeholder="e.g., llama3"
-                    className="w-full p-2 border border-gray-300 rounded text-sm"
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="ollamaBaseUrl" className="block text-sm font-medium text-gray-700 mb-1">
-                    Ollama Base URL
-                  </label>
-                  <input
-                    type="text"
-                    id="ollamaBaseUrl"
-                    value={ollamaBaseUrl}
-                    onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                    placeholder="e.g., http://localhost:11434"
-                    className="w-full p-2 border border-gray-300 rounded text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <div className="flex items-center gap-4">
             <button
-              onClick={saveAiConfig}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+              onClick={() => loadSampleData('instagram')}
+              className="px-2 py-1 bg-pink-50 text-pink-700 rounded text-xs hover:bg-pink-100"
             >
-              Save Configuration
+              Instagram
             </button>
-            
-            {configSaveStatus && (
-              <div className={`text-sm ${
-                configSaveStatus.success ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
-              </div>
-            )}
+            <button
+              onClick={() => loadSampleData('linkedin')}
+              className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-xs hover:bg-indigo-100"
+            >
+              LinkedIn
+            </button>
+            <button
+              onClick={() => loadSampleData('tiktok')}
+              className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs hover:bg-purple-100"
+            >
+              TikTok
+            </button>
           </div>
         </div>
+        
+        <textarea
+          id="jsonData"
+          value={jsonData}
+          onChange={(e) => setJsonData(e.target.value)}
+          placeholder="Enter your JSON data here or load a sample..."
+          className="w-full h-64 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
       </div>
 
-      {/* Ingestion Configuration Section */}
+      {/* Process Button */}
       <div className="bg-white p-4 rounded-lg shadow">
-        <h3 className="text-lg font-medium text-gray-900 mb-3">Ingestion Configuration</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label htmlFor="autoExecute" className="flex items-center">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                id="autoExecute"
                 checked={autoExecute}
                 onChange={(e) => setAutoExecute(e.target.checked)}
-                className="mr-2"
+                className="rounded"
               />
-              <span className="text-sm font-medium text-gray-700">Auto Execute Mutations</span>
+              <span className="text-gray-700">Auto-execute mutations</span>
             </label>
-          </div>
-          
-          <div>
-            <label htmlFor="trustDistance" className="block text-sm font-medium text-gray-700 mb-1">
-              Trust Distance
-            </label>
-            <input
-              type="number"
-              id="trustDistance"
-              value={trustDistance}
-              onChange={(e) => setTrustDistance(parseInt(e.target.value) || 0)}
-              min="0"
-              className="w-full p-2 border border-gray-300 rounded text-sm"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="pubKey" className="block text-sm font-medium text-gray-700 mb-1">
-              Public Key
-            </label>
-            <input
-              type="text"
-              id="pubKey"
-              value={pubKey}
-              onChange={(e) => setPubKey(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Action Section */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <div className="flex justify-between items-center">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900">Process Ingestion</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              AI will analyze your data and automatically create schemas or map to existing ones
-            </p>
+            <span className="text-xs text-gray-500">AI will analyze and automatically map data to schemas</span>
           </div>
           
           <button
             onClick={processIngestion}
             disabled={isLoading || !jsonData.trim()}
-            className={`px-6 py-2 rounded font-medium ${
+            className={`px-6 py-2.5 rounded font-medium transition-colors ${
               isLoading || !jsonData.trim()
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-primary text-white hover:bg-primary-dark'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
             {isLoading ? 'Processing...' : 'Process Data'}
           </button>
         </div>
-      </div>
-
-      {/* Help Section */}
-      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <h4 className="text-sm font-medium text-blue-900 mb-2">How it works:</h4>
-        <ol className="text-sm text-blue-800 space-y-1">
-          <li>1. Configure your AI provider, API key and model</li>
-          <li>2. Enter your JSON data or use a sample</li>
-          <li>3. Configure ingestion settings (optional)</li>
-          <li>4. Click "Process Data" to start AI analysis</li>
-          <li>5. AI will create schemas and store your data automatically</li>
-        </ol>
       </div>
     </div>
   )

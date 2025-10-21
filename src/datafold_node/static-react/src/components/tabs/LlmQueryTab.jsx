@@ -124,9 +124,9 @@ function LlmQueryTab({ onResult }) {
   }, []);
 
   return (
-    <div className="flex flex-col h-full" style={{ height: 'calc(100vh - 200px)' }}>
+    <div className="flex flex-col bg-white rounded-lg shadow">
       {/* Header */}
-      <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
         <div>
           <h2 className="text-xl font-bold text-gray-900">
             🤖 AI Data Assistant
@@ -147,7 +147,7 @@ function LlmQueryTab({ onResult }) {
       </div>
 
       {/* Conversation Log */}
-      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-3">
+      <div className="overflow-y-auto bg-gray-50 p-4 space-y-3" style={{ maxHeight: '60vh', minHeight: '400px' }}>
         {conversationLog.length === 0 ? (
           <div className="text-center text-gray-500 mt-20">
             <div className="text-6xl mb-4">💬</div>
@@ -202,8 +202,8 @@ function LlmQueryTab({ onResult }) {
       </div>
 
       {/* Input Box */}
-      <form onSubmit={handleSubmit} className="bg-white border-t border-gray-200 p-4">
-        <div className="flex gap-2 max-w-4xl mx-auto">
+      <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4 bg-white">
+        <div className="flex gap-2">
           <input
             type="text"
             value={inputText}

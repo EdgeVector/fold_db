@@ -10,7 +10,7 @@
  * - QueryPreview for query visualization
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { mutationClient } from '../../api/clients/mutationClient';
 import { useQueryState } from '../../hooks/useQueryState';
 import { useQueryBuilder } from '../../hooks/useQueryBuilder';
@@ -31,6 +31,7 @@ function QueryTab({ onResult }) {
     setRangeSchemaFilter,
     setHashKeyValue,
     clearState,
+    refetchSchemas,
     approvedSchemas,
     schemasLoading,
     selectedSchemaObj,
@@ -38,6 +39,11 @@ function QueryTab({ onResult }) {
     isHashRangeSchema,
     rangeKey
   } = useQueryState();
+
+  // Fetch schema states from backend when tab is activated
+  useEffect(() => {
+    refetchSchemas();
+  }, [refetchSchemas]);
 
   // Execution state management
   const [isExecuting, setIsExecuting] = useState(false);

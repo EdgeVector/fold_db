@@ -13,7 +13,8 @@ import { selectFetchLoading, selectAllSchemas } from '../../store/schemaSlice.ts
 
 // Mock the Redux store hooks
 vi.mock('../../store/hooks.ts', () => ({
-  useAppSelector: vi.fn()
+  useAppSelector: vi.fn(),
+  useAppDispatch: vi.fn(() => vi.fn())
 }));
 
 describe('useQueryState Hook', () => {

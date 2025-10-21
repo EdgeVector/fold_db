@@ -242,6 +242,14 @@ impl DataFoldNode {
     pub fn get_security_manager(&self) -> &Arc<SecurityManager> {
         &self.security_manager
     }
+
+    /// Get a schema service client for communicating with the schema service
+    pub fn get_schema_client(&self) -> crate::datafold_node::schema_client::SchemaServiceClient {
+        let url = self.config.schema_service_url
+            .as_deref()
+            .unwrap_or("http://localhost:9002");
+        crate::datafold_node::schema_client::SchemaServiceClient::new(url)
+    }
 }
 
 #[cfg(test)]

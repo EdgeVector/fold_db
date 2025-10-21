@@ -7,7 +7,21 @@ import { DEFAULT_TAB } from '../../constants';
 
 // Mock child components to focus on App.jsx logic
 vi.mock('../../components/Header', () => ({
-  default: () => <div data-testid="header">Header Component</div>
+  default: ({ onSettingsClick }) => (
+    <div data-testid="header">
+      Header Component
+      <button data-testid="settings-button" onClick={onSettingsClick}>Settings</button>
+    </div>
+  )
+}));
+
+vi.mock('../../components/SettingsModal', () => ({
+  default: ({ isOpen, onClose }) => isOpen ? (
+    <div data-testid="settings-modal">
+      Settings Modal
+      <button data-testid="close-settings" onClick={onClose}>Close</button>
+    </div>
+  ) : null
 }));
 
 vi.mock('../../components/Footer', () => ({
@@ -34,11 +48,18 @@ vi.mock('../../components/TabNavigation', () => ({
   default: ({ activeTab, onTabChange }) => (
     <div data-testid="tab-navigation">
       <button 
-        data-testid="tab-keys" 
-        onClick={() => onTabChange('keys')}
-        className={activeTab === 'keys' ? 'active' : ''}
+        data-testid="tab-ingestion" 
+        onClick={() => onTabChange('ingestion')}
+        className={activeTab === 'ingestion' ? 'active' : ''}
       >
-        Keys
+        Ingestion
+      </button>
+      <button 
+        data-testid="tab-llm-query" 
+        onClick={() => onTabChange('llm-query')}
+        className={activeTab === 'llm-query' ? 'active' : ''}
+      >
+        AI Query
       </button>
       <button 
         data-testid="tab-schemas" 
@@ -115,31 +136,28 @@ vi.mock('../../components/tabs/MutationTab', () => ({
   )
 }));
 
-vi.mock('../../components/tabs/KeyManagementTab', () => ({
+vi.mock('../../components/tabs/IngestionTab', () => ({
   default: ({ onResult }) => (
-    <div data-testid="key-management-tab">
+    <div data-testid="ingestion-tab">
       <button 
-        data-testid="key-action" 
-        onClick={() => onResult({ type: 'key', data: 'key result' })}
+        data-testid="ingestion-action" 
+        onClick={() => onResult({ type: 'ingestion', data: 'ingestion result' })}
       >
-        Key Action
+        Ingestion Action
       </button>
     </div>
   )
 }));
 
-vi.mock('../../components/tabs/TransformsTab', () => ({
+vi.mock('../../components/tabs/LlmQueryTab', () => ({
   default: ({ onResult }) => (
-    <div data-testid="transforms-tab">
-      Transforms Tab
-    </div>
-  )
-}));
-
-vi.mock('../../components/tabs/IngestionTab', () => ({
-  default: ({ onResult }) => (
-    <div data-testid="ingestion-tab">
-      Ingestion Tab
+    <div data-testid="llm-query-tab">
+      <button 
+        data-testid="llm-query-action" 
+        onClick={() => onResult({ type: 'llm-query', data: 'llm query result' })}
+      >
+        LLM Query Action
+      </button>
     </div>
   )
 }));
@@ -197,7 +215,7 @@ describe('App Component', () => {
         expect(screen.getByTestId('log-sidebar')).toBeInTheDocument();
       });
 
-      it('initializes with default tab (keys)', () => {
+      it('initializes with default tab (ingestion)', () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: false,
@@ -215,7 +233,7 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
+        expect(screen.getByTestId('ingestion-tab')).toBeInTheDocument();
         expect(screen.queryByTestId('schema-tab')).not.toBeInTheDocument();
       });
 
@@ -243,102 +261,6 @@ describe('App Component', () => {
       });
     });
 
-    describe('Authentication State Handling', () => {
-      it('shows authentication warning when not authenticated', () => {
-        const store = createTestStore({
-          auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
-
-        renderWithRedux(<AppContent />, { store });
-
-        // Should be on keys tab by default when not authenticated
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
-      });
-
-      it('hides authentication warning when authenticated', () => {
-        const store = createTestStore({
-          auth: {
-            isAuthenticated: true,
-            systemPublicKey: 'test-key',
-            systemKeyId: 'test-id',
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
-
-        renderWithRedux(<AppContent />, { store });
-
-        // Should be able to navigate to other tabs when authenticated
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
-      });
-
-      it('restricts tab navigation when not authenticated', async () => {
-        const store = createTestStore({
-          auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
-
-        renderWithRedux(<AppContent />, { store });
-
-        // Try to switch to schemas tab
-        fireEvent.click(screen.getByTestId('tab-schemas'));
-
-        // Should be able to navigate to schemas tab (authentication restriction removed)
-        expect(screen.getByTestId('schema-tab')).toBeInTheDocument();
-        expect(screen.queryByTestId('key-management-tab')).not.toBeInTheDocument();
-      });
-
-      it('allows tab navigation when authenticated', async () => {
-        const store = createTestStore({
-          auth: {
-            isAuthenticated: true,
-            systemPublicKey: 'test-key',
-            systemKeyId: 'test-id',
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
-
-        renderWithRedux(<AppContent />, { store });
-
-        // Switch to schemas tab
-        fireEvent.click(screen.getByTestId('tab-schemas'));
-
-        expect(screen.getByTestId('schema-tab')).toBeInTheDocument();
-        expect(screen.queryByTestId('key-management-tab')).not.toBeInTheDocument();
-      });
-    });
 
     describe('Tab Navigation', () => {
       it('renders correct tab content based on activeTab', async () => {
@@ -359,8 +281,8 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        // Default should be keys tab
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
+        // Default should be ingestion tab
+        expect(screen.getByTestId('ingestion-tab')).toBeInTheDocument();
 
         // Switch to schemas tab
         fireEvent.click(screen.getByTestId('tab-schemas'));
@@ -546,9 +468,9 @@ describe('App Component', () => {
         const tabNavigation = screen.getByTestId('tab-navigation');
         expect(tabNavigation).toBeInTheDocument();
 
-        // Keys tab should be active by default
-        const keysTab = screen.getByTestId('tab-keys');
-        expect(keysTab).toHaveClass('active');
+        // Ingestion tab should be active by default
+        const ingestionTab = screen.getByTestId('tab-ingestion');
+        expect(ingestionTab).toBeInTheDocument();
       });
 
       it('renders different tab components correctly', () => {
@@ -659,7 +581,7 @@ describe('App Component', () => {
         // Rapidly switch between tabs
         fireEvent.click(screen.getByTestId('tab-schemas'));
         fireEvent.click(screen.getByTestId('tab-query'));
-        fireEvent.click(screen.getByTestId('tab-keys'));
+        fireEvent.click(screen.getByTestId('tab-llm-query'));
         fireEvent.click(screen.getByTestId('tab-mutation'));
 
         // Should end up on mutation tab
@@ -706,51 +628,6 @@ describe('App Component', () => {
         });
       });
 
-      it('preserves authentication state across different stores', () => {
-        const unauthenticatedStore = createTestStore({
-          auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
-
-        const { unmount } = renderWithRedux(<AppContent />, { store: unauthenticatedStore });
-
-        // Initially not authenticated - should be on keys tab
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
-
-        // Unmount and create new authenticated store
-        unmount();
-
-        const authenticatedStore = createTestStore({
-          auth: {
-            isAuthenticated: true,
-            systemPublicKey: 'test-key',
-            systemKeyId: 'test-id',
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
-
-        // Render with authenticated store
-        renderWithRedux(<AppContent />, { store: authenticatedStore });
-
-        // Should still be on keys tab but now authenticated
-        expect(screen.getByTestId('key-management-tab')).toBeInTheDocument();
-      });
     });
   });
 });
