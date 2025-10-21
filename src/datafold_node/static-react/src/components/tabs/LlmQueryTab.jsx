@@ -1,417 +1,236 @@
 /**
- * LlmQueryTab Component - Natural Language Query Interface
+ * LlmQueryTab Component - Conversational AI Query Interface
  * 
- * Provides an interactive natural language query interface that uses LLM
- * to analyze queries, create indexes if needed, and provide interactive
- * results exploration.
+ * A simplified chat-style interface where the AI automatically loops through
+ * queries until it finds data or determines it doesn't exist.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { llmQueryClient } from '../../api/clients/llmQueryClient';
 
 function LlmQueryTab({ onResult }) {
   // State management
-  const [query, setQuery] = useState('');
+  const [inputText, setInputText] = useState('');
   const [sessionId, setSessionId] = useState(null);
-  const [queryPlan, setQueryPlan] = useState(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [executionStatus, setExecutionStatus] = useState(null);
-  const [results, setResults] = useState(null);
-  const [summary, setSummary] = useState(null);
-  const [followUpQuestion, setFollowUpQuestion] = useState('');
-  const [chatHistory, setChatHistory] = useState([]);
-  const [isAsking, setIsAsking] = useState(false);
-  const [backfillProgress, setBackfillProgress] = useState(null);
-  const [pollingInterval, setPollingInterval] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [conversationLog, setConversationLog] = useState([]);
+  const conversationEndRef = useRef(null);
 
-  // Clear polling interval on unmount
+  // Auto-scroll to bottom when conversation updates
   useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
-    };
-  }, [pollingInterval]);
+    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [conversationLog]);
 
   /**
-   * Analyze the natural language query
+   * Add a message to the conversation log
    */
-  const handleAnalyze = useCallback(async () => {
-    if (!query.trim()) {
-      onResult({ error: 'Please enter a query' });
+  const addToLog = useCallback((type, content, data = null) => {
+    setConversationLog(prev => [...prev, {
+      type, // 'user', 'system', 'results'
+      content,
+      data,
+      timestamp: new Date().toISOString()
+    }]);
+  }, []);
+
+  /**
+   * Handle user input - run query or ask follow-up
+   */
+  const handleSubmit = useCallback(async (e) => {
+    e?.preventDefault();
+    
+    if (!inputText.trim() || isProcessing) {
       return;
     }
 
-    setIsAnalyzing(true);
-    setQueryPlan(null);
-    setExecutionStatus(null);
-    setResults(null);
-    setSummary(null);
-    
+    const userInput = inputText.trim();
+    setInputText('');
+    setIsProcessing(true);
+
+    // Add user message to log
+    addToLog('user', userInput);
+
     try {
-      const response = await llmQueryClient.analyzeQuery({
-        query: query.trim(),
-        session_id: sessionId
-      });
-
-      if (!response.success) {
-        onResult({ error: response.error || 'Failed to analyze query' });
-        return;
-      }
-
-      setSessionId(response.data.session_id);
-      setQueryPlan(response.data.query_plan);
-      onResult({
-        success: true,
-        message: 'Query analyzed successfully'
-      });
-    } catch (error) {
-      console.error('Failed to analyze query:', error);
-      onResult({
-        error: `Analysis failed: ${error.message}`
-      });
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [query, sessionId, onResult]);
-
-  /**
-   * Execute the query plan
-   */
-  const handleExecute = useCallback(async () => {
-    if (!queryPlan || !sessionId) {
-      onResult({ error: 'No query plan to execute' });
-      return;
-    }
-
-    setIsExecuting(true);
-    setExecutionStatus('pending');
-    
-    try {
-      const response = await llmQueryClient.executeQueryPlan({
-        session_id: sessionId,
-        query_plan: queryPlan
-      });
-
-      if (!response.success) {
-        onResult({ error: response.error || 'Failed to execute query' });
-        setIsExecuting(false);
-        return;
-      }
-
-      const data = response.data;
-      setExecutionStatus(data.status);
-
-      if (data.status === 'complete') {
-        // Query is complete
-        setResults(data.results);
-        setSummary(data.summary);
-        setBackfillProgress(null);
-        onResult({
-          success: true,
-          data: data.results
-        });
-        setIsExecuting(false);
-      } else if (data.status === 'running' || data.status === 'pending') {
-        // Backfill in progress, start polling
-        setBackfillProgress(data.backfill_progress || 0);
+      // If this is a follow-up question (session exists and we have results)
+      if (sessionId && conversationLog.some(log => log.type === 'results')) {
+        addToLog('system', '🤔 Analyzing follow-up question...');
         
-        // Poll every 2 seconds
-        const interval = setInterval(async () => {
-          try {
-            const pollResponse = await llmQueryClient.executeQueryPlan({
-              session_id: sessionId,
-              query_plan: queryPlan
-            });
+        const response = await llmQueryClient.chat({
+          session_id: sessionId,
+          question: userInput
+        });
 
-            if (pollResponse.success) {
-              const pollData = pollResponse.data;
-              setBackfillProgress(pollData.backfill_progress || 0);
-              
-              if (pollData.status === 'complete') {
-                setResults(pollData.results);
-                setSummary(pollData.summary);
-                setExecutionStatus('complete');
-                setBackfillProgress(null);
-                setIsExecuting(false);
-                onResult({
-                  success: true,
-                  data: pollData.results
-                });
-                clearInterval(interval);
-              }
-            }
-          } catch (error) {
-            console.error('Polling error:', error);
+        if (!response.success) {
+          addToLog('system', `❌ Error: ${response.error || 'Failed to process question'}`);
+          return;
+        }
+
+        addToLog('system', response.data.answer);
+      } else {
+        // New query
+        addToLog('system', '🔍 Analyzing your query and searching for data...');
+        
+        const response = await llmQueryClient.runQuery({
+          query: userInput,
+          session_id: sessionId
+        });
+
+        if (!response.success) {
+          addToLog('system', `❌ Error: ${response.error || 'Failed to run query'}`);
+          return;
+        }
+
+        setSessionId(response.data.session_id);
+
+        // Show query plan details
+        const plan = response.data.query_plan;
+        addToLog('system', `📋 Query Plan: ${plan.reasoning}`);
+        addToLog('system', `🎯 Querying schema: ${plan.query.schema_name}`);
+        
+        if (plan.index_schema) {
+          addToLog('system', `📊 Created index: ${plan.index_schema.name}`);
+        }
+
+        // Show results
+        const resultCount = response.data.results?.length || 0;
+        if (resultCount > 0) {
+          addToLog('system', `✅ Found ${resultCount} result${resultCount !== 1 ? 's' : ''}`);
+          addToLog('results', response.data.summary || `Retrieved ${resultCount} records`, response.data.results);
+          onResult({ success: true, data: response.data.results });
+        } else {
+          addToLog('system', '❌ No results found');
+          if (response.data.summary) {
+            addToLog('system', response.data.summary);
           }
-        }, 2000);
-
-        setPollingInterval(interval);
+        }
       }
     } catch (error) {
-      console.error('Failed to execute query:', error);
-      onResult({
-        error: `Execution failed: ${error.message}`
-      });
-      setIsExecuting(false);
-    }
-  }, [queryPlan, sessionId, onResult]);
-
-  /**
-   * Ask a follow-up question
-   */
-  const handleAskFollowUp = useCallback(async () => {
-    if (!followUpQuestion.trim() || !sessionId) {
-      return;
-    }
-
-    setIsAsking(true);
-    
-    try {
-      const response = await llmQueryClient.chat({
-        session_id: sessionId,
-        question: followUpQuestion.trim()
-      });
-
-      if (!response.success) {
-        onResult({ error: response.error || 'Failed to get answer' });
-        return;
-      }
-
-      // Add to chat history
-      setChatHistory(prev => [
-        ...prev,
-        { role: 'user', content: followUpQuestion.trim() },
-        { role: 'assistant', content: response.data.answer }
-      ]);
-      
-      setFollowUpQuestion('');
-    } catch (error) {
-      console.error('Failed to ask follow-up question:', error);
-      onResult({
-        error: `Failed to get answer: ${error.message}`
-      });
+      console.error('Error processing input:', error);
+      addToLog('system', `❌ Error: ${error.message}`);
+      onResult({ error: error.message });
     } finally {
-      setIsAsking(false);
+      setIsProcessing(false);
     }
-  }, [followUpQuestion, sessionId, onResult]);
+  }, [inputText, sessionId, conversationLog, isProcessing, addToLog, onResult]);
 
   /**
-   * Start a new query session
+   * Start a new conversation
    */
-  const handleNewQuery = useCallback(() => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
-    }
-    
-    setQuery('');
+  const handleNewConversation = useCallback(() => {
     setSessionId(null);
-    setQueryPlan(null);
-    setExecutionStatus(null);
-    setResults(null);
-    setSummary(null);
-    setChatHistory([]);
-    setFollowUpQuestion('');
-    setBackfillProgress(null);
-    setIsExecuting(false);
-  }, [pollingInterval]);
+    setConversationLog([]);
+    setInputText('');
+    setIsProcessing(false);
+  }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full" style={{ height: 'calc(100vh - 200px)' }}>
       {/* Header */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          🤖 Natural Language Query
-        </h2>
-        <p className="text-gray-600">
-          Ask questions in plain English. The AI will analyze your query, create indexes if needed, and provide interactive results exploration.
-        </p>
-      </div>
-
-      {/* Query Input Section */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Your Question
-        </label>
-        <textarea
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Example: Find all blog posts about AI from last month"
-          className="w-full h-32 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-          disabled={isAnalyzing || isExecuting}
-        />
-        
-        <div className="mt-4 flex gap-3">
+      <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">
+            🤖 AI Data Assistant
+          </h2>
+          <p className="text-sm text-gray-600">
+            Ask questions in plain English - I'll find your data
+          </p>
+        </div>
+        {conversationLog.length > 0 && (
           <button
-            onClick={handleAnalyze}
-            disabled={isAnalyzing || isExecuting || !query.trim()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            onClick={handleNewConversation}
+            disabled={isProcessing}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm"
           >
-            {isAnalyzing ? 'Analyzing...' : 'Analyze Query'}
+            New Conversation
           </button>
-          
-          {queryPlan && !isExecuting && (
-            <button
-              onClick={handleNewQuery}
-              className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              New Query
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Query Plan Section */}
-      {queryPlan && (
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">📋 Query Plan</h3>
-          
-          <div className="space-y-4">
-            {/* Reasoning */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Analysis
-              </label>
-              <p className="text-gray-600 bg-gray-50 p-3 rounded">
-                {queryPlan.reasoning}
-              </p>
-            </div>
-
-            {/* Target Schema */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Target Schema
-              </label>
-              <p className="text-gray-900 font-mono bg-gray-50 p-3 rounded">
-                {queryPlan.query.schema_name}
-              </p>
-            </div>
-
-            {/* Fields */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Fields to Retrieve
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {queryPlan.query.fields.map((field, idx) => (
-                  <span
-                    key={idx}
-                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-mono"
-                  >
-                    {field}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Index Schema (if needed) */}
-            {queryPlan.index_schema && (
-              <div className="border-l-4 border-yellow-400 bg-yellow-50 p-4 rounded">
-                <h4 className="text-sm font-semibold text-yellow-800 mb-2">
-                  ⚠️ Index Creation Required
-                </h4>
-                <p className="text-sm text-yellow-700 mb-2">
-                  An index schema will be created to optimize this query:
-                </p>
-                <p className="font-mono text-sm text-yellow-900">
-                  {queryPlan.index_schema.name}
-                </p>
-              </div>
-            )}
-
-            {/* Execute Button */}
-            <button
-              onClick={handleExecute}
-              disabled={isExecuting}
-              className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-semibold"
-            >
-              {isExecuting ? 'Executing...' : '▶️ Execute Query'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Backfill Progress */}
-      {isExecuting && backfillProgress !== null && (
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            ⏳ Building Index...
-          </h3>
-          <div className="space-y-2">
-            <div className="w-full bg-gray-200 rounded-full h-4">
-              <div
-                className="bg-blue-600 h-4 rounded-full transition-all duration-500"
-                style={{ width: `${(backfillProgress * 100).toFixed(1)}%` }}
-              />
-            </div>
-            <p className="text-sm text-gray-600 text-center">
-              {(backfillProgress * 100).toFixed(1)}% complete
+      {/* Conversation Log */}
+      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-3">
+        {conversationLog.length === 0 ? (
+          <div className="text-center text-gray-500 mt-20">
+            <div className="text-6xl mb-4">💬</div>
+            <p className="text-lg mb-2">Start a conversation</p>
+            <p className="text-sm">
+              Try: "Find all blog posts from last month" or "Show me products over $100"
             </p>
           </div>
-        </div>
-      )}
-
-      {/* Results Summary */}
-      {summary && (
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 Summary</h3>
-          <div className="prose max-w-none">
-            <p className="text-gray-700 whitespace-pre-wrap">{summary}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Follow-up Questions */}
-      {results && sessionId && (
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            💬 Ask Follow-up Questions
-          </h3>
-          
-          {/* Chat History */}
-          {chatHistory.length > 0 && (
-            <div className="mb-4 space-y-3 max-h-96 overflow-y-auto">
-              {chatHistory.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-lg ${
-                    msg.role === 'user'
-                      ? 'bg-blue-50 ml-8'
-                      : 'bg-gray-50 mr-8'
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-gray-700 mb-1">
-                    {msg.role === 'user' ? '👤 You' : '🤖 AI'}
-                  </p>
-                  <p className="text-gray-900 whitespace-pre-wrap">{msg.content}</p>
+        ) : (
+          conversationLog.map((entry, idx) => (
+            <div key={idx}>
+              {entry.type === 'user' && (
+                <div className="flex justify-end">
+                  <div className="bg-blue-600 text-white rounded-lg px-4 py-2 max-w-3xl">
+                    <p className="text-sm font-semibold mb-1">You</p>
+                    <p className="whitespace-pre-wrap">{entry.content}</p>
+                  </div>
                 </div>
-              ))}
+              )}
+              
+              {entry.type === 'system' && (
+                <div className="flex justify-start">
+                  <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 max-w-3xl">
+                    <p className="text-sm font-semibold text-gray-700 mb-1">AI Assistant</p>
+                    <p className="text-gray-900 whitespace-pre-wrap">{entry.content}</p>
+                  </div>
+                </div>
+              )}
+              
+              {entry.type === 'results' && entry.data && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-full">
+                  <p className="text-sm font-semibold text-green-800 mb-2">📊 Results ({entry.data.length})</p>
+                  <div className="bg-white rounded p-3 mb-2">
+                    <p className="text-gray-900 whitespace-pre-wrap mb-3">{entry.content}</p>
+                  </div>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-sm text-green-700 hover:text-green-900">
+                      View raw data ({entry.data.length} records)
+                    </summary>
+                    <div className="mt-2 max-h-64 overflow-auto">
+                      <pre className="text-xs bg-gray-900 text-green-400 p-3 rounded">
+                        {JSON.stringify(entry.data, null, 2)}
+                      </pre>
+                    </div>
+                  </details>
+                </div>
+              )}
             </div>
-          )}
+          ))
+        )}
+        <div ref={conversationEndRef} />
+      </div>
 
-          {/* Question Input */}
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={followUpQuestion}
-              onChange={(e) => setFollowUpQuestion(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && !isAsking && handleAskFollowUp()}
-              placeholder="Ask a question about these results..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isAsking}
-            />
-            <button
-              onClick={handleAskFollowUp}
-              disabled={isAsking || !followUpQuestion.trim()}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {isAsking ? '...' : 'Ask'}
-            </button>
-          </div>
+      {/* Input Box */}
+      <form onSubmit={handleSubmit} className="bg-white border-t border-gray-200 p-4">
+        <div className="flex gap-2 max-w-4xl mx-auto">
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={
+              conversationLog.some(log => log.type === 'results')
+                ? "Ask a follow-up question or start a new query..."
+                : "Ask me anything about your data..."
+            }
+            disabled={isProcessing}
+            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+            autoFocus
+          />
+          <button
+            type="submit"
+            disabled={!inputText.trim() || isProcessing}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-semibold"
+          >
+            {isProcessing ? '⏳ Processing...' : 'Send'}
+          </button>
         </div>
-      )}
+        {isProcessing && (
+          <p className="text-center text-sm text-gray-500 mt-2">
+            AI is analyzing and searching...
+          </p>
+        )}
+      </form>
     </div>
   );
 }

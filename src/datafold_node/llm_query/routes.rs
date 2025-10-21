@@ -396,12 +396,12 @@ pub async fn execute_query_plan(
 )]
 pub async fn chat(
     request: web::Json<ChatRequest>,
+    app_state: web::Data<AppState>,
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
     let session_id = &request.session_id;
     let question = &request.question;
 
-    // Get session context
     let context = match llm_state.session_manager.get_session(session_id) {
         Ok(Some(ctx)) => ctx,
         Ok(None) => {
@@ -413,7 +413,6 @@ pub async fn chat(
         }
     };
 
-    // Check if we have results
     let results = match context.query_results {
         Some(ref r) => r,
         None => {
@@ -422,7 +421,6 @@ pub async fn chat(
         }
     };
 
-    // Check if LLM service is available
     let service = match &llm_state.service {
         Some(svc) => svc,
         None => {
@@ -434,11 +432,139 @@ pub async fn chat(
         }
     };
 
-    // Get answer from LLM
+    let schemas = {
+        let node = app_state.node.lock().await;
+        let db_guard = match node.get_fold_db() {
+            Ok(guard) => guard,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to access database: {}", e)}));
+            }
+        };
+        match db_guard.schema_manager.get_schemas_with_states() {
+            Ok(schemas) => schemas,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to get schemas: {}", e)}));
+            }
+        }
+    };
+
+    let analysis = match service
+        .analyze_followup_question(
+            &context.original_query,
+            results,
+            question,
+            &schemas,
+        )
+        .await
+    {
+        Ok(a) => a,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to analyze followup question: {}", e)}));
+        }
+    };
+
+    let mut combined_results = results.clone();
+    let mut executed_query = false;
+    let mut retry_info: Option<String> = None;
+
+    if analysis.needs_query {
+        if let Some(ref initial_query) = analysis.query {
+            executed_query = true;
+            
+            let mut current_query = initial_query.clone();
+            let mut attempts: Vec<String> = Vec::new();
+            const MAX_FOLLOWUP_ATTEMPTS: usize = 3;
+
+            for attempt in 0..MAX_FOLLOWUP_ATTEMPTS {
+                log::info!(
+                    "Follow-up question executing query (attempt {}/{}) - Schema: {}, Fields: {:?}",
+                    attempt + 1,
+                    MAX_FOLLOWUP_ATTEMPTS,
+                    current_query.schema_name,
+                    current_query.fields
+                );
+
+                let node_arc = Arc::clone(&app_state.node);
+                let processor = OperationProcessor::new(node_arc);
+                match processor.execute_query_map(current_query.clone()).await {
+                    Ok(result_map) => {
+                        let records_map = records_from_field_map(&result_map);
+                        let new_results: Vec<Value> = records_map
+                            .into_iter()
+                            .map(|(key, record)| json!({"key": key, "fields": record.fields}))
+                            .collect();
+
+                        if !new_results.is_empty() {
+                            if attempt > 0 {
+                                log::info!(
+                                    "Follow-up query found {} results after {} attempts",
+                                    new_results.len(),
+                                    attempt + 1
+                                );
+                                retry_info = Some(format!(
+                                    "Found results using alternative strategy after {} attempts",
+                                    attempt + 1
+                                ));
+                            }
+                            combined_results = new_results;
+                            break;
+                        }
+
+                        log::info!("Follow-up query returned empty results, attempt {}/{}", attempt + 1, MAX_FOLLOWUP_ATTEMPTS);
+                        
+                        attempts.push(format!(
+                            "Schema: {}, Filter: {:?}",
+                            current_query.schema_name,
+                            current_query.filter
+                        ));
+
+                        if attempt < MAX_FOLLOWUP_ATTEMPTS - 1 {
+                            match service.suggest_alternative_query(
+                                question,
+                                &current_query,
+                                &schemas,
+                                &attempts,
+                            ).await {
+                                Ok(Some(alternative_plan)) => {
+                                    log::info!("Follow-up trying alternative: {}", alternative_plan.reasoning);
+                                    current_query = alternative_plan.query;
+                                }
+                                Ok(None) => {
+                                    log::info!("No more alternative strategies for follow-up query");
+                                    retry_info = Some(format!(
+                                        "No results found after trying {} approaches",
+                                        attempt + 1
+                                    ));
+                                    break;
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to generate alternative for follow-up: {}", e);
+                                    break;
+                                }
+                            }
+                        } else {
+                            retry_info = Some(format!(
+                                "No results found after trying {} approaches",
+                                MAX_FOLLOWUP_ATTEMPTS
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to execute followup query: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     let answer = match service
         .answer_question(
             &context.original_query,
-            results,
+            &combined_results,
             &context.conversation_history,
             question,
         )
@@ -451,7 +577,6 @@ pub async fn chat(
         }
     };
 
-    // Add messages to conversation history
     if let Err(e) = llm_state
         .session_manager
         .add_message(session_id, "user".to_string(), question.clone())
@@ -460,16 +585,26 @@ pub async fn chat(
             .json(json!({"error": format!("Failed to update session: {}", e)}));
     }
 
+    let mut assistant_message = if executed_query {
+        format!("[Executed new query: {}]\n\n{}", analysis.reasoning, answer)
+    } else {
+        answer.clone()
+    };
+
+    if let Some(info) = retry_info {
+        assistant_message.push_str(&format!("\n\n[Note: {}]", info));
+    }
+
     if let Err(e) = llm_state
         .session_manager
-        .add_message(session_id, "assistant".to_string(), answer.clone())
+        .add_message(session_id, "assistant".to_string(), assistant_message.clone())
     {
         return HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to update session: {}", e)}));
     }
 
     HttpResponse::Ok().json(ChatResponse {
-        answer,
+        answer: assistant_message,
         context_used: true,
     })
 }
@@ -521,10 +656,318 @@ pub async fn get_backfill_status(
                 progress,
                 total_records: info.mutations_expected,
                 processed_records: info.mutations_completed,
-                estimated_completion: None, // TODO: Calculate based on rate
+                estimated_completion: None,
             })
         }
         None => HttpResponse::NotFound().json(json!({"error": "Backfill not found"})),
     }
+}
+
+/// Single-step query execution: analyze, create index, wait for backfill, execute, and summarize
+#[utoipa::path(
+    post,
+    path = "/api/llm-query/run",
+    tag = "llm-query",
+    request_body = RunQueryRequest,
+    responses(
+        (status = 200, description = "Query execution complete", body = RunQueryResponse),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn run_query(
+    request: web::Json<RunQueryRequest>,
+    app_state: web::Data<AppState>,
+    llm_state: web::Data<LlmQueryState>,
+) -> impl Responder {
+    let service = match &llm_state.service {
+        Some(svc) => svc,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(json!({
+                    "error": "LLM Query service not configured",
+                    "message": "Please configure AI_PROVIDER and FOLD_OPENROUTER_API_KEY or OLLAMA_BASE_URL environment variables to use this feature"
+                }));
+        }
+    };
+
+    let schemas = {
+        let node = app_state.node.lock().await;
+        let db_guard = match node.get_fold_db() {
+            Ok(guard) => guard,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to access database: {}", e)}));
+            }
+        };
+        match db_guard.schema_manager.get_schemas_with_states() {
+            Ok(schemas) => schemas,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to get schemas: {}", e)}));
+            }
+        }
+    };
+
+    let session_id = match llm_state.session_manager.create_or_get_session(
+        request.session_id.clone(),
+        request.query.clone(),
+    ) {
+        Ok(id) => id,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to create session: {}", e)}));
+        }
+    };
+
+    let query_plan = match service.analyze_query(&request.query, &schemas).await {
+        Ok(plan) => plan,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to analyze query: {}", e)}));
+        }
+    };
+
+    if let Err(e) = llm_state.session_manager.add_message(
+        &session_id,
+        "assistant".to_string(),
+        format!("Query plan: {}", query_plan.reasoning),
+    ) {
+        return HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to update session: {}", e)}));
+    }
+
+    let mut backfill_hash: Option<String> = None;
+    if let Some(ref index_schema) = query_plan.index_schema {
+        let schema_name = index_schema.name.clone();
+        {
+            let node = app_state.node.lock().await;
+            let db_guard = match node.get_fold_db() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    return HttpResponse::InternalServerError()
+                        .json(json!({"error": format!("Failed to access database: {}", e)}));
+                }
+            };
+
+            let schema = match db_guard
+                .schema_manager
+                .interpret_declarative_schema(index_schema.clone())
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    return HttpResponse::InternalServerError()
+                        .json(json!({"error": format!("Failed to interpret schema: {}", e)}));
+                }
+            };
+
+            if let Err(e) = db_guard.schema_manager.load_schema_internal(schema) {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to load schema: {}", e)}));
+            }
+
+            let is_transform = match db_guard.transform_manager.transform_exists(&schema_name) {
+                Ok(exists) => exists,
+                Err(e) => {
+                    log::warn!("Failed to check if {} is a transform: {}", schema_name, e);
+                    false
+                }
+            };
+
+            if is_transform {
+                backfill_hash = generate_backfill_hash_for_transform(&db_guard.transform_manager, &schema_name);
+            }
+
+            let current_state = match db_guard.schema_manager.get_schema_states() {
+                Ok(states) => states.get(&schema_name).copied().unwrap_or_default(),
+                Err(e) => {
+                    return HttpResponse::InternalServerError()
+                        .json(json!({"error": format!("Failed to get schema states: {}", e)}));
+                }
+            };
+
+            if current_state != SchemaState::Approved {
+                if let Err(e) = db_guard.schema_manager.set_schema_state_with_backfill(
+                    &schema_name,
+                    SchemaState::Approved,
+                    backfill_hash.clone(),
+                ) {
+                    return HttpResponse::InternalServerError()
+                        .json(json!({"error": format!("Failed to approve schema: {}", e)}));
+                }
+            }
+        }
+
+        if let Err(e) = llm_state
+            .session_manager
+            .set_schema_created(&session_id, schema_name)
+        {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to update session: {}", e)}));
+        }
+
+        if let Some(ref hash) = backfill_hash {
+            loop {
+                let backfill_info = {
+                    let node = app_state.node.lock().await;
+                    let db_guard = match node.get_fold_db() {
+                        Ok(guard) => guard,
+                        Err(e) => {
+                            return HttpResponse::InternalServerError().json(
+                                json!({"error": format!("Failed to access database: {}", e)}),
+                            );
+                        }
+                    };
+                    db_guard.get_backfill_tracker().get_backfill_by_hash(hash)
+                };
+
+                if let Some(info) = backfill_info {
+                    if info.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Completed {
+                        break;
+                    }
+                    if info.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Failed {
+                        return HttpResponse::InternalServerError()
+                            .json(json!({"error": "Backfill failed"}));
+                    }
+                } else {
+                    break;
+                }
+                
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            }
+        }
+    }
+
+    let mut current_query_plan = query_plan.clone();
+    let mut results: Vec<Value> = Vec::new();
+    let mut attempts: Vec<String> = Vec::new();
+    const MAX_ATTEMPTS: usize = 5;
+
+    for attempt in 0..MAX_ATTEMPTS {
+        log::info!(
+            "Executing AI query (attempt {}/{}) - Schema: {}, Fields: {:?}, Filter: {:?}",
+            attempt + 1,
+            MAX_ATTEMPTS,
+            current_query_plan.query.schema_name,
+            current_query_plan.query.fields,
+            current_query_plan.query.filter
+        );
+
+        let node_arc = Arc::clone(&app_state.node);
+        let processor = OperationProcessor::new(node_arc);
+        match processor.execute_query_map(current_query_plan.query.clone()).await {
+            Ok(result_map) => {
+                let records_map = records_from_field_map(&result_map);
+                results = records_map
+                    .into_iter()
+                    .map(|(key, record)| json!({"key": key, "fields": record.fields}))
+                    .collect();
+
+                if !results.is_empty() {
+                    if attempt > 0 {
+                        log::info!(
+                            "Found {} results after {} attempts with alternative strategy: {}",
+                            results.len(),
+                            attempt + 1,
+                            current_query_plan.reasoning
+                        );
+                    }
+                    break;
+                }
+
+                log::info!("Query returned empty results, attempt {}/{}", attempt + 1, MAX_ATTEMPTS);
+                
+                attempts.push(format!(
+                    "Schema: {}, Filter: {:?} - {}",
+                    current_query_plan.query.schema_name,
+                    current_query_plan.query.filter,
+                    current_query_plan.reasoning
+                ));
+
+                if attempt < MAX_ATTEMPTS - 1 {
+                    match service.suggest_alternative_query(
+                        &request.query,
+                        &current_query_plan.query,
+                        &schemas,
+                        &attempts,
+                    ).await {
+                        Ok(Some(alternative_plan)) => {
+                            log::info!("Trying alternative: {}", alternative_plan.reasoning);
+                            current_query_plan = alternative_plan;
+                        }
+                        Ok(None) => {
+                            log::info!("No more alternative strategies available");
+                            break;
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to generate alternative query: {}", e);
+                            break;
+                        }
+                    }
+                } else {
+                    log::info!("Reached maximum attempts without finding results");
+                }
+            }
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to execute query: {}", e)}));
+            }
+        }
+    }
+
+    if let Err(e) = llm_state.session_manager.add_results(&session_id, results.clone()) {
+        return HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to store results: {}", e)}));
+    }
+
+    let original_query = match llm_state.session_manager.get_session(&session_id) {
+        Ok(Some(ctx)) => ctx.original_query,
+        Ok(None) => {
+            return HttpResponse::NotFound()
+                .json(json!({"error": "Session not found"}));
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to get session: {}", e)}));
+        }
+    };
+
+    let mut summary_text = match service.summarize_results(&original_query, &results).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("Failed to summarize results: {}", e);
+            String::new()
+        }
+    };
+
+    if !attempts.is_empty() {
+        let retry_info = if results.is_empty() {
+            format!(
+                "\n\n[Note: No results found after trying {} different approaches: {}]",
+                attempts.len() + 1,
+                attempts.join("; ")
+            )
+        } else {
+            format!(
+                "\n\n[Note: Found results using alternative strategy after {} attempts. Final approach: {}]",
+                attempts.len() + 1,
+                current_query_plan.reasoning
+            )
+        };
+        summary_text.push_str(&retry_info);
+    }
+
+    let final_summary = if summary_text.is_empty() {
+        None
+    } else {
+        Some(summary_text)
+    };
+
+    HttpResponse::Ok().json(RunQueryResponse {
+        session_id,
+        query_plan: current_query_plan,
+        results,
+        summary: final_summary,
+    })
 }
 
