@@ -1,6 +1,6 @@
 //! LLM service for query analysis and summarization.
 
-use super::types::{QueryPlan, Message};
+use super::types::{QueryPlan, Message, FollowupAnalysis};
 use crate::ingestion::{
     config::{AIProvider, IngestionConfig},
     ollama_service::OllamaService,
@@ -84,6 +84,240 @@ impl LlmQueryService {
     ) -> Result<String, String> {
         let prompt = self.build_chat_prompt(original_query, results, conversation_history, question);
         self.call_llm(&prompt).await
+    }
+
+    /// Analyze if a follow-up question needs a new query or can be answered from existing results
+    pub async fn analyze_followup_question(
+        &self,
+        original_query: &str,
+        results: &[Value],
+        question: &str,
+        schemas: &[crate::schema::SchemaWithState],
+    ) -> Result<FollowupAnalysis, String> {
+        let prompt = self.build_followup_analysis_prompt(original_query, results, question, schemas);
+        let response = self.call_llm(&prompt).await?;
+        self.parse_followup_analysis(&response)
+    }
+
+    /// Build prompt to analyze if a followup needs a new query
+    fn build_followup_analysis_prompt(
+        &self,
+        original_query: &str,
+        results: &[Value],
+        question: &str,
+        schemas: &[crate::schema::SchemaWithState],
+    ) -> String {
+        let results_preview = if results.len() > 100 {
+            &results[..100]
+        } else {
+            results
+        };
+
+        let results_str = serde_json::to_string_pretty(results_preview)
+            .unwrap_or_else(|_| "Failed to serialize results".to_string());
+
+        let mut prompt = String::from(
+            "You are analyzing whether a follow-up question can be answered from existing query results or needs a new query.\n\n"
+        );
+
+        prompt.push_str(&format!("Original Query: {}\n", original_query));
+        prompt.push_str(&format!("Existing Results ({} total): {}\n\n", results.len(), results_str));
+        prompt.push_str(&format!("Follow-up Question: {}\n\n", question));
+
+        prompt.push_str("Available Schemas:\n");
+        for schema in schemas {
+            prompt.push_str(&format!(
+                "- {} (Type: {:?})\n",
+                schema.schema.name, schema.schema.schema_type
+            ));
+            prompt.push_str("  Fields: ");
+            let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
+            prompt.push_str(&field_names.join(", "));
+            prompt.push('\n');
+        }
+
+        prompt.push_str("\nDetermine if:\n");
+        prompt.push_str("1. The question can be FULLY answered from the existing results (needs_query: false)\n");
+        prompt.push_str("2. The question needs NEW data that requires a query (needs_query: true)\n\n");
+
+        prompt.push_str("If a new query is needed, provide:\n");
+        prompt.push_str("- query: The Query object to execute (same format as before)\n");
+        prompt.push_str("- reasoning: Why a new query is needed\n\n");
+
+        prompt.push_str(
+            "FILTER TYPES AVAILABLE:\n\
+            - HashRangeKey: {\"HashRangeKey\": {\"hash\": \"value\", \"range\": \"value\"}} - exact match\n\
+            - HashKey: {\"HashKey\": \"value\"} - all records with this hash\n\
+            - RangePrefix: {\"RangePrefix\": \"prefix\"} - all records with range starting with prefix\n\
+            - HashRangePrefix: {\"HashRangePrefix\": {\"hash\": \"value\", \"prefix\": \"prefix\"}}\n\
+            - Value: {\"Value\": \"search_term\"} - search across all values\n\
+            - SampleN: {\"SampleN\": 100} - return N RANDOM records (NOT sorted)\n\
+            - RangePattern: {\"RangePattern\": \"*pattern*\"} - glob pattern matching\n\
+            - HashPattern: {\"HashPattern\": \"*pattern*\"} - hash glob pattern\n\
+            - RangeRange: {\"RangeRange\": {\"start\": \"2025-01-01\", \"end\": \"2025-12-31\"}} - range of values\n\
+            - null - no filter (return all records)\n\n"
+        );
+
+        prompt.push_str(
+            "Respond in JSON format:\n\
+            {\n\
+              \"needs_query\": true/false,\n\
+              \"query\": null or {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ...},\n\
+              \"reasoning\": \"explanation\"\n\
+            }\n\n\
+            IMPORTANT: Return ONLY the JSON object, no additional text."
+        );
+
+        prompt
+    }
+
+    /// Parse the followup analysis response
+    fn parse_followup_analysis(&self, response: &str) -> Result<FollowupAnalysis, String> {
+        let json_str = if let Some(start) = response.find('{') {
+            if let Some(end) = response.rfind('}') {
+                &response[start..=end]
+            } else {
+                response
+            }
+        } else {
+            response
+        };
+
+        #[derive(serde::Deserialize)]
+        struct LlmFollowupResponse {
+            needs_query: bool,
+            query: Option<Query>,
+            reasoning: String,
+        }
+
+        let parsed: LlmFollowupResponse = serde_json::from_str(json_str)
+            .map_err(|e| format!("Failed to parse followup analysis: {}. Response: {}", e, json_str))?;
+
+        Ok(FollowupAnalysis {
+            needs_query: parsed.needs_query,
+            query: parsed.query,
+            reasoning: parsed.reasoning,
+        })
+    }
+
+    /// Suggest alternative query strategies when results are empty
+    pub async fn suggest_alternative_query(
+        &self,
+        original_user_query: &str,
+        failed_query: &Query,
+        schemas: &[crate::schema::SchemaWithState],
+        previous_attempts: &[String],
+    ) -> Result<Option<QueryPlan>, String> {
+        let prompt = self.build_alternative_query_prompt(
+            original_user_query,
+            failed_query,
+            schemas,
+            previous_attempts,
+        );
+        let response = self.call_llm(&prompt).await?;
+        self.parse_alternative_query(&response)
+    }
+
+    /// Build prompt to suggest alternative query strategies
+    fn build_alternative_query_prompt(
+        &self,
+        original_user_query: &str,
+        failed_query: &Query,
+        schemas: &[crate::schema::SchemaWithState],
+        previous_attempts: &[String],
+    ) -> String {
+        let mut prompt = String::from(
+            "A query returned no results. Suggest an alternative approach to find the data the user wants.\n\n"
+        );
+
+        prompt.push_str(&format!("User's Original Question: {}\n\n", original_user_query));
+        
+        prompt.push_str("Failed Query:\n");
+        prompt.push_str(&format!("  Schema: {}\n", failed_query.schema_name));
+        prompt.push_str(&format!("  Fields: {:?}\n", failed_query.fields));
+        prompt.push_str(&format!("  Filter: {:?}\n\n", failed_query.filter));
+
+        if !previous_attempts.is_empty() {
+            prompt.push_str("Previous Failed Attempts:\n");
+            for (i, attempt) in previous_attempts.iter().enumerate() {
+                prompt.push_str(&format!("{}. {}\n", i + 1, attempt));
+            }
+            prompt.push('\n');
+        }
+
+        prompt.push_str("Available Schemas:\n");
+        for schema in schemas {
+            prompt.push_str(&format!(
+                "- {} (Type: {:?}, State: {:?})\n",
+                schema.schema.name, schema.schema.schema_type, schema.state
+            ));
+            prompt.push_str("  Fields: ");
+            let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
+            prompt.push_str(&field_names.join(", "));
+            prompt.push('\n');
+        }
+
+        prompt.push_str("\nSuggest ONE alternative approach:\n");
+        prompt.push_str("1. Try a different schema that might have the data\n");
+        prompt.push_str("2. Broaden the filter (e.g., remove date constraints, use pattern matching)\n");
+        prompt.push_str("3. Try a different filter type (e.g., null filter for all records)\n");
+        prompt.push_str("4. Search in related/index schemas\n\n");
+
+        prompt.push_str("If you believe there are NO reasonable alternatives left, respond with:\n");
+        prompt.push_str("{\"has_alternative\": false, \"query\": null, \"reasoning\": \"explanation\"}\n\n");
+
+        prompt.push_str("Otherwise, respond with:\n");
+        prompt.push_str("{\n");
+        prompt.push_str("  \"has_alternative\": true,\n");
+        prompt.push_str("  \"query\": {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ...},\n");
+        prompt.push_str("  \"reasoning\": \"why this approach might work\"\n");
+        prompt.push_str("}\n\n");
+
+        prompt.push_str(
+            "FILTER TYPES:\n\
+            - HashRangeKey, HashKey, RangePrefix, HashRangePrefix, Value, SampleN, \n\
+            - RangePattern, HashPattern, RangeRange, null (all records)\n\n\
+            IMPORTANT: Return ONLY the JSON object."
+        );
+
+        prompt
+    }
+
+    /// Parse alternative query response
+    fn parse_alternative_query(&self, response: &str) -> Result<Option<QueryPlan>, String> {
+        let json_str = if let Some(start) = response.find('{') {
+            if let Some(end) = response.rfind('}') {
+                &response[start..=end]
+            } else {
+                response
+            }
+        } else {
+            response
+        };
+
+        #[derive(serde::Deserialize)]
+        struct LlmAlternativeResponse {
+            has_alternative: bool,
+            query: Option<Query>,
+            reasoning: String,
+        }
+
+        let parsed: LlmAlternativeResponse = serde_json::from_str(json_str)
+            .map_err(|e| format!("Failed to parse alternative query: {}. Response: {}", e, json_str))?;
+
+        if parsed.has_alternative {
+            if let Some(query) = parsed.query {
+                Ok(Some(QueryPlan {
+                    query,
+                    index_schema: None,
+                    reasoning: parsed.reasoning,
+                }))
+            } else {
+                Err("has_alternative is true but no query provided".to_string())
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     /// Build the analysis prompt

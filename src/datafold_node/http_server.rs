@@ -296,6 +296,10 @@ impl DataFoldHttpServer {
                         )
                         // LLM Query endpoints
                         .route(
+                            "/llm-query/run",
+                            web::post().to(llm_query::run_query),
+                        )
+                        .route(
                             "/llm-query/analyze",
                             web::post().to(llm_query::analyze_query),
                         )

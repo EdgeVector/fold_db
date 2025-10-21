@@ -34,7 +34,12 @@ use utoipa::OpenApi;
         crate::ingestion::routes::health_check,
         crate::ingestion::routes::validate_json,
         crate::ingestion::routes::get_ingestion_config,
-        crate::ingestion::routes::save_ingestion_config
+        crate::ingestion::routes::save_ingestion_config,
+        crate::datafold_node::llm_query::routes::run_query,
+        crate::datafold_node::llm_query::routes::analyze_query,
+        crate::datafold_node::llm_query::routes::execute_query_plan,
+        crate::datafold_node::llm_query::routes::chat,
+        crate::datafold_node::llm_query::routes::get_backfill_status
     ),
     components(
         schemas(
@@ -65,7 +70,18 @@ use utoipa::OpenApi;
             crate::datafold_node::log_routes::LogLevelUpdate,
             crate::datafold_node::log_routes::LogConfigResponse,
             crate::datafold_node::system_routes::ResetDatabaseRequest,
-            crate::datafold_node::system_routes::ResetDatabaseResponse
+            crate::datafold_node::system_routes::ResetDatabaseResponse,
+            crate::datafold_node::llm_query::types::RunQueryRequest,
+            crate::datafold_node::llm_query::types::RunQueryResponse,
+            crate::datafold_node::llm_query::types::AnalyzeQueryRequest,
+            crate::datafold_node::llm_query::types::AnalyzeQueryResponse,
+            crate::datafold_node::llm_query::types::ExecuteQueryPlanRequest,
+            crate::datafold_node::llm_query::types::ExecuteQueryPlanResponse,
+            crate::datafold_node::llm_query::types::QueryPlan,
+            crate::datafold_node::llm_query::types::QueryExecutionStatus,
+            crate::datafold_node::llm_query::types::ChatRequest,
+            crate::datafold_node::llm_query::types::ChatResponse,
+            crate::datafold_node::llm_query::types::BackfillStatusResponse
         )
     ),
     tags(
@@ -74,7 +90,8 @@ use utoipa::OpenApi;
         (name = "security", description = "Security and key management endpoints"),
         (name = "system", description = "System management endpoints"),
         (name = "logs", description = "Logging endpoints"),
-        (name = "ingestion", description = "Ingestion endpoints")
+        (name = "ingestion", description = "Ingestion endpoints"),
+        (name = "llm-query", description = "LLM-powered natural language query endpoints")
     )
 )]
 struct ApiDoc;

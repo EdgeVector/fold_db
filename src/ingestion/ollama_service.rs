@@ -54,7 +54,7 @@ Example Range schema (for multiple records):
   "field_topologies": {
     "id": {"root": {"type": "Primitive", "value": "String"}},
     "name": {"root": {"type": "Primitive", "value": "String"}},
-    "age": {"root": {"type": "Primitive", "value": "Int"}}
+    "age": {"root": {"type": "Primitive", "value": "Number"}}
   }
 }
 
@@ -64,8 +64,8 @@ Example Single schema (for one global value):
   "descriptive_name": "Global Counter Statistics",
   "fields": ["count", "total"],
   "field_topologies": {
-    "count": {"root": {"type": "Primitive", "value": "Int"}},
-    "total": {"root": {"type": "Primitive", "value": "Int"}}
+    "count": {"root": {"type": "Primitive", "value": "Number"}},
+    "total": {"root": {"type": "Primitive", "value": "Number"}}
   }
 }
 "#;

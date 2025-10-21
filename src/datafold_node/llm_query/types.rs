@@ -84,6 +84,30 @@ pub struct Message {
     pub timestamp: SystemTime,
 }
 
+/// Analysis of whether a followup question needs a new query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowupAnalysis {
+    pub needs_query: bool,
+    pub query: Option<Query>,
+    pub reasoning: String,
+}
+
+/// Request to run a query (single-step analyze and execute)
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct RunQueryRequest {
+    pub query: String,
+    pub session_id: Option<String>,
+}
+
+/// Response from run query
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct RunQueryResponse {
+    pub session_id: String,
+    pub query_plan: QueryPlan,
+    pub results: Vec<serde_json::Value>,
+    pub summary: Option<String>,
+}
+
 /// Session context stored for each user session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionContext {
