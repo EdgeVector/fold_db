@@ -44,6 +44,7 @@ export const API_ENDPOINTS_DERIVED = {
   GET_TRANSFORM_QUEUE: '/transforms/queue',
   ADD_TO_TRANSFORM_QUEUE: (id: PathParams<'/api/transforms/queue/{id}', 'post'>['id']) => `/transforms/queue/${id}`,
   GET_TRANSFORM_STATISTICS: '/transforms/statistics',
+  NATIVE_INDEX_SEARCH: '/native-index/search',
 } as const;
 
 // Base URL prefixes derived from OpenAPI paths
@@ -59,6 +60,7 @@ export const API_BASE_URLS = {
   SECURITY: '/api/security',
   SYSTEM: '/api/system',
   TRANSFORMS: '/api/transforms',
+  NATIVE_INDEX: '/api/native-index',
 } as const;
 
 // Export generated endpoints directly (no hardcoded aliases)

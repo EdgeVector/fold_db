@@ -264,6 +264,11 @@ impl DataFoldHttpServer {
                             "/transforms/statistics",
                             web::get().to(query_routes::get_transform_statistics),
                         )
+                        // Native index search endpoint
+                        .route(
+                            "/native-index/search",
+                            web::get().to(query_routes::native_index_search),
+                        )
                         // Log endpoints
                         .route("/logs", web::get().to(log_routes::list_logs))
                         .route("/logs/stream", web::get().to(log_routes::stream_logs))

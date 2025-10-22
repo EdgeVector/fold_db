@@ -19,7 +19,8 @@ export const DEFAULT_TABS = [
   // Developer/Advanced features
   { id: 'schemas', label: 'Schemas', icon: '📊', group: 'advanced' },
   { id: 'query', label: 'Query', icon: '🔍', group: 'advanced' },
-  { id: 'mutation', label: 'Mutation', icon: '✏️', group: 'advanced' }
+  { id: 'mutation', label: 'Mutation', icon: '✏️', group: 'advanced' },
+  { id: 'native-index', label: 'Native Index Query', icon: '🧭', group: 'advanced' }
 ];
 
 // Button Text Constants

@@ -479,6 +479,29 @@ export const defaultHandlers = [
     );
   }),
 
+  // Native index search endpoint
+  http.get('/api/native-index/search', async (req, res, ctx) => {
+    const term = req.url.searchParams.get('term') || '';
+    await mockDelay(MOCK_API_DELAY_MS);
+    const sample = [
+      {
+        schema_name: 'user_profiles',
+        field: 'name',
+        key_value: { hash: null, range: 'user-1' },
+        value: 'John Doe',
+        metadata: { word: term.toLowerCase() }
+      },
+      {
+        schema_name: 'time_series',
+        field: 'value',
+        key_value: { hash: 'metrics', range: '2025-01-01T00:00:00Z' },
+        value: 100,
+        metadata: { word: term.toLowerCase() }
+      }
+    ];
+    return res(ctx.status(200), ctx.json(sample));
+  }),
+
   // Security endpoints
   http.get('/api/security/system-public-key', async (req, res, ctx) => {
     await mockDelay(MOCK_API_DELAY_MS);
