@@ -89,18 +89,10 @@ impl FilterApplicator for SingleField {
 
         let uuid = molecule.get_atom_uuid().clone();
         let mut matches = std::collections::HashMap::new();
-        match filter.unwrap_or(HashRangeFilter::SampleN(1)) {
-            HashRangeFilter::SampleN(n) => {
-                if n > 0 {
-                    matches.insert(crate::schema::types::key_value::KeyValue::new(None, None), uuid);
-                }
+        if let HashRangeFilter::SampleN(n) = filter.unwrap_or(HashRangeFilter::SampleN(1)) {
+            if n > 0 {
+                matches.insert(crate::schema::types::key_value::KeyValue::new(None, None), uuid);
             }
-            HashRangeFilter::Value(target) => {
-                if target == uuid {
-                    matches.insert(crate::schema::types::key_value::KeyValue::new(None, None), uuid);
-                }
-            }
-            _ => {}
         }
 
         HashRangeFilterResult::new(matches)

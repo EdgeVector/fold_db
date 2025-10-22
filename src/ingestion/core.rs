@@ -395,21 +395,10 @@ impl IngestionCore {
         let schema_name = add_schema_response.schema.name.clone();
         let returned_mutation_mappers = add_schema_response.mutation_mappers;
 
-        // Check if the schema is already approved
-        let current_state = self
-            .schema_core
-            .get_schema_states()
-            .map_err(IngestionError::SchemaSystemError)?
-            .get(&schema_name)
-            .copied()
-            .unwrap_or_default();
-
-        // Only approve if not already approved
-        if current_state != crate::schema::SchemaState::Approved {
-            self.schema_core
-                .set_schema_state(&schema_name, crate::schema::SchemaState::Approved)
-                .map_err(IngestionError::SchemaSystemError)?;
-        }
+        // Auto-approve the new schema (idempotent - only approves if not already approved)
+        self.schema_core
+            .approve(&schema_name)
+            .map_err(IngestionError::SchemaSystemError)?;
 
         log_feature!(
             LogFeature::Ingestion,

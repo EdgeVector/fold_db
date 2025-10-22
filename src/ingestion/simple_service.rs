@@ -330,6 +330,19 @@ impl SimpleIngestionService {
             // Ensure existing schema has topologies - add them if missing
             self.ensure_schema_has_topologies_with_node(schema_name, sample_data, &ai_response.mutation_mappers, node.clone()).await?;
             
+            // Auto-approve existing schema (idempotent - only approves if not already approved)
+            let schema_manager = {
+                let node_guard = node.lock().await;
+                let db_guard = node_guard
+                    .get_fold_db()
+                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+                db_guard.schema_manager.clone()
+            };
+
+            schema_manager
+                .approve(schema_name)
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            
             return Ok(schema_name.clone());
         }
 
@@ -445,20 +458,10 @@ impl SimpleIngestionService {
             .load_schema_from_json(&json_str)
             .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
 
-        // Check if the schema is already approved
-        let current_state = schema_manager
-            .get_schema_states()
-            .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?
-            .get(&schema_response.name)
-            .copied()
-            .unwrap_or_default();
-
-        // Only approve if not already approved
-        if current_state != crate::schema::SchemaState::Approved {
-            schema_manager
-                .set_schema_state(&schema_response.name, crate::schema::SchemaState::Approved)
-                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
-        }
+        // Auto-approve the new schema (idempotent - only approves if not already approved)
+        schema_manager
+            .approve(&schema_response.name)
+            .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
 
         log_feature!(
             LogFeature::Ingestion,

@@ -253,25 +253,13 @@ pub async fn execute_query_plan(
                 backfill_hash = generate_backfill_hash_for_transform(&db_guard.transform_manager, &schema_name);
             }
 
-            // Check if the schema is already approved
-            let current_state = match db_guard.schema_manager.get_schema_states() {
-                Ok(states) => states.get(&schema_name).copied().unwrap_or_default(),
-                Err(e) => {
-                    return HttpResponse::InternalServerError()
-                        .json(json!({"error": format!("Failed to get schema states: {}", e)}));
-                }
-            };
-
-            // Only approve if not already approved
-            if current_state != SchemaState::Approved {
-                if let Err(e) = db_guard.schema_manager.set_schema_state_with_backfill(
-                    &schema_name,
-                    SchemaState::Approved,
-                    backfill_hash.clone(),
-                ) {
-                    return HttpResponse::InternalServerError()
-                        .json(json!({"error": format!("Failed to approve schema: {}", e)}));
-                }
+            // Auto-approve the schema (idempotent - only approves if not already approved)
+            if let Err(e) = db_guard.schema_manager.approve_with_backfill(
+                &schema_name,
+                backfill_hash.clone(),
+            ) {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to approve schema: {}", e)}));
             }
         }
 

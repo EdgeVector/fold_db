@@ -529,29 +529,29 @@ impl HttpTestHelper {
                             if records >= min_records {
                                 println!("  ✅ Produced {} records (expected at least {})", records, min_records);
                                 results.add_pass(&format!("Verify backfill by hash {}", backfill_hash));
-                                return true;
+                                true
                             } else {
                                 results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
                                     &format!("Only {} records produced, expected at least {}", records, min_records));
-                                return false;
+                                false
                             }
                         } else {
                             results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
                                 &format!("Backfill status is '{}', expected 'Completed'", status));
-                            return false;
+                            false
                         }
                     }
                     Err(e) => {
                         results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
                             &format!("Failed to parse backfills response: {}", e));
-                        return false;
+                        false
                     }
                 }
             }
             Ok(response) => {
                 results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 
                     &format!("Expected status 200, got {}", response.status()));
-                return false;
+                false
             }
             Err(e) => {
                 results.add_fail(&format!("Verify backfill by hash {}", backfill_hash), 

@@ -99,6 +99,33 @@ impl SchemaCore {
         self.set_schema_state_with_backfill(schema_name, schema_state, None)
     }
 
+    /// Approve a schema if it's not already approved (idempotent operation)
+    /// This is a convenience method that checks the current state before approving
+    pub fn approve(&self, schema_name: &str) -> Result<(), SchemaError> {
+        self.approve_with_backfill(schema_name, None)
+    }
+
+    /// Approve a schema with optional backfill hash if it's not already approved
+    pub fn approve_with_backfill(
+        &self,
+        schema_name: &str,
+        backfill_hash: Option<String>,
+    ) -> Result<(), SchemaError> {
+        // Check current state
+        let current_state = self
+            .get_schema_states()?
+            .get(schema_name)
+            .copied()
+            .unwrap_or_default();
+
+        // Only approve if not already approved
+        if current_state != SchemaState::Approved {
+            self.set_schema_state_with_backfill(schema_name, SchemaState::Approved, backfill_hash)?;
+        }
+
+        Ok(())
+    }
+
     pub fn set_schema_state_with_backfill(
         &self,
         schema_name: &str,
