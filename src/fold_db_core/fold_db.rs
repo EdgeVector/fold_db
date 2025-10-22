@@ -10,7 +10,7 @@ use std::sync::Arc;
 use log::info;
 
 // Internal crate imports
-use crate::db_operations::DbOperations;
+use crate::db_operations::{DbOperations, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::transform::manager::TransformManager;
@@ -253,6 +253,11 @@ impl FoldDB {
     pub fn schema_manager(&self) -> Arc<SchemaCore> {
         Arc::clone(&self.schema_manager)
     }
+    /// Search the native word index for a specific term
+    pub fn native_word_search(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
+        self.db_ops.native_index_manager().search_word(term)
+    }
+
 
     /// Get the transform orchestrator for managing transform execution
     pub fn transform_orchestrator(&self) -> Arc<TransformOrchestrator> {

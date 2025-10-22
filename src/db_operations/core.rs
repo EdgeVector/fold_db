@@ -1,4 +1,4 @@
-use super::error_utils::ErrorUtils;
+use super::{error_utils::ErrorUtils, NativeIndexConfig, NativeIndexManager};
 use crate::schema::SchemaError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -19,6 +19,7 @@ pub struct DbOperations {
     /// Tree for storing public keys
     pub(crate) public_keys_tree: sled::Tree,
     pub(crate) transform_queue_tree: sled::Tree,
+    native_index_manager: NativeIndexManager,
 }
 
 impl DbOperations {
@@ -32,6 +33,9 @@ impl DbOperations {
         let schemas_tree = db.open_tree("schemas")?;
         let public_keys_tree = db.open_tree("public_keys")?;
         let transform_queue_tree = db.open_tree("transform_queue_tree")?;
+        let native_index_tree = db.open_tree("native_index")?;
+        let native_index_manager =
+            NativeIndexManager::new(native_index_tree, NativeIndexConfig::default());
 
         Ok(Self {
             db,
@@ -43,7 +47,12 @@ impl DbOperations {
             schemas_tree,
             public_keys_tree,
             transform_queue_tree,
+            native_index_manager,
         })
+    }
+
+    pub fn native_index_manager(&self) -> &NativeIndexManager {
+        &self.native_index_manager
     }
 
     /// Gets a reference to the underlying database
