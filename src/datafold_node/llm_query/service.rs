@@ -60,8 +60,26 @@ impl LlmQueryService {
         schemas: &[SchemaWithState],
     ) -> Result<QueryPlan, String> {
         let prompt = self.build_analysis_prompt(user_query, schemas);
+        
+        // Log prompt for debugging (truncated to avoid too much output)
+        let prompt_preview = if prompt.len() > 500 {
+            format!("{}... [truncated, total {} chars]", &prompt[..500], prompt.len())
+        } else {
+            prompt.clone()
+        };
+        log::debug!("AI Query Prompt Preview: {}", prompt_preview);
+        
         let response = self.call_llm(&prompt).await?;
-        self.parse_query_plan(&response)
+        
+        // Log the response for debugging
+        log::info!("AI Query Response: {}", response);
+        
+        let query_plan = self.parse_query_plan(&response)?;
+        
+        // Log the selected filter
+        log::info!("AI Selected Filter: {:?} for query: {}", query_plan.query.filter, user_query);
+        
+        Ok(query_plan)
     }
 
     /// Summarize query results
@@ -130,6 +148,17 @@ impl LlmQueryService {
                 "- {} (Type: {:?})\n",
                 schema.schema.name, schema.schema.schema_type
             ));
+            
+            // Include key configuration for Range and HashRange schemas
+            if let Some(ref key) = schema.schema.key {
+                if let Some(ref hash_field) = key.hash_field {
+                    prompt.push_str(&format!("  Hash Key: {} (filters: HashKey, HashPattern, HashRangeKey, HashRangePrefix operate on this field)\n", hash_field));
+                }
+                if let Some(ref range_field) = key.range_field {
+                    prompt.push_str(&format!("  Range Key: {} (filters: RangePrefix, RangePattern, RangeRange, HashRangeKey, HashRangePrefix operate on this field)\n", range_field));
+                }
+            }
+            
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -145,17 +174,26 @@ impl LlmQueryService {
         prompt.push_str("- reasoning: Why a new query is needed\n\n");
 
         prompt.push_str(
-            "FILTER TYPES AVAILABLE:\n\
-            - HashRangeKey: {\"HashRangeKey\": {\"hash\": \"value\", \"range\": \"value\"}} - exact match\n\
-            - HashKey: {\"HashKey\": \"value\"} - all records with this hash\n\
-            - RangePrefix: {\"RangePrefix\": \"prefix\"} - all records with range starting with prefix\n\
-            - HashRangePrefix: {\"HashRangePrefix\": {\"hash\": \"value\", \"prefix\": \"prefix\"}}\n\
-            - Value: {\"Value\": \"search_term\"} - search across all values\n\
-            - SampleN: {\"SampleN\": 100} - return N RANDOM records (NOT sorted)\n\
-            - RangePattern: {\"RangePattern\": \"*pattern*\"} - glob pattern matching\n\
-            - HashPattern: {\"HashPattern\": \"*pattern*\"} - hash glob pattern\n\
-            - RangeRange: {\"RangeRange\": {\"start\": \"2025-01-01\", \"end\": \"2025-12-31\"}} - range of values\n\
-            - null - no filter (return all records)\n\n"
+            "FILTER TYPES AVAILABLE:\n\n\
+            Filters for HashRange schemas (have both Hash Key and Range Key):\n\
+            - HashRangeKey: {\"HashRangeKey\": {\"hash\": \"value\", \"range\": \"value\"}} - exact match on BOTH hash key field AND range key field\n\
+            - HashKey: {\"HashKey\": \"value\"} - filter on hash key field only\n\
+            - HashRangePrefix: {\"HashRangePrefix\": {\"hash\": \"value\", \"prefix\": \"prefix\"}} - filter on hash key field + range key field prefix\n\
+            - HashPattern: {\"HashPattern\": \"*pattern*\"} - glob pattern on hash key field\n\n\
+            Filters for Range schemas (have Range Key only):\n\
+            - RangePrefix: {\"RangePrefix\": \"prefix\"} - filter on range key field\n\
+            - RangePattern: {\"RangePattern\": \"*pattern*\"} - glob pattern on range key field\n\
+            - RangeRange: {\"RangeRange\": {\"start\": \"2025-01-01\", \"end\": \"2025-12-31\"}} - filter on range key field\n\n\
+            Universal filters (work on any schema type):\n\
+            - SampleN: {\"SampleN\": 100} - return N RANDOM records\n\
+            - null - no filter (return all records)\n\n\
+            IMPORTANT JSON FORMATTING:\n\
+            - All filter string values must use proper JSON format\n\
+            - Special characters like @ # $ are valid in JSON strings without escaping\n\
+            - Example: {\"HashKey\": \"@techinfluencer\"} is correct\n\n\
+            CRITICAL: Always use key-based filters (HashKey, RangePrefix, etc.).\n\
+            Check each schema's Hash Key and Range Key fields to determine which filter to use.\n\
+            Example: If searching for author \"Jennifer Liu\" and schema has hash_field=author, use {\"HashKey\": \"Jennifer Liu\"}.\n\n"
         );
 
         prompt.push_str(
@@ -251,6 +289,17 @@ impl LlmQueryService {
                 "- {} (Type: {:?}, State: {:?})\n",
                 schema.schema.name, schema.schema.schema_type, schema.state
             ));
+            
+            // Include key configuration for Range and HashRange schemas
+            if let Some(ref key) = schema.schema.key {
+                if let Some(ref hash_field) = key.hash_field {
+                    prompt.push_str(&format!("  Hash Key: {} (filters: HashKey, HashPattern, HashRangeKey, HashRangePrefix operate on this field)\n", hash_field));
+                }
+                if let Some(ref range_field) = key.range_field {
+                    prompt.push_str(&format!("  Range Key: {} (filters: RangePrefix, RangePattern, RangeRange, HashRangeKey, HashRangePrefix operate on this field)\n", range_field));
+                }
+            }
+            
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -275,8 +324,19 @@ impl LlmQueryService {
 
         prompt.push_str(
             "FILTER TYPES:\n\
-            - HashRangeKey, HashKey, RangePrefix, HashRangePrefix, Value, SampleN, \n\
-            - RangePattern, HashPattern, RangeRange, null (all records)\n\n\
+            For HashRange schemas (check Hash Key field):\n\
+            - HashRangeKey, HashKey, HashRangePrefix, HashPattern\n\
+            For Range schemas (check Range Key field):\n\
+            - RangePrefix, RangePattern, RangeRange\n\
+            Universal filters:\n\
+            - Value (LAST RESORT ONLY), SampleN, null (all records)\n\n\
+            JSON FORMATTING:\n\
+            - Use proper JSON format for all filter values\n\
+            - Special characters like @ # $ are valid in JSON strings\n\
+            - Example: {\"Value\": \"@username\"}, {\"HashKey\": \"@mention\"}\n\n\
+            CRITICAL: Prefer key-based filters over Value filter.\n\
+            Check Hash Key and Range Key fields to determine correct filter.\n\
+            If search matches a key field, use key filter (HashKey/RangePrefix), NOT Value filter.\n\n\
             IMPORTANT: Return ONLY the JSON object."
         );
 
@@ -333,6 +393,17 @@ impl LlmQueryService {
                 "- {} (Type: {:?}, State: {:?})\n",
                 schema.schema.name, schema.schema.schema_type, schema.state
             ));
+            
+            // Include key configuration for Range and HashRange schemas
+            if let Some(ref key) = schema.schema.key {
+                if let Some(ref hash_field) = key.hash_field {
+                    prompt.push_str(&format!("  Hash Key: {} (filters: HashKey, HashPattern, HashRangeKey, HashRangePrefix operate on this field)\n", hash_field));
+                }
+                if let Some(ref range_field) = key.range_field {
+                    prompt.push_str(&format!("  Range Key: {} (filters: RangePrefix, RangePattern, RangeRange, HashRangeKey, HashRangePrefix operate on this field)\n", range_field));
+                }
+            }
+            
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -347,28 +418,42 @@ impl LlmQueryService {
             2. What fields to retrieve\n\
             3. What filters to apply (if any)\n\
             4. If an index is needed (consider element count > 10,000 as threshold)\n\n\
-            FILTER TYPES AVAILABLE:\n\
-            - HashRangeKey: {\"HashRangeKey\": {\"hash\": \"value\", \"range\": \"value\"}} - exact match\n\
-            - HashKey: {\"HashKey\": \"value\"} - all records with this hash\n\
-            - RangePrefix: {\"RangePrefix\": \"prefix\"} - all records with range starting with prefix\n\
-            - HashRangePrefix: {\"HashRangePrefix\": {\"hash\": \"value\", \"prefix\": \"prefix\"}}\n\
-            - Value: {\"Value\": \"search_term\"} - search across all values\n\
+            FILTER TYPES AVAILABLE:\n\n\
+            Filters for HashRange schemas (have both Hash Key and Range Key):\n\
+            - HashRangeKey: {\"HashRangeKey\": {\"hash\": \"value\", \"range\": \"value\"}} - exact match on BOTH hash key field AND range key field\n\
+            - HashKey: {\"HashKey\": \"value\"} - filter on hash key field only, returns all records with this hash\n\
+            - HashRangePrefix: {\"HashRangePrefix\": {\"hash\": \"value\", \"prefix\": \"prefix\"}} - filter on hash key field + range key field prefix\n\
+            - HashPattern: {\"HashPattern\": \"*pattern*\"} - glob pattern matching on hash key field\n\n\
+            Filters for Range schemas (have Range Key only):\n\
+            - RangePrefix: {\"RangePrefix\": \"prefix\"} - filter on range key field, returns records with range starting with prefix\n\
+            - RangePattern: {\"RangePattern\": \"*pattern*\"} - glob pattern matching on range key field\n\
+            - RangeRange: {\"RangeRange\": {\"start\": \"2025-01-01\", \"end\": \"2025-12-31\"}} - filter on range key field for values within range\n\n\
+            Universal filters (work on any schema type):\n\
             - SampleN: {\"SampleN\": 100} - return N RANDOM records (NOT sorted)\n\
-            - RangePattern: {\"RangePattern\": \"*pattern*\"} - glob pattern matching\n\
-            - HashPattern: {\"HashPattern\": \"*pattern*\"} - hash glob pattern\n\
-            - RangeRange: {\"RangeRange\": {\"start\": \"2025-01-01\", \"end\": \"2025-12-31\"}} - range of values\n\
             - null - no filter (return all records)\n\n\
-            IMPORTANT FILTER NOTES:\n\
+            IMPORTANT JSON FORMATTING:\n\
+            - All string values in filters MUST be properly JSON-escaped\n\
+            - Special characters like @ # $ etc. do NOT need escaping in JSON strings\n\
+            - Example: {\"HashKey\": \"user@domain.com\"} is valid JSON\n\n\
+            CRITICAL FILTER SELECTION RULES:\n\
+            1. ALWAYS check the schema's Hash Key and Range Key fields to determine the correct filter\n\
+            2. If the search term matches a Hash Key field value, use HashKey or HashPattern filter\n\
+            3. If the search term matches a Range Key field value, use RangePrefix, RangePattern, or RangeRange filter\n\
+            4. Examples of when to use each:\n\
+               - Searching for author \"Jennifer Liu\" on a schema with hash_field=author → use {\"HashKey\": \"Jennifer Liu\"}\n\
+               - Searching for date \"2025-09\" on a schema with range_field=publish_date → use {\"RangePrefix\": \"2025-09\"}\n\n\
+            IMPORTANT NOTES:\n\
+            - For HashRange schemas, HashKey filters operate on the hash_field, Range filters operate on the range_field\n\
+            - For Range schemas, Range filters operate on the range_field\n\
             - SampleN returns RANDOM records, NOT sorted or ordered\n\
             - For \"most recent\" or \"latest\" queries, use null filter to get all records (backend will handle sorting)\n\
-            - For date ranges, use RangeRange with start/end dates\n\
             - Range keys are stored as strings and compared lexicographically\n\n\
             EXAMPLES:\n\
-            - Search for word \"ai\" in BlogPostWordIndex: {\"HashKey\": \"ai\"}\n\
-            - Get blog post by ID: {\"RangePrefix\": \"post-123\"}\n\
-            - Get most recent posts: null (returns all, sorted by backend)\n\
-            - Get posts in date range: {\"RangeRange\": {\"start\": \"2025-09-01\", \"end\": \"2025-09-30\"}}\n\
-            - Search for \"technology\" anywhere: {\"Value\": \"technology\"}\n\n\
+            - Search for word \"ai\" in BlogPostWordIndex (hash_field=word): {\"HashKey\": \"ai\"} ✓ CORRECT\n\
+            - Search for author \"Jennifer Liu\" in schema with hash_field=author: {\"HashKey\": \"Jennifer Liu\"} ✓ CORRECT\n\
+            - Get blog post by ID in BlogPost (range_field=post_id): {\"RangePrefix\": \"post-123\"} ✓ CORRECT\n\
+            - Get most recent posts: null (returns all, sorted by backend) ✓ CORRECT\n\
+            - Get posts in date range (range_field=publish_date): {\"RangeRange\": {\"start\": \"2025-09-01\", \"end\": \"2025-09-30\"}} ✓ CORRECT\n\n\
             Respond in JSON format with:\n\
             {\n\
               \"query\": {\n\
@@ -376,15 +461,111 @@ impl LlmQueryService {
                 \"fields\": [\"field1\", \"field2\"],\n\
                 \"filter\": null or one of the filter types above\n\
               },\n\
-              \"index_schema\": null,\n\
+              \"index_schema\": null or index schema definition (see below),\n\
               \"reasoning\": \"your analysis\"\n\
+            }\n\n\
+            INDEX SCHEMA CREATION:\n\
+            If no efficient schema exists for the query, recommend an index schema.\n\
+            Index schemas enable fast lookups by creating a HashRange index on specific fields.\n\n\
+            When to recommend an index:\n\
+            - Word search queries (e.g., \"find posts containing 'technology'\")\n\
+            - Array field searches (e.g., \"products with tag 'electronics'\")\n\
+            - Author/user lookup queries (e.g., \"posts by Alice Johnson\")\n\
+            - Any query that would benefit from hash-based lookup\n\n\
+            Index schema format:\n\
+            {\n\
+              \"name\": \"SourceSchemaFieldIndex\",\n\
+              \"descriptive_name\": \"Human Readable Name\",\n\
+              \"key\": {\n\
+                \"hash_field\": \"field_to_index_on\",\n\
+                \"range_field\": \"timestamp_or_id_field\"\n\
+              },\n\
+              \"transform_fields\": {\n\
+                \"indexed_field\": \"SourceSchema.map().field.transform().map()\",\n\
+                \"other_field\": \"SourceSchema.map().other_field\"\n\
+              },\n\
+              \"field_topologies\": {\n\
+                \"indexed_field\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"other_field\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              }\n\
+            }\n\n\
+            CRITICAL TOPOLOGY FORMAT:\n\
+            - Every field in field_topologies MUST have format: {\"root\": {\"type\": \"Primitive\", \"value\": \"TYPE\"}}\n\
+            - The \"value\" field is REQUIRED for Primitive types\n\
+            - Valid values: \"String\", \"Number\", \"Boolean\", \"Null\"\n\
+            - Arrays: {\"root\": {\"type\": \"Array\", \"value\": {\"type\": \"Primitive\", \"value\": \"String\"}}}\n\
+            - Objects: {\"root\": {\"type\": \"Object\", \"value\": {\"field1\": {\"type\": \"Primitive\", \"value\": \"String\"}}}}\n\n\
+            Transform functions available:\n\
+            - split_by_word() - splits text into individual words\n\
+            - split_array() - splits array into individual elements\n\
+            - count() - counts items (returns Number)\n\
+            - map() - applies transformation to each item\n\n\
+            Example index schemas:\n\
+            1. Word search index:\n\
+            {\n\
+              \"name\": \"BlogPostWordIndex\",\n\
+              \"descriptive_name\": \"Blog Post Word Index\",\n\
+              \"key\": {\"hash_field\": \"word\", \"range_field\": \"publish_date\"},\n\
+              \"transform_fields\": {\n\
+                \"word\": \"BlogPost.map().content.split_by_word().map()\",\n\
+                \"title\": \"BlogPost.map().title\",\n\
+                \"author\": \"BlogPost.map().author\",\n\
+                \"publish_date\": \"BlogPost.map().publish_date\"\n\
+              },\n\
+              \"field_topologies\": {\n\
+                \"word\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"title\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"author\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"publish_date\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              }\n\
+            }\n\n\
+            2. Author lookup index:\n\
+            {\n\
+              \"name\": \"BlogPostAuthorIndex\",\n\
+              \"descriptive_name\": \"Blog Post Author Index\",\n\
+              \"key\": {\"hash_field\": \"author\", \"range_field\": \"publish_date\"},\n\
+              \"transform_fields\": {\n\
+                \"author\": \"BlogPost.map().author\",\n\
+                \"title\": \"BlogPost.map().title\",\n\
+                \"content\": \"BlogPost.map().content\",\n\
+                \"publish_date\": \"BlogPost.map().publish_date\"\n\
+              },\n\
+              \"field_topologies\": {\n\
+                \"author\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"title\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"content\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"publish_date\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              }\n\
+            }\n\n\
+            3. Tag search index (array splitting):\n\
+            {\n\
+              \"name\": \"ProductTagIndex\",\n\
+              \"descriptive_name\": \"Product Tag Index\",\n\
+              \"key\": {\"hash_field\": \"tag\", \"range_field\": \"created_at\"},\n\
+              \"transform_fields\": {\n\
+                \"tag\": \"Product.map().tags.split_array().map()\",\n\
+                \"product_id\": \"Product.map().product_id\",\n\
+                \"name\": \"Product.map().name\",\n\
+                \"price\": \"Product.map().price\",\n\
+                \"created_at\": \"Product.map().created_at\"\n\
+              },\n\
+              \"field_topologies\": {\n\
+                \"tag\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"product_id\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"name\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
+                \"price\": {\"root\": {\"type\": \"Primitive\", \"value\": \"Number\"}},\n\
+                \"created_at\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              }\n\
             }\n\n\
             IMPORTANT: \n\
             - Return ONLY the JSON object, no additional text\n\
             - Use the EXACT filter format shown above\n\
-            - ALWAYS set index_schema to null (index creation is not yet supported)\n\
             - For \"most recent\", \"latest\", or \"newest\" queries, use null filter (NOT SampleN)\n\
-            - Choose the most efficient existing schema for the query"
+            - Prefer existing approved schemas; only recommend index_schema if no efficient schema exists\n\
+            - Index schemas must always have schema_type \"HashRange\" (implicit)\n\
+            - Always include field_topologies for all fields in transform_fields\n\
+            - Choose hash_field based on what will be queried (word, author, tag, etc.)\n\
+            - Choose range_field as a timestamp or ID for natural ordering"
         );
 
         prompt
@@ -509,6 +690,84 @@ impl LlmQueryService {
             index_schema: parsed.index_schema,
             reasoning: parsed.reasoning,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::{SchemaState, SchemaWithState};
+    use crate::schema::types::{DeclarativeSchemaDefinition, KeyConfig, JsonTopology, TopologyNode, PrimitiveType};
+    use std::collections::HashMap;
+
+    fn create_test_hash_range_schema() -> SchemaWithState {
+        let mut field_topologies = HashMap::new();
+        field_topologies.insert(
+            "author".to_string(),
+            JsonTopology {
+                root: TopologyNode::Primitive(PrimitiveType::String),
+            },
+        );
+        field_topologies.insert(
+            "publish_date".to_string(),
+            JsonTopology {
+                root: TopologyNode::Primitive(PrimitiveType::String),
+            },
+        );
+
+        let mut schema = DeclarativeSchemaDefinition::new(
+            "BlogPostAuthorIndex".to_string(),
+            crate::schema::types::schema::DeclarativeSchemaType::HashRange,
+            Some(KeyConfig {
+                hash_field: Some("author".to_string()),
+                range_field: Some("publish_date".to_string()),
+            }),
+            None,  // fields
+            None,  // transform_fields
+            None,  // field_mappers
+        );
+        
+        schema.descriptive_name = Some("Blog Post Author Index".to_string());
+        schema.field_topologies = field_topologies;
+
+        SchemaWithState {
+            schema,
+            state: SchemaState::Approved,
+        }
+    }
+
+    #[test]
+    fn test_prompt_includes_hash_and_range_keys() {
+        let mut config = crate::ingestion::config::IngestionConfig::default();
+        config.provider = crate::ingestion::config::AIProvider::Ollama;
+
+        let service = LlmQueryService::new(config).expect("Failed to create service");
+        let schemas = vec![create_test_hash_range_schema()];
+        
+        let prompt = service.build_analysis_prompt("Find posts by Jennifer Liu", &schemas);
+        
+        // Verify prompt includes hash key information
+        assert!(prompt.contains("Hash Key: author"), "Prompt should include Hash Key field");
+        assert!(prompt.contains("Range Key: publish_date"), "Prompt should include Range Key field");
+        
+        // Verify prompt includes filter guidance
+        assert!(prompt.contains("HashKey"), "Prompt should mention HashKey filter");
+        assert!(prompt.contains("CRITICAL"), "Prompt should include critical filter selection guidance");
+        assert!(prompt.contains("Jennifer Liu"), "Prompt should include the example with Jennifer Liu");
+    }
+
+    #[test]
+    fn test_prompt_shows_correct_vs_incorrect_examples() {
+        let mut config = crate::ingestion::config::IngestionConfig::default();
+        config.provider = crate::ingestion::config::AIProvider::Ollama;
+
+        let service = LlmQueryService::new(config).expect("Failed to create service");
+        let schemas = vec![create_test_hash_range_schema()];
+        
+        let prompt = service.build_analysis_prompt("Test query", &schemas);
+        
+        // Verify prompt includes correct examples
+        assert!(prompt.contains("✓ CORRECT"), "Prompt should show correct examples");
     }
 }
 

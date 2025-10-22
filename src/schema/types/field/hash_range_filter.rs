@@ -28,8 +28,6 @@ pub enum HashRangeFilter {
     },
     /// Filter by sample size
     SampleN(usize),
-    /// Filter by value match (searches across all hash groups)
-    Value(String),
     /// Filter by multiple hash-range key pairs
     HashRangeKeys(Vec<(String, String)>),
     /// Filter by range key pattern within a specific hash group

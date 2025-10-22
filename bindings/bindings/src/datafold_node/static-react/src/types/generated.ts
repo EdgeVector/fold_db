@@ -154,7 +154,7 @@ export type DeclarativeSchemaType = "Single" | "Range" | "HashRange";
 /**
  * HashRange filter operations for querying hash-range fields
  */
-export type HashRangeFilter = { "HashRangeKey": { hash: string, range: string, } } | { "HashKey": string } | { "HashRangePrefix": { hash: string, prefix: string, } } | { "RangePrefix": string } | { "HashRangeRange": { hash: string, start: string, end: string, } } | { "RangeRange": { start: string, end: string, } } | { "SampleN": number } | { "Value": string } | { "HashRangeKeys": Array<[string, string]> } | { "HashRangePattern": { hash: string, pattern: string, } } | { "RangePattern": string } | { "HashPattern": string } | { "HashRange": { start: string, end: string, } };
+export type HashRangeFilter = { "HashRangeKey": { hash: string, range: string, } } | { "HashKey": string } | { "HashRangePrefix": { hash: string, prefix: string, } } | { "RangePrefix": string } | { "HashRangeRange": { hash: string, start: string, end: string, } } | { "RangeRange": { start: string, end: string, } } | { "SampleN": number } | { "HashRangeKeys": Array<[string, string]> } | { "HashRangePattern": { hash: string, pattern: string, } } | { "RangePattern": string } | { "HashPattern": string } | { "HashRange": { start: string, end: string, } };
 
 /**
  * Result of a hash-range filter operation

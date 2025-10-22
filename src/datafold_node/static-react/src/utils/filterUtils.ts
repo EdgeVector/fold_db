@@ -58,13 +58,6 @@ export function createSampleNFilter(count: number): HashRangeFilter {
 }
 
 /**
- * Creates a Value filter for exact value matches
- */
-export function createValueFilter(value: string): HashRangeFilter {
-  return { Value: value };
-}
-
-/**
  * Creates a HashRangeKeys filter for multiple hash-range key pairs
  */
 export function createHashRangeKeysFilter(keys: Array<[string, string]>): HashRangeFilter {
