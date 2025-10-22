@@ -1,11 +1,11 @@
 use super::core::DbOperations;
 use crate::atom::{Atom, AtomStatus, Molecule, MoleculeRange};
 use crate::schema::{
-    SchemaError, 
     types::{
-        field::{FieldVariant, Field}, 
-        key_value::KeyValue
-    }
+        field::{Field, FieldVariant},
+        key_value::KeyValue,
+    },
+    SchemaError,
 };
 use serde_json::Value;
 
@@ -91,16 +91,16 @@ impl DbOperations {
         value: Value,
     ) -> Result<Atom, SchemaError> {
         let new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
-        
+
         // Check if atom with this content-based UUID already exists
         let atom_key = format!("atom:{}", new_atom.uuid());
         if let Some(existing_atom) = self.get_item::<Atom>(&atom_key)? {
             return Ok(existing_atom);
         }
-        
+
         // Persist the atom to the database
         self.store_item(&atom_key, &new_atom)?;
-        
+
         Ok(new_atom)
     }
 
@@ -135,6 +135,7 @@ impl DbOperations {
     pub fn process_mutation_field(
         &self,
         schema_name: &str,
+        field_name: &str,
         pub_key: &str,
         value: Value,
         key_value: &KeyValue,
@@ -142,18 +143,26 @@ impl DbOperations {
     ) -> Result<(), SchemaError> {
         // Refresh field from database
         schema_field.refresh_from_db(self);
-        
+
+        let index_value = value.clone();
         // Create and store the atom
         let new_atom = self.create_and_store_atom_for_mutation(schema_name, pub_key, value)?;
-        
+
         // Write mutation to field (updates in-memory molecule)
         schema_field.write_mutation(key_value, new_atom, pub_key.to_string());
-        
+
         // Persist the updated molecule to the database
         if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
             self.persist_field_molecule(schema_field, molecule_uuid)?;
         }
-        
+
+        self.native_index_manager().index_field_value(
+            schema_name,
+            field_name,
+            key_value,
+            &index_value,
+        )?;
+
         Ok(())
     }
 }

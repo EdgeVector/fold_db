@@ -71,6 +71,7 @@ impl MutationManager {
                 // Use the new db_operations method to handle the entire field mutation process
                 self.db_ops.process_mutation_field(
                     &mutation.schema_name,
+                    &field_name,
                     &mutation.pub_key,
                     value,
                     &key_value,
@@ -205,6 +206,7 @@ impl MutationManager {
                 // Use the new db_operations method to handle the entire field mutation process
                 db_ops.process_mutation_field(
                     &mutation_request.mutation.schema_name,
+                    &field_name,
                     &mutation_request.mutation.pub_key,
                     value,
                     &key_value,
