@@ -13,8 +13,20 @@
 import type { 
   DeclarativeSchemaType, 
   KeyConfig, 
-  DeclarativeSchemaDefinition 
+  DeclarativeSchemaDefinition as GeneratedDeclarativeSchemaDefinition,
+  JsonTopology
 } from '@generated/generated';
+
+// Override the generated DeclarativeSchemaDefinition to enforce required field topologies
+// The generated type makes field_topologies optional, but the documentation states
+// "Every field MUST have a topology", so we enforce this requirement here
+export type DeclarativeSchemaDefinition = Omit<GeneratedDeclarativeSchemaDefinition, 'field_topologies'> & {
+  /** Topology definitions for each field (defines JSON structure)
+   * Maps field_name -> JsonTopology. Every field MUST have a topology.
+   * This overrides the generated optional type to enforce the requirement.
+   */
+  field_topologies: { [key: string]: JsonTopology };
+};
 
 // Re-export backend type as BackendSchema for backward compatibility
 export type BackendSchema = DeclarativeSchemaDefinition;

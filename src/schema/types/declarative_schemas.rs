@@ -243,7 +243,6 @@ pub struct DeclarativeSchemaDefinition {
     pub field_molecule_uuids: Option<HashMap<String, String>>,
     /// Topology definitions for each field (defines JSON structure)
     /// Maps field_name -> JsonTopology. Every field MUST have a topology.
-    #[serde(default)]
     pub field_topologies: HashMap<String, JsonTopology>,
     /// Hash of each field's topology for change detection
     /// Maps field_name -> topology_hash
