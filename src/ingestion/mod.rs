@@ -33,6 +33,7 @@ pub mod ollama_service;
 pub mod openrouter_service;
 pub mod routes;
 pub mod simple_service;
+pub mod structure_analyzer;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ pub use ai_schema_response::AISchemaResponse;
 pub use config::IngestionConfig;
 pub use core::IngestionCore;
 pub use error::IngestionError;
+pub use structure_analyzer::StructureAnalyzer;
 
 /// Result type for ingestion operations
 pub type IngestionResult<T> = Result<T, IngestionError>;

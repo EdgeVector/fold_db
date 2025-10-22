@@ -1,7 +1,7 @@
 //! Ollama API service for AI-powered schema analysis
 
 use crate::ingestion::config::OllamaConfig;
-use crate::ingestion::{AISchemaResponse, IngestionError, IngestionResult};
+use crate::ingestion::{AISchemaResponse, IngestionError, IngestionResult, StructureAnalyzer};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use reqwest::Client;
@@ -140,30 +140,63 @@ impl OllamaService {
         sample_json: &Value,
         available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
-        // If the input is a JSON array, use only the first element for schema determination
-        // This prevents the LLM from being confused by array structures
-        let schema_sample = if let Some(array) = sample_json.as_array() {
+        // Create superset structure from all top-level elements
+        let superset_structure = StructureAnalyzer::create_superset_structure(sample_json);
+        
+        // Get analysis statistics for logging
+        let stats = StructureAnalyzer::get_analysis_stats(sample_json);
+        
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Analyzed JSON structure: {} elements, {} unique fields",
+            stats.total_elements,
+            stats.unique_fields
+        );
+        
+        if let Some(array) = sample_json.as_array() {
             if array.is_empty() {
                 return Err(IngestionError::ai_response_validation_error(
                     "Cannot determine schema from empty JSON array".to_string()
                 ));
             }
+            
             log_feature!(
                 LogFeature::Ingestion,
                 info,
-                "JSON data is an array with {} elements, using first element for schema determination",
-                array.len()
+                "JSON data is an array with {} elements, created superset structure with {} fields",
+                array.len(),
+                stats.unique_fields
             );
-            &array[0]
-        } else {
-            sample_json
-        };
+            
+            // Log field coverage information
+            let common_fields = stats.get_common_fields();
+            let partial_fields = stats.get_partial_fields();
+            
+            if !common_fields.is_empty() {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Common fields (100% coverage): {:?}",
+                    common_fields
+                );
+            }
+            
+            if !partial_fields.is_empty() {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Partial fields (not in all elements): {:?}",
+                    partial_fields
+                );
+            }
+        }
         
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "Sample JSON data: {}",
-            pretty_json(schema_sample)
+            "Superset structure: {}",
+            pretty_json(&superset_structure)
         );
         log_feature!(
             LogFeature::Ingestion,
@@ -173,7 +206,7 @@ impl OllamaService {
         );
 
         let is_array_input = sample_json.is_array();
-        let prompt = self.create_prompt(schema_sample, available_schemas, is_array_input);
+        let prompt = self.create_prompt(&superset_structure, available_schemas, is_array_input);
 
         log_feature!(
             LogFeature::Ingestion,
