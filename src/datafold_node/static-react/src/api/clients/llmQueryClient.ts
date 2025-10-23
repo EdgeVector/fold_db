@@ -73,6 +73,12 @@ export interface RunQueryResponse {
   summary?: string;
 }
 
+export interface FollowupAnalysis {
+  needs_query: boolean;
+  query?: QueryPlan;
+  reasoning: string;
+}
+
 export const llmQueryClient = {
   /**
    * Run a query in a single step (analyze + execute with internal polling loop)
@@ -100,6 +106,13 @@ export const llmQueryClient = {
    */
   async chat(request: ChatRequest) {
     return client.post<ChatResponse>('/llm-query/chat', request);
+  },
+
+  /**
+   * Analyze if a follow-up question can be answered from existing context
+   */
+  async analyzeFollowup(request: ChatRequest) {
+    return client.post<FollowupAnalysis>('/llm-query/analyze-followup', request);
   },
 
   /**

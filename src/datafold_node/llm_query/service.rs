@@ -9,6 +9,7 @@ use crate::ingestion::{
 use crate::schema::types::{DeclarativeSchemaDefinition, Query};
 use crate::schema::{SchemaWithState};
 use serde_json::Value;
+use std::collections::HashSet;
 
 /// Service for LLM-based query analysis and summarization
 pub struct LlmQueryService {
@@ -174,10 +175,13 @@ impl LlmQueryService {
             }
         }
         
-        // Step 3: Send results to AI for interpretation
-        let ai_interpretation = self.interpret_native_index_results(user_query, &all_results).await?;
+        // Step 2.5: Deduplicate results based on schema_name + key_value + field
+        let deduplicated_results = self.deduplicate_results(all_results);
         
-        Ok((ai_interpretation, all_results))
+        // Step 3: Send results to AI for interpretation
+        let ai_interpretation = self.interpret_native_index_results(user_query, &deduplicated_results).await?;
+        
+        Ok((ai_interpretation, deduplicated_results))
     }
 
     /// Build prompt to analyze if a followup needs a new query
@@ -365,6 +369,27 @@ impl LlmQueryService {
         let prompt = self.build_native_index_search_prompt(user_query, schemas);
         let response = self.call_llm(&prompt).await?;
         self.parse_query_terms_response(&response)
+    }
+
+    /// Deduplicate results based on schema_name + key_value + field combination
+    fn deduplicate_results(&self, mut results: Vec<crate::db_operations::IndexResult>) -> Vec<crate::db_operations::IndexResult> {
+        let original_count = results.len();
+        let mut seen = HashSet::new();
+        
+        results.retain(|result| {
+            // Create a unique key based on schema_name + key_value + field
+            let key = format!(
+                "{}:{}:{}",
+                result.schema_name,
+                serde_json::to_string(&result.key_value).unwrap_or_default(),
+                result.field
+            );
+            
+            seen.insert(key)
+        });
+        
+        log::info!("Deduplicated {} results down to {} unique entries", original_count, results.len());
+        results
     }
 
     /// Interpret native index search results using AI

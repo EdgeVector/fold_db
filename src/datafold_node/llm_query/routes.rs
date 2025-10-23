@@ -370,6 +370,93 @@ pub async fn execute_query_plan(
     })
 }
 
+/// Analyze if a follow-up question can be answered from existing context
+#[utoipa::path(
+    post,
+    path = "/api/llm-query/analyze-followup",
+    tag = "llm-query",
+    request_body = ChatRequest,
+    responses(
+        (status = 200, description = "Follow-up analysis result", body = FollowupAnalysis),
+        (status = 404, description = "Session not found"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn analyze_followup(
+    request: web::Json<ChatRequest>,
+    app_state: web::Data<AppState>,
+    llm_state: web::Data<LlmQueryState>,
+) -> impl Responder {
+    let session_id = &request.session_id;
+    let question = &request.question;
+
+    let context = match llm_state.session_manager.get_session(session_id) {
+        Ok(Some(ctx)) => ctx,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(json!({"error": "Session not found"}));
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to get session: {}", e)}));
+        }
+    };
+
+    let results = match context.query_results {
+        Some(ref r) => r,
+        None => {
+            return HttpResponse::BadRequest()
+                .json(json!({"error": "No query results available in session"}));
+        }
+    };
+
+    let service = match &llm_state.service {
+        Some(svc) => svc,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(json!({
+                    "error": "LLM Query service not configured",
+                    "message": "Please configure AI_PROVIDER and FOLD_OPENROUTER_API_KEY or OLLAMA_BASE_URL environment variables to use this feature"
+                }));
+        }
+    };
+
+    let schemas = {
+        let node = app_state.node.lock().await;
+        let db_guard = match node.get_fold_db() {
+            Ok(guard) => guard,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to access database: {}", e)}));
+            }
+        };
+        match db_guard.schema_manager.get_schemas_with_states() {
+            Ok(schemas) => schemas,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to get schemas: {}", e)}));
+            }
+        }
+    };
+
+    let analysis = match service
+        .analyze_followup_question(
+            &context.original_query,
+            results,
+            question,
+            &schemas,
+        )
+        .await
+    {
+        Ok(a) => a,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to analyze followup question: {}", e)}));
+        }
+    };
+
+    HttpResponse::Ok().json(analysis)
+}
+
 /// Ask a follow-up question about query results
 #[utoipa::path(
     post,
@@ -987,6 +1074,18 @@ pub async fn ai_native_index_query(
         }
     };
 
+    // Create or get session to maintain conversation context
+    let session_id = match llm_state.session_manager.create_or_get_session(
+        request.session_id.clone(),
+        request.query.clone(),
+    ) {
+        Ok(id) => id,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to create session: {}", e)}));
+        }
+    };
+
     // Get available schemas
     let schemas = {
         let node = app_state.node.lock().await;
@@ -1021,11 +1120,42 @@ pub async fn ai_native_index_query(
     }.await;
 
     match result {
-        Ok((ai_interpretation, raw_results)) => HttpResponse::Ok().json(json!({
-            "ai_interpretation": ai_interpretation,
-            "raw_results": raw_results,
-            "query": request.query
-        })),
+        Ok((ai_interpretation, raw_results)) => {
+            // Store results in session for context tracking
+            let results_as_json: Vec<serde_json::Value> = raw_results
+                .into_iter()
+                .map(|result| serde_json::to_value(result).unwrap_or(json!({})))
+                .collect();
+
+            if let Err(e) = llm_state.session_manager.add_results(&session_id, results_as_json.clone()) {
+                log::warn!("Failed to store results in session: {}", e);
+            }
+
+            // Add user message to conversation history
+            if let Err(e) = llm_state.session_manager.add_message(
+                &session_id,
+                "user".to_string(),
+                request.query.clone(),
+            ) {
+                log::warn!("Failed to add user message to session: {}", e);
+            }
+
+            // Add AI response to conversation history
+            if let Err(e) = llm_state.session_manager.add_message(
+                &session_id,
+                "assistant".to_string(),
+                ai_interpretation.clone(),
+            ) {
+                log::warn!("Failed to add assistant message to session: {}", e);
+            }
+
+            HttpResponse::Ok().json(json!({
+                "ai_interpretation": ai_interpretation,
+                "raw_results": results_as_json,
+                "query": request.query,
+                "session_id": session_id
+            }))
+        },
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("AI-native index query failed: {}", e)})),
     }

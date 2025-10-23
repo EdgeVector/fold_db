@@ -14,6 +14,7 @@ function LlmQueryTab({ onResult }) {
   const [sessionId, setSessionId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [conversationLog, setConversationLog] = useState([]);
+  const [showResults, setShowResults] = useState(false);
   const conversationEndRef = useRef(null);
 
   // Auto-scroll to bottom when conversation updates
@@ -53,19 +54,76 @@ function LlmQueryTab({ onResult }) {
     try {
       // If this is a follow-up question (session exists and we have results)
       if (sessionId && conversationLog.some(log => log.type === 'results')) {
-        addToLog('system', '🤔 Analyzing follow-up question...');
+        addToLog('system', '🤔 Analyzing if question can be answered from existing context...');
         
-        const response = await llmQueryClient.chat({
+        // First analyze if the question can be answered from existing context
+        const analysisResponse = await llmQueryClient.analyzeFollowup({
           session_id: sessionId,
           question: userInput
         });
 
-        if (!response.success) {
-          addToLog('system', `❌ Error: ${response.error || 'Failed to process question'}`);
+        if (!analysisResponse.success) {
+          addToLog('system', `❌ Error: ${analysisResponse.error || 'Failed to analyze question'}`);
           return;
         }
 
-        addToLog('system', response.data.answer);
+        const analysis = analysisResponse.data;
+        
+        if (!analysis.needs_query) {
+          // Can answer from existing context
+          addToLog('system', `✅ Answering from existing context: ${analysis.reasoning}`);
+          
+          const chatResponse = await llmQueryClient.chat({
+            session_id: sessionId,
+            question: userInput
+          });
+
+          if (!chatResponse.success) {
+            addToLog('system', `❌ Error: ${chatResponse.error || 'Failed to process question'}`);
+            return;
+          }
+
+          addToLog('system', chatResponse.data.answer);
+        } else {
+          // Needs new query - use AI-native index
+          addToLog('system', `🔍 Need new data: ${analysis.reasoning}`);
+          addToLog('system', '🔍 Using AI-native index search...');
+          
+          const response = await fetch('/api/llm-query/native-index', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              query: userInput,
+              session_id: sessionId
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI-native index query'}`);
+            return;
+          }
+
+          const result = await response.json();
+          addToLog('system', '✅ AI-native index search completed');
+          
+          // Update session ID if returned from the server
+          if (result.session_id) {
+            setSessionId(result.session_id);
+          }
+          
+          // Display the AI's interpretation of the results in the conversation
+          addToLog('system', result.ai_interpretation);
+          
+          // Also add the raw results for detailed view
+          addToLog('results', 'Raw search results', result.raw_results);
+          // Only show results section if user has expanded details
+          if (showResults) {
+            onResult({ success: true, data: result.raw_results });
+          }
+        }
       } else {
         // New query - use AI-native index
         addToLog('system', '🔍 Using AI-native index search...');
@@ -90,12 +148,20 @@ function LlmQueryTab({ onResult }) {
         const result = await response.json();
         addToLog('system', '✅ AI-native index search completed');
         
+        // Update session ID if returned from the server
+        if (result.session_id) {
+          setSessionId(result.session_id);
+        }
+        
         // Display the AI's interpretation of the results in the conversation
         addToLog('system', result.ai_interpretation);
         
         // Also add the raw results for detailed view
         addToLog('results', 'Raw search results', result.raw_results);
-        onResult({ success: true, data: result.raw_results });
+        // Only show results section if user has expanded details
+        if (showResults) {
+          onResult({ success: true, data: result.raw_results });
+        }
       }
     } catch (error) {
       console.error('Error processing input:', error);
@@ -172,20 +238,46 @@ function LlmQueryTab({ onResult }) {
               
               {entry.type === 'results' && entry.data && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-full">
-                  <p className="text-sm font-semibold text-green-800 mb-2">📊 Results ({entry.data.length})</p>
-                  <div className="bg-white rounded p-3 mb-2">
-                    <p className="text-gray-900 whitespace-pre-wrap mb-3">{entry.content}</p>
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm font-semibold text-green-800">📊 Results ({entry.data.length})</p>
+                    <button
+                      onClick={() => {
+                        const newShowResults = !showResults;
+                        setShowResults(newShowResults);
+                        // Show/hide the results section based on toggle
+                        if (newShowResults) {
+                          // Find the results data from conversation log
+                          const resultsEntry = conversationLog.find(log => log.type === 'results');
+                          if (resultsEntry && resultsEntry.data) {
+                            onResult({ success: true, data: resultsEntry.data });
+                          }
+                        } else {
+                          // Hide the results section
+                          onResult(null);
+                        }
+                      }}
+                      className="text-sm text-green-700 hover:text-green-900 underline"
+                    >
+                      {showResults ? 'Hide Details' : 'Show Details'}
+                    </button>
                   </div>
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-sm text-green-700 hover:text-green-900">
-                      View raw data ({entry.data.length} records)
-                    </summary>
-                    <div className="mt-2 max-h-64 overflow-auto">
-                      <pre className="text-xs bg-gray-900 text-green-400 p-3 rounded">
-                        {JSON.stringify(entry.data, null, 2)}
-                      </pre>
-                    </div>
-                  </details>
+                  {showResults && (
+                    <>
+                      <div className="bg-white rounded p-3 mb-2">
+                        <p className="text-gray-900 whitespace-pre-wrap mb-3">{entry.content}</p>
+                      </div>
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-sm text-green-700 hover:text-green-900">
+                          View raw data ({entry.data.length} records)
+                        </summary>
+                        <div className="mt-2 max-h-64 overflow-auto">
+                          <pre className="text-xs bg-gray-900 text-green-400 p-3 rounded">
+                            {JSON.stringify(entry.data, null, 2)}
+                          </pre>
+                        </div>
+                      </details>
+                    </>
+                  )}
                 </div>
               )}
             </div>
