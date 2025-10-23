@@ -17,27 +17,39 @@ pub struct JsonTopology {
 /// Represents a node in the JSON topology tree
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-#[serde(tag = "type", content = "value")]
+#[serde(tag = "type")]
 pub enum TopologyNode {
-    /// Primitive type: "string", "number", "boolean", "null"
-    Primitive(PrimitiveType),
+    /// Primitive type with classifications
+    #[serde(rename = "Primitive")]
+    Primitive {
+        value: PrimitiveValueType,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        classifications: Option<Vec<String>>,
+    },
     /// Object with named fields and their topologies
-    Object(HashMap<String, TopologyNode>),
+    Object {
+        value: HashMap<String, TopologyNode>,
+    },
     /// Array of a specific type
-    Array(Box<TopologyNode>),
+    Array {
+        value: Box<TopologyNode>,
+    },
     /// Any type (no validation)
     Any,
 }
 
-/// Primitive JSON types
+/// Primitive JSON value types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub enum PrimitiveType {
+pub enum PrimitiveValueType {
     String,
     Number,
     Boolean,
     Null,
 }
+
+/// Legacy type alias for backward compatibility
+pub type PrimitiveType = PrimitiveValueType;
 
 impl JsonTopology {
     /// Create a new topology with a root node
@@ -78,62 +90,81 @@ impl JsonTopology {
 impl TopologyNode {
     /// Validate that a JSON value conforms to this topology node
     pub fn validate(&self, value: &JsonValue, path: &str) -> Result<(), SchemaError> {
-        match (self, value) {
+        match self {
             // Any accepts everything
-            (TopologyNode::Any, _) => Ok(()),
+            TopologyNode::Any => Ok(()),
 
             // Primitive validations
-            (TopologyNode::Primitive(PrimitiveType::String), JsonValue::String(_)) => Ok(()),
-            (TopologyNode::Primitive(PrimitiveType::Number), JsonValue::Number(_)) => Ok(()),
-            (TopologyNode::Primitive(PrimitiveType::Boolean), JsonValue::Bool(_)) => Ok(()),
-            // Null is always acceptable for any primitive type (nullable fields)
-            (TopologyNode::Primitive(_), JsonValue::Null) => Ok(()),
-            (TopologyNode::Primitive(expected), _) => Err(SchemaError::InvalidData(format!(
-                "Topology validation failed at '{}': expected {:?}, got {:?}",
-                path,
-                expected,
-                value_type_name(value)
-            ))),
+            TopologyNode::Primitive { value: prim_type, .. } => {
+                match (prim_type, value) {
+                    (PrimitiveValueType::String, JsonValue::String(_)) => Ok(()),
+                    (PrimitiveValueType::Number, JsonValue::Number(_)) => Ok(()),
+                    (PrimitiveValueType::Boolean, JsonValue::Bool(_)) => Ok(()),
+                    // Null is always acceptable for any primitive type (nullable fields)
+                    (_, JsonValue::Null) => Ok(()),
+                    _ => Err(SchemaError::InvalidData(format!(
+                        "Topology validation failed at '{}': expected {:?}, got {:?}",
+                        path,
+                        prim_type,
+                        value_type_name(value)
+                    ))),
+                }
+            }
 
             // Object validation
-            (TopologyNode::Object(expected_fields), JsonValue::Object(obj)) => {
-                for (field_name, field_topology) in expected_fields {
-                    if let Some(field_value) = obj.get(field_name) {
-                        let field_path = format!("{}.{}", path, field_name);
-                        field_topology.validate(field_value, &field_path)?;
+            TopologyNode::Object { value: expected_fields } => {
+                if let JsonValue::Object(obj) = value {
+                    for (field_name, field_topology) in expected_fields {
+                        if let Some(field_value) = obj.get(field_name) {
+                            let field_path = format!("{}.{}", path, field_name);
+                            field_topology.validate(field_value, &field_path)?;
+                        }
+                        // Missing fields are allowed - this enables partial updates
                     }
-                    // Missing fields are allowed - this enables partial updates
+                    Ok(())
+                } else {
+                    Err(SchemaError::InvalidData(format!(
+                        "Topology validation failed at '{}': expected object, got {:?}",
+                        path,
+                        value_type_name(value)
+                    )))
                 }
-                Ok(())
             }
-            (TopologyNode::Object(_), _) => Err(SchemaError::InvalidData(format!(
-                "Topology validation failed at '{}': expected object, got {:?}",
-                path,
-                value_type_name(value)
-            ))),
 
             // Array validation
-            (TopologyNode::Array(element_topology), JsonValue::Array(arr)) => {
-                for (idx, element) in arr.iter().enumerate() {
-                    let element_path = format!("{}[{}]", path, idx);
-                    element_topology.validate(element, &element_path)?;
+            TopologyNode::Array { value: element_topology } => {
+                if let JsonValue::Array(arr) = value {
+                    for (idx, element) in arr.iter().enumerate() {
+                        let element_path = format!("{}[{}]", path, idx);
+                        element_topology.validate(element, &element_path)?;
+                    }
+                    Ok(())
+                } else {
+                    Err(SchemaError::InvalidData(format!(
+                        "Topology validation failed at '{}': expected array, got {:?}",
+                        path,
+                        value_type_name(value)
+                    )))
                 }
-                Ok(())
             }
-            (TopologyNode::Array(_), _) => Err(SchemaError::InvalidData(format!(
-                "Topology validation failed at '{}': expected array, got {:?}",
-                path,
-                value_type_name(value)
-            ))),
         }
     }
 
     /// Infer topology from a sample JSON value
     pub fn infer_from_value(value: &JsonValue) -> Self {
         match value {
-            JsonValue::String(_) => TopologyNode::Primitive(PrimitiveType::String),
-            JsonValue::Number(_) => TopologyNode::Primitive(PrimitiveType::Number),
-            JsonValue::Bool(_) => TopologyNode::Primitive(PrimitiveType::Boolean),
+            JsonValue::String(_) => TopologyNode::Primitive {
+                value: PrimitiveValueType::String,
+                classifications: None,
+            },
+            JsonValue::Number(_) => TopologyNode::Primitive {
+                value: PrimitiveValueType::Number,
+                classifications: None,
+            },
+            JsonValue::Bool(_) => TopologyNode::Primitive {
+                value: PrimitiveValueType::Boolean,
+                classifications: None,
+            },
             // Null values don't provide type information - use Any to accept any type later
             JsonValue::Null => TopologyNode::Any,
             JsonValue::Array(arr) => {
@@ -142,14 +173,16 @@ impl TopologyNode {
                     .first()
                     .map(Self::infer_from_value)
                     .unwrap_or(TopologyNode::Any);
-                TopologyNode::Array(Box::new(element_topology))
+                TopologyNode::Array {
+                    value: Box::new(element_topology),
+                }
             }
             JsonValue::Object(obj) => {
                 let mut fields = HashMap::new();
                 for (key, val) in obj {
                     fields.insert(key.clone(), Self::infer_from_value(val));
                 }
-                TopologyNode::Object(fields)
+                TopologyNode::Object { value: fields }
             }
         }
     }
@@ -174,7 +207,10 @@ mod tests {
 
     #[test]
     fn test_primitive_validation() {
-        let topology = JsonTopology::new(TopologyNode::Primitive(PrimitiveType::String));
+        let topology = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        });
         
         assert!(topology.validate(&json!("hello")).is_ok());
         assert!(topology.validate(&json!(42)).is_err());
@@ -184,10 +220,16 @@ mod tests {
     #[test]
     fn test_object_validation() {
         let mut fields = HashMap::new();
-        fields.insert("name".to_string(), TopologyNode::Primitive(PrimitiveType::String));
-        fields.insert("age".to_string(), TopologyNode::Primitive(PrimitiveType::Number));
+        fields.insert("name".to_string(), TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        });
+        fields.insert("age".to_string(), TopologyNode::Primitive {
+            value: PrimitiveValueType::Number,
+            classifications: None,
+        });
         
-        let topology = JsonTopology::new(TopologyNode::Object(fields));
+        let topology = JsonTopology::new(TopologyNode::Object { value: fields });
         
         // Valid object
         assert!(topology.validate(&json!({"name": "Alice", "age": 30})).is_ok());
@@ -204,9 +246,12 @@ mod tests {
 
     #[test]
     fn test_array_validation() {
-        let topology = JsonTopology::new(TopologyNode::Array(Box::new(
-            TopologyNode::Primitive(PrimitiveType::Number)
-        )));
+        let topology = JsonTopology::new(TopologyNode::Array {
+            value: Box::new(TopologyNode::Primitive {
+                value: PrimitiveValueType::Number,
+                classifications: None,
+            }),
+        });
         
         assert!(topology.validate(&json!([1, 2, 3])).is_ok());
         assert!(topology.validate(&json!([])).is_ok());
@@ -216,14 +261,23 @@ mod tests {
     #[test]
     fn test_nested_validation() {
         let mut user_fields = HashMap::new();
-        user_fields.insert("id".to_string(), TopologyNode::Primitive(PrimitiveType::Number));
-        user_fields.insert("name".to_string(), TopologyNode::Primitive(PrimitiveType::String));
+        user_fields.insert("id".to_string(), TopologyNode::Primitive {
+            value: PrimitiveValueType::Number,
+            classifications: None,
+        });
+        user_fields.insert("name".to_string(), TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        });
         
         let mut root_fields = HashMap::new();
-        root_fields.insert("user".to_string(), TopologyNode::Object(user_fields));
-        root_fields.insert("active".to_string(), TopologyNode::Primitive(PrimitiveType::Boolean));
+        root_fields.insert("user".to_string(), TopologyNode::Object { value: user_fields });
+        root_fields.insert("active".to_string(), TopologyNode::Primitive {
+            value: PrimitiveValueType::Boolean,
+            classifications: None,
+        });
         
-        let topology = JsonTopology::new(TopologyNode::Object(root_fields));
+        let topology = JsonTopology::new(TopologyNode::Object { value: root_fields });
         
         // Valid nested structure
         assert!(topology.validate(&json!({
@@ -280,15 +334,24 @@ mod tests {
     #[test]
     fn test_nullable_primitives() {
         // All primitive types should accept null values
-        let string_topology = JsonTopology::new(TopologyNode::Primitive(PrimitiveType::String));
+        let string_topology = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        });
         assert!(string_topology.validate(&json!(null)).is_ok());
         assert!(string_topology.validate(&json!("hello")).is_ok());
         
-        let number_topology = JsonTopology::new(TopologyNode::Primitive(PrimitiveType::Number));
+        let number_topology = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::Number,
+            classifications: None,
+        });
         assert!(number_topology.validate(&json!(null)).is_ok());
         assert!(number_topology.validate(&json!(42)).is_ok());
         
-        let bool_topology = JsonTopology::new(TopologyNode::Primitive(PrimitiveType::Boolean));
+        let bool_topology = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::Boolean,
+            classifications: None,
+        });
         assert!(bool_topology.validate(&json!(null)).is_ok());
         assert!(bool_topology.validate(&json!(true)).is_ok());
     }
@@ -296,10 +359,16 @@ mod tests {
     #[test]
     fn test_nullable_fields_in_object() {
         let mut fields = HashMap::new();
-        fields.insert("thread_position".to_string(), TopologyNode::Primitive(PrimitiveType::Number));
-        fields.insert("reply_to".to_string(), TopologyNode::Primitive(PrimitiveType::String));
+        fields.insert("thread_position".to_string(), TopologyNode::Primitive {
+            value: PrimitiveValueType::Number,
+            classifications: None,
+        });
+        fields.insert("reply_to".to_string(), TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        });
         
-        let topology = JsonTopology::new(TopologyNode::Object(fields));
+        let topology = JsonTopology::new(TopologyNode::Object { value: fields });
         
         // Should accept null for numeric field
         assert!(topology.validate(&json!({"thread_position": null, "reply_to": "tweet_123"})).is_ok());

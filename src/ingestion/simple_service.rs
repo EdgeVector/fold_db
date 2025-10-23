@@ -387,24 +387,52 @@ impl SimpleIngestionService {
                 ))
             })?;
 
-        // Infer topologies from sample data
-        let sample_for_topology = if let Some(array) = sample_data.as_array() {
-            // Use first element if array
-            array.first().unwrap_or(sample_data)
-        } else {
-            sample_data
-        };
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Deserialized schema with {} field topologies from AI",
+            schema.field_topologies.len()
+        );
 
-        if let Some(sample_obj) = sample_for_topology.as_object() {
-            let sample_map: std::collections::HashMap<String, serde_json::Value> = 
-                sample_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            schema.infer_topologies_from_data(&sample_map);
+        // Compute topology hash for the AI-generated topologies
+        if !schema.field_topologies.is_empty() {
+            schema.compute_schema_topology_hash();
             log_feature!(
                 LogFeature::Ingestion,
                 info,
-                "Inferred topologies for {} fields from sample data",
-                sample_map.len()
+                "Computed topology hash from {} AI-generated topologies",
+                schema.field_topologies.len()
             );
+        }
+
+        // DON'T infer topologies - AI already provided them with classifications
+        // Inferring would overwrite AI-generated classifications
+        
+        // Only infer if the schema is completely missing topologies
+        if schema.field_topologies.is_empty() {
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "AI did not provide field_topologies, inferring from sample data"
+            );
+            
+            let sample_for_topology = if let Some(array) = sample_data.as_array() {
+                array.first().unwrap_or(sample_data)
+            } else {
+                sample_data
+            };
+
+            if let Some(sample_obj) = sample_for_topology.as_object() {
+                let sample_map: std::collections::HashMap<String, serde_json::Value> = 
+                    sample_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                schema.infer_topologies_from_data(&sample_map);
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Inferred topologies for {} fields (no AI topologies)",
+                    sample_map.len()
+                );
+            }
         }
 
         // Use topology_hash as schema name for structure-based deduplication

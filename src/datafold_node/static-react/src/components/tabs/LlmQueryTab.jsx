@@ -67,42 +67,35 @@ function LlmQueryTab({ onResult }) {
 
         addToLog('system', response.data.answer);
       } else {
-        // New query
-        addToLog('system', '🔍 Analyzing your query and searching for data...');
+        // New query - use AI-native index
+        addToLog('system', '🔍 Using AI-native index search...');
         
-        const response = await llmQueryClient.runQuery({
-          query: userInput,
-          session_id: sessionId
+        const response = await fetch('/api/llm-query/native-index', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: userInput,
+            session_id: sessionId
+          }),
         });
 
-        if (!response.success) {
-          addToLog('system', `❌ Error: ${response.error || 'Failed to run query'}`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI-native index query'}`);
           return;
         }
 
-        setSessionId(response.data.session_id);
-
-        // Show query plan details
-        const plan = response.data.query_plan;
-        addToLog('system', `📋 Query Plan: ${plan.reasoning}`);
-        addToLog('system', `🎯 Querying schema: ${plan.query.schema_name}`);
+        const result = await response.json();
+        addToLog('system', '✅ AI-native index search completed');
         
-        if (plan.index_schema) {
-          addToLog('system', `📊 Created index: ${plan.index_schema.name}`);
-        }
-
-        // Show results
-        const resultCount = response.data.results?.length || 0;
-        if (resultCount > 0) {
-          addToLog('system', `✅ Found ${resultCount} result${resultCount !== 1 ? 's' : ''}`);
-          addToLog('results', response.data.summary || `Retrieved ${resultCount} records`, response.data.results);
-          onResult({ success: true, data: response.data.results });
-        } else {
-          addToLog('system', '❌ No results found');
-          if (response.data.summary) {
-            addToLog('system', response.data.summary);
-          }
-        }
+        // Display the AI's interpretation of the results in the conversation
+        addToLog('system', result.ai_interpretation);
+        
+        // Also add the raw results for detailed view
+        addToLog('results', 'Raw search results', result.raw_results);
+        onResult({ success: true, data: result.raw_results });
       }
     } catch (error) {
       console.error('Error processing input:', error);
@@ -211,7 +204,7 @@ function LlmQueryTab({ onResult }) {
             placeholder={
               conversationLog.some(log => log.type === 'results')
                 ? "Ask a follow-up question or start a new query..."
-                : "Ask me anything about your data..."
+                : "Search the native index (e.g., 'Find posts about AI')..."
             }
             disabled={isProcessing}
             className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"

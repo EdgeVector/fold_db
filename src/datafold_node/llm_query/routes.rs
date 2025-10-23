@@ -959,3 +959,75 @@ pub async fn run_query(
     })
 }
 
+/// Execute an AI-native index query workflow
+#[utoipa::path(
+    post,
+    path = "/api/llm-query/native-index",
+    tag = "llm-query",
+    request_body = RunQueryRequest,
+    responses(
+        (status = 200, description = "AI-native index query result", body = String),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn ai_native_index_query(
+    request: web::Json<RunQueryRequest>,
+    app_state: web::Data<AppState>,
+    llm_state: web::Data<LlmQueryState>,
+) -> impl Responder {
+    let service = match &llm_state.service {
+        Some(svc) => svc,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(json!({
+                    "error": "LLM Query service not configured",
+                    "message": "Please configure AI_PROVIDER and FOLD_OPENROUTER_API_KEY or OLLAMA_BASE_URL environment variables to use this feature"
+                }));
+        }
+    };
+
+    // Get available schemas
+    let schemas = {
+        let node = app_state.node.lock().await;
+        let db_guard = match node.get_fold_db() {
+            Ok(guard) => guard,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to access database: {}", e)}));
+            }
+        };
+        match db_guard.schema_manager.get_schemas_with_states() {
+            Ok(schemas) => schemas,
+            Err(e) => {
+                return HttpResponse::InternalServerError()
+                    .json(json!({"error": format!("Failed to get schemas: {}", e)}));
+            }
+        }
+    };
+
+    // Execute AI-native index query workflow
+    let result = async {
+        let node = app_state.node.lock().await;
+        let db_guard = match node.get_fold_db() {
+            Ok(guard) => guard,
+            Err(e) => {
+                return Err(format!("Failed to access database: {}", e));
+            }
+        };
+        
+        // Get both AI interpretation and raw results
+        service.execute_ai_native_index_query_with_results(&request.query, &schemas, &db_guard.get_db_ops()).await
+    }.await;
+
+    match result {
+        Ok((ai_interpretation, raw_results)) => HttpResponse::Ok().json(json!({
+            "ai_interpretation": ai_interpretation,
+            "raw_results": raw_results,
+            "query": request.query
+        })),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("AI-native index query failed: {}", e)})),
+    }
+}
+

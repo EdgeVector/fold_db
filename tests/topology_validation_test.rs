@@ -22,7 +22,7 @@ fn test_topology_validation_rejects_invalid_type() {
     // Set topology: name should be a string
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive(PrimitiveType::String)),
+        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
     );
 
     // Try to validate wrong type (number instead of string)
@@ -55,7 +55,7 @@ fn test_topology_validation_accepts_valid_type() {
     // Set topology: name should be a string
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive(PrimitiveType::String)),
+        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
     );
 
     // Validate correct type
@@ -80,12 +80,12 @@ fn test_topology_nested_object_validation() {
 
     // Set topology: user is an object with id (number) and name (string)
     let mut user_fields = HashMap::new();
-    user_fields.insert("id".to_string(), TopologyNode::Primitive(PrimitiveType::Number));
-    user_fields.insert("name".to_string(), TopologyNode::Primitive(PrimitiveType::String));
+    user_fields.insert("id".to_string(), TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None });
+    user_fields.insert("name".to_string(), TopologyNode::Primitive { value: PrimitiveType::String, classifications: None });
     
     schema.set_field_topology(
         "user".to_string(),
-        JsonTopology::new(TopologyNode::Object(user_fields)),
+        JsonTopology::new(TopologyNode::Object { value: user_fields }),
     );
 
     // Test 1: Valid nested object
@@ -115,9 +115,9 @@ fn test_topology_array_validation() {
     // Set topology: tags is an array of strings
     schema.set_field_topology(
         "tags".to_string(),
-        JsonTopology::new(TopologyNode::Array(Box::new(
-            TopologyNode::Primitive(PrimitiveType::String)
-        ))),
+        JsonTopology::new(TopologyNode::Array {
+            value: Box::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None })
+        }),
     );
 
     // Test 1: Valid array
@@ -175,11 +175,11 @@ fn test_schema_serialization_includes_topology() {
 
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive(PrimitiveType::String)),
+        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
     );
     schema.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive(PrimitiveType::Number)),
+        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
     );
 
     // Serialize and deserialize
@@ -195,13 +195,13 @@ fn test_schema_serialization_includes_topology() {
     let name_topology = deserialized.field_topologies.get("name").unwrap();
     assert_eq!(
         name_topology.root,
-        TopologyNode::Primitive(PrimitiveType::String)
+        TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }
     );
 
     let age_topology = deserialized.field_topologies.get("age").unwrap();
     assert_eq!(
         age_topology.root,
-        TopologyNode::Primitive(PrimitiveType::Number)
+        TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }
     );
 }
 

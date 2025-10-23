@@ -229,6 +229,50 @@ pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Respon
     }
 }
 
+/// Search the native word index for a term.
+#[utoipa::path(
+    get,
+    path = "/api/native-index/search",
+    tag = "query",
+    params(
+        ("term" = String, Query, description = "Search term for native word index")
+    ),
+    responses(
+        (status = 200, description = "Array of native index results", body = [crate::db_operations::IndexResult]),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn native_index_search(
+    query: web::Query<std::collections::HashMap<String, String>>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let term = match query.get("term") {
+        Some(t) if !t.trim().is_empty() => t.trim().to_string(),
+        _ => {
+            return HttpResponse::BadRequest()
+                .json(json!({"error": "Missing required 'term' query parameter"}));
+        }
+    };
+
+    // Acquire FoldDB and perform search
+    let node_arc = Arc::clone(&state.node);
+    let node_guard = node_arc.lock().await;
+    let fold_db = match node_guard.get_fold_db() {
+        Ok(guard) => guard,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to acquire database: {}", e)}));
+        }
+    };
+
+    match fold_db.native_search_all_classifications(&term) {
+        Ok(results) => HttpResponse::Ok().json(results),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Native index search failed: {}", e)})),
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/api/transforms/backfills/statistics",

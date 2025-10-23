@@ -698,13 +698,19 @@ mod tests {
         new_schema.set_field_topology(
             "id".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         new_schema.set_field_topology(
             "value".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
 
@@ -765,13 +771,19 @@ mod tests {
         existing_schema.set_field_topology(
             "id".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         existing_schema.set_field_topology(
             "value".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
 
@@ -789,13 +801,19 @@ mod tests {
         similar_schema.set_field_topology(
             "id".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         similar_schema.set_field_topology(
             "value".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
 
@@ -849,13 +867,19 @@ mod tests {
         schema1.set_field_topology(
             "id".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema1.set_field_topology(
             "name".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
 
@@ -881,19 +905,28 @@ mod tests {
         schema2.set_field_topology(
             "id".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema2.set_field_topology(
             "name".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema2.set_field_topology(
             "email".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
 
@@ -965,19 +998,28 @@ mod tests {
         schema1.set_field_topology(
             "user_id".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema1.set_field_topology(
             "username".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema1.set_field_topology(
             "email".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
 
@@ -994,25 +1036,37 @@ mod tests {
         schema2.set_field_topology(
             "product_id".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema2.set_field_topology(
             "title".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema2.set_field_topology(
             "price".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::Number)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::Number,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
         schema2.set_field_topology(
             "description".to_string(),
             crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive(crate::schema::types::PrimitiveType::String)
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                }
             ),
         );
 

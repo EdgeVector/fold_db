@@ -258,6 +258,48 @@ impl FoldDB {
         self.db_ops.native_index_manager().search_word(term)
     }
 
+    /// Search native index across all classification types and aggregate results
+    pub fn native_search_all_classifications(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
+        use crate::db_operations::ClassificationType;
+        use std::collections::HashSet;
+        
+        let index_manager = self.db_ops.native_index_manager();
+        let mut all_results = Vec::new();
+        let mut seen_keys = HashSet::new();
+        
+        // Search all classification types
+        let classifications = vec![
+            ClassificationType::Word,
+            ClassificationType::NamePerson,
+            ClassificationType::NameCompany,
+            ClassificationType::NamePlace,
+            ClassificationType::Email,
+            ClassificationType::Phone,
+            ClassificationType::Url,
+            ClassificationType::Date,
+            ClassificationType::Hashtag,
+            ClassificationType::Username,
+        ];
+        
+        for classification in classifications {
+            if let Ok(results) = index_manager.search_with_classification(term, Some(classification)) {
+                for result in results {
+                    // Deduplicate by schema + field + key + classification
+                    // Different classifications of the same field/record are DISTINCT results
+                    let classification_str = result.metadata.as_ref()
+                        .and_then(|m| m.get("classification"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("unknown");
+                    let key = format!("{}:{}:{:?}:{}", result.schema_name, result.field, result.key_value, classification_str);
+                    if seen_keys.insert(key) {
+                        all_results.push(result);
+                    }
+                }
+            }
+        }
+        
+        Ok(all_results)
+    }
 
     /// Get the transform orchestrator for managing transform execution
     pub fn transform_orchestrator(&self) -> Arc<TransformOrchestrator> {
