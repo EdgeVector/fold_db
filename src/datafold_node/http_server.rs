@@ -321,6 +321,10 @@ impl DataFoldHttpServer {
                             web::post().to(llm_query::chat),
                         )
                         .route(
+                            "/llm-query/analyze-followup",
+                            web::post().to(llm_query::analyze_followup),
+                        )
+                        .route(
                             "/llm-query/native-index",
                             web::post().to(llm_query::ai_native_index_query),
                         )
