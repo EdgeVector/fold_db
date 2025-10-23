@@ -68,17 +68,17 @@ fn test_topology_inference_from_sample_data() {
     
     // Verify correct types
     let id_topology = schema.field_topologies.get("id").unwrap();
-    assert_eq!(id_topology.root, TopologyNode::Primitive(PrimitiveType::String));
+    assert_eq!(id_topology.root, TopologyNode::Primitive { value: PrimitiveType::String, classifications: None });
     
     let name_topology = schema.field_topologies.get("name").unwrap();
-    assert_eq!(name_topology.root, TopologyNode::Primitive(PrimitiveType::String));
+    assert_eq!(name_topology.root, TopologyNode::Primitive { value: PrimitiveType::String, classifications: None });
     
     let age_topology = schema.field_topologies.get("age").unwrap();
-    assert_eq!(age_topology.root, TopologyNode::Primitive(PrimitiveType::Number));
+    assert_eq!(age_topology.root, TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None });
     
     let tags_topology = schema.field_topologies.get("tags").unwrap();
     match &tags_topology.root {
-        TopologyNode::Array(_) => {},
+        TopologyNode::Array { .. } => {},
         other => panic!("Expected Array topology for tags, got {:?}", other),
     }
 }

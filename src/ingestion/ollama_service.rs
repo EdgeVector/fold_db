@@ -39,11 +39,26 @@ IMPORTANT - Schema Name and Descriptive Name:
 - ALWAYS include "descriptive_name": a clear, human-readable description of what this schema stores
 - Example: "descriptive_name": "User Profile Information" or "Customer Order Records"
 
-IMPORTANT - Field Topologies:
-- Use proper topologies for nested structures:
-  * For nested objects: {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String"}}}
-  * For arrays of primitives: {"type": "Array", "value": {"type": "Primitive", "value": "String"}}
-  * For arrays of objects: {"type": "Array", "value": {"type": "Object", "value": {"field_name": {...}}}}
+IMPORTANT - Field Topologies with Classifications:
+- EVERY Primitive leaf MUST include "classifications" array
+- Analyze field semantic meaning and assign appropriate classification types
+- Multiple classifications per field are encouraged (e.g., ["name:person", "word"])
+- Available classification types:
+  * "word" - general text, split into words for search
+  * "name:person" - person names (kept whole: "Jennifer Liu")
+  * "name:company" - company/organization names
+  * "name:place" - location names (cities, countries, places)
+  * "email" - email addresses
+  * "phone" - phone numbers
+  * "url" - URLs or domains
+  * "date" - dates and timestamps
+  * "hashtag" - hashtags (from social media)
+  * "username" - usernames/handles
+- Topology structure:
+  * Primitives: {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}
+  * Objects: {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}
+  * Arrays of Primitives: {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}
+  * Arrays of Objects: {"type": "Array", "value": {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}
 
 Example Range schema (for multiple records):
 {
@@ -52,9 +67,9 @@ Example Range schema (for multiple records):
   "key": {"range_field": "id"},
   "fields": ["id", "name", "age"],
   "field_topologies": {
-    "id": {"root": {"type": "Primitive", "value": "String"}},
-    "name": {"root": {"type": "Primitive", "value": "String"}},
-    "age": {"root": {"type": "Primitive", "value": "Number"}}
+    "id": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
+    "name": {"root": {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}},
+    "age": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}}
   }
 }
 
@@ -64,8 +79,22 @@ Example Single schema (for one global value):
   "descriptive_name": "Global Counter Statistics",
   "fields": ["count", "total"],
   "field_topologies": {
-    "count": {"root": {"type": "Primitive", "value": "Number"}},
-    "total": {"root": {"type": "Primitive", "value": "Number"}}
+    "count": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}},
+    "total": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}}
+  }
+}
+
+Example with Arrays and Objects:
+{
+  "name": "Schema",
+  "descriptive_name": "Social Media Post",
+  "key": {"range_field": "post_id"},
+  "fields": ["post_id", "content", "hashtags", "media"],
+  "field_topologies": {
+    "post_id": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
+    "content": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
+    "hashtags": {"root": {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}},
+    "media": {"root": {"type": "Array", "value": {"type": "Object", "value": {"url": {"type": "Primitive", "value": "String", "classifications": ["url", "word"]}, "type": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}}
   }
 }
 "#;

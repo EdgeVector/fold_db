@@ -1,7 +1,7 @@
 use crate::schema::types::field::Field;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-use crate::schema::types::topology::JsonTopology;
+use crate::schema::types::topology::{JsonTopology, TopologyNode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -450,6 +450,25 @@ impl DeclarativeSchemaDefinition {
 
     pub fn field_mappers(&self) -> Option<&HashMap<String, FieldMapper>> {
         self.field_mappers.as_ref()
+    }
+
+    /// Get classifications for a specific field from its topology
+    pub fn get_field_classifications(&self, field_name: &str) -> Option<Vec<String>> {
+        let topology = self.field_topologies.get(field_name)?;
+        Self::extract_classifications_from_topology(&topology.root)
+    }
+
+    /// Extract classifications from a topology node (recursively)
+    fn extract_classifications_from_topology(node: &TopologyNode) -> Option<Vec<String>> {
+        match node {
+            TopologyNode::Primitive { classifications, .. } => {
+                classifications.clone()
+            }
+            TopologyNode::Array { value, .. } => {
+                Self::extract_classifications_from_topology(value)
+            }
+            _ => None,
+        }
     }
 
     /// Get topology for a specific field

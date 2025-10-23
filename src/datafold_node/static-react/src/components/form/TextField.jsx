@@ -64,6 +64,7 @@ function TextField({
 
   // Debounced onChange handler
   const timeoutRef = useRef(null);
+  const rafRef = useRef(null);
   const onChangeRef = useRef(onChange);
   
   // Keep onChangeRef current with the latest onChange
@@ -75,11 +76,23 @@ function TextField({
     setIsDebouncing(true);
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
-    timeoutRef.current = setTimeout(() => {
-      onChangeRef.current(newValue);
-      setIsDebouncing(false);
-    }, debounceMs);
+    if (rafRef.current && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    const schedule = () => {
+      timeoutRef.current = setTimeout(() => {
+        onChangeRef.current(newValue);
+        setIsDebouncing(false);
+      }, debounceMs);
+    };
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      rafRef.current = window.requestAnimationFrame(schedule);
+    } else {
+      setTimeout(schedule, 0);
+    }
   }, [debounceMs]);
 
   const handleChange = (e) => {

@@ -78,6 +78,8 @@ export {
 
 // LLM Query Client
 export { llmQueryClient } from './llmQueryClient';
+// Native Index Client
+export { nativeIndexClient, NativeIndexClient } from './nativeIndexClient';
 
 // Type exports for convenience
 export type {

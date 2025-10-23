@@ -1,4 +1,5 @@
-use super::{error_utils::ErrorUtils, NativeIndexConfig, NativeIndexManager};
+use super::{error_utils::ErrorUtils, NativeIndexConfig, NativeIndexManager, NativeIndexAIClassifier};
+use crate::ingestion::config::IngestionConfig;
 use crate::schema::SchemaError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -53,6 +54,22 @@ impl DbOperations {
 
     pub fn native_index_manager(&self) -> &NativeIndexManager {
         &self.native_index_manager
+    }
+
+    /// Enable AI-driven classification for the native index
+    /// This should be called once during initialization with the ingestion config
+    pub fn enable_ai_classification(&mut self, ingestion_config: IngestionConfig) -> Result<(), SchemaError> {
+        let native_index_tree = self.db.open_tree("native_index")
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to open native index tree: {}", e)))?;
+        
+        let ai_classifier = NativeIndexAIClassifier::new(ingestion_config);
+        self.native_index_manager = NativeIndexManager::with_ai_classifier(
+            native_index_tree,
+            NativeIndexConfig::default(),
+            ai_classifier,
+        );
+        
+        Ok(())
     }
 
     /// Gets a reference to the underlying database

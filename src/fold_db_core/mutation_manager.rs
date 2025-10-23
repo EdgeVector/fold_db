@@ -67,15 +67,19 @@ impl MutationManager {
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
         for (field_name, value) in mutation.fields_and_values {
+            // Get field classifications BEFORE mutable borrow
+            let field_classifications = schema.get_field_classifications(&field_name);
+            
             if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
-                // Use the new db_operations method to handle the entire field mutation process
-                self.db_ops.process_mutation_field(
+                // Use the new db_operations method with classifications
+                self.db_ops.process_mutation_field_with_schema(
                     &mutation.schema_name,
                     &field_name,
                     &mutation.pub_key,
                     value,
                     &key_value,
                     schema_field,
+                    field_classifications,
                 )?;
             }
         }
@@ -202,15 +206,19 @@ impl MutationManager {
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation_request.mutation.fields_and_values.keys().cloned().collect();
         for (field_name, value) in mutation_request.mutation.fields_and_values.clone() {
+            // Get field classifications BEFORE mutable borrow
+            let field_classifications = schema.get_field_classifications(&field_name);
+            
             if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
-                // Use the new db_operations method to handle the entire field mutation process
-                db_ops.process_mutation_field(
+                // Use the new db_operations method with classifications
+                db_ops.process_mutation_field_with_schema(
                     &mutation_request.mutation.schema_name,
                     &field_name,
                     &mutation_request.mutation.pub_key,
                     value,
                     &key_value,
                     schema_field,
+                    field_classifications,
                 )?;
             } else {
                 error!(

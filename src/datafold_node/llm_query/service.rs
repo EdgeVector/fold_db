@@ -117,6 +117,69 @@ impl LlmQueryService {
         self.parse_followup_analysis(&response)
     }
 
+    /// Generate query terms for native index search based on a natural language query
+    pub async fn generate_native_index_query_terms(
+        &self,
+        user_query: &str,
+        schemas: &[crate::schema::SchemaWithState],
+    ) -> Result<Vec<String>, String> {
+        let prompt = self.build_native_index_query_terms_prompt(user_query, schemas);
+        let response = self.call_llm(&prompt).await?;
+        self.parse_query_terms_response(&response)
+    }
+
+    /// Execute a complete AI-native index query workflow
+    pub async fn execute_ai_native_index_query(
+        &self,
+        user_query: &str,
+        schemas: &[crate::schema::SchemaWithState],
+        db_ops: &crate::db_operations::DbOperations,
+    ) -> Result<String, String> {
+        // Step 1: Generate native index search terms using AI
+        let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;
+        
+        // Step 2: Execute native index searches for each term
+        let mut all_results = Vec::new();
+        for term in &search_terms {
+            match db_ops.native_index_manager().search_with_classification(term, None) {
+                Ok(mut results) => all_results.append(&mut results),
+                Err(e) => {
+                    log::warn!("Native index search failed for term '{}': {}", term, e);
+                }
+            }
+        }
+        
+        // Step 3: Send results to AI for interpretation
+        self.interpret_native_index_results(user_query, &all_results).await
+    }
+
+    /// Execute a complete AI-native index query workflow and return both AI interpretation and raw results
+    pub async fn execute_ai_native_index_query_with_results(
+        &self,
+        user_query: &str,
+        schemas: &[crate::schema::SchemaWithState],
+        db_ops: &crate::db_operations::DbOperations,
+    ) -> Result<(String, Vec<crate::db_operations::IndexResult>), String> {
+        // Step 1: Generate native index search terms using AI
+        let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;
+        
+        // Step 2: Execute native index searches for each term
+        let mut all_results = Vec::new();
+        for term in &search_terms {
+            match db_ops.native_index_manager().search_with_classification(term, None) {
+                Ok(mut results) => all_results.append(&mut results),
+                Err(e) => {
+                    log::warn!("Native index search failed for term '{}': {}", term, e);
+                }
+            }
+        }
+        
+        // Step 3: Send results to AI for interpretation
+        let ai_interpretation = self.interpret_native_index_results(user_query, &all_results).await?;
+        
+        Ok((ai_interpretation, all_results))
+    }
+
     /// Build prompt to analyze if a followup needs a new query
     fn build_followup_analysis_prompt(
         &self,
@@ -207,6 +270,202 @@ impl LlmQueryService {
         );
 
         prompt
+    }
+
+    /// Build prompt to generate native index query terms
+    fn build_native_index_query_terms_prompt(
+        &self,
+        user_query: &str,
+        schemas: &[crate::schema::SchemaWithState],
+    ) -> String {
+        let mut prompt = String::from(
+            "You are generating search terms for a native word index. Based on the user's natural language query, \
+            generate relevant search terms that would help find matching records.\n\n"
+        );
+
+        prompt.push_str("Available Schemas:\n");
+        for schema in schemas {
+            prompt.push_str(&format!(
+                "- {} (Type: {:?}, State: {:?})\n",
+                schema.schema.name, schema.schema.schema_type, schema.state
+            ));
+            
+            // Include key configuration for Range and HashRange schemas
+            if let Some(ref key) = schema.schema.key {
+                if let Some(ref hash_field) = key.hash_field {
+                    prompt.push_str(&format!("  Hash Key: {} (indexed for fast lookup)\n", hash_field));
+                }
+                if let Some(ref range_field) = key.range_field {
+                    prompt.push_str(&format!("  Range Key: {} (indexed for fast lookup)\n", range_field));
+                }
+            }
+            
+            prompt.push_str("  Fields: ");
+            let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
+            prompt.push_str(&field_names.join(", "));
+            prompt.push('\n');
+        }
+
+        prompt.push_str(&format!("\nUser Query: {}\n\n", user_query));
+
+        prompt.push_str(
+            "Generate 3-8 relevant search terms that would help find records matching this query.\n\n\
+            Guidelines:\n\
+            - Extract key words and phrases from the query\n\
+            - Include synonyms and related terms\n\
+            - Consider different ways the same concept might be expressed\n\
+            - Include specific names, places, or entities mentioned\n\
+            - Generate terms that would be found in indexed fields\n\
+            - Avoid very common words (stopwords)\n\
+            - Keep terms concise but meaningful\n\n\
+            Examples:\n\
+            - Query: \"Find posts about artificial intelligence\"\n\
+              Terms: [\"artificial\", \"intelligence\", \"AI\", \"machine learning\", \"neural network\"]\n\
+            - Query: \"Show me articles by Jennifer Liu\"\n\
+              Terms: [\"Jennifer\", \"Liu\", \"Jennifer Liu\", \"author\"]\n\
+            - Query: \"Products with electronics tag\"\n\
+              Terms: [\"electronics\", \"electronic\", \"tech\", \"gadgets\", \"devices\"]\n\n\
+            Respond with a JSON array of strings:\n\
+            [\"term1\", \"term2\", \"term3\", ...]\n\n\
+            IMPORTANT: Return ONLY the JSON array, no additional text."
+        );
+
+        prompt
+    }
+
+    /// Parse the query terms response
+    fn parse_query_terms_response(&self, response: &str) -> Result<Vec<String>, String> {
+        // Try to extract JSON array from the response
+        let json_str = if let Some(start) = response.find('[') {
+            if let Some(end) = response.rfind(']') {
+                &response[start..=end]
+            } else {
+                response
+            }
+        } else {
+            response
+        };
+
+        let terms: Vec<String> = serde_json::from_str(json_str)
+            .map_err(|e| format!("Failed to parse query terms: {}. Response: {}", e, json_str))?;
+
+        if terms.is_empty() {
+            return Err("No query terms generated".to_string());
+        }
+
+        Ok(terms)
+    }
+
+    /// Generate native index search terms specifically for search execution
+    async fn generate_native_index_search_terms(
+        &self,
+        user_query: &str,
+        schemas: &[crate::schema::SchemaWithState],
+    ) -> Result<Vec<String>, String> {
+        let prompt = self.build_native_index_search_prompt(user_query, schemas);
+        let response = self.call_llm(&prompt).await?;
+        self.parse_query_terms_response(&response)
+    }
+
+    /// Interpret native index search results using AI
+    async fn interpret_native_index_results(
+        &self,
+        original_query: &str,
+        results: &[crate::db_operations::IndexResult],
+    ) -> Result<String, String> {
+        let prompt = self.build_native_index_interpretation_prompt(original_query, results);
+        self.call_llm(&prompt).await
+    }
+
+    /// Build prompt for native index search term generation
+    fn build_native_index_search_prompt(
+        &self,
+        user_query: &str,
+        schemas: &[crate::schema::SchemaWithState],
+    ) -> String {
+        let mut prompt = String::from(
+            "You are generating search terms for a native word index system. Based on the user's natural language query, \
+            generate 3-6 specific search terms that will be used to search the native index.\n\n"
+        );
+
+        prompt.push_str("Available Schemas:\n");
+        for schema in schemas {
+            prompt.push_str(&format!(
+                "- {} (Type: {:?}, State: {:?})\n",
+                schema.schema.name, schema.schema.schema_type, schema.state
+            ));
+            
+            if let Some(ref key) = schema.schema.key {
+                if let Some(ref hash_field) = key.hash_field {
+                    prompt.push_str(&format!("  Hash Key: {} (indexed for fast lookup)\n", hash_field));
+                }
+                if let Some(ref range_field) = key.range_field {
+                    prompt.push_str(&format!("  Range Key: {} (indexed for fast lookup)\n", range_field));
+                }
+            }
+            
+            prompt.push_str("  Fields: ");
+            let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
+            prompt.push_str(&field_names.join(", "));
+            prompt.push('\n');
+        }
+
+        prompt.push_str(&format!("\nUser Query: {}\n\n", user_query));
+
+        prompt.push_str(
+            "Generate 3-6 specific search terms that will be used to search the native word index.\n\n\
+            Guidelines:\n\
+            - Extract the most important keywords from the query\n\
+            - Include specific names, places, or entities mentioned\n\
+            - Generate terms that would be found in indexed text fields\n\
+            - Avoid very common words (stopwords)\n\
+            - Keep terms concise but meaningful\n\
+            - Focus on terms that are likely to appear in the data\n\n\
+            Examples:\n\
+            - Query: \"Find posts about artificial intelligence\"\n\
+              Terms: [\"artificial\", \"intelligence\", \"AI\", \"machine learning\"]\n\
+            - Query: \"Show me articles by Jennifer Liu\"\n\
+              Terms: [\"Jennifer\", \"Liu\", \"Jennifer Liu\"]\n\
+            - Query: \"Products with electronics tag\"\n\
+              Terms: [\"electronics\", \"electronic\", \"tech\"]\n\n\
+            Respond with a JSON array of strings:\n\
+            [\"term1\", \"term2\", \"term3\", ...]\n\n\
+            IMPORTANT: Return ONLY the JSON array, no additional text."
+        );
+
+        prompt
+    }
+
+    /// Build prompt for interpreting native index results
+    fn build_native_index_interpretation_prompt(
+        &self,
+        original_query: &str,
+        results: &[crate::db_operations::IndexResult],
+    ) -> String {
+        let results_preview = if results.len() > 50 {
+            &results[..50]
+        } else {
+            results
+        };
+
+        let results_str = serde_json::to_string_pretty(results_preview)
+            .unwrap_or_else(|_| "Failed to serialize results".to_string());
+
+        format!(
+            "You are interpreting native index search results for a user. Analyze the search results and provide a helpful response.\n\n\
+            Original User Query: {}\n\
+            Search Results ({} total, showing first {}):\n{}\n\n\
+            Provide:\n\
+            1. A summary of what was found\n\
+            2. Key insights from the results\n\
+            3. Notable patterns or interesting findings\n\
+            4. If no results were found, suggest alternative search terms\n\n\
+            Keep the response concise, informative, and helpful to the user.",
+            original_query,
+            results.len(),
+            results_preview.len(),
+            results_str
+        )
     }
 
     /// Parse the followup analysis response
@@ -705,13 +964,19 @@ mod tests {
         field_topologies.insert(
             "author".to_string(),
             JsonTopology {
-                root: TopologyNode::Primitive(PrimitiveType::String),
+                root: TopologyNode::Primitive {
+                    value: PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                },
             },
         );
         field_topologies.insert(
             "publish_date".to_string(),
             JsonTopology {
-                root: TopologyNode::Primitive(PrimitiveType::String),
+                root: TopologyNode::Primitive {
+                    value: PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                },
             },
         );
 

@@ -121,7 +121,7 @@ fn test_schema_with_array_topology() {
     
     // The topology should be an Array type
     match &tags_topology.root {
-        datafold::schema::types::TopologyNode::Array(_) => {
+        datafold::schema::types::TopologyNode::Array { .. } => {
             println!("✅ Tags correctly has Array topology");
         }
         other => {
