@@ -81,6 +81,13 @@ impl MutationManager {
                     schema_field,
                     field_classifications,
                 )?;
+            } else {
+                return Err(SchemaError::InvalidData(format!(
+                    "Field '{}' not found in runtime_fields for schema '{}'. Available fields: {:?}",
+                    field_name,
+                    mutation.schema_name,
+                    schema.runtime_fields.keys().collect::<Vec<_>>()
+                )));
             }
         }
 
@@ -221,12 +228,12 @@ impl MutationManager {
                     field_classifications,
                 )?;
             } else {
-                error!(
+                return Err(SchemaError::InvalidData(format!(
                     "Field '{}' not found in runtime_fields for schema '{}'. Available fields: {:?}",
                     field_name,
                     mutation_request.mutation.schema_name,
                     schema.runtime_fields.keys().collect::<Vec<_>>()
-                );
+                )));
             }
         }
 

@@ -60,6 +60,25 @@ IMPORTANT - Field Topologies with Classifications:
   * Arrays of Primitives: {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}
   * Arrays of Objects: {"type": "Array", "value": {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}
 
+CRITICAL - Using Flattened Path Structure:
+- The superset structure now uses flattened dot-separated paths instead of nested structures
+- Each path represents a field with its type (e.g., "entities.user_mentions[0].id": "string")
+- Convert these flattened paths into proper nested topology structures
+- For arrays of objects, paths like "user_mentions[0].field" mean:
+  * user_mentions is an Array
+  * Each array element is an Object  
+  * Each object has the field "field"
+  * Create topology: {"type": "Array", "value": {"type": "Object", "value": {"field": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}
+- Group paths by their base path and create proper nested structures
+- IMPORTANT: When you see paths like "user_mentions[0].id", "user_mentions[0].name", etc., this means:
+  * user_mentions is an Array (not an Object)
+  * Each array element is an Object with fields: id, name, etc.
+  * The topology should be: {"type": "Array", "value": {"type": "Object", "value": {"id": {...}, "name": {...}}}}
+- NEVER create an object with field names like "[0].id" - this is wrong!
+- NEVER use generic "Object" types without specifying the exact fields inside
+- ALWAYS specify the complete structure with all nested fields and their types
+- For example, instead of {"type": "Object"}, use {"type": "Object", "value": {"field1": {"type": "Primitive", "value": "String"}, "field2": {"type": "Array", "value": {...}}}}
+
 Example Range schema (for multiple records):
 {
   "name": "Schema",
@@ -101,13 +120,21 @@ Example with Arrays and Objects:
 
 /// Instructions appended to every prompt
 const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and either:
-1. If existing schemas can handle this data, return their names in existing_schemas and provide mutation_mappers
-2. If no existing schemas match, create a new schema definition in new_schemas and provide mutation_mappers
+1. If existing schemas can handle this data EXACTLY (with perfect topology match), return their names in existing_schemas and provide mutation_mappers
+2. If no existing schemas match PERFECTLY, create a new schema definition in new_schemas and provide mutation_mappers
+
+IMPORTANT: Only recommend existing schemas if they have EXACTLY the same topology structure as the input data. If there are any differences in nested structures, array types, or field types, create a new schema instead.
+
+CRITICAL: When in doubt, ALWAYS create a new schema rather than trying to match an existing one. It's better to have multiple schemas than to use an incorrect one.
+
+FORCE NEW SCHEMA: For Twitter data with user_mentions arrays, ALWAYS create a new schema. Do not use existing schemas even if they seem to match.
 
 CRITICAL RULES:
 - If the original input was a JSON array (multiple objects), you MUST create a NEW Range schema with "key": {"range_field": "unique_field"}
 - NEVER recommend a Single-type schema for array inputs - they will overwrite data
 - When user provides an array, ignore any existing Single schemas and create a new Range schema with the "key" field
+- NEVER use generic "Object" types - always specify the complete field structure with exact types and classifications
+- ALWAYS provide complete topology definitions with all nested fields explicitly defined
 
 The response must be valid JSON."#;
 
@@ -456,11 +483,29 @@ impl OllamaService {
             }
         }
 
+        // Look for "Here's the response:" followed by JSON
+        if let Some(start) = response_text.find("Here's the response:") {
+            let json_start = response_text[start + 20..].trim(); // Skip "Here's the response:"
+            if let Some(json_start_pos) = json_start.find('{') {
+                let json_candidate = json_start[json_start_pos..].trim();
+                if let Some(end) = json_candidate.rfind('}') {
+                    let json_str = json_candidate[..=end].to_string();
+                    if serde_json::from_str::<Value>(&json_str).is_ok() {
+                        return Ok(json_str);
+                    }
+                }
+            }
+        }
+
         // Look for direct JSON (starts with { and ends with })
         if let Some(start) = response_text.find('{') {
             if let Some(end) = response_text.rfind('}') {
                 if end > start {
-                    return Ok(response_text[start..=end].to_string());
+                    let json_candidate = response_text[start..=end].to_string();
+                    // Try to parse the JSON to validate it's complete
+                    if serde_json::from_str::<Value>(&json_candidate).is_ok() {
+                        return Ok(json_candidate);
+                    }
                 }
             }
         }

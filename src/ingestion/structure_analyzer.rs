@@ -44,57 +44,37 @@ impl StructureAnalyzer {
                     return Value::Object(serde_json::Map::new());
                 }
                 
-                // Collect all unique fields and their types from all objects
-                let mut field_types: HashMap<String, Vec<String>> = HashMap::new();
+                // Create flattened path-based structure
+                let mut path_types: HashMap<String, Vec<String>> = HashMap::new();
                 
                 for item in array {
                     if let Some(obj) = item.as_object() {
-                        for (key, value) in obj {
-                            let type_name = Self::get_value_type(value);
-                            field_types
-                                .entry(key.clone())
-                                .or_default()
-                                .push(type_name);
-                        }
+                        Self::flatten_object(obj, &mut path_types, String::new());
                     }
                 }
                 
-                // Create superset object with all fields
+                // Create superset with flattened paths
                 let mut superset = serde_json::Map::new();
-                for (field_name, types) in field_types {
-                    // Use the most specific type if there are multiple types
+                for (path, types) in path_types {
                     let representative_type = Self::get_representative_type(&types);
-                    
-                    // If the field is an object or array, analyze its nested structure
-                    if representative_type == "object" || representative_type == "array" {
-                        // Collect all instances of this field to analyze nested structure
-                        let mut nested_values = Vec::new();
-                        for item in array {
-                            if let Some(obj) = item.as_object() {
-                                if let Some(value) = obj.get(&field_name) {
-                                    nested_values.push(value.clone());
-                                }
-                            }
-                        }
-                        
-                        // Create superset structure for nested data
-                        let nested_structure = Self::create_nested_superset(&nested_values);
-                        superset.insert(field_name, nested_structure);
-                    } else {
-                        superset.insert(field_name, Value::String(representative_type));
-                    }
+                    superset.insert(path, Value::String(representative_type));
                 }
                 
                 Value::Object(superset)
             }
             Value::Object(obj) => {
-                // For single objects, create a structure with field types
-                let mut structure = serde_json::Map::new();
-                for (key, value) in obj {
-                    let type_name = Self::get_value_type(value);
-                    structure.insert(key.clone(), Value::String(type_name));
+                // For single objects, use flattened path structure
+                let mut path_types: HashMap<String, Vec<String>> = HashMap::new();
+                Self::flatten_object(obj, &mut path_types, String::new());
+                
+                // Create superset with flattened paths
+                let mut superset = serde_json::Map::new();
+                for (path, types) in path_types {
+                    let representative_type = Self::get_representative_type(&types);
+                    superset.insert(path, Value::String(representative_type));
                 }
-                Value::Object(structure)
+                
+                Value::Object(superset)
             }
             _ => {
                 // For primitive values, return a simple type representation
@@ -107,6 +87,64 @@ impl StructureAnalyzer {
         }
     }
     
+    /// Flatten an object into dot-separated paths
+    fn flatten_object(
+        obj: &serde_json::Map<String, Value>,
+        path_types: &mut HashMap<String, Vec<String>>,
+        current_path: String,
+    ) {
+        for (key, value) in obj {
+            let field_path = if current_path.is_empty() {
+                key.clone()
+            } else {
+                format!("{}.{}", current_path, key)
+            };
+            
+            match value {
+                Value::Object(nested_obj) => {
+                    // Recursively flatten nested objects
+                    Self::flatten_object(nested_obj, path_types, field_path);
+                }
+                Value::Array(array) => {
+                    // For arrays, analyze the structure of elements
+                    if !array.is_empty() {
+                        // Check if array contains objects
+                        if array.iter().all(|item| item.is_object()) {
+                            // Array of objects - flatten each object and add array notation
+                            for (i, item) in array.iter().enumerate() {
+                                if let Some(obj) = item.as_object() {
+                                    let array_path = format!("{}[{}]", field_path, i);
+                                    Self::flatten_object(obj, path_types, array_path);
+                                }
+                            }
+                        } else {
+                            // Array of primitives - just record as array type
+                            let element_type = Self::get_value_type(&array[0]);
+                            path_types
+                                .entry(field_path)
+                                .or_default()
+                                .push(format!("array[{}]", element_type));
+                        }
+                    } else {
+                        // Empty array
+                        path_types
+                            .entry(field_path)
+                            .or_default()
+                            .push("array".to_string());
+                    }
+                }
+                _ => {
+                    // Primitive value
+                    let type_name = Self::get_value_type(value);
+                    path_types
+                        .entry(field_path)
+                        .or_default()
+                        .push(type_name);
+                }
+            }
+        }
+    }
+
     /// Get the JSON type of a value
     fn get_value_type(value: &Value) -> String {
         match value {
@@ -119,92 +157,6 @@ impl StructureAnalyzer {
         }
     }
     
-    /// Create superset structure for nested data (objects or arrays)
-    fn create_nested_superset(values: &[Value]) -> Value {
-        if values.is_empty() {
-            return Value::String("null".to_string());
-        }
-        
-        // Check if all values are objects
-        if values.iter().all(|v| v.is_object()) {
-            // Create superset for nested objects
-            let mut field_types: HashMap<String, Vec<String>> = HashMap::new();
-            
-            for value in values {
-                if let Some(obj) = value.as_object() {
-                    for (key, val) in obj {
-                        let type_name = Self::get_value_type(val);
-                        field_types
-                            .entry(key.clone())
-                            .or_default()
-                            .push(type_name);
-                    }
-                }
-            }
-            
-            // Create superset object with all fields
-            let mut superset = serde_json::Map::new();
-            for (field_name, types) in field_types {
-                let representative_type = Self::get_representative_type(&types);
-                
-                // If the field is an object, analyze its nested structure
-                if representative_type == "object" {
-                    // Collect all instances of this field to analyze nested structure
-                    let mut nested_values = Vec::new();
-                    for value in values {
-                        if let Some(obj) = value.as_object() {
-                            if let Some(nested_value) = obj.get(&field_name) {
-                                nested_values.push(nested_value.clone());
-                            }
-                        }
-                    }
-                    
-                    // Create superset structure for nested data
-                    let nested_structure = Self::create_nested_superset(&nested_values);
-                    superset.insert(field_name, nested_structure);
-                } else {
-                    superset.insert(field_name, Value::String(representative_type));
-                }
-            }
-            
-            Value::Object(superset)
-        } else if values.iter().all(|v| v.is_array()) {
-            // Handle arrays of arrays - analyze element types
-            let mut element_types: HashMap<String, usize> = HashMap::new();
-            
-            for array_value in values {
-                if let Some(array) = array_value.as_array() {
-                    for item in array {
-                        let type_name = Self::get_value_type(item);
-                        *element_types.entry(type_name).or_insert(0) += 1;
-                    }
-                }
-            }
-            
-            let most_common_type = element_types
-                .into_iter()
-                .max_by_key(|(_, count)| *count)
-                .map(|(type_name, _)| type_name)
-                .unwrap_or_else(|| "string".to_string());
-            
-            Value::String(format!("array[{}]", most_common_type))
-        } else {
-            // Mixed types or primitive arrays - use most common type
-            let mut type_counts: HashMap<String, usize> = HashMap::new();
-            for value in values {
-                let type_name = Self::get_value_type(value);
-                *type_counts.entry(type_name).or_insert(0) += 1;
-            }
-            
-            let most_common_type = type_counts
-                .into_iter()
-                .max_by_key(|(_, count)| *count)
-                .map(|(type_name, _)| type_name)
-                .unwrap_or_else(|| "string".to_string());
-            
-            Value::String(most_common_type)
-        }
-    }
     
     /// Get the most representative type from a list of types
     /// 
@@ -435,20 +387,21 @@ mod tests {
         let superset = StructureAnalyzer::create_superset_structure(&data);
         let obj = superset.as_object().unwrap();
         
+        // Debug: print the actual structure
+        println!("Actual superset structure: {}", serde_json::to_string_pretty(&superset).unwrap());
+        
         // Check top-level fields
         assert_eq!(obj["name"], "string");
         
-        // Check nested object structure
-        assert!(obj.contains_key("profile"));
-        let profile = obj["profile"].as_object().unwrap();
-        assert!(profile.contains_key("age"));
-        assert!(profile.contains_key("department"));
-        assert!(profile.contains_key("email"));
-        assert!(profile.contains_key("role"));
-        assert_eq!(profile["age"], "number");
-        assert_eq!(profile["department"], "string");
-        assert_eq!(profile["email"], "string");
-        assert_eq!(profile["role"], "string");
+        // Check flattened path structure (new approach)
+        assert!(obj.contains_key("profile.age"));
+        assert!(obj.contains_key("profile.department"));
+        assert!(obj.contains_key("profile.email"));
+        assert!(obj.contains_key("profile.role"));
+        assert_eq!(obj["profile.age"], "number");
+        assert_eq!(obj["profile.department"], "string");
+        assert_eq!(obj["profile.email"], "string");
+        assert_eq!(obj["profile.role"], "string");
         
         // Check array structure
         assert_eq!(obj["tags"], "array[string]");
