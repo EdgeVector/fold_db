@@ -7,14 +7,32 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { llmQueryClient } from '../../api/clients/llmQueryClient';
+import { useAppSelector, useAppDispatch } from '../../store/hooks';
+import {
+  setInputText,
+  setSessionId,
+  setIsProcessing,
+  addMessage,
+  setShowResults,
+  startNewConversation,
+  selectInputText,
+  selectSessionId,
+  selectIsProcessing,
+  selectConversationLog,
+  selectShowResults,
+  selectCanAskFollowup,
+} from '../../store/aiQuerySlice';
 
 function LlmQueryTab({ onResult }) {
-  // State management
-  const [inputText, setInputText] = useState('');
-  const [sessionId, setSessionId] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [conversationLog, setConversationLog] = useState([]);
-  const [showResults, setShowResults] = useState(false);
+  // Redux state and dispatch
+  const dispatch = useAppDispatch();
+  const inputText = useAppSelector(selectInputText);
+  const sessionId = useAppSelector(selectSessionId);
+  const isProcessing = useAppSelector(selectIsProcessing);
+  const conversationLog = useAppSelector(selectConversationLog);
+  const showResults = useAppSelector(selectShowResults);
+  const canAskFollowup = useAppSelector(selectCanAskFollowup);
+  
   const conversationEndRef = useRef(null);
 
   // Auto-scroll to bottom when conversation updates
@@ -26,13 +44,8 @@ function LlmQueryTab({ onResult }) {
    * Add a message to the conversation log
    */
   const addToLog = useCallback((type, content, data = null) => {
-    setConversationLog(prev => [...prev, {
-      type, // 'user', 'system', 'results'
-      content,
-      data,
-      timestamp: new Date().toISOString()
-    }]);
-  }, []);
+    dispatch(addMessage({ type, content, data }));
+  }, [dispatch]);
 
   /**
    * Handle user input - run query or ask follow-up
@@ -45,15 +58,15 @@ function LlmQueryTab({ onResult }) {
     }
 
     const userInput = inputText.trim();
-    setInputText('');
-    setIsProcessing(true);
+    dispatch(setInputText(''));
+    dispatch(setIsProcessing(true));
 
     // Add user message to log
     addToLog('user', userInput);
 
     try {
       // If this is a follow-up question (session exists and we have results)
-      if (sessionId && conversationLog.some(log => log.type === 'results')) {
+      if (canAskFollowup) {
         addToLog('system', '🤔 Analyzing if question can be answered from existing context...');
         
         // First analyze if the question can be answered from existing context
@@ -111,7 +124,7 @@ function LlmQueryTab({ onResult }) {
           
           // Update session ID if returned from the server
           if (result.session_id) {
-            setSessionId(result.session_id);
+            dispatch(setSessionId(result.session_id));
           }
           
           // Display the AI's interpretation of the results in the conversation
@@ -150,7 +163,7 @@ function LlmQueryTab({ onResult }) {
         
         // Update session ID if returned from the server
         if (result.session_id) {
-          setSessionId(result.session_id);
+          dispatch(setSessionId(result.session_id));
         }
         
         // Display the AI's interpretation of the results in the conversation
@@ -168,19 +181,16 @@ function LlmQueryTab({ onResult }) {
       addToLog('system', `❌ Error: ${error.message}`);
       onResult({ error: error.message });
     } finally {
-      setIsProcessing(false);
+      dispatch(setIsProcessing(false));
     }
-  }, [inputText, sessionId, conversationLog, isProcessing, addToLog, onResult]);
+  }, [inputText, sessionId, canAskFollowup, isProcessing, addToLog, onResult, dispatch]);
 
   /**
    * Start a new conversation
    */
   const handleNewConversation = useCallback(() => {
-    setSessionId(null);
-    setConversationLog([]);
-    setInputText('');
-    setIsProcessing(false);
-  }, []);
+    dispatch(startNewConversation());
+  }, [dispatch]);
 
   return (
     <div className="flex flex-col bg-white rounded-lg shadow">
@@ -243,7 +253,7 @@ function LlmQueryTab({ onResult }) {
                     <button
                       onClick={() => {
                         const newShowResults = !showResults;
-                        setShowResults(newShowResults);
+                        dispatch(setShowResults(newShowResults));
                         // Show/hide the results section based on toggle
                         if (newShowResults) {
                           // Find the results data from conversation log
@@ -292,7 +302,7 @@ function LlmQueryTab({ onResult }) {
           <input
             type="text"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => dispatch(setInputText(e.target.value))}
             placeholder={
               conversationLog.some(log => log.type === 'results')
                 ? "Ask a follow-up question or start a new query..."
