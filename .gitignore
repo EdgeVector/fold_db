@@ -8,6 +8,7 @@ Cargo.lock
 datafold_sdk/Cargo.lock
 social_app_example/Cargo.lock
 **/target/**/*.lock
+sample_data/
 
 # Electron UI specific
 /fold_client/node_modules/

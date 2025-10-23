@@ -101,18 +101,21 @@ impl IngestionCore {
         // Step 2: Prepare schemas
         let available_schemas = self.prepare_schemas().await?;
 
+        // Step 2.5: Flatten Twitter data structure for AI analysis
+        let flattened_data = self.flatten_twitter_data(&request.data);
+
         // Step 3: Get AI recommendation
         let ai_response = self
-            .get_ai_recommendation(&request.data, &available_schemas)
+            .get_ai_recommendation(&flattened_data, &available_schemas)
             .await?;
 
         // Step 4: Determine and setup schema
-        let (schema_name, new_schema_created, mutation_mappers) = self.setup_schema(&ai_response, &request.data).await?;
+        let (schema_name, new_schema_created, mutation_mappers) = self.setup_schema(&ai_response, &flattened_data).await?;
 
         // Step 5: Generate mutations using the returned mutation_mappers (which may have been updated by schema service)
         let mutations = self.generate_mutations_for_data(
             &schema_name,
-            &request.data,
+            &flattened_data,
             &mutation_mappers,
             request.trust_distance.unwrap_or(self.config.default_trust_distance),
             request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
@@ -141,6 +144,62 @@ impl IngestionCore {
             ));
         }
         Ok(())
+    }
+
+    /// Flatten Twitter data structure for AI analysis
+    /// Converts nested structures like [{"like": {"tweetId": "...", "fullText": "..."}}] 
+    /// to flattened structures like [{"tweetId": "...", "fullText": "..."}]
+    fn flatten_twitter_data(&self, data: &Value) -> Value {
+        if let Some(array) = data.as_array() {
+            let flattened_items: Vec<Value> = array.iter().map(|item| {
+                if let Some(obj) = item.as_object() {
+                    // Handle nested Twitter data structure (e.g., {"like": {...}} or {"following": {...}})
+                    if obj.len() == 1 {
+                        // If there's only one key, assume it's a wrapper and extract the inner object
+                        let (wrapper_key, inner_value) = obj.iter().next().unwrap();
+                        if let Some(inner_obj) = inner_value.as_object() {
+                            log_feature!(
+                                LogFeature::Ingestion,
+                                info,
+                                "Flattening Twitter data: extracting inner object from wrapper '{}'",
+                                wrapper_key
+                            );
+                            Value::Object(inner_obj.clone())
+                        } else {
+                            // Fallback to original structure if inner value is not an object
+                            Value::Object(obj.clone())
+                        }
+                    } else {
+                        // Multiple keys, use as-is
+                        Value::Object(obj.clone())
+                    }
+                } else {
+                    item.clone()
+                }
+            }).collect();
+            
+            Value::Array(flattened_items)
+        } else if let Some(obj) = data.as_object() {
+            // Handle single object case
+            if obj.len() == 1 {
+                let (wrapper_key, inner_value) = obj.iter().next().unwrap();
+                if let Some(inner_obj) = inner_value.as_object() {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Flattening Twitter data: extracting inner object from wrapper '{}'",
+                        wrapper_key
+                    );
+                    Value::Object(inner_obj.clone())
+                } else {
+                    Value::Object(obj.clone())
+                }
+            } else {
+                Value::Object(obj.clone())
+            }
+        } else {
+            data.clone()
+        }
     }
 
     /// Prepares available schemas for AI recommendation.
@@ -546,6 +605,123 @@ impl IngestionCore {
         Ok(())
     }
 
+    /// Extract key values from JSON data based on schema key fields
+    fn extract_key_values_from_data(
+        &self,
+        fields_and_values: &HashMap<String, Value>,
+        schema_name: &str,
+    ) -> IngestionResult<HashMap<String, String>> {
+        let mut keys_and_values = HashMap::new();
+        
+        // Get the schema to understand its key structure
+        if let Ok(Some(schema)) = self.schema_core.get_schema(schema_name) {
+            if let Some(key_def) = &schema.key {
+                // Extract hash field value if present
+                if let Some(hash_field) = &key_def.hash_field {
+                    if let Some(hash_value) = fields_and_values.get(hash_field) {
+                        if let Some(hash_str) = hash_value.as_str() {
+                            keys_and_values.insert("hash_field".to_string(), hash_str.to_string());
+                        } else if let Some(hash_num) = hash_value.as_f64() {
+                            keys_and_values.insert("hash_field".to_string(), hash_num.to_string());
+                        }
+                    }
+                }
+                
+                // Extract range field value if present
+                if let Some(range_field) = &key_def.range_field {
+                    if let Some(range_value) = self.extract_nested_field_value(fields_and_values, range_field) {
+                        if let Some(range_str) = range_value.as_str() {
+                            keys_and_values.insert("range_field".to_string(), range_str.to_string());
+                        } else if let Some(range_num) = range_value.as_f64() {
+                            keys_and_values.insert("range_field".to_string(), range_num.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Extracted key values for schema '{}': {:?}",
+            schema_name,
+            keys_and_values
+        );
+        
+        Ok(keys_and_values)
+    }
+
+    /// Extract nested field value from JSON data using dot notation
+    fn extract_nested_field_value<'a>(
+        &self,
+        fields_and_values: &'a HashMap<String, Value>,
+        field_path: &str,
+    ) -> Option<&'a Value> {
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "🔍 Searching for field '{}' in data with top-level keys: {:?}",
+            field_path,
+            fields_and_values.keys().collect::<Vec<_>>()
+        );
+        
+        // First try direct field access
+        if let Some(value) = fields_and_values.get(field_path) {
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "✅ Found field '{}' at top level",
+                field_path
+            );
+            return Some(value);
+        }
+        
+        // Then try nested field access (e.g., "like.tweetId")
+        if field_path.contains('.') {
+            let parts: Vec<&str> = field_path.split('.').collect();
+            if parts.len() == 2 {
+                if let Some(parent_value) = fields_and_values.get(parts[0]) {
+                    if let Some(parent_obj) = parent_value.as_object() {
+                        if let Some(result) = parent_obj.get(parts[1]) {
+                            log_feature!(
+                                LogFeature::Ingestion,
+                                info,
+                                "✅ Found field '{}' using dot notation",
+                                field_path
+                            );
+                            return Some(result);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Try to find the field in nested objects
+        for (parent_key, value) in fields_and_values {
+            if let Some(obj) = value.as_object() {
+                if let Some(nested_value) = obj.get(field_path) {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "✅ Found field '{}' nested inside '{}'",
+                        field_path,
+                        parent_key
+                    );
+                    return Some(nested_value);
+                }
+            }
+        }
+        
+        log_feature!(
+            LogFeature::Ingestion,
+            warn,
+            "❌ Field '{}' not found in data",
+            field_path
+        );
+        
+        None
+    }
+
     /// Generate mutations for the data
     fn generate_mutations_for_data(
         &self,
@@ -579,9 +755,15 @@ impl IngestionCore {
                     continue;
                 };
 
+                // Extract key values from the JSON data based on schema key fields
+                let keys_and_values = self.extract_key_values_from_data(
+                    &fields_and_values,
+                    schema_name,
+                )?;
+
                 let mutations = self.mutation_generator.generate_mutations(
                     schema_name,
-                    &HashMap::new(),
+                    &keys_and_values,
                     &fields_and_values,
                     mutation_mappers,
                     trust_distance,
@@ -600,9 +782,15 @@ impl IngestionCore {
                 HashMap::new()
             };
 
+            // Extract key values from the JSON data based on schema key fields
+            let keys_and_values = self.extract_key_values_from_data(
+                &fields_and_values,
+                schema_name,
+            )?;
+
             self.mutation_generator.generate_mutations(
                 schema_name,
-                &HashMap::new(),
+                &keys_and_values,
                 &fields_and_values,
                 mutation_mappers,
                 trust_distance,
