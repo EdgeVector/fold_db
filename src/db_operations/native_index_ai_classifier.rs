@@ -7,13 +7,11 @@ use crate::schema::SchemaError;
 // For now, we use heuristic-based classification
 
 pub struct NativeIndexAIClassifier {
-    #[allow(dead_code)] // TODO: Will be used for full AI classification
-    config: IngestionConfig,
 }
 
 impl NativeIndexAIClassifier {
-    pub fn new(config: IngestionConfig) -> Self {
-        Self { config }
+    pub fn new(_config: IngestionConfig) -> Self {
+        Self { }
     }
 
     /// Classify a field using heuristics (AI classification is TODO)

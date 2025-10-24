@@ -75,10 +75,6 @@ impl SchemaServiceClient {
         if response.status() == StatusCode::CONFLICT {
             #[derive(Deserialize)]
             struct ConflictBody {
-                #[allow(dead_code)]
-                error: String,
-                #[allow(dead_code)]
-                similarity: f64,
                 closest_schema: Schema,
             }
             

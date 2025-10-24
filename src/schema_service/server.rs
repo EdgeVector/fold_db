@@ -82,9 +82,6 @@ pub struct SchemaServiceState {
     schemas_tree: sled::Tree,
 }
 
-#[allow(dead_code)]
-const FIELD_OVERLAP_THRESHOLD: f64 = 0.6;
-
 impl SchemaServiceState {
     pub fn new(db_path: String) -> FoldDbResult<Self> {
         let db = sled::open(&db_path).map_err(|e| {
@@ -239,60 +236,6 @@ impl SchemaServiceState {
         schemas.insert(schema_name.clone(), schema.clone());
 
         Ok(SchemaAddOutcome::Added(schema, mutation_mappers))
-    }
-
-    #[allow(dead_code)]
-    fn validate_schema_name(schema_name: &str) -> FoldDbResult<()> {
-        if schema_name.is_empty() {
-            return Err(FoldDbError::Config(
-                "Schema name must not be empty".to_string(),
-            ));
-        }
-
-        if schema_name.chars().all(|character| {
-            character.is_ascii_alphanumeric() || character == '_' || character == '-'
-        }) {
-            return Ok(());
-        }
-
-        Err(FoldDbError::Config(format!(
-            "Schema name '{}' contains invalid characters",
-            schema_name
-        )))
-    }
-
-    #[allow(dead_code)]
-    fn normalized_json_string(value: &serde_json::Value) -> FoldDbResult<String> {
-        let normalized = Self::normalize_value(value);
-        serde_json::to_string(&normalized).map_err(|error| {
-            FoldDbError::Serialization(format!("Failed to canonicalize schema: {}", error))
-        })
-    }
-
-    #[allow(dead_code)]
-    fn normalized_json_string_without_name(value: &serde_json::Value) -> FoldDbResult<String> {
-        let mut sanitized = value.clone();
-        if let serde_json::Value::Object(map) = &mut sanitized {
-            map.remove("name");
-        }
-        Self::normalized_json_string(&sanitized)
-    }
-
-    #[allow(dead_code)]
-    fn normalize_value(value: &serde_json::Value) -> serde_json::Value {
-        match value {
-            serde_json::Value::Object(map) => {
-                let mut entries: Vec<_> = map.iter().collect();
-                entries.sort_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
-                let mut sorted_map = serde_json::Map::with_capacity(entries.len());
-                for (key, inner_value) in entries {
-                    sorted_map.insert(key.clone(), Self::normalize_value(inner_value));
-                }
-                serde_json::Value::Object(sorted_map)
-            }
-            serde_json::Value::Array(items) => serde_json::Value::Array(items.iter().map(Self::normalize_value).collect()),
-            _ => value.clone(),
-        }
     }
 
 }
