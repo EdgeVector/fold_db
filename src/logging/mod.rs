@@ -38,6 +38,9 @@ impl LoggingSystem {
             _ => log::LevelFilter::Info,
         };
         log::set_max_level(level_filter);
+        
+        // Also set the web logger level dynamically
+        crate::web_logger::set_log_level(level_filter);
 
         // Store configuration globally
         let config_arc = Arc::new(RwLock::new(config));
@@ -45,8 +48,7 @@ impl LoggingSystem {
             .set(config_arc.clone())
             .map_err(|_| LoggingError::AlreadyInitialized)?;
 
-        // Initialize the existing web logger for backward compatibility
-        crate::web_logger::init().ok();
+        // Web logger is already initialized in main, no need to reinitialize
 
         Ok(())
     }

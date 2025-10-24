@@ -8,7 +8,7 @@ use crate::fold_db_core::infrastructure::message_bus::{
 };
 use crate::schema::SchemaError;
 use crate::schema::types::Mutation;
-use log::{error, info, warn};
+use log::{error, warn};
 use serde::Serialize;
 use std::sync::Arc;
 use std::thread;
@@ -57,18 +57,15 @@ impl MutationEventManager {
         is_running.store(true, std::sync::atomic::Ordering::Release);
 
         thread::spawn(move || {
-            info!("🔄 Starting MutationEventManager background thread");
             
             // Subscribe to MutationRequest events (emitted when transforms complete and store results)
             let mut consumer = message_bus.subscribe::<MutationRequest>();
 
-            info!("✅ MutationEventManager subscribed to MutationRequest events");
 
             // Main event processing loop
             while is_running.load(std::sync::atomic::Ordering::Acquire) {
                 match consumer.try_recv() {
                     Ok(mutation_request) => {
-                        info!("📨 Received MutationRequest event: {:?}", mutation_request);
                         
                         if let Err(e) = Self::handle_mutation_request(&mutation_request, &mutation_executor, &message_bus) {
                             error!("❌ Failed to handle mutation request: {}", e);
@@ -85,17 +82,14 @@ impl MutationEventManager {
                 }
             }
 
-            info!("🛑 MutationEventManager background thread stopped");
         });
 
-        info!("✅ MutationEventManager started successfully");
         Ok(())
     }
 
     /// Stop the mutation event manager
     pub fn stop(&self) {
         self.is_running.store(false, std::sync::atomic::Ordering::Release);
-        info!("🛑 MutationEventManager stop requested");
     }
 
     /// Check if the manager is currently running
@@ -111,21 +105,10 @@ impl MutationEventManager {
     ) -> Result<(), SchemaError> {
         let start_time = std::time::Instant::now();
         
-        info!(
-            "🔧 Processing MutationRequest event for schema: {}, correlation_id: {}",
-            mutation_request.mutation.schema_name, mutation_request.correlation_id
-        );
 
-        // Log mutation details
-        info!(
-            "📊 Mutation details - Schema: {}, Type: {:?}, Fields: {:?}",
-            mutation_request.mutation.schema_name,
-            mutation_request.mutation.mutation_type,
-            mutation_request.mutation.fields_and_values.keys().collect::<Vec<_>>()
-        );
 
         // Actually execute the mutation using the provided closure
-        let mutation_result = mutation_executor(mutation_request.mutation.clone())?;
+        let _mutation_result = mutation_executor(mutation_request.mutation.clone())?;
         
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -150,7 +133,6 @@ impl MutationEventManager {
             mutation_context,
         };
 
-        info!("📢 Emitting MutationExecuted event for completed mutation");
         message_bus.publish(mutation_event).map_err(|e| {
             error!("❌ Failed to emit MutationExecuted event: {}", e);
             SchemaError::InvalidData(format!("Failed to emit mutation event: {}", e))
@@ -160,25 +142,17 @@ impl MutationEventManager {
         Self::perform_mutation_request_cleanup(mutation_request)?;
         Self::update_mutation_request_statistics(mutation_request)?;
 
-        info!(
-            "✅ Successfully executed mutation and emitted MutationExecuted event. Mutation ID: {}, Execution time: {}ms",
-            mutation_result, execution_time_ms
-        );
         Ok(())
     }
 
 
     /// Perform cleanup operations after a mutation request
     fn perform_mutation_request_cleanup(
-        mutation_request: &MutationRequest,
+        _mutation_request: &MutationRequest,
     ) -> Result<(), SchemaError> {
         // Example: Update mutation state or perform cleanup
         // This is where you could add any post-mutation processing
         
-        info!(
-            "🧹 Performing mutation request cleanup for schema: {}, correlation_id: {}",
-            mutation_request.mutation.schema_name, mutation_request.correlation_id
-        );
 
         // Example cleanup operations:
         // - Update mutation tracking
@@ -191,25 +165,12 @@ impl MutationEventManager {
 
     /// Update mutation request statistics
     fn update_mutation_request_statistics(
-        mutation_request: &MutationRequest,
+        _mutation_request: &MutationRequest,
     ) -> Result<(), SchemaError> {
-        info!(
-            "📈 Updating mutation request statistics for schema: {}",
-            mutation_request.mutation.schema_name
-        );
 
         // Example: Store mutation request statistics
         // Note: In a real implementation, you might want to store these in the database
         // For now, we'll just log the statistics
-        info!(
-            "📊 Mutation statistics - Schema: {}, Type: {:?}, Fields: {}, Correlation ID: {}",
-            mutation_request.mutation.schema_name,
-            mutation_request.mutation.mutation_type,
-            mutation_request.mutation.fields_and_values.len(),
-            mutation_request.correlation_id
-        );
-
-        info!("✅ Updated mutation request statistics");
         Ok(())
     }
 
@@ -235,28 +196,24 @@ impl MutationEventManager {
             mutation_context,
         };
 
-        info!("📢 Emitting MutationExecuted event: {:?}", mutation_event);
 
         self.message_bus.publish(mutation_event).map_err(|e| {
             error!("❌ Failed to emit MutationExecuted event: {}", e);
             SchemaError::InvalidData(format!("Failed to emit mutation event: {}", e))
         })?;
 
-        info!("✅ Successfully emitted MutationExecuted event");
         Ok(())
     }
 
     /// Get mutation statistics for a schema
     pub fn get_mutation_statistics(&self, _schema_name: &str) -> Result<Option<MutationStatistics>, SchemaError> {
         // TODO: Implement full statistics tracking with database persistence
-        info!("📊 Getting mutation statistics (simplified implementation)");
         Ok(None)
     }
 
     /// List all schemas with mutation statistics
     pub fn list_mutation_statistics(&self) -> Result<Vec<MutationStatistics>, SchemaError> {
         // TODO: Implement full statistics tracking with database persistence
-        info!("📊 Listing mutation statistics (simplified implementation)");
         Ok(Vec::new())
     }
 }

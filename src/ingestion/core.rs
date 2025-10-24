@@ -7,6 +7,7 @@ use crate::ingestion::{
     openrouter_service::OpenRouterService, AISchemaResponse,
     IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
     IngestionStatus, SimplifiedSchema, SimplifiedSchemaMap,
+    progress::{ProgressService, IngestionStep, IngestionResults},
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -84,35 +85,62 @@ impl IngestionCore {
         })
     }
 
-    /// Process JSON ingestion request
-    pub async fn process_json_ingestion(
+    /// Process JSON ingestion request with progress tracking
+    pub async fn process_json_ingestion_with_progress(
         &self,
         request: IngestionRequest,
+        progress_service: &ProgressService,
+        progress_id: String,
     ) -> IngestionResult<IngestionResponse> {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Starting JSON ingestion process"
-        );
 
         // Step 1: Validate configuration
+        progress_service.update_progress(
+            &progress_id,
+            IngestionStep::ValidatingConfig,
+            "Validating ingestion configuration...".to_string(),
+        );
         self.validate_configuration()?;
 
         // Step 2: Prepare schemas
+        progress_service.update_progress(
+            &progress_id,
+            IngestionStep::PreparingSchemas,
+            "Preparing available schemas...".to_string(),
+        );
         let available_schemas = self.prepare_schemas().await?;
 
         // Step 2.5: Flatten Twitter data structure for AI analysis
+        progress_service.update_progress(
+            &progress_id,
+            IngestionStep::FlatteningData,
+            "Processing and flattening data structure...".to_string(),
+        );
         let flattened_data = self.flatten_twitter_data(&request.data);
 
         // Step 3: Get AI recommendation
+        progress_service.update_progress(
+            &progress_id,
+            IngestionStep::GettingAIRecommendation,
+            "Analyzing data with AI to determine schema...".to_string(),
+        );
         let ai_response = self
             .get_ai_recommendation(&flattened_data, &available_schemas)
             .await?;
 
         // Step 4: Determine and setup schema
+        progress_service.update_progress(
+            &progress_id,
+            IngestionStep::SettingUpSchema,
+            "Setting up schema and preparing for data storage...".to_string(),
+        );
         let (schema_name, new_schema_created, mutation_mappers) = self.setup_schema(&ai_response, &flattened_data).await?;
 
         // Step 5: Generate mutations using the returned mutation_mappers (which may have been updated by schema service)
+        progress_service.update_progress(
+            &progress_id,
+            IngestionStep::GeneratingMutations,
+            "Generating database mutations...".to_string(),
+        );
         let mutations = self.generate_mutations_for_data(
             &schema_name,
             &flattened_data,
@@ -122,9 +150,23 @@ impl IngestionCore {
         )?;
 
         // Step 6: Execute mutations if requested
+        progress_service.update_progress(
+            &progress_id,
+            IngestionStep::ExecutingMutations,
+            "Executing mutations to store data...".to_string(),
+        );
         let mutations_executed = self
             .execute_mutations_if_requested(&request, &mutations)
             .await?;
+
+        // Mark as completed
+        let results = IngestionResults {
+            schema_name: schema_name.clone(),
+            new_schema_created,
+            mutations_generated: mutations.len(),
+            mutations_executed,
+        };
+        progress_service.complete_progress(&progress_id, results);
 
         self.log_completion(&schema_name, mutations.len(), mutations_executed);
 
@@ -156,14 +198,8 @@ impl IngestionCore {
                     // Handle nested Twitter data structure (e.g., {"like": {...}} or {"following": {...}})
                     if obj.len() == 1 {
                         // If there's only one key, assume it's a wrapper and extract the inner object
-                        let (wrapper_key, inner_value) = obj.iter().next().unwrap();
+                        let (_wrapper_key, inner_value) = obj.iter().next().unwrap();
                         if let Some(inner_obj) = inner_value.as_object() {
-                            log_feature!(
-                                LogFeature::Ingestion,
-                                info,
-                                "Flattening Twitter data: extracting inner object from wrapper '{}'",
-                                wrapper_key
-                            );
                             Value::Object(inner_obj.clone())
                         } else {
                             // Fallback to original structure if inner value is not an object
@@ -205,12 +241,6 @@ impl IngestionCore {
     /// Prepares available schemas for AI recommendation.
     async fn prepare_schemas(&self) -> IngestionResult<SimplifiedSchemaMap> {
         let available_schemas = self.get_stripped_available_schemas().await?;
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Retrieved {} available schemas",
-            available_schemas.len()
-        );
         Ok(available_schemas)
     }
 
@@ -224,13 +254,6 @@ impl IngestionCore {
         let ai_response = self
             .get_ai_schema_recommendation(data, &schemas_json)
             .await?;
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Received AI recommendation: {} existing schemas, new schema: {}",
-            ai_response.existing_schemas.len(),
-            ai_response.new_schemas.is_some()
-        );
         Ok(ai_response)
     }
 
@@ -262,15 +285,8 @@ impl IngestionCore {
     }
 
     /// Logs the completion of the ingestion process.
-    fn log_completion(&self, schema_name: &str, mutations_count: usize, mutations_executed: usize) {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Ingestion completed successfully: schema '{}', {} mutations generated, {} executed",
-            schema_name,
-            mutations_count,
-            mutations_executed
-        );
+    fn log_completion(&self, _schema_name: &str, _mutations_count: usize, _mutations_executed: usize) {
+        // Completion logging removed to reduce verbosity
     }
 
     /// Get available schemas from the schema service
@@ -360,13 +376,6 @@ impl IngestionCore {
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
             let (schema_name, mutation_mappers) = self.create_new_schema(new_schema_def, sample_data, ai_response.mutation_mappers.clone()).await?;
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Created new schema: {} with {} mutation mappers",
-                schema_name,
-                mutation_mappers.len()
-            );
             return Ok((schema_name, mutation_mappers));
         }
 
@@ -377,12 +386,6 @@ impl IngestionCore {
 
     /// Create a new schema from AI response with mutation mappers
     async fn create_new_schema(&self, schema_def: &Value, sample_data: &Value, mutation_mappers: HashMap<String, String>) -> IngestionResult<(String, HashMap<String, String>)> {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Creating new schema from AI definition with {} mutation mappers",
-            mutation_mappers.len()
-        );
 
         // Deserialize Value to Schema
         let mut schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
@@ -393,22 +396,10 @@ impl IngestionCore {
                 ))
             })?;
 
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Deserialized schema with {} field topologies",
-            schema.field_topologies.len()
-        );
 
         // Compute topology hash for the AI-generated topologies
         if !schema.field_topologies.is_empty() {
             schema.compute_schema_topology_hash();
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Computed topology hash from {} AI-generated topologies",
-                schema.field_topologies.len()
-            );
         }
 
         // DON'T infer topologies - AI already provided them with classifications
@@ -432,12 +423,6 @@ impl IngestionCore {
                 let sample_map: std::collections::HashMap<String, serde_json::Value> = 
                     sample_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 schema.infer_topologies_from_data(&sample_map);
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "Inferred topologies for {} fields (no AI topologies)",
-                    sample_map.len()
-                );
             }
         }
 
@@ -448,12 +433,6 @@ impl IngestionCore {
             ))?
             .clone();
         
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Using topology_hash as schema name: {}",
-            topology_hash
-        );
         
         schema.name = topology_hash.clone();
 
@@ -487,13 +466,6 @@ impl IngestionCore {
             .approve(&schema_name)
             .map_err(IngestionError::SchemaSystemError)?;
 
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "New schema '{}' created and approved with {} mutation mappers",
-            schema_name,
-            returned_mutation_mappers.len()
-        );
         Ok((schema_name, returned_mutation_mappers))
     }
 

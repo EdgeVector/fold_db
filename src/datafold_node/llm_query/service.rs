@@ -72,13 +72,9 @@ impl LlmQueryService {
         
         let response = self.call_llm(&prompt).await?;
         
-        // Log the response for debugging
-        log::info!("AI Query Response: {}", response);
         
         let query_plan = self.parse_query_plan(&response)?;
         
-        // Log the selected filter
-        log::info!("AI Selected Filter: {:?} for query: {}", query_plan.query.filter, user_query);
         
         Ok(query_plan)
     }
@@ -373,7 +369,7 @@ impl LlmQueryService {
 
     /// Deduplicate results based on schema_name + key_value + field combination
     fn deduplicate_results(&self, mut results: Vec<crate::db_operations::IndexResult>) -> Vec<crate::db_operations::IndexResult> {
-        let original_count = results.len();
+        let _original_count = results.len();
         let mut seen = HashSet::new();
         
         results.retain(|result| {
@@ -388,7 +384,6 @@ impl LlmQueryService {
             seen.insert(key)
         });
         
-        log::info!("Deduplicated {} results down to {} unique entries", original_count, results.len());
         results
     }
 

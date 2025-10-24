@@ -5,7 +5,7 @@
  */
 
 import { ApiClient, createApiClient } from '../core/client';
-import { API_ENDPOINTS } from '../endpoints';
+import { API_ENDPOINTS, API_BASE_URLS } from '../endpoints';
 import { API_TIMEOUTS, API_RETRIES } from '../../constants/api';
 import type { EnhancedApiResponse } from '../core/types';
 
@@ -66,6 +66,28 @@ export interface ProcessIngestionResponse {
     data_quality_notes?: string[];
     execution_summary?: string;
   };
+  progress_id?: string; // ID for tracking progress
+}
+
+// Progress tracking types
+export interface IngestionProgress {
+  id: string;
+  current_step: string;
+  progress_percentage: number;
+  status_message: string;
+  is_complete: boolean;
+  is_failed: boolean;
+  error_message?: string;
+  started_at: string;
+  completed_at?: string;
+  results?: IngestionResults;
+}
+
+export interface IngestionResults {
+  schema_name: string;
+  new_schema_created: boolean;
+  mutations_generated: number;
+  mutations_executed: number;
 }
 
 /**
@@ -76,6 +98,7 @@ export class UnifiedIngestionClient {
 
   constructor(client?: ApiClient) {
     this.client = client || createApiClient({
+      baseUrl: API_BASE_URLS.ROOT,
       enableCache: false, // Ingestion operations should not be cached
       enableLogging: true,
       enableMetrics: true
@@ -278,6 +301,41 @@ export class UnifiedIngestionClient {
   /**
    * Clear ingestion-related cache (though ingestion operations should not be cached)
    */
+  /**
+   * Get ingestion progress by ID
+   * 
+   * @param id Progress ID
+   * @returns Promise resolving to progress information
+   */
+  async getProgress(id: string): Promise<EnhancedApiResponse<IngestionProgress>> {
+    return this.client.get<IngestionProgress>(
+      `/ingestion/progress/${id}`,
+      {
+        requiresAuth: false,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.STANDARD,
+        cacheable: false
+      }
+    );
+  }
+
+  /**
+   * Get all active ingestion progress
+   * 
+   * @returns Promise resolving to all active progress
+   */
+  async getAllProgress(): Promise<EnhancedApiResponse<IngestionProgress[]>> {
+    return this.client.get<IngestionProgress[]>(
+      '/ingestion/progress',
+      {
+        requiresAuth: false,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.STANDARD,
+        cacheable: false
+      }
+    );
+  }
+
   clearCache(): void {
     this.client.clearCache();
   }

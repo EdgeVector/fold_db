@@ -1,5 +1,6 @@
 Project Settings
 - use ./run_http_server to start the server, it will kill all other db proccesses and start the front and back end.  It runs on port 9001.
+- no custom url endpoints, all UI endpoints derived using OpenAPI
 
 Coding standards.  Follow these to avoid creating spagetti code.
 - No silent failures.  Throw errors if anything goes wrong.

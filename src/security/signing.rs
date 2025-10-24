@@ -210,7 +210,6 @@ impl MessageVerifier {
             }
         }
 
-        log_feature!(LogFeature::Permissions, info, "Removed system public key");
         Ok(())
     }
 

@@ -82,7 +82,6 @@ impl FoldDB {
             return Err(e);
         }
 
-        log_feature!(LogFeature::Database, info, "FoldDB closed successfully");
         Ok(())
     }
 

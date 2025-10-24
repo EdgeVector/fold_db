@@ -80,7 +80,6 @@ impl LlmQueryState {
         let config = IngestionConfig::from_env_allow_empty();
         let service = match LlmQueryService::new(config) {
             Ok(svc) => {
-                log::info!("LLM Query service initialized successfully");
                 Some(Arc::new(svc))
             }
             Err(e) => {
@@ -308,12 +307,6 @@ pub async fn execute_query_plan(
     }
 
     // Execute the query
-    log::info!(
-        "Executing AI query - Schema: {}, Fields: {:?}, Filter: {:?}",
-        query_plan.query.schema_name,
-        query_plan.query.fields,
-        query_plan.query.filter
-    );
     let node_arc = Arc::clone(&app_state.node);
     let processor = OperationProcessor::new(node_arc);
     let results = match processor.execute_query_map(query_plan.query.clone()).await {
@@ -554,13 +547,6 @@ pub async fn chat(
             const MAX_FOLLOWUP_ATTEMPTS: usize = 3;
 
             for attempt in 0..MAX_FOLLOWUP_ATTEMPTS {
-                log::info!(
-                    "Follow-up question executing query (attempt {}/{}) - Schema: {}, Fields: {:?}",
-                    attempt + 1,
-                    MAX_FOLLOWUP_ATTEMPTS,
-                    current_query.schema_name,
-                    current_query.fields
-                );
 
                 let node_arc = Arc::clone(&app_state.node);
                 let processor = OperationProcessor::new(node_arc);
@@ -574,11 +560,6 @@ pub async fn chat(
 
                         if !new_results.is_empty() {
                             if attempt > 0 {
-                                log::info!(
-                                    "Follow-up query found {} results after {} attempts",
-                                    new_results.len(),
-                                    attempt + 1
-                                );
                                 retry_info = Some(format!(
                                     "Found results using alternative strategy after {} attempts",
                                     attempt + 1
@@ -588,7 +569,6 @@ pub async fn chat(
                             break;
                         }
 
-                        log::info!("Follow-up query returned empty results, attempt {}/{}", attempt + 1, MAX_FOLLOWUP_ATTEMPTS);
                         
                         attempts.push(format!(
                             "Schema: {}, Filter: {:?}",
@@ -604,11 +584,9 @@ pub async fn chat(
                                 &attempts,
                             ).await {
                                 Ok(Some(alternative_plan)) => {
-                                    log::info!("Follow-up trying alternative: {}", alternative_plan.reasoning);
                                     current_query = alternative_plan.query;
                                 }
                                 Ok(None) => {
-                                    log::info!("No more alternative strategies for follow-up query");
                                     retry_info = Some(format!(
                                         "No results found after trying {} approaches",
                                         attempt + 1
@@ -919,14 +897,6 @@ pub async fn run_query(
     const MAX_ATTEMPTS: usize = 5;
 
     for attempt in 0..MAX_ATTEMPTS {
-        log::info!(
-            "Executing AI query (attempt {}/{}) - Schema: {}, Fields: {:?}, Filter: {:?}",
-            attempt + 1,
-            MAX_ATTEMPTS,
-            current_query_plan.query.schema_name,
-            current_query_plan.query.fields,
-            current_query_plan.query.filter
-        );
 
         let node_arc = Arc::clone(&app_state.node);
         let processor = OperationProcessor::new(node_arc);
@@ -939,18 +909,9 @@ pub async fn run_query(
                     .collect();
 
                 if !results.is_empty() {
-                    if attempt > 0 {
-                        log::info!(
-                            "Found {} results after {} attempts with alternative strategy: {}",
-                            results.len(),
-                            attempt + 1,
-                            current_query_plan.reasoning
-                        );
-                    }
                     break;
                 }
 
-                log::info!("Query returned empty results, attempt {}/{}", attempt + 1, MAX_ATTEMPTS);
                 
                 attempts.push(format!(
                     "Schema: {}, Filter: {:?} - {}",
@@ -967,22 +928,18 @@ pub async fn run_query(
                         &attempts,
                     ).await {
                         Ok(Some(alternative_plan)) => {
-                            log::info!("Trying alternative: {}", alternative_plan.reasoning);
                             current_query_plan = alternative_plan;
                         }
                         Ok(None) => {
-                            log::info!("No more alternative strategies available");
                             break;
                         }
                         Err(e) => {
                             log::warn!("Failed to generate alternative query: {}", e);
                             break;
                         }
+                        }
                     }
-                } else {
-                    log::info!("Reached maximum attempts without finding results");
                 }
-            }
             Err(e) => {
                 return HttpResponse::InternalServerError()
                     .json(json!({"error": format!("Failed to execute query: {}", e)}));
@@ -1108,15 +1065,16 @@ pub async fn ai_native_index_query(
     // Execute AI-native index query workflow
     let result = async {
         let node = app_state.node.lock().await;
-        let db_guard = match node.get_fold_db() {
-            Ok(guard) => guard,
+        let db_ops = match node.get_fold_db() {
+            Ok(guard) => guard.get_db_ops(),
             Err(e) => {
                 return Err(format!("Failed to access database: {}", e));
             }
         };
+        drop(node); // Drop the mutex guard before await
         
         // Get both AI interpretation and raw results
-        service.execute_ai_native_index_query_with_results(&request.query, &schemas, &db_guard.get_db_ops()).await
+        service.execute_ai_native_index_query_with_results(&request.query, &schemas, &db_ops).await
     }.await;
 
     match result {

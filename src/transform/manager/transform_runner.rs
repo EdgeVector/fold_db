@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use crate::fold_db_core::infrastructure::message_bus::events::request_events::BackfillExpectedMutations;
 use crate::fold_db_core::query::formatter::Record;
@@ -87,7 +86,6 @@ impl TransformRunner for super::TransformManager {
             let _ = self.message_bus.publish(evt);
         }
         
-        log::info!("🧭 TransformRunner using MessageBus at {:p}", Arc::as_ptr(&self.message_bus));
         for record in &records {
             // For storage, we need to create a key - using the first field's key or a default
             let key_config = schema.key.clone();

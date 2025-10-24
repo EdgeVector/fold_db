@@ -297,6 +297,7 @@ mod tests {
 
         let state = web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
+            progress_tracker: crate::ingestion::create_progress_tracker(),
         });
 
         let req = test::TestRequest::get().to_http_request();
@@ -313,6 +314,7 @@ mod tests {
 
         let state = web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
+            progress_tracker: crate::ingestion::create_progress_tracker(),
         });
 
         let req = test::TestRequest::get().to_http_request();
@@ -338,6 +340,7 @@ mod tests {
 
         let state = web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
+            progress_tracker: crate::ingestion::create_progress_tracker(),
         });
 
         let req = test::TestRequest::get().to_http_request();
@@ -363,6 +366,7 @@ mod tests {
 
         let state = web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
+            progress_tracker: crate::ingestion::create_progress_tracker(),
         });
 
         // Get private key
@@ -396,6 +400,7 @@ mod tests {
 
         let state = web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
+            progress_tracker: crate::ingestion::create_progress_tracker(),
         });
 
         let req_body = ResetDatabaseRequest { confirm: false };
@@ -418,6 +423,7 @@ mod tests {
 
         let state = web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
+            progress_tracker: crate::ingestion::create_progress_tracker(),
         });
 
         let req_body = ResetDatabaseRequest { confirm: true };

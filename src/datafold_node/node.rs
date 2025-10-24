@@ -73,8 +73,6 @@ impl DataFoldNode {
         let private_key = keypair.secret_key_base64();
         let public_key = keypair.public_key_base64();
 
-        log_feature!(LogFeature::Database, info, "Generated new node keypair");
-
         // Initialize security manager with node configuration
         let mut security_config = config.security_config.clone();
 

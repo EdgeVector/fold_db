@@ -31,6 +31,7 @@ pub mod error;
 pub mod mutation_generator;
 pub mod ollama_service;
 pub mod openrouter_service;
+pub mod progress;
 pub mod routes;
 pub mod simple_service;
 pub mod structure_analyzer;
@@ -44,6 +45,7 @@ pub use ai_schema_response::AISchemaResponse;
 pub use config::IngestionConfig;
 pub use core::IngestionCore;
 pub use error::IngestionError;
+pub use progress::{IngestionProgress, IngestionStep, IngestionResults, ProgressService, ProgressTracker, create_progress_tracker};
 pub use structure_analyzer::StructureAnalyzer;
 
 /// Result type for ingestion operations
@@ -54,6 +56,8 @@ pub type IngestionResult<T> = Result<T, IngestionError>;
 pub struct IngestionResponse {
     /// Whether the ingestion was successful
     pub success: bool,
+    /// Progress ID for tracking the ingestion process
+    pub progress_id: Option<String>,
     /// Name of the schema used (existing or newly created)
     pub schema_used: Option<String>,
     /// Whether a new schema was created
@@ -76,6 +80,26 @@ impl IngestionResponse {
     ) -> Self {
         Self {
             success: true,
+            progress_id: None,
+            schema_used: Some(schema_used),
+            new_schema_created,
+            mutations_generated,
+            mutations_executed,
+            errors: Vec::new(),
+        }
+    }
+
+    /// Create a successful ingestion response with progress tracking
+    pub fn success_with_progress(
+        progress_id: String,
+        schema_used: String,
+        new_schema_created: bool,
+        mutations_generated: usize,
+        mutations_executed: usize,
+    ) -> Self {
+        Self {
+            success: true,
+            progress_id: Some(progress_id),
             schema_used: Some(schema_used),
             new_schema_created,
             mutations_generated,
@@ -88,6 +112,7 @@ impl IngestionResponse {
     pub fn failure(errors: Vec<String>) -> Self {
         Self {
             success: false,
+            progress_id: None,
             schema_used: None,
             new_schema_created: false,
             mutations_generated: 0,

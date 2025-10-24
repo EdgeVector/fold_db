@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ingestionClient } from '../../api/clients'
+import ProgressBar from '../ProgressBar'
 
 function IngestionTab({ onResult }) {
   const [jsonData, setJsonData] = useState('')
@@ -8,10 +9,62 @@ function IngestionTab({ onResult }) {
   const [pubKey, setPubKey] = useState('default')
   const [isLoading, setIsLoading] = useState(false)
   const [ingestionStatus, setIngestionStatus] = useState(null)
+  const [currentProgress, setCurrentProgress] = useState(null)
+  const [progressId, setProgressId] = useState(null)
 
   useEffect(() => {
     fetchIngestionStatus()
   }, [])
+
+  // Poll for progress updates when we have a progress ID
+  useEffect(() => {
+    if (!progressId) return
+
+    const pollProgress = async () => {
+      try {
+        // Poll for specific progress ID
+        const response = await ingestionClient.getProgress(progressId)
+        if (response.success && response.data) {
+          setCurrentProgress(response.data)
+          
+          // Stop polling if complete or failed
+          if (response.data.is_complete) {
+            setIsLoading(false)
+            setProgressId(null)
+            
+            // Show results
+            if (response.data.results) {
+              onResult({
+                success: true,
+                data: {
+                  schema_used: response.data.results.schema_name,
+                  new_schema_created: response.data.results.new_schema_created,
+                  mutations_generated: response.data.results.mutations_generated,
+                  mutations_executed: response.data.results.mutations_executed
+                }
+              })
+            } else if (response.data.error_message) {
+              onResult({
+                success: false,
+                error: response.data.error_message
+              })
+            }
+            
+            // Keep the progress bar visible for a moment to show completion
+            // It will be cleared when the user clicks "Process Data" again
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch progress:', error)
+      }
+    }
+
+    // Poll immediately, then every 500ms
+    pollProgress()
+    const interval = setInterval(pollProgress, 500)
+
+    return () => clearInterval(interval)
+  }, [progressId, onResult])
 
   const fetchIngestionStatus = async () => {
     try {
@@ -25,7 +78,25 @@ function IngestionTab({ onResult }) {
   }
 
   const processIngestion = async () => {
+    // Reset all progress-related state immediately
     setIsLoading(true)
+    setProgressId(null)
+    
+    // Clear any previous results
+    onResult(null)
+    
+    // Show initial progress state immediately
+    setCurrentProgress({
+      progress_percentage: 0,
+      status_message: 'Starting ingestion...',
+      current_step: 'ValidatingConfig',
+      is_complete: false,
+      started_at: new Date().toISOString()
+    })
+    
+    // Small delay to ensure UI updates before starting new process
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
     try {
       const parsedData = JSON.parse(jsonData)
       
@@ -38,21 +109,32 @@ function IngestionTab({ onResult }) {
       const response = await ingestionClient.processIngestion(parsedData, options)
       
       if (response.success) {
-        onResult(response.data)
-        setJsonData('') // Clear the form on success
+        // Check if we got a progress ID for tracking
+        if (response.data.progress_id) {
+          // Start polling for the specific progress ID
+          setProgressId(response.data.progress_id)
+          // Don't call onResult here - let the progress polling handle it
+        } else {
+          // Fallback to immediate result if no progress tracking
+          onResult(response.data)
+          setJsonData('') // Clear the form on success
+          setIsLoading(false)
+        }
       } else {
         onResult({
           success: false,
           error: 'Failed to process ingestion'
         })
+        setIsLoading(false)
+        setCurrentProgress(null)
       }
     } catch (error) {
       onResult({
         success: false,
         error: error.message || 'Failed to process ingestion'
       })
-    } finally {
       setIsLoading(false)
+      setCurrentProgress(null)
     }
   }
 
@@ -651,6 +733,11 @@ The key to success lies in understanding not just the technical aspects, but als
             <span className="text-xs text-gray-500">Configure AI settings using the Settings button in the header</span>
           </div>
         </div>
+      )}
+
+      {/* Progress Bar */}
+      {currentProgress && (
+        <ProgressBar progress={currentProgress} />
       )}
 
       {/* Main Input Area */}

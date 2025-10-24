@@ -34,7 +34,6 @@ where
     )
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Received request to list schemas");
     let result = with_schema_manager(&state, |db| db.schema_manager.get_schemas_with_states()).await;
     match result {
         Ok(Ok(schemas)) => HttpResponse::Ok().json(schemas),
@@ -260,7 +259,6 @@ pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppSt
     )
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Received request to load schemas from directories");
     let result = with_schema_manager(&state, |db| {
         // Try available_schemas and data/schemas
         let available_loaded = db

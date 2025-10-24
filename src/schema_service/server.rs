@@ -82,6 +82,7 @@ pub struct SchemaServiceState {
     schemas_tree: sled::Tree,
 }
 
+#[allow(dead_code)]
 const FIELD_OVERLAP_THRESHOLD: f64 = 0.6;
 
 impl SchemaServiceState {
@@ -298,7 +299,6 @@ impl SchemaServiceState {
 
 /// List all available schemas
 async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Schema service: listing schemas");
 
     let schemas = match state.schemas.read() {
         Ok(s) => s,
@@ -325,7 +325,6 @@ async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
 
 /// Get all available schemas with their full definitions
 async fn get_available_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
-    log_feature!(LogFeature::Schema, info, "Schema service: getting all available schemas");
 
     let schemas = match state.schemas.read() {
         Ok(s) => s,

@@ -3,6 +3,7 @@
 use crate::datafold_node::http_server::AppState;
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::core::IngestionRequest;
+use crate::ingestion::progress::ProgressService;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::IngestionResponse;
 use crate::log_feature;
@@ -32,6 +33,14 @@ pub async fn process_json(
         "Received JSON ingestion request"
     );
 
+    // Generate a unique progress ID
+    let progress_id = uuid::Uuid::new_v4().to_string();
+    
+    // Start progress tracking
+    let tracker = state.progress_tracker.clone();
+    let progress_service = ProgressService::new(tracker);
+    progress_service.start_progress(progress_id.clone());
+
     // Try to create a simple ingestion service
     let service = match create_simple_ingestion_service().await {
         Ok(service) => service,
@@ -42,15 +51,16 @@ pub async fn process_json(
                 "Failed to initialize ingestion service: {}",
                 e
             );
+            progress_service.fail_progress(&progress_id, format!("Ingestion service not available: {}", e));
             return HttpResponse::ServiceUnavailable().json(IngestionResponse::failure(vec![
                 format!("Ingestion service not available: {}", e),
             ]));
         }
     };
 
-    // Process the ingestion request
+    // Process the ingestion request with progress tracking
     match service
-        .process_json_with_node(request.into_inner(), Arc::clone(&state.node))
+        .process_json_with_node_and_progress(request.into_inner(), Arc::clone(&state.node), &progress_service, progress_id.clone())
         .await
     {
         Ok(response) => {
@@ -78,6 +88,7 @@ pub async fn process_json(
                 "Ingestion processing failed: {}",
                 e
             );
+            progress_service.fail_progress(&progress_id, format!("Processing failed: {}", e));
             HttpResponse::InternalServerError().json(IngestionResponse::failure(vec![format!(
                 "Processing failed: {}",
                 e
@@ -103,7 +114,6 @@ pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
     match create_simple_ingestion_service().await {
         Ok(service) => match service.get_status() {
             Ok(status) => {
-                log_feature!(LogFeature::Ingestion, info, "Returning ingestion status");
                 HttpResponse::Ok().json(status)
             }
             Err(e) => {
@@ -200,14 +210,12 @@ pub async fn validate_json(
     match create_simple_ingestion_service().await {
         Ok(service) => match service.validate_input(&request.into_inner()) {
             Ok(()) => {
-                log_feature!(LogFeature::Ingestion, info, "JSON validation successful");
                 HttpResponse::Ok().json(json!({
                     "valid": true,
                     "message": "JSON data is valid for ingestion"
                 }))
             }
             Err(e) => {
-                log_feature!(LogFeature::Ingestion, info, "JSON validation failed: {}", e);
                 HttpResponse::BadRequest().json(json!({
                     "valid": false,
                     "error": format!("Validation failed: {}", e)
@@ -328,6 +336,67 @@ async fn create_simple_ingestion_service(
     SimpleIngestionService::new(config)
 }
 
+/// Get ingestion progress by ID
+#[utoipa::path(
+    get,
+    path = "/api/ingestion/progress/{id}",
+    tag = "ingestion",
+    responses((status = 200, description = "Progress information", body = IngestionProgress), (status = 404, description = "Progress not found"))
+)]
+pub async fn get_progress(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let id = path.into_inner();
+    
+    log_feature!(
+        LogFeature::Ingestion,
+        debug,
+        "Received progress request for ID: {}",
+        id
+    );
+
+    // Get progress tracker from app state
+    let tracker = state.progress_tracker.clone();
+    let progress_service = ProgressService::new(tracker);
+    
+    match progress_service.get_progress(&id) {
+        Some(progress) => {
+            HttpResponse::Ok().json(progress)
+        }
+        None => {
+            log_feature!(LogFeature::Ingestion, warn, "Progress not found for ID: {}", id);
+            HttpResponse::NotFound().json(json!({
+                "error": "Progress not found",
+                "id": id
+            }))
+        }
+    }
+}
+
+/// Get all active ingestion progress
+#[utoipa::path(
+    get,
+    path = "/api/ingestion/progress",
+    tag = "ingestion",
+    responses((status = 200, description = "All active progress", body = Vec<IngestionProgress>))
+)]
+pub async fn get_all_progress(
+    state: web::Data<AppState>,
+) -> impl Responder {
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Received request for all progress"
+    );
+
+    let tracker = state.progress_tracker.clone();
+    let progress_service = ProgressService::new(tracker);
+    let all_progress = progress_service.get_all_progress();
+    
+    HttpResponse::Ok().json(all_progress)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,6 +413,7 @@ mod tests {
 
         web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
+            progress_tracker: crate::ingestion::create_progress_tracker(),
         })
     }
 

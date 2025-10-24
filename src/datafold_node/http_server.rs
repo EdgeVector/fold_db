@@ -5,6 +5,7 @@ use crate::datafold_node::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::error_handling::http_errors;
 use crate::ingestion::routes as ingestion_routes;
+use crate::ingestion::create_progress_tracker;
 
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -38,6 +39,8 @@ pub struct DataFoldHttpServer {
 pub struct AppState {
     /// The DataFold node
     pub(crate) node: Arc<tokio::sync::Mutex<DataFoldNode>>,
+    /// Progress tracker for ingestion operations
+    pub(crate) progress_tracker: crate::ingestion::ProgressTracker,
 }
 
 impl DataFoldHttpServer {
@@ -159,6 +162,7 @@ impl DataFoldHttpServer {
         // Create shared application state
         let app_state = web::Data::new(AppState {
             node: self.node.clone(),
+            progress_tracker: create_progress_tracker(),
         });
 
         // Create LLM query state (gracefully handles missing configuration)
@@ -232,6 +236,15 @@ impl DataFoldHttpServer {
                         .route(
                             "/ingestion/validate",
                             web::post().to(ingestion_routes::validate_json),
+                        )
+                        // Progress tracking endpoints
+                        .route(
+                            "/ingestion/progress",
+                            web::get().to(ingestion_routes::get_all_progress),
+                        )
+                        .route(
+                            "/ingestion/progress/{id}",
+                            web::get().to(ingestion_routes::get_progress),
                         )
                         // Transform endpoints
                         .route("/transforms", web::get().to(query_routes::list_transforms))

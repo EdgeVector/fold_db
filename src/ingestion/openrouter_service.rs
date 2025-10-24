@@ -336,15 +336,6 @@ impl OpenRouterService {
         );
 
         let response = self.call_openrouter_api(&prompt).await?;
-        log_feature!(LogFeature::Ingestion, info, "=== FULL AI RESPONSE ===");
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "AI Response (length: {} chars):\n{}",
-            response.len(),
-            response
-        );
-        log_feature!(LogFeature::Ingestion, info, "=== END AI RESPONSE ===");
 
         self.parse_ai_response(&response)
     }
@@ -413,7 +404,6 @@ impl OpenRouterService {
                     if attempt < self.max_retries {
                         // Exponential backoff
                         let delay = Duration::from_secs(2_u64.pow(attempt - 1));
-                        log_feature!(LogFeature::Ingestion, info, "Retrying in {:?}", delay);
                         tokio::time::sleep(delay).await;
                     }
                 }
@@ -475,13 +465,6 @@ impl OpenRouterService {
 
     /// Parse the AI response
     fn parse_ai_response(&self, response_text: &str) -> IngestionResult<AISchemaResponse> {
-        log_feature!(LogFeature::Ingestion, info, "=== PARSING AI RESPONSE ===");
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Raw AI response text: {}",
-            response_text
-        );
 
         // Try to extract JSON from the response
         let json_str = self.extract_json_from_response(response_text)?;

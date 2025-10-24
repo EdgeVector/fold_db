@@ -1,12 +1,13 @@
 use log::{LevelFilter, Metadata, Record, SetLoggerError};
 use once_cell::sync::OnceCell;
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use tokio::sync::broadcast;
 
 pub struct WebLogger {
     buffer: Mutex<VecDeque<String>>,
     sender: broadcast::Sender<String>,
+    level: RwLock<LevelFilter>,
 }
 
 impl WebLogger {
@@ -15,6 +16,13 @@ impl WebLogger {
         Self {
             buffer: Mutex::new(VecDeque::with_capacity(1000)),
             sender,
+            level: RwLock::new(LevelFilter::Warn),
+        }
+    }
+    
+    pub fn set_level(&self, level: LevelFilter) {
+        if let Ok(mut current_level) = self.level.write() {
+            *current_level = level;
         }
     }
 }
@@ -23,7 +31,11 @@ static LOGGER: OnceCell<WebLogger> = OnceCell::new();
 
 impl log::Log for WebLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= log::max_level()
+        if let Ok(current_level) = self.level.read() {
+            metadata.level() <= *current_level
+        } else {
+            false
+        }
     }
 
     fn log(&self, record: &Record) {
@@ -46,7 +58,7 @@ impl log::Log for WebLogger {
 pub fn init() -> Result<(), SetLoggerError> {
     let logger = LOGGER.get_or_init(WebLogger::new);
     log::set_logger(logger)?;
-    log::set_max_level(LevelFilter::Info);
+    log::set_max_level(LevelFilter::Warn);
     Ok(())
 }
 
@@ -59,4 +71,10 @@ pub fn get_logs() -> Vec<String> {
 
 pub fn subscribe() -> Option<broadcast::Receiver<String>> {
     LOGGER.get().map(|l| l.sender.subscribe())
+}
+
+pub fn set_log_level(level: LevelFilter) {
+    if let Some(logger) = LOGGER.get() {
+        logger.set_level(level);
+    }
 }
