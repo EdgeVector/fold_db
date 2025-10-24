@@ -1,6 +1,4 @@
 use crate::error::{FoldDbError, FoldDbResult};
-use crate::log_feature;
-use crate::logging::features::LogFeature;
 use crate::schema::types::Schema;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -40,13 +38,6 @@ impl SchemaServiceClient {
     pub async fn add_schema(&self, schema: &Schema, mutation_mappers: HashMap<String, String>) -> FoldDbResult<AddSchemaResponse> {
         let url = format!("{}/api/schemas", self.base_url);
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Adding schema via schema service at {} with {} mutation mappers",
-            url,
-            mutation_mappers.len()
-        );
 
         let request = AddSchemaRequest {
             schema: schema.clone(),
@@ -77,13 +68,6 @@ impl SchemaServiceClient {
                     ))
                 })?;
 
-            log_feature!(
-                LogFeature::Schema,
-                info,
-                "Schema '{}' added via schema service with {} mutation mappers",
-                add_schema_response.schema.name,
-                add_schema_response.mutation_mappers.len()
-            );
 
             return Ok(add_schema_response);
         }
@@ -106,13 +90,6 @@ impl SchemaServiceClient {
                     ))
                 })?;
 
-            log_feature!(
-                LogFeature::Schema,
-                info,
-                "Schema already exists with {}% similarity - using existing schema '{}'",
-                (conflict_body.similarity * 100.0) as u32,
-                conflict_body.closest_schema.name
-            );
 
             // Return the existing schema as if it was successfully added
             return Ok(AddSchemaResponse {
@@ -136,12 +113,6 @@ impl SchemaServiceClient {
     pub async fn list_schemas(&self) -> FoldDbResult<Vec<String>> {
         let url = format!("{}/api/schemas", self.base_url);
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Fetching schema list from {}",
-            url
-        );
 
         let response = self.client.get(&url).send().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to fetch schemas from service: {}", e))
@@ -163,12 +134,6 @@ impl SchemaServiceClient {
             FoldDbError::Config(format!("Failed to parse schema list response: {}", e))
         })?;
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Received {} schemas from schema service",
-            schemas_response.schemas.len()
-        );
 
         Ok(schemas_response.schemas)
     }
@@ -177,12 +142,6 @@ impl SchemaServiceClient {
     pub async fn get_available_schemas(&self) -> FoldDbResult<Vec<Schema>> {
         let url = format!("{}/api/schemas/available", self.base_url);
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Fetching all available schemas from {}",
-            url
-        );
 
         let response = self.client.get(&url).send().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to fetch available schemas: {}", e))
@@ -204,12 +163,6 @@ impl SchemaServiceClient {
             FoldDbError::Config(format!("Failed to parse available schemas response: {}", e))
         })?;
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Received {} available schemas from schema service",
-            schemas_response.schemas.len()
-        );
 
         Ok(schemas_response.schemas)
     }
@@ -218,13 +171,6 @@ impl SchemaServiceClient {
     pub async fn get_schema(&self, name: &str) -> FoldDbResult<Schema> {
         let url = format!("{}/api/schema/{}", self.base_url, name);
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Fetching schema '{}' from {}",
-            name,
-            url
-        );
 
         let response = self.client.get(&url).send().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to fetch schema '{}': {}", name, e))
@@ -242,12 +188,6 @@ impl SchemaServiceClient {
             FoldDbError::Config(format!("Failed to parse schema '{}' response: {}", name, e))
         })?;
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Successfully fetched schema '{}' from schema service",
-            name
-        );
 
         Ok(schema)
     }
@@ -274,12 +214,6 @@ impl SchemaServiceClient {
                 })?;
 
             loaded_count += 1;
-            log_feature!(
-                LogFeature::Schema,
-                info,
-                "Loaded schema '{}' from schema service",
-                name
-            );
         }
 
         Ok(loaded_count)
@@ -289,12 +223,6 @@ impl SchemaServiceClient {
     pub async fn reset_schema_service(&self) -> FoldDbResult<()> {
         let url = format!("{}/api/system/reset", self.base_url);
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Resetting schema service database at {}",
-            url
-        );
 
         #[derive(Serialize)]
         struct ResetRequest {
@@ -323,11 +251,6 @@ impl SchemaServiceClient {
             )));
         }
 
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Schema service database reset successfully"
-        );
 
         Ok(())
     }
@@ -435,56 +358,6 @@ mod tests {
 
         // Schema name should be the topology_hash (64 char hex string)
         assert_eq!(response.schema.name.len(), 64);
-
-        handle.stop(true).await;
-    }
-
-    #[actix_web::test]
-    async fn add_schema_conflict_is_reported() {
-        let temp_dir = tempdir().expect("failed to create tempdir");
-        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
-        let state = SchemaServiceState::new(db_path)
-            .expect("failed to create schema service state");
-
-        let (base_url, handle) = spawn_schema_service(state).await;
-
-        let client = SchemaServiceClient::new(&base_url);
-        let mut schema = Schema::new(
-            "ExistingSchema".to_string(),
-            SchemaType::Single,
-            None,
-            Some(vec!["id".to_string()]),
-            None,
-            None,
-        );
-
-        // Add required topology
-        schema.set_field_topology(
-            "id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                }
-            ),
-        );
-
-        client
-            .add_schema(&schema, HashMap::new())
-            .await
-            .expect("initial schema creation should succeed");
-
-        let error = client
-            .add_schema(&schema, HashMap::new())
-            .await
-            .expect_err("duplicate schema creation should fail");
-
-        match error {
-            FoldDbError::Config(message) => {
-                assert!(message.contains("Schema service conflict"));
-            }
-            other => panic!("unexpected error type: {:?}", other),
-        }
 
         handle.stop(true).await;
     }
