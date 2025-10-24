@@ -773,20 +773,25 @@ impl IngestionCore {
 
     /// Execute mutations
     async fn execute_mutations(&self, mutations: &[Mutation]) -> IngestionResult<usize> {
-        let mut executed_count = 0;
-
-        for mutation in mutations {
-            match self.execute_single_mutation(mutation).await {
-                Ok(()) => {
-                    executed_count += 1;
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
+        if mutations.is_empty() {
+            return Ok(0);
         }
 
-        Ok(executed_count)
+        if mutations.len() == 1 {
+            self.execute_single_mutation(&mutations[0]).await?;
+            return Ok(1);
+        }
+
+        let mut db = self.fold_db.lock().map_err(|_| {
+            IngestionError::DatabaseError("Failed to acquire database lock".to_string())
+        })?;
+
+        let executed_ids = db
+            .mutation_manager
+            .write_mutations_batch(mutations.to_vec())
+            .map_err(IngestionError::SchemaSystemError)?;
+
+        Ok(executed_ids.len())
     }
 
     /// Execute a single mutation
