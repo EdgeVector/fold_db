@@ -2,7 +2,7 @@ use actix_cors::Cors;
 use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
@@ -77,7 +77,7 @@ pub struct ConflictResponse {
 /// Shared state for the schema service
 #[derive(Clone)]
 pub struct SchemaServiceState {
-    schemas: Arc<Mutex<HashMap<String, Schema>>>,
+    schemas: Arc<RwLock<HashMap<String, Schema>>>,
     db: sled::Db,
     schemas_tree: sled::Tree,
 }
@@ -95,7 +95,7 @@ impl SchemaServiceState {
         })?;
 
         let state = Self {
-            schemas: Arc::new(Mutex::new(HashMap::new())),
+            schemas: Arc::new(RwLock::new(HashMap::new())),
             db,
             schemas_tree,
         };
@@ -110,8 +110,8 @@ impl SchemaServiceState {
     pub fn load_schemas(&self) -> FoldDbResult<()> {
         let mut schemas = self
             .schemas
-            .lock()
-            .map_err(|_| FoldDbError::Config("Failed to acquire schemas lock".to_string()))?;
+            .write()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
 
         schemas.clear();
 
@@ -191,56 +191,8 @@ impl SchemaServiceState {
 
         let mut schemas = self
             .schemas
-            .lock()
-            .map_err(|_| FoldDbError::Config("Failed to acquire schemas lock".to_string()))?;
-
-        // Find all schemas with the same topology_hash
-        let schemas_with_same_topology: Vec<(String, Schema)> = schemas
-            .iter()
-            .filter(|(_, s)| {
-                s.get_topology_hash() == Some(&topology_hash)
-            })
-            .map(|(name, schema)| (name.clone(), schema.clone()))
-            .collect();
-
-        // If schemas with same topology exist, check field name similarity
-        if !schemas_with_same_topology.is_empty() {
-            let new_field_names: std::collections::HashSet<_> = schema.fields
-                .as_ref()
-                .map(|f| f.iter().cloned().collect())
-                .unwrap_or_default();
-
-            for (existing_name, existing_schema) in &schemas_with_same_topology {
-                let existing_field_names: std::collections::HashSet<_> = existing_schema.fields
-                    .as_ref()
-                    .map(|f| f.iter().cloned().collect())
-                    .unwrap_or_default();
-
-                let shared_fields: Vec<_> = new_field_names.intersection(&existing_field_names).cloned().collect();
-                let overlap_ratio = if new_field_names.len().max(existing_field_names.len()) == 0 {
-                    0.0
-                } else {
-                    shared_fields.len() as f64 / new_field_names.len().max(existing_field_names.len()) as f64
-                };
-
-                // If field names are very similar, reject as duplicate
-                if overlap_ratio >= FIELD_OVERLAP_THRESHOLD {
-                    log_feature!(
-                        LogFeature::Schema,
-                        info,
-                        "Schema '{}' has same topology as '{}' and similar field names ({}% overlap) - rejecting as duplicate",
-                        original_schema_name,
-                        existing_name,
-                        (overlap_ratio * 100.0) as u32
-                    );
-                    
-                    return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
-                        similarity: 1.0,
-                        closest_schema: existing_schema.clone(),
-                    }));
-                }
-            }
-        }
+            .write()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
 
         // Use topology_hash as unique identifier (already includes field names)
         let schema_name = topology_hash.clone();
@@ -251,7 +203,7 @@ impl SchemaServiceState {
             log_feature!(
                 LogFeature::Schema,
                 info,
-                "Schema '{}' already exists - exact duplicate",
+                "Schema '{}' already exists - using existing schema",
                 schema_name
             );
             
@@ -348,18 +300,18 @@ impl SchemaServiceState {
 async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
     log_feature!(LogFeature::Schema, info, "Schema service: listing schemas");
 
-    let schemas = match state.schemas.lock() {
+    let schemas = match state.schemas.read() {
         Ok(s) => s,
         Err(e) => {
             log_feature!(
                 LogFeature::Schema,
                 error,
-                "Failed to acquire schemas lock: {}",
+                "Failed to acquire schemas read lock: {}",
                 e
             );
             return HttpResponse::InternalServerError()
                 .json(ErrorResponse {
-                    error: "Failed to acquire schemas lock".to_string(),
+                    error: "Failed to acquire schemas read lock".to_string(),
                 });
         }
     };
@@ -375,18 +327,18 @@ async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
 async fn get_available_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
     log_feature!(LogFeature::Schema, info, "Schema service: getting all available schemas");
 
-    let schemas = match state.schemas.lock() {
+    let schemas = match state.schemas.read() {
         Ok(s) => s,
         Err(e) => {
             log_feature!(
                 LogFeature::Schema,
                 error,
-                "Failed to acquire schemas lock: {}",
+                "Failed to acquire schemas read lock: {}",
                 e
             );
             return HttpResponse::InternalServerError()
                 .json(ErrorResponse {
-                    error: "Failed to acquire schemas lock".to_string(),
+                    error: "Failed to acquire schemas read lock".to_string(),
                 });
         }
     };
@@ -411,18 +363,18 @@ async fn get_schema(
         schema_name
     );
 
-    let schemas = match state.schemas.lock() {
+    let schemas = match state.schemas.read() {
         Ok(s) => s,
         Err(e) => {
             log_feature!(
                 LogFeature::Schema,
                 error,
-                "Failed to acquire schemas lock: {}",
+                "Failed to acquire schemas read lock: {}",
                 e
             );
             return HttpResponse::InternalServerError()
                 .json(ErrorResponse {
-                    error: "Failed to acquire schemas lock".to_string(),
+                    error: "Failed to acquire schemas read lock".to_string(),
                 });
         }
     };
@@ -453,18 +405,18 @@ async fn reload_schemas(state: web::Data<SchemaServiceState>) -> impl Responder 
 
     match state.load_schemas() {
         Ok(_) => {
-            let schemas = match state.schemas.lock() {
+            let schemas = match state.schemas.read() {
                 Ok(s) => s,
                 Err(e) => {
                     log_feature!(
                         LogFeature::Schema,
                         error,
-                        "Failed to acquire schemas lock: {}",
+                        "Failed to acquire schemas read lock: {}",
                         e
                     );
                     return HttpResponse::InternalServerError()
                         .json(ErrorResponse {
-                            error: "Failed to acquire schemas lock".to_string(),
+                            error: "Failed to acquire schemas read lock".to_string(),
                         });
                 }
             };
@@ -569,7 +521,7 @@ async fn reset_database(
 
     // Clear the in-memory schemas map
     {
-        let mut schemas = state.schemas.lock().unwrap();
+        let mut schemas = state.schemas.write().unwrap();
         schemas.clear();
     }
 
@@ -732,8 +684,8 @@ mod tests {
 
         let stored_schemas = state
             .schemas
-            .lock()
-            .expect("failed to lock schema map after addition");
+            .read()
+            .expect("failed to acquire read lock on schema map after addition");
 
         // Check stored by combined name
         assert!(stored_schemas.contains_key(&added_schema.name));
@@ -1082,7 +1034,7 @@ mod tests {
             _ => panic!("schema2 should be added"),
         };
 
-        let schemas = state.schemas.lock().expect("failed to lock schemas");
+        let schemas = state.schemas.read().expect("failed to acquire read lock on schemas");
         assert_eq!(schemas.len(), 2);
         
         // Schemas are now stored by topology_hash

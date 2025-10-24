@@ -401,16 +401,7 @@ impl NativeIndexManager {
         // If no classifications provided, fall back to word-only indexing
         let classifications = classifications.unwrap_or_else(|| vec!["word".to_string()]);
         
-        use crate::logging::features::{log_feature, LogFeature};
-        if classifications.len() > 1 || !classifications.contains(&"word".to_string()) {
-            log_feature!(
-                LogFeature::Database,
-                info,
-                "Indexing field '{}' with classifications: {:?}",
-                field_name,
-                classifications
-            );
-        }
+        // Indexing field with classifications (logging removed for performance)
 
         let record_key = self.build_record_key(schema_name, field_name, key_value)?;
         self.remove_record_entries(&record_key, schema_name, field_name, key_value)?;
@@ -438,15 +429,7 @@ impl NativeIndexManager {
             };
 
             for (index_key, normalized_value) in index_entries {
-                use crate::logging::features::{log_feature, LogFeature};
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Creating index: {} (classification: {}, value: {})",
-                    index_key,
-                    classification_str,
-                    normalized_value
-                );
+                // Index creation logging removed for performance
                 
                 self.add_to_index(
                     &index_key,

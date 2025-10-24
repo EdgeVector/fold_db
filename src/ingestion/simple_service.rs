@@ -16,7 +16,15 @@ use crate::schema::types::{Mutation, Operation};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+
+/// Schema cache entry
+#[derive(Debug, Clone)]
+struct SchemaCacheEntry {
+    schemas: SimplifiedSchemaMap,
+    timestamp: Instant,
+}
 
 /// Simplified ingestion service that works with DataFoldNode
 pub struct SimpleIngestionService {
@@ -24,6 +32,7 @@ pub struct SimpleIngestionService {
     openrouter_service: Option<OpenRouterService>,
     ollama_service: Option<OllamaService>,
     mutation_generator: MutationGenerator,
+    schema_cache: Arc<Mutex<Option<SchemaCacheEntry>>>,
 }
 
 impl SimpleIngestionService {
@@ -56,6 +65,7 @@ impl SimpleIngestionService {
             openrouter_service,
             ollama_service,
             mutation_generator,
+            schema_cache: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -269,11 +279,36 @@ impl SimpleIngestionService {
         })
     }
 
-    /// Get available schemas from the schema service via node
+    /// Get available schemas from the schema service via node (with caching)
     async fn get_stripped_available_schemas_from_node(
         &self,
         node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<SimplifiedSchemaMap> {
+        const CACHE_TTL: Duration = Duration::from_secs(30); // 30 second cache
+        
+        // Check cache first
+        {
+            let cache_guard = self.schema_cache.lock().await;
+            if let Some(cache_entry) = cache_guard.as_ref() {
+                if cache_entry.timestamp.elapsed() < CACHE_TTL {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Using cached schemas ({} schemas, {}s old)",
+                        cache_entry.schemas.len(),
+                        cache_entry.timestamp.elapsed().as_secs()
+                    );
+                    return Ok(cache_entry.schemas.clone());
+                }
+            }
+        }
+
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Cache miss or expired, fetching schemas from schema service"
+        );
+
         // Fetch available schemas from the schema service via the node
         let schemas = {
             let node_guard = node.lock().await;
@@ -306,6 +341,22 @@ impl SimpleIngestionService {
 
             schema_map.insert(schema.name.clone(), simplified);
         }
+
+        // Update cache
+        {
+            let mut cache_guard = self.schema_cache.lock().await;
+            *cache_guard = Some(SchemaCacheEntry {
+                schemas: schema_map.clone(),
+                timestamp: Instant::now(),
+            });
+        }
+
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Cached {} schemas for future requests",
+            schema_map.len()
+        );
 
         Ok(schema_map)
     }
@@ -671,22 +722,9 @@ impl SimpleIngestionService {
             match exec_result {
                 Ok(_) => {
                     executed_count += 1;
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Successfully executed mutation for schema '{}'",
-                        mutation.schema_name
-                    );
                 }
                 Err(e) => {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        error,
-                        "Failed to execute mutation for schema '{}': {}",
-                        mutation.schema_name,
-                        e
-                    );
-                    // Continue with other mutations even if one fails
+                    return Err(e);
                 }
             }
         }

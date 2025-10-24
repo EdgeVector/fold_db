@@ -125,7 +125,7 @@ def load_twitter_js_file(file_path: Path) -> Optional[Dict[str, Any]]:
 
 def process_data_with_ingestion(data: Any, auto_execute: bool = True, 
                                trust_distance: int = 0, pub_key: str = "default") -> bool:
-    """Send data to the ingestion endpoint."""
+    """Send data to the ingestion endpoint and wait for completion."""
     try:
         payload = {
             "data": data,
@@ -134,7 +134,8 @@ def process_data_with_ingestion(data: Any, auto_execute: bool = True,
             "pub_key": pub_key
         }
         
-        response = requests.post(INGESTION_ENDPOINT, json=payload, timeout=60)
+        # Send the request with a longer timeout to allow for processing time
+        response = requests.post(INGESTION_ENDPOINT, json=payload, timeout=120)
         
         if response.status_code == 200:
             result = response.json()
@@ -146,6 +147,9 @@ def process_data_with_ingestion(data: Any, auto_execute: bool = True,
                     print(f"   📝 Mutations: {result['mutations_generated']}")
                 if "mutations_executed" in result:
                     print(f"   ⚡ Executed: {result['mutations_executed']}")
+                
+                # Add a small delay to ensure database operations complete
+                time.sleep(1)
                 return True
             else:
                 print(f"❌ Ingestion failed: {result.get('error', 'Unknown error')}")
@@ -237,11 +241,16 @@ def main():
     successful = 0
     failed = 0
     
-    for file_name in files_to_process:
+    for i, file_name in enumerate(files_to_process):
         if process_twitter_file(file_name, args.auto_execute, args.trust_distance, args.pub_key):
             successful += 1
         else:
             failed += 1
+        
+        # Add a delay between requests to prevent database lock contention
+        if i < len(files_to_process) - 1:  # Don't delay after the last file
+            print("⏳ Waiting for database operations to complete...")
+            time.sleep(5)  # 5 second delay between requests
     
     # Summary
     print(f"\n📊 Processing Summary:")

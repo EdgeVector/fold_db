@@ -807,22 +807,9 @@ impl IngestionCore {
             match self.execute_single_mutation(mutation).await {
                 Ok(()) => {
                     executed_count += 1;
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Successfully executed mutation for schema '{}'",
-                        mutation.schema_name
-                    );
                 }
                 Err(e) => {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        error,
-                        "Failed to execute mutation for schema '{}': {}",
-                        mutation.schema_name,
-                        e
-                    );
-                    // Continue with other mutations even if one fails
+                    return Err(e);
                 }
             }
         }

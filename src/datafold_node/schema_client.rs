@@ -90,20 +90,35 @@ impl SchemaServiceClient {
 
         if response.status() == StatusCode::CONFLICT {
             #[derive(Deserialize)]
-            struct ErrorBody {
+            struct ConflictBody {
                 error: String,
+                similarity: f64,
+                closest_schema: Schema,
             }
             
-            let error_message = response
-                .json::<ErrorBody>()
+            let conflict_body = response
+                .json::<ConflictBody>()
                 .await
-                .map(|body| body.error)
-                .unwrap_or_else(|_| "Schema service reported a conflict when adding schema".to_string());
+                .map_err(|error| {
+                    FoldDbError::Config(format!(
+                        "Failed to parse schema conflict response: {}",
+                        error
+                    ))
+                })?;
 
-            return Err(FoldDbError::Config(format!(
-                "Schema service conflict: {}",
-                error_message
-            )));
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema already exists with {}% similarity - using existing schema '{}'",
+                (conflict_body.similarity * 100.0) as u32,
+                conflict_body.closest_schema.name
+            );
+
+            // Return the existing schema as if it was successfully added
+            return Ok(AddSchemaResponse {
+                schema: conflict_body.closest_schema,
+                mutation_mappers: HashMap::new(), // Empty mappers for existing schema
+            });
         }
 
         let status = response.status();
