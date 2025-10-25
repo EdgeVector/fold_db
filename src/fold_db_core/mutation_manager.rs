@@ -8,9 +8,11 @@
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use std::collections::HashMap;
 
 use crate::db_operations::DbOperations;
 use crate::schema::types::{Mutation, KeyValue};
+use crate::schema::types::field::Field;
 use crate::schema::{SchemaCore, SchemaError};
 use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 use super::infrastructure::message_bus::request_events::MutationRequest;
@@ -126,6 +128,228 @@ impl MutationManager {
         
         // Return the mutation ID
         Ok(mutation_id)
+    }
+
+    /// Write multiple mutations in a batch for improved performance
+    /// Groups mutations by schema to minimize schema reloads and uses true batching
+    pub fn write_mutations_batch(&mut self, mutations: Vec<Mutation>) -> Result<Vec<String>, SchemaError> {
+        if mutations.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let start_time = std::time::Instant::now();
+        let mut timing_breakdown = std::collections::HashMap::new();
+        
+        // Group mutations by schema to minimize schema reloads
+        let group_start = std::time::Instant::now();
+        let grouped_mutations = self.group_mutations_by_schema(mutations);
+        timing_breakdown.insert("grouping", group_start.elapsed());
+        
+        let mut mutation_ids = Vec::new();
+        let mut batch_events = Vec::new();
+
+        for (schema_name, schema_mutations) in grouped_mutations {
+            // Load schema once for all mutations in this schema
+            let load_start = std::time::Instant::now();
+            let mut schema = self.schema_manager.get_schema(&schema_name)?
+                .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", schema_name)))?;
+            *timing_breakdown.entry("schema_load").or_insert(std::time::Duration::ZERO) += load_start.elapsed();
+
+            let mut mutation_contexts = Vec::new();
+            let mut validation_time = std::time::Duration::ZERO;
+            let mut field_processing_time = std::time::Duration::ZERO;
+            let mut refresh_time = std::time::Duration::ZERO;
+            let mut atom_time = std::time::Duration::ZERO;
+            let mut molecule_time = std::time::Duration::ZERO;
+            let mut index_time = std::time::Duration::ZERO;
+            
+            // Collect all index operations for batch processing
+            let mut index_operations = Vec::new();
+
+            // Process all mutations for this schema using deferred storage
+            for mutation in schema_mutations {
+                let mutation_id = mutation.uuid.clone();
+                let backfill_hash = mutation.backfill_hash.clone();
+                let key_config = schema.key.clone();
+                let key_value = KeyValue::from_mutation(&mutation.fields_and_values, key_config.as_ref().unwrap());
+                
+                // Validate all field values against their topologies before processing
+                let val_start = std::time::Instant::now();
+                for (field_name, value) in &mutation.fields_and_values {
+                    schema.validate_field_value(field_name, value)
+                        .map_err(|e| {
+                            SchemaError::InvalidData(format!(
+                                "Topology validation failed for field '{}' in schema '{}': {}. Value received: {:?}",
+                                field_name, mutation.schema_name, e, value
+                            ))
+                        })?;
+                }
+                validation_time += val_start.elapsed();
+                
+                // Process each field using deferred storage
+                let field_start = std::time::Instant::now();
+                for (field_name, value) in mutation.fields_and_values {
+                    // Get field classifications before mutable borrow
+                    let field_classifications = schema.get_field_classifications(&field_name);
+                    
+                    // Process the field in a separate scope to release the mutable borrow
+                    {
+                        let schema_field = schema.runtime_fields.get_mut(&field_name)
+                            .ok_or_else(|| SchemaError::InvalidData(format!(
+                                "Field '{}' not found in runtime_fields for schema '{}'",
+                                field_name,
+                                mutation.schema_name
+                            )))?;
+                        
+                        // Refresh field from database
+                        let refresh_start = std::time::Instant::now();
+                        schema_field.refresh_from_db(&self.db_ops);
+                        refresh_time += refresh_start.elapsed();
+                        
+                        // Create and store atom using deferred storage
+                        let atom_start = std::time::Instant::now();
+                        let new_atom = self.db_ops.create_and_store_atom_for_mutation_deferred(
+                            &mutation.schema_name,
+                            &mutation.pub_key,
+                            value.clone(),
+                        )?;
+                        atom_time += atom_start.elapsed();
+                        
+                        // Write mutation to field (updates in-memory molecule)
+                        let mol_start = std::time::Instant::now();
+                        schema_field.write_mutation(&key_value, new_atom, mutation.pub_key.clone());
+                        
+                        // Persist molecule using deferred storage
+                        if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
+                            self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)?;
+                        }
+                        molecule_time += mol_start.elapsed();
+                    } // Mutable borrow ends here
+                    
+                    // Collect index operation for batch processing
+                    index_operations.push((
+                        mutation.schema_name.clone(),
+                        field_name,
+                        key_value.clone(),
+                        value,
+                        field_classifications,
+                    ));
+                }
+                field_processing_time += field_start.elapsed();
+
+                // Store mutation context for event publishing
+                mutation_contexts.push((mutation_id, backfill_hash, key_value));
+            }
+            
+            *timing_breakdown.entry("validation").or_insert(std::time::Duration::ZERO) += validation_time;
+            *timing_breakdown.entry("field_processing").or_insert(std::time::Duration::ZERO) += field_processing_time;
+            *timing_breakdown.entry("  - refresh_fields").or_insert(std::time::Duration::ZERO) += refresh_time;
+            *timing_breakdown.entry("  - create_atoms").or_insert(std::time::Duration::ZERO) += atom_time;
+            *timing_breakdown.entry("  - write_molecules").or_insert(std::time::Duration::ZERO) += molecule_time;
+            *timing_breakdown.entry("  - index_fields").or_insert(std::time::Duration::ZERO) += index_time;
+            
+            // Publish batch index request for background processing
+            if !index_operations.is_empty() {
+                let index_start = std::time::Instant::now();
+                let index_requests: Vec<_> = index_operations.into_iter().map(|(schema_name, field_name, key_value, value, classifications)| {
+                    super::infrastructure::message_bus::request_events::IndexRequest {
+                        schema_name,
+                        field_name,
+                        key_value,
+                        value,
+                        classifications,
+                    }
+                }).collect();
+                
+                let batch_request = super::infrastructure::message_bus::request_events::BatchIndexRequest {
+                    operations: index_requests,
+                };
+                
+                self.message_bus.publish(batch_request)?;
+                index_time += index_start.elapsed();
+            }
+
+            // Sync molecule UUIDs to the persisted field before storing
+            let sync_start = std::time::Instant::now();
+            schema.sync_molecule_uuids();
+            *timing_breakdown.entry("sync_uuids").or_insert(std::time::Duration::ZERO) += sync_start.elapsed();
+
+            // Single schema persist and reload for this schema group
+            let store_start = std::time::Instant::now();
+            self.db_ops.store_schema(&schema_name, &schema)?;
+            *timing_breakdown.entry("schema_store").or_insert(std::time::Duration::ZERO) += store_start.elapsed();
+            
+            let reload_start = std::time::Instant::now();
+            self.schema_manager.load_schema_internal(schema)?;
+            *timing_breakdown.entry("schema_reload").or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
+
+            // Create events for batch publishing
+            for (mutation_id, backfill_hash, key_value) in mutation_contexts {
+                let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+                    key_value: Some(key_value),
+                    mutation_hash: Some(mutation_id.clone()),
+                    incremental: true,
+                    backfill_hash: backfill_hash,
+                });
+                
+                let event = MutationExecuted::with_context(
+                    "write_mutations_batch",
+                    schema_name.clone(),
+                    0, // Execution time will be calculated for the batch
+                    vec![], // Fields affected - could be populated if needed
+                    mutation_context,
+                );
+                
+                batch_events.push((event, mutation_id.clone()));
+                mutation_ids.push(mutation_id.clone());
+            }
+        }
+
+        // Single flush for entire batch
+        let flush_start = std::time::Instant::now();
+        self.db_ops.flush()?;
+        timing_breakdown.insert("flush", flush_start.elapsed());
+
+        // Batch publish events
+        let publish_start = std::time::Instant::now();
+        self.publish_batch_events(batch_events)?;
+        timing_breakdown.insert("event_publish", publish_start.elapsed());
+
+        let total_time = start_time.elapsed();
+        
+        // Log timing breakdown
+        eprintln!("\n🔍 Batch mutation timing breakdown (total: {:.2}ms):", total_time.as_millis());
+        let mut sorted_timings: Vec<_> = timing_breakdown.iter().collect();
+        sorted_timings.sort_by(|a, b| b.1.cmp(a.1));
+        for (operation, duration) in sorted_timings {
+            let percentage = (duration.as_millis() as f64 / total_time.as_millis() as f64) * 100.0;
+            eprintln!("  - {}: {:.2}ms ({:.1}%)", operation, duration.as_millis(), percentage);
+        }
+        eprintln!();
+
+        Ok(mutation_ids)
+    }
+
+    /// Groups mutations by schema name for efficient batch processing
+    fn group_mutations_by_schema(&self, mutations: Vec<Mutation>) -> HashMap<String, Vec<Mutation>> {
+        let mut grouped: HashMap<String, Vec<Mutation>> = HashMap::new();
+        
+        for mutation in mutations {
+            grouped.entry(mutation.schema_name.clone())
+                .or_insert_with(Vec::new)
+                .push(mutation);
+        }
+        
+        grouped
+    }
+
+
+    /// Publishes all batch events at once
+    fn publish_batch_events(&self, events: Vec<(MutationExecuted, String)>) -> Result<(), SchemaError> {
+        for (event, _mutation_id) in events {
+            self.message_bus.publish(event)?;
+        }
+        Ok(())
     }
 
     /// Start listening for MutationRequest events in a background thread

@@ -248,6 +248,20 @@ impl DataFoldNode {
             .unwrap_or("http://localhost:9002");
         crate::datafold_node::schema_client::SchemaServiceClient::new(url)
     }
+    
+    /// Get the current indexing status
+    pub fn get_indexing_status(&self) -> crate::fold_db_core::orchestration::IndexingStatus {
+        self.db.lock()
+            .map(|db| db.get_indexing_status())
+            .unwrap_or_default()
+    }
+    
+    /// Check if indexing is currently in progress
+    pub fn is_indexing(&self) -> bool {
+        self.db.lock()
+            .map(|db| db.is_indexing())
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]

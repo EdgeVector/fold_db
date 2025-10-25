@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::schema::types::Mutation;
 use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::key_value::KeyValue;
 
 use super::EventType;
 
@@ -479,6 +480,34 @@ pub struct BackfillExpectedMutations {
 impl EventType for BackfillExpectedMutations {
     fn type_id() -> &'static str {
         "BackfillExpectedMutations"
+    }
+}
+
+/// Request to index a field value (for background/async indexing)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IndexRequest {
+    pub schema_name: String,
+    pub field_name: String,
+    pub key_value: KeyValue,
+    pub value: Value,
+    pub classifications: Option<Vec<String>>,
+}
+
+impl EventType for IndexRequest {
+    fn type_id() -> &'static str {
+        "IndexRequest"
+    }
+}
+
+/// Batch request to index multiple field values
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BatchIndexRequest {
+    pub operations: Vec<IndexRequest>,
+}
+
+impl EventType for BatchIndexRequest {
+    fn type_id() -> &'static str {
+        "BatchIndexRequest"
     }
 }
 

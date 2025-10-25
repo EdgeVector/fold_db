@@ -19,6 +19,7 @@ use utoipa::OpenApi;
         crate::datafold_node::query_routes::get_transform_statistics,
         crate::datafold_node::query_routes::get_backfill_statistics,
         crate::datafold_node::query_routes::native_index_search,
+        crate::datafold_node::query_routes::get_indexing_status,
         crate::datafold_node::security_routes::get_system_public_key,
         crate::datafold_node::system_routes::get_system_status,
         crate::datafold_node::system_routes::get_node_private_key,
@@ -85,7 +86,9 @@ use utoipa::OpenApi;
             crate::datafold_node::llm_query::types::ChatRequest,
             crate::datafold_node::llm_query::types::ChatResponse,
             crate::datafold_node::llm_query::types::BackfillStatusResponse,
-            crate::db_operations::IndexResult
+            crate::db_operations::IndexResult,
+            crate::fold_db_core::orchestration::IndexingStatus,
+            crate::fold_db_core::orchestration::IndexingState
         )
     ),
     tags(

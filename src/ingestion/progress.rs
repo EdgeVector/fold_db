@@ -72,7 +72,7 @@ impl IngestionProgress {
         Self {
             id,
             current_step: IngestionStep::ValidatingConfig,
-            progress_percentage: 0,
+            progress_percentage: 5,  // Start at 5% for ValidatingConfig step
             status_message: "Starting ingestion process...".to_string(),
             is_complete: false,
             is_failed: false,
@@ -88,6 +88,13 @@ impl IngestionProgress {
         self.current_step = step.clone();
         self.status_message = message;
         self.progress_percentage = self.step_to_percentage(&step);
+    }
+
+    /// Update progress with a custom percentage (for granular progress within a step)
+    pub fn update_step_with_percentage(&mut self, step: IngestionStep, message: String, percentage: u8) {
+        self.current_step = step;
+        self.status_message = message;
+        self.progress_percentage = percentage.min(100);
     }
 
     /// Mark as completed with results
@@ -158,6 +165,17 @@ impl ProgressService {
         let mut tracker = self.tracker.lock().unwrap();
         if let Some(progress) = tracker.get_mut(id) {
             progress.update_step(step, message);
+            Some(progress.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Update progress with custom percentage (for granular progress within a step)
+    pub fn update_progress_with_percentage(&self, id: &str, step: IngestionStep, message: String, percentage: u8) -> Option<IngestionProgress> {
+        let mut tracker = self.tracker.lock().unwrap();
+        if let Some(progress) = tracker.get_mut(id) {
+            progress.update_step_with_percentage(step, message, percentage);
             Some(progress.clone())
         } else {
             None

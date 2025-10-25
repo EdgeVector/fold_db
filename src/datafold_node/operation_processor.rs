@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::schema::types::operations::MutationType;
+use crate::schema::types::operations::{MutationType, Operation};
 use super::DataFoldNode;
 use super::response_types::QueryResultMap;
 
@@ -69,6 +69,59 @@ impl OperationProcessor {
         Ok(())
     }
 
+    /// Executes multiple mutations in a batch for improved performance.
+    pub async fn execute_mutations_batch(
+        &self,
+        mutations_data: Vec<Value>,
+    ) -> FoldDbResult<Vec<String>> {
+        if mutations_data.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut mutations = Vec::new();
+
+        // Parse each mutation from the input data
+        for mutation_data in mutations_data {
+            let (schema, fields_and_values, key_value, mutation_type) = match serde_json::from_value::<Operation>(mutation_data) {
+                Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type }) => {
+                    (schema, fields_and_values, key_value, mutation_type)
+                },
+                Err(e) => {
+                    return Err(FoldDbError::Config(format!("Failed to parse mutation: {}", e)));
+                }
+            };
+
+            if fields_and_values.is_empty() {
+                return Err(FoldDbError::Config("No fields to mutate".to_string()));
+            }
+
+            // Convert HashMap<String, Value> to HashMap<String, Value> (already correct type)
+            let fields_and_values = match serde_json::to_value(&fields_and_values) {
+                Ok(Value::Object(map)) => map.into_iter().collect(),
+                _ => {
+                    return Err(FoldDbError::Config(
+                        "Mutation fields_and_values must be an object".into(),
+                    ))
+                }
+            };
+
+            let mutation = Mutation::new(
+                schema,
+                fields_and_values,
+                key_value,
+                String::new(),
+                0,
+                mutation_type,
+            );
+
+            mutations.push(mutation);
+        }
+
+        let node_guard = self.node.lock().await;
+        let mutation_ids = node_guard.mutate_batch(mutations)?;
+
+        Ok(mutation_ids)
+    }
 
     // Removed execute_sync as part of eliminating the generic execute path
 }

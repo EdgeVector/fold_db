@@ -80,6 +80,9 @@ export {
 export { llmQueryClient } from './llmQueryClient';
 // Native Index Client
 export { nativeIndexClient, NativeIndexClient } from './nativeIndexClient';
+// Indexing Status Client
+export { getIndexingStatus, useIndexingStatus } from './indexingClient';
+export type { IndexingStatus } from './indexingClient';
 
 // Type exports for convenience
 export type {

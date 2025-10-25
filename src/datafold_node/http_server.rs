@@ -212,6 +212,7 @@ impl DataFoldHttpServer {
                         .route("/backfill/{hash}", web::get().to(schema_routes::get_backfill_status))
                         .route("/query", web::post().to(query_routes::execute_query))
                         .route("/mutation", web::post().to(query_routes::execute_mutation))
+                        .route("/mutations/batch", web::post().to(query_routes::execute_mutations_batch))
                         // Ingestion endpoints
                         .route(
                             "/ingestion/process",
@@ -281,6 +282,11 @@ impl DataFoldHttpServer {
                         .route(
                             "/native-index/search",
                             web::get().to(query_routes::native_index_search),
+                        )
+                        // Indexing status endpoint
+                        .route(
+                            "/indexing/status",
+                            web::get().to(query_routes::get_indexing_status),
                         )
                         // Log endpoints
                         .route("/logs", web::get().to(log_routes::list_logs))

@@ -78,6 +78,7 @@ impl DbOperations {
     }
 
     /// Generic function to store a serializable item in the database
+    /// This method immediately flushes to disk - use store_item_deferred for batch operations
     pub fn store_item<T: Serialize>(&self, key: &str, item: &T) -> Result<(), SchemaError> {
         let bytes =
             serde_json::to_vec(item).map_err(ErrorUtils::from_serialization_error("item"))?;
@@ -91,6 +92,20 @@ impl DbOperations {
             .flush()
             .map_err(ErrorUtils::from_sled_error("flush"))?;
 
+        Ok(())
+    }
+
+    /// Generic function to store a serializable item in the database without immediate flush
+    /// Use this for batch operations where you'll flush at the end
+    pub fn store_item_deferred<T: Serialize>(&self, key: &str, item: &T) -> Result<(), SchemaError> {
+        let bytes =
+            serde_json::to_vec(item).map_err(ErrorUtils::from_serialization_error("item"))?;
+
+        self.db
+            .insert(key.as_bytes(), bytes)
+            .map_err(ErrorUtils::from_sled_error("insert"))?;
+
+        // No immediate flush - caller is responsible for flushing
         Ok(())
     }
 
@@ -252,6 +267,59 @@ impl DbOperations {
     pub fn exists_in_tree(&self, tree: &sled::Tree, key: &str) -> Result<bool, SchemaError> {
         tree.contains_key(key.as_bytes())
             .map_err(|e| SchemaError::InvalidData(format!("Existence check failed: {}", e)))
+    }
+
+    // ========== BATCH OPERATIONS ==========
+
+    /// Batch store multiple items using sled's batch API for atomic operations
+    pub fn batch_store_items<T: Serialize>(&self, items: &[(String, T)]) -> Result<(), SchemaError> {
+        let mut batch = sled::Batch::default();
+        
+        for (key, item) in items {
+            let bytes = serde_json::to_vec(item)
+                .map_err(ErrorUtils::from_serialization_error("batch item"))?;
+            batch.insert(key.as_bytes(), bytes);
+        }
+        
+        self.db.apply_batch(batch)
+            .map_err(ErrorUtils::from_sled_error("batch apply"))?;
+        
+        Ok(())
+    }
+
+    /// Batch get multiple items efficiently
+    pub fn batch_get_items<T: DeserializeOwned>(&self, keys: &[String]) -> Result<Vec<Option<T>>, SchemaError> {
+        let mut results = Vec::with_capacity(keys.len());
+        
+        for key in keys {
+            match self.db.get(key.as_bytes()) {
+                Ok(Some(bytes)) => {
+                    let item = serde_json::from_slice(&bytes)
+                        .map_err(ErrorUtils::from_deserialization_error("batch item"))?;
+                    results.push(Some(item));
+                }
+                Ok(None) => results.push(None),
+                Err(e) => return Err(ErrorUtils::database_error("batch retrieve", e)),
+            }
+        }
+        
+        Ok(results)
+    }
+
+    /// Batch store items in a specific tree
+    pub fn batch_store_in_tree<T: Serialize>(&self, tree: &sled::Tree, items: &[(String, T)]) -> Result<(), SchemaError> {
+        let mut batch = sled::Batch::default();
+        
+        for (key, item) in items {
+            let bytes = serde_json::to_vec(item)
+                .map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?;
+            batch.insert(key.as_bytes(), bytes);
+        }
+        
+        tree.apply_batch(batch)
+            .map_err(|e| SchemaError::InvalidData(format!("Tree batch apply failed: {}", e)))?;
+        
+        Ok(())
     }
 
     /// Flush the database to ensure all data is persisted to disk

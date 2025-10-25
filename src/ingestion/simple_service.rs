@@ -143,7 +143,7 @@ impl SimpleIngestionService {
         // Handle both single objects and arrays of objects
         let mutations = if let Some(array) = request.data.as_array() {
             // Generate a mutation for each element in the array
-
+            let total_items = array.len();
             let mut all_mutations = Vec::new();
             for (idx, item) in array.iter().enumerate() {
                 let fields_and_values = if let Some(obj) = item.as_object() {
@@ -173,6 +173,18 @@ impl SimpleIngestionService {
                 )?;
 
                 all_mutations.extend(mutations);
+                
+                // Update progress every 10 items
+                if (idx + 1) % 10 == 0 || idx + 1 == total_items {
+                    let percent_of_step = ((idx + 1) as f32 / total_items as f32 * 15.0) as u8;
+                    let progress_percent = 75 + percent_of_step;
+                    progress_service.update_progress_with_percentage(
+                        &progress_id,
+                        IngestionStep::GeneratingMutations,
+                        format!("Generating mutations... ({}/{})", idx + 1, total_items),
+                        progress_percent,
+                    );
+                }
             }
 
             all_mutations
@@ -213,8 +225,13 @@ impl SimpleIngestionService {
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
         {
-            self.execute_mutations_with_node(&mutations, node.clone())
-                .await?
+            self.execute_mutations_with_node_and_progress(
+                &mutations, 
+                node.clone(),
+                progress_service,
+                &progress_id,
+            )
+            .await?
         } else {
             0
         };
@@ -797,52 +814,99 @@ impl SimpleIngestionService {
         Ok(())
     }
 
-    /// Execute mutations using the OperationProcessor
+    /// Execute mutations using the OperationProcessor with batch mutations
+    /// Execute mutations with progress tracking
+    async fn execute_mutations_with_node_and_progress(
+        &self,
+        mutations: &[Mutation],
+        node: Arc<Mutex<DataFoldNode>>,
+        progress_service: &ProgressService,
+        progress_id: &str,
+    ) -> IngestionResult<usize> {
+        if mutations.is_empty() {
+            return Ok(0);
+        }
+
+        let processor = OperationProcessor::new(node);
+        let total_mutations = mutations.len();
+
+        // Convert mutations to operation format for batch processing
+        // Update progress for every 5 items to ensure visibility
+        let mutations_data: Vec<Value> = mutations
+            .iter()
+            .enumerate()
+            .map(|(idx, mutation)| {
+                // Update progress more frequently (every 5 items) to ensure frontend catches updates
+                if (idx + 1) % 5 == 0 || idx + 1 == total_mutations {
+                    // Calculate progress: 90% base + up to 10% for this step
+                    let percent_of_step = ((idx + 1) as f32 / total_mutations as f32 * 10.0) as u8;
+                    let progress_percent = 90 + percent_of_step;
+                    progress_service.update_progress_with_percentage(
+                        progress_id,
+                        IngestionStep::ExecutingMutations,
+                        format!("Executing mutations... ({}/{})", idx + 1, total_mutations),
+                        progress_percent,
+                    );
+                }
+                
+                let operation = Operation::Mutation {
+                    schema: mutation.schema_name.clone(),
+                    fields_and_values: mutation.fields_and_values.clone(),
+                    key_value: mutation.key_value.clone(),
+                    mutation_type: mutation.mutation_type.clone(),
+                };
+                serde_json::to_value(operation).expect("Failed to serialize operation")
+            })
+            .collect();
+
+        // Execute all mutations in a batch
+        processor
+            .execute_mutations_batch(mutations_data)
+            .await
+            .map(|mutation_ids| mutation_ids.len())
+            .map_err(|e| {
+                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                    e.to_string(),
+                ))
+            })
+    }
+
+    /// Execute mutations without progress tracking (for backward compatibility)
     async fn execute_mutations_with_node(
         &self,
         mutations: &[Mutation],
         node: Arc<Mutex<DataFoldNode>>,
     ) -> IngestionResult<usize> {
-        let mut executed_count = 0;
-        let processor = OperationProcessor::new(node);
-
-        for mutation in mutations {
-            // Convert mutation to operation with correct structure
-            let operation = Operation::Mutation {
-                schema: mutation.schema_name.clone(),
-                fields_and_values: mutation.fields_and_values.clone(),
-                key_value: mutation.key_value.clone(),
-                mutation_type: mutation.mutation_type.clone(),
-            };
-
-            // Execute mutation asynchronously
-            let exec_result: Result<(), IngestionError> = match operation {
-                Operation::Mutation {
-                    schema,
-                    fields_and_values,
-                    key_value,
-                    mutation_type,
-                } => processor
-                    .execute_mutation(schema, fields_and_values, key_value, mutation_type)
-                    .await
-                    .map_err(|e| {
-                        IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                            e.to_string(),
-                        ))
-                    }),
-            };
-
-            match exec_result {
-                Ok(_) => {
-                    executed_count += 1;
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
+        if mutations.is_empty() {
+            return Ok(0);
         }
 
-        Ok(executed_count)
+        let processor = OperationProcessor::new(node);
+
+        // Convert mutations to operation format for batch processing
+        let mutations_data: Vec<Value> = mutations
+            .iter()
+            .map(|mutation| {
+                let operation = Operation::Mutation {
+                    schema: mutation.schema_name.clone(),
+                    fields_and_values: mutation.fields_and_values.clone(),
+                    key_value: mutation.key_value.clone(),
+                    mutation_type: mutation.mutation_type.clone(),
+                };
+                serde_json::to_value(operation).expect("Failed to serialize operation")
+            })
+            .collect();
+
+        // Execute all mutations in a batch
+        processor
+            .execute_mutations_batch(mutations_data)
+            .await
+            .map(|mutation_ids| mutation_ids.len())
+            .map_err(|e| {
+                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                    e.to_string(),
+                ))
+            })
     }
 
     /// Flatten Twitter data structure for AI analysis

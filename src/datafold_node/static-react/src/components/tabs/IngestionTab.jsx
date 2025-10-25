@@ -59,9 +59,9 @@ function IngestionTab({ onResult }) {
       }
     }
 
-    // Poll immediately, then every 500ms
+    // Poll immediately, then every 200ms for faster updates
     pollProgress()
-    const interval = setInterval(pollProgress, 500)
+    const interval = setInterval(pollProgress, 200)
 
     return () => clearInterval(interval)
   }, [progressId, onResult])
@@ -113,6 +113,14 @@ function IngestionTab({ onResult }) {
         if (response.data.progress_id) {
           // Start polling for the specific progress ID
           setProgressId(response.data.progress_id)
+          
+          // Emit event for header status tracker
+          console.log('🟢 IngestionTab: Dispatching ingestion-started event', response.data.progress_id)
+          window.dispatchEvent(new CustomEvent('ingestion-started', {
+            detail: { progressId: response.data.progress_id }
+          }))
+          console.log('🟢 IngestionTab: Event dispatched')
+          
           // Don't call onResult here - let the progress polling handle it
         } else {
           // Fallback to immediate result if no progress tracking
@@ -735,7 +743,7 @@ The key to success lies in understanding not just the technical aspects, but als
         </div>
       )}
 
-      {/* Progress Bar */}
+      {/* Progress Bar - Shows Ingestion Progress */}
       {currentProgress && (
         <ProgressBar progress={currentProgress} />
       )}

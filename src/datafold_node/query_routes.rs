@@ -82,6 +82,32 @@ pub async fn execute_mutation(
     }
 }
 
+/// Execute multiple mutations in a batch for improved performance.
+#[utoipa::path(
+    post,
+    path = "/api/mutations/batch",
+    tag = "query",
+    request_body = Vec<serde_json::Value>,
+    responses(
+        (status = 200, description = "Array of mutation IDs"),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn execute_mutations_batch(
+    mutations_data: web::Json<Vec<Value>>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let node_arc = Arc::clone(&state.node);
+    let processor = OperationProcessor::new(node_arc);
+
+    match processor.execute_mutations_batch(mutations_data.into_inner()).await {
+        Ok(mutation_ids) => HttpResponse::Ok().json(mutation_ids),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to execute batch mutations: {}", e)})),
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/api/transforms",
@@ -309,6 +335,22 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to get backfill statistics: {}", e)})),
     }
+}
+
+/// Get indexing status
+#[utoipa::path(
+    get,
+    path = "/api/indexing/status",
+    tag = "system",
+    responses(
+        (status = 200, description = "Current indexing status", body = IndexingStatus),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
+    let node = state.node.lock().await;
+    let status = node.get_indexing_status();
+    HttpResponse::Ok().json(status)
 }
 
 #[cfg(test)]

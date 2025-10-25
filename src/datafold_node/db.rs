@@ -51,6 +51,15 @@ impl DataFoldNode {
         )
     }
 
+    /// Executes multiple mutations in a batch for improved performance.
+    pub fn mutate_batch(&self, mutations: Vec<Mutation>) -> FoldDbResult<Vec<String>> {
+        self.with_db_mut(
+            |db| db.mutation_manager.write_mutations_batch(mutations),
+            "Failed to acquire database lock for batch mutation",
+            "Batch mutation operation failed"
+        )
+    }
+
     /// List all registered transforms.
     pub fn list_transforms(&self) -> FoldDbResult<HashMap<String, Transform>> {
         self.with_db(

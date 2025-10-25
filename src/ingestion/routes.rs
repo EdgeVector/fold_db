@@ -58,43 +58,65 @@ pub async fn process_json(
         }
     };
 
-    // Process the ingestion request with progress tracking
-    match service
-        .process_json_with_node_and_progress(request.into_inner(), Arc::clone(&state.node), &progress_service, progress_id.clone())
-        .await
-    {
-        Ok(response) => {
-            if response.success {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "Ingestion completed successfully"
-                );
-                HttpResponse::Ok().json(response)
-            } else {
+    // Spawn ingestion as a background task and return immediately with progress_id
+    let node = Arc::clone(&state.node);
+    let request_data = request.into_inner();
+    let progress_id_clone = progress_id.clone();
+    
+    tokio::spawn(async move {
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Starting background ingestion with progress_id: {}",
+            progress_id_clone
+        );
+        
+        match service
+            .process_json_with_node_and_progress(request_data, node, &progress_service, progress_id_clone.clone())
+            .await
+        {
+            Ok(response) => {
+                if response.success {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Background ingestion completed successfully: {}",
+                        progress_id_clone
+                    );
+                } else {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
+                        "Background ingestion failed: {:?}",
+                        response.errors
+                    );
+                }
+            }
+            Err(e) => {
                 log_feature!(
                     LogFeature::Ingestion,
                     error,
-                    "Ingestion failed: {:?}",
-                    response.errors
+                    "Background ingestion processing failed: {}",
+                    e
                 );
-                HttpResponse::InternalServerError().json(response)
+                progress_service.fail_progress(&progress_id_clone, format!("Processing failed: {}", e));
             }
         }
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Ingestion processing failed: {}",
-                e
-            );
-            progress_service.fail_progress(&progress_id, format!("Processing failed: {}", e));
-            HttpResponse::InternalServerError().json(IngestionResponse::failure(vec![format!(
-                "Processing failed: {}",
-                e
-            )]))
-        }
-    }
+    });
+    
+    // Return immediately with the progress_id so frontend can start polling
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Returning progress_id to client: {}",
+        progress_id
+    );
+    
+    HttpResponse::Accepted().json(serde_json::json!({
+        "success": true,
+        "progress_id": progress_id,
+        "message": "Ingestion started. Use progress_id to track status."
+    }))
 }
 
 /// Get ingestion status
