@@ -7,6 +7,7 @@ type PathParams<P extends keyof paths, M extends keyof paths[P]> =
   paths[P][M] extends { parameters: { path: infer T } } ? T : Record<string, string>
 
 export const API_ENDPOINTS_DERIVED = {
+  GET_INDEXING_STATUS: '/indexing/status',
   GET_INGESTION_CONFIG: '/ingestion/config',
   HEALTH_CHECK: '/ingestion/health',
   PROCESS_JSON: '/ingestion/process',
@@ -50,6 +51,7 @@ export const API_ENDPOINTS_DERIVED = {
 // Base URL prefixes derived from OpenAPI paths
 export const API_BASE_URLS = {
   ROOT: '/api',
+  INDEXING: '/api/indexing',
   INGESTION: '/api/ingestion',
   LLM_QUERY: '/api/llm-query',
   LOGS: '/api/logs',

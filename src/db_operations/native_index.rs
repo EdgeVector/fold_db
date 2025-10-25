@@ -224,7 +224,7 @@ impl NativeIndexManager {
             self.store_record_words(&record_key, &all_index_keys)?;
         }
 
-        self.tree.flush()?;
+        // Note: flush is now handled by the caller to avoid flushing on every field operation
         Ok(())
     }
 
@@ -450,7 +450,8 @@ impl NativeIndexManager {
             self.store_record_words(&record_key, &all_index_keys)?;
         }
 
-        self.tree.flush()?;
+        // Note: flush is now handled by the caller (batch mutation manager)
+        // to avoid flushing on every field operation
         Ok(())
     }
 
@@ -693,6 +694,101 @@ impl NativeIndexManager {
         }
 
         self.tree.remove(record_key.as_bytes())?;
+        Ok(())
+    }
+
+    // ========== BATCH INDEX OPERATIONS ==========
+
+    /// Batch index multiple field values with classifications
+    pub fn batch_index_field_values_with_classifications(
+        &self,
+        index_operations: &[(String, String, KeyValue, Value, Option<Vec<String>>)], // (schema_name, field_name, key_value, value, classifications)
+    ) -> Result<(), SchemaError> {
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        let mut batch_operations = Vec::new();
+
+        for (schema_name, field_name, key_value, value, classifications) in index_operations {
+            if !self.should_index_field(field_name) {
+                continue;
+            }
+
+            let classifications = classifications.clone().unwrap_or_else(|| vec!["word".to_string()]);
+            let record_key = self.build_record_key(schema_name, field_name, key_value)?;
+
+            // Remove old entries
+            self.remove_record_entries(&record_key, schema_name, field_name, key_value)?;
+
+            let mut all_index_keys = Vec::new();
+
+            for classification_str in &classifications {
+                let index_entries = if classification_str == "word" {
+                    // Split into words
+                    let words = self.collect_words(value);
+                    words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
+                } else if classification_str.starts_with("hashtag") {
+                    // Keep hashtags whole (including the #)
+                    self.extract_hashtags(value)
+                } else if classification_str.starts_with("email") {
+                    // Keep emails whole
+                    self.extract_emails(value)
+                } else if classification_str.starts_with("name:") || classification_str.starts_with("username") || classification_str.starts_with("phone") || classification_str.starts_with("url") || classification_str.starts_with("date") {
+                    // Keep these whole (normalized)
+                    self.extract_whole_values(classification_str, value)
+                } else {
+                    // Default: treat as word
+                    let words = self.collect_words(value);
+                    words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
+                };
+
+                for (index_key, normalized_value) in index_entries {
+                    let index_entry = IndexResult {
+                        schema_name: schema_name.clone(),
+                        field: field_name.clone(),
+                        key_value: key_value.clone(),
+                        value: value.clone(),
+                        metadata: Some(json!({
+                            "classification": classification_str,
+                            "normalized": normalized_value
+                        })),
+                    };
+
+                    batch_operations.push((index_key.clone(), serde_json::to_value(index_entry).map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?));
+                    all_index_keys.push(index_key.clone());
+                }
+            }
+
+            if !all_index_keys.is_empty() {
+                batch_operations.push((record_key.clone(), serde_json::Value::Array(
+                    all_index_keys.into_iter().map(|k| serde_json::Value::String(k)).collect()
+                )));
+            }
+        }
+
+        // Batch execute all index operations
+        self.batch_execute_index_operations(&batch_operations)?;
+
+        Ok(())
+    }
+
+    /// Batch execute index operations using sled's batch API
+    fn batch_execute_index_operations(
+        &self,
+        operations: &[(String, serde_json::Value)],
+    ) -> Result<(), SchemaError> {
+        let mut batch = sled::Batch::default();
+
+        for (key, value) in operations {
+            let bytes = serde_json::to_vec(value)
+                .map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?;
+            batch.insert(key.as_bytes(), bytes);
+        }
+
+        self.tree.apply_batch(batch)
+            .map_err(|e| SchemaError::InvalidData(format!("Batch apply failed: {}", e)))?;
+
         Ok(())
     }
 }

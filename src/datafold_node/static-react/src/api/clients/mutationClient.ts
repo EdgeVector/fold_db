@@ -73,6 +73,26 @@ export class UnifiedMutationClient implements MutationApiClient {
   }
 
   /**
+   * Execute multiple mutations in a batch for improved performance
+   * PROTECTED - Requires authentication and SCHEMA-002 compliance
+   * 
+   * @param mutations Array of mutation objects to execute
+   * @returns Promise resolving to array of mutation IDs
+   */
+  async executeMutationsBatch(mutations: any[]): Promise<EnhancedApiResponse<string[]>> {
+    return this.client.post<string[]>(
+      API_ENDPOINTS.EXECUTE_MUTATIONS_BATCH,
+      mutations,
+      {
+        validateSchema: false, // Skip schema validation for mutations
+        timeout: 30000, // Longer timeout for batch operations
+        retries: 0, // No retries for mutations to prevent duplicate operations
+        cacheable: false // Never cache mutation results
+      }
+    );
+  }
+
+  /**
    * Execute a query against an approved schema
    * UNPROTECTED - No authentication required
    * 

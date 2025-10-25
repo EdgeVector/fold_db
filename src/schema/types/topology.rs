@@ -19,7 +19,7 @@ pub struct JsonTopology {
 #[ts(export)]
 #[serde(tag = "type")]
 pub enum TopologyNode {
-    /// Primitive type with classifications
+    /// Primitive type with optional classifications (required for index schemas)
     #[serde(rename = "Primitive")]
     Primitive {
         value: PrimitiveValueType,
