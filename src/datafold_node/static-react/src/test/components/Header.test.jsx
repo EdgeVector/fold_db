@@ -35,14 +35,6 @@ describe('Header Component', () => {
     expect(link).toHaveAttribute('href', '/')
   })
 
-  it('displays node status indicator', () => {
-    render(<Header onSettingsClick={vi.fn()} />)
-    
-    const statusBadge = screen.getByText('Active').closest('.inline-flex')
-    expect(statusBadge).toBeInTheDocument()
-    expect(statusBadge).toHaveClass('inline-flex', 'items-center', 'gap-2', 'px-3', 'py-2', 'rounded-md', 'text-sm', 'font-medium', 'bg-green-100', 'text-green-800')
-  })
-
   it('has proper layout classes', () => {
     render(<Header onSettingsClick={vi.fn()} />)
     
@@ -57,13 +49,20 @@ describe('Header Component', () => {
     expect(link).toHaveClass('flex', 'items-center', 'gap-3', 'text-blue-600', 'hover:text-blue-700', 'transition-colors')
   })
 
-  it('status indicator has green dot', () => {
+  it('displays settings button with correct classes', () => {
     render(<Header onSettingsClick={vi.fn()} />)
     
-    const statusContainer = screen.getByText('Active').parentElement
-    const greenDot = statusContainer.querySelector('.bg-green-500')
-    expect(greenDot).toBeInTheDocument()
-    expect(greenDot).toHaveClass('w-2', 'h-2', 'rounded-full', 'bg-green-500')
+    const settingsButton = screen.getByRole('button', { name: /settings/i })
+    expect(settingsButton).toHaveClass('inline-flex', 'items-center', 'gap-2', 'px-3', 'py-2', 'text-sm')
+  })
+
+  it('settings button contains icon', () => {
+    render(<Header onSettingsClick={vi.fn()} />)
+    
+    const settingsButton = screen.getByRole('button', { name: /settings/i })
+    const icon = settingsButton.querySelector('svg')
+    expect(icon).toBeInTheDocument()
+    expect(icon).toHaveClass('w-4', 'h-4')
   })
 
   it('title has correct typography classes', () => {

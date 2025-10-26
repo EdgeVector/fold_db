@@ -16,71 +16,64 @@ describe('StatusSection Component', () => {
     vi.clearAllMocks()
   })
 
-  it('renders status message correctly', () => {
+  it('renders system status heading', () => {
     render(<StatusSection />)
     
-    expect(screen.getByText('Node is running successfully')).toBeInTheDocument()
-    expect(screen.getByText('Active and healthy')).toBeInTheDocument()
+    expect(screen.getByText('System Status')).toBeInTheDocument()
   })
 
   it('has correct container styling', () => {
     render(<StatusSection />)
     
-    const container = screen.getByText('Node is running successfully').closest('div').parentElement.parentElement
+    const heading = screen.getByText('System Status')
+    const container = heading.closest('.bg-white')
     expect(container).toHaveClass('bg-white', 'rounded-lg', 'shadow-sm', 'p-4', 'mb-6')
   })
 
   it('displays check circle icon', () => {
     render(<StatusSection />)
     
-    // The CheckCircleIcon should be rendered as an SVG
-    const icon = screen.getByText('Node is running successfully').parentElement.querySelector('svg')
+    // The CheckCircleIcon should be rendered as an SVG next to System Status
+    const heading = screen.getByText('System Status')
+    const icon = heading.parentElement.querySelector('svg')
     expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('icon', 'icon-md', 'text-green-500')
+    expect(icon).toHaveClass('w-5', 'h-5', 'text-green-500')
   })
 
   it('has proper layout structure', () => {
     render(<StatusSection />)
     
-    const mainContainer = screen.getByText('Node is running successfully').parentElement
-    expect(mainContainer).toHaveClass('flex', 'items-center', 'gap-3')
-    
-    const statusContainer = screen.getByText('Active and healthy').parentElement
-    expect(statusContainer).toHaveClass('mt-2', 'flex', 'items-center', 'gap-2')
+    const heading = screen.getByText('System Status')
+    const headerContainer = heading.parentElement
+    expect(headerContainer).toHaveClass('flex', 'items-center', 'gap-2')
   })
 
-  it('displays animated pulse indicator', () => {
+  it('renders ingestion status card', () => {
     render(<StatusSection />)
     
-    const pulseIndicator = screen.getByText('Active and healthy').parentElement.querySelector('.animate-pulse')
-    expect(pulseIndicator).toBeInTheDocument()
-    expect(pulseIndicator).toHaveClass('w-2', 'h-2', 'rounded-full', 'bg-green-500', 'animate-pulse')
+    // Check for Ingestion text in the status cards
+    expect(screen.getByText('Ingestion')).toBeInTheDocument()
   })
 
-  it('has correct text styling', () => {
+  it('renders indexing status card', () => {
     render(<StatusSection />)
     
-    const mainText = screen.getByText('Node is running successfully')
-    expect(mainText).toHaveClass('text-gray-700', 'font-medium')
-    
-    const subText = screen.getByText('Active and healthy')
-    expect(subText).toHaveClass('text-sm', 'text-gray-500')
+    // Check for Indexing text in the status cards
+    expect(screen.getByText('Indexing')).toBeInTheDocument()
   })
 
   it('renders all visual elements', () => {
     render(<StatusSection />)
     
     // Check that all key elements are present
-    expect(screen.getByText('Node is running successfully')).toBeInTheDocument()
-    expect(screen.getByText('Active and healthy')).toBeInTheDocument()
+    expect(screen.getByText('System Status')).toBeInTheDocument()
+    expect(screen.getByText('Ingestion')).toBeInTheDocument()
+    expect(screen.getByText('Indexing')).toBeInTheDocument()
     
     // Check for icon
-    const icon = screen.getByText('Node is running successfully').parentElement.querySelector('svg')
+    const heading = screen.getByText('System Status')
+    const icon = heading.parentElement.querySelector('svg')
     expect(icon).toBeInTheDocument()
-    
-    // Check for pulse indicator
-    const pulseIndicator = screen.getByText('Active and healthy').parentElement.querySelector('.animate-pulse')
-    expect(pulseIndicator).toBeInTheDocument()
   })
 
   describe('Database Reset Functionality', () => {
@@ -239,8 +232,11 @@ describe('StatusSection Component', () => {
       const resetButton = screen.getByRole('button', { name: /reset database/i })
       fireEvent.click(resetButton)
       
-      // Check for proper heading
-      expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('Reset Database')
+      // Check for proper heading in the dialog
+      const dialogHeadings = screen.getAllByRole('heading', { level: 3 })
+      const resetDialogHeading = dialogHeadings.find(h => h.textContent === 'Reset Database')
+      expect(resetDialogHeading).toBeDefined()
+      expect(resetDialogHeading).toHaveTextContent('Reset Database')
       
       // Check for proper button roles
       expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument()
