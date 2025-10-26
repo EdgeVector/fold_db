@@ -12,13 +12,6 @@ use crate::schema::types::key_value::KeyValue;
 ///
 /// This engine does not use serde_json internally. It works directly with
 /// FieldValue and preserves atom_uuid for persistence when not splitting.
-///
-/// TODO: Reducer functions (first, last, count, join, sum, max, min) are registered
-/// in the function registry but not yet executed by this engine. Need to:
-/// - Detect reducer operations in the chain
-/// - Collect items at the appropriate depth level
-/// - Call the registered reducer function
-/// - Convert ReducerResult to field values
 pub struct TypedEngine;
 
 impl TypedEngine {

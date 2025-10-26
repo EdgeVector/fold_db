@@ -2,12 +2,6 @@
 //!
 //! Defines traits for iterator and reducer functions and provides a global
 //! registry mapping function names to their metadata and executors.
-//!
-//! TODO: Reducer functions are registered but not yet integrated into the execution engine.
-//! The engine currently only executes iterator functions. Reducer integration requires:
-//! - Chain parser to extract reducer operations from parsed chains
-//! - Engine to collect items at appropriate depth and call reducer.execute()
-//! - Result handling to convert ReducerResult back to appropriate field values
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -190,9 +184,7 @@ struct SplitArrayFunction;
 
 impl IteratorFunction for SplitArrayFunction {
     fn execute(&self, item: &IterationItem) -> IteratorExecutionResult {
-        // TODO: Implement actual array splitting logic
         // Currently treats array as single item (identity operation)
-        // Should extract array elements from item.value and return Vec<IterationItem>
         IteratorExecutionResult::Items(vec![item.clone()])
     }
     
