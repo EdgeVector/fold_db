@@ -682,8 +682,6 @@ impl NativeIndexManager {
         if entries.is_empty() {
             log::info!("🗑️ Removing empty index key: {}", key);
             self.tree.remove(key.as_bytes())?;
-            self.tree.flush()
-                .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
             return Ok(());
         }
 
@@ -692,9 +690,6 @@ impl NativeIndexManager {
             SchemaError::InvalidData(format!("Failed to serialize index entries: {}", e))
         })?;
         self.tree.insert(key.as_bytes(), bytes)?;
-        self.tree.flush()
-            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
-        log::info!("✅ Flushed index key: {}", key);
         Ok(())
     }
 
@@ -704,9 +699,6 @@ impl NativeIndexManager {
             SchemaError::InvalidData(format!("Failed to serialize record index words: {}", e))
         })?;
         self.tree.insert(record_key.as_bytes(), bytes)?;
-        self.tree.flush()
-            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
-        log::info!("✅ Flushed record key: {}", record_key);
         Ok(())
     }
 
@@ -744,11 +736,6 @@ impl NativeIndexManager {
         }
 
         self.tree.remove(record_key.as_bytes())?;
-        
-        // Flush after all removals
-        self.tree.flush()
-            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
-        
         Ok(())
     }
 
@@ -887,6 +874,16 @@ impl NativeIndexManager {
             .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
 
         log::info!("✅ Batch flushed {} operations to disk", operations.len());
+        Ok(())
+    }
+
+    /// Explicitly flush the index tree to disk
+    /// 
+    /// This should only be called for non-batch operations.
+    /// Batch operations handle flushing internally.
+    pub fn flush(&self) -> Result<(), SchemaError> {
+        self.tree.flush()
+            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
         Ok(())
     }
 }
