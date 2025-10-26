@@ -17,7 +17,7 @@ mod utility_operations;
 // Re-export the main DbOperations struct and error utilities
 pub use core::DbOperations;
 pub use error_utils::ErrorUtils;
-pub use native_index::{IndexResult, NativeIndexConfig, NativeIndexManager};
+pub use native_index::{IndexResult, NativeIndexManager};
 pub use native_index_classification::{
     ClassificationType, ExtractedEntity, FieldClassification, SplitStrategy,
     ClassificationRequest, ClassificationCacheKey,
