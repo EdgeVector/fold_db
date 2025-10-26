@@ -3,6 +3,7 @@ use crate::schema::types::operations::{Query, Operation};
 use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;
 use actix_web::{web, HttpResponse, Responder};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -11,6 +12,11 @@ use std::sync::Arc;
 pub struct SuccessResponse {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct MutationResponse {
+    pub mutation_id: String,
 }
 
 
@@ -51,7 +57,7 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
     tag = "query",
     request_body = serde_json::Value,
     responses(
-        (status = 200, description = "Success boolean"),
+        (status = 200, description = "Mutation accepted", body = MutationResponse),
         (status = 400, description = "Bad request"),
         (status = 500, description = "Server error")
     )
@@ -273,18 +279,18 @@ pub async fn native_index_search(
     query: web::Query<std::collections::HashMap<String, String>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    eprintln!("🌐 API: native_index_search endpoint called");
+    info!("API: native_index_search endpoint called");
     
     let term = match query.get("term") {
         Some(t) if !t.trim().is_empty() => t.trim().to_string(),
         _ => {
-            eprintln!("⚠️ API: Missing or empty term parameter");
+            warn!("API: Missing or empty term parameter");
             return HttpResponse::BadRequest()
                 .json(json!({"error": "Missing required 'term' query parameter"}));
         }
     };
     
-    eprintln!("🔍 API: Searching for term: '{}'", term);
+    info!("API: Searching for term: '{}'", term);
 
     // Acquire FoldDB and perform search
     let node_arc = Arc::clone(&state.node);
@@ -292,20 +298,20 @@ pub async fn native_index_search(
     let fold_db = match node_guard.get_fold_db() {
         Ok(guard) => guard,
         Err(e) => {
-            eprintln!("❌ API: Failed to acquire database: {}", e);
+            error!("API: Failed to acquire database: {}", e);
             return HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to acquire database: {}", e)}));
         }
     };
 
-    eprintln!("✅ API: Acquired database, calling native_search_all_classifications");
+    debug!("API: Acquired database, calling native_search_all_classifications");
     match fold_db.native_search_all_classifications(&term) {
         Ok(results) => {
-            eprintln!("✅ API: Search completed, found {} results", results.len());
+            info!("API: Search completed, found {} results", results.len());
             HttpResponse::Ok().json(results)
         },
         Err(e) => {
-            eprintln!("❌ API: Search failed: {}", e);
+            error!("API: Search failed: {}", e);
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Native index search failed: {}", e)}))
         },

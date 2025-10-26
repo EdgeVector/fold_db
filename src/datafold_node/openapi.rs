@@ -88,7 +88,8 @@ use utoipa::OpenApi;
             crate::datafold_node::llm_query::types::BackfillStatusResponse,
             crate::db_operations::IndexResult,
             crate::fold_db_core::orchestration::IndexingStatus,
-            crate::fold_db_core::orchestration::IndexingState
+            crate::fold_db_core::orchestration::IndexingState,
+            crate::datafold_node::query_routes::MutationResponse
         )
     ),
     tags(

@@ -1,6 +1,7 @@
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 use super::native_index_classification::ClassificationType;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sled::Tree;
@@ -65,16 +66,16 @@ impl NativeIndexManager {
 
 
     pub fn search_word(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        eprintln!("🔍 Native Index Search: Searching for word '{}'", term);
+        debug!("Native Index Search: Searching for word '{}'", term);
         let Some(normalized) = self.normalize_search_term(term) else {
-            eprintln!("⚠️ Native Index Search: Term '{}' normalized to empty string", term);
+            debug!("Native Index Search: Term '{}' normalized to empty string", term);
             return Ok(Vec::new());
         };
 
         let key = format!("{}{}", WORD_PREFIX, normalized);
-        eprintln!("🔑 Native Index Search: Looking up key: '{}'", key);
+        debug!("Native Index Search: Looking up key: '{}'", key);
         let Some(bytes) = self.tree.get(key.as_bytes())? else {
-            eprintln!("📭 Native Index Search: No results found for key: '{}'", key);
+            debug!("Native Index Search: No results found for key: '{}'", key);
             return Ok(Vec::new());
         };
 
@@ -82,7 +83,7 @@ impl NativeIndexManager {
             SchemaError::InvalidData(format!("Failed to deserialize index results: {}", e))
         })?;
 
-        eprintln!("✅ Native Index Search: Found {} results for word '{}'", results.len(), term);
+        info!("Native Index Search: Found {} results for word '{}'", results.len(), term);
         Ok(results)
     }
 
@@ -383,14 +384,14 @@ impl NativeIndexManager {
         &self,
         index_operations: &[(String, String, KeyValue, Value, Option<Vec<String>>)], // (schema_name, field_name, key_value, value, classifications)
     ) -> Result<(), SchemaError> {
-        eprintln!(
-            "🔍 Native Index BATCH: Starting batch indexing of {} operations (enabled={})",
+        debug!(
+            "Native Index BATCH: Starting batch indexing of {} operations (enabled={})",
             index_operations.len(),
             self.config.enabled
         );
         
         if !self.config.enabled {
-            eprintln!("⚠️ Native Index BATCH: Indexing is DISABLED - skipping {} operations", index_operations.len());
+            debug!("Native Index BATCH: Indexing is DISABLED - skipping {} operations", index_operations.len());
             return Ok(());
         }
 
@@ -447,7 +448,7 @@ impl NativeIndexManager {
 
                     // Aggregate entries by index_key
                     index_map.entry(index_key.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(index_entry);
                     all_index_keys.push(index_key.clone());
                 }
@@ -466,8 +467,21 @@ impl NativeIndexManager {
             // Read existing entries for this index_key
             let mut existing_entries = self.read_entries(&index_key)?;
             
-            // Remove duplicates from existing entries that match any new entry
-            for new_entry in &new_entries {
+            // Deduplicate new_entries internally (keep last occurrence of each unique record)
+            let mut deduplicated_new_entries = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            
+            // Process in reverse to keep the last occurrence
+            for entry in new_entries.into_iter().rev() {
+                let key = (entry.schema_name.clone(), entry.field.clone(), entry.key_value.clone());
+                if seen.insert(key) {
+                    deduplicated_new_entries.push(entry);
+                }
+            }
+            deduplicated_new_entries.reverse(); // Restore original order
+            
+            // Remove duplicates from existing entries that match any deduplicated new entry
+            for new_entry in &deduplicated_new_entries {
                 existing_entries.retain(|entry| {
                     !(entry.schema_name == new_entry.schema_name
                         && entry.field == new_entry.field
@@ -475,8 +489,8 @@ impl NativeIndexManager {
                 });
             }
             
-            // Merge: existing entries + new entries
-            existing_entries.extend(new_entries);
+            // Merge: existing entries + deduplicated new entries
+            existing_entries.extend(deduplicated_new_entries);
             
             batch_operations.push((index_key, serde_json::to_value(&existing_entries)
                 .map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?));
@@ -490,14 +504,14 @@ impl NativeIndexManager {
         }
 
         // Batch execute all index operations
-        eprintln!(
-            "✅ Native Index BATCH: Executing {} batch operations",
+        debug!(
+            "Native Index BATCH: Executing {} batch operations",
             batch_operations.len()
         );
         self.batch_execute_index_operations(&batch_operations)?;
         
-        eprintln!(
-            "✅ Native Index BATCH: Successfully completed batch indexing of {} operations",
+        info!(
+            "Native Index BATCH: Successfully completed batch indexing of {} operations",
             index_operations.len()
         );
 

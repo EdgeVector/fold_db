@@ -44,16 +44,6 @@ impl OperationProcessor {
             return Err(FoldDbError::Config("No fields to mutate".to_string()));
         }
 
-        // Convert HashMap<String, Value> to HashMap<String, Value> (already correct type)
-        let fields_and_values = match serde_json::to_value(&fields_and_values) {
-            Ok(Value::Object(map)) => map.into_iter().collect(),
-            _ => {
-                return Err(FoldDbError::Config(
-                    "Mutation fields_and_values must be an object".into(),
-                ))
-            }
-        };
-
         let mutation = Mutation::new(
             schema,
             fields_and_values,
@@ -97,16 +87,6 @@ impl OperationProcessor {
             if fields_and_values.is_empty() {
                 return Err(FoldDbError::Config("No fields to mutate".to_string()));
             }
-
-            // Convert HashMap<String, Value> to HashMap<String, Value> (already correct type)
-            let fields_and_values = match serde_json::to_value(&fields_and_values) {
-                Ok(Value::Object(map)) => map.into_iter().collect(),
-                _ => {
-                    return Err(FoldDbError::Config(
-                        "Mutation fields_and_values must be an object".into(),
-                    ))
-                }
-            };
 
             let mutation = Mutation::new(
                 schema,

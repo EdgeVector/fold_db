@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 // External crate imports
-use log::info;
+use log::{debug, error, info};
 
 // Internal crate imports
 use crate::db_operations::{DbOperations, IndexResult};
@@ -285,7 +285,7 @@ impl FoldDB {
         use crate::db_operations::ClassificationType;
         use std::collections::HashSet;
         
-        eprintln!("🔎 FoldDB: native_search_all_classifications called for term: '{}'", term);
+        debug!("FoldDB: native_search_all_classifications called for term: '{}'", term);
         
         let index_manager = self.db_ops.native_index_manager();
         let mut all_results = Vec::new();
@@ -305,12 +305,12 @@ impl FoldDB {
             ClassificationType::Username,
         ];
         
-        eprintln!("🔍 FoldDB: Searching {} classification types", classifications.len());
+        debug!("FoldDB: Searching {} classification types", classifications.len());
         
         for classification in classifications {
             match index_manager.search_with_classification(term, Some(classification.clone())) {
                 Ok(results) => {
-                    eprintln!("  📊 FoldDB: Classification {:?} returned {} results", classification, results.len());
+                    debug!("FoldDB: Classification {:?} returned {} results", classification, results.len());
                     for result in results {
                         // Deduplicate by schema + field + key + classification
                         // Different classifications of the same field/record are DISTINCT results
@@ -325,12 +325,12 @@ impl FoldDB {
                     }
                 },
                 Err(e) => {
-                    eprintln!("  ❌ FoldDB: Classification {:?} search failed: {}", classification, e);
+                    error!("FoldDB: Classification {:?} search failed: {}", classification, e);
                 }
             }
         }
         
-        eprintln!("✅ FoldDB: Total aggregated results: {}", all_results.len());
+        info!("FoldDB: Total aggregated results: {}", all_results.len());
         Ok(all_results)
     }
 
