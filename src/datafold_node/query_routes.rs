@@ -76,7 +76,7 @@ pub async fn execute_mutation(
         .execute_mutation(schema, fields_and_values, key_value, mutation_type)
         .await
     {
-        Ok(()) => HttpResponse::Ok().json(true),
+        Ok(mutation_id) => HttpResponse::Ok().json(json!({"mutation_id": mutation_id})),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to execute mutation: {}", e)})),
     }

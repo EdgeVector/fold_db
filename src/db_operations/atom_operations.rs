@@ -215,14 +215,15 @@ impl DbOperations {
             self.persist_field_molecule(schema_field, molecule_uuid)?;
         }
 
-        // Use classification-aware indexing
-        self.native_index_manager().index_field_value_with_classifications(
-            schema_name,
-            field_name,
-            key_value,
-            &index_value,
+        // Use batch indexing (with single element) for consistency
+        let index_operations = vec![(
+            schema_name.to_string(),
+            field_name.to_string(),
+            key_value.clone(),
+            index_value,
             field_classifications,
-        )?;
+        )];
+        self.native_index_manager().batch_index_field_values_with_classifications(&index_operations)?;
 
         Ok(())
     }
@@ -253,38 +254,6 @@ impl DbOperations {
         )
     }
 
-    /// Async version: Processes a mutation field with AI-driven classification indexing
-    pub async fn process_mutation_field_with_ai(
-        &self,
-        schema_name: &str,
-        field_name: &str,
-        pub_key: &str,
-        value: Value,
-        key_value: &KeyValue,
-        schema_field: &mut FieldVariant,
-    ) -> Result<(), SchemaError> {
-        // Refresh field from database
-        schema_field.refresh_from_db(self);
-
-        let index_value = value.clone();
-        // Create and store the atom
-        let new_atom = self.create_and_store_atom_for_mutation(schema_name, pub_key, value)?;
-
-        // Write mutation to field (updates in-memory molecule)
-        schema_field.write_mutation(key_value, new_atom, pub_key.to_string());
-
-        // Persist the updated molecule to the database
-        if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-            self.persist_field_molecule(schema_field, molecule_uuid)?;
-        }
-
-        // Use AI-driven classification indexing (async)
-        self.native_index_manager()
-            .index_field_value_with_ai(schema_name, field_name, key_value, &index_value)
-            .await?;
-
-        Ok(())
-    }
 
     // ========== BATCH OPERATIONS ==========
 

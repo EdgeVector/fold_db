@@ -1,16 +1,10 @@
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
-use super::native_index_classification::{
-    ClassificationCacheKey, ClassificationType, FieldClassification,
-    SplitStrategy,
-};
-use super::native_index_ai_classifier::NativeIndexAIClassifier;
+use super::native_index_classification::ClassificationType;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sled::Tree;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::collections::HashSet;
 
 const WORD_PREFIX: &str = "word:";
 const RECORD_PREFIX: &str = "record:";
@@ -59,10 +53,6 @@ impl Default for NativeIndexConfig {
 pub struct NativeIndexManager {
     tree: Tree,
     config: NativeIndexConfig,
-    /// Optional AI classifier for intelligent field classification
-    ai_classifier: Option<Arc<NativeIndexAIClassifier>>,
-    /// Cache of field classifications to avoid repeated AI calls
-    classification_cache: Arc<RwLock<HashMap<ClassificationCacheKey, FieldClassification>>>,
 }
 
 impl NativeIndexManager {
@@ -70,23 +60,9 @@ impl NativeIndexManager {
         Self {
             tree,
             config,
-            ai_classifier: None,
-            classification_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub fn with_ai_classifier(
-        tree: Tree,
-        config: NativeIndexConfig,
-        ai_classifier: NativeIndexAIClassifier,
-    ) -> Self {
-        Self {
-            tree,
-            config,
-            ai_classifier: Some(Arc::new(ai_classifier)),
-            classification_cache: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
 
     pub fn search_word(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
         eprintln!("🔍 Native Index Search: Searching for word '{}'", term);
@@ -173,341 +149,10 @@ impl NativeIndexManager {
         Ok(results)
     }
 
-    /// Index a field value with AI-driven classification (async version)
-    pub async fn index_field_value_with_ai(
-        &self,
-        schema_name: &str,
-        field_name: &str,
-        key_value: &KeyValue,
-        value: &Value,
-    ) -> Result<(), SchemaError> {
-        if !self.config.enabled || !self.should_index_field(field_name) {
-            return Ok(());
-        }
 
-        let classification = self.get_or_classify_field(schema_name, field_name).await?;
 
-        // Remove old entries
-        let record_key = self.build_record_key(schema_name, field_name, key_value)?;
-        self.remove_record_entries(&record_key, schema_name, field_name, key_value)?;
 
-        // Index based on each classification
-        let mut all_index_keys = Vec::new();
-        
-        for class_type in &classification.classifications {
-            let strategy = classification
-                .get_strategy(class_type)
-                .unwrap_or(&SplitStrategy::SplitWords);
 
-            let index_entries = match strategy {
-                SplitStrategy::KeepWhole => {
-                    Self::process_keep_whole(class_type, value)?
-                }
-                SplitStrategy::SplitWords => {
-                    self.process_split_words(class_type, value)?
-                }
-                SplitStrategy::ExtractEntities => {
-                    self.process_extract_entities(class_type, value, &classification).await?
-                }
-            };
-
-            for (index_key, normalized_value) in index_entries {
-                self.add_to_index(
-                    &index_key,
-                    schema_name,
-                    field_name,
-                    key_value,
-                    value,
-                    Some(json!({
-                        "classification": class_type.prefix(),
-                        "normalized": normalized_value
-                    })),
-                )?;
-                all_index_keys.push(index_key);
-            }
-        }
-
-        // Store the index keys for this record
-        if !all_index_keys.is_empty() {
-            self.store_record_words(&record_key, &all_index_keys)?;
-        }
-
-        // Note: flush is now handled by the caller to avoid flushing on every field operation
-        Ok(())
-    }
-
-    /// Get cached classification or classify using AI
-    async fn get_or_classify_field(
-        &self,
-        schema_name: &str,
-        field_name: &str,
-    ) -> Result<FieldClassification, SchemaError> {
-        let cache_key = ClassificationCacheKey::new(
-            schema_name.to_string(),
-            field_name.to_string(),
-        );
-
-        // Check cache first
-        {
-            let cache = self.classification_cache.read().await;
-            if let Some(classification) = cache.get(&cache_key) {
-                return Ok(classification.clone());
-            }
-        }
-
-        // If no AI classifier, use word-only fallback
-        let Some(ai_classifier) = &self.ai_classifier else {
-            return Ok(FieldClassification::word_only(field_name.to_string()));
-        };
-
-        // TODO: Collect sample values from database
-        // For now, we'll use an empty sample set
-        let request = super::native_index_classification::ClassificationRequest {
-            schema_name: schema_name.to_string(),
-            field_name: field_name.to_string(),
-            sample_values: Vec::new(),
-        };
-
-        let classification = ai_classifier.classify_field(request).await?;
-
-        // Cache the result
-        {
-            let mut cache = self.classification_cache.write().await;
-            cache.insert(cache_key, classification.clone());
-        }
-
-        Ok(classification)
-    }
-
-    fn process_keep_whole(
-        classification: &ClassificationType,
-        value: &Value,
-    ) -> Result<Vec<(String, String)>, SchemaError> {
-        let mut results = Vec::new();
-        
-        match value {
-            Value::String(text) => {
-                let normalized = text.trim().to_ascii_lowercase();
-                if !normalized.is_empty() {
-                    let key = format!("{}:{}", classification.prefix(), normalized);
-                    results.push((key, normalized));
-                }
-            }
-            Value::Array(values) => {
-                for item in values {
-                    results.extend(Self::process_keep_whole(classification, item)?);
-                }
-            }
-            Value::Object(obj) => {
-                // For objects, recursively process all string values
-                for (_, nested_value) in obj {
-                    results.extend(Self::process_keep_whole(classification, nested_value)?);
-                }
-            }
-            _ => {}
-        }
-
-        Ok(results)
-    }
-
-    fn process_split_words(
-        &self,
-        classification: &ClassificationType,
-        value: &Value,
-    ) -> Result<Vec<(String, String)>, SchemaError> {
-        let words = self.collect_words(value);
-        let results = words
-            .into_iter()
-            .map(|word| {
-                let key = format!("{}:{}", classification.prefix(), word);
-                (key, word.clone())
-            })
-            .collect();
-        Ok(results)
-    }
-
-    async fn process_extract_entities(
-        &self,
-        classification: &ClassificationType,
-        value: &Value,
-        field_classification: &FieldClassification,
-    ) -> Result<Vec<(String, String)>, SchemaError> {
-        let mut results = Vec::new();
-
-        // Use pre-extracted entities if available
-        for entity in &field_classification.entities {
-            if &entity.classification == classification {
-                let normalized = entity.value.trim().to_ascii_lowercase();
-                let key = format!("{}:{}", classification.prefix(), normalized);
-                results.push((key, normalized));
-            }
-        }
-
-        // If no pre-extracted entities, try to extract from value
-        if results.is_empty() && self.ai_classifier.is_some() {
-            if let Value::String(text) = value {
-                let ai_classifier = self.ai_classifier.as_ref().unwrap();
-                let entities = ai_classifier
-                    .extract_entities_from_value(text, classification)
-                    .await?;
-
-                for entity in entities {
-                    let normalized = entity.value.trim().to_ascii_lowercase();
-                    let key = format!("{}:{}", classification.prefix(), normalized);
-                    results.push((key, normalized));
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    fn add_to_index(
-        &self,
-        index_key: &str,
-        schema_name: &str,
-        field_name: &str,
-        key_value: &KeyValue,
-        value: &Value,
-        metadata: Option<Value>,
-    ) -> Result<(), SchemaError> {
-        let mut entries = self.read_entries(index_key)?;
-        
-        // Remove duplicates
-        entries.retain(|entry| {
-            !(entry.schema_name == schema_name
-                && entry.field == field_name
-                && entry.key_value == *key_value)
-        });
-
-        let index_entry = IndexResult {
-            schema_name: schema_name.to_string(),
-            field: field_name.to_string(),
-            key_value: key_value.clone(),
-            value: value.clone(),
-            metadata,
-        };
-
-        entries.push(index_entry);
-        self.write_entries(index_key, &entries)?;
-        Ok(())
-    }
-
-    /// Index a field value with classifications from schema topology
-    /// 
-    /// # Deprecated
-    /// Use `batch_index_field_values_with_classifications()` instead for better performance.
-    /// Single indexing causes flush-per-operation, while batching allows a single flush.
-    #[deprecated(since = "0.1.0", note = "Use batch_index_field_values_with_classifications() instead for better performance")]
-    #[allow(deprecated)]
-    pub fn index_field_value_with_classifications(
-        &self,
-        schema_name: &str,
-        field_name: &str,
-        key_value: &KeyValue,
-        value: &Value,
-        classifications: Option<Vec<String>>,
-    ) -> Result<(), SchemaError> {
-        if !self.config.enabled || !self.should_index_field(field_name) {
-            return Ok(());
-        }
-
-        // If no classifications provided, fall back to word-only indexing
-        let classifications = classifications.unwrap_or_else(|| vec!["word".to_string()]);
-        
-        log::info!(
-            "🔍 Native Index: Indexing field '{}' in schema '{}' with classifications: {:?}",
-            field_name,
-            schema_name,
-            classifications
-        );
-
-        let record_key = self.build_record_key(schema_name, field_name, key_value)?;
-        self.remove_record_entries(&record_key, schema_name, field_name, key_value)?;
-
-        let mut all_index_keys = Vec::new();
-
-        for classification_str in &classifications {
-            let index_entries = if classification_str == "word" {
-                // Split into words
-                let words = self.collect_words(value);
-                words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
-            } else if classification_str.starts_with("hashtag") {
-                // Keep hashtags whole (including the #)
-                self.extract_hashtags(value)
-            } else if classification_str.starts_with("email") {
-                // Keep emails whole
-                self.extract_emails(value)
-            } else if classification_str.starts_with("name:") || classification_str.starts_with("username") || classification_str.starts_with("phone") || classification_str.starts_with("url") || classification_str.starts_with("date") {
-                // Keep these whole (normalized)
-                self.extract_whole_values(classification_str, value)
-            } else {
-                // Default: treat as word
-                let words = self.collect_words(value);
-                words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
-            };
-
-            for (index_key, normalized_value) in &index_entries {
-                self.add_to_index(
-                    index_key,
-                    schema_name,
-                    field_name,
-                    key_value,
-                    value,
-                    Some(json!({
-                        "classification": classification_str,
-                        "normalized": normalized_value
-                    })),
-                )?;
-                all_index_keys.push(index_key.clone());
-            }
-            
-            if !index_entries.is_empty() {
-                log::info!(
-                    "  ✅ Indexed {} entries for classification '{}' in field '{}'",
-                    index_entries.len(),
-                    classification_str,
-                    field_name
-                );
-            }
-        }
-
-        if !all_index_keys.is_empty() {
-            log::info!(
-                "📝 Native Index: Stored {} total index keys for field '{}' in schema '{}'",
-                all_index_keys.len(),
-                field_name,
-                schema_name
-            );
-            self.store_record_words(&record_key, &all_index_keys)?;
-        }
-
-        // Note: flush is now handled by the caller (batch mutation manager)
-        // to avoid flushing on every field operation
-        Ok(())
-    }
-
-    /// Legacy method: Index a field value (word-only, for backward compatibility)
-    /// 
-    /// # Deprecated
-    /// Use `batch_index_field_values_with_classifications()` instead for better performance.
-    #[deprecated(since = "0.1.0", note = "Use batch_index_field_values_with_classifications() instead for better performance")]
-    #[allow(deprecated)]
-    pub fn index_field_value(
-        &self,
-        schema_name: &str,
-        field_name: &str,
-        key_value: &KeyValue,
-        value: &Value,
-    ) -> Result<(), SchemaError> {
-        self.index_field_value_with_classifications(
-            schema_name,
-            field_name,
-            key_value,
-            value,
-            None, // No classifications = word-only
-        )
-    }
 
     fn extract_hashtags(&self, value: &Value) -> Vec<(String, String)> {
         let mut results = Vec::new();
@@ -693,14 +338,6 @@ impl NativeIndexManager {
         Ok(())
     }
 
-    fn store_record_words(&self, record_key: &str, words: &[String]) -> Result<(), SchemaError> {
-        log::info!("📝 Storing {} words for record key: {}", words.len(), record_key);
-        let bytes = serde_json::to_vec(words).map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to serialize record index words: {}", e))
-        })?;
-        self.tree.insert(record_key.as_bytes(), bytes)?;
-        Ok(())
-    }
 
     fn remove_record_entries(
         &self,
@@ -824,9 +461,24 @@ impl NativeIndexManager {
         // Convert aggregated entries to batch operations
         let mut batch_operations = Vec::new();
         
-        // Add index entries (as arrays)
-        for (index_key, entries) in index_map {
-            batch_operations.push((index_key, serde_json::to_value(&entries)
+        // Add index entries (as arrays) - MUST merge with existing entries
+        for (index_key, new_entries) in index_map {
+            // Read existing entries for this index_key
+            let mut existing_entries = self.read_entries(&index_key)?;
+            
+            // Remove duplicates from existing entries that match any new entry
+            for new_entry in &new_entries {
+                existing_entries.retain(|entry| {
+                    !(entry.schema_name == new_entry.schema_name
+                        && entry.field == new_entry.field
+                        && entry.key_value == new_entry.key_value)
+                });
+            }
+            
+            // Merge: existing entries + new entries
+            existing_entries.extend(new_entries);
+            
+            batch_operations.push((index_key, serde_json::to_value(&existing_entries)
                 .map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?));
         }
         
