@@ -6,7 +6,7 @@ fn test_load_blogpost_schema_with_topology() {
     let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
     
     // Load the BlogPost schema file
-    let result = schema_core.load_schema_from_file("available_schemas/BlogPost.json");
+    let result = schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPost.json");
     
     match &result {
         Ok(()) => {
@@ -40,11 +40,11 @@ fn test_load_blogpost_word_index_transform_with_topology() {
     let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
     
     // First load the source schema (BlogPost)
-    schema_core.load_schema_from_file("available_schemas/BlogPost.json")
+    schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPost.json")
         .expect("Failed to load BlogPost schema");
     
     // Then load the transform schema (BlogPostWordIndex)
-    let result = schema_core.load_schema_from_file("available_schemas/BlogPostWordIndex.json");
+    let result = schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPostWordIndex.json");
     
     match &result {
         Ok(()) => {
@@ -77,14 +77,14 @@ fn test_load_blogpost_word_index_transform_with_topology() {
 fn test_load_all_available_schemas() {
     let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
     
-    // Try to load all schemas from available_schemas directory
-    let loaded_count = schema_core.load_schemas_from_directory("available_schemas")
+    // Try to load all schemas from tests/schemas_for_testing directory
+    let loaded_count = schema_core.load_schemas_from_directory("tests/schemas_for_testing")
         .expect("Failed to load schemas from directory");
     
-    println!("📋 Loaded {} schemas from available_schemas/", loaded_count);
+    println!("📋 Loaded {} schemas from tests/schemas_for_testing/", loaded_count);
     
     // We should have loaded some schemas
-    assert!(loaded_count > 0, "No schemas were loaded from available_schemas directory");
+    assert!(loaded_count > 0, "No schemas were loaded from tests/schemas_for_testing directory");
     
     // Verify schemas are accessible
     let schemas = schema_core.get_schemas().expect("Failed to get schemas");
@@ -107,7 +107,7 @@ fn test_load_all_available_schemas() {
 fn test_schema_with_array_topology() {
     let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
     
-    schema_core.load_schema_from_file("available_schemas/BlogPost.json")
+    schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPost.json")
         .expect("Failed to load BlogPost schema");
     
     let schemas = schema_core.get_schemas().expect("Failed to get schemas");
@@ -135,7 +135,7 @@ fn test_schema_json_roundtrip() {
     use datafold::schema::types::DeclarativeSchemaDefinition;
     
     // Read the BlogPost schema file
-    let contents = std::fs::read_to_string("available_schemas/BlogPost.json")
+    let contents = std::fs::read_to_string("tests/schemas_for_testing/BlogPost.json")
         .expect("Failed to read BlogPost.json");
     
     // Parse it

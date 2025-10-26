@@ -1,0 +1,15 @@
+{
+  "name": "BlogPost",
+  "descriptive_name": "Blog Post",
+  "key": {
+    "range_field": "publish_date"
+  },
+  "fields": ["title", "content", "author", "publish_date", "tags"],
+  "field_topologies": {
+    "title": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
+    "content": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
+    "author": {"root": {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}},
+    "publish_date": {"root": {"type": "Primitive", "value": "String"}},
+    "tags": {"root": {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}}
+  }
+}

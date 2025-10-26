@@ -1,7 +1,7 @@
 use super::http_server::AppState;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::{SchemaError, SchemaState, SchemaWithState};
+use crate::schema::{SchemaState, SchemaWithState};
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -152,7 +152,7 @@ fn generate_backfill_hash_for_transform(
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let result = with_schema_manager(&state, |db| {
+    let result = with_schema_manager(&state, |db| -> Result<Option<String>, crate::error::FoldDbError> {
         // Check if the schema is already approved
         let current_state = db.schema_manager.get_schema_states()?
             .get(&schema_name)
@@ -160,9 +160,25 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
             .unwrap_or_default();
         
         if current_state == SchemaState::Approved {
-            return Err(SchemaError::InvalidData(
-                format!("Schema '{}' is already approved", schema_name)
-            ));
+            // If already approved, return current backfill hash if available
+            log::info!("Schema '{}' is already approved", schema_name);
+            
+            // Check if this is a transform schema and generate backfill hash if needed
+            let is_transform = match db.transform_manager.transform_exists(&schema_name) {
+                Ok(exists) => exists,
+                Err(e) => {
+                    log::warn!("Failed to check if {} is a transform, assuming false: {}", schema_name, e);
+                    false
+                }
+            };
+            
+            let backfill_hash = if is_transform {
+                generate_backfill_hash_for_transform(&db.transform_manager, &schema_name)
+            } else {
+                None
+            };
+            
+            return Ok(backfill_hash);
         }
         
         // Check if this is a transform schema and generate backfill hash if needed
@@ -259,35 +275,53 @@ pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppSt
     )
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
-    let result = with_schema_manager(&state, |db| {
-        // Try available_schemas and data/schemas
-        let available_loaded = db
-            .schema_manager
-            .load_schemas_from_directory("available_schemas")
-            .map_err(|e| {
-                log_feature!(LogFeature::Schema, error, "Failed to load schemas from available_schemas directory: {}", e);
-                e
-            })?;
-        let data_loaded = db
-            .schema_manager
-            .load_schemas_from_directory("data/schemas")
-            .map_err(|e| {
-                log_feature!(LogFeature::Schema, error, "Failed to load schemas from data/schemas directory: {}", e);
-                e
-            })?;
-        Ok((available_loaded, data_loaded))
-    })
-    .await;
-
-    match result {
-        Ok(Ok((available_loaded, data_loaded))) => {
+    // Fetch schemas from the schema service
+    let node_guard = state.node.lock().await;
+    
+    match node_guard.fetch_available_schemas().await {
+        Ok(schemas) => {
+            let schema_count = schemas.len();
+            drop(node_guard);
+            
+            // Load each schema into the local database
+            let mut loaded_count = 0;
+            let mut failed_schemas = Vec::new();
+            
+            for schema in schemas {
+                let schema_name = schema.name.clone();
+                let result = with_schema_manager(&state, |db| {
+                    db.schema_manager.load_schema_internal(schema.clone())
+                }).await;
+                
+                match result {
+                    Ok(Ok(_)) => {
+                        loaded_count += 1;
+                        log_feature!(LogFeature::Schema, debug, "Loaded schema: {}", schema_name);
+                    }
+                    Ok(Err(e)) => {
+                        log_feature!(LogFeature::Schema, error, "Failed to load schema {}: {}", schema_name, e);
+                        failed_schemas.push(schema_name);
+                    }
+                    Err(e) => {
+                        log_feature!(LogFeature::Schema, error, "Failed to load schema {}: {}", schema_name, e);
+                        failed_schemas.push(schema_name);
+                    }
+                }
+            }
+            
+            log_feature!(LogFeature::Schema, info, "Loaded {} of {} schemas from schema service", loaded_count, schema_count);
+            
             HttpResponse::Ok().json(json!({
-                "available_schemas_loaded": available_loaded,
-                "data_schemas_loaded": data_loaded
+                "available_schemas_loaded": schema_count,
+                "schemas_loaded_to_db": loaded_count,
+                "failed_schemas": failed_schemas
             }))
         }
-        Ok(Err(e)) | Err(e) => {
-            HttpResponse::InternalServerError().json(json!({"error": format!("Failed to load schemas: {}", e)}))
+        Err(e) => {
+            log_feature!(LogFeature::Schema, error, "Failed to fetch schemas from schema service: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "error": format!("Failed to fetch schemas from schema service: {}", e)
+            }))
         }
     }
 }

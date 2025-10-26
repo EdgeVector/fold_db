@@ -51,7 +51,7 @@ async fn test_mutation_performance_direct() {
         .expect("Failed to create test node");
     
     // Load BlogPost schema
-    let schema_path = Path::new("./available_schemas/BlogPost.json");
+    let schema_path = Path::new("./tests/schemas_for_testing/BlogPost.json");
     let schema_json = std::fs::read_to_string(schema_path).expect("Failed to read schema file");
     
     let mut db_guard = node.get_fold_db().expect("Failed to get database");

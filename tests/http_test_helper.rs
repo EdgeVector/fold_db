@@ -258,10 +258,77 @@ impl HttpTestHelper {
         // Server stopped
     }
 
-    /// Load schemas from the available_schemas directory
+    /// Add test schemas to the schema service, then load them into the node
     pub async fn load_schemas(&self, results: &mut HttpTestResults) -> bool {
-        // Loading schemas
+        // First, add test schemas to the schema service
+        let schema_dir = "tests/schemas_for_testing";
+        let schema_service_url = "http://localhost:9002";
+        
+        let entries = match std::fs::read_dir(schema_dir) {
+            Ok(e) => e,
+            Err(e) => {
+                results.add_fail("Load schemas", &format!("Failed to read schema directory: {}", e));
+                return false;
+            }
+        };
 
+        let mut added_count = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                let schema_content = match std::fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        println!("  ⚠️  Failed to read {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+                
+                let schema_value: Value = match serde_json::from_str(&schema_content) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        println!("  ⚠️  Failed to parse {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+                
+                // Wrap schema in the format expected by the schema service
+                let request_body = json!({
+                    "schema": schema_value,
+                    "mutation_mappers": {}
+                });
+                
+                // POST schema to schema service
+                match self.client.post(format!("{}/api/schemas", schema_service_url))
+                    .header("Content-Type", "application/json")
+                    .json(&request_body)
+                    .send()
+                    .await
+                {
+                    Ok(response) if response.status().is_success() => {
+                        added_count += 1;
+                        println!("  ✅ Added schema to service: {}", path.file_name().unwrap().to_string_lossy());
+                    }
+                    Ok(response) if response.status() == 409 => {
+                        added_count += 1;
+                        println!("  ✅ Schema already exists (skipped): {}", path.file_name().unwrap().to_string_lossy());
+                    }
+                    Ok(response) => {
+                        println!("  ⚠️  Failed to add {}: status {}", path.file_name().unwrap().to_string_lossy(), response.status());
+                    }
+                    Err(e) => {
+                        println!("  ⚠️  Request failed for {}: {}", path.file_name().unwrap().to_string_lossy(), e);
+                    }
+                }
+            }
+        }
+        
+        if added_count == 0 {
+            results.add_fail("Load schemas", "No schemas were added to schema service");
+            return false;
+        }
+        
+        // Now load schemas from schema service into the node
         match self.client.post(format!("{}/api/schemas/load", self.base_url))
             .header("Content-Type", "application/json")
             .send()
@@ -270,14 +337,14 @@ impl HttpTestHelper {
             Ok(response) if response.status() == 200 => {
                 match response.json::<Value>().await {
                     Ok(data) => {
-                        let available_loaded = data.get("available_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let data_loaded = data.get("data_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let total_loaded = available_loaded + data_loaded;
+                        let _available_loaded = data.get("available_schemas_loaded").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let schemas_loaded_to_db = data.get("schemas_loaded_to_db").and_then(|v| v.as_u64()).unwrap_or(0);
 
-                        if total_loaded == 0 {
-                            results.add_fail("Load schemas", "No schemas were loaded");
+                        if schemas_loaded_to_db == 0 {
+                            results.add_fail("Load schemas", "No schemas were loaded into node database");
                             false
                         } else {
+                            println!("  ✅ Loaded {} schemas from service into node", schemas_loaded_to_db);
                             results.add_pass("Load schemas");
                             true
                         }
@@ -422,7 +489,9 @@ impl HttpTestHelper {
                 }
             }
             Ok(response) => {
-                results.add_fail(&format!("Approve {} schema", schema_name), &format!("Expected status 200, got {}", response.status()));
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                results.add_fail(&format!("Approve {} schema", schema_name), &format!("Expected status 200, got {} - Body: {}", status, body));
                 false
             }
             Err(e) => {
@@ -1047,10 +1116,10 @@ impl HttpTestHelper {
     }
 }
 
-/// Get available schema files from the available_schemas directory
+/// Get available schema files from the tests/schemas_for_testing directory
 #[allow(dead_code)]
 pub fn get_available_schema_files() -> Vec<String> {
-    let available_schemas_dir = "available_schemas";
+    let available_schemas_dir = "tests/schemas_for_testing";
     let mut schema_files = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(available_schemas_dir) {
@@ -1065,7 +1134,7 @@ pub fn get_available_schema_files() -> Vec<String> {
             }
         }
     } else {
-        println!("  ⚠️  Error reading available_schemas directory");
+        println!("  ⚠️  Error reading tests/schemas_for_testing directory");
     }
 
     schema_files

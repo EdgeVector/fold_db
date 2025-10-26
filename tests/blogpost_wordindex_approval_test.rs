@@ -194,10 +194,10 @@ fn test_blogpost_wordindex_approval_from_file() {
     // Load the BlogPostWordIndex schema from the actual file
     let wordindex_schema_path = std::env::current_dir()
         .expect("Failed to get current directory")
-        .join("available_schemas")
+        .join("tests/schemas_for_testing")
         .join("BlogPostWordIndex.json");
     
-    assert!(wordindex_schema_path.exists(), "BlogPostWordIndex.json should exist in available_schemas");
+    assert!(wordindex_schema_path.exists(), "BlogPostWordIndex.json should exist in tests/schemas_for_testing");
     
     // Load the schema from file - this should trigger transform registration
     fold_db.load_schema_from_file(&wordindex_schema_path)

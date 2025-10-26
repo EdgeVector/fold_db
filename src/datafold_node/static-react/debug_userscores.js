@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load the actual UserScores schema
-const userScoresPath = path.join(__dirname, '../../../available_schemas/UserScores.json');
+const userScoresPath = path.join(__dirname, '../../../tests/schemas_for_testing/UserScores.json');
 const userScoresSchema = JSON.parse(fs.readFileSync(userScoresPath, 'utf8'));
 
 // Import the detection functions
