@@ -473,10 +473,13 @@ impl NativeIndexManager {
         let deduplicated = self.deduplicate_entries(new_entries);
 
         for new_entry in &deduplicated {
+            let new_classification = self.extract_classification(new_entry);
             existing_entries.retain(|entry| {
+                let entry_classification = self.extract_classification(entry);
                 !(entry.schema_name == new_entry.schema_name
                     && entry.field == new_entry.field
-                    && entry.key_value == new_entry.key_value)
+                    && entry.key_value == new_entry.key_value
+                    && entry_classification == new_classification)
             });
         }
 
@@ -486,14 +489,29 @@ impl NativeIndexManager {
 
     fn deduplicate_entries(&self, entries: Vec<IndexResult>) -> Vec<IndexResult> {
         use std::collections::HashMap;
-        let mut seen: HashMap<(String, String, KeyValue), IndexResult> = HashMap::new();
+        let mut seen: HashMap<(String, String, KeyValue, String), IndexResult> = HashMap::new();
 
         for entry in entries {
-            let key = (entry.schema_name.clone(), entry.field.clone(), entry.key_value.clone());
+            let classification = self.extract_classification(&entry);
+            let key = (
+                entry.schema_name.clone(),
+                entry.field.clone(),
+                entry.key_value.clone(),
+                classification,
+            );
             seen.insert(key, entry);
         }
 
         seen.into_values().collect()
+    }
+
+    fn extract_classification(&self, entry: &IndexResult) -> String {
+        if let Some(metadata) = &entry.metadata {
+            if let Some(Value::String(class)) = metadata.get("classification") {
+                return class.clone();
+            }
+        }
+        "word".to_string()
     }
 
     /// Batch execute index operations using sled's batch API
