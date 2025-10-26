@@ -99,6 +99,9 @@ impl MutationManager {
             }
         }
 
+        // Flush native index after all field operations (single mutation path only)
+        self.db_ops.native_index_manager().flush()?;
+
         // Sync molecule UUIDs to the persisted field before storing
         schema.sync_molecule_uuids();
 
@@ -485,6 +488,9 @@ impl MutationManager {
                 )));
             }
         }
+
+        // Flush native index after all field operations (legacy event handler path)
+        db_ops.native_index_manager().flush()?;
 
         // Sync molecule UUIDs to the persisted field before storing
         schema.sync_molecule_uuids();
