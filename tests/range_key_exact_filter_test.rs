@@ -27,7 +27,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     // Load BlogPost schema from file
     let blogpost_schema_path = std::env::current_dir()
         .expect("Failed to get current directory")
-        .join("available_schemas")
+        .join("tests/schemas_for_testing")
         .join("BlogPost.json");
     
     {
@@ -170,7 +170,7 @@ async fn test_range_key_set_in_query_object() {
     // Load BlogPost schema from file
     let blogpost_schema_path = std::env::current_dir()
         .expect("Failed to get current directory")
-        .join("available_schemas")
+        .join("tests/schemas_for_testing")
         .join("BlogPost.json");
     
     {

@@ -163,7 +163,7 @@ impl SchemaCore {
 
     fn apply_field_mappers(&self, schema_name: &str) -> Result<(), SchemaError> {
         let mut schema = self.db_ops.get_schema(schema_name)?.ok_or_else(|| {
-            SchemaError::InvalidData(format!("Schema '{}' not found", schema_name))
+            SchemaError::InvalidData(format!("Schema '{}' not found in database", schema_name))
         })?;
 
         let Some(field_mappers) = schema.field_mappers().cloned() else {

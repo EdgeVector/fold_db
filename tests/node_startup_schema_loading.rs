@@ -4,7 +4,7 @@ use tempfile::TempDir;
 
 /// Test to verify that DataFoldNode FAILS to start when no schema service is configured
 #[tokio::test]
-async fn test_node_loads_available_schemas_on_startup() {
+async fn test_node_loads_schemas_for_testing_on_startup() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().join("test_db");
@@ -42,7 +42,7 @@ async fn test_node_loads_available_schemas_on_startup() {
 
 /// Test to verify that DataFoldNode can start with a mock schema service for testing
 #[tokio::test]
-async fn test_node_new_loads_available_schemas() {
+async fn test_node_new_loads_schemas_for_testing() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().join("test_db");
