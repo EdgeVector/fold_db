@@ -71,7 +71,6 @@ fn handle_transform_schema_approval(
                 return Err(crate::schema::SchemaError::InvalidTransform(
                     format!("Source schema '{}' is not approved (state: {:?})", source_schema, other)
                 ));
-                // TODO: Allow auto approval of source schemas.
             },
             None => {
                 return Err(crate::schema::SchemaError::InvalidTransform(

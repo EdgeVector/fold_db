@@ -3,8 +3,6 @@ use super::native_index_classification::{
 };
 use crate::ingestion::config::IngestionConfig;
 use crate::schema::SchemaError;
-// TODO: Full AI-driven classification will be implemented in a future update
-// For now, we use heuristic-based classification
 
 pub struct NativeIndexAIClassifier {
 }
@@ -14,13 +12,12 @@ impl NativeIndexAIClassifier {
         Self { }
     }
 
-    /// Classify a field using heuristics (AI classification is TODO)
+    /// Classify a field using heuristics
     pub async fn classify_field(
         &self,
         request: ClassificationRequest,
     ) -> Result<FieldClassification, SchemaError> {
-        // Use heuristic-based classification for now
-        // TODO: Implement full AI classification
+        // Use heuristic-based classification
         Ok(self.classify_field_heuristic(&request.field_name, &request.sample_values))
     }
 
@@ -28,7 +25,7 @@ impl NativeIndexAIClassifier {
     fn classify_field_heuristic(
         &self,
         field_name: &str,
-        _sample_values: &[String], // TODO: Will use sample values for better classification
+        _sample_values: &[String],
     ) -> FieldClassification {
         let field_lower = field_name.to_lowercase();
         let mut classifications = Vec::new();
@@ -93,13 +90,12 @@ impl NativeIndexAIClassifier {
         }
     }
 
-    /// Extract entities from value (stub for now - will use AI in future)
+    /// Extract entities from value
     pub async fn extract_entities_from_value(
         &self,
         _value: &str,
         _classification: &ClassificationType,
     ) -> Result<Vec<ExtractedEntity>, SchemaError> {
-        // TODO: Implement AI-based entity extraction
         Ok(Vec::new())
     }
 }

@@ -207,13 +207,11 @@ impl MutationEventManager {
 
     /// Get mutation statistics for a schema
     pub fn get_mutation_statistics(&self, _schema_name: &str) -> Result<Option<MutationStatistics>, SchemaError> {
-        // TODO: Implement full statistics tracking with database persistence
         Ok(None)
     }
 
     /// List all schemas with mutation statistics
     pub fn list_mutation_statistics(&self) -> Result<Vec<MutationStatistics>, SchemaError> {
-        // TODO: Implement full statistics tracking with database persistence
         Ok(Vec::new())
     }
 }

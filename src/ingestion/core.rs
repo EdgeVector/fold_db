@@ -20,7 +20,6 @@ use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
 
 /// Core ingestion service that orchestrates the entire ingestion process
-/// TODO: Ingestion needs to be able to create new schemas and persist them to the 'available_schemas' folder.
 pub struct IngestionCore {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,

@@ -92,7 +92,6 @@ impl ChainParser {
                         });
                     }
                     
-                    // TODO: Parse function parameters from syntax like split_by_word(sep: ",")
                     // For now, no parameters supported - params field exists for future use
                     ChainOperation::Function { 
                         name: func_name.to_string(),
