@@ -15,6 +15,10 @@ const STOPWORDS: &[&str] = &[
     "on", "or", "the", "to", "with",
 ];
 
+const MIN_WORD_LENGTH: usize = 2;
+const MAX_WORD_LENGTH: usize = 100;
+const EXCLUDED_FIELDS: &[&str] = &["uuid", "id", "password", "token"];
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct IndexResult {
     pub schema_name: String,
@@ -24,44 +28,17 @@ pub struct IndexResult {
     pub metadata: Option<Value>,
 }
 
-#[derive(Debug, Clone)]
-pub struct NativeIndexConfig {
-    pub enabled: bool,
-    pub min_word_length: usize,
-    pub max_word_length: usize,
-    pub excluded_fields: Vec<String>,
-    pub filter_stopwords: bool,
-}
-
-impl Default for NativeIndexConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            min_word_length: 2,
-            max_word_length: 100,
-            excluded_fields: vec![
-                "uuid".to_string(),
-                "id".to_string(),
-                "password".to_string(),
-                "token".to_string(),
-            ],
-            filter_stopwords: true,
-        }
-    }
-}
+/// Represents a batch index operation: (schema_name, field_name, key_value, value, classifications)
+pub type BatchIndexOperation = (String, String, KeyValue, Value, Option<Vec<String>>);
 
 #[derive(Clone)]
 pub struct NativeIndexManager {
     tree: Tree,
-    config: NativeIndexConfig,
 }
 
 impl NativeIndexManager {
-    pub fn new(tree: Tree, config: NativeIndexConfig) -> Self {
-        Self {
-            tree,
-            config,
-        }
+    pub fn new(tree: Tree) -> Self {
+        Self { tree }
     }
 
 
@@ -227,9 +204,7 @@ impl NativeIndexManager {
     }
 
     fn should_index_field(&self, field_name: &str) -> bool {
-        !self
-            .config
-            .excluded_fields
+        !EXCLUDED_FIELDS
             .iter()
             .any(|excluded| excluded.eq_ignore_ascii_case(field_name))
     }
@@ -289,13 +264,11 @@ impl NativeIndexManager {
 
         let normalized = trimmed.to_ascii_lowercase();
 
-        if normalized.len() < self.config.min_word_length
-            || normalized.len() > self.config.max_word_length
-        {
+        if normalized.len() < MIN_WORD_LENGTH || normalized.len() > MAX_WORD_LENGTH {
             return None;
         }
 
-        if self.config.filter_stopwords && STOPWORDS.contains(&normalized.as_str()) {
+        if STOPWORDS.contains(&normalized.as_str()) {
             return None;
         }
 
@@ -382,22 +355,9 @@ impl NativeIndexManager {
     /// Batch index multiple field values with classifications
     pub fn batch_index_field_values_with_classifications(
         &self,
-        index_operations: &[(String, String, KeyValue, Value, Option<Vec<String>>)], // (schema_name, field_name, key_value, value, classifications)
+        index_operations: &[BatchIndexOperation],
     ) -> Result<(), SchemaError> {
-        debug!(
-            "Native Index BATCH: Starting batch indexing of {} operations (enabled={})",
-            index_operations.len(),
-            self.config.enabled
-        );
-        
-        if !self.config.enabled {
-            debug!("Native Index BATCH: Indexing is DISABLED - skipping {} operations", index_operations.len());
-            return Ok(());
-        }
-
         use std::collections::HashMap;
-        
-        // Group index entries by index_key to aggregate them into arrays
         let mut index_map: HashMap<String, Vec<IndexResult>> = HashMap::new();
         let mut record_keys: Vec<(String, Vec<String>)> = Vec::new();
 
@@ -408,114 +368,132 @@ impl NativeIndexManager {
 
             let classifications = classifications.clone().unwrap_or_else(|| vec!["word".to_string()]);
             let record_key = self.build_record_key(schema_name, field_name, key_value)?;
-
-            // Remove old entries
             self.remove_record_entries(&record_key, schema_name, field_name, key_value)?;
 
-            let mut all_index_keys = Vec::new();
-
-            for classification_str in &classifications {
-                let index_entries = if classification_str == "word" {
-                    // Split into words
-                    let words = self.collect_words(value);
-                    words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
-                } else if classification_str.starts_with("hashtag") {
-                    // Keep hashtags whole (including the #)
-                    self.extract_hashtags(value)
-                } else if classification_str.starts_with("email") {
-                    // Keep emails whole
-                    self.extract_emails(value)
-                } else if classification_str.starts_with("name:") || classification_str.starts_with("username") || classification_str.starts_with("phone") || classification_str.starts_with("url") || classification_str.starts_with("date") {
-                    // Keep these whole (normalized)
-                    self.extract_whole_values(classification_str, value)
-                } else {
-                    // Default: treat as word
-                    let words = self.collect_words(value);
-                    words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
-                };
-
-                for (index_key, normalized_value) in index_entries {
-                    let index_entry = IndexResult {
-                        schema_name: schema_name.clone(),
-                        field: field_name.clone(),
-                        key_value: key_value.clone(),
-                        value: value.clone(),
-                        metadata: Some(json!({
-                            "classification": classification_str,
-                            "normalized": normalized_value
-                        })),
-                    };
-
-                    // Aggregate entries by index_key
-                    index_map.entry(index_key.clone())
-                        .or_default()
-                        .push(index_entry);
-                    all_index_keys.push(index_key.clone());
-                }
-            }
+            let all_index_keys = self.extract_and_aggregate_entries(
+                &classifications,
+                value,
+                schema_name,
+                field_name,
+                key_value,
+                &mut index_map,
+            )?;
 
             if !all_index_keys.is_empty() {
                 record_keys.push((record_key, all_index_keys));
             }
         }
 
-        // Convert aggregated entries to batch operations
+        let batch_operations = self.build_batch_operations(index_map, record_keys)?;
+        self.batch_execute_index_operations(&batch_operations)?;
+        Ok(())
+    }
+
+    fn extract_and_aggregate_entries(
+        &self,
+        classifications: &[String],
+        value: &Value,
+        schema_name: &str,
+        field_name: &str,
+        key_value: &KeyValue,
+        index_map: &mut std::collections::HashMap<String, Vec<IndexResult>>,
+    ) -> Result<Vec<String>, SchemaError> {
+        let mut all_index_keys = Vec::new();
+
+        for classification_str in classifications {
+            let index_entries = self.extract_by_classification(classification_str, value);
+
+            for (index_key, normalized_value) in index_entries {
+                let index_entry = IndexResult {
+                    schema_name: schema_name.to_string(),
+                    field: field_name.to_string(),
+                    key_value: key_value.clone(),
+                    value: value.clone(),
+                    metadata: Some(json!({
+                        "classification": classification_str,
+                        "normalized": normalized_value
+                    })),
+                };
+
+                index_map.entry(index_key.clone()).or_default().push(index_entry);
+                all_index_keys.push(index_key);
+            }
+        }
+
+        Ok(all_index_keys)
+    }
+
+    fn extract_by_classification(&self, classification: &str, value: &Value) -> Vec<(String, String)> {
+        match classification {
+            "word" => {
+                let words = self.collect_words(value);
+                words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
+            }
+            c if c.starts_with("hashtag") => self.extract_hashtags(value),
+            c if c.starts_with("email") => self.extract_emails(value),
+            c if c.starts_with("name:") || c.starts_with("username") || c.starts_with("phone") 
+                || c.starts_with("url") || c.starts_with("date") => {
+                self.extract_whole_values(c, value)
+            }
+            _ => {
+                let words = self.collect_words(value);
+                words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
+            }
+        }
+    }
+
+    fn build_batch_operations(
+        &self,
+        index_map: std::collections::HashMap<String, Vec<IndexResult>>,
+        record_keys: Vec<(String, Vec<String>)>,
+    ) -> Result<Vec<(String, serde_json::Value)>, SchemaError> {
         let mut batch_operations = Vec::new();
-        
-        // Add index entries (as arrays) - MUST merge with existing entries
+
         for (index_key, new_entries) in index_map {
-            // Read existing entries for this index_key
-            let mut existing_entries = self.read_entries(&index_key)?;
-            
-            // Deduplicate new_entries internally (keep last occurrence of each unique record)
-            let mut deduplicated_new_entries = Vec::new();
-            let mut seen = std::collections::HashSet::new();
-            
-            // Process in reverse to keep the last occurrence
-            for entry in new_entries.into_iter().rev() {
-                let key = (entry.schema_name.clone(), entry.field.clone(), entry.key_value.clone());
-                if seen.insert(key) {
-                    deduplicated_new_entries.push(entry);
-                }
-            }
-            deduplicated_new_entries.reverse(); // Restore original order
-            
-            // Remove duplicates from existing entries that match any deduplicated new entry
-            for new_entry in &deduplicated_new_entries {
-                existing_entries.retain(|entry| {
-                    !(entry.schema_name == new_entry.schema_name
-                        && entry.field == new_entry.field
-                        && entry.key_value == new_entry.key_value)
-                });
-            }
-            
-            // Merge: existing entries + deduplicated new entries
-            existing_entries.extend(deduplicated_new_entries);
-            
-            batch_operations.push((index_key, serde_json::to_value(&existing_entries)
+            let merged_entries = self.merge_with_existing_entries(&index_key, new_entries)?;
+            batch_operations.push((index_key, serde_json::to_value(&merged_entries)
                 .map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?));
         }
-        
-        // Add record keys
+
         for (record_key, index_keys) in record_keys {
             batch_operations.push((record_key, serde_json::Value::Array(
-                index_keys.into_iter().map(|k| serde_json::Value::String(k)).collect()
+                index_keys.into_iter().map(serde_json::Value::String).collect()
             )));
         }
 
-        // Batch execute all index operations
-        debug!(
-            "Native Index BATCH: Executing {} batch operations",
-            batch_operations.len()
-        );
-        self.batch_execute_index_operations(&batch_operations)?;
-        
-        info!(
-            "Native Index BATCH: Successfully completed batch indexing of {} operations",
-            index_operations.len()
-        );
+        Ok(batch_operations)
+    }
 
-        Ok(())
+    fn merge_with_existing_entries(
+        &self,
+        index_key: &str,
+        new_entries: Vec<IndexResult>,
+    ) -> Result<Vec<IndexResult>, SchemaError> {
+        let mut existing_entries = self.read_entries(index_key)?;
+        let deduplicated = self.deduplicate_entries(new_entries);
+
+        for new_entry in &deduplicated {
+            existing_entries.retain(|entry| {
+                !(entry.schema_name == new_entry.schema_name
+                    && entry.field == new_entry.field
+                    && entry.key_value == new_entry.key_value)
+            });
+        }
+
+        existing_entries.extend(deduplicated);
+        Ok(existing_entries)
+    }
+
+    fn deduplicate_entries(&self, entries: Vec<IndexResult>) -> Vec<IndexResult> {
+        use std::collections::HashMap;
+        let mut seen: HashMap<(String, String, KeyValue), IndexResult> = HashMap::new();
+
+        for entry in entries {
+            let key = (entry.schema_name.clone(), entry.field.clone(), entry.key_value.clone());
+            seen.insert(key, entry);
+        }
+
+        seen.into_values().collect()
     }
 
     /// Batch execute index operations using sled's batch API

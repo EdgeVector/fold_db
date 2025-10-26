@@ -1,4 +1,4 @@
-use super::{error_utils::ErrorUtils, NativeIndexConfig, NativeIndexManager};
+use super::{error_utils::ErrorUtils, NativeIndexManager};
 use crate::schema::SchemaError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -34,8 +34,7 @@ impl DbOperations {
         let public_keys_tree = db.open_tree("public_keys")?;
         let transform_queue_tree = db.open_tree("transform_queue_tree")?;
         let native_index_tree = db.open_tree("native_index")?;
-        let native_index_manager =
-            NativeIndexManager::new(native_index_tree, NativeIndexConfig::default());
+        let native_index_manager = NativeIndexManager::new(native_index_tree);
 
         Ok(Self {
             db,
