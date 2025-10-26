@@ -16,7 +16,7 @@ impl WebLogger {
         Self {
             buffer: Mutex::new(VecDeque::with_capacity(1000)),
             sender,
-            level: RwLock::new(LevelFilter::Warn),
+            level: RwLock::new(LevelFilter::Info),
         }
     }
     
@@ -58,7 +58,7 @@ impl log::Log for WebLogger {
 pub fn init() -> Result<(), SetLoggerError> {
     let logger = LOGGER.get_or_init(WebLogger::new);
     log::set_logger(logger)?;
-    log::set_max_level(LevelFilter::Warn);
+    log::set_max_level(LevelFilter::Info);
     Ok(())
 }
 

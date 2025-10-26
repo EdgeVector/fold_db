@@ -125,7 +125,7 @@ impl Default for LogConfig {
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
-            default_level: "WARN".to_string(),
+            default_level: "INFO".to_string(),
             enable_colors: true,
             enable_correlation_ids: true,
             max_correlation_id_length: 64,
@@ -137,7 +137,7 @@ impl Default for ConsoleConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            level: "WARN".to_string(),
+            level: "INFO".to_string(),
             colors: true,
             include_timestamp: true,
             include_module: true,
@@ -165,7 +165,7 @@ impl Default for WebConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            level: "WARN".to_string(),
+            level: "INFO".to_string(),
             buffer_size: 1000,
             enable_filtering: true,
             max_logs: 5000,

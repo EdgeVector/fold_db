@@ -47,6 +47,12 @@ impl MutationManager {
     }
 
     /// Write schema operation - main orchestration method for mutations
+    /// 
+    /// # Deprecated
+    /// Use `write_mutations_batch()` instead for better performance.
+    /// Single mutations cause a flush-per-operation, while batching allows a single flush.
+    #[deprecated(since = "0.1.0", note = "Use write_mutations_batch() instead for better performance")]
+    #[allow(deprecated)]
     pub fn write_mutation(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
         let start_time = std::time::Instant::now();
         
@@ -251,6 +257,12 @@ impl MutationManager {
             // Publish batch index request for background processing
             if !index_operations.is_empty() {
                 let index_start = std::time::Instant::now();
+                eprintln!(
+                    "📤 MutationManager: Publishing BatchIndexRequest with {} operations for schema '{}'",
+                    index_operations.len(),
+                    schema_name
+                );
+                
                 let index_requests: Vec<_> = index_operations.into_iter().map(|(schema_name, field_name, key_value, value, classifications)| {
                     super::infrastructure::message_bus::request_events::IndexRequest {
                         schema_name,
@@ -266,7 +278,16 @@ impl MutationManager {
                 };
                 
                 self.message_bus.publish(batch_request)?;
+                eprintln!(
+                    "✅ MutationManager: Successfully published BatchIndexRequest for schema '{}'",
+                    schema_name
+                );
                 index_time += index_start.elapsed();
+            } else {
+                eprintln!(
+                    "⚠️ MutationManager: No index operations to publish for schema '{}'",
+                    schema_name
+                );
             }
 
             // Sync molecule UUIDs to the persisted field before storing
@@ -413,6 +434,10 @@ impl MutationManager {
     }
 
     /// Handle a mutation request event by executing the mutation
+    /// 
+    /// Note: This is a legacy async event handler that processes single mutations.
+    /// For better performance, use the batch mutation APIs directly.
+    #[allow(deprecated)]
     fn handle_mutation_request_event(
         mutation_request: &MutationRequest,
         db_ops: &Arc<DbOperations>,

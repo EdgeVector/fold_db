@@ -789,14 +789,15 @@ impl IngestionCore {
         Ok(executed_count)
     }
 
-    /// Execute a single mutation
+    /// Execute a single mutation (now uses batch internally for efficiency)
     async fn execute_single_mutation(&self, mutation: &Mutation) -> IngestionResult<()> {
         let mut db = self.fold_db.lock().map_err(|_| {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 
+        // Use batch API even for single mutation for better performance
         db.mutation_manager
-            .write_mutation(mutation.clone())
+            .write_mutations_batch(vec![mutation.clone()])
             .map_err(IngestionError::SchemaSystemError)?;
 
         Ok(())

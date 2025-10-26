@@ -43,8 +43,13 @@ impl DataFoldNode {
     }
 
     /// Executes a mutation on the database.
+    /// 
+    /// # Deprecated
+    /// Use `mutate_batch()` instead for better performance, even for single mutations.
+    #[deprecated(since = "0.1.0", note = "Use mutate_batch() instead for better performance")]
     pub fn mutate(&self, mutation: Mutation) -> FoldDbResult<String> {
         self.with_db_mut(
+            #[allow(deprecated)]
             |db| db.mutation_manager.write_mutation(mutation),
             "Failed to acquire database lock for mutation",
             "Mutation operation failed"

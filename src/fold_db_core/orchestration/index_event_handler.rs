@@ -112,6 +112,12 @@ impl IndexEventHandler {
         
         let elapsed = start_time.elapsed();
         
+        // Keep the "Indexing" state visible for at least 500ms so UI can display it
+        // This is purely for UI feedback - the actual indexing is already done
+        if elapsed.as_millis() < 500 {
+            thread::sleep(Duration::from_millis(500 - elapsed.as_millis() as u64));
+        }
+        
         // Update status: indexing completed
         status_tracker.complete_batch(operation_count, elapsed.as_millis());
         
