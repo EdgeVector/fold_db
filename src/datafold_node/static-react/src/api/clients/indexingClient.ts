@@ -15,6 +15,7 @@ export interface IndexingStatus {
   operations_queued: number;
   last_operation_time: number | null;
   avg_processing_time_ms: number;
+  operations_per_second: number;
   current_batch_size: number | null;
   current_batch_start_time: number | null;
 }
@@ -23,7 +24,10 @@ export interface IndexingStatus {
  * Get the current indexing status
  */
 export async function getIndexingStatus(): Promise<IndexingStatus> {
-  const response = await defaultApiClient.get<IndexingStatus>(API_ENDPOINTS.GET_INDEXING_STATUS);
+  const response = await defaultApiClient.get<IndexingStatus>(
+    API_ENDPOINTS.GET_INDEXING_STATUS,
+    { cacheable: false } // Don't cache - we need real-time status updates
+  );
   return response.data;
 }
 

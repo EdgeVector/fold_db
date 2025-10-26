@@ -89,12 +89,16 @@ impl NativeIndexManager {
     }
 
     pub fn search_word(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
+        eprintln!("🔍 Native Index Search: Searching for word '{}'", term);
         let Some(normalized) = self.normalize_search_term(term) else {
+            eprintln!("⚠️ Native Index Search: Term '{}' normalized to empty string", term);
             return Ok(Vec::new());
         };
 
         let key = format!("{}{}", WORD_PREFIX, normalized);
+        eprintln!("🔑 Native Index Search: Looking up key: '{}'", key);
         let Some(bytes) = self.tree.get(key.as_bytes())? else {
+            eprintln!("📭 Native Index Search: No results found for key: '{}'", key);
             return Ok(Vec::new());
         };
 
@@ -102,6 +106,7 @@ impl NativeIndexManager {
             SchemaError::InvalidData(format!("Failed to deserialize index results: {}", e))
         })?;
 
+        eprintln!("✅ Native Index Search: Found {} results for word '{}'", results.len(), term);
         Ok(results)
     }
 
@@ -111,6 +116,7 @@ impl NativeIndexManager {
         term: &str,
         classification: Option<ClassificationType>,
     ) -> Result<Vec<IndexResult>, SchemaError> {
+        log::info!("🔍 Searching for term '{}' with classification {:?}", term, classification);
         // For word classification, extract first word
         // For other classifications (names, etc.), keep the whole term
         let normalized = match classification {
@@ -130,6 +136,7 @@ impl NativeIndexManager {
         };
 
         let Some(normalized) = normalized else {
+            log::info!("⚠️ Search term '{}' normalized to empty string", term);
             return Ok(Vec::new());
         };
 
@@ -138,6 +145,7 @@ impl NativeIndexManager {
         } else {
             format!("{}{}", WORD_PREFIX, normalized)
         };
+        log::info!("🔑 Searching with key: '{}'", key);
 
         use crate::logging::features::{log_feature, LogFeature};
         log_feature!(
@@ -386,6 +394,12 @@ impl NativeIndexManager {
     }
 
     /// Index a field value with classifications from schema topology
+    /// 
+    /// # Deprecated
+    /// Use `batch_index_field_values_with_classifications()` instead for better performance.
+    /// Single indexing causes flush-per-operation, while batching allows a single flush.
+    #[deprecated(since = "0.1.0", note = "Use batch_index_field_values_with_classifications() instead for better performance")]
+    #[allow(deprecated)]
     pub fn index_field_value_with_classifications(
         &self,
         schema_name: &str,
@@ -401,7 +415,12 @@ impl NativeIndexManager {
         // If no classifications provided, fall back to word-only indexing
         let classifications = classifications.unwrap_or_else(|| vec!["word".to_string()]);
         
-        // Indexing field with classifications (logging removed for performance)
+        log::info!(
+            "🔍 Native Index: Indexing field '{}' in schema '{}' with classifications: {:?}",
+            field_name,
+            schema_name,
+            classifications
+        );
 
         let record_key = self.build_record_key(schema_name, field_name, key_value)?;
         self.remove_record_entries(&record_key, schema_name, field_name, key_value)?;
@@ -428,11 +447,9 @@ impl NativeIndexManager {
                 words.into_iter().map(|w| (format!("word:{}", w), w)).collect()
             };
 
-            for (index_key, normalized_value) in index_entries {
-                // Index creation logging removed for performance
-                
+            for (index_key, normalized_value) in &index_entries {
                 self.add_to_index(
-                    &index_key,
+                    index_key,
                     schema_name,
                     field_name,
                     key_value,
@@ -442,11 +459,26 @@ impl NativeIndexManager {
                         "normalized": normalized_value
                     })),
                 )?;
-                all_index_keys.push(index_key);
+                all_index_keys.push(index_key.clone());
+            }
+            
+            if !index_entries.is_empty() {
+                log::info!(
+                    "  ✅ Indexed {} entries for classification '{}' in field '{}'",
+                    index_entries.len(),
+                    classification_str,
+                    field_name
+                );
             }
         }
 
         if !all_index_keys.is_empty() {
+            log::info!(
+                "📝 Native Index: Stored {} total index keys for field '{}' in schema '{}'",
+                all_index_keys.len(),
+                field_name,
+                schema_name
+            );
             self.store_record_words(&record_key, &all_index_keys)?;
         }
 
@@ -456,6 +488,11 @@ impl NativeIndexManager {
     }
 
     /// Legacy method: Index a field value (word-only, for backward compatibility)
+    /// 
+    /// # Deprecated
+    /// Use `batch_index_field_values_with_classifications()` instead for better performance.
+    #[deprecated(since = "0.1.0", note = "Use batch_index_field_values_with_classifications() instead for better performance")]
+    #[allow(deprecated)]
     pub fn index_field_value(
         &self,
         schema_name: &str,
@@ -630,33 +667,46 @@ impl NativeIndexManager {
 
     fn read_entries(&self, key: &str) -> Result<Vec<IndexResult>, SchemaError> {
         let Some(bytes) = self.tree.get(key.as_bytes())? else {
+            log::debug!("📭 No entries found for key: {}", key);
             return Ok(Vec::new());
         };
 
-        let entries = serde_json::from_slice(&bytes).map_err(|e| {
+        let entries: Vec<IndexResult> = serde_json::from_slice(&bytes).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to deserialize index entries: {}", e))
         })?;
+        log::debug!("📬 Read {} entries from key: {}", entries.len(), key);
         Ok(entries)
     }
 
     fn write_entries(&self, key: &str, entries: &[IndexResult]) -> Result<(), SchemaError> {
         if entries.is_empty() {
+            log::info!("🗑️ Removing empty index key: {}", key);
             self.tree.remove(key.as_bytes())?;
+            self.tree.flush()
+                .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
             return Ok(());
         }
 
+        log::info!("✍️ Writing {} entries to index key: {}", entries.len(), key);
         let bytes = serde_json::to_vec(entries).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to serialize index entries: {}", e))
         })?;
         self.tree.insert(key.as_bytes(), bytes)?;
+        self.tree.flush()
+            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
+        log::info!("✅ Flushed index key: {}", key);
         Ok(())
     }
 
     fn store_record_words(&self, record_key: &str, words: &[String]) -> Result<(), SchemaError> {
+        log::info!("📝 Storing {} words for record key: {}", words.len(), record_key);
         let bytes = serde_json::to_vec(words).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to serialize record index words: {}", e))
         })?;
         self.tree.insert(record_key.as_bytes(), bytes)?;
+        self.tree.flush()
+            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
+        log::info!("✅ Flushed record key: {}", record_key);
         Ok(())
     }
 
@@ -694,6 +744,11 @@ impl NativeIndexManager {
         }
 
         self.tree.remove(record_key.as_bytes())?;
+        
+        // Flush after all removals
+        self.tree.flush()
+            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
+        
         Ok(())
     }
 
@@ -704,11 +759,22 @@ impl NativeIndexManager {
         &self,
         index_operations: &[(String, String, KeyValue, Value, Option<Vec<String>>)], // (schema_name, field_name, key_value, value, classifications)
     ) -> Result<(), SchemaError> {
+        eprintln!(
+            "🔍 Native Index BATCH: Starting batch indexing of {} operations (enabled={})",
+            index_operations.len(),
+            self.config.enabled
+        );
+        
         if !self.config.enabled {
+            eprintln!("⚠️ Native Index BATCH: Indexing is DISABLED - skipping {} operations", index_operations.len());
             return Ok(());
         }
 
-        let mut batch_operations = Vec::new();
+        use std::collections::HashMap;
+        
+        // Group index entries by index_key to aggregate them into arrays
+        let mut index_map: HashMap<String, Vec<IndexResult>> = HashMap::new();
+        let mut record_keys: Vec<(String, Vec<String>)> = Vec::new();
 
         for (schema_name, field_name, key_value, value, classifications) in index_operations {
             if !self.should_index_field(field_name) {
@@ -755,20 +821,46 @@ impl NativeIndexManager {
                         })),
                     };
 
-                    batch_operations.push((index_key.clone(), serde_json::to_value(index_entry).map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?));
+                    // Aggregate entries by index_key
+                    index_map.entry(index_key.clone())
+                        .or_insert_with(Vec::new)
+                        .push(index_entry);
                     all_index_keys.push(index_key.clone());
                 }
             }
 
             if !all_index_keys.is_empty() {
-                batch_operations.push((record_key.clone(), serde_json::Value::Array(
-                    all_index_keys.into_iter().map(|k| serde_json::Value::String(k)).collect()
-                )));
+                record_keys.push((record_key, all_index_keys));
             }
         }
 
+        // Convert aggregated entries to batch operations
+        let mut batch_operations = Vec::new();
+        
+        // Add index entries (as arrays)
+        for (index_key, entries) in index_map {
+            batch_operations.push((index_key, serde_json::to_value(&entries)
+                .map_err(|e| SchemaError::InvalidData(format!("Serialization failed: {}", e)))?));
+        }
+        
+        // Add record keys
+        for (record_key, index_keys) in record_keys {
+            batch_operations.push((record_key, serde_json::Value::Array(
+                index_keys.into_iter().map(|k| serde_json::Value::String(k)).collect()
+            )));
+        }
+
         // Batch execute all index operations
+        eprintln!(
+            "✅ Native Index BATCH: Executing {} batch operations",
+            batch_operations.len()
+        );
         self.batch_execute_index_operations(&batch_operations)?;
+        
+        eprintln!(
+            "✅ Native Index BATCH: Successfully completed batch indexing of {} operations",
+            index_operations.len()
+        );
 
         Ok(())
     }
@@ -778,6 +870,7 @@ impl NativeIndexManager {
         &self,
         operations: &[(String, serde_json::Value)],
     ) -> Result<(), SchemaError> {
+        log::info!("📦 Batch executing {} index operations", operations.len());
         let mut batch = sled::Batch::default();
 
         for (key, value) in operations {
@@ -789,6 +882,11 @@ impl NativeIndexManager {
         self.tree.apply_batch(batch)
             .map_err(|e| SchemaError::InvalidData(format!("Batch apply failed: {}", e)))?;
 
+        // Ensure the data is durably written to disk
+        self.tree.flush()
+            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
+
+        log::info!("✅ Batch flushed {} operations to disk", operations.len());
         Ok(())
     }
 }

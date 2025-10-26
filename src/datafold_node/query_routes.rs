@@ -273,13 +273,18 @@ pub async fn native_index_search(
     query: web::Query<std::collections::HashMap<String, String>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
+    eprintln!("🌐 API: native_index_search endpoint called");
+    
     let term = match query.get("term") {
         Some(t) if !t.trim().is_empty() => t.trim().to_string(),
         _ => {
+            eprintln!("⚠️ API: Missing or empty term parameter");
             return HttpResponse::BadRequest()
                 .json(json!({"error": "Missing required 'term' query parameter"}));
         }
     };
+    
+    eprintln!("🔍 API: Searching for term: '{}'", term);
 
     // Acquire FoldDB and perform search
     let node_arc = Arc::clone(&state.node);
@@ -287,15 +292,23 @@ pub async fn native_index_search(
     let fold_db = match node_guard.get_fold_db() {
         Ok(guard) => guard,
         Err(e) => {
+            eprintln!("❌ API: Failed to acquire database: {}", e);
             return HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to acquire database: {}", e)}));
         }
     };
 
+    eprintln!("✅ API: Acquired database, calling native_search_all_classifications");
     match fold_db.native_search_all_classifications(&term) {
-        Ok(results) => HttpResponse::Ok().json(results),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Native index search failed: {}", e)})),
+        Ok(results) => {
+            eprintln!("✅ API: Search completed, found {} results", results.len());
+            HttpResponse::Ok().json(results)
+        },
+        Err(e) => {
+            eprintln!("❌ API: Search failed: {}", e);
+            HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Native index search failed: {}", e)}))
+        },
     }
 }
 

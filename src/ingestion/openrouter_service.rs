@@ -571,6 +571,89 @@ impl OpenRouterService {
         Ok(response_text.trim().to_string())
     }
 
+    /// Validate that a schema has classifications on all primitive fields
+    fn validate_schema_has_classifications(&self, schema_val: &Value) -> IngestionResult<()> {
+        let schema_obj = schema_val.as_object().ok_or_else(|| {
+            IngestionError::ai_response_validation_error("Schema must be a JSON object")
+        })?;
+        
+        let schema_name = schema_obj.get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        
+        let field_topologies = schema_obj.get("field_topologies")
+            .and_then(|v| v.as_object())
+            .ok_or_else(|| {
+                IngestionError::ai_response_validation_error(
+                    format!("Schema '{}' missing field_topologies", schema_name)
+                )
+            })?;
+        
+        // Check each field's topology for classifications
+        for (field_name, topology_val) in field_topologies {
+            let topology_obj = topology_val.as_object()
+                .and_then(|obj| obj.get("root"))
+                .and_then(|v| v.as_object())
+                .ok_or_else(|| {
+                    IngestionError::ai_response_validation_error(
+                        format!("Schema '{}' field '{}' has invalid topology structure", schema_name, field_name)
+                    )
+                })?;
+            
+            self.validate_topology_node_classifications(schema_name, field_name, topology_obj)?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Recursively validate that primitive nodes have classifications
+    fn validate_topology_node_classifications(
+        &self, 
+        schema_name: &str, 
+        field_name: &str, 
+        node: &serde_json::Map<String, Value>
+    ) -> IngestionResult<()> {
+        let node_type = node.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        
+        match node_type {
+            "Primitive" => {
+                // Check if classifications exist and is a non-empty array
+                let classifications = node.get("classifications")
+                    .and_then(|v| v.as_array());
+                
+                match classifications {
+                    Some(arr) if !arr.is_empty() => Ok(()), // Valid
+                    _ => Err(IngestionError::ai_response_validation_error(
+                        format!(
+                            "Schema '{}' field '{}' has a Primitive without classifications. \
+                            AI must provide at least one classification (e.g., [\"word\"])",
+                            schema_name, field_name
+                        )
+                    ))
+                }
+            }
+            "Array" => {
+                // Recurse into array value
+                if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
+                    self.validate_topology_node_classifications(schema_name, field_name, value_obj)?;
+                }
+                Ok(())
+            }
+            "Object" => {
+                // Recurse into object fields
+                if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
+                    for (_nested_field, nested_node) in value_obj {
+                        if let Some(nested_obj) = nested_node.as_object() {
+                            self.validate_topology_node_classifications(schema_name, field_name, nested_obj)?;
+                        }
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()) // Unknown type, skip validation
+        }
+    }
+    
     /// Validate and convert the parsed response
     fn validate_and_convert_response(&self, parsed: Value) -> IngestionResult<AISchemaResponse> {
         let obj = parsed.as_object().ok_or_else(|| {
@@ -595,6 +678,22 @@ impl OpenRouterService {
 
         // Parse new_schemas
         let new_schemas = obj.get("new_schemas").cloned();
+        
+        // Validate that new schemas have classifications on all primitive fields
+        if let Some(schema_val) = &new_schemas {
+            match schema_val {
+                Value::Array(schemas) => {
+                    for schema in schemas {
+                        self.validate_schema_has_classifications(schema)?;
+                    }
+                }
+                Value::Object(_) => {
+                    // Single schema object (expected format)
+                    self.validate_schema_has_classifications(schema_val)?;
+                }
+                _ => {}
+            }
+        }
 
         // Parse mutation_mappers
         let mutation_mappers = match obj.get("mutation_mappers") {

@@ -17,7 +17,8 @@
     "word": {
       "root": {
         "type": "Primitive",
-        "value": "String"
+        "value": "String",
+        "classifications": ["word"]
       }
     },
     "publish_date": {
@@ -29,19 +30,22 @@
     "content": {
       "root": {
         "type": "Primitive",
-        "value": "String"
+        "value": "String",
+        "classifications": ["word"]
       }
     },
     "author": {
       "root": {
         "type": "Primitive",
-        "value": "String"
+        "value": "String",
+        "classifications": ["name:person", "word"]
       }
     },
     "title": {
       "root": {
         "type": "Primitive",
-        "value": "String"
+        "value": "String",
+        "classifications": ["word"]
       }
     },
     "tags": {
@@ -49,7 +53,8 @@
         "type": "Array",
         "value": {
           "type": "Primitive",
-          "value": "String"
+          "value": "String",
+          "classifications": ["hashtag", "word"]
         }
       }
     }

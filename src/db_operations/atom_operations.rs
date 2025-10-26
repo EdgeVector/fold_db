@@ -183,6 +183,12 @@ impl DbOperations {
 
     /// Processes a mutation field - creates atom, applies mutation, and persists molecule
     /// Now accepts optional field classifications from the schema topology
+    /// 
+    /// # Deprecated
+    /// Use `process_mutation_fields_batch()` instead for better performance.
+    /// Single field processing causes flush-per-field, while batching allows a single flush.
+    #[deprecated(since = "0.1.0", note = "Use process_mutation_fields_batch() instead for better performance")]
+    #[allow(deprecated)]
     #[allow(clippy::too_many_arguments)]
     pub fn process_mutation_field_with_schema(
         &self,
@@ -222,6 +228,11 @@ impl DbOperations {
     }
 
     /// Legacy method for backward compatibility
+    /// 
+    /// # Deprecated
+    /// Use `process_mutation_fields_batch()` instead for better performance.
+    #[deprecated(since = "0.1.0", note = "Use process_mutation_fields_batch() instead for better performance")]
+    #[allow(deprecated)]
     pub fn process_mutation_field(
         &self,
         schema_name: &str,

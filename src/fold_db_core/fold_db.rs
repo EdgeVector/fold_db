@@ -285,6 +285,8 @@ impl FoldDB {
         use crate::db_operations::ClassificationType;
         use std::collections::HashSet;
         
+        eprintln!("🔎 FoldDB: native_search_all_classifications called for term: '{}'", term);
+        
         let index_manager = self.db_ops.native_index_manager();
         let mut all_results = Vec::new();
         let mut seen_keys = HashSet::new();
@@ -303,23 +305,32 @@ impl FoldDB {
             ClassificationType::Username,
         ];
         
+        eprintln!("🔍 FoldDB: Searching {} classification types", classifications.len());
+        
         for classification in classifications {
-            if let Ok(results) = index_manager.search_with_classification(term, Some(classification)) {
-                for result in results {
-                    // Deduplicate by schema + field + key + classification
-                    // Different classifications of the same field/record are DISTINCT results
-                    let classification_str = result.metadata.as_ref()
-                        .and_then(|m| m.get("classification"))
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("unknown");
-                    let key = format!("{}:{}:{:?}:{}", result.schema_name, result.field, result.key_value, classification_str);
-                    if seen_keys.insert(key) {
-                        all_results.push(result);
+            match index_manager.search_with_classification(term, Some(classification.clone())) {
+                Ok(results) => {
+                    eprintln!("  📊 FoldDB: Classification {:?} returned {} results", classification, results.len());
+                    for result in results {
+                        // Deduplicate by schema + field + key + classification
+                        // Different classifications of the same field/record are DISTINCT results
+                        let classification_str = result.metadata.as_ref()
+                            .and_then(|m| m.get("classification"))
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("unknown");
+                        let key = format!("{}:{}:{:?}:{}", result.schema_name, result.field, result.key_value, classification_str);
+                        if seen_keys.insert(key) {
+                            all_results.push(result);
+                        }
                     }
+                },
+                Err(e) => {
+                    eprintln!("  ❌ FoldDB: Classification {:?} search failed: {}", classification, e);
                 }
             }
         }
         
+        eprintln!("✅ FoldDB: Total aggregated results: {}", all_results.len());
         Ok(all_results)
     }
 

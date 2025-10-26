@@ -64,7 +64,8 @@ impl OperationProcessor {
         );
 
         let node_guard = self.node.lock().await;
-        node_guard.mutate(mutation)?;
+        // Use batch API even for single mutation for better performance
+        node_guard.mutate_batch(vec![mutation])?;
 
         Ok(())
     }
