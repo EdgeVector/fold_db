@@ -17,7 +17,7 @@ use crate::schema::{SchemaCore, SchemaError};
 use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 use super::infrastructure::message_bus::request_events::MutationRequest;
 use super::infrastructure::MessageBus;
-use log::{error, warn};
+use log::{debug, error, warn};
 
 /// Manages mutation operations for the FoldDB system
 pub struct MutationManager {
@@ -260,8 +260,8 @@ impl MutationManager {
             // Publish batch index request for background processing
             if !index_operations.is_empty() {
                 let index_start = std::time::Instant::now();
-                eprintln!(
-                    "📤 MutationManager: Publishing BatchIndexRequest with {} operations for schema '{}'",
+                debug!(
+                    "MutationManager: Publishing BatchIndexRequest with {} operations for schema '{}'",
                     index_operations.len(),
                     schema_name
                 );
@@ -281,14 +281,14 @@ impl MutationManager {
                 };
                 
                 self.message_bus.publish(batch_request)?;
-                eprintln!(
-                    "✅ MutationManager: Successfully published BatchIndexRequest for schema '{}'",
+                debug!(
+                    "MutationManager: Successfully published BatchIndexRequest for schema '{}'",
                     schema_name
                 );
                 index_time += index_start.elapsed();
             } else {
-                eprintln!(
-                    "⚠️ MutationManager: No index operations to publish for schema '{}'",
+                debug!(
+                    "MutationManager: No index operations to publish for schema '{}'",
                     schema_name
                 );
             }
@@ -342,14 +342,13 @@ impl MutationManager {
         let total_time = start_time.elapsed();
         
         // Log timing breakdown
-        eprintln!("\n🔍 Batch mutation timing breakdown (total: {:.2}ms):", total_time.as_millis());
+        debug!("Batch mutation timing breakdown (total: {:.2}ms):", total_time.as_millis());
         let mut sorted_timings: Vec<_> = timing_breakdown.iter().collect();
         sorted_timings.sort_by(|a, b| b.1.cmp(a.1));
         for (operation, duration) in sorted_timings {
             let percentage = (duration.as_millis() as f64 / total_time.as_millis() as f64) * 100.0;
-            eprintln!("  - {}: {:.2}ms ({:.1}%)", operation, duration.as_millis(), percentage);
+            debug!("  - {}: {:.2}ms ({:.1}%)", operation, duration.as_millis(), percentage);
         }
-        eprintln!();
 
         Ok(mutation_ids)
     }

@@ -845,6 +845,7 @@ mod tests {
     use crate::fold_db_core::FoldDB;
     use crate::ingestion::config::AIProvider;
     use crate::schema::SchemaCore;
+    use log::warn;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
@@ -890,7 +891,7 @@ mod tests {
         let schema_core = match SchemaCore::new_for_testing() {
             Ok(core) => Arc::new(core),
             Err(_) => {
-                eprintln!("Skipping test_validate_input: Could not create schema core");
+                warn!("Skipping test_validate_input: Could not create schema core");
                 return;
             }
         };
@@ -898,7 +899,7 @@ mod tests {
         let fold_db = match FoldDB::new(&test_path) {
             Ok(db) => Arc::new(Mutex::new(db)),
             Err(_) => {
-                eprintln!("Skipping test_validate_input: Could not create database");
+                warn!("Skipping test_validate_input: Could not create database");
                 return;
             }
         };
@@ -907,7 +908,7 @@ mod tests {
         let core = match IngestionCore::new(config, schema_core, fold_db, schema_client) {
             Ok(core) => core,
             Err(_) => {
-                eprintln!("Skipping test_validate_input: Could not create ingestion core");
+                warn!("Skipping test_validate_input: Could not create ingestion core");
                 return;
             }
         };
