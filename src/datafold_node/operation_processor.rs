@@ -32,14 +32,14 @@ impl OperationProcessor {
         Ok(results)
     }
 
-    /// Executes a mutation operation.
+    /// Executes a mutation operation and returns its mutation ID.
     pub async fn execute_mutation(
         &self,
         schema: String,
         fields_and_values: HashMap<String, Value>,
         key_value: KeyValue,
         mutation_type: MutationType,
-    ) -> FoldDbResult<()> {
+    ) -> FoldDbResult<String> {
         if fields_and_values.is_empty() {
             return Err(FoldDbError::Config("No fields to mutate".to_string()));
         }
@@ -64,10 +64,12 @@ impl OperationProcessor {
         );
 
         let node_guard = self.node.lock().await;
-        // Use batch API even for single mutation for better performance
-        node_guard.mutate_batch(vec![mutation])?;
-
-        Ok(())
+        // Use batch API even for single mutation for better performance and return the ID
+        let mut ids = node_guard.mutate_batch(vec![mutation])?;
+        match ids.pop() {
+            Some(id) => Ok(id),
+            None => Err(FoldDbError::Config("Batch mutation returned no IDs".to_string())),
+        }
     }
 
     /// Executes multiple mutations in a batch for improved performance.

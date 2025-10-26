@@ -777,7 +777,7 @@ impl IngestionCore {
 
         for mutation in mutations {
             match self.execute_single_mutation(mutation).await {
-                Ok(()) => {
+                Ok(_mutation_id) => {
                     executed_count += 1;
                 }
                 Err(e) => {
@@ -789,18 +789,21 @@ impl IngestionCore {
         Ok(executed_count)
     }
 
-    /// Execute a single mutation (now uses batch internally for efficiency)
-    async fn execute_single_mutation(&self, mutation: &Mutation) -> IngestionResult<()> {
+    /// Execute a single mutation (now uses batch internally for efficiency) and return its ID
+    async fn execute_single_mutation(&self, mutation: &Mutation) -> IngestionResult<String> {
         let mut db = self.fold_db.lock().map_err(|_| {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 
         // Use batch API even for single mutation for better performance
-        db.mutation_manager
+        let mut ids = db
+            .mutation_manager
             .write_mutations_batch(vec![mutation.clone()])
             .map_err(IngestionError::SchemaSystemError)?;
 
-        Ok(())
+        ids.pop().ok_or_else(|| {
+            IngestionError::DatabaseError("Batch mutation returned no IDs".to_string())
+        })
     }
 
     /// Get ingestion status
