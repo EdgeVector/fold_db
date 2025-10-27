@@ -160,25 +160,9 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
             .unwrap_or_default();
         
         if current_state == SchemaState::Approved {
-            // If already approved, return current backfill hash if available
-            log::info!("Schema '{}' is already approved", schema_name);
-            
-            // Check if this is a transform schema and generate backfill hash if needed
-            let is_transform = match db.transform_manager.transform_exists(&schema_name) {
-                Ok(exists) => exists,
-                Err(e) => {
-                    log::warn!("Failed to check if {} is a transform, assuming false: {}", schema_name, e);
-                    false
-                }
-            };
-            
-            let backfill_hash = if is_transform {
-                generate_backfill_hash_for_transform(&db.transform_manager, &schema_name)
-            } else {
-                None
-            };
-            
-            return Ok(backfill_hash);
+            // If already approved, no backfill needed - return None
+            log::info!("Schema '{}' is already approved, no backfill needed", schema_name);
+            return Ok(None);
         }
         
         // Check if this is a transform schema and generate backfill hash if needed
