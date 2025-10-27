@@ -136,15 +136,23 @@ impl LlmQueryService {
         let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;
         
         // Step 2: Execute native index searches for each term
+        // Use search_all_classifications which searches:
+        // - Word matches + field name matches
+        // - All classification types (email, phone, date, name, etc.)
         let mut all_results = Vec::new();
         for term in &search_terms {
-            match db_ops.native_index_manager().search_with_classification(term, None) {
-                Ok(mut results) => all_results.append(&mut results),
+            match db_ops.native_index_manager().search_all_classifications(term) {
+                Ok(mut results) => {
+                    log::debug!("LLM Query: Term '{}' returned {} results", term, results.len());
+                    all_results.append(&mut results);
+                },
                 Err(e) => {
                     log::warn!("Native index search failed for term '{}': {}", term, e);
                 }
             }
         }
+        
+        log::info!("LLM Query: Collected {} total results for AI interpretation", all_results.len());
         
         // Step 3: Send results to AI for interpretation
         self.interpret_native_index_results(user_query, &all_results).await
@@ -161,18 +169,28 @@ impl LlmQueryService {
         let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;
         
         // Step 2: Execute native index searches for each term
+        // Use search_all_classifications which searches:
+        // - Word matches + field name matches
+        // - All classification types (email, phone, date, name, etc.)
         let mut all_results = Vec::new();
         for term in &search_terms {
-            match db_ops.native_index_manager().search_with_classification(term, None) {
-                Ok(mut results) => all_results.append(&mut results),
+            match db_ops.native_index_manager().search_all_classifications(term) {
+                Ok(mut results) => {
+                    log::debug!("LLM Query: Term '{}' returned {} results", term, results.len());
+                    all_results.append(&mut results);
+                },
                 Err(e) => {
                     log::warn!("Native index search failed for term '{}': {}", term, e);
                 }
             }
         }
         
+        log::debug!("LLM Query: Total results before deduplication: {}", all_results.len());
+        
         // Step 2.5: Deduplicate results based on schema_name + key_value + field
         let deduplicated_results = self.deduplicate_results(all_results);
+        
+        log::info!("LLM Query: Sending {} deduplicated results to AI for interpretation", deduplicated_results.len());
         
         // Step 3: Send results to AI for interpretation
         let ai_interpretation = self.interpret_native_index_results(user_query, &deduplicated_results).await?;
@@ -393,6 +411,16 @@ impl LlmQueryService {
         original_query: &str,
         results: &[crate::db_operations::IndexResult],
     ) -> Result<String, String> {
+        log::info!("LLM Query: Sending {} results to AI for interpretation", results.len());
+        if results.is_empty() {
+            log::warn!("LLM Query: No results to send to AI");
+        } else {
+            log::debug!("LLM Query: Sample result - schema={}, field={}, key_value={:?}", 
+                results[0].schema_name, 
+                results[0].field,
+                results[0].key_value
+            );
+        }
         let prompt = self.build_native_index_interpretation_prompt(original_query, results);
         self.call_llm(&prompt).await
     }

@@ -17,7 +17,7 @@ function SchemaSelector({ selectedSchema, mutationType, onSchemaChange, onTypeCh
         onChange={onSchemaChange}
         options={approvedSchemas.map(schema => ({
           value: schema.name,
-          label: schema.name
+          label: schema.descriptive_name || schema.name
         }))}
         placeholder="Select a schema..."
         emptyMessage="No approved schemas available for mutations"

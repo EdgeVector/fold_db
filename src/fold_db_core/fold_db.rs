@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 // External crate imports
-use log::{debug, error, info};
+use log::{debug, info};
 
 // Internal crate imports
 use crate::db_operations::{DbOperations, IndexResult};
@@ -281,57 +281,12 @@ impl FoldDB {
     }
 
     /// Search native index across all classification types and aggregate results
+    /// This now includes field name matches via search_word
     pub fn native_search_all_classifications(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        use crate::db_operations::ClassificationType;
-        use std::collections::HashSet;
-        
         debug!("FoldDB: native_search_all_classifications called for term: '{}'", term);
         
-        let index_manager = self.db_ops.native_index_manager();
-        let mut all_results = Vec::new();
-        let mut seen_keys = HashSet::new();
-        
-        // Search all classification types
-        let classifications = vec![
-            ClassificationType::Word,
-            ClassificationType::NamePerson,
-            ClassificationType::NameCompany,
-            ClassificationType::NamePlace,
-            ClassificationType::Email,
-            ClassificationType::Phone,
-            ClassificationType::Url,
-            ClassificationType::Date,
-            ClassificationType::Hashtag,
-            ClassificationType::Username,
-        ];
-        
-        debug!("FoldDB: Searching {} classification types", classifications.len());
-        
-        for classification in classifications {
-            match index_manager.search_with_classification(term, Some(classification.clone())) {
-                Ok(results) => {
-                    debug!("FoldDB: Classification {:?} returned {} results", classification, results.len());
-                    for result in results {
-                        // Deduplicate by schema + field + key + classification
-                        // Different classifications of the same field/record are DISTINCT results
-                        let classification_str = result.metadata.as_ref()
-                            .and_then(|m| m.get("classification"))
-                            .and_then(|c| c.as_str())
-                            .unwrap_or("unknown");
-                        let key = format!("{}:{}:{:?}:{}", result.schema_name, result.field, result.key_value, classification_str);
-                        if seen_keys.insert(key) {
-                            all_results.push(result);
-                        }
-                    }
-                },
-                Err(e) => {
-                    error!("FoldDB: Classification {:?} search failed: {}", classification, e);
-                }
-            }
-        }
-        
-        info!("FoldDB: Total aggregated results: {}", all_results.len());
-        Ok(all_results)
+        // Delegate to NativeIndexManager which has the full implementation
+        self.db_ops.native_index_manager().search_all_classifications(term)
     }
 
     /// Get the transform orchestrator for managing transform execution

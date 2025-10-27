@@ -141,7 +141,7 @@ impl SimpleIngestionService {
             "Generating database mutations...".to_string(),
         );
         // Handle both single objects and arrays of objects
-        let mutations = if let Some(array) = request.data.as_array() {
+        let mutations = if let Some(array) = flattened_data.as_array() {
             // Generate a mutation for each element in the array
             let total_items = array.len();
             let mut all_mutations = Vec::new();
@@ -190,7 +190,7 @@ impl SimpleIngestionService {
             all_mutations
         } else {
             // Handle single object
-            let fields_and_values = if let Some(obj) = request.data.as_object() {
+            let fields_and_values = if let Some(obj) = flattened_data.as_object() {
                 obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
             } else {
                 HashMap::new()
@@ -276,26 +276,29 @@ impl SimpleIngestionService {
         // Step 1: Validate input
         self.validate_input(&request.data)?;
 
-        // Step 2: Get available schemas and strip them
+        // Step 2: Flatten Twitter data
+        let flattened_data = self.flatten_twitter_data(&request.data);
+
+        // Step 3: Get available schemas and strip them
         let available_schemas = self
             .get_stripped_available_schemas_from_node(node.clone())
             .await?;
 
-        // Step 3: Get AI recommendation
+        // Step 4: Get AI recommendation
         let ai_response = self
-            .get_ai_recommendation(&request.data, &available_schemas)
+            .get_ai_recommendation(&flattened_data, &available_schemas)
             .await?;
 
 
-        // Step 4: Determine schema to use
+        // Step 5: Determine schema to use
         let schema_name = self
             .determine_schema_to_use(&ai_response, &request.data, node.clone())
             .await?;
         let new_schema_created = ai_response.new_schemas.is_some();
 
-        // Step 5: Generate mutations
+        // Step 6: Generate mutations
         // Handle both single objects and arrays of objects
-        let mutations = if let Some(array) = request.data.as_array() {
+        let mutations = if let Some(array) = flattened_data.as_array() {
             // Generate a mutation for each element in the array
 
             let mut all_mutations = Vec::new();
@@ -332,7 +335,7 @@ impl SimpleIngestionService {
             all_mutations
         } else {
             // Handle single object
-            let fields_and_values = if let Some(obj) = request.data.as_object() {
+            let fields_and_values = if let Some(obj) = flattened_data.as_object() {
                 obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
             } else {
                 HashMap::new()
@@ -357,7 +360,7 @@ impl SimpleIngestionService {
             mutations.len()
         );
 
-        // Step 6: Execute mutations if requested
+        // Step 7: Execute mutations if requested
         let mutations_executed = if request
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)

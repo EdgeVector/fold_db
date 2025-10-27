@@ -1,7 +1,26 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ============================================================================
+// INDEX PREFIX CONSTANTS
+// ============================================================================
+
+/// Structural prefixes - used for index organization (not content classification)
+/// These organize the index structure itself rather than classifying data content
+pub mod structural_prefixes {
+    /// General word-based search entries: `word:term`
+    pub const WORD: &str = "word:";
+    
+    /// Reverse lookup entries for cleanup: `record:schema:field:key_value`
+    pub const RECORD: &str = "record:";
+    
+    /// Field name index entries: `field:fieldname`
+    /// Used to find all records that have a particular field
+    pub const FIELD: &str = "field:";
+}
+
 /// Classification type for native index entries
+/// These classify the actual content of field values (e.g., email addresses, phone numbers)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ClassificationType {
     /// General word-based search

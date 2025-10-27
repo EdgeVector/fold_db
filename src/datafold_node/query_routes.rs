@@ -317,7 +317,6 @@ pub async fn native_index_search(
         },
     }
 }
-
 #[utoipa::path(
     get,
     path = "/api/transforms/backfills/statistics",

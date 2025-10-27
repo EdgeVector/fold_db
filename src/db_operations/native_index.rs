@@ -1,14 +1,11 @@
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
-use super::native_index_classification::ClassificationType;
-use log::{debug, info};
+use super::native_index_classification::{ClassificationType, structural_prefixes};
+use log;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sled::Tree;
 use std::collections::HashSet;
-
-const WORD_PREFIX: &str = "word:";
-const RECORD_PREFIX: &str = "record:";
 
 const STOPWORDS: &[&str] = &[
     "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "in", "is", "it", "of",
@@ -43,25 +40,38 @@ impl NativeIndexManager {
 
 
     pub fn search_word(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        debug!("Native Index Search: Searching for word '{}'", term);
+        log::debug!("Native Index: search_word called for term: '{}'", term);
         let Some(normalized) = self.normalize_search_term(term) else {
-            debug!("Native Index Search: Term '{}' normalized to empty string", term);
+            log::debug!("Native Index: Term '{}' normalized to empty string", term);
             return Ok(Vec::new());
         };
 
-        let key = format!("{}{}", WORD_PREFIX, normalized);
-        debug!("Native Index Search: Looking up key: '{}'", key);
-        let Some(bytes) = self.tree.get(key.as_bytes())? else {
-            debug!("Native Index Search: No results found for key: '{}'", key);
-            return Ok(Vec::new());
-        };
+        let mut all_results = Vec::new();
 
-        let results: Vec<IndexResult> = serde_json::from_slice(&bytes).map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to deserialize index results: {}", e))
-        })?;
+        // Search for word matches
+        let word_key = format!("{}{}", structural_prefixes::WORD, normalized);
+        log::debug!("Native Index: Looking up word key: '{}'", word_key);
+        if let Some(bytes) = self.tree.get(word_key.as_bytes())? {
+            let word_results: Vec<IndexResult> = serde_json::from_slice(&bytes).map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to deserialize word index results: {}", e))
+            })?;
+            log::debug!("Native Index: Found {} word results for key '{}'", word_results.len(), word_key);
+            all_results.extend(word_results);
+        }
 
-        info!("Native Index Search: Found {} results for word '{}'", results.len(), term);
-        Ok(results)
+        // Also search for field name matches (e.g., searching "email" returns all records with an email field)
+        let field_key = format!("{}{}", structural_prefixes::FIELD, normalized);
+        log::debug!("Native Index: Looking up field key: '{}'", field_key);
+        if let Some(bytes) = self.tree.get(field_key.as_bytes())? {
+            let field_results: Vec<IndexResult> = serde_json::from_slice(&bytes).map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to deserialize field index results: {}", e))
+            })?;
+            log::debug!("Native Index: Found {} field results for key '{}'", field_results.len(), field_key);
+            all_results.extend(field_results);
+        }
+
+        log::info!("Native Index: search_word for '{}' returned {} results", term, all_results.len());
+        Ok(all_results)
     }
 
     /// Search with optional classification filter
@@ -70,7 +80,7 @@ impl NativeIndexManager {
         term: &str,
         classification: Option<ClassificationType>,
     ) -> Result<Vec<IndexResult>, SchemaError> {
-        log::info!("🔍 Searching for term '{}' with classification {:?}", term, classification);
+        log::debug!("Native Index: Searching for term '{}' with classification {:?}", term, classification);
         // For word classification, extract first word
         // For other classifications (names, etc.), keep the whole term
         let normalized = match classification {
@@ -90,16 +100,16 @@ impl NativeIndexManager {
         };
 
         let Some(normalized) = normalized else {
-            log::info!("⚠️ Search term '{}' normalized to empty string", term);
+            log::debug!("Native Index: Search term '{}' normalized to empty string", term);
             return Ok(Vec::new());
         };
 
         let key = if let Some(ref class) = classification {
             format!("{}:{}", class.prefix(), normalized)
         } else {
-            format!("{}{}", WORD_PREFIX, normalized)
+            format!("{}{}", structural_prefixes::WORD, normalized)
         };
-        log::info!("🔑 Searching with key: '{}'", key);
+        log::debug!("Native Index: Searching with key: '{}'", key);
 
         use crate::logging::features::{log_feature, LogFeature};
         log_feature!(
@@ -127,10 +137,77 @@ impl NativeIndexManager {
         Ok(results)
     }
 
-
-
-
-
+    /// Search across all classification types and aggregate results
+    /// This includes word matches, field name matches, and all specialized classifications
+    pub fn search_all_classifications(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
+        use std::collections::HashSet;
+        
+        log::debug!("Native Index: search_all_classifications called for term: '{}'", term);
+        
+        let mut all_results = Vec::new();
+        let mut seen_keys = HashSet::new();
+        
+        // First, do a basic word search which includes both word matches AND field name matches
+        match self.search_word(term) {
+            Ok(results) => {
+                log::debug!("Native Index: Word search (including field names) returned {} results", results.len());
+                for result in results {
+                    let classification_str = result.metadata.as_ref()
+                        .and_then(|m| m.get("classification"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("word");
+                    let key = format!("{}:{}:{:?}:{}", result.schema_name, result.field, result.key_value, classification_str);
+                    if seen_keys.insert(key) {
+                        all_results.push(result);
+                    }
+                }
+            },
+            Err(e) => {
+                log::error!("Native Index: Word search failed: {}", e);
+            }
+        }
+        
+        // Search all other classification types for more specific matches
+        let classifications = vec![
+            ClassificationType::NamePerson,
+            ClassificationType::NameCompany,
+            ClassificationType::NamePlace,
+            ClassificationType::Email,
+            ClassificationType::Phone,
+            ClassificationType::Url,
+            ClassificationType::Date,
+            ClassificationType::Hashtag,
+            ClassificationType::Username,
+        ];
+        
+        log::debug!("Native Index: Searching {} additional classification types", classifications.len());
+        
+        for classification in classifications {
+            match self.search_with_classification(term, Some(classification.clone())) {
+                Ok(results) => {
+                    log::debug!("Native Index: Classification {:?} returned {} results", classification, results.len());
+                    for result in results {
+                        // Deduplicate by schema + field + key + classification
+                        // Different classifications of the same field/record are DISTINCT results
+                        let classification_str = result.metadata.as_ref()
+                            .and_then(|m| m.get("classification"))
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("unknown");
+                        let key = format!("{}:{}:{:?}:{}", result.schema_name, result.field, result.key_value, classification_str);
+                        if seen_keys.insert(key) {
+                            all_results.push(result);
+                        }
+                    }
+                },
+                Err(e) => {
+                    log::error!("Native Index: Classification {:?} search failed: {}", classification, e);
+                }
+            }
+        }
+        
+        log::info!("Native Index: search_all_classifications for '{}' returned {} total results", term, all_results.len());
+        Ok(all_results)
+    }
 
     fn extract_hashtags(&self, value: &Value) -> Vec<(String, String)> {
         let mut results = Vec::new();
@@ -220,7 +297,7 @@ impl NativeIndexManager {
         })?;
         Ok(format!(
             "{}{}:{}:{}",
-            RECORD_PREFIX, schema_name, field_name, serialized_key
+            structural_prefixes::RECORD, schema_name, field_name, serialized_key
         ))
     }
 
@@ -299,12 +376,12 @@ impl NativeIndexManager {
 
     fn write_entries(&self, key: &str, entries: &[IndexResult]) -> Result<(), SchemaError> {
         if entries.is_empty() {
-            log::info!("🗑️ Removing empty index key: {}", key);
+            log::debug!("Native Index: Removing empty index key: {}", key);
             self.tree.remove(key.as_bytes())?;
             return Ok(());
         }
 
-        log::info!("✍️ Writing {} entries to index key: {}", entries.len(), key);
+        log::debug!("Native Index: Writing {} entries to index key: {}", entries.len(), key);
         let bytes = serde_json::to_vec(entries).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to serialize index entries: {}", e))
         })?;
@@ -329,7 +406,7 @@ impl NativeIndexManager {
         })?;
 
         for word in words {
-            let index_key = format!("{}{}", WORD_PREFIX, word);
+            let index_key = format!("{}{}", structural_prefixes::WORD, word);
             let mut entries = self.read_entries(&index_key)?;
             let initial_len = entries.len();
 
@@ -359,7 +436,7 @@ impl NativeIndexManager {
     ) -> Result<(), SchemaError> {
         use std::collections::HashMap;
         let mut index_map: HashMap<String, Vec<IndexResult>> = HashMap::new();
-        let mut record_keys: Vec<(String, Vec<String>)> = Vec::new();
+        let mut record_keys: Vec<(String, HashSet<String>)> = Vec::new();
 
         for (schema_name, field_name, key_value, value, classifications) in index_operations {
             if !self.should_index_field(field_name) {
@@ -397,14 +474,15 @@ impl NativeIndexManager {
         field_name: &str,
         key_value: &KeyValue,
         index_map: &mut std::collections::HashMap<String, Vec<IndexResult>>,
-    ) -> Result<Vec<String>, SchemaError> {
-        let mut all_index_keys = Vec::new();
+    ) -> Result<HashSet<String>, SchemaError> {
+        let mut all_index_keys = HashSet::new();
 
         for classification_str in classifications {
             let index_entries = self.extract_by_classification(classification_str, value);
 
             for (index_key, normalized_value) in index_entries {
-                let index_entry = IndexResult {
+                // Create record-level index entry (with key_value)
+                let record_index_entry = IndexResult {
                     schema_name: schema_name.to_string(),
                     field: field_name.to_string(),
                     key_value: key_value.clone(),
@@ -415,10 +493,28 @@ impl NativeIndexManager {
                     })),
                 };
 
-                index_map.entry(index_key.clone()).or_default().push(index_entry);
-                all_index_keys.push(index_key);
+                index_map.entry(index_key.clone()).or_default().push(record_index_entry);
+                all_index_keys.insert(index_key);
             }
         }
+        
+        // Create field name index: field:email (not word:email)
+        // This allows searching for "email" to return all records with an email field
+        let field_name_normalized = field_name.to_ascii_lowercase();
+        let field_name_key = format!("{}{}", structural_prefixes::FIELD, field_name_normalized);
+        let field_name_entry = IndexResult {
+            schema_name: schema_name.to_string(),
+            field: field_name.to_string(),
+            key_value: key_value.clone(),
+            value: value.clone(),
+            metadata: Some(json!({
+                "classification": "field",
+                "field_name": field_name
+            })),
+        };
+        
+        index_map.entry(field_name_key.clone()).or_default().push(field_name_entry);
+        all_index_keys.insert(field_name_key);
 
         Ok(all_index_keys)
     }
@@ -445,7 +541,7 @@ impl NativeIndexManager {
     fn build_batch_operations(
         &self,
         index_map: std::collections::HashMap<String, Vec<IndexResult>>,
-        record_keys: Vec<(String, Vec<String>)>,
+        record_keys: Vec<(String, HashSet<String>)>,
     ) -> Result<Vec<(String, serde_json::Value)>, SchemaError> {
         let mut batch_operations = Vec::new();
 
@@ -519,7 +615,7 @@ impl NativeIndexManager {
         &self,
         operations: &[(String, serde_json::Value)],
     ) -> Result<(), SchemaError> {
-        log::info!("📦 Batch executing {} index operations", operations.len());
+        log::debug!("Native Index: Batch executing {} index operations", operations.len());
         let mut batch = sled::Batch::default();
 
         for (key, value) in operations {
@@ -535,7 +631,7 @@ impl NativeIndexManager {
         self.tree.flush()
             .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
 
-        log::info!("✅ Batch flushed {} operations to disk", operations.len());
+        log::info!("Native Index: Batch flushed {} operations to disk", operations.len());
         Ok(())
     }
 

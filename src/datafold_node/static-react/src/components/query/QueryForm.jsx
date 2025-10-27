@@ -118,7 +118,7 @@ function QueryForm({
           onChange={handleSchemaChange}
           options={approvedSchemas.map(schema => ({
             value: schema.name,
-            label: schema.name
+            label: schema.descriptive_name || schema.name
           }))}
           placeholder="Select a schema..."
           emptyMessage={FORM_LABELS.schemaEmpty || 'No schemas available'}
