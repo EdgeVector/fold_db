@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
 
 /// Get current Unix timestamp in seconds
@@ -27,8 +29,12 @@ fn current_timestamp_nanos() -> u128 {
 }
 
 /// Status of a backfill operation
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
+)]
 pub enum BackfillStatus {
     /// Backfill is currently in progress
     InProgress,
@@ -39,8 +45,12 @@ pub enum BackfillStatus {
 }
 
 /// Information about a backfill operation
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
+)]
 pub struct BackfillInfo {
     /// Unique hash identifying this specific backfill operation
     pub backfill_hash: String,
@@ -51,30 +61,34 @@ pub struct BackfillInfo {
     /// Current status
     pub status: BackfillStatus,
     /// When the backfill started (Unix timestamp in seconds)
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub start_time: u64,
     /// When the backfill completed (if finished)
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub end_time: Option<u64>,
     /// Error message if failed
     pub error: Option<String>,
     /// Records produced by the backfill
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub records_produced: u64,
     /// Expected number of mutations to be created (for completion tracking)
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub mutations_expected: u64,
     /// Number of mutations completed so far
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub mutations_completed: u64,
     /// Number of mutations that failed
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub mutations_failed: u64,
 }
 
 /// Aggregate statistics from all backfills
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
+)]
 pub struct BackfillStatistics {
     /// Total number of backfills
     pub total_backfills: usize,
@@ -85,16 +99,16 @@ pub struct BackfillStatistics {
     /// Number of failed backfills
     pub failed_backfills: usize,
     /// Total mutations expected across all backfills
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub total_mutations_expected: u64,
     /// Total mutations completed across all backfills
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub total_mutations_completed: u64,
     /// Total mutations failed across all backfills
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub total_mutations_failed: u64,
     /// Total records produced across all backfills
-    #[ts(type = "number")]
+    #[cfg_attr(feature = "ts-bindings", ts(type = "number"))]
     pub total_records_produced: u64,
 }
 

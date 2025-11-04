@@ -9,6 +9,12 @@ use crate::schema::{
 };
 use serde_json::Value;
 
+/// Type alias for mutation field tuple: (schema_name, field_name, pub_key, value, key_value, schema_field, field_classifications)
+type MutationFieldBatch<'a> = Vec<(String, String, String, Value, KeyValue, &'a mut FieldVariant, Option<Vec<String>>)>;
+
+/// Type alias for index operation tuple: (schema_name, field_name, key_value, value, field_classifications)
+type IndexOperationBatch = Vec<(String, String, KeyValue, Value, Option<Vec<String>>)>;
+
 impl DbOperations {
     /// Creates a new atom and stores it in the database.
     /// If an atom with the same content already exists (content-based deduplication),
@@ -364,7 +370,7 @@ impl DbOperations {
     /// This method collects all operations and executes them in batches
     pub fn process_mutation_fields_batch(
         &self,
-        mutation_fields: &mut Vec<(String, String, String, Value, KeyValue, &mut FieldVariant, Option<Vec<String>>)>, // (schema_name, field_name, pub_key, value, key_value, schema_field, field_classifications)
+        mutation_fields: &mut MutationFieldBatch,
     ) -> Result<(), SchemaError> {
         if mutation_fields.is_empty() {
             return Ok(());
@@ -429,12 +435,12 @@ impl DbOperations {
 
             // Persist molecule using deferred storage
             if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                self.persist_field_molecule_deferred(schema_field, &molecule_uuid)?;
+                self.persist_field_molecule_deferred(schema_field, molecule_uuid)?;
             }
         }
 
         // Step 5: Batch index operations
-        let index_operations: Vec<(String, String, KeyValue, Value, Option<Vec<String>>)> = mutation_fields.iter()
+        let index_operations: IndexOperationBatch = mutation_fields.iter()
             .map(|(schema_name, field_name, _, value, key_value, _, classifications)| {
                 (schema_name.clone(), field_name.clone(), key_value.clone(), value.clone(), classifications.clone())
             })

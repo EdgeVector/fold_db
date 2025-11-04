@@ -600,7 +600,7 @@ impl OpenRouterService {
                     )
                 })?;
             
-            self.validate_topology_node_classifications(schema_name, field_name, topology_obj)?;
+            Self::validate_topology_node_classifications(schema_name, field_name, topology_obj)?;
         }
         
         Ok(())
@@ -608,7 +608,6 @@ impl OpenRouterService {
     
     /// Recursively validate that primitive nodes have classifications
     fn validate_topology_node_classifications(
-        &self, 
         schema_name: &str, 
         field_name: &str, 
         node: &serde_json::Map<String, Value>
@@ -635,7 +634,7 @@ impl OpenRouterService {
             "Array" => {
                 // Recurse into array value
                 if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
-                    self.validate_topology_node_classifications(schema_name, field_name, value_obj)?;
+                    Self::validate_topology_node_classifications(schema_name, field_name, value_obj)?;
                 }
                 Ok(())
             }
@@ -644,7 +643,7 @@ impl OpenRouterService {
                 if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
                     for (_nested_field, nested_node) in value_obj {
                         if let Some(nested_obj) = nested_node.as_object() {
-                            self.validate_topology_node_classifications(schema_name, field_name, nested_obj)?;
+                            Self::validate_topology_node_classifications(schema_name, field_name, nested_obj)?;
                         }
                     }
                 }

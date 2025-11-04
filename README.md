@@ -38,6 +38,20 @@ This provides three binaries:
 - `datafold_http_server` - HTTP server with web UI
 - `datafold_node` - P2P node server
 
+### Optional TypeScript Bindings
+
+The crate ships without generating TypeScript artifacts by default so it can
+compile cleanly in any environment. If you need the auto-generated bindings for
+the web UI, enable the `ts-bindings` feature when building or testing:
+
+```bash
+cargo build --features ts-bindings
+```
+
+The feature keeps the `ts-rs` dependency optional and writes the generated
+definitions to the existing `bindings/` directory just like the repository
+version.
+
 ### Basic Usage
 
 ```rust

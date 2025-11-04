@@ -313,7 +313,7 @@ impl MutationManager {
                     key_value: Some(key_value),
                     mutation_hash: Some(mutation_id.clone()),
                     incremental: true,
-                    backfill_hash: backfill_hash,
+                    backfill_hash,
                 });
                 
                 let event = MutationExecuted::with_context(
@@ -359,7 +359,7 @@ impl MutationManager {
         
         for mutation in mutations {
             grouped.entry(mutation.schema_name.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(mutation);
         }
         

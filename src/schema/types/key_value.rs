@@ -1,12 +1,15 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use ts_rs::TS;
 use super::key_config::KeyConfig;
 
+#[cfg(feature = "ts-bindings")]
+use ts_rs::TS;
+
 /// Represents resolved key values for hash and range components.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, TS, utoipa::ToSchema)]
-#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(feature = "ts-bindings", ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"))]
 pub struct KeyValue {
     pub hash: Option<String>,
     pub range: Option<String>,

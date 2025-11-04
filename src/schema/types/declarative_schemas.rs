@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+
+#[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
@@ -13,9 +15,10 @@ pub struct FieldDefinition {
     pub field_expression: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[serde(into = "String", try_from = "String")]
-#[ts(type = "string")]
+#[cfg_attr(feature = "ts-bindings", ts(type = "string"))]
 pub struct FieldMapper {
     source_schema: String,
     source_field: String,
@@ -210,10 +213,11 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 
 /// Declarative schema definition - the primary schema representation.
 /// This is the unified schema type that replaces the old Schema/DeclarativeSchemaDefinition split.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema, TS)]
-#[ts(
-    export,
-    export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
 )]
 pub struct DeclarativeSchemaDefinition {
     /// Schema name
@@ -255,32 +259,32 @@ pub struct DeclarativeSchemaDefinition {
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
     #[serde(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "ts-bindings", ts(skip))]
     pub runtime_fields: HashMap<String, crate::schema::types::field::FieldVariant>,
 
     /// Input fields extracted from transform expressions
     #[serde(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "ts-bindings", ts(skip))]
     inputs_schema_fields: Vec<String>,
 
     /// Source schemas extracted from input fields (for transforms)
     #[serde(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "ts-bindings", ts(skip))]
     source_schemas: Vec<String>,
 
     /// Key to hash code mapping for transforms
     #[serde(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "ts-bindings", ts(skip))]
     key_to_hash_code: HashMap<String, String>,
 
     /// Field to hash code mapping for transforms
     #[serde(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "ts-bindings", ts(skip))]
     field_to_hash_code: HashMap<String, String>,
 
     /// Hash to code mapping for transforms
     #[serde(skip)]
-    #[ts(skip)]
+    #[cfg_attr(feature = "ts-bindings", ts(skip))]
     hash_to_code: HashMap<String, String>,
 }
 

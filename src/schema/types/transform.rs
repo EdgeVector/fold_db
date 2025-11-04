@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
 
 /// Represents a transformation that can be applied to field values.
@@ -30,8 +32,15 @@ pub struct TransformRegistration {
 /// Transform stores only a schema_name reference to avoid duplication.
 /// The full schema is stored in schemas_tree and looked up when needed.
 /// This saves ~50% storage for transform schemas (previously stored in both trees).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema, TS)]
-#[ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
+)]
 pub struct Transform {
     /// The name of the schema (stored in schemas_tree)
     pub schema_name: String,

@@ -2,21 +2,24 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+#[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
 
 use crate::schema::SchemaError;
 
 /// Represents the topology (structure) of a JSON field
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(feature = "ts-bindings", ts(export))]
 pub struct JsonTopology {
     /// Root structure definition
     pub root: TopologyNode,
 }
 
 /// Represents a node in the JSON topology tree
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(feature = "ts-bindings", ts(export))]
 #[serde(tag = "type")]
 pub enum TopologyNode {
     /// Primitive type with optional classifications (required for index schemas)
@@ -39,8 +42,9 @@ pub enum TopologyNode {
 }
 
 /// Primitive JSON value types
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(feature = "ts-bindings", ts(export))]
 pub enum PrimitiveValueType {
     String,
     Number,
