@@ -3,14 +3,24 @@ name = "datafold"
 version = "0.1.0"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
-description = "A distributed data platform with schema-based storage and AI-powered ingestion"
+description = "A personal database for data sovereignty"
 documentation = "https://docs.rs/datafold"
-homepage = "https://github.com/yourusername/datafold"
-repository = "https://github.com/yourusername/datafold"
+homepage = "https://datafold.ai"
+repository = "https://github.com/shiba4life/fold_db"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["database", "distributed", "schema", "ingestion", "ai"]
 categories = ["database", "data-structures", "network-programming"]
+exclude = [
+    "data/*",
+    "schema_registry/*",
+    "test_db/*",
+    "target/*",
+    "sample_data/*",
+    "*.log",
+    ".github/*",
+    ".roo/*",
+]
 
 [features]
 default = []
