@@ -11,6 +11,7 @@ import QueryTab from './components/tabs/QueryTab'
 import LlmQueryTab from './components/tabs/LlmQueryTab'
 import MutationTab from './components/tabs/MutationTab'
 import IngestionTab from './components/tabs/IngestionTab'
+import FileUploadTab from './components/tabs/FileUploadTab'
 import NativeIndexTab from './components/tabs/NativeIndexTab'
 import SettingsModal from './components/SettingsModal'
 import LogSidebar from './components/LogSidebar'
@@ -87,6 +88,8 @@ export function AppContent() {
         )
       case 'ingestion':
         return <IngestionTab onResult={handleOperationResult} />
+      case 'file-upload':
+        return <FileUploadTab onResult={handleOperationResult} />
       case 'native-index':
         return <NativeIndexTab onResult={handleOperationResult} />
       default:

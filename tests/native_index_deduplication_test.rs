@@ -179,7 +179,7 @@ fn test_deduplication_with_multiple_classifications_same_batch() {
     let word_entries: Vec<_> = word_results.iter()
         .filter(|r| r.key_value.hash.as_deref() == Some("record1") && r.field == "author")
         .collect();
-    assert!(word_entries.len() >= 1, "Should have word entry");
+    assert!(!word_entries.is_empty(), "Should have word entry");
     
     // Check username
     let username_entries: Vec<_> = username_results.iter()

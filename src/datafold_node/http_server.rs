@@ -219,6 +219,10 @@ impl DataFoldHttpServer {
                             web::post().to(ingestion_routes::process_json),
                         )
                         .route(
+                            "/ingestion/upload",
+                            web::post().to(crate::ingestion::file_upload::upload_file),
+                        )
+                        .route(
                             "/ingestion/status",
                             web::get().to(ingestion_routes::get_status),
                         )

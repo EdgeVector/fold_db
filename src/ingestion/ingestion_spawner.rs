@@ -1,0 +1,145 @@
+//! Background ingestion task spawner
+
+use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use crate::datafold_node::http_server::AppState;
+use crate::datafold_node::DataFoldNode;
+use crate::ingestion::config::IngestionConfig;
+use crate::ingestion::core::IngestionRequest;
+use crate::ingestion::progress::ProgressService;
+use crate::ingestion::simple_service::SimpleIngestionService;
+use crate::ingestion::IngestionError;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
+
+/// Configuration for spawning background ingestion
+pub struct IngestionSpawnConfig {
+    pub json_data: Value,
+    pub auto_execute: bool,
+    pub trust_distance: u32,
+    pub pub_key: String,
+}
+
+/// Spawn background ingestion task and return progress_id
+pub fn spawn_background_ingestion(
+    config: IngestionSpawnConfig,
+    state: &AppState,
+) -> String {
+    let progress_id = uuid::Uuid::new_v4().to_string();
+    
+    // Start progress tracking
+    let tracker = state.progress_tracker.clone();
+    let progress_service = ProgressService::new(tracker);
+    progress_service.start_progress(progress_id.clone());
+    
+    // Create ingestion request
+    let ingestion_request = IngestionRequest {
+        data: config.json_data,
+        auto_execute: Some(config.auto_execute),
+        trust_distance: Some(config.trust_distance),
+        pub_key: Some(config.pub_key),
+    };
+    
+    // Clone for the spawned task
+    let node = Arc::clone(&state.node);
+    let progress_id_clone = progress_id.clone();
+    
+    // Spawn the background task
+    tokio::spawn(async move {
+        if let Err(e) = run_background_ingestion(
+            ingestion_request,
+            node,
+            progress_service,
+            progress_id_clone,
+        ).await {
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Background ingestion setup failed: {}",
+                e
+            );
+        }
+    });
+    
+    progress_id
+}
+
+/// Run the actual ingestion process in background
+async fn run_background_ingestion(
+    ingestion_request: IngestionRequest,
+    node: Arc<Mutex<DataFoldNode>>,
+    progress_service: ProgressService,
+    progress_id: String,
+) -> Result<(), String> {
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Starting background ingestion for uploaded file with progress_id: {}",
+        progress_id
+    );
+    
+    // Create ingestion service
+    let service = create_simple_ingestion_service()
+        .await
+        .map_err(|e| {
+            let error_msg = format!("Ingestion service not available: {}", e);
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Failed to initialize ingestion service: {}",
+                e
+            );
+            progress_service.fail_progress(&progress_id, error_msg.clone());
+            error_msg
+        })?;
+    
+    // Process the ingestion
+    match service
+        .process_json_with_node_and_progress(
+            ingestion_request,
+            node,
+            &progress_service,
+            progress_id.clone(),
+        )
+        .await
+    {
+        Ok(response) => {
+            if response.success {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "File ingestion completed successfully: {}",
+                    progress_id
+                );
+            } else {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "File ingestion failed: {:?}",
+                    response.errors
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let error_msg = format!("Processing failed: {}", e);
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "File ingestion processing failed: {}",
+                e
+            );
+            progress_service.fail_progress(&progress_id, error_msg.clone());
+            Err(error_msg)
+        }
+    }
+}
+
+/// Create a simple ingestion service with potentially updated config
+async fn create_simple_ingestion_service() -> Result<SimpleIngestionService, IngestionError> {
+    let config = IngestionConfig::from_env()?;
+    SimpleIngestionService::new(config)
+}
+

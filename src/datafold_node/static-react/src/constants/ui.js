@@ -15,6 +15,7 @@ export const FORM_FIELD_DEBOUNCE_MS = 300;
 export const DEFAULT_TABS = [
   // Main features
   { id: 'ingestion', label: 'Ingestion', icon: '📥', group: 'main' },
+  { id: 'file-upload', label: 'File Upload', icon: '📄', group: 'main' },
   { id: 'llm-query', label: 'AI Query', icon: '🤖', group: 'main' },
   // Developer/Advanced features
   { id: 'schemas', label: 'Schemas', icon: '📊', group: 'advanced' },

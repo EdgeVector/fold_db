@@ -596,6 +596,25 @@ impl SimpleIngestionService {
             schema.field_topologies.len()
         );
 
+        // Ensure schema has a key configuration (add default if missing)
+        if schema.key.is_none() {
+            if let Some(fields) = &schema.fields {
+                if let Some(first_field) = fields.first() {
+                    // Use the first field as the hash key for simple schemas
+                    schema.key = Some(crate::schema::types::KeyConfig::new(
+                        Some(first_field.clone()),
+                        None, // No range field for simple Hash schemas
+                    ));
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Added default Hash key configuration using field '{}'",
+                        first_field
+                    );
+                }
+            }
+        }
+
         // Compute topology hash for the AI-generated topologies
         if !schema.field_topologies.is_empty() {
             schema.compute_schema_topology_hash();

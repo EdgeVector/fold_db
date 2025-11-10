@@ -180,7 +180,11 @@ impl MutationManager {
                 let mutation_id = mutation.uuid.clone();
                 let backfill_hash = mutation.backfill_hash.clone();
                 let key_config = schema.key.clone();
-                let key_value = KeyValue::from_mutation(&mutation.fields_and_values, key_config.as_ref().unwrap());
+                let key_value = KeyValue::from_mutation(&mutation.fields_and_values, key_config.as_ref()
+                    .ok_or_else(|| SchemaError::InvalidData(format!(
+                        "Schema '{}' has no key configuration. Cannot execute mutation.",
+                        schema_name
+                    )))?);
                 
                 // Validate all field values against their topologies before processing
                 let val_start = std::time::Instant::now();
