@@ -41,7 +41,7 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
             let records_map = records_from_field_map(&result_map);
             let data: Vec<Value> = records_map
                 .into_iter()
-                .map(|(key, record)| json!({"key": key, "fields": record.fields}))
+                .map(|(key, record)| json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
                 .collect();
             HttpResponse::Ok().json(data)
         },

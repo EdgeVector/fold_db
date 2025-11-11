@@ -31,7 +31,7 @@ impl TransformResult {
     /// Convert to a single Record by merging all records (for backward compatibility)
     pub fn to_single_record(&self) -> Record {
         if self.records.is_empty() {
-            return Record { fields: HashMap::new() };
+            return Record { fields: HashMap::new(), metadata: HashMap::new() };
         }
         
         if self.records.len() == 1 {
@@ -40,6 +40,7 @@ impl TransformResult {
 
         // Merge all records into a single record
         let mut merged_fields = HashMap::new();
+        let mut merged_metadata = HashMap::new();
         for (i, record) in self.records.iter().enumerate() {
             for (key, value) in &record.fields {
                 // Add index suffix to avoid field name conflicts
@@ -48,11 +49,16 @@ impl TransformResult {
                 } else {
                     key.clone()
                 };
-                merged_fields.insert(indexed_key, value.clone());
+                merged_fields.insert(indexed_key.clone(), value.clone());
+                
+                // Merge metadata with the same indexed key
+                if let Some(meta) = record.metadata.get(key) {
+                    merged_metadata.insert(indexed_key, meta.clone());
+                }
             }
         }
         
-        Record { fields: merged_fields }
+        Record { fields: merged_fields, metadata: merged_metadata }
     }
 }
 

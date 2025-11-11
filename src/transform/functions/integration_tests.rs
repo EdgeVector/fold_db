@@ -23,6 +23,7 @@ fn create_test_input() -> TypedInput {
         FieldValue {
             value: serde_json::Value::String("hello world test".to_string()),
             atom_uuid: "atom-1".to_string(),
+            source_file_name: None,
         }
     );
     input.insert("BlogPost.content".to_string(), blogpost_data);
@@ -40,6 +41,7 @@ fn create_numeric_input() -> TypedInput {
         FieldValue {
             value: serde_json::Value::Number(serde_json::Number::from(10)),
             atom_uuid: "atom-1".to_string(),
+            source_file_name: None,
         }
     );
     scores_data.insert(
@@ -47,6 +49,7 @@ fn create_numeric_input() -> TypedInput {
         FieldValue {
             value: serde_json::Value::Number(serde_json::Number::from(20)),
             atom_uuid: "atom-2".to_string(),
+            source_file_name: None,
         }
     );
     scores_data.insert(
@@ -54,6 +57,7 @@ fn create_numeric_input() -> TypedInput {
         FieldValue {
             value: serde_json::Value::Number(serde_json::Number::from(30)),
             atom_uuid: "atom-3".to_string(),
+            source_file_name: None,
         }
     );
     input.insert("Scores.values".to_string(), scores_data);
@@ -71,6 +75,7 @@ fn create_array_input() -> TypedInput {
         FieldValue {
             value: serde_json::Value::String("rust".to_string()),
             atom_uuid: "atom-1".to_string(),
+            source_file_name: None,
         }
     );
     tags_data.insert(
@@ -78,6 +83,7 @@ fn create_array_input() -> TypedInput {
         FieldValue {
             value: serde_json::Value::String("database".to_string()),
             atom_uuid: "atom-2".to_string(),
+            source_file_name: None,
         }
     );
     tags_data.insert(
@@ -85,6 +91,7 @@ fn create_array_input() -> TypedInput {
         FieldValue {
             value: serde_json::Value::String("transforms".to_string()),
             atom_uuid: "atom-3".to_string(),
+            source_file_name: None,
         }
     );
     input.insert("Scores.values".to_string(), tags_data);
@@ -226,6 +233,7 @@ fn test_engine_executes_iterator_functions() {
         FieldValue {
             value: serde_json::Value::String("hello world test".to_string()),
             atom_uuid: "atom-1".to_string(),
+            source_file_name: None,
         }
     );
     input.insert("BlogPost.content".to_string(), field_map);

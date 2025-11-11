@@ -49,7 +49,11 @@ pub fn fetch_atoms_for_matches(
             Ok(Some(atom)) => {
                 resolved_values.insert(
                     key,
-                    FieldValue { value: atom.content().clone(), atom_uuid: atom_uuid.clone() },
+                    FieldValue { 
+                        value: atom.content().clone(), 
+                        atom_uuid: atom_uuid.clone(),
+                        source_file_name: atom.source_file_name().cloned(),
+                    },
                 );
             }
             Ok(None) => {

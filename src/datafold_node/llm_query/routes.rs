@@ -314,7 +314,7 @@ pub async fn execute_query_plan(
             let records_map = records_from_field_map(&result_map);
             records_map
                 .into_iter()
-                .map(|(key, record)| json!({"key": key, "fields": record.fields}))
+                .map(|(key, record)| json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
                 .collect::<Vec<Value>>()
         }
         Err(e) => {
@@ -555,7 +555,7 @@ pub async fn chat(
                         let records_map = records_from_field_map(&result_map);
                         let new_results: Vec<Value> = records_map
                             .into_iter()
-                            .map(|(key, record)| json!({"key": key, "fields": record.fields}))
+                            .map(|(key, record)| json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
                             .collect();
 
                         if !new_results.is_empty() {
@@ -905,7 +905,7 @@ pub async fn run_query(
                 let records_map = records_from_field_map(&result_map);
                 results = records_map
                     .into_iter()
-                    .map(|(key, record)| json!({"key": key, "fields": record.fields}))
+                    .map(|(key, record)| json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
                     .collect();
 
                 if !results.is_empty() {
