@@ -27,7 +27,7 @@ fn convert_execution_result_to_records(execution_result: &datafold::transform::r
             };
             record_fields.insert(field_name, value);
         }
-        records.push(datafold::fold_db_core::query::formatter::Record { fields: record_fields });
+        records.push(datafold::fold_db_core::query::formatter::Record { fields: record_fields, metadata: HashMap::new() });
     }
     
     Ok(records)
@@ -94,8 +94,8 @@ fn execute_engine_and_convert_to_records() {
     // Helper to insert a field map
     let mut insert_field = |name: &str, v1: serde_json::Value, v2: serde_json::Value| {
         let mut m: HashMap<KV, FV> = HashMap::new();
-        m.insert(k1.clone(), FV { value: v1, atom_uuid: "a1".to_string() });
-        m.insert(k2.clone(), FV { value: v2, atom_uuid: "a2".to_string() });
+        m.insert(k1.clone(), FV { value: v1, atom_uuid: "a1".to_string(), source_file_name: None });
+        m.insert(k2.clone(), FV { value: v2, atom_uuid: "a2".to_string(), source_file_name: None });
         typed_input.insert(name.to_string(), m);
     };
 
