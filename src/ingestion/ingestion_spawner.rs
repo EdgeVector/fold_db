@@ -20,6 +20,7 @@ pub struct IngestionSpawnConfig {
     pub auto_execute: bool,
     pub trust_distance: u32,
     pub pub_key: String,
+    pub source_file_name: Option<String>,
 }
 
 /// Spawn background ingestion task and return progress_id
@@ -40,6 +41,7 @@ pub fn spawn_background_ingestion(
         auto_execute: Some(config.auto_execute),
         trust_distance: Some(config.trust_distance),
         pub_key: Some(config.pub_key),
+        source_file_name: config.source_file_name,
     };
     
     // Clone for the spawned task

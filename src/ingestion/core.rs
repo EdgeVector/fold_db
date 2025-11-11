@@ -41,6 +41,8 @@ pub struct IngestionRequest {
     pub trust_distance: Option<u32>,
     /// Public key for mutations
     pub pub_key: Option<String>,
+    /// Original source filename (for file uploads)
+    pub source_file_name: Option<String>,
 }
 
 impl IngestionCore {
@@ -146,6 +148,7 @@ impl IngestionCore {
             &mutation_mappers,
             request.trust_distance.unwrap_or(self.config.default_trust_distance),
             request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+            request.source_file_name.clone(),
         )?;
 
         // Step 6: Execute mutations if requested
@@ -701,6 +704,7 @@ impl IngestionCore {
         mutation_mappers: &HashMap<String, String>,
         trust_distance: u32,
         pub_key: String,
+        source_file_name: Option<String>,
     ) -> IngestionResult<Vec<Mutation>> {
         // Handle both single objects and arrays of objects
         if let Some(array) = json_data.as_array() {
@@ -739,6 +743,7 @@ impl IngestionCore {
                     mutation_mappers,
                     trust_distance,
                     pub_key.clone(),
+                    source_file_name.clone(),
                 )?;
 
                 all_mutations.extend(mutations);
@@ -766,6 +771,7 @@ impl IngestionCore {
                 mutation_mappers,
                 trust_distance,
                 pub_key,
+                source_file_name,
             )
         }
     }

@@ -22,6 +22,7 @@ pub struct Atom {
     uuid: String,
     source_schema_name: String,
     source_pub_key: String,
+    source_file_name: Option<String>,
     created_at: DateTime<Utc>,
     prev_atom_uuid: Option<String>,
     content: Value,
@@ -72,6 +73,7 @@ impl Atom {
             uuid,
             source_schema_name,
             source_pub_key,
+            source_file_name: None,
             created_at: Utc::now(),
             prev_atom_uuid: None,
             content,
@@ -83,6 +85,13 @@ impl Atom {
     #[must_use]
     pub fn with_prev_version(mut self, prev_atom_uuid: String) -> Self {
         self.prev_atom_uuid = Some(prev_atom_uuid);
+        self
+    }
+
+    /// Sets the source file name for atoms created from file uploads
+    #[must_use]
+    pub fn with_source_file_name(mut self, file_name: String) -> Self {
+        self.source_file_name = Some(file_name);
         self
     }
 
@@ -154,6 +163,14 @@ impl Atom {
     #[must_use]
     pub fn source_pub_key(&self) -> &str {
         &self.source_pub_key
+    }
+
+    /// Returns the original filename if this atom was created from a file upload.
+    ///
+    /// This is used for tracking data provenance and auditing purposes.
+    #[must_use]
+    pub fn source_file_name(&self) -> Option<&String> {
+        self.source_file_name.as_ref()
     }
 
     /// Returns the timestamp when this Atom was created.

@@ -95,8 +95,14 @@ impl DbOperations {
         schema_name: &str,
         pub_key: &str,
         value: Value,
+        source_file_name: Option<String>,
     ) -> Result<Atom, SchemaError> {
-        let new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+        let mut new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+
+        // Set source filename if provided
+        if let Some(filename) = source_file_name {
+            new_atom = new_atom.with_source_file_name(filename);
+        }
 
         // Check if atom with this content-based UUID already exists
         let atom_key = format!("atom:{}", new_atom.uuid());
@@ -118,8 +124,14 @@ impl DbOperations {
         schema_name: &str,
         pub_key: &str,
         value: Value,
+        source_file_name: Option<String>,
     ) -> Result<Atom, SchemaError> {
-        let new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+        let mut new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+
+        // Set source filename if provided
+        if let Some(filename) = source_file_name {
+            new_atom = new_atom.with_source_file_name(filename);
+        }
 
         // Check if atom with this content-based UUID already exists
         let atom_key = format!("atom:{}", new_atom.uuid());
@@ -210,8 +222,8 @@ impl DbOperations {
         schema_field.refresh_from_db(self);
 
         let index_value = value.clone();
-        // Create and store the atom
-        let new_atom = self.create_and_store_atom_for_mutation(schema_name, pub_key, value)?;
+        // Create and store the atom (no source_file_name in deprecated single-field path)
+        let new_atom = self.create_and_store_atom_for_mutation(schema_name, pub_key, value, None)?;
 
         // Write mutation to field (updates in-memory molecule)
         schema_field.write_mutation(key_value, new_atom, pub_key.to_string());

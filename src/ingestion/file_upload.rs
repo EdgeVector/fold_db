@@ -63,6 +63,7 @@ pub async fn upload_file(
         auto_execute: form_data.auto_execute,
         trust_distance: form_data.trust_distance,
         pub_key: form_data.pub_key,
+        source_file_name: Some(form_data.original_filename.clone()),
     };
 
     let progress_id = spawn_background_ingestion(spawn_config, &state);

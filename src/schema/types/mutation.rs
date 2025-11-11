@@ -16,6 +16,8 @@ pub struct Mutation {
     pub synchronous: Option<bool>,
     /// Optional backfill hash for tracking backfill completion
     pub backfill_hash: Option<String>,
+    /// Optional source filename for atoms created from file uploads
+    pub source_file_name: Option<String>,
 }
 
 impl Mutation {
@@ -38,12 +40,19 @@ impl Mutation {
             mutation_type,
             synchronous: None,
             backfill_hash: None,
+            source_file_name: None,
         }
     }
 
     #[must_use]
     pub fn with_backfill_hash(mut self, backfill_hash: String) -> Self {
         self.backfill_hash = Some(backfill_hash);
+        self
+    }
+
+    #[must_use]
+    pub fn with_source_file_name(mut self, file_name: String) -> Self {
+        self.source_file_name = Some(file_name);
         self
     }
 }

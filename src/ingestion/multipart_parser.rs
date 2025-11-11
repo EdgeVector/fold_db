@@ -13,6 +13,7 @@ use crate::logging::features::LogFeature;
 #[derive(Debug)]
 pub struct UploadFormData {
     pub file_path: PathBuf,
+    pub original_filename: String,
     pub auto_execute: bool,
     pub trust_distance: u32,
     pub pub_key: String,
@@ -21,6 +22,7 @@ pub struct UploadFormData {
 /// Extract and parse multipart form data
 pub async fn parse_multipart(mut payload: Multipart) -> Result<UploadFormData, HttpResponse> {
     let mut file_path: Option<PathBuf> = None;
+    let mut original_filename: Option<String> = None;
     let mut auto_execute = true;
     let mut trust_distance = 0;
     let mut pub_key = "default".to_string();
@@ -46,7 +48,9 @@ pub async fn parse_multipart(mut payload: Multipart) -> Result<UploadFormData, H
 
         match field_name.as_deref() {
             Some("file") => {
-                file_path = Some(save_uploaded_file(field).await?);
+                let (path, filename) = save_uploaded_file(field).await?;
+                file_path = Some(path);
+                original_filename = Some(filename);
             }
             Some("autoExecute") => {
                 auto_execute = parse_field_as_bool(&mut field).await.unwrap_or(true);
@@ -72,8 +76,11 @@ pub async fn parse_multipart(mut payload: Multipart) -> Result<UploadFormData, H
         }
     };
 
+    let original_filename = original_filename.unwrap_or_else(|| "unknown".to_string());
+
     Ok(UploadFormData {
         file_path,
+        original_filename,
         auto_execute,
         trust_distance,
         pub_key,
@@ -81,16 +88,18 @@ pub async fn parse_multipart(mut payload: Multipart) -> Result<UploadFormData, H
 }
 
 /// Save uploaded file from multipart field
+/// Returns (file_path, original_filename)
 async fn save_uploaded_file(
     mut field: actix_multipart::Field,
-) -> Result<PathBuf, HttpResponse> {
+) -> Result<(PathBuf, String), HttpResponse> {
     use std::io::Write;
     use tokio::fs;
 
     let filename = field
         .content_disposition()
         .get_filename()
-        .unwrap_or("uploaded_file");
+        .unwrap_or("uploaded_file")
+        .to_string();
 
     // Create uploads directory if it doesn't exist
     let uploads_dir = PathBuf::from("data/uploads");
@@ -108,7 +117,7 @@ async fn save_uploaded_file(
     }
 
     // Generate unique filename
-    let unique_filename = format!("{}_{}", uuid::Uuid::new_v4(), filename);
+    let unique_filename = format!("{}_{}", uuid::Uuid::new_v4(), &filename);
     let filepath = uploads_dir.join(&unique_filename);
 
     // Save file to disk
@@ -167,7 +176,7 @@ async fn save_uploaded_file(
         filepath
     );
 
-    Ok(filepath)
+    Ok((filepath, filename))
 }
 
 /// Parse multipart field as boolean

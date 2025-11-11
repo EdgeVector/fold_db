@@ -18,6 +18,7 @@ impl MutationGenerator {
     }
 
     /// Generate mutations from JSON data and mutation mappers
+    #[allow(clippy::too_many_arguments)]
     pub fn generate_mutations(
         &self,
         schema_name: &str,
@@ -26,6 +27,7 @@ impl MutationGenerator {
         mutation_mappers: &HashMap<String, String>,
         trust_distance: u32,
         pub_key: String,
+        source_file_name: Option<String>,
     ) -> IngestionResult<Vec<Mutation>> {
         log_feature!(
             LogFeature::Ingestion,
@@ -96,7 +98,7 @@ impl MutationGenerator {
                 keys_and_values.get("range_field").cloned(),
             );
             
-            let mutation = Mutation::new(
+            let mut mutation = Mutation::new(
                 schema_name.to_string(),
                 mapped_fields,
                 key_value,
@@ -104,6 +106,11 @@ impl MutationGenerator {
                 trust_distance,
                 MutationType::Create,
             );
+            
+            if let Some(filename) = source_file_name {
+                mutation = mutation.with_source_file_name(filename);
+            }
+            
             mutations.push(mutation);
             log_feature!(
                 LogFeature::Ingestion,
@@ -164,6 +171,7 @@ mod tests {
                 &mappers,
                 0,
                 "test-key".to_string(),
+                None,
             )
             .unwrap();
 

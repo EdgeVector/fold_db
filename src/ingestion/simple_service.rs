@@ -170,6 +170,7 @@ impl SimpleIngestionService {
                         .pub_key
                         .clone()
                         .unwrap_or_else(|| "default".to_string()),
+                    request.source_file_name.clone(),
                 )?;
 
                 all_mutations.extend(mutations);
@@ -204,7 +205,8 @@ impl SimpleIngestionService {
                 request
                     .trust_distance
                     .unwrap_or(self.config.default_trust_distance),
-                request.pub_key.unwrap_or_else(|| "default".to_string()),
+                request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+                request.source_file_name.clone(),
             )?
         };
 
@@ -327,6 +329,7 @@ impl SimpleIngestionService {
                         .pub_key
                         .clone()
                         .unwrap_or_else(|| "default".to_string()),
+                    request.source_file_name.clone(),
                 )?;
 
                 all_mutations.extend(mutations);
@@ -349,7 +352,8 @@ impl SimpleIngestionService {
                 request
                     .trust_distance
                     .unwrap_or(self.config.default_trust_distance),
-                request.pub_key.unwrap_or_else(|| "default".to_string()),
+                request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+                request.source_file_name.clone(),
             )?
         };
 
