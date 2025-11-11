@@ -26,6 +26,7 @@ pub enum FieldVariant {
 pub struct FieldValue {
     pub value: JsonValue,
     pub atom_uuid: String,
+    pub source_file_name: Option<String>,
 }
 
 // Macro to reduce boilerplate for Field trait implementation

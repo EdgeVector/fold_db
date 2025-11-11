@@ -206,7 +206,7 @@ fn convert_execution_result_to_records(execution_result: &ExecutionResult) -> Re
             };
             record_fields.insert(field_name, value);
         }
-        records.push(Record { fields: record_fields });
+        records.push(Record { fields: record_fields, metadata: HashMap::new() });
     }
     
     Ok(records)

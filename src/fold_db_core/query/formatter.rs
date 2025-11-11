@@ -36,11 +36,20 @@ pub fn format_hash_range_fields(
     Value::Object(top)
 }
 
+/// Metadata associated with a field value
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct FieldMetadata {
+    pub atom_uuid: String,
+    pub source_file_name: Option<String>,
+}
+
 /// Represents a single logical record keyed by `KeyValue`.
-/// The `fields` map stores field_name -> value. Atom metadata is omitted here.
+/// The `fields` map stores field_name -> value.
+/// The `metadata` map stores field_name -> atom metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Record {
     pub fields: HashMap<String, Value>,
+    pub metadata: HashMap<String, FieldMetadata>,
 }
 
 /// Represents a query result record with its key and fields
@@ -56,17 +65,30 @@ pub fn records_from_field_map(
     results: &HashMap<String, HashMap<KeyValue, FieldValue>>,
 ) -> HashMap<KeyValue, Record> {
     let mut by_key: HashMap<KeyValue, HashMap<String, Value>> = HashMap::new();
+    let mut metadata_by_key: HashMap<KeyValue, HashMap<String, FieldMetadata>> = HashMap::new();
 
     for (field_name, key_map) in results.iter() {
         for (key_value, field_val) in key_map.iter() {
             let entry = by_key.entry(key_value.clone()).or_default();
             entry.insert(field_name.clone(), field_val.value.clone());
+            
+            let metadata_entry = metadata_by_key.entry(key_value.clone()).or_default();
+            metadata_entry.insert(
+                field_name.clone(),
+                FieldMetadata {
+                    atom_uuid: field_val.atom_uuid.clone(),
+                    source_file_name: field_val.source_file_name.clone(),
+                },
+            );
         }
     }
 
     by_key
         .into_iter()
-        .map(|(k, fields)| (k, Record { fields }))
+        .map(|(k, fields)| {
+            let metadata = metadata_by_key.get(&k).cloned().unwrap_or_default();
+            (k, Record { fields, metadata })
+        })
         .collect()
 }
 
@@ -82,11 +104,11 @@ mod tests {
         let key2 = KeyValue::new(Some("h2".to_string()), None);
 
         let mut f1_map = HashMap::new();
-        f1_map.insert(key1.clone(), FieldValue { value: Value::from(1), atom_uuid: "a1".to_string() });
-        f1_map.insert(key2.clone(), FieldValue { value: Value::from(2), atom_uuid: "a2".to_string() });
+        f1_map.insert(key1.clone(), FieldValue { value: Value::from(1), atom_uuid: "a1".to_string(), source_file_name: None });
+        f1_map.insert(key2.clone(), FieldValue { value: Value::from(2), atom_uuid: "a2".to_string(), source_file_name: None });
 
         let mut f2_map = HashMap::new();
-        f2_map.insert(key1.clone(), FieldValue { value: Value::from("x"), atom_uuid: "b1".to_string() });
+        f2_map.insert(key1.clone(), FieldValue { value: Value::from("x"), atom_uuid: "b1".to_string(), source_file_name: None });
 
         results.insert("f1".to_string(), f1_map);
         results.insert("f2".to_string(), f2_map);
@@ -100,6 +122,114 @@ mod tests {
         let rec2 = records.get(&key2).expect("record for key2");
         assert_eq!(rec2.fields.get("f1").cloned().unwrap(), Value::from(2));
         assert!(!rec2.fields.contains_key("f2"));
+    }
+
+    #[test]
+    fn records_include_metadata() {
+        let mut results: HashMap<String, HashMap<KeyValue, FieldValue>> = HashMap::new();
+
+        let key1 = KeyValue::new(Some("user1".to_string()), Some("post1".to_string()));
+
+        let mut f1_map = HashMap::new();
+        f1_map.insert(
+            key1.clone(), 
+            FieldValue { 
+                value: Value::from("Hello World"), 
+                atom_uuid: "atom-123".to_string(), 
+                source_file_name: Some("tweets.json".to_string()),
+            }
+        );
+
+        let mut f2_map = HashMap::new();
+        f2_map.insert(
+            key1.clone(), 
+            FieldValue { 
+                value: Value::from(42), 
+                atom_uuid: "atom-456".to_string(), 
+                source_file_name: None,
+            }
+        );
+
+        results.insert("content".to_string(), f1_map);
+        results.insert("likes".to_string(), f2_map);
+
+        let records = records_from_field_map(&results);
+
+        let rec1 = records.get(&key1).expect("record for key1");
+        
+        // Check fields
+        assert_eq!(rec1.fields.get("content").cloned().unwrap(), Value::from("Hello World"));
+        assert_eq!(rec1.fields.get("likes").cloned().unwrap(), Value::from(42));
+        
+        // Check metadata for content field
+        let content_meta = rec1.metadata.get("content").expect("content metadata");
+        assert_eq!(content_meta.atom_uuid, "atom-123");
+        assert_eq!(content_meta.source_file_name, Some("tweets.json".to_string()));
+        
+        // Check metadata for likes field
+        let likes_meta = rec1.metadata.get("likes").expect("likes metadata");
+        assert_eq!(likes_meta.atom_uuid, "atom-456");
+        assert_eq!(likes_meta.source_file_name, None);
+    }
+
+    #[test]
+    fn metadata_preserved_for_multiple_keys() {
+        let mut results: HashMap<String, HashMap<KeyValue, FieldValue>> = HashMap::new();
+
+        let key1 = KeyValue::new(Some("user1".to_string()), Some("post1".to_string()));
+        let key2 = KeyValue::new(Some("user2".to_string()), Some("post2".to_string()));
+
+        let mut field_map = HashMap::new();
+        field_map.insert(
+            key1.clone(), 
+            FieldValue { 
+                value: Value::from("First post"), 
+                atom_uuid: "atom-1".to_string(), 
+                source_file_name: Some("file1.json".to_string()),
+            }
+        );
+        field_map.insert(
+            key2.clone(), 
+            FieldValue { 
+                value: Value::from("Second post"), 
+                atom_uuid: "atom-2".to_string(), 
+                source_file_name: Some("file2.json".to_string()),
+            }
+        );
+
+        results.insert("content".to_string(), field_map);
+
+        let records = records_from_field_map(&results);
+
+        // Verify key1 metadata
+        let rec1 = records.get(&key1).expect("record for key1");
+        let meta1 = rec1.metadata.get("content").expect("content metadata for key1");
+        assert_eq!(meta1.atom_uuid, "atom-1");
+        assert_eq!(meta1.source_file_name, Some("file1.json".to_string()));
+        
+        // Verify key2 metadata
+        let rec2 = records.get(&key2).expect("record for key2");
+        let meta2 = rec2.metadata.get("content").expect("content metadata for key2");
+        assert_eq!(meta2.atom_uuid, "atom-2");
+        assert_eq!(meta2.source_file_name, Some("file2.json".to_string()));
+    }
+
+    #[test]
+    fn field_metadata_is_serializable() {
+        let metadata = FieldMetadata {
+            atom_uuid: "test-atom".to_string(),
+            source_file_name: Some("test.json".to_string()),
+        };
+        
+        // Test serialization
+        let json = serde_json::to_string(&metadata).expect("should serialize");
+        assert!(json.contains("test-atom"));
+        assert!(json.contains("test.json"));
+        
+        // Test deserialization
+        let deserialized: FieldMetadata = serde_json::from_str(&json).expect("should deserialize");
+        assert_eq!(deserialized.atom_uuid, "test-atom");
+        assert_eq!(deserialized.source_file_name, Some("test.json".to_string()));
     }
 }
 

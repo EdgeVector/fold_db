@@ -16,7 +16,7 @@ mod typed_engine_tests {
     fn test_passthrough_emits_atom_uuid() {
         let mut input: TypedInput = HashMap::new();
         let mut field_map: HashMap<KeyValue, FieldValue> = HashMap::new();
-        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("hello world"), atom_uuid: "atom-1".to_string() });
+        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("hello world"), atom_uuid: "atom-1".to_string(), source_file_name: None });
         input.insert("BlogPost.content".to_string(), field_map);
 
         let engine = TypedEngine::new();
@@ -32,7 +32,7 @@ mod typed_engine_tests {
     fn test_word_split_emits_words_with_atom_uuid() {
         let mut input: TypedInput = HashMap::new();
         let mut field_map: HashMap<KeyValue, FieldValue> = HashMap::new();
-        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("alpha beta gamma"), atom_uuid: "atom-2".to_string() });
+        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("alpha beta gamma"), atom_uuid: "atom-2".to_string(), source_file_name: None });
         input.insert("BlogPost.content".to_string(), field_map);
 
         let engine = TypedEngine::new();
@@ -60,9 +60,9 @@ mod typed_engine_tests {
     fn test_count_reducer_execution() {
         let mut input: TypedInput = HashMap::new();
         let mut field_map: HashMap<KeyValue, FieldValue> = HashMap::new();
-        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("one"), atom_uuid: "atom-1".to_string() });
-        field_map.insert(kv("h1", "r2"), FieldValue { value: serde_json::json!("two"), atom_uuid: "atom-2".to_string() });
-        field_map.insert(kv("h1", "r3"), FieldValue { value: serde_json::json!("three"), atom_uuid: "atom-3".to_string() });
+        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("one"), atom_uuid: "atom-1".to_string(), source_file_name: None });
+        field_map.insert(kv("h1", "r2"), FieldValue { value: serde_json::json!("two"), atom_uuid: "atom-2".to_string(), source_file_name: None });
+        field_map.insert(kv("h1", "r3"), FieldValue { value: serde_json::json!("three"), atom_uuid: "atom-3".to_string(), source_file_name: None });
         input.insert("BlogPost.content".to_string(), field_map);
 
         let engine = TypedEngine::new();
@@ -86,8 +86,8 @@ mod typed_engine_tests {
     fn test_join_reducer_execution() {
         let mut input: TypedInput = HashMap::new();
         let mut field_map: HashMap<KeyValue, FieldValue> = HashMap::new();
-        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("hello"), atom_uuid: "atom-1".to_string() });
-        field_map.insert(kv("h1", "r2"), FieldValue { value: serde_json::json!("world"), atom_uuid: "atom-2".to_string() });
+        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("hello"), atom_uuid: "atom-1".to_string(), source_file_name: None });
+        field_map.insert(kv("h1", "r2"), FieldValue { value: serde_json::json!("world"), atom_uuid: "atom-2".to_string(), source_file_name: None });
         input.insert("BlogPost.content".to_string(), field_map);
 
         let engine = TypedEngine::new();
@@ -113,7 +113,7 @@ mod typed_engine_tests {
     fn test_iterator_then_reducer_chain() {
         let mut input: TypedInput = HashMap::new();
         let mut field_map: HashMap<KeyValue, FieldValue> = HashMap::new();
-        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("alpha beta gamma"), atom_uuid: "atom-1".to_string() });
+        field_map.insert(kv("h1", "r1"), FieldValue { value: serde_json::json!("alpha beta gamma"), atom_uuid: "atom-1".to_string(), source_file_name: None });
         input.insert("BlogPost.content".to_string(), field_map);
 
         let engine = TypedEngine::new();
