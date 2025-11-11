@@ -429,13 +429,6 @@ mod persistence_tests {
         let retrieved = verifier2.get_system_public_key().unwrap();
         assert!(retrieved.is_none());
     }
-
-    #[test]
-    #[ignore] // This test is flaky depending on timing.
-    fn test_graceful_database_failure() {
-        // This test is difficult to implement reliably without more extensive mocking
-        // or a way to simulate database disconnection. We'll ignore it for now.
-    }
 }
 
 #[cfg(test)]
