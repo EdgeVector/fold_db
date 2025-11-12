@@ -37,6 +37,7 @@ pub mod logging;
 pub mod schema;
 pub mod schema_service;
 pub mod security;
+pub mod storage;
 pub mod testing_utils;
 pub mod transform;
 pub mod web_logger;
@@ -65,6 +66,9 @@ pub use security::{
 
 // Re-export ingestion types
 pub use ingestion::{IngestionConfig, IngestionCore, IngestionError, IngestionResponse};
+
+// Re-export storage types
+pub use storage::{S3Config, S3SyncedStorage, StorageConfig, StorageError};
 
 // Re-export commonly used constants
 pub use constants::{DEFAULT_HTTP_PORT, DEFAULT_P2P_PORT};

@@ -14,6 +14,7 @@ A Rust-based distributed data platform with schema-based storage, AI-powered ing
 - **📊 Flexible Schema System** - Dynamic schema management with validation [working]
 - **🔐 Permission Management** - Fine-grained access control and trust-based permissions [working]
 - **⚡ High Performance** - Rust-based core with optimized storage and query execution [maybe]
+- **☁️ Serverless Ready** - S3-backed storage for AWS Lambda and serverless deployments [working]
 - **🔌 Extensible Ingestion** - Plugin system for social media and external data sources [not yet begun]
 
 ## 🚀 Quick Start
@@ -287,6 +288,45 @@ npm run dev
 
 The UI will be available at `http://localhost:5173`.
 
+## ☁️ Serverless Deployment (S3 Storage)
+
+DataFold can run in serverless environments like AWS Lambda using S3-backed storage:
+
+```rust
+use datafold::{FoldDB, S3Config};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Configure S3 storage
+    let config = S3Config::new(
+        "my-folddb-bucket".to_string(),
+        "us-west-2".to_string(),
+        "production".to_string(),
+    );
+    
+    // Database automatically downloads from S3 on startup
+    let db = FoldDB::new_with_s3(config).await?;
+    
+    // Use normally - all operations are local
+    // ... queries, mutations, transforms ...
+    
+    // Sync back to S3
+    db.flush_to_s3().await?;
+    
+    Ok(())
+}
+```
+
+**Environment variable configuration:**
+
+```bash
+export DATAFOLD_STORAGE_MODE=s3
+export DATAFOLD_S3_BUCKET=my-folddb-bucket
+export DATAFOLD_S3_REGION=us-west-2
+```
+
+See [S3 Configuration Guide](docs/S3_CONFIGURATION.md) for complete setup instructions, AWS Lambda deployment, and cost optimization.
+
 ## 📊 Examples
 
 ### Loading Sample Data
@@ -348,6 +388,7 @@ registered. This keeps authentication intact across restarts. See
 - **[API Documentation](https://docs.rs/datafold)** - Complete API reference
 - **[CLI Guide](README_CLI.md)** - Command-line interface usage
 - **[Ingestion Guide](INGESTION_README.md)** - AI-powered data ingestion
+- **[S3 Storage Guide](docs/S3_CONFIGURATION.md)** - Serverless deployment with S3
 - **[Architecture](docs/Unified_Architecture.md)** - System design and patterns
 
 ## 🤝 Contributing

@@ -74,6 +74,10 @@ reqwest = { version = "0.11", features = ["json", "multipart"] }
 # File to JSON conversion
 file_to_json = "0.1.4"
 
+# AWS SDK for S3 storage
+aws-config = "1.0"
+aws-sdk-s3 = "1.0"
+
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "full"] }
 reqwest = { version = "0.11", features = ["json"] }
