@@ -158,21 +158,24 @@ async fn save_uploaded_file(
     let unique_filename = format!("{}_{}", short_hash, &filename);
     let filepath = uploads_dir.join(&unique_filename);
 
-    // Check if file already exists
-    if filepath.exists() {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "File already exists (duplicate upload): {} at {:?}",
-            unique_filename,
-            filepath
-        );
-        return Ok((filepath, unique_filename, true));
-    }
-
-    // Save file to disk
-    let mut f = match std::fs::File::create(&filepath) {
+    // Atomically create file only if it doesn't exist (prevents race condition)
+    let mut f = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&filepath)
+    {
         Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            // File already exists (duplicate upload detected atomically)
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "File already exists (duplicate upload): {} at {:?}",
+                unique_filename,
+                filepath
+            );
+            return Ok((filepath, unique_filename, true));
+        }
         Err(e) => {
             log_feature!(
                 LogFeature::Ingestion,
