@@ -243,9 +243,26 @@ pub enum UploadStorage {
 
 **Methods:**
 - `save_file(filename, data)` - Save file to storage
+- `save_file_if_not_exists(filename, data)` - Atomically save file only if it doesn't exist (prevents race conditions)
 - `read_file(filename)` - Read file from storage
 - `file_exists(filename)` - Check if file exists
 - `get_display_path(filename)` - Get display path for logging
+
+### Atomic Duplicate Detection
+
+The storage abstraction provides **race-free duplicate detection** through the `save_file_if_not_exists` method:
+
+**Local Storage:**
+- Uses `OpenOptions::create_new(true)` for atomic file creation
+- Fails with `AlreadyExists` error if file already exists
+- Prevents race condition between check and create
+
+**S3 Storage:**
+- Uses conditional PUT with `if-none-match: *` header
+- Only creates object if it doesn't already exist
+- Returns `PreconditionFailed` (412) if object exists
+
+This ensures that concurrent uploads of the same file are detected atomically, preventing duplicate ingestion even under high concurrency.
 
 ### Processing Optimization
 

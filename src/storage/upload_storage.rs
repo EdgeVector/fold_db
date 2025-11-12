@@ -104,6 +104,84 @@ impl UploadStorage {
         }
     }
 
+    /// Atomically save a file only if it doesn't already exist.
+    /// Returns (PathBuf, bool) where:
+    /// - PathBuf is the path/key where the file was (or would be) saved
+    /// - bool is true if file already existed (duplicate), false if newly created
+    pub async fn save_file_if_not_exists(&self, filename: &str, data: &[u8]) -> StorageResult<(PathBuf, bool)> {
+        match self {
+            Self::Local { path } => {
+                // Ensure directory exists
+                fs::create_dir_all(path).await?;
+                
+                let filepath = path.join(filename);
+                
+                // Atomically create file only if it doesn't exist (prevents race condition)
+                match tokio::task::spawn_blocking({
+                    let filepath = filepath.clone();
+                    let data = data.to_vec();
+                    move || {
+                        use std::io::Write;
+                        std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&filepath)
+                            .and_then(|mut f| f.write_all(&data))
+                    }
+                }).await {
+                    Ok(Ok(())) => {
+                        // File created successfully (new file)
+                        Ok((filepath, false))
+                    }
+                    Ok(Err(e)) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                        // File already exists (duplicate upload detected atomically)
+                        Ok((filepath, true))
+                    }
+                    Ok(Err(e)) => {
+                        Err(StorageError::UploadFailed(format!("Failed to write file: {}", e)))
+                    }
+                    Err(e) => {
+                        Err(StorageError::UploadFailed(format!("Task join error: {}", e)))
+                    }
+                }
+            }
+            Self::S3 { bucket, prefix, client } => {
+                let key = if prefix.is_empty() {
+                    filename.to_string()
+                } else {
+                    format!("{}/{}", prefix, filename)
+                };
+                
+                // Use conditional PUT with if-none-match: * to only create if doesn't exist
+                let result = client
+                    .put_object()
+                    .bucket(bucket)
+                    .key(&key)
+                    .body(data.to_vec().into())
+                    .if_none_match("*")
+                    .send()
+                    .await;
+                
+                match result {
+                    Ok(_) => {
+                        // File created successfully (new file)
+                        Ok((PathBuf::from(key), false))
+                    }
+                    Err(e) => {
+                        let error_msg = format!("{}", e);
+                        // S3 returns PreconditionFailed when if-none-match fails (file exists)
+                        if error_msg.contains("PreconditionFailed") || error_msg.contains("412") {
+                            // File already exists (duplicate upload detected atomically)
+                            Ok((PathBuf::from(key), true))
+                        } else {
+                            Err(StorageError::UploadFailed(format!("Failed to upload to S3: {}", e)))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Check if a file exists in storage
     pub async fn file_exists(&self, filename: &str) -> StorageResult<bool> {
         match self {
@@ -190,6 +268,64 @@ mod tests {
         assert_eq!(local.get_display_path("test.txt"), "/tmp/uploads/test.txt");
         assert!(local.is_local());
         assert!(!local.is_s3());
+    }
+
+    #[tokio::test]
+    async fn test_atomic_save_prevents_race_condition() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = UploadStorage::local(temp_dir.path().to_path_buf());
+
+        let data = b"test file content";
+        let filename = "race_test.txt";
+
+        // First save should succeed and return false (not duplicate)
+        let (path1, exists1) = storage.save_file_if_not_exists(filename, data).await.unwrap();
+        assert!(!exists1, "First save should not be a duplicate");
+        assert!(path1.exists());
+
+        // Second save should detect duplicate and return true
+        let (path2, exists2) = storage.save_file_if_not_exists(filename, data).await.unwrap();
+        assert!(exists2, "Second save should be detected as duplicate");
+        assert_eq!(path1, path2);
+
+        // File should only contain one copy of the data
+        let file_data = std::fs::read(&path1).unwrap();
+        assert_eq!(file_data, data);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_save_race_protection() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = UploadStorage::local(temp_dir.path().to_path_buf());
+
+        let data = b"concurrent test data";
+        let filename = "concurrent_test.txt";
+
+        // Simulate concurrent uploads
+        let storage1 = storage.clone();
+        let storage2 = storage.clone();
+        
+        let handle1 = tokio::spawn(async move {
+            storage1.save_file_if_not_exists(filename, data).await
+        });
+        
+        let handle2 = tokio::spawn(async move {
+            storage2.save_file_if_not_exists(filename, data).await
+        });
+
+        let result1 = handle1.await.unwrap().unwrap();
+        let result2 = handle2.await.unwrap().unwrap();
+
+        // Exactly one should be new (false), one should be duplicate (true)
+        let new_count = [result1.1, result2.1].iter().filter(|&&x| !x).count();
+        let dup_count = [result1.1, result2.1].iter().filter(|&&x| x).count();
+        
+        assert_eq!(new_count, 1, "Exactly one save should succeed as new");
+        assert_eq!(dup_count, 1, "Exactly one save should be detected as duplicate");
+
+        // File should only contain one copy of the data
+        let file_data = std::fs::read(&result1.0).unwrap();
+        assert_eq!(file_data, data);
     }
 }
 
