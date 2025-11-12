@@ -186,8 +186,12 @@ pub fn add_file_location(json: Value, file_path: &std::path::Path) -> Value {
 /// Save JSON to a temporary file that persists for testing
 /// Returns the path to the temporary file
 pub fn save_json_to_temp_file(json: &Value) -> std::io::Result<String> {
+    // Create temp directory in system temp location (works in Lambda and locally)
+    let temp_dir = std::env::temp_dir().join("folddb_debug");
+    std::fs::create_dir_all(&temp_dir)?;
+    
     // Create a named temporary file with .json extension
-    let temp_file = NamedTempFile::new_in("data/uploads")?;
+    let temp_file = NamedTempFile::new_in(&temp_dir)?;
     
     // Write the JSON with pretty formatting
     let json_string = serde_json::to_string_pretty(json)?;

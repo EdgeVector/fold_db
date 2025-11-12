@@ -5,9 +5,11 @@ use actix_web::HttpResponse;
 use futures_util::StreamExt;
 use serde_json::json;
 use std::path::PathBuf;
+use tokio::fs;
 
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::storage::UploadStorage;
 
 /// Data extracted from multipart upload form
 #[derive(Debug)]
@@ -24,7 +26,10 @@ pub struct UploadFormData {
 }
 
 /// Extract and parse multipart form data
-pub async fn parse_multipart(mut payload: Multipart) -> Result<UploadFormData, HttpResponse> {
+pub async fn parse_multipart(
+    mut payload: Multipart,
+    upload_storage: &UploadStorage,
+) -> Result<UploadFormData, HttpResponse> {
     let mut file_path: Option<PathBuf> = None;
     let mut original_filename: Option<String> = None;
     let mut already_exists = false;
@@ -53,7 +58,7 @@ pub async fn parse_multipart(mut payload: Multipart) -> Result<UploadFormData, H
 
         match field_name.as_deref() {
             Some("file") => {
-                let (path, filename, exists) = save_uploaded_file(field).await?;
+                let (path, filename, exists) = save_uploaded_file(field, upload_storage).await?;
                 file_path = Some(path);
                 original_filename = Some(filename);
                 already_exists = exists;
@@ -100,31 +105,15 @@ pub async fn parse_multipart(mut payload: Multipart) -> Result<UploadFormData, H
 /// - already_exists is true if this exact file was already uploaded
 async fn save_uploaded_file(
     mut field: actix_multipart::Field,
+    upload_storage: &UploadStorage,
 ) -> Result<(PathBuf, String, bool), HttpResponse> {
     use sha2::{Sha256, Digest};
-    use std::io::Write;
-    use tokio::fs;
 
     let filename = field
         .content_disposition()
         .get_filename()
         .unwrap_or("uploaded_file")
         .to_string();
-
-    // Create uploads directory if it doesn't exist
-    let uploads_dir = PathBuf::from("data/uploads");
-    if let Err(e) = fs::create_dir_all(&uploads_dir).await {
-        log_feature!(
-            LogFeature::Ingestion,
-            error,
-            "Failed to create uploads directory: {}",
-            e
-        );
-        return Err(HttpResponse::InternalServerError().json(json!({
-            "success": false,
-            "error": format!("Failed to create uploads directory: {}", e)
-        })));
-    }
 
     // Read file contents and compute hash simultaneously
     let mut hasher = Sha256::new();
@@ -156,93 +145,147 @@ async fn save_uploaded_file(
     let hash_hex = format!("{:x}", hash_result);
     let short_hash = &hash_hex[..16]; // First 16 characters provides plenty of uniqueness
     let unique_filename = format!("{}_{}", short_hash, &filename);
-    let filepath = uploads_dir.join(&unique_filename);
 
-    // Atomically create file only if it doesn't exist (prevents race condition)
-    let mut f = match std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&filepath)
-    {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            // File already exists (duplicate upload detected atomically)
+    // Check if file already exists using storage abstraction
+    match upload_storage.file_exists(&unique_filename).await {
+        Ok(true) => {
+            // File already exists (duplicate upload detected)
+            let filepath = match upload_storage {
+                UploadStorage::Local { path } => {
+                    // File is already on local disk, return permanent path
+                    path.join(&unique_filename)
+                }
+                UploadStorage::S3 { .. } => {
+                    // File is in S3, need to save to /tmp for processing
+                    let temp_path = std::env::temp_dir().join(&unique_filename);
+                    if let Err(e) = fs::write(&temp_path, &file_data).await {
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            error,
+                            "Failed to write temp file for duplicate: {}",
+                            e
+                        );
+                        return Err(HttpResponse::InternalServerError().json(json!({
+                            "success": false,
+                            "error": format!("Failed to write temp file: {}", e)
+                        })));
+                    }
+                    temp_path
+                }
+            };
+            
             log_feature!(
                 LogFeature::Ingestion,
                 info,
-                "File already exists (duplicate upload): {} at {:?}",
+                "File already exists (duplicate upload): {} at {}",
                 unique_filename,
-                filepath
+                upload_storage.get_display_path(&unique_filename)
             );
             return Ok((filepath, unique_filename, true));
+        }
+        Ok(false) => {
+            // File doesn't exist, proceed to save
         }
         Err(e) => {
             log_feature!(
                 LogFeature::Ingestion,
                 error,
-                "Failed to create file: {}",
+                "Failed to check file existence: {}",
                 e
             );
             return Err(HttpResponse::InternalServerError().json(json!({
                 "success": false,
-                "error": format!("Failed to create file: {}", e)
+                "error": format!("Failed to check file existence: {}", e)
             })));
         }
+    }
+
+    // Save file to permanent storage and determine processing path
+    let filepath = match upload_storage {
+        UploadStorage::Local { .. } => {
+            // For local storage: save once and use that path for processing
+            match upload_storage.save_file(&unique_filename, &file_data).await {
+                Ok(path) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "File saved to local storage: {} at {}",
+                        unique_filename,
+                        upload_storage.get_display_path(&unique_filename)
+                    );
+                    path
+                }
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
+                        "Failed to save file to local storage: {}",
+                        e
+                    );
+                    return Err(HttpResponse::InternalServerError().json(json!({
+                        "success": false,
+                        "error": format!("Failed to save file: {}", e)
+                    })));
+                }
+            }
+        }
+        UploadStorage::S3 { .. } => {
+            // For S3 storage: save to S3 for permanence, and to /tmp for processing
+            match upload_storage.save_file(&unique_filename, &file_data).await {
+                Ok(_) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "File saved to S3: {} at {}",
+                        unique_filename,
+                        upload_storage.get_display_path(&unique_filename)
+                    );
+                }
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
+                        "Failed to save file to S3: {}",
+                        e
+                    );
+                    return Err(HttpResponse::InternalServerError().json(json!({
+                        "success": false,
+                        "error": format!("Failed to save file to S3: {}", e)
+                    })));
+                }
+            }
+            
+            // Also save to /tmp for processing (file_to_json needs local file)
+            let temp_path = std::env::temp_dir().join(&unique_filename);
+            if let Err(e) = fs::write(&temp_path, &file_data).await {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Failed to write temp file for processing: {}",
+                    e
+                );
+                return Err(HttpResponse::InternalServerError().json(json!({
+                    "success": false,
+                    "error": format!("Failed to write temp file for processing: {}", e)
+                })));
+            }
+            
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "File saved to /tmp for processing: {:?}",
+                temp_path
+            );
+            
+            temp_path
+        }
     };
-
-    // Write all file data at once
-    if let Err(e) = f.write_all(&file_data) {
-        log_feature!(
-            LogFeature::Ingestion,
-            error,
-            "Failed to write file: {}",
-            e
-        );
-        return Err(HttpResponse::InternalServerError().json(json!({
-            "success": false,
-            "error": format!("Failed to write file: {}", e)
-        })));
-    }
-
-    // Ensure file is flushed to disk before returning
-    if let Err(e) = f.flush() {
-        log_feature!(
-            LogFeature::Ingestion,
-            error,
-            "Failed to flush file to disk: {}",
-            e
-        );
-        return Err(HttpResponse::InternalServerError().json(json!({
-            "success": false,
-            "error": format!("Failed to flush file to disk: {}", e)
-        })));
-    }
-
-    // Verify the filename matches what we saved
-    let saved_filename = filepath.file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("");
-    
-    if saved_filename != unique_filename {
-        log_feature!(
-            LogFeature::Ingestion,
-            error,
-            "Filename mismatch: saved as '{}' but returning '{}'",
-            saved_filename,
-            unique_filename
-        );
-        return Err(HttpResponse::InternalServerError().json(json!({
-            "success": false,
-            "error": "Internal error: filename mismatch"
-        })));
-    }
 
     log_feature!(
         LogFeature::Ingestion,
         info,
-        "File saved successfully (new upload): {} at {:?}",
-        unique_filename,
-        filepath
+        "File ready for processing (new upload): {}",
+        unique_filename
     );
 
     Ok((filepath, unique_filename, false))

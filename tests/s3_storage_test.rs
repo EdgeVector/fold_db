@@ -39,16 +39,15 @@ fn test_s3_config_from_env_with_all_vars() {
     std::env::set_var("DATAFOLD_S3_PREFIX", "test-prefix");
     std::env::set_var("DATAFOLD_S3_LOCAL_PATH", "/tmp/test-path");
     
-    let config = S3Config::from_env();
+    let config = S3Config::from_env().unwrap();
     
-    // Cleanup first
+    // Cleanup after reading config
     std::env::remove_var("DATAFOLD_S3_BUCKET");
     std::env::remove_var("DATAFOLD_S3_REGION");
     std::env::remove_var("DATAFOLD_S3_PREFIX");
     std::env::remove_var("DATAFOLD_S3_LOCAL_PATH");
     
-    // Now check the result
-    let config = config.unwrap();
+    // Check the result
     assert_eq!(config.bucket, "test-bucket-from-env");
     assert_eq!(config.region, "us-west-2");
     assert_eq!(config.prefix, "test-prefix");

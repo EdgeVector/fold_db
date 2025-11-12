@@ -92,6 +92,69 @@ impl Default for StorageConfig {
     }
 }
 
+/// Upload storage configuration for uploaded files
+#[derive(Debug, Clone)]
+pub enum UploadStorageConfig {
+    /// Local filesystem storage (default)
+    Local { path: PathBuf },
+    /// S3 storage for uploads
+    S3 { 
+        bucket: String, 
+        region: String,
+        prefix: String,
+    },
+}
+
+impl Default for UploadStorageConfig {
+    fn default() -> Self {
+        UploadStorageConfig::Local {
+            path: PathBuf::from("data/uploads"),
+        }
+    }
+}
+
+impl UploadStorageConfig {
+    /// Creates UploadStorageConfig from environment variables:
+    /// - DATAFOLD_UPLOAD_STORAGE_MODE: "local" or "s3" (defaults to "local")
+    /// - DATAFOLD_UPLOAD_PATH: Path for local storage (defaults to "data/uploads")
+    /// - DATAFOLD_UPLOAD_S3_BUCKET: S3 bucket for uploads (required if mode=s3)
+    /// - DATAFOLD_UPLOAD_S3_REGION: AWS region (required if mode=s3)
+    /// - DATAFOLD_UPLOAD_S3_PREFIX: S3 prefix/folder (defaults to "uploads")
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let mode = env::var("DATAFOLD_UPLOAD_STORAGE_MODE")
+            .unwrap_or_else(|_| "local".to_string());
+
+        match mode.as_str() {
+            "local" => {
+                let path = env::var("DATAFOLD_UPLOAD_PATH")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from("data/uploads"));
+                Ok(UploadStorageConfig::Local { path })
+            }
+            "s3" => {
+                let bucket = env::var("DATAFOLD_UPLOAD_S3_BUCKET")
+                    .map_err(|_| ConfigError::MissingVariable("DATAFOLD_UPLOAD_S3_BUCKET".to_string()))?;
+                
+                let region = env::var("DATAFOLD_UPLOAD_S3_REGION")
+                    .map_err(|_| ConfigError::MissingVariable("DATAFOLD_UPLOAD_S3_REGION".to_string()))?;
+                
+                let prefix = env::var("DATAFOLD_UPLOAD_S3_PREFIX")
+                    .unwrap_or_else(|_| "uploads".to_string());
+
+                Ok(UploadStorageConfig::S3 {
+                    bucket,
+                    region,
+                    prefix,
+                })
+            }
+            _ => Err(ConfigError::InvalidValue(format!(
+                "Invalid DATAFOLD_UPLOAD_STORAGE_MODE: {}. Must be 'local' or 's3'",
+                mode
+            ))),
+        }
+    }
+}
+
 impl StorageConfig {
     /// Creates StorageConfig from environment variables:
     /// - DATAFOLD_STORAGE_MODE: "local" (default) or "s3"

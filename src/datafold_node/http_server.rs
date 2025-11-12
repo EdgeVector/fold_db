@@ -41,6 +41,8 @@ pub struct AppState {
     pub(crate) node: Arc<tokio::sync::Mutex<DataFoldNode>>,
     /// Progress tracker for ingestion operations
     pub(crate) progress_tracker: crate::ingestion::ProgressTracker,
+    /// Upload storage for file uploads
+    pub(crate) upload_storage: crate::storage::UploadStorage,
 }
 
 impl DataFoldHttpServer {
@@ -159,10 +161,38 @@ impl DataFoldHttpServer {
             }
         }
 
+        // Initialize upload storage from environment config
+        let upload_storage_config = crate::storage::UploadStorageConfig::from_env()
+            .unwrap_or_default();
+        
+        let upload_storage = match upload_storage_config {
+            crate::storage::UploadStorageConfig::Local { path } => {
+                crate::storage::UploadStorage::local(path)
+            }
+            crate::storage::UploadStorageConfig::S3 { bucket, region, prefix } => {
+                // Create S3 client
+                let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(aws_sdk_s3::config::Region::new(region))
+                    .load()
+                    .await;
+                let s3_client = aws_sdk_s3::Client::new(&aws_config);
+                
+                crate::storage::UploadStorage::s3(bucket, prefix, s3_client)
+            }
+        };
+
+        log_feature!(
+            LogFeature::HttpServer,
+            info,
+            "Upload storage initialized: {}",
+            if upload_storage.is_local() { "Local" } else { "S3" }
+        );
+
         // Create shared application state
         let app_state = web::Data::new(AppState {
             node: self.node.clone(),
             progress_tracker: create_progress_tracker(),
+            upload_storage,
         });
 
         // Create LLM query state (gracefully handles missing configuration)

@@ -2,6 +2,9 @@
 
 This document describes how to configure FoldDB to use S3-backed storage for serverless deployments (AWS Lambda, Cloudflare Workers, etc).
 
+> **Note:** This document covers **database storage**. For uploaded files, see [UPLOAD_STORAGE.md](UPLOAD_STORAGE.md). 
+> For best Lambda performance, configure both database and uploads to use S3.
+
 ## Quick Start
 
 ### Option 1: Environment Variables (Recommended)
