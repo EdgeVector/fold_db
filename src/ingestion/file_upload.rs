@@ -39,6 +39,18 @@ pub async fn upload_file(
         Err(response) => return response,
     };
 
+    // Check if file already exists (duplicate upload) BEFORE converting to JSON
+    if form_data.already_exists {
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "File already exists, skipping ingestion (no JSON conversion needed): {}",
+            form_data.original_filename
+        );
+        
+        return build_duplicate_response(&form_data.file_path, &form_data.original_filename);
+    }
+
     // Convert file to JSON using file_to_json
     let json_value = match convert_file_to_json(&form_data.file_path).await {
         Ok(json) => json,
@@ -58,6 +70,13 @@ pub async fn upload_file(
     let temp_json_path = save_json_debug_file(&flattened_json);
 
     // Spawn background ingestion and get progress_id
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Creating mutations with source_file_name: {}",
+        form_data.original_filename
+    );
+    
     let spawn_config = IngestionSpawnConfig {
         json_data: flattened_json,
         auto_execute: form_data.auto_execute,
@@ -117,7 +136,8 @@ fn build_upload_response(
         "success": true,
         "progress_id": progress_id,
         "message": "File upload and ingestion started. Use progress_id to track status.",
-        "file_path": file_path.to_string_lossy().to_string()
+        "file_path": file_path.to_string_lossy().to_string(),
+        "duplicate": false
     });
 
     if let Some(json_path) = temp_json_path {
@@ -125,4 +145,18 @@ fn build_upload_response(
     }
 
     HttpResponse::Accepted().json(response)
+}
+
+/// Build the HTTP response for duplicate file upload
+fn build_duplicate_response(
+    file_path: &std::path::Path,
+    filename: &str,
+) -> HttpResponse {
+    HttpResponse::Ok().json(json!({
+        "success": true,
+        "message": "File already exists - no ingestion needed (content-based deduplication)",
+        "file_path": file_path.to_string_lossy().to_string(),
+        "filename": filename,
+        "duplicate": true
+    }))
 }

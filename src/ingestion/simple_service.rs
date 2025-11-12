@@ -880,6 +880,7 @@ impl SimpleIngestionService {
                     fields_and_values: mutation.fields_and_values.clone(),
                     key_value: mutation.key_value.clone(),
                     mutation_type: mutation.mutation_type.clone(),
+                    source_file_name: mutation.source_file_name.clone(),
                 };
                 serde_json::to_value(operation).expect("Failed to serialize operation")
             })
@@ -918,6 +919,7 @@ impl SimpleIngestionService {
                     fields_and_values: mutation.fields_and_values.clone(),
                     key_value: mutation.key_value.clone(),
                     mutation_type: mutation.mutation_type.clone(),
+                    source_file_name: mutation.source_file_name.clone(),
                 };
                 serde_json::to_value(operation).expect("Failed to serialize operation")
             })

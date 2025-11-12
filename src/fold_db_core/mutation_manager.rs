@@ -262,38 +262,26 @@ impl MutationManager {
             *timing_breakdown.entry("  - write_molecules").or_insert(std::time::Duration::ZERO) += molecule_time;
             *timing_breakdown.entry("  - index_fields").or_insert(std::time::Duration::ZERO) += index_time;
             
-            // Publish batch index request for background processing
+            // Process batch index operations synchronously
             if !index_operations.is_empty() {
                 let index_start = std::time::Instant::now();
                 debug!(
-                    "MutationManager: Publishing BatchIndexRequest with {} operations for schema '{}'",
+                    "MutationManager: Processing batch index with {} operations for schema '{}'",
                     index_operations.len(),
                     schema_name
                 );
                 
-                let index_requests: Vec<_> = index_operations.into_iter().map(|(schema_name, field_name, key_value, value, classifications)| {
-                    super::infrastructure::message_bus::request_events::IndexRequest {
-                        schema_name,
-                        field_name,
-                        key_value,
-                        value,
-                        classifications,
-                    }
-                }).collect();
+                // Call batch indexing directly for synchronous processing
+                self.db_ops.native_index_manager().batch_index_field_values_with_classifications(&index_operations)?;
                 
-                let batch_request = super::infrastructure::message_bus::request_events::BatchIndexRequest {
-                    operations: index_requests,
-                };
-                
-                self.message_bus.publish(batch_request)?;
                 debug!(
-                    "MutationManager: Successfully published BatchIndexRequest for schema '{}'",
+                    "MutationManager: Successfully processed batch index for schema '{}'",
                     schema_name
                 );
                 index_time += index_start.elapsed();
             } else {
                 debug!(
-                    "MutationManager: No index operations to publish for schema '{}'",
+                    "MutationManager: No index operations to process for schema '{}'",
                     schema_name
                 );
             }
@@ -333,6 +321,11 @@ impl MutationManager {
                 mutation_ids.push(mutation_id.clone());
             }
         }
+
+        // Flush native index after all mutations in the batch
+        let native_index_flush_start = std::time::Instant::now();
+        self.db_ops.native_index_manager().flush()?;
+        timing_breakdown.insert("native_index_flush", native_index_flush_start.elapsed());
 
         // Single flush for entire batch
         let flush_start = std::time::Instant::now();

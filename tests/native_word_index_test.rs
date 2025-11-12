@@ -156,6 +156,6 @@ fn execute_mutation(
         mutation_type,
     );
 
-    node.mutate(mutation)
+    node.mutate_batch(vec![mutation])
         .expect("mutation execution should succeed");
 }

@@ -5,99 +5,11 @@
 
 use super::*;
 use crate::transform::chain_parser::parser::ChainParser;
-use crate::transform::iterator_stack_typed::adapter::map_chain_to_specs;
 use crate::transform::iterator_stack_typed::engine::TypedEngine;
 use crate::transform::iterator_stack_typed::types::{IteratorSpec, TypedInput};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
 use std::collections::HashMap;
-
-/// Helper to create test input data
-fn create_test_input() -> TypedInput {
-    let mut input: TypedInput = HashMap::new();
-    
-    // Add blog post data - each KeyValue represents a unique item
-    let mut blogpost_data = HashMap::new();
-    blogpost_data.insert(
-        KeyValue::new(Some("content".to_string()), None),
-        FieldValue {
-            value: serde_json::Value::String("hello world test".to_string()),
-            atom_uuid: "atom-1".to_string(),
-            source_file_name: None,
-        }
-    );
-    input.insert("BlogPost.content".to_string(), blogpost_data);
-    
-    input
-}
-
-fn create_numeric_input() -> TypedInput {
-    let mut input: TypedInput = HashMap::new();
-    
-    // Create multiple numeric items
-    let mut scores_data = HashMap::new();
-    scores_data.insert(
-        KeyValue::new(Some("values".to_string()), Some("item1".to_string())),
-        FieldValue {
-            value: serde_json::Value::Number(serde_json::Number::from(10)),
-            atom_uuid: "atom-1".to_string(),
-            source_file_name: None,
-        }
-    );
-    scores_data.insert(
-        KeyValue::new(Some("values".to_string()), Some("item2".to_string())),
-        FieldValue {
-            value: serde_json::Value::Number(serde_json::Number::from(20)),
-            atom_uuid: "atom-2".to_string(),
-            source_file_name: None,
-        }
-    );
-    scores_data.insert(
-        KeyValue::new(Some("values".to_string()), Some("item3".to_string())),
-        FieldValue {
-            value: serde_json::Value::Number(serde_json::Number::from(30)),
-            atom_uuid: "atom-3".to_string(),
-            source_file_name: None,
-        }
-    );
-    input.insert("Scores.values".to_string(), scores_data);
-    
-    input
-}
-
-fn create_array_input() -> TypedInput {
-    let mut input: TypedInput = HashMap::new();
-    
-    // Create multiple string items
-    let mut tags_data = HashMap::new();
-    tags_data.insert(
-        KeyValue::new(Some("values".to_string()), Some("tag1".to_string())),
-        FieldValue {
-            value: serde_json::Value::String("rust".to_string()),
-            atom_uuid: "atom-1".to_string(),
-            source_file_name: None,
-        }
-    );
-    tags_data.insert(
-        KeyValue::new(Some("values".to_string()), Some("tag2".to_string())),
-        FieldValue {
-            value: serde_json::Value::String("database".to_string()),
-            atom_uuid: "atom-2".to_string(),
-            source_file_name: None,
-        }
-    );
-    tags_data.insert(
-        KeyValue::new(Some("values".to_string()), Some("tag3".to_string())),
-        FieldValue {
-            value: serde_json::Value::String("transforms".to_string()),
-            atom_uuid: "atom-3".to_string(),
-            source_file_name: None,
-        }
-    );
-    input.insert("Scores.values".to_string(), tags_data);
-    
-    input
-}
 
 // ============================================================================
 // Chain Parser Integration Tests
