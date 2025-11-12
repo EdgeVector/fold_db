@@ -1,8 +1,14 @@
 use datafold::{FoldDB, S3Config, StorageConfig};
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+// Mutex to serialize tests that modify environment variables
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_storage_config_from_env_defaults_to_local() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    
     // Clear any S3 env vars
     std::env::remove_var("DATAFOLD_STORAGE_MODE");
     std::env::remove_var("DATAFOLD_S3_BUCKET");
@@ -22,6 +28,8 @@ fn test_storage_config_from_env_defaults_to_local() {
 
 #[test]
 fn test_s3_config_from_env_missing_bucket_fails() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    
     std::env::remove_var("DATAFOLD_S3_BUCKET");
     std::env::set_var("DATAFOLD_S3_REGION", "us-west-2");
     
@@ -33,6 +41,8 @@ fn test_s3_config_from_env_missing_bucket_fails() {
 
 #[test]
 fn test_s3_config_from_env_with_all_vars() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    
     // Use a test-specific prefix to avoid conflicts
     std::env::set_var("DATAFOLD_S3_BUCKET", "test-bucket-from-env");
     std::env::set_var("DATAFOLD_S3_REGION", "us-west-2");
