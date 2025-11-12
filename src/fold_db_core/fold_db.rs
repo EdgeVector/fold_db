@@ -106,8 +106,36 @@ impl FoldDB {
             }
         };
 
-        let db_ops =
-            DbOperations::new(db.clone()).map_err(|e| sled::Error::Unsupported(e.to_string()))?;
+        Self::initialize_from_db(db, path, None)
+            .map_err(|e| sled::Error::Unsupported(e.to_string()))
+    }
+
+    /// Creates a new FoldDB instance with S3-backed storage.
+    /// The database is downloaded from S3 on initialization and can be synced back with flush_to_s3().
+    pub async fn new_with_s3(config: S3Config) -> Result<Self, StorageError> {
+        // Initialize S3 storage (downloads from S3 if exists)
+        let s3_storage = Arc::new(S3SyncedStorage::new(config).await?);
+        
+        // Get local path as a String to avoid borrowing issues
+        let local_path_string = s3_storage.local_path().to_str()
+            .ok_or_else(|| StorageError::InvalidPath("Invalid local path".to_string()))?
+            .to_string();
+        
+        let db = sled::open(&local_path_string)
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
+
+        Self::initialize_from_db(db, &local_path_string, Some(s3_storage))
+    }
+
+    /// Common initialization logic shared by both new() and new_with_s3()
+    /// This method initializes all FoldDB components from an already-opened sled database
+    fn initialize_from_db(
+        db: sled::Db, 
+        db_path: &str,
+        s3_storage: Option<Arc<S3SyncedStorage>>
+    ) -> Result<Self, StorageError> {
+        let db_ops = DbOperations::new(db.clone())
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
         let orchestrator_tree = db_ops.orchestrator_tree.clone();
 
         // Initialize message bus
@@ -117,31 +145,24 @@ impl FoldDB {
         let correlation_id = uuid::Uuid::new_v4().to_string();
         let init_request = SystemInitializationRequest {
             correlation_id: correlation_id.clone(),
-            db_path: path.to_string(),
+            db_path: db_path.to_string(),
             orchestrator_config: None,
         };
 
         // Send system initialization request via message bus
-        if let Err(e) = message_bus.publish(init_request) {
-            return Err(sled::Error::Unsupported(format!(
-                "Failed to initialize system via events: {}",
-                e
-            )));
-        }
+        message_bus.publish(init_request)
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         // Create managers using event-driven initialization only
         let db_ops_arc = Arc::new(db_ops.clone());
 
-        // Use standard initialization but with deprecated closures that recommend events
-        let transform_manager =
-            init_transform_manager(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))?;
+        let transform_manager = init_transform_manager(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         let schema_manager = Arc::new(
             SchemaCore::new(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
-                .map_err(|e| sled::Error::Unsupported(e.to_string()))?,
+                .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?
         );
-
-
 
         // Create and start EventMonitor for system-wide observability
         let event_monitor = Arc::new(EventMonitor::new(Arc::clone(&message_bus), Arc::clone(&transform_manager)));
@@ -163,7 +184,6 @@ impl FoldDB {
         ));
         info!("Created TransformOrchestrator for transform execution");
 
-
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
             Arc::new(db_ops.clone()),
@@ -174,12 +194,8 @@ impl FoldDB {
         info!("Created MutationManager for mutation operations");
 
         // Start the MutationManager event listener
-        if let Err(e) = mutation_manager.start_event_listener() {
-            return Err(sled::Error::Unsupported(format!(
-                "Failed to start MutationManager event listener: {}",
-                e
-            )));
-        }
+        mutation_manager.start_event_listener()
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
         info!("Started MutationManager event listener");
         
         // Create and start IndexEventHandler for background indexing
@@ -205,99 +221,7 @@ impl FoldDB {
             transform_orchestrator,
             mutation_manager,
             index_event_handler,
-            s3_storage: None,
-        })
-    }
-
-    /// Creates a new FoldDB instance with S3-backed storage.
-    /// The database is downloaded from S3 on initialization and can be synced back with flush_to_s3().
-    pub async fn new_with_s3(config: S3Config) -> Result<Self, StorageError> {
-        // Initialize S3 storage (downloads from S3 if exists)
-        let s3_storage = Arc::new(S3SyncedStorage::new(config).await?);
-        
-        // Open Sled from the local path
-        let local_path = s3_storage.local_path().to_str()
-            .ok_or_else(|| StorageError::InvalidPath("Invalid local path".to_string()))?;
-        
-        let db = sled::open(local_path)
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-
-        let db_ops = DbOperations::new(db.clone())
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-        let orchestrator_tree = db_ops.orchestrator_tree.clone();
-
-        // Initialize message bus
-        let message_bus = Arc::new(MessageBus::new());
-
-        // Initialize components via event-driven system initialization
-        let correlation_id = uuid::Uuid::new_v4().to_string();
-        let init_request = SystemInitializationRequest {
-            correlation_id: correlation_id.clone(),
-            db_path: local_path.to_string(),
-            orchestrator_config: None,
-        };
-
-        // Send system initialization request via message bus
-        message_bus.publish(init_request)
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-
-        // Create managers using event-driven initialization only
-        let db_ops_arc = Arc::new(db_ops.clone());
-
-        let transform_manager = init_transform_manager(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-
-        let schema_manager = Arc::new(
-            SchemaCore::new(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
-                .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?
-        );
-
-        let event_monitor = Arc::new(EventMonitor::new(Arc::clone(&message_bus), Arc::clone(&transform_manager)));
-        info!("Started EventMonitor for system-wide event tracking");
-
-        let query_executor = QueryExecutor::new(
-            Arc::new(db_ops.clone()),
-            Arc::clone(&schema_manager),
-        );
-        info!("Created QueryExecutor for query operations");
-
-        let transform_orchestrator = Arc::new(TransformOrchestrator::new(
-            Arc::clone(&transform_manager),
-            orchestrator_tree,
-            Arc::clone(&message_bus),
-            Arc::new(db_ops.clone()),
-        ));
-        info!("Created TransformOrchestrator for transform execution");
-
-        let mutation_manager = MutationManager::new(
-            Arc::new(db_ops.clone()),
-            Arc::clone(&schema_manager),
-            Arc::clone(&message_bus),
-        );
-        
-        info!("Created MutationManager for mutation operations");
-
-        mutation_manager.start_event_listener()
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-        info!("Started MutationManager event listener");
-        
-        let index_event_handler = IndexEventHandler::new(
-            Arc::clone(&message_bus),
-            Arc::new(db_ops.clone()),
-        );
-        info!("Started IndexEventHandler for background indexing");
-
-        Ok(Self {
-            schema_manager,
-            transform_manager,
-            db_ops: Arc::new(db_ops.clone()),
-            query_executor,
-            message_bus,
-            event_monitor,
-            transform_orchestrator,
-            mutation_manager,
-            index_event_handler,
-            s3_storage: Some(s3_storage),
+            s3_storage,
         })
     }
 
