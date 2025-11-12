@@ -34,7 +34,7 @@ pub async fn upload_file(
     );
 
     // Extract file and form data from multipart request
-    let form_data = match parse_multipart(payload).await {
+    let form_data = match parse_multipart(payload, &state.upload_storage).await {
         Ok(data) => data,
         Err(response) => return response,
     };

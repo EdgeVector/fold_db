@@ -288,17 +288,23 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    #[tokio::test]
-    async fn test_system_status() {
-        let temp_dir = tempdir().unwrap();
+    fn create_test_state(temp_dir: &tempfile::TempDir) -> web::Data<AppState> {
         let config = NodeConfig::new(temp_dir.path().to_path_buf())
             .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
+        let upload_storage = crate::storage::UploadStorage::local(temp_dir.path().join("uploads"));
 
-        let state = web::Data::new(AppState {
+        web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
             progress_tracker: crate::ingestion::create_progress_tracker(),
-        });
+            upload_storage,
+        })
+    }
+
+    #[tokio::test]
+    async fn test_system_status() {
+        let temp_dir = tempdir().unwrap();
+        let state = create_test_state(&temp_dir);
 
         let req = test::TestRequest::get().to_http_request();
         let resp = get_system_status(state).await.respond_to(&req);
@@ -308,14 +314,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_node_private_key() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
-        let node = DataFoldNode::new(config).unwrap();
-
-        let state = web::Data::new(AppState {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
-            progress_tracker: crate::ingestion::create_progress_tracker(),
-        });
+        let state = create_test_state(&temp_dir);
 
         let req = test::TestRequest::get().to_http_request();
         let resp = get_node_private_key(state).await.respond_to(&req);
@@ -334,14 +333,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_node_public_key() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
-        let node = DataFoldNode::new(config).unwrap();
-
-        let state = web::Data::new(AppState {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
-            progress_tracker: crate::ingestion::create_progress_tracker(),
-        });
+        let state = create_test_state(&temp_dir);
 
         let req = test::TestRequest::get().to_http_request();
         let resp = get_node_public_key(state).await.respond_to(&req);
@@ -360,14 +352,7 @@ mod tests {
     #[tokio::test]
     async fn test_private_and_public_keys_are_different() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
-        let node = DataFoldNode::new(config).unwrap();
-
-        let state = web::Data::new(AppState {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
-            progress_tracker: crate::ingestion::create_progress_tracker(),
-        });
+        let state = create_test_state(&temp_dir);
 
         // Get private key
         let req1 = test::TestRequest::get().to_http_request();
@@ -394,14 +379,7 @@ mod tests {
     #[tokio::test]
     async fn test_reset_database_without_confirmation() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
-        let node = DataFoldNode::new(config).unwrap();
-
-        let state = web::Data::new(AppState {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
-            progress_tracker: crate::ingestion::create_progress_tracker(),
-        });
+        let state = create_test_state(&temp_dir);
 
         let req_body = ResetDatabaseRequest { confirm: false };
         let req = test::TestRequest::post()
@@ -417,14 +395,7 @@ mod tests {
     #[tokio::test]
     async fn test_reset_database_with_confirmation() {
         let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
-        let node = DataFoldNode::new(config).unwrap();
-
-        let state = web::Data::new(AppState {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
-            progress_tracker: crate::ingestion::create_progress_tracker(),
-        });
+        let state = create_test_state(&temp_dir);
 
         let req_body = ResetDatabaseRequest { confirm: true };
         let req = test::TestRequest::post()
