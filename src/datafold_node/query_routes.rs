@@ -68,7 +68,7 @@ pub async fn execute_mutation(
 ) -> impl Responder {
 
     let (schema, fields_and_values, key_value, mutation_type) = match serde_json::from_value::<Operation>(mutation_data.into_inner()) {
-        Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type }) => (schema, fields_and_values, key_value, mutation_type),
+        Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type, source_file_name: _ }) => (schema, fields_and_values, key_value, mutation_type),
         Err(e) => {
             return HttpResponse::BadRequest()
                 .json(json!({"error": format!("Failed to parse mutation: {}", e)}))

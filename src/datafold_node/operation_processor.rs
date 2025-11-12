@@ -75,9 +75,9 @@ impl OperationProcessor {
 
         // Parse each mutation from the input data
         for mutation_data in mutations_data {
-            let (schema, fields_and_values, key_value, mutation_type) = match serde_json::from_value::<Operation>(mutation_data) {
-                Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type }) => {
-                    (schema, fields_and_values, key_value, mutation_type)
+            let (schema, fields_and_values, key_value, mutation_type, source_file_name) = match serde_json::from_value::<Operation>(mutation_data) {
+                Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type, source_file_name }) => {
+                    (schema, fields_and_values, key_value, mutation_type, source_file_name)
                 },
                 Err(e) => {
                     return Err(FoldDbError::Config(format!("Failed to parse mutation: {}", e)));
@@ -88,7 +88,7 @@ impl OperationProcessor {
                 return Err(FoldDbError::Config("No fields to mutate".to_string()));
             }
 
-            let mutation = Mutation::new(
+            let mut mutation = Mutation::new(
                 schema,
                 fields_and_values,
                 key_value,
@@ -96,6 +96,11 @@ impl OperationProcessor {
                 0,
                 mutation_type,
             );
+
+            // Add source_file_name if provided
+            if let Some(filename) = source_file_name {
+                mutation = mutation.with_source_file_name(filename);
+            }
 
             mutations.push(mutation);
         }

@@ -54,16 +54,18 @@ async fn test_mutation_performance_direct() {
     let schema_path = Path::new("./tests/schemas_for_testing/BlogPost.json");
     let schema_json = std::fs::read_to_string(schema_path).expect("Failed to read schema file");
     
-    let mut db_guard = node.get_fold_db().expect("Failed to get database");
-    db_guard.load_schema_from_json(&schema_json)
-        .expect("Failed to load BlogPost schema");
-    drop(db_guard);
+    {
+        let mut db_guard = node.get_fold_db().expect("Failed to get database");
+        db_guard.load_schema_from_json(&schema_json)
+            .expect("Failed to load BlogPost schema");
+    }
     
     // Approve the schema
-    let db_guard = node.get_fold_db().expect("Failed to get database");
-    db_guard.schema_manager().approve("BlogPost")
-        .expect("Failed to approve BlogPost schema");
-    drop(db_guard);
+    {
+        let db_guard = node.get_fold_db().expect("Failed to get database");
+        db_guard.schema_manager().approve("BlogPost")
+            .expect("Failed to approve BlogPost schema");
+    }
 
     println!("\n{}", "=".repeat(80));
     println!("Test Configuration");
@@ -146,7 +148,7 @@ async fn execute_single_mutations_direct(node: &DataFoldNode, count: usize) -> V
         let mutation = create_blogpost_mutation(i);
         
         let start = Instant::now();
-        let result = node.mutate(mutation);
+        let result = node.mutate_batch(vec![mutation]);
         let duration = start.elapsed();
         times.push(duration.as_millis() as u64);
         
