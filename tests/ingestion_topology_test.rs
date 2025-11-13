@@ -1,7 +1,7 @@
 use tempfile::TempDir;
 
-#[test]
-fn test_schema_service_rejects_schema_without_topologies() {
+#[tokio::test]
+async fn test_schema_service_rejects_schema_without_topologies() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
     
@@ -19,8 +19,8 @@ fn test_schema_service_rejects_schema_without_topologies() {
     );
     
     // Attempt to add schema - should fail
-    let result = state.add_schema(schema, std::collections::HashMap::new());
-    
+    let result = state.add_schema(schema, std::collections::HashMap::new()).await;
+
     assert!(result.is_err(), "Schema without topologies should be rejected");
     let err = result.unwrap_err();
     let err_msg = err.to_string();
