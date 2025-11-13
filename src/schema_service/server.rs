@@ -8,6 +8,9 @@ use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Schema;
+use crate::storage::DynamoDbSchemaStore;
+
+pub use crate::storage::DynamoDbConfig;
 
 /// Response containing a list of available schema names
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,15 +77,29 @@ pub struct ConflictResponse {
     pub closest_schema: Schema,
 }
 
+/// Storage backend for the schema service
+#[derive(Clone)]
+pub enum SchemaStorage {
+    /// Local sled database (default)
+    Sled {
+        db: sled::Db,
+        schemas_tree: sled::Tree,
+    },
+    /// DynamoDB storage (serverless, no locking needed!)
+    DynamoDB {
+        store: Arc<DynamoDbSchemaStore>,
+    },
+}
+
 /// Shared state for the schema service
 #[derive(Clone)]
 pub struct SchemaServiceState {
     schemas: Arc<RwLock<HashMap<String, Schema>>>,
-    db: sled::Db,
-    schemas_tree: sled::Tree,
+    storage: SchemaStorage,
 }
 
 impl SchemaServiceState {
+    /// Create a new schema service state with local sled storage
     pub fn new(db_path: String) -> FoldDbResult<Self> {
         let db = sled::open(&db_path).map_err(|e| {
             FoldDbError::Config(format!("Failed to open schema service database at '{}': {}", db_path, e))
@@ -94,18 +111,17 @@ impl SchemaServiceState {
 
         let state = Self {
             schemas: Arc::new(RwLock::new(HashMap::new())),
-            db,
-            schemas_tree,
+            storage: SchemaStorage::Sled { db, schemas_tree },
         };
 
-        // Load schemas on initialization
-        state.load_schemas()?;
+        // Load schemas synchronously for sled
+        state.load_schemas_sync()?;
 
         Ok(state)
     }
 
-    /// Load all schemas from the sled database
-    pub fn load_schemas(&self) -> FoldDbResult<()> {
+    /// Synchronous version of load_schemas for Sled storage
+    fn load_schemas_sync(&self) -> FoldDbResult<()> {
         let mut schemas = self
             .schemas
             .write()
@@ -113,45 +129,149 @@ impl SchemaServiceState {
 
         schemas.clear();
 
-        let mut count = 0;
-        for result in self.schemas_tree.iter() {
-            let (key, value) = result.map_err(|e| {
-                FoldDbError::Config(format!("Failed to iterate over schemas tree: {}", e))
-            })?;
+        match &self.storage {
+            SchemaStorage::Sled { schemas_tree, .. } => {
+                let mut count = 0;
+                for result in schemas_tree.iter() {
+                    let (key, value) = result.map_err(|e| {
+                        FoldDbError::Config(format!("Failed to iterate over schemas tree: {}", e))
+                    })?;
 
-            let name = String::from_utf8(key.to_vec()).map_err(|e| {
-                FoldDbError::Config(format!("Failed to decode schema name from key: {}", e))
-            })?;
+                    let name = String::from_utf8(key.to_vec()).map_err(|e| {
+                        FoldDbError::Config(format!("Failed to decode schema name from key: {}", e))
+                    })?;
 
-            let schema: Schema = serde_json::from_slice(&value).map_err(|e| {
-                FoldDbError::Config(format!(
-                    "Failed to parse schema '{}' from database: {}",
-                    name, e
-                ))
-            })?;
+                    let schema: Schema = serde_json::from_slice(&value).map_err(|e| {
+                        FoldDbError::Config(format!(
+                            "Failed to parse schema '{}' from database: {}",
+                            name, e
+                        ))
+                    })?;
 
-            log_feature!(
-                LogFeature::Schema,
-                info,
-                "Loaded schema '{}' from database",
-                name
-            );
+                    schemas.insert(name, schema);
+                    count += 1;
+                }
 
-            schemas.insert(name, schema);
-            count += 1;
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema service loaded {} schemas from sled",
+                    count
+                );
+            }
+            _ => {
+                return Err(FoldDbError::Config("load_schemas_sync called on non-Sled storage".to_string()));
+            }
         }
-
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Schema service loaded {} schemas from database",
-            count
-        );
 
         Ok(())
     }
 
-    pub fn add_schema(&self, mut schema: Schema, mutation_mappers: HashMap<String, String>) -> FoldDbResult<SchemaAddOutcome> {
+    /// Create a new schema service state with DynamoDB storage
+    /// No locking needed - topology hashes ensure idempotent writes!
+    pub async fn new_with_dynamodb(config: DynamoDbConfig) -> FoldDbResult<Self> {
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Initializing schema service with DynamoDB: table={}",
+            config.table_name
+        );
+
+        let store = DynamoDbSchemaStore::new(config).await?;
+
+        let state = Self {
+            schemas: Arc::new(RwLock::new(HashMap::new())),
+            storage: SchemaStorage::DynamoDB {
+                store: Arc::new(store),
+            },
+        };
+
+        // Load schemas on initialization
+        state.load_schemas().await?;
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Schema service initialized with DynamoDB, loaded {} schemas",
+            state.schemas.read().map(|s| s.len()).unwrap_or(0)
+        );
+
+        Ok(state)
+    }
+
+    /// Load all schemas from storage (works for both Sled and DynamoDB)
+    pub async fn load_schemas(&self) -> FoldDbResult<()> {
+        let mut schemas = self
+            .schemas
+            .write()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
+
+        schemas.clear();
+
+        match &self.storage {
+            SchemaStorage::Sled { schemas_tree, .. } => {
+                let mut count = 0;
+                for result in schemas_tree.iter() {
+                    let (key, value) = result.map_err(|e| {
+                        FoldDbError::Config(format!("Failed to iterate over schemas tree: {}", e))
+                    })?;
+
+                    let name = String::from_utf8(key.to_vec()).map_err(|e| {
+                        FoldDbError::Config(format!("Failed to decode schema name from key: {}", e))
+                    })?;
+
+                    let schema: Schema = serde_json::from_slice(&value).map_err(|e| {
+                        FoldDbError::Config(format!(
+                            "Failed to parse schema '{}' from database: {}",
+                            name, e
+                        ))
+                    })?;
+
+                    log_feature!(
+                        LogFeature::Schema,
+                        info,
+                        "Loaded schema '{}' from sled database",
+                        name
+                    );
+
+                    schemas.insert(name, schema);
+                    count += 1;
+                }
+
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema service loaded {} schemas from sled",
+                    count
+                );
+            }
+            SchemaStorage::DynamoDB { store } => {
+                let all_schemas = store.get_all_schemas().await?;
+                let count = all_schemas.len();
+
+                for schema in all_schemas {
+                    log_feature!(
+                        LogFeature::Schema,
+                        info,
+                        "Loaded schema '{}' from DynamoDB",
+                        schema.name
+                    );
+                    schemas.insert(schema.name.clone(), schema);
+                }
+
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema service loaded {} schemas from DynamoDB",
+                    count
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn add_schema(&self, mut schema: Schema, mutation_mappers: HashMap<String, String>) -> FoldDbResult<SchemaAddOutcome> {
         // Validate that all fields have topologies defined
         if let Some(ref fields) = schema.fields {
             for field_name in fields {
@@ -213,27 +333,57 @@ impl SchemaServiceState {
 
         schema.name = schema_name.clone();
 
-        let serialized_schema = serde_json::to_vec(&schema).map_err(|error| {
-            FoldDbError::Serialization(format!(
-                "Failed to serialize schema '{}': {}",
-                schema_name, error
-            ))
-        })?;
+        // Persist to storage backend
+        match &self.storage {
+            SchemaStorage::Sled { db, schemas_tree } => {
+                let serialized_schema = serde_json::to_vec(&schema).map_err(|error| {
+                    FoldDbError::Serialization(format!(
+                        "Failed to serialize schema '{}': {}",
+                        schema_name, error
+                    ))
+                })?;
 
-        self.schemas_tree
-            .insert(schema_name.as_bytes(), serialized_schema)
-            .map_err(|error| {
-                FoldDbError::Config(format!(
-                    "Failed to insert schema '{}' into database: {}",
-                    schema_name, error
-                ))
-            })?;
+                schemas_tree
+                    .insert(schema_name.as_bytes(), serialized_schema)
+                    .map_err(|error| {
+                        FoldDbError::Config(format!(
+                            "Failed to insert schema '{}' into sled database: {}",
+                            schema_name, error
+                        ))
+                    })?;
 
-        self.db.flush().map_err(|error| {
-            FoldDbError::Config(format!("Failed to flush database: {}", error))
-        })?;
+                db.flush().map_err(|error| {
+                    FoldDbError::Config(format!("Failed to flush sled database: {}", error))
+                })?;
+
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema '{}' persisted to sled database",
+                    schema_name
+                );
+            }
+            SchemaStorage::DynamoDB { store } => {
+                // No locking needed! Topology hash ensures idempotent writes
+                store.put_schema(&schema, &mutation_mappers).await?;
+
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema '{}' persisted to DynamoDB (no locking needed!)",
+                    schema_name
+                );
+            }
+        }
 
         schemas.insert(schema_name.clone(), schema.clone());
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Schema '{}' successfully added to registry",
+            schema_name
+        );
 
         Ok(SchemaAddOutcome::Added(schema, mutation_mappers))
     }
@@ -345,7 +495,7 @@ async fn reload_schemas(state: web::Data<SchemaServiceState>) -> impl Responder 
         "Schema service: reloading schemas"
     );
 
-    match state.load_schemas() {
+    match state.load_schemas().await {
         Ok(_) => {
             let schemas = match state.schemas.read() {
                 Ok(s) => s,
@@ -393,7 +543,7 @@ async fn add_schema(
         request.mutation_mappers.len()
     );
 
-    match state.add_schema(request.schema, request.mutation_mappers) {
+    match state.add_schema(request.schema, request.mutation_mappers).await {
         Ok(SchemaAddOutcome::Added(schema, mutation_mappers)) => {
             HttpResponse::Created().json(AddSchemaResponse {
                 schema,
@@ -467,29 +617,48 @@ async fn reset_database(
         schemas.clear();
     }
 
-    // Clear all entries from the schemas tree instead of dropping it
-    // This preserves the tree handle that the state is using
-    if let Err(e) = state.schemas_tree.clear() {
-        log_feature!(
-            LogFeature::Schema,
-            error,
-            "Failed to clear schemas tree: {}",
-            e
-        );
-        return HttpResponse::InternalServerError().json(ResetResponse {
-            success: false,
-            message: format!("Failed to reset database: {}", e),
-        });
-    }
+    // Clear storage backend
+    match &state.storage {
+        SchemaStorage::Sled { db, schemas_tree } => {
+            // Clear all entries from the schemas tree
+            if let Err(e) = schemas_tree.clear() {
+                log_feature!(
+                    LogFeature::Schema,
+                    error,
+                    "Failed to clear schemas tree: {}",
+                    e
+                );
+                return HttpResponse::InternalServerError().json(ResetResponse {
+                    success: false,
+                    message: format!("Failed to reset sled database: {}", e),
+                });
+            }
 
-    // Flush to ensure changes are persisted
-    if let Err(e) = state.schemas_tree.flush() {
-        log_feature!(
-            LogFeature::Schema,
-            warn,
-            "Failed to flush schemas tree after reset: {}",
-            e
-        );
+            // Flush to ensure changes are persisted
+            if let Err(e) = db.flush() {
+                log_feature!(
+                    LogFeature::Schema,
+                    warn,
+                    "Failed to flush database after reset: {}",
+                    e
+                );
+            }
+        }
+        SchemaStorage::DynamoDB { store } => {
+            // Clear all schemas from DynamoDB
+            if let Err(e) = store.clear_all_schemas().await {
+                log_feature!(
+                    LogFeature::Schema,
+                    error,
+                    "Failed to clear DynamoDB schemas: {}",
+                    e
+                );
+                return HttpResponse::InternalServerError().json(ResetResponse {
+                    success: false,
+                    message: format!("Failed to reset DynamoDB: {}", e),
+                });
+            }
+        }
     }
 
     log_feature!(
@@ -511,9 +680,20 @@ pub struct SchemaServiceServer {
 }
 
 impl SchemaServiceServer {
-    /// Create a new schema service server
+    /// Create a new schema service server with local sled storage
     pub fn new(db_path: String, bind_address: &str) -> FoldDbResult<Self> {
         let state = SchemaServiceState::new(db_path)?;
+
+        Ok(Self {
+            state: web::Data::new(state),
+            bind_address: bind_address.to_string(),
+        })
+    }
+
+    /// Create a new schema service server with DynamoDB storage
+    /// No locking needed - topology hashes ensure idempotent concurrent writes!
+    pub async fn new_with_dynamodb(config: DynamoDbConfig, bind_address: &str) -> FoldDbResult<Self> {
+        let state = SchemaServiceState::new_with_dynamodb(config).await?;
 
         Ok(Self {
             state: web::Data::new(state),
@@ -571,8 +751,8 @@ mod tests {
     use tempfile::tempdir;
 
 
-    #[test]
-    fn add_schema_adds_new_schema() {
+    #[tokio::test]
+    async fn add_schema_adds_new_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -610,6 +790,7 @@ mod tests {
 
         let outcome = state
             .add_schema(new_schema.clone(), HashMap::new())
+            .await
             .expect("failed to add schema");
 
         let added_schema = match outcome {
@@ -632,20 +813,24 @@ mod tests {
         // Check stored by combined name
         assert!(stored_schemas.contains_key(&added_schema.name));
 
-        let db_value = state
-            .schemas_tree
-            .get(added_schema.name.as_bytes())
-            .expect("failed to query database")
-            .expect("schema should exist in database");
-        
-        let stored_schema: Schema = serde_json::from_slice(&db_value)
-            .expect("failed to deserialize stored schema");
-        
-        assert_eq!(stored_schema.name, added_schema.name);
+        // Check the underlying storage
+        if let SchemaStorage::Sled { schemas_tree, .. } = &state.storage {
+            let db_value = schemas_tree
+                .get(added_schema.name.as_bytes())
+                .expect("failed to query database")
+                .expect("schema should exist in database");
+            
+            let stored_schema: Schema = serde_json::from_slice(&db_value)
+                .expect("failed to deserialize stored schema");
+            
+            assert_eq!(stored_schema.name, added_schema.name);
+        } else {
+            panic!("Expected Sled storage");
+        }
     }
 
-    #[test]
-    fn add_schema_detects_similar_schema() {
+    #[tokio::test]
+    async fn add_schema_detects_similar_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -714,6 +899,7 @@ mod tests {
         // First schema gets added
         let outcome1 = state
             .add_schema(existing_schema.clone(), HashMap::new())
+            .await
             .expect("failed to add existing schema");
         
         let existing_name = match outcome1 {
@@ -728,6 +914,7 @@ mod tests {
         // Second schema with SAME topology and SAME name should be detected as exact duplicate
         let outcome2 = state
             .add_schema(similar_schema.clone(), HashMap::new())
+            .await
             .expect("failed to evaluate schema similarity");
 
         match outcome2 {
@@ -740,8 +927,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn add_schema_with_different_topology_creates_separate_schema() {
+    #[tokio::test]
+    async fn add_schema_with_different_topology_creates_separate_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -779,6 +966,7 @@ mod tests {
 
         let outcome1 = state
             .add_schema(schema1.clone(), HashMap::new())
+            .await
             .expect("failed to add first schema");
 
         let schema1_name = match outcome1 {
@@ -826,6 +1014,7 @@ mod tests {
 
         let outcome2 = state
             .add_schema(schema2.clone(), HashMap::new())
+            .await
             .expect("failed to add second schema");
 
         let schema2_name = match outcome2 {
@@ -841,8 +1030,8 @@ mod tests {
         assert_ne!(schema1_name, schema2_name);
     }
 
-    #[test]
-    fn add_schema_rejects_missing_topology() {
+    #[tokio::test]
+    async fn add_schema_rejects_missing_topology() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -861,6 +1050,7 @@ mod tests {
 
         let error = state
             .add_schema(invalid_schema, HashMap::new())
+            .await
             .expect_err("schema without topology should be rejected");
 
         match error {
@@ -871,8 +1061,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn get_available_schemas_returns_all_schemas() {
+    #[tokio::test]
+    async fn get_available_schemas_returns_all_schemas() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -964,13 +1154,13 @@ mod tests {
             ),
         );
 
-        let outcome1 = state.add_schema(schema1.clone(), HashMap::new()).expect("failed to add schema1");
+        let outcome1 = state.add_schema(schema1.clone(), HashMap::new()).await.expect("failed to add schema1");
         let schema1_name = match outcome1 {
             SchemaAddOutcome::Added(s, _) => s.name,
             _ => panic!("schema1 should be added"),
         };
         
-        let outcome2 = state.add_schema(schema2.clone(), HashMap::new()).expect("failed to add schema2");
+        let outcome2 = state.add_schema(schema2.clone(), HashMap::new()).await.expect("failed to add schema2");
         let schema2_name = match outcome2 {
             SchemaAddOutcome::Added(s, _) => s.name,
             _ => panic!("schema2 should be added"),

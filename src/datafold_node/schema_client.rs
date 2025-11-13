@@ -285,7 +285,7 @@ mod tests {
                     |payload: web::Json<AddSchemaRequest>, state: web::Data<SchemaServiceState>| async move {
                         let request = payload.into_inner();
                         
-                        match state.add_schema(request.schema, request.mutation_mappers) {
+                        match state.add_schema(request.schema, request.mutation_mappers).await {
                             Ok(SchemaAddOutcome::Added(schema, mutation_mappers)) => {
                                 HttpResponse::Created().json(AddSchemaResponse {
                                     schema,

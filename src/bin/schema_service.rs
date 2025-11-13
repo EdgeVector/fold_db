@@ -2,6 +2,7 @@ use clap::Parser;
 use datafold::{
     constants::DEFAULT_SCHEMA_SERVICE_PORT,
     schema_service::SchemaServiceServer,
+    storage::DynamoDbConfig,
 };
 
 /// Command line options for the schema service binary.
@@ -20,12 +21,26 @@ struct Cli {
 /// Main entry point for the Schema Service.
 ///
 /// This service provides HTTP endpoints for schema discovery and retrieval.
-/// It stores schemas in a sled database and serves them via REST API.
+///
+/// # Storage Modes
+///
+/// The service supports two storage modes:
+/// 1. **Local Sled Storage (Default)**: Uses local sled database
+/// 2. **DynamoDB Storage (Serverless)**: Uses DynamoDB with no locking needed!
 ///
 /// # Command-Line Arguments
 ///
 /// * `--port <PORT>` - Port for the schema service (default: 9002)
-/// * `--db-path <PATH>` - Path to the sled database for storing schemas (default: schema_registry)
+/// * `--db-path <PATH>` - Path to the sled database for local storage (default: schema_registry)
+///
+/// # Environment Variables (DynamoDB Mode)
+///
+/// To enable DynamoDB storage, set the following environment variables:
+/// * `DATAFOLD_DYNAMODB_TABLE` - DynamoDB table name (required for DynamoDB mode)
+/// * `DATAFOLD_DYNAMODB_REGION` - AWS region (required for DynamoDB mode)
+///
+/// If DynamoDB environment variables are set, DynamoDB storage will be used automatically.
+/// **No distributed locking needed** - topology hashes ensure idempotent writes!
 ///
 /// # Returns
 ///
@@ -36,6 +51,7 @@ struct Cli {
 /// Returns an error if:
 /// * The database cannot be opened
 /// * The HTTP server cannot be started
+/// * DynamoDB configuration is invalid (when using DynamoDB mode)
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     datafold::web_logger::init().ok();
@@ -43,9 +59,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command-line arguments
     let Cli { port, db_path } = Cli::parse();
     
-    // Create and run the schema service
     let bind_address = format!("127.0.0.1:{}", port);
-    let server = SchemaServiceServer::new(db_path, &bind_address)?;
+    
+    // Check if DynamoDB configuration is available from environment
+    let server = if let Ok(dynamodb_config) = DynamoDbConfig::from_env() {
+        println!("🚀 Schema service starting with DynamoDB storage");
+        println!("   Table: {}", dynamodb_config.table_name);
+        println!("   Region: {}", dynamodb_config.region);
+        println!("   ✨ No locking needed - topology hashes ensure idempotent writes!");
+        
+        SchemaServiceServer::new_with_dynamodb(dynamodb_config, &bind_address).await?
+    } else {
+        println!("🚀 Schema service starting with local sled storage");
+        println!("   Database path: {}", db_path);
+        
+        SchemaServiceServer::new(db_path, &bind_address)?
+    };
+    
+    println!("✅ Schema service listening on {}", bind_address);
     
     server.run().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
