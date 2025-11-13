@@ -286,7 +286,7 @@ mod tests {
         let store = DynamoDbSchemaStore::new(config).await.unwrap();
 
         let schemas = store.list_schema_names().await.unwrap();
-        assert!(schemas.len() >= 0); // Just check it doesn't crash
+        assert!(schemas.iter().all(|schema| !schema.is_empty()));
     }
 }
 

@@ -68,8 +68,8 @@ fn verify_outcome_has_schema(outcome: &SchemaAddOutcome) {
     }
 }
 
-#[test]
-fn closeness_rejects_identical_schema_with_different_name() {
+#[tokio::test]
+async fn closeness_rejects_identical_schema_with_different_name() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -86,7 +86,7 @@ fn closeness_rejects_identical_schema_with_different_name() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let duplicate_schema = json_to_schema(add_string_topologies(
         json!({
@@ -98,7 +98,7 @@ fn closeness_rejects_identical_schema_with_different_name() {
 
     let outcome = state
         .add_schema(duplicate_schema, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     verify_outcome_has_schema(&outcome);
 
@@ -111,8 +111,8 @@ fn closeness_rejects_identical_schema_with_different_name() {
     }
 }
 
-#[test]
-fn closeness_always_returns_schema_on_success() {
+#[tokio::test]
+async fn closeness_always_returns_schema_on_success() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -129,7 +129,7 @@ fn closeness_always_returns_schema_on_success() {
 
     let outcome = state
         .add_schema(new_schema, HashMap::new())
-        .expect("failed to add schema");
+        .await.expect("failed to add schema");
 
     verify_outcome_has_schema(&outcome);
 
@@ -145,8 +145,8 @@ fn closeness_always_returns_schema_on_success() {
     }
 }
 
-#[test]
-fn closeness_always_returns_schema_on_rejection() {
+#[tokio::test]
+async fn closeness_always_returns_schema_on_rejection() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -166,7 +166,7 @@ fn closeness_always_returns_schema_on_rejection() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let duplicate_schema = json_to_schema(add_string_topologies(
         json!({
@@ -181,7 +181,7 @@ fn closeness_always_returns_schema_on_rejection() {
 
     let outcome = state
         .add_schema(duplicate_schema, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     verify_outcome_has_schema(&outcome);
 
@@ -197,8 +197,8 @@ fn closeness_always_returns_schema_on_rejection() {
     }
 }
 
-#[test]
-fn closeness_allows_dissimilar_schemas() {
+#[tokio::test]
+async fn closeness_allows_dissimilar_schemas() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -218,7 +218,7 @@ fn closeness_allows_dissimilar_schemas() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let different_schema = json_to_schema(add_string_topologies(
         json!({
@@ -235,7 +235,7 @@ fn closeness_allows_dissimilar_schemas() {
 
     let outcome = state
         .add_schema(different_schema, HashMap::new())
-        .expect("failed to add dissimilar schema");
+        .await.expect("failed to add dissimilar schema");
 
     verify_outcome_has_schema(&outcome);
 
@@ -247,8 +247,8 @@ fn closeness_allows_dissimilar_schemas() {
     }
 }
 
-#[test]
-fn closeness_handles_similar_but_slightly_different_schemas() {
+#[tokio::test]
+async fn closeness_handles_similar_but_slightly_different_schemas() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -269,7 +269,7 @@ fn closeness_handles_similar_but_slightly_different_schemas() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let similar_schema_with_extra_field = json_to_schema(add_string_topologies(
         json!({
@@ -286,7 +286,7 @@ fn closeness_handles_similar_but_slightly_different_schemas() {
 
     let outcome = state
         .add_schema(similar_schema_with_extra_field, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     verify_outcome_has_schema(&outcome);
 
@@ -302,8 +302,8 @@ fn closeness_handles_similar_but_slightly_different_schemas() {
     }
 }
 
-#[test]
-fn closeness_uses_normalized_comparison_for_properties() {
+#[tokio::test]
+async fn closeness_uses_normalized_comparison_for_properties() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -324,7 +324,7 @@ fn closeness_uses_normalized_comparison_for_properties() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let reordered_properties_schema = json_to_schema(add_string_topologies(
         json!({
@@ -340,7 +340,7 @@ fn closeness_uses_normalized_comparison_for_properties() {
 
     let outcome = state
         .add_schema(reordered_properties_schema, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     match outcome {
         SchemaAddOutcome::TooSimilar(conflict) => {
@@ -353,8 +353,8 @@ fn closeness_uses_normalized_comparison_for_properties() {
     }
 }
 
-#[test]
-fn closeness_ignores_schema_name_in_comparison() {
+#[tokio::test]
+async fn closeness_ignores_schema_name_in_comparison() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -373,7 +373,7 @@ fn closeness_ignores_schema_name_in_comparison() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let same_content_different_name = json_to_schema(add_string_topologies(
         json!({
@@ -387,7 +387,7 @@ fn closeness_ignores_schema_name_in_comparison() {
 
     let outcome = state
         .add_schema(same_content_different_name, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     match outcome {
         SchemaAddOutcome::TooSimilar(conflict) => {
@@ -400,8 +400,8 @@ fn closeness_ignores_schema_name_in_comparison() {
     }
 }
 
-#[test]
-fn closeness_with_object_style_fields() {
+#[tokio::test]
+async fn closeness_with_object_style_fields() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -419,7 +419,7 @@ fn closeness_with_object_style_fields() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let similar_object_schema = json_to_schema(convert_object_fields_to_array(json!({
         "name": "NewObject",
@@ -432,7 +432,7 @@ fn closeness_with_object_style_fields() {
 
     let outcome = state
         .add_schema(similar_object_schema, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     match outcome {
         SchemaAddOutcome::TooSimilar(conflict) => {
@@ -445,8 +445,8 @@ fn closeness_with_object_style_fields() {
     }
 }
 
-#[test]
-fn closeness_creates_field_mappers_for_high_field_overlap() {
+#[tokio::test]
+async fn closeness_creates_field_mappers_for_high_field_overlap() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -466,7 +466,7 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let extended_schema = json_to_schema(convert_object_fields_to_array(json!({
         "name": "ExtendedEntity",
@@ -483,7 +483,7 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
 
     let outcome = state
         .add_schema(extended_schema, HashMap::new())
-        .expect("failed to add schema with high field overlap");
+        .await.expect("failed to add schema with high field overlap");
 
     match outcome {
         SchemaAddOutcome::Added(response, _) => {
@@ -497,8 +497,8 @@ fn closeness_creates_field_mappers_for_high_field_overlap() {
     }
 }
 
-#[test]
-fn closeness_with_multiple_existing_schemas_finds_closest() {
+#[tokio::test]
+async fn closeness_with_multiple_existing_schemas_finds_closest() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -538,9 +538,15 @@ fn closeness_with_multiple_existing_schemas_finds_closest() {
         &["x", "y", "z"]
     ));
 
-    state.add_schema(schema1, HashMap::new()).expect("failed to add schema1");
-    state.add_schema(schema2, HashMap::new()).expect("failed to add schema2");
-    state.add_schema(schema3, HashMap::new()).expect("failed to add schema3");
+    state
+        .add_schema(schema1, HashMap::new())
+        .await.expect("failed to add schema1");
+    state
+        .add_schema(schema2, HashMap::new())
+        .await.expect("failed to add schema2");
+    state
+        .add_schema(schema3, HashMap::new())
+        .await.expect("failed to add schema3");
 
     let new_schema = json_to_schema(add_string_topologies(
         json!({
@@ -555,7 +561,7 @@ fn closeness_with_multiple_existing_schemas_finds_closest() {
 
     let outcome = state
         .add_schema(new_schema, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     match outcome {
         SchemaAddOutcome::TooSimilar(conflict) => {
@@ -568,8 +574,8 @@ fn closeness_with_multiple_existing_schemas_finds_closest() {
     }
 }
 
-#[test]
-fn closeness_with_nested_objects() {
+#[tokio::test]
+async fn closeness_with_nested_objects() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -586,7 +592,7 @@ fn closeness_with_nested_objects() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let duplicate_nested = json_to_schema(add_string_topologies(
         json!({
@@ -598,7 +604,7 @@ fn closeness_with_nested_objects() {
 
     let outcome = state
         .add_schema(duplicate_nested, HashMap::new())
-        .expect("failed to evaluate schema similarity");
+        .await.expect("failed to evaluate schema similarity");
 
     match outcome {
         SchemaAddOutcome::TooSimilar(conflict) => {
@@ -611,8 +617,8 @@ fn closeness_with_nested_objects() {
     }
 }
 
-#[test]
-fn closeness_field_overlap_below_threshold_without_high_similarity() {
+#[tokio::test]
+async fn closeness_field_overlap_below_threshold_without_high_similarity() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -634,7 +640,7 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let new_schema = json_to_schema(convert_object_fields_to_array(json!({
         "name": "DifferentSchema",
@@ -651,7 +657,7 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
 
     let outcome = state
         .add_schema(new_schema, HashMap::new())
-        .expect("failed to add schema with low overlap");
+        .await.expect("failed to add schema with low overlap");
 
     match outcome {
         SchemaAddOutcome::Added(response, _) => {
@@ -663,9 +669,9 @@ fn closeness_field_overlap_below_threshold_without_high_similarity() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "empty schemas cannot have topology hashes computed - not supported with topology-based system"]
-fn closeness_with_empty_schemas() {
+async fn closeness_with_empty_schemas() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -679,7 +685,7 @@ fn closeness_with_empty_schemas() {
 
     let outcome1 = state
         .add_schema(first_empty, HashMap::new())
-        .expect("failed to add first empty schema");
+        .await.expect("failed to add first empty schema");
 
     assert!(matches!(outcome1, SchemaAddOutcome::Added(_, _)));
 
@@ -690,7 +696,7 @@ fn closeness_with_empty_schemas() {
 
     let outcome2 = state
         .add_schema(second_empty, HashMap::new())
-        .expect("failed to evaluate empty schema similarity");
+        .await.expect("failed to evaluate empty schema similarity");
 
     match outcome2 {
         SchemaAddOutcome::TooSimilar(conflict) => {
@@ -702,8 +708,8 @@ fn closeness_with_empty_schemas() {
     }
 }
 
-#[test]
-fn closeness_respects_field_mapper_preservation() {
+#[tokio::test]
+async fn closeness_respects_field_mapper_preservation() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -720,7 +726,7 @@ fn closeness_respects_field_mapper_preservation() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     let new_schema_with_existing_mappers = json_to_schema(convert_object_fields_to_array(json!({
         "name": "Extended",
@@ -736,7 +742,7 @@ fn closeness_respects_field_mapper_preservation() {
 
     let outcome = state
         .add_schema(new_schema_with_existing_mappers, HashMap::new())
-        .expect("failed to add schema with existing mappers");
+        .await.expect("failed to add schema with existing mappers");
 
     match outcome {
         SchemaAddOutcome::Added(response, _) => {
@@ -754,9 +760,9 @@ fn closeness_respects_field_mapper_preservation() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "field_mappers are no longer automatically created - this feature needs to be reimplemented"]
-fn mutation_mappers_updated_when_field_mappers_added() {
+async fn mutation_mappers_updated_when_field_mappers_added() {
     let temp_dir = tempdir().expect("failed to create temp directory");
     let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
@@ -775,7 +781,7 @@ fn mutation_mappers_updated_when_field_mappers_added() {
 
     state
         .add_schema(existing_schema, HashMap::new())
-        .expect("failed to add existing schema");
+        .await.expect("failed to add existing schema");
 
     // Propose a new schema with mutation_mappers that map JSON fields to schema fields
     let mut mutation_mappers = HashMap::new();
@@ -795,7 +801,7 @@ fn mutation_mappers_updated_when_field_mappers_added() {
 
     let outcome = state
         .add_schema(new_schema, mutation_mappers)
-        .expect("failed to add schema with mutation mappers");
+        .await.expect("failed to add schema with mutation mappers");
 
     match outcome {
         SchemaAddOutcome::Added(response, updated_mutation_mappers) => {
