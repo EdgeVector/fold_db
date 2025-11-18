@@ -1,16 +1,20 @@
 //! File upload and conversion module for ingestion
 
-use crate::datafold_node::http_server::AppState;
+use crate::datafold_node::DataFoldNode;
 use crate::ingestion::multipart_parser::parse_multipart;
 use crate::ingestion::json_processor::{
     convert_file_to_json, flatten_root_layers, save_json_to_temp_file,
 };
 use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
+use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::storage::UploadStorage;
 use actix_multipart::Multipart;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Process file upload and ingestion
 /// 
@@ -37,7 +41,9 @@ use serde_json::json;
 )]
 pub async fn upload_file(
     payload: Multipart,
-    state: web::Data<AppState>,
+    upload_storage: web::Data<UploadStorage>,
+    progress_tracker: web::Data<ProgressTracker>,
+    node: web::Data<Arc<Mutex<DataFoldNode>>>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -46,7 +52,7 @@ pub async fn upload_file(
     );
 
     // Extract file and form data from multipart request
-    let form_data = match parse_multipart(payload, &state.upload_storage).await {
+    let form_data = match parse_multipart(payload, &upload_storage).await {
         Ok(data) => data,
         Err(response) => return response,
     };
@@ -97,7 +103,11 @@ pub async fn upload_file(
         source_file_name: Some(form_data.original_filename.clone()),
     };
 
-    let progress_id = spawn_background_ingestion(spawn_config, &state);
+    let progress_id = spawn_background_ingestion(
+        spawn_config, 
+        progress_tracker.get_ref(),
+        Arc::clone(node.get_ref())
+    );
 
     // Return immediately with the progress_id
     log_feature!(

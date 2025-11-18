@@ -6,13 +6,15 @@
 //! - Batch processing scripts
 //! - Programmatic data pipelines
 
-use crate::datafold_node::http_server::AppState;
+use crate::datafold_node::DataFoldNode;
 use crate::ingestion::json_processor::{convert_file_to_json, flatten_root_layers};
 use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
-use crate::ingestion::{IngestionError, IngestionResponse};
+use crate::ingestion::{IngestionError, IngestionResponse, ProgressTracker};
 use crate::storage::UploadStorage;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::fs;
+use tokio::sync::Mutex;
 
 /// Request for S3 file ingestion
 #[derive(Debug, Clone)]
@@ -65,7 +67,9 @@ impl S3IngestionRequest {
 /// # Arguments
 ///
 /// * `request` - S3 ingestion request with path and settings
-/// * `state` - Application state with DB and storage configuration
+/// * `upload_storage` - Upload storage for file management
+/// * `progress_tracker` - Progress tracker for ingestion operations
+/// * `node` - DataFold node for data operations
 ///
 /// # Returns
 ///
@@ -75,18 +79,21 @@ impl S3IngestionRequest {
 ///
 /// ```ignore
 /// use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
-/// use datafold::datafold_node::http_server::AppState;
+/// use datafold::storage::UploadStorage;
+/// use std::sync::Arc;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     // Initialize AppState with your configuration
-///     let state = /* initialize AppState */;
+///     // Initialize dependencies
+///     let upload_storage = UploadStorage::local("uploads".into());
+///     let progress_tracker = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+///     let node = Arc::new(tokio::sync::Mutex::new(/* initialize DataFoldNode */));
 ///     
 ///     let request = S3IngestionRequest::new(
 ///         "s3://my-bucket/data.json".to_string()
 ///     );
 ///     
-///     let response = ingest_from_s3_path_async(&request, &state).await?;
+///     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node).await?;
 ///     println!("Started ingestion: {}", response.progress_id.unwrap());
 ///     
 ///     Ok(())
@@ -94,10 +101,12 @@ impl S3IngestionRequest {
 /// ```
 pub async fn ingest_from_s3_path_async(
     request: &S3IngestionRequest,
-    state: &AppState,
+    upload_storage: &UploadStorage,
+    progress_tracker: &ProgressTracker,
+    node: Arc<Mutex<DataFoldNode>>,
 ) -> Result<IngestionResponse, IngestionError> {
     // Parse and download S3 file
-    let (file_path, filename) = download_s3_file(&request.s3_path, &state.upload_storage).await?;
+    let (file_path, filename) = download_s3_file(&request.s3_path, upload_storage).await?;
 
     // Convert file to JSON
     let json_value = convert_file_to_json(&file_path)
@@ -116,7 +125,7 @@ pub async fn ingest_from_s3_path_async(
         source_file_name: Some(filename),
     };
 
-    let progress_id = spawn_background_ingestion(spawn_config, state);
+    let progress_id = spawn_background_ingestion(spawn_config, progress_tracker, node);
 
     Ok(IngestionResponse {
         success: true,
@@ -137,7 +146,9 @@ pub async fn ingest_from_s3_path_async(
 /// # Arguments
 ///
 /// * `request` - S3 ingestion request with path and settings
-/// * `state` - Application state with DB and storage configuration
+/// * `upload_storage` - Upload storage for file management
+/// * `progress_tracker` - Progress tracker for ingestion operations
+/// * `node` - DataFold node for data operations
 ///
 /// # Returns
 ///
@@ -147,18 +158,21 @@ pub async fn ingest_from_s3_path_async(
 ///
 /// ```ignore
 /// use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
-/// use datafold::datafold_node::http_server::AppState;
+/// use datafold::storage::UploadStorage;
+/// use std::sync::Arc;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     // Initialize AppState with your configuration
-///     let state = /* initialize AppState */;
+///     // Initialize dependencies
+///     let upload_storage = UploadStorage::local("uploads".into());
+///     let progress_tracker = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+///     let node = Arc::new(tokio::sync::Mutex::new(/* initialize DataFoldNode */));
 ///     
 ///     let request = S3IngestionRequest::new(
 ///         "s3://my-bucket/data.json".to_string()
 ///     ).with_auto_execute(true);
 ///     
-///     let response = ingest_from_s3_path_sync(&request, &state).await?;
+///     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node).await?;
 ///     println!("Ingestion complete: {} mutations executed", 
 ///              response.mutations_executed);
 ///     
@@ -167,10 +181,12 @@ pub async fn ingest_from_s3_path_async(
 /// ```
 pub async fn ingest_from_s3_path_sync(
     request: &S3IngestionRequest,
-    state: &AppState,
+    upload_storage: &UploadStorage,
+    progress_tracker: &ProgressTracker,
+    node: Arc<Mutex<DataFoldNode>>,
 ) -> Result<IngestionResponse, IngestionError> {
     // Start async ingestion
-    let async_response = ingest_from_s3_path_async(request, state).await?;
+    let async_response = ingest_from_s3_path_async(request, upload_storage, progress_tracker, node).await?;
     
     let progress_id = async_response.progress_id
         .ok_or_else(|| IngestionError::InvalidInput("No progress_id returned".to_string()))?;
@@ -179,7 +195,7 @@ pub async fn ingest_from_s3_path_sync(
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         
-        let progress_map = state.progress_tracker.lock().unwrap();
+        let progress_map = progress_tracker.lock().unwrap();
         let progress = progress_map.get(&progress_id).cloned();
         drop(progress_map);
         
@@ -190,7 +206,7 @@ pub async fn ingest_from_s3_path_sync(
                     success: true,
                     progress_id: Some(progress_id),
                     schema_used: progress.results.as_ref().map(|r| r.schema_name.clone()),
-                    new_schema_created: progress.results.as_ref().map_or(false, |r| r.new_schema_created),
+                    new_schema_created: progress.results.as_ref().is_some_and(|r| r.new_schema_created),
                     mutations_generated: progress.results.as_ref().map_or(0, |r| r.mutations_generated),
                     mutations_executed: progress.results.as_ref().map_or(0, |r| r.mutations_executed),
                     errors: progress.error_message.into_iter().collect(),

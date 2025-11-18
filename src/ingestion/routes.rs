@@ -1,9 +1,10 @@
 //! HTTP route handlers for the ingestion API
 
-use crate::datafold_node::http_server::AppState;
+use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
+use crate::ingestion::ProgressTracker;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::IngestionResponse;
 use crate::log_feature;
@@ -14,6 +15,7 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Process JSON ingestion request
 #[utoipa::path(
@@ -25,7 +27,8 @@ use std::sync::Arc;
 )]
 pub async fn process_json(
     request: web::Json<IngestionRequest>,
-    state: web::Data<AppState>,
+    progress_tracker: web::Data<ProgressTracker>,
+    node: web::Data<Arc<Mutex<DataFoldNode>>>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -37,8 +40,7 @@ pub async fn process_json(
     let progress_id = uuid::Uuid::new_v4().to_string();
     
     // Start progress tracking
-    let tracker = state.progress_tracker.clone();
-    let progress_service = ProgressService::new(tracker);
+    let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
     progress_service.start_progress(progress_id.clone());
 
     // Try to create a simple ingestion service
@@ -59,7 +61,7 @@ pub async fn process_json(
     };
 
     // Spawn ingestion as a background task and return immediately with progress_id
-    let node = Arc::clone(&state.node);
+    let node_clone = Arc::clone(node.get_ref());
     let request_data = request.into_inner();
     let progress_id_clone = progress_id.clone();
     
@@ -72,7 +74,7 @@ pub async fn process_json(
         );
         
         match service
-            .process_json_with_node_and_progress(request_data, node, &progress_service, progress_id_clone.clone())
+            .process_json_with_node_and_progress(request_data, node_clone, &progress_service, progress_id_clone.clone())
             .await
         {
             Ok(response) => {
@@ -126,7 +128,7 @@ pub async fn process_json(
     tag = "ingestion",
     responses((status = 200, description = "Ingestion status", body = crate::ingestion::IngestionStatus))
 )]
-pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
+pub async fn get_status() -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -173,7 +175,7 @@ pub async fn get_status(_state: web::Data<AppState>) -> impl Responder {
     tag = "ingestion",
     responses((status = 200, description = "Health OK", body = Value), (status = 503, description = "Health not OK", body = Value))
 )]
-pub async fn health_check(_state: web::Data<AppState>) -> impl Responder {
+pub async fn health_check() -> impl Responder {
     match create_simple_ingestion_service().await {
         Ok(service) => {
             let status = service.get_status();
@@ -221,7 +223,6 @@ pub async fn health_check(_state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn validate_json(
     request: web::Json<Value>,
-    _state: web::Data<AppState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -258,7 +259,7 @@ pub async fn validate_json(
     tag = "ingestion",
     responses((status = 200, description = "Ingestion config", body = IngestionConfig))
 )]
-pub async fn get_ingestion_config(_state: web::Data<AppState>) -> impl Responder {
+pub async fn get_ingestion_config() -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -285,7 +286,6 @@ pub async fn get_ingestion_config(_state: web::Data<AppState>) -> impl Responder
 )]
 pub async fn save_ingestion_config(
     request: web::Json<SavedConfig>,
-    _state: web::Data<AppState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -367,7 +367,7 @@ async fn create_simple_ingestion_service(
 )]
 pub async fn get_progress(
     path: web::Path<String>,
-    state: web::Data<AppState>,
+    progress_tracker: web::Data<ProgressTracker>,
 ) -> impl Responder {
     let id = path.into_inner();
     
@@ -378,9 +378,8 @@ pub async fn get_progress(
         id
     );
 
-    // Get progress tracker from app state
-    let tracker = state.progress_tracker.clone();
-    let progress_service = ProgressService::new(tracker);
+    // Get progress tracker from data
+    let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
     
     match progress_service.get_progress(&id) {
         Some(progress) => {
@@ -404,7 +403,7 @@ pub async fn get_progress(
     responses((status = 200, description = "All active progress", body = Vec<IngestionProgress>))
 )]
 pub async fn get_all_progress(
-    state: web::Data<AppState>,
+    progress_tracker: web::Data<ProgressTracker>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -412,8 +411,7 @@ pub async fn get_all_progress(
         "Received request for all progress"
     );
 
-    let tracker = state.progress_tracker.clone();
-    let progress_service = ProgressService::new(tracker);
+    let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
     let all_progress = progress_service.get_all_progress();
     
     HttpResponse::Ok().json(all_progress)
@@ -422,33 +420,12 @@ pub async fn get_all_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datafold_node::{DataFoldNode, NodeConfig};
     use actix_web::{test, App};
-    use std::sync::Arc;
-    use tempfile::tempdir;
-
-    async fn create_test_app_state() -> web::Data<AppState> {
-        let temp_dir = tempdir().unwrap();
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
-        let node = DataFoldNode::new(config).unwrap();
-
-        // Create temp upload storage for tests
-        let upload_storage = crate::storage::UploadStorage::local(temp_dir.path().join("uploads"));
-
-        web::Data::new(AppState {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
-            progress_tracker: crate::ingestion::create_progress_tracker(),
-            upload_storage,
-        })
-    }
 
     #[actix_web::test]
     async fn test_get_status() {
-        let app_state = create_test_app_state().await;
         let app = test::init_service(
             App::new()
-                .app_data(app_state)
                 .route("/status", web::get().to(get_status)),
         )
         .await;
@@ -461,10 +438,8 @@ mod tests {
 
     #[actix_web::test]
     async fn test_health_check() {
-        let app_state = create_test_app_state().await;
         let app = test::init_service(
             App::new()
-                .app_data(app_state)
                 .route("/health", web::get().to(health_check)),
         )
         .await;
@@ -476,10 +451,8 @@ mod tests {
 
     #[actix_web::test]
     async fn test_get_ingestion_config() {
-        let app_state = create_test_app_state().await;
         let app = test::init_service(
             App::new()
-                .app_data(app_state)
                 .route("/config", web::get().to(get_ingestion_config)),
         )
         .await;

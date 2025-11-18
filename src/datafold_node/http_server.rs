@@ -188,10 +188,15 @@ impl DataFoldHttpServer {
             if upload_storage.is_local() { "Local" } else { "S3" }
         );
 
-        // Create shared application state
+        // Create individual dependencies for ingestion routes
+        let node = web::Data::new(self.node.clone());
+        let progress_tracker_data = web::Data::new(create_progress_tracker());
+        let upload_storage_data = web::Data::new(upload_storage.clone());
+
+        // Create shared application state for routes that still need it
         let app_state = web::Data::new(AppState {
             node: self.node.clone(),
-            progress_tracker: create_progress_tracker(),
+            progress_tracker: progress_tracker_data.get_ref().clone(),
             upload_storage,
         });
 
@@ -215,6 +220,9 @@ impl DataFoldHttpServer {
                 .wrap(cors)
                 .app_data(app_state.clone())
                 .app_data(llm_query_state.clone())
+                .app_data(node.clone())
+                .app_data(progress_tracker_data.clone())
+                .app_data(upload_storage_data.clone())
                 .app_data(json_config)
                 .service(
                     web::scope("/api")

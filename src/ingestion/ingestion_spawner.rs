@@ -4,11 +4,11 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::datafold_node::http_server::AppState;
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::IngestionConfig;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
+use crate::ingestion::ProgressTracker;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::IngestionError;
 use crate::log_feature;
@@ -26,13 +26,13 @@ pub struct IngestionSpawnConfig {
 /// Spawn background ingestion task and return progress_id
 pub fn spawn_background_ingestion(
     config: IngestionSpawnConfig,
-    state: &AppState,
+    progress_tracker: &ProgressTracker,
+    node: Arc<Mutex<DataFoldNode>>,
 ) -> String {
     let progress_id = uuid::Uuid::new_v4().to_string();
     
     // Start progress tracking
-    let tracker = state.progress_tracker.clone();
-    let progress_service = ProgressService::new(tracker);
+    let progress_service = ProgressService::new(progress_tracker.clone());
     progress_service.start_progress(progress_id.clone());
     
     // Create ingestion request
@@ -45,7 +45,6 @@ pub fn spawn_background_ingestion(
     };
     
     // Clone for the spawned task
-    let node = Arc::clone(&state.node);
     let progress_id_clone = progress_id.clone();
     
     // Spawn the background task
