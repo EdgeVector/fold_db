@@ -61,17 +61,21 @@ impl EmbeddedServerHandle {
 /// # Example
 ///
 /// ```no_run
+/// use std::path::PathBuf;
 /// use datafold::datafold_node::{DataFoldNode, start_embedded_server};
+/// use datafold::datafold_node::config::NodeConfig;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let node = DataFoldNode::new_with_defaults()?;
+///     // Build a NodeConfig and create the node with the current API:
+///     let config = NodeConfig::new(PathBuf::from("./data"));
+///     let node = DataFoldNode::new(config)?;
 ///     let handle = start_embedded_server(node, 9001).await?;
-///     
+///
 ///     println!("Server running on {}", handle.bind_address());
-///     
+///
 ///     // Do other work...
-///     
+///
 ///     // When done:
 ///     handle.abort();
 ///     Ok(())
