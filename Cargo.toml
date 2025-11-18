@@ -1,15 +1,15 @@
 [package]
 name = "datafold"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
-description = "A personal database for data sovereignty"
+description = "A personal database for data sovereignty with AI-powered ingestion and S3 support"
 documentation = "https://docs.rs/datafold"
 homepage = "https://datafold.ai"
 repository = "https://github.com/shiba4life/fold_db"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
-keywords = ["database", "distributed", "schema", "ingestion", "ai"]
+keywords = ["database", "distributed", "schema", "ingestion", "s3"]
 categories = ["database", "data-structures", "network-programming"]
 exclude = [
     "data/*",

@@ -9,6 +9,7 @@ A Rust-based distributed data platform with schema-based storage, AI-powered ing
 ## ✨ Features
 
 - **🤖 AI-Powered Data Ingestion** - Automatic schema creation and field mapping using AI [Initial prototype]
+- **💬 AI Natural Language Query** - Ask questions in plain English, get AI-interpreted results [working]
 - **🔄 Real-Time Processing** - Event-driven architecture with automatic transform execution [working]
 - **🌐 Distributed Architecture** - P2P networking with automatic peer discovery [untested]
 - **📊 Flexible Schema System** - Dynamic schema management with validation [working]
@@ -240,11 +241,57 @@ DataFold supports ingesting data from various sources with the new adapter-based
 
 - **Social Media APIs** - Twitter, Facebook, Reddit, TikTok
 - **Real-time Streams** - WebSockets, Server-Sent Events
-- **File Uploads** - JSON, CSV, JSONL
+- **File Uploads** - JSON, CSV, JSONL with AI-powered conversion
+- **S3 File Paths** - Process files already in S3 without re-uploading
 - **Webhooks** - Real-time event processing
 - **Custom Adapters** - Extensible plugin system
 
 See [`SOCIAL_MEDIA_INGESTION_PROPOSAL.md`](SOCIAL_MEDIA_INGESTION_PROPOSAL.md) for the complete ingestion architecture.
+
+### File Ingestion
+
+DataFold provides two ways to ingest files:
+
+**1. Traditional File Upload**
+```bash
+curl -X POST http://localhost:9001/api/ingestion/upload \
+  -F "file=@/path/to/local/file.json" \
+  -F "autoExecute=true"
+```
+
+**2. S3 File Path (No Re-upload Required)**
+```bash
+curl -X POST http://localhost:9001/api/ingestion/upload \
+  -F "s3FilePath=s3://my-bucket/path/to/file.json" \
+  -F "autoExecute=true"
+```
+
+**3. Programmatic API (for Lambda/Rust code)**
+```rust
+use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
+
+// Async ingestion (returns immediately with progress_id)
+let request = S3IngestionRequest::new("s3://bucket/file.json".to_string());
+let response = ingest_from_s3_path_async(&request, &state).await?;
+println!("Started: {}", response.progress_id.unwrap());
+
+// Or sync ingestion (waits for completion)
+use datafold::ingestion::ingest_from_s3_path_sync;
+let response = ingest_from_s3_path_sync(&request, &state).await?;
+println!("Complete: {} mutations", response.mutations_executed);
+```
+
+The S3 file path option allows you to process files already stored in S3 without uploading them again, saving bandwidth and time. This is particularly useful for:
+- **Lambda Functions** - Process S3 events programmatically
+- **ETL Pipelines** - Ingest pipeline outputs already in S3
+- **Batch Processing** - Process existing S3 files at scale
+- **Data Lakes** - Integration with S3-based data lakes
+
+**Requirements for S3 file paths:**
+- S3 storage mode must be configured (`DATAFOLD_UPLOAD_STORAGE_MODE=s3`)
+- AWS credentials with `s3:GetObject` permissions
+
+See [S3 File Path Ingestion Guide](docs/S3_FILE_PATH_INGESTION.md) for complete documentation and [Lambda example](examples/lambda_s3_ingestion.rs) for AWS Lambda integration.
 
 ## 🛠️ Development Setup
 
@@ -320,9 +367,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **Environment variable configuration:**
 
 ```bash
+# Database storage (Sled with S3 sync)
 export DATAFOLD_STORAGE_MODE=s3
 export DATAFOLD_S3_BUCKET=my-folddb-bucket
 export DATAFOLD_S3_REGION=us-west-2
+
+# Upload storage (for file ingestion)
+export DATAFOLD_UPLOAD_STORAGE_MODE=s3
+export DATAFOLD_UPLOAD_S3_BUCKET=my-uploads-bucket
+export DATAFOLD_UPLOAD_S3_REGION=us-west-2
 ```
 
 See [S3 Configuration Guide](docs/S3_CONFIGURATION.md) for complete setup instructions, AWS Lambda deployment, and cost optimization.
@@ -340,6 +393,21 @@ datafold_cli query examples/user_query.json
 
 # Execute mutations
 datafold_cli mutate examples/user_mutation.json
+```
+
+### Rust Code Examples
+
+See [`examples/`](examples/) directory for:
+
+- **[simple_s3_ingestion.rs](examples/simple_s3_ingestion.rs)** - Basic S3 file ingestion from Rust code
+- **[lambda_s3_ingestion.rs](examples/lambda_s3_ingestion.rs)** - AWS Lambda integration with S3 events
+
+```rust
+// Quick example: Ingest S3 file in Lambda
+use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
+
+let request = S3IngestionRequest::new("s3://bucket/data.json".to_string());
+let response = ingest_from_s3_path_async(&request, &state).await?;
 ```
 
 ### Python Integration
@@ -388,7 +456,11 @@ registered. This keeps authentication intact across restarts. See
 - **[API Documentation](https://docs.rs/datafold)** - Complete API reference
 - **[CLI Guide](README_CLI.md)** - Command-line interface usage
 - **[Ingestion Guide](INGESTION_README.md)** - AI-powered data ingestion
+- **[S3 File Path Ingestion](docs/S3_FILE_PATH_INGESTION.md)** - Process S3 files without re-uploading
+- **[AI Query Guide](docs/AI_QUERY_USAGE_GUIDE.md)** - Natural language query with AI interpretation
+- **[AI Query Quick Reference](docs/AI_QUERY_QUICK_REFERENCE.md)** - Quick start for AI queries
 - **[S3 Storage Guide](docs/S3_CONFIGURATION.md)** - Serverless deployment with S3
+- **[Upload Storage Guide](docs/UPLOAD_STORAGE.md)** - Configure local or S3 storage for uploads
 - **[Architecture](docs/Unified_Architecture.md)** - System design and patterns
 
 ## 🤝 Contributing

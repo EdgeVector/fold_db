@@ -65,7 +65,10 @@ pub use security::{
 };
 
 // Re-export ingestion types
-pub use ingestion::{IngestionConfig, IngestionCore, IngestionError, IngestionResponse};
+pub use ingestion::{
+    IngestionConfig, IngestionCore, IngestionError, IngestionResponse,
+    S3IngestionRequest, ingest_from_s3_path_async, ingest_from_s3_path_sync,
+};
 
 // Re-export storage types
 pub use storage::{S3Config, S3SyncedStorage, StorageConfig, StorageError};

@@ -1,0 +1,295 @@
+//! S3 file path ingestion for programmatic use
+//!
+//! This module provides functions for ingesting files directly from S3 paths
+//! without needing the HTTP server. This is particularly useful for:
+//! - AWS Lambda functions triggered by S3 events
+//! - Batch processing scripts
+//! - Programmatic data pipelines
+
+use crate::datafold_node::http_server::AppState;
+use crate::ingestion::json_processor::{convert_file_to_json, flatten_root_layers};
+use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
+use crate::ingestion::{IngestionError, IngestionResponse};
+use crate::storage::UploadStorage;
+use std::path::PathBuf;
+use tokio::fs;
+
+/// Request for S3 file ingestion
+#[derive(Debug, Clone)]
+pub struct S3IngestionRequest {
+    /// S3 path in format: s3://bucket/key
+    pub s3_path: String,
+    /// Whether to auto-execute mutations
+    pub auto_execute: bool,
+    /// Trust distance for mutations
+    pub trust_distance: u32,
+    /// Public key for authentication
+    pub pub_key: String,
+}
+
+impl S3IngestionRequest {
+    /// Create a new S3 ingestion request with default settings
+    pub fn new(s3_path: String) -> Self {
+        Self {
+            s3_path,
+            auto_execute: true,
+            trust_distance: 0,
+            pub_key: "default".to_string(),
+        }
+    }
+
+    /// Set whether to auto-execute mutations
+    pub fn with_auto_execute(mut self, auto_execute: bool) -> Self {
+        self.auto_execute = auto_execute;
+        self
+    }
+
+    /// Set trust distance
+    pub fn with_trust_distance(mut self, trust_distance: u32) -> Self {
+        self.trust_distance = trust_distance;
+        self
+    }
+
+    /// Set public key
+    pub fn with_pub_key(mut self, pub_key: String) -> Self {
+        self.pub_key = pub_key;
+        self
+    }
+}
+
+/// Ingest a file from S3 path with background processing
+///
+/// This function downloads a file from S3 and starts background ingestion.
+/// It returns immediately with a progress_id that can be used to track status.
+///
+/// # Arguments
+///
+/// * `request` - S3 ingestion request with path and settings
+/// * `state` - Application state with DB and storage configuration
+///
+/// # Returns
+///
+/// Returns an `IngestionResponse` with a progress_id for tracking.
+///
+/// # Example
+///
+/// ```ignore
+/// use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
+/// use datafold::datafold_node::http_server::AppState;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // Initialize AppState with your configuration
+///     let state = /* initialize AppState */;
+///     
+///     let request = S3IngestionRequest::new(
+///         "s3://my-bucket/data.json".to_string()
+///     );
+///     
+///     let response = ingest_from_s3_path_async(&request, &state).await?;
+///     println!("Started ingestion: {}", response.progress_id.unwrap());
+///     
+///     Ok(())
+/// }
+/// ```
+pub async fn ingest_from_s3_path_async(
+    request: &S3IngestionRequest,
+    state: &AppState,
+) -> Result<IngestionResponse, IngestionError> {
+    // Parse and download S3 file
+    let (file_path, filename) = download_s3_file(&request.s3_path, &state.upload_storage).await?;
+
+    // Convert file to JSON
+    let json_value = convert_file_to_json(&file_path)
+        .await
+        .map_err(|_| IngestionError::FileConversionFailed)?;
+
+    // Flatten unnecessary root layers
+    let flattened_json = flatten_root_layers(json_value);
+
+    // Spawn background ingestion
+    let spawn_config = IngestionSpawnConfig {
+        json_data: flattened_json,
+        auto_execute: request.auto_execute,
+        trust_distance: request.trust_distance,
+        pub_key: request.pub_key.clone(),
+        source_file_name: Some(filename),
+    };
+
+    let progress_id = spawn_background_ingestion(spawn_config, state);
+
+    Ok(IngestionResponse {
+        success: true,
+        progress_id: Some(progress_id),
+        schema_used: None,
+        new_schema_created: false,
+        mutations_generated: 0,
+        mutations_executed: 0,
+        errors: Vec::new(),
+    })
+}
+
+/// Ingest a file from S3 path synchronously (waits for completion)
+///
+/// This function downloads a file from S3, starts ingestion, and polls
+/// until completion before returning the final results.
+///
+/// # Arguments
+///
+/// * `request` - S3 ingestion request with path and settings
+/// * `state` - Application state with DB and storage configuration
+///
+/// # Returns
+///
+/// Returns a complete `IngestionResponse` with results.
+///
+/// # Example
+///
+/// ```ignore
+/// use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
+/// use datafold::datafold_node::http_server::AppState;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // Initialize AppState with your configuration
+///     let state = /* initialize AppState */;
+///     
+///     let request = S3IngestionRequest::new(
+///         "s3://my-bucket/data.json".to_string()
+///     ).with_auto_execute(true);
+///     
+///     let response = ingest_from_s3_path_sync(&request, &state).await?;
+///     println!("Ingestion complete: {} mutations executed", 
+///              response.mutations_executed);
+///     
+///     Ok(())
+/// }
+/// ```
+pub async fn ingest_from_s3_path_sync(
+    request: &S3IngestionRequest,
+    state: &AppState,
+) -> Result<IngestionResponse, IngestionError> {
+    // Start async ingestion
+    let async_response = ingest_from_s3_path_async(request, state).await?;
+    
+    let progress_id = async_response.progress_id
+        .ok_or_else(|| IngestionError::InvalidInput("No progress_id returned".to_string()))?;
+
+    // Poll for completion
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        
+        let progress_map = state.progress_tracker.lock().unwrap();
+        let progress = progress_map.get(&progress_id).cloned();
+        drop(progress_map);
+        
+        if let Some(progress) = progress {
+            if progress.is_complete {
+                // Return complete response with results
+                return Ok(IngestionResponse {
+                    success: true,
+                    progress_id: Some(progress_id),
+                    schema_used: progress.results.as_ref().map(|r| r.schema_name.clone()),
+                    new_schema_created: progress.results.as_ref().map_or(false, |r| r.new_schema_created),
+                    mutations_generated: progress.results.as_ref().map_or(0, |r| r.mutations_generated),
+                    mutations_executed: progress.results.as_ref().map_or(0, |r| r.mutations_executed),
+                    errors: progress.error_message.into_iter().collect(),
+                });
+            }
+        } else {
+            return Err(IngestionError::InvalidInput(format!(
+                "Progress tracking lost for {}",
+                progress_id
+            )));
+        }
+    }
+}
+
+/// Download a file from S3 path
+///
+/// Internal helper function that parses S3 path and downloads file to /tmp
+async fn download_s3_file(
+    s3_path: &str,
+    upload_storage: &UploadStorage,
+) -> Result<(PathBuf, String), IngestionError> {
+    // Parse S3 path (format: s3://bucket/key)
+    if !s3_path.starts_with("s3://") {
+        return Err(IngestionError::InvalidInput(format!(
+            "Invalid S3 path format. Expected 's3://bucket/key', got: {}",
+            s3_path
+        )));
+    }
+
+    let path_without_prefix = &s3_path[5..]; // Remove "s3://"
+    let parts: Vec<&str> = path_without_prefix.splitn(2, '/').collect();
+
+    if parts.len() != 2 {
+        return Err(IngestionError::InvalidInput(format!(
+            "Invalid S3 path structure. Expected 's3://bucket/key', got: {}",
+            s3_path
+        )));
+    }
+
+    let bucket = parts[0];
+    let key = parts[1];
+
+    // Extract filename from key (last part of the path)
+    let filename = key.rsplit('/').next().unwrap_or(key).to_string();
+
+    // Download file from S3
+    let file_data = upload_storage
+        .download_from_s3_path(bucket, key)
+        .await
+        .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+
+    // Save to /tmp for processing (file_to_json needs local file)
+    let temp_path = std::env::temp_dir().join(&filename);
+    fs::write(&temp_path, &file_data)
+        .await
+        .map_err(|e| IngestionError::StorageError(format!("Failed to write temp file: {}", e)))?;
+
+    Ok((temp_path, filename))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_s3_ingestion_request_builder() {
+        let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+            .with_auto_execute(false)
+            .with_trust_distance(5)
+            .with_pub_key("custom".to_string());
+
+        assert_eq!(request.s3_path, "s3://bucket/file.json");
+        assert!(!request.auto_execute);
+        assert_eq!(request.trust_distance, 5);
+        assert_eq!(request.pub_key, "custom");
+    }
+
+    #[test]
+    fn test_s3_path_parsing() {
+        let path = "s3://my-bucket/path/to/file.json";
+        assert!(path.starts_with("s3://"));
+
+        let path_without_prefix = &path[5..];
+        let parts: Vec<&str> = path_without_prefix.splitn(2, '/').collect();
+        
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "my-bucket");
+        assert_eq!(parts[1], "path/to/file.json");
+    }
+
+    #[test]
+    fn test_filename_extraction() {
+        let key = "path/to/file.json";
+        let filename = key.rsplit('/').next().unwrap_or(key);
+        assert_eq!(filename, "file.json");
+
+        let key2 = "file.json";
+        let filename2 = key2.rsplit('/').next().unwrap_or(key2);
+        assert_eq!(filename2, "file.json");
+    }
+}
+

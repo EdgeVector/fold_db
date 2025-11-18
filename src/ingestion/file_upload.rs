@@ -13,6 +13,18 @@ use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 
 /// Process file upload and ingestion
+/// 
+/// Accepts multipart/form-data with either:
+/// - file: Binary file to upload (traditional upload)
+/// - s3FilePath: S3 path (e.g., "s3://bucket/path/to/file.json") for files already in S3
+/// 
+/// Additional optional fields:
+/// - autoExecute: Boolean (default: true)
+/// - trustDistance: Number (default: 0)
+/// - pubKey: String (default: "default")
+/// 
+/// Note: Provide either 'file' OR 's3FilePath', not both.
+/// If s3FilePath is used, the file is downloaded from S3 for processing but not re-uploaded.
 #[utoipa::path(
     post,
     path = "/api/ingestion/upload",

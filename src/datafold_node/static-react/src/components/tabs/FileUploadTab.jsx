@@ -12,6 +12,8 @@ function FileUploadTab({ onResult }) {
   const [ingestionStatus, setIngestionStatus] = useState(null)
   const [currentProgress, setCurrentProgress] = useState(null)
   const [progressId, setProgressId] = useState(null)
+  const [useS3Path, setUseS3Path] = useState(false)
+  const [s3FilePath, setS3FilePath] = useState('')
 
   useEffect(() => {
     fetchIngestionStatus()
@@ -111,12 +113,23 @@ function FileUploadTab({ onResult }) {
   }, [])
 
   const handleUpload = async () => {
-    if (!selectedFile) {
-      onResult({
-        success: false,
-        error: 'Please select a file to upload'
-      })
-      return
+    // Validate input based on mode
+    if (useS3Path) {
+      if (!s3FilePath || !s3FilePath.startsWith('s3://')) {
+        onResult({
+          success: false,
+          error: 'Please provide a valid S3 path (e.g., s3://bucket/path/to/file.json)'
+        })
+        return
+      }
+    } else {
+      if (!selectedFile) {
+        onResult({
+          success: false,
+          error: 'Please select a file to upload'
+        })
+        return
+      }
     }
 
     // Reset all progress-related state immediately
@@ -129,7 +142,7 @@ function FileUploadTab({ onResult }) {
     // Show initial progress state immediately
     setCurrentProgress({
       progress_percentage: 0,
-      status_message: 'Uploading file...',
+      status_message: useS3Path ? 'Processing S3 file...' : 'Uploading file...',
       current_step: 'ValidatingConfig',
       is_complete: false,
       started_at: new Date().toISOString()
@@ -140,7 +153,15 @@ function FileUploadTab({ onResult }) {
 
     try {
       const formData = new FormData()
-      formData.append('file', selectedFile)
+      
+      if (useS3Path) {
+        // S3 path mode - send s3FilePath instead of file
+        formData.append('s3FilePath', s3FilePath)
+      } else {
+        // Regular file upload mode
+        formData.append('file', selectedFile)
+      }
+      
       formData.append('autoExecute', autoExecute.toString())
       formData.append('trustDistance', trustDistance.toString())
       formData.append('pubKey', pubKey)
@@ -165,7 +186,7 @@ function FileUploadTab({ onResult }) {
       } else {
         onResult({
           success: false,
-          error: result.error || 'Failed to upload file'
+          error: result.error || 'Failed to process file'
         })
         setIsUploading(false)
         setCurrentProgress(null)
@@ -173,7 +194,7 @@ function FileUploadTab({ onResult }) {
     } catch (error) {
       onResult({
         success: false,
-        error: error.message || 'Failed to upload file'
+        error: error.message || 'Failed to process file'
       })
       setIsUploading(false)
       setCurrentProgress(null)
@@ -212,9 +233,54 @@ function FileUploadTab({ onResult }) {
         <ProgressBar progress={currentProgress} />
       )}
 
-      {/* Drag and Drop Area */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Upload File</h3>
+      {/* Mode Toggle */}
+      <div className="bg-white p-4 rounded-lg shadow">
+        <div className="flex items-center gap-6">
+          <span className="text-sm font-medium text-gray-700">Input Mode:</span>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              checked={!useS3Path}
+              onChange={() => setUseS3Path(false)}
+              className="rounded"
+            />
+            <span className="text-sm text-gray-700">Upload File</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              checked={useS3Path}
+              onChange={() => setUseS3Path(true)}
+              className="rounded"
+            />
+            <span className="text-sm text-gray-700">S3 File Path</span>
+          </label>
+        </div>
+      </div>
+
+      {/* S3 Path Input or File Upload */}
+      {useS3Path ? (
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">S3 File Path</h3>
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700">
+              Enter S3 file path
+            </label>
+            <input
+              type="text"
+              value={s3FilePath}
+              onChange={(e) => setS3FilePath(e.target.value)}
+              placeholder="s3://bucket-name/path/to/file.json"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500">
+              The file will be downloaded from S3 for processing without re-uploading
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Upload File</h3>
         
         <div
           className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
@@ -288,7 +354,8 @@ function FileUploadTab({ onResult }) {
             )}
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Options and Upload Button */}
       <div className="bg-white p-4 rounded-lg shadow">
@@ -310,14 +377,14 @@ function FileUploadTab({ onResult }) {
           
           <button
             onClick={handleUpload}
-            disabled={isUploading || !selectedFile}
+            disabled={isUploading || (!useS3Path && !selectedFile) || (useS3Path && !s3FilePath)}
             className={`px-6 py-2.5 rounded font-medium transition-colors ${
-              isUploading || !selectedFile
+              isUploading || (!useS3Path && !selectedFile) || (useS3Path && !s3FilePath)
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {isUploading ? 'Uploading...' : 'Upload & Process'}
+            {isUploading ? 'Processing...' : (useS3Path ? 'Process S3 File' : 'Upload & Process')}
           </button>
         </div>
       </div>
@@ -341,7 +408,7 @@ function FileUploadTab({ onResult }) {
           <div className="text-sm text-blue-800">
             <p className="font-medium mb-1">How it works:</p>
             <ol className="list-decimal list-inside space-y-1">
-              <li>Upload any file type (PDFs, documents, spreadsheets, etc.)</li>
+              <li>{useS3Path ? 'Provide an S3 file path (files already in S3 are not re-uploaded)' : 'Upload any file type (PDFs, documents, spreadsheets, etc.)'}</li>
               <li>File is automatically converted to JSON using AI</li>
               <li>AI analyzes the JSON and maps it to appropriate schemas</li>
               <li>Data is stored in the database with the file location tracked</li>

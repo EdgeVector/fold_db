@@ -234,6 +234,38 @@ impl UploadStorage {
     pub fn is_s3(&self) -> bool {
         matches!(self, Self::S3 { .. })
     }
+
+    /// Download a file from S3 using a full S3 path (bucket and key)
+    /// This allows downloading from any S3 location, not just the configured upload storage
+    pub async fn download_from_s3_path(&self, bucket: &str, key: &str) -> StorageResult<Vec<u8>> {
+        match self {
+            Self::Local { .. } => {
+                // For local storage, we can't download from S3 - return error
+                Err(StorageError::DownloadFailed(
+                    "Cannot download from S3 path when using local storage. Configure S3 storage or upload file directly.".to_string()
+                ))
+            }
+            Self::S3 { client, .. } => {
+                // Use the S3 client to download from any bucket/key
+                let response = client
+                    .get_object()
+                    .bucket(bucket)
+                    .key(key)
+                    .send()
+                    .await
+                    .map_err(|e| StorageError::DownloadFailed(format!("Failed to download from S3: {}", e)))?;
+                
+                let data = response
+                    .body
+                    .collect()
+                    .await
+                    .map_err(|e| StorageError::DownloadFailed(format!("Failed to read S3 body: {}", e)))?
+                    .into_bytes();
+                
+                Ok(data.to_vec())
+            }
+        }
+    }
 }
 
 #[cfg(test)]
