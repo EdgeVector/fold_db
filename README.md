@@ -22,6 +22,31 @@ A Rust-based distributed data platform with schema-based storage, AI-powered ing
 
 ### Installation
 
+#### Option 1: Download Pre-built Binary (Recommended)
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/shiba4life/fold_db/releases):
+
+```bash
+# macOS (Intel)
+curl -LO https://github.com/shiba4life/fold_db/releases/latest/download/datafold_http_server-macos-x86_64-VERSION
+chmod +x datafold_http_server-macos-x86_64-VERSION
+sudo mv datafold_http_server-macos-x86_64-VERSION /usr/local/bin/datafold_http_server
+
+# macOS (Apple Silicon)
+curl -LO https://github.com/shiba4life/fold_db/releases/latest/download/datafold_http_server-macos-aarch64-VERSION
+chmod +x datafold_http_server-macos-aarch64-VERSION
+sudo mv datafold_http_server-macos-aarch64-VERSION /usr/local/bin/datafold_http_server
+
+# Linux
+curl -LO https://github.com/shiba4life/fold_db/releases/latest/download/datafold_http_server-linux-x86_64-VERSION
+chmod +x datafold_http_server-linux-x86_64-VERSION
+sudo mv datafold_http_server-linux-x86_64-VERSION /usr/local/bin/datafold_http_server
+```
+
+Replace `VERSION` with the actual version number (e.g., `0.1.5`).
+
+#### Option 2: Install from Crates.io
+
 Add DataFold to your `Cargo.toml`:
 
 ```toml

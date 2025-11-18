@@ -1,0 +1,109 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v0.1.5, v1.0.0, etc.
+
+permissions:
+  contents: write  # Required for creating releases
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: datafold_http_server-macos-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_name: datafold_http_server-macos-aarch64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: datafold_http_server-linux-x86_64
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ matrix.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ matrix.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ matrix.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binary
+        run: cargo build --release --bin datafold_http_server --target ${{ matrix.target }}
+
+      - name: Strip binary (Unix)
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/datafold_http_server
+
+      - name: Get version from tag
+        id: get_version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Prepare binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/datafold_http_server \
+             dist/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
+
+      - name: Upload binary to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
+          asset_name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
+          tag: ${{ github.ref }}
+          overwrite: true
+          body: |
+            ## DataFold ${{ github.ref_name }}
+            
+            ### Download
+            Choose the binary for your platform:
+            - **macOS (Intel)**: `datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }}`
+            - **macOS (Apple Silicon)**: `datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }}`
+            - **Linux**: `datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }}`
+            
+            ### Installation
+            ```bash
+            # Download the binary for your platform
+            chmod +x datafold_http_server-*
+            
+            # Move to your PATH (optional)
+            sudo mv datafold_http_server-* /usr/local/bin/datafold_http_server
+            ```
+            
+            ### Usage
+            ```bash
+            # Start the HTTP server
+            datafold_http_server --port 9001
+            
+            # Visit http://localhost:9001 for the web interface
+            ```
+            
+            See [CHANGELOG.md](https://github.com/shiba4life/fold_db/blob/mainline/CHANGELOG.md) for detailed release notes.

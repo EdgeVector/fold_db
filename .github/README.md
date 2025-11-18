@@ -43,12 +43,46 @@ See [GITHUB_ACTIONS_SETUP.md](./GITHUB_ACTIONS_SETUP.md) for:
 
 ## Workflows
 
-| Workflow | Purpose | AI for Full Pass |
-|----------|---------|------------------|
-| `ci-tests.yml` | All tests including AI query test | Optional* |
-| `coverage.yml` | Code coverage | No |
+| Workflow | Purpose | Trigger | AI Required |
+|----------|---------|---------|-------------|
+| `ci-tests.yml` | Run all tests (Rust + Frontend) | Push/PR | Optional* |
+| `coverage.yml` | Generate code coverage | Push/PR | No |
+| `release.yml` | Build release binaries | Version tags | No |
 
 *AI secrets are optional - if not set, the AI query test will fail but other tests will still pass.
+
+### Release Workflow
+
+The `release.yml` workflow automatically builds binaries when you push a version tag:
+
+**Platforms:**
+- macOS (Intel x86_64)
+- macOS (Apple Silicon aarch64)
+- Linux (x86_64)
+
+**How to trigger a release:**
+```bash
+# 1. Update version in Cargo.toml
+# 2. Commit changes
+git add .
+git commit -m "Release v0.1.6"
+
+# 3. Create and push version tag
+git tag v0.1.6
+git push origin mainline --tags
+
+# 4. GitHub Actions will automatically:
+#    - Build binaries for all platforms
+#    - Create a GitHub release
+#    - Attach binaries as release assets
+```
+
+**Release binaries are named:**
+- `datafold_http_server-macos-x86_64-{version}`
+- `datafold_http_server-macos-aarch64-{version}`
+- `datafold_http_server-linux-x86_64-{version}`
+
+For detailed workflow validation and troubleshooting, see [RELEASE_WORKFLOW_VALIDATION.md](./RELEASE_WORKFLOW_VALIDATION.md).
 
 ## Getting API Keys
 
