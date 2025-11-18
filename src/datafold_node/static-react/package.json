@@ -23,7 +23,10 @@
     "ci:test": "npm run lint && npm run test:coverage:threshold",
     "ci:coverage-check": "node scripts/check-coverage.js",
     "generate:api": "npx -y openapi-typescript ../../../target/openapi.json -o src/types/openapi.ts",
-    "generate:endpoints": "node scripts/generate-endpoints.js"
+    "generate:endpoints": "node scripts/generate-endpoints.js",
+    "tauri:dev": "npx tauri dev",
+    "tauri:build": "npx tauri build",
+    "tauri:build:debug": "npx tauri build --debug"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -39,6 +42,8 @@
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.10",
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/cli": "^2.9.4",
     "@testing-library/jest-dom": "^6.1.4",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^14.5.1",

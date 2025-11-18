@@ -1,0 +1,50 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "DataFold",
+  "version": "0.1.6",
+  "identifier": "ai.datafold.app",
+  "build": {
+    "devUrl": "http://localhost:9001",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DataFold - Personal Database",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "url": "http://localhost:9001"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13",
+      "exceptionDomain": "localhost",
+      "signingIdentity": null,
+      "entitlements": null
+    },
+    "category": "Developer Tool",
+    "shortDescription": "Personal Database for Data Sovereignty",
+    "longDescription": "DataFold is a powerful personal database with AI-powered ingestion, schema management, and natural language queries. Built with Rust for performance and security."
+  }
+}

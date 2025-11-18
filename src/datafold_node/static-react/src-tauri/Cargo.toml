@@ -1,0 +1,40 @@
+[package]
+name = "datafold-app"
+version = "0.1.6"
+description = "DataFold - Personal Database for Data Sovereignty"
+authors = ["Tom Tang <tom@datafold.ai>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/shiba4life/fold_db"
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "datafold_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.1", features = [] }
+
+[dependencies]
+# DataFold core library (local dependency)
+datafold = { path = "../../../../" }
+
+# Tauri dependencies
+tauri = { version = "2.9.2", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+
+# Async runtime
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+# Serialization
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+
+# Logging
+log = "0.4"
+
+# System utilities
+dirs = "5.0"

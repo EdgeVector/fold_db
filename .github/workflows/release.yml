@@ -1,4 +1,4 @@
-name: Release Binaries
+name: Release Binaries and Native Apps
 
 on:
   push:
@@ -9,8 +9,9 @@ permissions:
   contents: write  # Required for creating releases
 
 jobs:
-  build-and-release:
-    name: Build and Release
+  # Build CLI binaries (server-only)
+  build-cli:
+    name: Build CLI Binary
     strategy:
       matrix:
         include:
@@ -80,16 +81,157 @@ jobs:
           asset_name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
           tag: ${{ github.ref }}
           overwrite: true
+
+  # Build native macOS apps
+  build-macos-app:
+    name: Build macOS Native App
+    strategy:
+      matrix:
+        include:
+          - os: macos-14  # Apple Silicon
+            arch: aarch64
+          - os: macos-13  # Intel
+            arch: x86_64
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ matrix.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ matrix.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: src/datafold_node/static-react/node_modules
+          key: ${{ matrix.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install frontend dependencies
+        working-directory: src/datafold_node/static-react
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: src/datafold_node/static-react
+        run: npm run build
+
+      - name: Build Tauri app
+        working-directory: src/datafold_node/static-react
+        run: npm run tauri:build
+
+      - name: Get version from tag
+        id: get_version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Rename and prepare artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cd src/datafold_node/static-react/src-tauri/target/release/bundle
+          
+          # Copy and rename the .dmg file
+          if [ -f dmg/DataFold_*.dmg ]; then
+            cp dmg/DataFold_*.dmg ../../../../../dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
+          fi
+          
+          # Create a zip of the .app for easier distribution
+          if [ -d macos/DataFold.app ]; then
+            cd macos
+            zip -r ../../../../../../dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip DataFold.app
+          fi
+
+      - name: Upload DMG to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
+          asset_name: DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
+          tag: ${{ github.ref }}
+          overwrite: true
+
+      - name: Upload APP.ZIP to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip
+          asset_name: DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip
+          tag: ${{ github.ref }}
+          overwrite: true
+
+  # Create release notes
+  create-release-notes:
+    name: Create Release Notes
+    needs: [build-cli, build-macos-app]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: get_version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create release notes
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: README.md  # Dummy file, just to update the body
+          asset_name: README.md
+          tag: ${{ github.ref }}
+          overwrite: true
           body: |
             ## DataFold ${{ github.ref_name }}
             
-            ### Download
-            Choose the binary for your platform:
-            - **macOS (Intel)**: `datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }}`
-            - **macOS (Apple Silicon)**: `datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }}`
-            - **Linux**: `datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }}`
+            ### 🎉 Native macOS App (Recommended)
             
-            ### Installation
+            **Download the native app for macOS:**
+            - **Apple Silicon (M1/M2/M3)**: [DataFold-${{ steps.get_version.outputs.version }}-aarch64.dmg](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/DataFold-${{ steps.get_version.outputs.version }}-aarch64.dmg)
+            - **Intel Mac**: [DataFold-${{ steps.get_version.outputs.version }}-x86_64.dmg](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/DataFold-${{ steps.get_version.outputs.version }}-x86_64.dmg)
+            
+            **Installation:**
+            1. Download the `.dmg` file for your Mac
+            2. Open the `.dmg` file
+            3. Drag `DataFold.app` to your Applications folder
+            4. Launch DataFold from Applications
+            
+            **Features:**
+            - ✅ Native macOS application
+            - ✅ Double-click to launch
+            - ✅ Embedded server (no separate process needed)
+            - ✅ Data stored in `~/.datafold/data`
+            - ✅ Same UI as web version
+            
+            ---
+            
+            ### 🖥️ CLI Binaries (Server Only)
+            
+            For running DataFold as a web server only:
+            - **macOS (Intel)**: [datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }})
+            - **macOS (Apple Silicon)**: [datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }})
+            - **Linux**: [datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }})
+            
+            **Installation:**
             ```bash
             # Download the binary for your platform
             chmod +x datafold_http_server-*
@@ -98,7 +240,7 @@ jobs:
             sudo mv datafold_http_server-* /usr/local/bin/datafold_http_server
             ```
             
-            ### Usage
+            **Usage:**
             ```bash
             # Start the HTTP server
             datafold_http_server --port 9001
@@ -106,4 +248,15 @@ jobs:
             # Visit http://localhost:9001 for the web interface
             ```
             
-            See [CHANGELOG.md](https://github.com/shiba4life/fold_db/blob/mainline/CHANGELOG.md) for detailed release notes.
+            ---
+            
+            ### 📚 Documentation
+            
+            - [Quick Start Guide](https://github.com/shiba4life/fold_db/blob/mainline/QUICK_START.md)
+            - [Native App Guide](https://github.com/shiba4life/fold_db/blob/mainline/TAURI_NATIVE_APP.md)
+            - [Full Documentation](https://github.com/shiba4life/fold_db/blob/mainline/README.md)
+            - [Changelog](https://github.com/shiba4life/fold_db/blob/mainline/CHANGELOG.md)
+            
+            ---
+            
+            **First time using the native app?** On first launch, macOS may show a security warning. Go to **System Preferences → Security & Privacy** and click "Open Anyway".
