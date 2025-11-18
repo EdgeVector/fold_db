@@ -292,12 +292,9 @@ mod tests {
         let config = NodeConfig::new(temp_dir.path().to_path_buf())
             .with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).unwrap();
-        let upload_storage = crate::storage::UploadStorage::local(temp_dir.path().join("uploads"));
 
         web::Data::new(AppState {
             node: Arc::new(tokio::sync::Mutex::new(node)),
-            progress_tracker: crate::ingestion::create_progress_tracker(),
-            upload_storage,
         })
     }
 

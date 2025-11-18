@@ -39,10 +39,6 @@ pub struct DataFoldHttpServer {
 pub struct AppState {
     /// The DataFold node
     pub(crate) node: Arc<tokio::sync::Mutex<DataFoldNode>>,
-    /// Progress tracker for ingestion operations
-    pub(crate) progress_tracker: crate::ingestion::ProgressTracker,
-    /// Upload storage for file uploads
-    pub(crate) upload_storage: crate::storage::UploadStorage,
 }
 
 impl DataFoldHttpServer {
@@ -196,8 +192,6 @@ impl DataFoldHttpServer {
         // Create shared application state for routes that still need it
         let app_state = web::Data::new(AppState {
             node: self.node.clone(),
-            progress_tracker: progress_tracker_data.get_ref().clone(),
-            upload_storage,
         });
 
         // Create LLM query state (gracefully handles missing configuration)
