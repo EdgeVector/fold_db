@@ -23,8 +23,8 @@ datafold = { path = "../../../../" }
 
 # Tauri dependencies
 tauri = { version = "2.9.2", features = [] }
-tauri-plugin-log = "^2.0"
-tauri-plugin-shell = "^2.0"
+tauri-plugin-log = "2.0"
+tauri-plugin-shell = "2.0"
 
 # Async runtime
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
