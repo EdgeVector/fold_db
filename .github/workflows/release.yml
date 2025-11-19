@@ -92,8 +92,11 @@ jobs:
             arch: aarch64
           - os: macos-15-large  # Intel
             arch: x86_64
-    
+
     runs-on: ${{ matrix.os }}
+
+    env:
+      OPENAPI_URL: ${{ github.workspace }}/src/datafold_node/static-react/target/openapi.json
     
     steps:
       - name: Checkout repository

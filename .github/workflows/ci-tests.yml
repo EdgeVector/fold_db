@@ -89,6 +89,9 @@ jobs:
     name: Frontend Tests
     runs-on: ubuntu-latest
 
+    env:
+      OPENAPI_URL: ${{ github.workspace }}/src/datafold_node/static-react/target/openapi.json
+
     defaults:
       run:
         working-directory: src/datafold_node/static-react
@@ -106,6 +109,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate API endpoints
+        run: npm run generate:endpoints
 
       - name: Run npm test
         id: npm-test

@@ -32,11 +32,11 @@ function fetchJsonFromHttp(url) {
           try {
             resolve(JSON.parse(data));
           } catch (e) {
-            reject(e);
+            reject(new Error(`Failed to parse JSON from ${url}: ${e.message}`));
           }
         });
       })
-      .on('error', reject);
+      .on('error', (err) => reject(new Error(`Failed to fetch ${url}: ${err.message}`)));
   });
 }
 
@@ -47,8 +47,18 @@ function loadSpec(input) {
   // file path or file:// URL
   const p = input.startsWith('file://') ? input.slice('file://'.length) : input;
   const abs = path.isAbsolute(p) ? p : path.join(process.cwd(), p);
-  const raw = fs.readFileSync(abs, 'utf8');
-  return Promise.resolve(JSON.parse(raw));
+
+  if (!fs.existsSync(abs)) {
+    const hint = 'Set OPENAPI_URL to a local openapi.json file (for example ./target/openapi.json).';
+    throw new Error(`OpenAPI spec not found at ${abs}. ${hint}`);
+  }
+
+  try {
+    const raw = fs.readFileSync(abs, 'utf8');
+    return Promise.resolve(JSON.parse(raw));
+  } catch (e) {
+    throw new Error(`Failed to load OpenAPI spec from ${abs}: ${e.message}`);
+  }
 }
 
 function emit(filePath, content) {
@@ -178,6 +188,7 @@ async function main() {
     console.log(`[generate-endpoints] Wrote ${outputFile}`);
   } catch (e) {
     console.error('[generate-endpoints] Failed:', e.message);
+    console.error('[generate-endpoints] Provide OPENAPI_URL to a local spec file (e.g. ./target/openapi.json).');
     process.exit(1);
   }
 }
