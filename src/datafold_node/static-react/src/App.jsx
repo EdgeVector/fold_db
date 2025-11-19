@@ -20,6 +20,7 @@ import { useAppSelector, useAppDispatch } from './store/hooks'
 import { initializeSystemKey, fetchNodePrivateKey } from './store/authSlice'
 import { useEffect } from 'react'
 import { DEFAULT_TAB } from './constants'
+import { SchemaServiceConfigProvider } from './contexts/SchemaServiceConfigContext'
 
 export function AppContent() {
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB)
@@ -176,7 +177,9 @@ export function AppContent() {
 function App() {
   return (
     <Provider store={store}>
-      <AppContent />
+      <SchemaServiceConfigProvider>
+        <AppContent />
+      </SchemaServiceConfigProvider>
     </Provider>
   )
 }

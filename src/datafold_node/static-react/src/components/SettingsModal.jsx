@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { ingestionClient } from '../api/clients'
 import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
+import { useSchemaServiceConfig, SCHEMA_SERVICE_ENVIRONMENTS } from '../contexts/SchemaServiceConfigContext'
+import { checkSchemaServiceStatus } from '../api/clients/configuredSchemaClient'
 
 function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('ai')
@@ -13,12 +15,23 @@ function SettingsModal({ isOpen, onClose }) {
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  
+  // Schema service configuration
+  const { environment, setEnvironment } = useSchemaServiceConfig()
+  const [selectedSchemaEnv, setSelectedSchemaEnv] = useState(environment.id)
+  const [connectionStatus, setConnectionStatus] = useState({})
+  const [checkingStatus, setCheckingStatus] = useState({})
 
   useEffect(() => {
     if (isOpen) {
       loadAiConfig()
+      setSelectedSchemaEnv(environment.id)
+      // Auto-check current environment status when opening the schema service tab
+      if (activeTab === 'schema-service') {
+        checkStatus(environment.id)
+      }
     }
-  }, [isOpen])
+  }, [isOpen, environment.id, activeTab])
 
   const loadAiConfig = async () => {
     try {
@@ -67,6 +80,82 @@ function SettingsModal({ isOpen, onClose }) {
     }
 
     setTimeout(() => setConfigSaveStatus(null), 3000)
+  }
+
+  const checkStatus = async (envId) => {
+    const env = Object.values(SCHEMA_SERVICE_ENVIRONMENTS).find(e => e.id === envId)
+    if (!env) return
+    
+    setCheckingStatus(prev => ({ ...prev, [envId]: true }))
+    
+    try {
+      const result = await checkSchemaServiceStatus(env.baseUrl)
+      setConnectionStatus(prev => ({
+        ...prev,
+        [envId]: result
+      }))
+    } catch (error) {
+      setConnectionStatus(prev => ({
+        ...prev,
+        [envId]: { success: false, error: error.message }
+      }))
+    } finally {
+      setCheckingStatus(prev => ({ ...prev, [envId]: false }))
+    }
+  }
+
+  const saveSchemaServiceConfig = () => {
+    setEnvironment(selectedSchemaEnv)
+    setConfigSaveStatus({ success: true, message: 'Schema service environment updated successfully' })
+    setTimeout(() => {
+      setConfigSaveStatus(null)
+      onClose()
+    }, 1500)
+  }
+
+  const getStatusBadge = (envId) => {
+    const status = connectionStatus[envId]
+    const checking = checkingStatus[envId]
+
+    if (checking) {
+      return (
+        <span className="inline-flex items-center text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+          <svg className="animate-spin h-3 w-3 mr-1" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Checking...
+        </span>
+      )
+    }
+
+    if (!status) {
+      return (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            checkStatus(envId)
+          }}
+          className="text-xs text-blue-600 hover:text-blue-700 underline"
+        >
+          Test Connection
+        </button>
+      )
+    }
+
+    if (status.success) {
+      return (
+        <span className="inline-flex items-center text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+          ✓ Online {status.responseTime && `(${status.responseTime}ms)`}
+        </span>
+      )
+    }
+
+    return (
+      <span className="inline-flex items-center text-xs bg-red-100 text-red-700 px-2 py-1 rounded" title={status.error}>
+        ✗ Offline
+      </span>
+    )
   }
 
   if (!isOpen) return null
@@ -127,6 +216,16 @@ function SettingsModal({ isOpen, onClose }) {
                   }`}
                 >
                   Key Management
+                </button>
+                <button
+                  onClick={() => setActiveTab('schema-service')}
+                  className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'schema-service'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Schema Service
                 </button>
               </nav>
             </div>
@@ -259,14 +358,79 @@ function SettingsModal({ isOpen, onClose }) {
               {activeTab === 'keys' && (
                 <KeyManagementTab onResult={() => {}} />
               )}
+
+              {activeTab === 'schema-service' && (
+                <div className="space-y-4">
+                  <div className="mb-4">
+                    <h4 className="text-md font-semibold text-gray-900 mb-2">Schema Service Environment</h4>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Select which schema service endpoint to use. This affects where schemas are loaded from and saved to.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {Object.values(SCHEMA_SERVICE_ENVIRONMENTS).map(env => (
+                      <label
+                        key={env.id}
+                        className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                          selectedSchemaEnv === env.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="schemaEnvironment"
+                          value={env.id}
+                          checked={selectedSchemaEnv === env.id}
+                          onChange={(e) => setSelectedSchemaEnv(e.target.value)}
+                          className="mt-1 mr-3"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-gray-900">{env.name}</span>
+                            <div className="flex items-center gap-2">
+                              {getStatusBadge(env.id)}
+                              {selectedSchemaEnv === env.id && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Active</span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-1">{env.description}</p>
+                          <p className="text-xs text-gray-500 mt-1 font-mono">
+                            {env.baseUrl || window.location.origin}
+                          </p>
+                          {connectionStatus[env.id] && !connectionStatus[env.id].success && (
+                            <p className="text-xs text-red-600 mt-1">
+                              Error: {connectionStatus[env.id].error}
+                            </p>
+                          )}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  {configSaveStatus && (
+                    <div className={`p-3 rounded-md ${
+                      configSaveStatus.success 
+                        ? 'bg-green-50 text-green-800 border border-green-200' 
+                        : 'bg-red-50 text-red-800 border border-red-200'
+                    }`}>
+                      <span className="text-sm font-medium">
+                        {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-200">
-            {activeTab === 'ai' ? (
+            {activeTab === 'ai' || activeTab === 'schema-service' ? (
               <>
                 <button
-                  onClick={saveAiConfig}
+                  onClick={activeTab === 'ai' ? saveAiConfig : saveSchemaServiceConfig}
                   className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
                 >
                   Save Configuration

@@ -32,9 +32,7 @@ import {
   SCHEMA_OPERATION_REQUIREMENTS,
   READABLE_SCHEMA_STATES
 } from '../constants/redux';
-import { 
-  schemaClient
-} from '../api/clients/schemaClient';
+import { getConfiguredSchemaClient } from '../api/clients/configuredSchemaClient';
 import {
   SCHEMA_OPERATION_TYPES,
   isCacheValid,
@@ -98,7 +96,7 @@ export const fetchSchemas = createAsyncThunk<
     // Clear API client cache when force refresh is requested
     if (params.forceRefresh) {
       console.log('🔄 Force refresh requested - clearing API client cache');
-      schemaClient.clearCache();
+      getConfiguredSchemaClient().clearCache();
     }
 
     // Fetch with retry logic
@@ -107,7 +105,7 @@ export const fetchSchemas = createAsyncThunk<
     for (let attempt = 1; attempt <= SCHEMA_FETCH_RETRY_ATTEMPTS; attempt++) {
       try {
         // Fetch schemas with their states from the backend
-        const availableResponse = await schemaClient.getSchemas();
+        const availableResponse = await getConfiguredSchemaClient().getSchemas();
         
         if (!availableResponse.success) {
           const error = new Error(`Failed to fetch schemas: ${availableResponse.error || 'Unknown error'}`);
@@ -182,28 +180,28 @@ export const fetchSchemas = createAsyncThunk<
  */
 export const approveSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.APPROVE_SCHEMA,
-  schemaClient.approveSchema.bind(schemaClient),
+  (name: string) => getConfiguredSchemaClient().approveSchema(name),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.APPROVE_FAILED
 );
 
 export const blockSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.BLOCK_SCHEMA,
-  schemaClient.blockSchema.bind(schemaClient),
+  (name: string) => getConfiguredSchemaClient().blockSchema(name),
   SCHEMA_STATES.BLOCKED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.BLOCK_FAILED
 );
 
 export const unloadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.UNLOAD_SCHEMA,
-  schemaClient.unloadSchema.bind(schemaClient),
+  (name: string) => getConfiguredSchemaClient().unloadSchema(name),
   SCHEMA_STATES.AVAILABLE as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED
 );
 
 export const loadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.LOAD_SCHEMA,
-  schemaClient.loadSchema.bind(schemaClient),
+  (name: string) => getConfiguredSchemaClient().loadSchema(name),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.LOAD_FAILED
 );
