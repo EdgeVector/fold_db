@@ -145,21 +145,40 @@ jobs:
         shell: bash
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Show bundle outputs
+        shell: bash
+        run: |
+          echo "Bundle path: src/datafold_node/static-react/src-tauri/target/release/bundle"
+          ls -al src/datafold_node/static-react/src-tauri/target/release/bundle || true
+          echo "dmg dir:"
+          ls -al src/datafold_node/static-react/src-tauri/target/release/bundle/dmg || true
+          echo "macos dir:"
+          ls -al src/datafold_node/static-react/src-tauri/target/release/bundle/macos || true
+
       - name: Rename and prepare artifacts
         shell: bash
         run: |
-          mkdir -p dist
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
           cd src/datafold_node/static-react/src-tauri/target/release/bundle
           
-          # Copy and rename the .dmg file
-          if [ -f dmg/DataFold_*.dmg ]; then
-            cp dmg/DataFold_*.dmg ../../../../../dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
-          fi
+          # Copy DMG (if produced)
+          for f in dmg/DataFold_*.dmg; do
+            if [ -f "$f" ]; then
+              echo "Found DMG: $f"
+              cp "$f" "$GITHUB_WORKSPACE/dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg"
+            else
+              echo "No DMG found matching dmg/DataFold_*.dmg"
+            fi
+          done
           
-          # Create a zip of the .app for easier distribution
+          # Zip the .app (if produced)
           if [ -d macos/DataFold.app ]; then
+            echo "Found .app; creating zip"
             cd macos
-            zip -r ../../../../../../dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip DataFold.app
+            zip -r "$GITHUB_WORKSPACE/dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip" DataFold.app
+          else
+            echo "No macOS .app found at macos/DataFold.app"
           fi
 
       - name: Upload DMG to release
