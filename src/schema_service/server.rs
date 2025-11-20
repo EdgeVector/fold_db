@@ -201,15 +201,14 @@ impl SchemaServiceState {
 
     /// Load all schemas from storage (works for both Sled and DynamoDB)
     pub async fn load_schemas(&self) -> FoldDbResult<()> {
-        let mut schemas = self
-            .schemas
-            .write()
-            .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
-
-        schemas.clear();
-
         match &self.storage {
             SchemaStorage::Sled { schemas_tree, .. } => {
+                let mut schemas = self
+                    .schemas
+                    .write()
+                    .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
+
+                schemas.clear();
                 let mut count = 0;
                 for result in schemas_tree.iter() {
                     let (key, value) = result.map_err(|e| {
@@ -249,6 +248,13 @@ impl SchemaServiceState {
                 let all_schemas = store.get_all_schemas().await?;
                 let count = all_schemas.len();
 
+                let mut schemas = self
+                    .schemas
+                    .write()
+                    .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
+
+                schemas.clear();
+                
                 for schema in all_schemas {
                     log_feature!(
                         LogFeature::Schema,
@@ -307,28 +313,30 @@ impl SchemaServiceState {
             topology_hash
         );
 
-        let mut schemas = self
-            .schemas
-            .write()
-            .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
-
         // Use topology_hash as unique identifier (already includes field names)
         let schema_name = topology_hash.clone();
 
         // Check if this exact combination already exists
-        if schemas.contains_key(&schema_name) {
-            let existing_schema = schemas.get(&schema_name).unwrap();
-            log_feature!(
-                LogFeature::Schema,
-                info,
-                "Schema '{}' already exists - using existing schema",
-                schema_name
-            );
-            
-            return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
-                similarity: 1.0,
-                closest_schema: existing_schema.clone(),
-            }));
+        {
+            let schemas = self
+                .schemas
+                .read()
+                .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
+
+            if schemas.contains_key(&schema_name) {
+                let existing_schema = schemas.get(&schema_name).unwrap();
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema '{}' already exists - using existing schema",
+                    schema_name
+                );
+                
+                return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
+                    similarity: 1.0,
+                    closest_schema: existing_schema.clone(),
+                }));
+            }
         }
 
         schema.name = schema_name.clone();
@@ -376,7 +384,14 @@ impl SchemaServiceState {
             }
         }
 
-        schemas.insert(schema_name.clone(), schema.clone());
+        // Insert into in-memory cache
+        {
+            let mut schemas = self
+                .schemas
+                .write()
+                .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
+            schemas.insert(schema_name.clone(), schema.clone());
+        }
 
         log_feature!(
             LogFeature::Schema,

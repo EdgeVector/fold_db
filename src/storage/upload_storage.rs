@@ -244,7 +244,31 @@ impl UploadStorage {
             Self::Local { .. } => {
                 // For local storage, try to create a temporary client from environment
                 // This enables downloading S3 files (e.g. imports) even when using local storage
+                
+                // First, create a client without region to query the bucket location
+                let config_without_region = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(aws_sdk_s3::config::Region::new("us-east-1")) // Use us-east-1 for bucket location query
+                    .load()
+                    .await;
+                let temp_client = Client::new(&config_without_region);
+                
+                // Get the bucket's region
+                let bucket_location = temp_client
+                    .get_bucket_location()
+                    .bucket(bucket)
+                    .send()
+                    .await
+                    .map_err(|e| StorageError::DownloadFailed(format!("Failed to get bucket location: {}", e)))?;
+                
+                // LocationConstraint is None for us-east-1, otherwise it's the region name
+                let region = match bucket_location.location_constraint() {
+                    Some(constraint) => constraint.as_str().to_string(),
+                    None => "us-east-1".to_string(),
+                };
+                
+                // Create the actual client with the correct region
                 let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(aws_sdk_s3::config::Region::new(region))
                     .load()
                     .await;
                 Client::new(&config)

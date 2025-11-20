@@ -5,10 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2025-11-20
+
+### Fixed
+- **S3 Download with Automatic Region Detection**: Fixed S3 downloads when using local storage mode by implementing automatic bucket region detection. The system now queries the bucket location via the S3 API and creates a properly configured client, enabling seamless S3 ingestion regardless of storage configuration.
+
 ## [0.1.12] - 2025-11-20
 
 ### Fixed
-- **S3 Download in Local Mode**: Fixed a limitation where S3 downloads (e.g. for ingestion) were blocked when the node was configured with local storage. Now uses a temporary S3 client to fetch files if needed.
+- **S3 Download in Local Mode**: Initial fix for S3 downloads in local storage mode (improved in 0.1.13 with automatic region detection).
 
 ## [0.1.4] - 2024-11-18
 
