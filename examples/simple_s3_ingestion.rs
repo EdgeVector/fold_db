@@ -39,7 +39,7 @@ async fn example_async_ingestion() -> Result<(), Box<dyn std::error::Error>> {
     let request = S3IngestionRequest::new(s3_path.to_string());
     
     // This would return immediately with a progress_id
-    // let response = ingest_from_s3_path_async(&request, &state).await?;
+    // let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
     // println!("Started ingestion: {}", response.progress_id.unwrap());
     
     println!("Would ingest: {}", s3_path);
@@ -55,7 +55,7 @@ async fn example_sync_ingestion() -> Result<(), Box<dyn std::error::Error>> {
         .with_auto_execute(true);
     
     // This would wait for completion
-    // let response = ingest_from_s3_path_sync(&request, &state).await?;
+    // let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
     // println!("Ingestion complete!");
     // println!("Schema: {}", response.schema_used.unwrap());
     // println!("Mutations executed: {}", response.mutations_executed);

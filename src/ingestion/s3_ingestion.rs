@@ -9,7 +9,7 @@
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::json_processor::{convert_file_to_json, flatten_root_layers};
 use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
-use crate::ingestion::{IngestionError, IngestionResponse, ProgressTracker};
+use crate::ingestion::{IngestionError, IngestionResponse, ProgressTracker, IngestionConfig};
 use crate::storage::UploadStorage;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -93,7 +93,7 @@ impl S3IngestionRequest {
 ///         "s3://my-bucket/data.json".to_string()
 ///     );
 ///     
-///     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node).await?;
+///     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
 ///     println!("Started ingestion: {}", response.progress_id.unwrap());
 ///     
 ///     Ok(())
@@ -104,6 +104,7 @@ pub async fn ingest_from_s3_path_async(
     upload_storage: &UploadStorage,
     progress_tracker: &ProgressTracker,
     node: Arc<Mutex<DataFoldNode>>,
+    ingestion_config: &IngestionConfig,
 ) -> Result<IngestionResponse, IngestionError> {
     // Parse and download S3 file
     let (file_path, filename) = download_s3_file(&request.s3_path, upload_storage).await?;
@@ -123,6 +124,7 @@ pub async fn ingest_from_s3_path_async(
         trust_distance: request.trust_distance,
         pub_key: request.pub_key.clone(),
         source_file_name: Some(filename),
+        ingestion_config: ingestion_config.clone(),
     };
 
     let progress_id = spawn_background_ingestion(spawn_config, progress_tracker, node);
@@ -149,6 +151,7 @@ pub async fn ingest_from_s3_path_async(
 /// * `upload_storage` - Upload storage for file management
 /// * `progress_tracker` - Progress tracker for ingestion operations
 /// * `node` - DataFold node for data operations
+/// * `ingestion_config` - Configuration for ingestion
 ///
 /// # Returns
 ///
@@ -157,7 +160,7 @@ pub async fn ingest_from_s3_path_async(
 /// # Example
 ///
 /// ```ignore
-/// use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
+/// use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest, IngestionConfig};
 /// use datafold::storage::UploadStorage;
 /// use std::sync::Arc;
 ///
@@ -167,12 +170,13 @@ pub async fn ingest_from_s3_path_async(
 ///     let upload_storage = UploadStorage::local("uploads".into());
 ///     let progress_tracker = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 ///     let node = Arc::new(tokio::sync::Mutex::new(/* initialize DataFoldNode */));
+///     let ingestion_config = IngestionConfig::from_env()?;
 ///     
 ///     let request = S3IngestionRequest::new(
 ///         "s3://my-bucket/data.json".to_string()
 ///     ).with_auto_execute(true);
 ///     
-///     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node).await?;
+///     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
 ///     println!("Ingestion complete: {} mutations executed", 
 ///              response.mutations_executed);
 ///     
@@ -184,9 +188,10 @@ pub async fn ingest_from_s3_path_sync(
     upload_storage: &UploadStorage,
     progress_tracker: &ProgressTracker,
     node: Arc<Mutex<DataFoldNode>>,
+    ingestion_config: &IngestionConfig,
 ) -> Result<IngestionResponse, IngestionError> {
     // Start async ingestion
-    let async_response = ingest_from_s3_path_async(request, upload_storage, progress_tracker, node).await?;
+    let async_response = ingest_from_s3_path_async(request, upload_storage, progress_tracker, node, ingestion_config).await?;
     
     let progress_id = async_response.progress_id
         .ok_or_else(|| IngestionError::InvalidInput("No progress_id returned".to_string()))?;

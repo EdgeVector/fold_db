@@ -31,11 +31,12 @@ use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
 // Async (returns immediately with progress_id)
 let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
     .with_auto_execute(true);
-let response = ingest_from_s3_path_async(&request, &state).await?;
+let ingestion_config = IngestionConfig::from_env()?;
+let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
 
 // Sync (waits for completion)
 use datafold::ingestion::ingest_from_s3_path_sync;
-let response = ingest_from_s3_path_sync(&request, &state).await?;
+let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
 ```
 
 See [Lambda Example](../examples/lambda_s3_ingestion.rs) for complete AWS Lambda integration.

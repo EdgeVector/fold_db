@@ -22,7 +22,7 @@
 //!
 //! ```rust,no_run
 //! use datafold::{
-//!     ingestion::{ingest_from_s3_path_async, S3IngestionRequest},
+//!     ingestion::{ingest_from_s3_path_async, S3IngestionRequest, IngestionConfig},
 //!     datafold_node::http_server::AppState,
 //! };
 //! use lambda_runtime::{run, service_fn, Error, LambdaEvent};
@@ -50,7 +50,8 @@
 //!         .with_trust_distance(0);
 //!
 //!     // Ingest file asynchronously
-//!     let response = ingest_from_s3_path_async(&request, state).await?;
+//!     let ingestion_config = IngestionConfig::from_env()?;
+//!     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
 //!
 //!     if response.success {
 //!         println!("Ingestion started: {:?}", response.progress_id);
@@ -87,7 +88,7 @@
 //! For synchronous processing (Lambda waits for ingestion to complete):
 //!
 //! ```rust,no_run
-//! use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
+//! use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest, IngestionConfig};
 //!
 //! async fn function_handler_sync(
 //!     event: LambdaEvent<Value>,
@@ -96,9 +97,10 @@
 //!     let s3_path = /* extract from event */;
 //!     
 //!     let request = S3IngestionRequest::new(s3_path);
+//!     let ingestion_config = IngestionConfig::from_env()?;
 //!     
 //!     // Wait for completion
-//!     let response = ingest_from_s3_path_sync(&request, state).await?;
+//!     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
 //!
 //!     Ok(json!({
 //!         "statusCode": 200,

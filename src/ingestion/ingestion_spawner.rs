@@ -21,6 +21,7 @@ pub struct IngestionSpawnConfig {
     pub trust_distance: u32,
     pub pub_key: String,
     pub source_file_name: Option<String>,
+    pub ingestion_config: IngestionConfig,
 }
 
 /// Spawn background ingestion task and return progress_id
@@ -46,6 +47,7 @@ pub fn spawn_background_ingestion(
     
     // Clone for the spawned task
     let progress_id_clone = progress_id.clone();
+    let ingestion_config = config.ingestion_config;
     
     // Spawn the background task
     tokio::spawn(async move {
@@ -54,6 +56,7 @@ pub fn spawn_background_ingestion(
             node,
             progress_service,
             progress_id_clone,
+            ingestion_config,
         ).await {
             log_feature!(
                 LogFeature::Ingestion,
@@ -73,6 +76,7 @@ async fn run_background_ingestion(
     node: Arc<Mutex<DataFoldNode>>,
     progress_service: ProgressService,
     progress_id: String,
+    ingestion_config: IngestionConfig,
 ) -> Result<(), String> {
     log_feature!(
         LogFeature::Ingestion,
@@ -82,7 +86,7 @@ async fn run_background_ingestion(
     );
     
     // Create ingestion service
-    let service = create_simple_ingestion_service()
+    let service = create_simple_ingestion_service(ingestion_config)
         .await
         .map_err(|e| {
             let error_msg = format!("Ingestion service not available: {}", e);
@@ -139,8 +143,7 @@ async fn run_background_ingestion(
 }
 
 /// Create a simple ingestion service with potentially updated config
-async fn create_simple_ingestion_service() -> Result<SimpleIngestionService, IngestionError> {
-    let config = IngestionConfig::from_env()?;
+async fn create_simple_ingestion_service(config: IngestionConfig) -> Result<SimpleIngestionService, IngestionError> {
     SimpleIngestionService::new(config)
 }
 

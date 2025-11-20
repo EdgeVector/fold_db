@@ -1,6 +1,6 @@
 [package]
 name = "datafold"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
 description = "A personal database for data sovereignty with AI-powered ingestion and S3 support"

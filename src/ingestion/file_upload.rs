@@ -6,7 +6,7 @@ use crate::ingestion::json_processor::{
     convert_file_to_json, flatten_root_layers, save_json_to_temp_file,
 };
 use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
-use crate::ingestion::ProgressTracker;
+use crate::ingestion::{IngestionConfig, ProgressTracker};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::storage::UploadStorage;
@@ -87,6 +87,22 @@ pub async fn upload_file(
     // Save JSON to a temporary file for testing/debugging
     let temp_json_path = save_json_debug_file(&flattened_json);
 
+    // Load ingestion config
+    let ingestion_config = match IngestionConfig::from_env() {
+        Ok(config) => config,
+        Err(e) => {
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Failed to load ingestion config: {}",
+                e
+            );
+            return HttpResponse::ServiceUnavailable().json(json!({
+                "error": format!("Failed to load configuration: {}", e)
+            }));
+        }
+    };
+
     // Spawn background ingestion and get progress_id
     log_feature!(
         LogFeature::Ingestion,
@@ -101,6 +117,7 @@ pub async fn upload_file(
         trust_distance: form_data.trust_distance,
         pub_key: form_data.pub_key,
         source_file_name: Some(form_data.original_filename.clone()),
+        ingestion_config,
     };
 
     let progress_id = spawn_background_ingestion(
