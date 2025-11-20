@@ -238,33 +238,36 @@ impl UploadStorage {
     /// Download a file from S3 using a full S3 path (bucket and key)
     /// This allows downloading from any S3 location, not just the configured upload storage
     pub async fn download_from_s3_path(&self, bucket: &str, key: &str) -> StorageResult<Vec<u8>> {
-        match self {
+        // Determine which client to use
+        let client = match self {
+            Self::S3 { client, .. } => client.clone(),
             Self::Local { .. } => {
-                // For local storage, we can't download from S3 - return error
-                Err(StorageError::DownloadFailed(
-                    "Cannot download from S3 path when using local storage. Configure S3 storage or upload file directly.".to_string()
-                ))
+                // For local storage, try to create a temporary client from environment
+                // This enables downloading S3 files (e.g. imports) even when using local storage
+                let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .load()
+                    .await;
+                Client::new(&config)
             }
-            Self::S3 { client, .. } => {
-                // Use the S3 client to download from any bucket/key
-                let response = client
-                    .get_object()
-                    .bucket(bucket)
-                    .key(key)
-                    .send()
-                    .await
-                    .map_err(|e| StorageError::DownloadFailed(format!("Failed to download from S3: {}", e)))?;
-                
-                let data = response
-                    .body
-                    .collect()
-                    .await
-                    .map_err(|e| StorageError::DownloadFailed(format!("Failed to read S3 body: {}", e)))?
-                    .into_bytes();
-                
-                Ok(data.to_vec())
-            }
-        }
+        };
+
+        // Use the client to download from the specified bucket/key
+        let response = client
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| StorageError::DownloadFailed(format!("Failed to download from S3: {}", e)))?;
+        
+        let data = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| StorageError::DownloadFailed(format!("Failed to read S3 body: {}", e)))?
+            .into_bytes();
+        
+        Ok(data.to_vec())
     }
 }
 

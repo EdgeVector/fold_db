@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2025-11-20
+
+### Fixed
+- **S3 Download in Local Mode**: Fixed a limitation where S3 downloads (e.g. for ingestion) were blocked when the node was configured with local storage. Now uses a temporary S3 client to fetch files if needed.
+
 ## [0.1.4] - 2024-11-18
 
 ### Added
