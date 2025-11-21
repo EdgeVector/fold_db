@@ -1,12 +1,14 @@
 //! JSON conversion and processing for file uploads
 
 use actix_web::{web, HttpResponse};
-use file_to_json::Converter;
+use file_to_json::{Converter, FallbackStrategy, OpenRouterConfig};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
+use std::time::Duration;
 use tempfile::NamedTempFile;
 
+use crate::ingestion::config::AIProvider;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 
@@ -19,10 +21,45 @@ pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, HttpResp
         file_path
     );
 
+    // Load fold_db ingestion config
+    let ingestion_config = match crate::ingestion::IngestionConfig::from_env() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Failed to load ingestion config: {}",
+                e
+            );
+            return Err(HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "error": format!("Failed to load ingestion config: {}. Ensure FOLD_OPENROUTER_API_KEY is set.", e)
+            })));
+        }
+    };
+
+    // Only OpenRouter is supported for file_to_json conversion
+    if ingestion_config.provider != AIProvider::OpenRouter {
+        return Err(HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "error": "File conversion requires OpenRouter provider. Ollama is not supported for this feature."
+        })));
+    }
+
+    // Build file_to_json OpenRouterConfig from fold_db config
+    let file_to_json_config = OpenRouterConfig {
+        api_key: ingestion_config.openrouter.api_key.clone(),
+        model: ingestion_config.openrouter.model.clone(),
+        timeout: Duration::from_secs(ingestion_config.timeout_seconds),
+        fallback_strategy: FallbackStrategy::Chunked,
+        vision_model: Some(ingestion_config.openrouter.model.clone()),
+        max_image_bytes: 5 * 1024 * 1024, // 5MB default
+    };
+
     let file_path_str = file_path.to_string_lossy().to_string();
     
     match web::block(move || {
-        let converter = Converter::from_env()?;
+        let converter = Converter::new(file_to_json_config)?;
         converter.convert_path(&file_path_str)
     })
     .await
@@ -44,12 +81,12 @@ pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, HttpResp
             log_feature!(
                 LogFeature::Ingestion,
                 error,
-                "Failed to initialize file_to_json converter: {}. Ensure OPENROUTER_API_KEY is set.",
+                "Failed to initialize file_to_json converter: {}",
                 e
             );
             Err(HttpResponse::InternalServerError().json(json!({
                 "success": false,
-                "error": format!("Failed to initialize converter: {}. Ensure OPENROUTER_API_KEY is set.", e)
+                "error": format!("Failed to initialize converter: {}", e)
             })))
         }
     }

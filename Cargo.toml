@@ -1,6 +1,6 @@
 [package]
 name = "datafold"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
 description = "A personal database for data sovereignty with AI-powered ingestion and S3 support"
@@ -72,7 +72,7 @@ utoipa = { version = "4", features = ["actix_extras"] }
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 
 # File to JSON conversion
-file_to_json = "0.1.4"
+file_to_json = "0.1.5"
 
 # AWS SDK for S3 storage and DynamoDB
 aws-config = "1.0"

@@ -1,6 +1,6 @@
 [package]
 name = "datafold-app"
-version = "0.1.11"
+version = "0.1.14"
 description = "DataFold - Personal Database for Data Sovereignty"
 authors = ["Tom Tang <tom@datafold.ai>"]
 license = "MIT OR Apache-2.0"

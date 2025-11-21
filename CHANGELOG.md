@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2025-11-21
+
+### Changed
+- **Updated file_to_json dependency**: Upgraded from 0.1.4 to 0.1.5 with improved API
+  - Migrated from `Converter::from_env()` to explicit `Converter::new(config)`
+  - Better configuration management and error handling
+  - Added proper OpenRouter configuration mapping from fold_db settings
+
+### Fixed
+- **File conversion configuration**: Fixed OpenRouter API integration by properly mapping fold_db's `FOLD_OPENROUTER_API_KEY` environment variable to file_to_json's expected configuration, resolving 404 errors during file conversion
+
 ## [0.1.13] - 2025-11-20
 
 ### Fixed
