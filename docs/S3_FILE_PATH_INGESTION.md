@@ -28,15 +28,24 @@ Content-Type: multipart/form-data
 ```rust
 use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
 
-// Async (returns immediately with progress_id)
+// Option 1: Pass API key directly (recommended)
+let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+    .with_auto_execute(true)
+    .with_openrouter_api_key("your-api-key".to_string());
+let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, None).await?;
+
+// Option 2: Use environment-based config
+use datafold::ingestion::IngestionConfig;
+let ingestion_config = IngestionConfig::from_env()?;
 let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
     .with_auto_execute(true);
-let ingestion_config = IngestionConfig::from_env()?;
-let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, Some(&ingestion_config)).await?;
 
 // Sync (waits for completion)
 use datafold::ingestion::ingest_from_s3_path_sync;
-let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+    .with_openrouter_api_key("your-api-key".to_string());
+let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, None).await?;
 ```
 
 See [Lambda Example](../examples/lambda_s3_ingestion.rs) for complete AWS Lambda integration.

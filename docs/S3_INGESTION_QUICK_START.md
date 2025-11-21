@@ -26,8 +26,10 @@ curl -X POST http://localhost:9001/api/ingestion/upload \
 ```rust
 use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
 
-let request = S3IngestionRequest::new("s3://bucket/file.json".to_string());
-let response = ingest_from_s3_path_async(&request, &state).await?;
+// Pass API key directly
+let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+    .with_openrouter_api_key("your-api-key".to_string());
+let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, None).await?;
 println!("Started: {}", response.progress_id.unwrap());
 ```
 
@@ -35,11 +37,13 @@ println!("Started: {}", response.progress_id.unwrap());
 ```rust
 use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
 
+// Pass API key directly
 let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
     .with_auto_execute(true)
-    .with_trust_distance(0);
+    .with_trust_distance(0)
+    .with_openrouter_api_key("your-api-key".to_string());
     
-let response = ingest_from_s3_path_sync(&request, &state).await?;
+let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, None).await?;
 println!("Complete: {} mutations", response.mutations_executed);
 ```
 

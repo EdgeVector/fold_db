@@ -201,10 +201,26 @@ Public key for authentication/authorization. Default: `"default"`.
 #### Example
 
 ```rust
+// Basic request
 let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
     .with_auto_execute(false)
     .with_trust_distance(5)
     .with_pub_key("user-123".to_string());
+
+// With API key passed directly (recommended)
+let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+    .with_auto_execute(true)
+    .with_openrouter_api_key("your-api-key".to_string());
+
+// With full configuration
+use datafold::ingestion::IngestionConfig;
+let mut config = IngestionConfig::default();
+config.openrouter.api_key = "your-api-key".to_string();
+config.openrouter.model = "anthropic/claude-3.5-sonnet".to_string();
+config.enabled = true;
+
+let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+    .with_ingestion_config(config);
 ```
 
 ### ingest_from_s3_path_async
@@ -219,17 +235,17 @@ pub async fn ingest_from_s3_path_async(
     upload_storage: &UploadStorage,
     progress_tracker: &ProgressTracker,
     node: Arc<Mutex<DataFoldNode>>,
-    ingestion_config: &IngestionConfig,
+    ingestion_config: Option<&IngestionConfig>,
 ) -> Result<IngestionResponse, IngestionError>
 ```
 
 #### Parameters
 
-- `request` - S3 ingestion request configuration
+- `request` - S3 ingestion request configuration (can include API key via `with_openrouter_api_key()`)
 - `upload_storage` - Storage handler for file management
 - `progress_tracker` - Shared progress tracker for monitoring
 - `node` - DataFold database node (wrapped in Arc<Mutex>)
-- `ingestion_config` - Ingestion configuration from environment
+- `ingestion_config` - Optional ingestion configuration. If `None`, uses config from request or environment variables
 
 #### Returns
 
@@ -257,13 +273,13 @@ pub async fn ingest_from_s3_path_sync(
     upload_storage: &UploadStorage,
     progress_tracker: &ProgressTracker,
     node: Arc<Mutex<DataFoldNode>>,
-    ingestion_config: &IngestionConfig,
+    ingestion_config: Option<&IngestionConfig>,
 ) -> Result<IngestionResponse, IngestionError>
 ```
 
 #### Parameters
 
-Same as `ingest_from_s3_path_async`.
+Same as `ingest_from_s3_path_async`. The `ingestion_config` parameter is optional.
 
 #### Returns
 

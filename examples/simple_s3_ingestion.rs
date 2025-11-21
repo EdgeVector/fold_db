@@ -36,13 +36,16 @@ async fn example_async_ingestion() -> Result<(), Box<dyn std::error::Error>> {
     
     let s3_path = "s3://my-bucket/data/tweets.json";
     
-    let request = S3IngestionRequest::new(s3_path.to_string());
+    // Pass API key directly in request
+    let request = S3IngestionRequest::new(s3_path.to_string())
+        .with_openrouter_api_key("your-api-key".to_string());
     
     // This would return immediately with a progress_id
-    // let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+    // let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, None).await?;
     // println!("Started ingestion: {}", response.progress_id.unwrap());
     
     println!("Would ingest: {}", s3_path);
+    println!("API key passed directly in request");
     println!("Returns immediately with progress_id for tracking");
     
     Ok(())
@@ -52,10 +55,11 @@ async fn example_sync_ingestion() -> Result<(), Box<dyn std::error::Error>> {
     let s3_path = "s3://my-bucket/data/users.json";
     
     let request = S3IngestionRequest::new(s3_path.to_string())
-        .with_auto_execute(true);
+        .with_auto_execute(true)
+        .with_openrouter_api_key("your-api-key".to_string());
     
     // This would wait for completion
-    // let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+    // let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, None).await?;
     // println!("Ingestion complete!");
     // println!("Schema: {}", response.schema_used.unwrap());
     // println!("Mutations executed: {}", response.mutations_executed);

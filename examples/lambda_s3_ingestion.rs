@@ -13,7 +13,8 @@
 //! export DATAFOLD_UPLOAD_STORAGE_MODE=s3
 //! export DATAFOLD_UPLOAD_S3_BUCKET=my-uploads-bucket
 //! export DATAFOLD_UPLOAD_S3_REGION=us-west-2
-//! export OPENROUTER_API_KEY=your-api-key
+//! # Optional: Can also pass API key directly in code
+//! export FOLD_OPENROUTER_API_KEY=your-api-key
 //! ```
 //!
 //! 2. Deploy to Lambda with S3 event trigger
@@ -45,13 +46,18 @@
 //!     println!("Processing S3 file: {}", s3_path);
 //!
 //!     // Create ingestion request
+//!     // Option 1: Pass API key directly (recommended for Lambda)
 //!     let request = S3IngestionRequest::new(s3_path)
 //!         .with_auto_execute(true)
-//!         .with_trust_distance(0);
+//!         .with_trust_distance(0)
+//!         .with_openrouter_api_key(std::env::var("FOLD_OPENROUTER_API_KEY")?);
 //!
 //!     // Ingest file asynchronously
-//!     let ingestion_config = IngestionConfig::from_env()?;
-//!     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+//!     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, None).await?;
+//!     
+//!     // Option 2: Use environment-based config (legacy approach)
+//!     // let ingestion_config = IngestionConfig::from_env()?;
+//!     // let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, Some(&ingestion_config)).await?;
 //!
 //!     if response.success {
 //!         println!("Ingestion started: {:?}", response.progress_id);
@@ -96,11 +102,12 @@
 //! ) -> Result<Value, Error> {
 //!     let s3_path = /* extract from event */;
 //!     
-//!     let request = S3IngestionRequest::new(s3_path);
-//!     let ingestion_config = IngestionConfig::from_env()?;
+//!     // Pass API key directly in request
+//!     let request = S3IngestionRequest::new(s3_path)
+//!         .with_openrouter_api_key(std::env::var("FOLD_OPENROUTER_API_KEY")?);
 //!     
 //!     // Wait for completion
-//!     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+//!     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, None).await?;
 //!
 //!     Ok(json!({
 //!         "statusCode": 200,

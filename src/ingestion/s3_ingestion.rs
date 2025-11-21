@@ -27,6 +27,8 @@ pub struct S3IngestionRequest {
     pub trust_distance: u32,
     /// Public key for authentication
     pub pub_key: String,
+    /// Optional ingestion configuration (if not provided, will use from_env())
+    pub ingestion_config: Option<IngestionConfig>,
 }
 
 impl S3IngestionRequest {
@@ -37,6 +39,7 @@ impl S3IngestionRequest {
             auto_execute: true,
             trust_distance: 0,
             pub_key: "default".to_string(),
+            ingestion_config: None,
         }
     }
 
@@ -57,6 +60,35 @@ impl S3IngestionRequest {
         self.pub_key = pub_key;
         self
     }
+
+    /// Set a complete ingestion configuration
+    pub fn with_ingestion_config(mut self, config: IngestionConfig) -> Self {
+        self.ingestion_config = Some(config);
+        self
+    }
+
+    /// Set the OpenRouter API key directly (convenience method)
+    /// 
+    /// This creates an ingestion config with the provided API key and default settings.
+    /// If you need more control over the configuration, use `with_ingestion_config` instead.
+    pub fn with_openrouter_api_key(mut self, api_key: String) -> Self {
+        let mut config = IngestionConfig::default();
+        config.openrouter.api_key = api_key;
+        config.enabled = true;
+        self.ingestion_config = Some(config);
+        self
+    }
+
+    /// Set the OpenRouter configuration with custom model and base URL
+    pub fn with_openrouter_config(mut self, api_key: String, model: String, base_url: String) -> Self {
+        let mut config = IngestionConfig::default();
+        config.openrouter.api_key = api_key;
+        config.openrouter.model = model;
+        config.openrouter.base_url = base_url;
+        config.enabled = true;
+        self.ingestion_config = Some(config);
+        self
+    }
 }
 
 /// Ingest a file from S3 path with background processing
@@ -70,6 +102,7 @@ impl S3IngestionRequest {
 /// * `upload_storage` - Upload storage for file management
 /// * `progress_tracker` - Progress tracker for ingestion operations
 /// * `node` - DataFold node for data operations
+/// * `ingestion_config` - Optional ingestion configuration (if not provided, uses from_env() or request.ingestion_config)
 ///
 /// # Returns
 ///
@@ -89,11 +122,16 @@ impl S3IngestionRequest {
 ///     let progress_tracker = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 ///     let node = Arc::new(tokio::sync::Mutex::new(/* initialize DataFoldNode */));
 ///     
-///     let request = S3IngestionRequest::new(
-///         "s3://my-bucket/data.json".to_string()
-///     );
+///     // Option 1: Pass API key directly in request
+///     let request = S3IngestionRequest::new("s3://my-bucket/data.json".to_string())
+///         .with_openrouter_api_key("your-api-key".to_string());
+///     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node.clone(), None).await?;
 ///     
-///     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+///     // Option 2: Pass config explicitly
+///     let ingestion_config = IngestionConfig::from_env()?;
+///     let request = S3IngestionRequest::new("s3://my-bucket/data.json".to_string());
+///     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, Some(&ingestion_config)).await?;
+///     
 ///     println!("Started ingestion: {}", response.progress_id.unwrap());
 ///     
 ///     Ok(())
@@ -104,8 +142,17 @@ pub async fn ingest_from_s3_path_async(
     upload_storage: &UploadStorage,
     progress_tracker: &ProgressTracker,
     node: Arc<Mutex<DataFoldNode>>,
-    ingestion_config: &IngestionConfig,
+    ingestion_config: Option<&IngestionConfig>,
 ) -> Result<IngestionResponse, IngestionError> {
+    // Determine which config to use: passed in, from request, or from env
+    let config = if let Some(config) = ingestion_config {
+        config.clone()
+    } else if let Some(config) = &request.ingestion_config {
+        config.clone()
+    } else {
+        IngestionConfig::from_env()?
+    };
+
     // Parse and download S3 file
     let (file_path, filename) = download_s3_file(&request.s3_path, upload_storage).await?;
 
@@ -124,7 +171,7 @@ pub async fn ingest_from_s3_path_async(
         trust_distance: request.trust_distance,
         pub_key: request.pub_key.clone(),
         source_file_name: Some(filename),
-        ingestion_config: ingestion_config.clone(),
+        ingestion_config: config,
     };
 
     let progress_id = spawn_background_ingestion(spawn_config, progress_tracker, node);
@@ -151,7 +198,7 @@ pub async fn ingest_from_s3_path_async(
 /// * `upload_storage` - Upload storage for file management
 /// * `progress_tracker` - Progress tracker for ingestion operations
 /// * `node` - DataFold node for data operations
-/// * `ingestion_config` - Configuration for ingestion
+/// * `ingestion_config` - Optional ingestion configuration (if not provided, uses from_env() or request.ingestion_config)
 ///
 /// # Returns
 ///
@@ -160,7 +207,7 @@ pub async fn ingest_from_s3_path_async(
 /// # Example
 ///
 /// ```ignore
-/// use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest, IngestionConfig};
+/// use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
 /// use datafold::storage::UploadStorage;
 /// use std::sync::Arc;
 ///
@@ -170,13 +217,13 @@ pub async fn ingest_from_s3_path_async(
 ///     let upload_storage = UploadStorage::local("uploads".into());
 ///     let progress_tracker = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 ///     let node = Arc::new(tokio::sync::Mutex::new(/* initialize DataFoldNode */));
-///     let ingestion_config = IngestionConfig::from_env()?;
 ///     
-///     let request = S3IngestionRequest::new(
-///         "s3://my-bucket/data.json".to_string()
-///     ).with_auto_execute(true);
+///     // Pass API key directly in request
+///     let request = S3IngestionRequest::new("s3://my-bucket/data.json".to_string())
+///         .with_auto_execute(true)
+///         .with_openrouter_api_key("your-api-key".to_string());
 ///     
-///     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, &ingestion_config).await?;
+///     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, None).await?;
 ///     println!("Ingestion complete: {} mutations executed", 
 ///              response.mutations_executed);
 ///     
@@ -188,7 +235,7 @@ pub async fn ingest_from_s3_path_sync(
     upload_storage: &UploadStorage,
     progress_tracker: &ProgressTracker,
     node: Arc<Mutex<DataFoldNode>>,
-    ingestion_config: &IngestionConfig,
+    ingestion_config: Option<&IngestionConfig>,
 ) -> Result<IngestionResponse, IngestionError> {
     // Start async ingestion
     let async_response = ingest_from_s3_path_async(request, upload_storage, progress_tracker, node, ingestion_config).await?;
@@ -287,6 +334,36 @@ mod tests {
         assert!(!request.auto_execute);
         assert_eq!(request.trust_distance, 5);
         assert_eq!(request.pub_key, "custom");
+        assert!(request.ingestion_config.is_none());
+    }
+
+    #[test]
+    fn test_s3_ingestion_request_with_api_key() {
+        let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+            .with_openrouter_api_key("test-key".to_string());
+
+        assert_eq!(request.s3_path, "s3://bucket/file.json");
+        assert!(request.ingestion_config.is_some());
+        
+        let config = request.ingestion_config.unwrap();
+        assert_eq!(config.openrouter.api_key, "test-key");
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn test_s3_ingestion_request_with_config() {
+        let mut custom_config = IngestionConfig::default();
+        custom_config.openrouter.api_key = "custom-key".to_string();
+        custom_config.openrouter.model = "custom-model".to_string();
+        custom_config.enabled = true;
+
+        let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
+            .with_ingestion_config(custom_config);
+
+        assert!(request.ingestion_config.is_some());
+        let config = request.ingestion_config.unwrap();
+        assert_eq!(config.openrouter.api_key, "custom-key");
+        assert_eq!(config.openrouter.model, "custom-model");
     }
 
     #[test]
