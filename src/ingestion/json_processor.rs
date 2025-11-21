@@ -1,6 +1,5 @@
 //! JSON conversion and processing for file uploads
 
-use actix_web::{web, HttpResponse};
 use file_to_json::{Converter, FallbackStrategy, OpenRouterConfig};
 use serde_json::{json, Value};
 use std::io::Write;
@@ -9,11 +8,12 @@ use std::time::Duration;
 use tempfile::NamedTempFile;
 
 use crate::ingestion::config::AIProvider;
+use crate::ingestion::IngestionError;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 
-/// Convert a file to JSON using file_to_json library
-pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, HttpResponse> {
+/// Convert a file to JSON using file_to_json library (core implementation)
+async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, IngestionError> {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -22,28 +22,13 @@ pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, HttpResp
     );
 
     // Load fold_db ingestion config
-    let ingestion_config = match crate::ingestion::IngestionConfig::from_env() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to load ingestion config: {}",
-                e
-            );
-            return Err(HttpResponse::InternalServerError().json(json!({
-                "success": false,
-                "error": format!("Failed to load ingestion config: {}. Ensure FOLD_OPENROUTER_API_KEY is set.", e)
-            })));
-        }
-    };
+    let ingestion_config = crate::ingestion::IngestionConfig::from_env()?;
 
     // Only OpenRouter is supported for file_to_json conversion
     if ingestion_config.provider != AIProvider::OpenRouter {
-        return Err(HttpResponse::BadRequest().json(json!({
-            "success": false,
-            "error": "File conversion requires OpenRouter provider. Ollama is not supported for this feature."
-        })));
+        return Err(IngestionError::configuration_error(
+            "File conversion requires OpenRouter provider. Ollama is not supported for this feature."
+        ));
     }
 
     // Build file_to_json OpenRouterConfig from fold_db config
@@ -58,35 +43,51 @@ pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, HttpResp
 
     let file_path_str = file_path.to_string_lossy().to_string();
     
-    match web::block(move || {
-        let converter = Converter::new(file_to_json_config)?;
+    // Run conversion in blocking task
+    tokio::task::spawn_blocking(move || {
+        let converter = Converter::new(file_to_json_config)
+            .map_err(|_| IngestionError::FileConversionFailed)?;
         converter.convert_path(&file_path_str)
+            .map_err(|e| {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Failed to convert file to JSON: {}",
+                    e
+                );
+                IngestionError::FileConversionFailed
+            })
     })
     .await
-    {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(e)) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to convert file to JSON: {}",
-                e
-            );
+    .map_err(|e| {
+        log_feature!(
+            LogFeature::Ingestion,
+            error,
+            "Failed to spawn blocking task: {}",
+            e
+        );
+        IngestionError::FileConversionFailed
+    })?
+}
+
+/// Convert a file to JSON using file_to_json library (public API for ingestion)
+pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, IngestionError> {
+    convert_file_to_json_core(file_path).await
+}
+
+/// Convert a file to JSON using file_to_json library (actix-web wrapper)
+pub async fn convert_file_to_json_http(
+    file_path: &PathBuf,
+) -> Result<Value, actix_web::HttpResponse> {
+    use actix_web::HttpResponse;
+
+    match convert_file_to_json_core(file_path).await {
+        Ok(value) => Ok(value),
+        Err(e) => {
+            log_feature!(LogFeature::Ingestion, error, "File conversion failed: {}", e);
             Err(HttpResponse::InternalServerError().json(json!({
                 "success": false,
                 "error": format!("Failed to convert file to JSON: {}", e)
-            })))
-        }
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to initialize file_to_json converter: {}",
-                e
-            );
-            Err(HttpResponse::InternalServerError().json(json!({
-                "success": false,
-                "error": format!("Failed to initialize converter: {}", e)
             })))
         }
     }

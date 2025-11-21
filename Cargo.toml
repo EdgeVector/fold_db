@@ -1,6 +1,6 @@
 [package]
 name = "datafold"
-version = "0.1.15"
+version = "0.1.16"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
 description = "A personal database for data sovereignty with AI-powered ingestion and S3 support"
@@ -26,6 +26,7 @@ exclude = [
 default = []
 test-utils = []  # Feature flag for test utilities
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
+lambda = ["lambda_runtime"]  # AWS Lambda support with simplified API
 
 [dependencies]
 # Utilities
@@ -78,6 +79,9 @@ file_to_json = "0.1.5"
 aws-config = "1.0"
 aws-sdk-s3 = "1.0"
 aws-sdk-dynamodb = "1.0"
+
+# Lambda runtime (optional, for AWS Lambda deployments)
+lambda_runtime = { version = "0.13", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "full"] }
