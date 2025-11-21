@@ -1,126 +1,113 @@
-//! Example: AWS Lambda S3 Event Ingestion
+//! AWS Lambda Basic Example
 //!
-//! This example demonstrates how to use DataFold's S3 ingestion API
-//! in an AWS Lambda function triggered by S3 events.
+//! This example demonstrates how to use DataFold's Lambda context API
+//! in an AWS Lambda function.
 //!
 //! ## Setup
 //!
-//! 1. Configure environment variables:
+//! 1. Add dependencies to your Lambda project's Cargo.toml:
+//! ```toml
+//! [dependencies]
+//! datafold = { version = "0.1", features = ["lambda"] }
+//! lambda_runtime = "0.13"
+//! tokio = { version = "1", features = ["macros"] }
+//! serde = { version = "1", features = ["derive"] }
+//! serde_json = "1"
+//! tracing = "0.1"
+//! tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+//! ```
+//!
+//! 2. Configure your Lambda function with any required environment variables
+//!    based on your use case.
+//!
+//! 3. Deploy to Lambda with your trigger (S3, API Gateway, etc.)
+//!
+//! 4. Set Lambda timeout based on your operations (typically 30s-5min).
+//!
+//! ## Build for Lambda
+//!
 //! ```bash
-//! export DATAFOLD_STORAGE_MODE=s3
-//! export DATAFOLD_S3_BUCKET=my-db-bucket
-//! export DATAFOLD_S3_REGION=us-west-2
-//! export DATAFOLD_UPLOAD_STORAGE_MODE=s3
-//! export DATAFOLD_UPLOAD_S3_BUCKET=my-uploads-bucket
-//! export DATAFOLD_UPLOAD_S3_REGION=us-west-2
-//! # Optional: Can also pass API key directly in code
-//! export FOLD_OPENROUTER_API_KEY=your-api-key
-//! ```
+//! # For x86_64 architecture
+//! cargo build --release --target x86_64-unknown-linux-gnu --features lambda
 //!
-//! 2. Deploy to Lambda with S3 event trigger
-//!
-//! ## Lambda Handler
-//!
-//! ```rust,no_run
-//! use datafold::{
-//!     ingestion::{ingest_from_s3_path_async, S3IngestionRequest, IngestionConfig},
-//!     datafold_node::http_server::AppState,
-//! };
-//! use lambda_runtime::{run, service_fn, Error, LambdaEvent};
-//! use serde_json::{json, Value};
-//!
-//! async fn function_handler(
-//!     event: LambdaEvent<Value>,
-//!     state: &AppState,
-//! ) -> Result<Value, Error> {
-//!     // Parse S3 event
-//!     let bucket = event.payload["Records"][0]["s3"]["bucket"]["name"]
-//!         .as_str()
-//!         .ok_or("Missing bucket name")?;
-//!     let key = event.payload["Records"][0]["s3"]["object"]["key"]
-//!         .as_str()
-//!         .ok_or("Missing object key")?;
-//!
-//!     let s3_path = format!("s3://{}/{}", bucket, key);
-//!     
-//!     println!("Processing S3 file: {}", s3_path);
-//!
-//!     // Create ingestion request
-//!     // Option 1: Pass API key directly (recommended for Lambda)
-//!     let request = S3IngestionRequest::new(s3_path)
-//!         .with_auto_execute(true)
-//!         .with_trust_distance(0)
-//!         .with_openrouter_api_key(std::env::var("FOLD_OPENROUTER_API_KEY")?);
-//!
-//!     // Ingest file asynchronously
-//!     let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, None).await?;
-//!     
-//!     // Option 2: Use environment-based config (legacy approach)
-//!     // let ingestion_config = IngestionConfig::from_env()?;
-//!     // let response = ingest_from_s3_path_async(&request, &upload_storage, &progress_tracker, node, Some(&ingestion_config)).await?;
-//!
-//!     if response.success {
-//!         println!("Ingestion started: {:?}", response.progress_id);
-//!         Ok(json!({
-//!             "statusCode": 200,
-//!             "body": json!({
-//!                 "message": "Ingestion started",
-//!                 "progress_id": response.progress_id,
-//!             }).to_string()
-//!         }))
-//!     } else {
-//!         Ok(json!({
-//!             "statusCode": 500,
-//!             "body": json!({
-//!                 "message": "Ingestion failed",
-//!                 "errors": response.errors,
-//!             }).to_string()
-//!         }))
-//!     }
-//! }
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Error> {
-//!     // Initialize DataFold
-//!     let state = AppState::new(/* ... */);
-//!     
-//!     // Run Lambda handler
-//!     run(service_fn(|event| function_handler(event, &state))).await
-//! }
-//! ```
-//!
-//! ## Synchronous Processing
-//!
-//! For synchronous processing (Lambda waits for ingestion to complete):
-//!
-//! ```rust,no_run
-//! use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest, IngestionConfig};
-//!
-//! async fn function_handler_sync(
-//!     event: LambdaEvent<Value>,
-//!     state: &AppState,
-//! ) -> Result<Value, Error> {
-//!     let s3_path = /* extract from event */;
-//!     
-//!     // Pass API key directly in request
-//!     let request = S3IngestionRequest::new(s3_path)
-//!         .with_openrouter_api_key(std::env::var("FOLD_OPENROUTER_API_KEY")?);
-//!     
-//!     // Wait for completion
-//!     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, None).await?;
-//!
-//!     Ok(json!({
-//!         "statusCode": 200,
-//!         "body": json!({
-//!             "message": "Ingestion complete",
-//!             "schema_used": response.schema_used,
-//!             "mutations_executed": response.mutations_executed,
-//!         }).to_string()
-//!     }))
-//! }
+//! # For ARM64 architecture (Graviton)
+//! cargo build --release --target aarch64-unknown-linux-gnu --features lambda
 //! ```
 
-fn main() {
-    println!("This is an example file. See the documentation above for Lambda usage.");
+#[cfg(feature = "lambda")]
+use datafold::lambda::{LambdaConfig, LambdaContext};
+#[cfg(feature = "lambda")]
+use lambda_runtime::{run, service_fn, Error, LambdaEvent};
+#[cfg(feature = "lambda")]
+use serde_json::{json, Value};
+
+/// Lambda handler function
+#[cfg(feature = "lambda")]
+async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    tracing::info!("Received event: {:?}", event.payload);
+
+    // Access the DataFold node from the context
+    let node = LambdaContext::node()?;
+    
+    // Example: Get node information
+    let node_id = {
+        let node_guard = node.lock().await;
+        node_guard.get_node_id().to_string()
+    };
+
+    tracing::info!("Processing with node: {}", node_id);
+
+    // Your Lambda logic here...
+    // For ingestion operations, use the node and progress_tracker
+    // For custom operations, you have full access to the DataFold node
+
+    Ok(json!({
+        "statusCode": 200,
+        "body": {
+            "message": "Processed successfully",
+            "node_id": node_id
+        }
+    }))
 }
 
+#[cfg(feature = "lambda")]
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    // Initialize tracing for CloudWatch logs
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .without_time() // CloudWatch adds timestamps
+        .init();
+
+    tracing::info!("Initializing Lambda context...");
+
+    // Create Lambda configuration
+    let mut config = LambdaConfig::new();
+
+    // Optionally set schema service URL from environment
+    if let Ok(schema_url) = std::env::var("SCHEMA_SERVICE_URL") {
+        if !schema_url.is_empty() {
+            config = config.with_schema_service_url(schema_url);
+        }
+    }
+
+    // Initialize Lambda context once (reused across invocations)
+    LambdaContext::init(config)
+        .await
+        .map_err(|e| format!("Failed to initialize Lambda context: {}", e))?;
+
+    tracing::info!("Lambda initialized successfully");
+
+    // Run Lambda runtime
+    run(service_fn(function_handler)).await
+}
+
+#[cfg(not(feature = "lambda"))]
+fn main() {
+    println!("This example requires the 'lambda' feature flag.");
+    println!("Run with: cargo run --example lambda_s3_ingestion --features lambda");
+    println!();
+    println!("Note: This is an example for AWS Lambda deployment.");
+    println!("See the documentation in the file for setup instructions.");
+}

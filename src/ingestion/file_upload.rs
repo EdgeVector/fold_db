@@ -3,7 +3,7 @@
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::multipart_parser::parse_multipart;
 use crate::ingestion::json_processor::{
-    convert_file_to_json, flatten_root_layers, save_json_to_temp_file,
+    convert_file_to_json_http, flatten_root_layers, save_json_to_temp_file,
 };
 use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
 use crate::ingestion::{IngestionConfig, ProgressTracker};
@@ -70,7 +70,7 @@ pub async fn upload_file(
     }
 
     // Convert file to JSON using file_to_json
-    let json_value = match convert_file_to_json(&form_data.file_path).await {
+    let json_value = match convert_file_to_json_http(&form_data.file_path).await {
         Ok(json) => json,
         Err(response) => return response,
     };
