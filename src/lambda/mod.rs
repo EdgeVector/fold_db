@@ -21,8 +21,15 @@
 //! ```
 
 use crate::datafold_node::{DataFoldNode, NodeConfig};
-use crate::ingestion::{create_progress_tracker, IngestionError, IngestionProgress, ProgressTracker};
+use crate::ingestion::core::IngestionRequest;
+use crate::ingestion::progress::ProgressService;
+use crate::ingestion::simple_service::SimpleIngestionService;
+use crate::ingestion::{
+    create_progress_tracker, IngestionConfig, IngestionError, IngestionProgress, 
+    IngestionResponse, ProgressTracker,
+};
 use once_cell::sync::OnceCell;
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -215,4 +222,255 @@ impl LambdaContext {
         })?;
         Ok(tracker.get(progress_id).cloned())
     }
+
+    /// Ingest JSON data asynchronously (returns immediately with progress_id)
+    ///
+    /// This function processes JSON data in the background and returns a progress_id
+    /// that can be used to track the ingestion status.
+    ///
+    /// # Arguments
+    ///
+    /// * `json_data` - The JSON data to ingest (array of objects or single object)
+    /// * `auto_execute` - Whether to execute mutations after generation
+    /// * `trust_distance` - Trust distance for mutations (default: 0)
+    /// * `pub_key` - Public key for mutations (default: "default")
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    /// use serde_json::json;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let data = json!([
+    ///         {"id": 1, "name": "Alice"},
+    ///         {"id": 2, "name": "Bob"}
+    ///     ]);
+    ///     
+    ///     let progress_id = LambdaContext::ingest_json(data, true, 0, "default".to_string()).await?;
+    ///     
+    ///     println!("Started ingestion: {}", progress_id);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn ingest_json(
+        json_data: Value,
+        auto_execute: bool,
+        trust_distance: u32,
+        pub_key: String,
+    ) -> Result<String, IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.clone();
+        let progress_tracker = ctx.progress_tracker.clone();
+
+        // Generate unique progress ID
+        let progress_id = uuid::Uuid::new_v4().to_string();
+
+        // Start progress tracking
+        let progress_service = ProgressService::new(progress_tracker);
+        progress_service.start_progress(progress_id.clone());
+
+        // Load ingestion config
+        let config = IngestionConfig::from_env()?;
+
+        // Create ingestion request
+        let request = IngestionRequest {
+            data: json_data,
+            auto_execute: Some(auto_execute),
+            trust_distance: Some(trust_distance),
+            pub_key: Some(pub_key),
+            source_file_name: None,
+        };
+
+        // Clone for background task
+        let progress_id_clone = progress_id.clone();
+
+        // Spawn background ingestion task
+        tokio::spawn(async move {
+            // Create ingestion service
+            let service = match SimpleIngestionService::new(config) {
+                Ok(service) => service,
+                Err(e) => {
+                    progress_service.fail_progress(
+                        &progress_id_clone,
+                        format!("Failed to create ingestion service: {}", e),
+                    );
+                    return;
+                }
+            };
+
+            // Process ingestion
+            match service
+                .process_json_with_node_and_progress(
+                    request,
+                    node,
+                    &progress_service,
+                    progress_id_clone.clone(),
+                )
+                .await
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    progress_service.fail_progress(
+                        &progress_id_clone,
+                        format!("Ingestion failed: {}", e),
+                    );
+                }
+            }
+        });
+
+        Ok(progress_id)
+    }
+
+    /// Ingest JSON data synchronously (waits for completion)
+    ///
+    /// This function processes JSON data and waits for completion before returning.
+    /// Use this when you need the full ingestion results immediately.
+    ///
+    /// # Arguments
+    ///
+    /// * `json_data` - The JSON data to ingest (array of objects or single object)
+    /// * `auto_execute` - Whether to execute mutations after generation
+    /// * `trust_distance` - Trust distance for mutations (default: 0)
+    /// * `pub_key` - Public key for mutations (default: "default")
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    /// use serde_json::json;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let data = json!([
+    ///         {"id": 1, "name": "Alice"},
+    ///         {"id": 2, "name": "Bob"}
+    ///     ]);
+    ///     
+    ///     let response = LambdaContext::ingest_json_sync(data, true, 0, "default".to_string()).await?;
+    ///     
+    ///     println!("Ingested {} mutations", response.mutations_executed);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn ingest_json_sync(
+        json_data: Value,
+        auto_execute: bool,
+        trust_distance: u32,
+        pub_key: String,
+    ) -> Result<IngestionResponse, IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.clone();
+        let progress_tracker = ctx.progress_tracker.clone();
+
+        // Generate unique progress ID
+        let progress_id = uuid::Uuid::new_v4().to_string();
+
+        // Start progress tracking
+        let progress_service = ProgressService::new(progress_tracker);
+        progress_service.start_progress(progress_id.clone());
+
+        // Load ingestion config
+        let config = IngestionConfig::from_env()?;
+
+        // Create ingestion service
+        let service = SimpleIngestionService::new(config)?;
+
+        // Create ingestion request
+        let request = IngestionRequest {
+            data: json_data,
+            auto_execute: Some(auto_execute),
+            trust_distance: Some(trust_distance),
+            pub_key: Some(pub_key),
+            source_file_name: None,
+        };
+
+        // Process synchronously
+        service
+            .process_json_with_node_and_progress(request, node, &progress_service, progress_id)
+            .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lambda_config_creation() {
+        let config = LambdaConfig::new();
+        assert!(config.storage_path.is_none());
+        assert!(config.schema_service_url.is_none());
+    }
+
+    #[test]
+    fn test_lambda_config_default() {
+        let config = LambdaConfig::default();
+        assert!(config.storage_path.is_none());
+        assert!(config.schema_service_url.is_none());
+    }
+
+    #[test]
+    fn test_lambda_config_with_storage_path() {
+        let path = PathBuf::from("/tmp/custom_path");
+        let config = LambdaConfig::new().with_storage_path(path.clone());
+        assert_eq!(config.storage_path, Some(path));
+    }
+
+    #[test]
+    fn test_lambda_config_with_schema_service_url() {
+        let url = "https://schema.example.com".to_string();
+        let config = LambdaConfig::new().with_schema_service_url(url.clone());
+        assert_eq!(config.schema_service_url, Some(url));
+    }
+
+    #[test]
+    fn test_lambda_config_builder_pattern() {
+        let path = PathBuf::from("/tmp/test");
+        let url = "https://schema.example.com".to_string();
+        
+        let config = LambdaConfig::new()
+            .with_storage_path(path.clone())
+            .with_schema_service_url(url.clone());
+        
+        assert_eq!(config.storage_path, Some(path));
+        assert_eq!(config.schema_service_url, Some(url));
+    }
+
+    #[test]
+    fn test_lambda_config_debug_impl() {
+        let config = LambdaConfig::new()
+            .with_storage_path(PathBuf::from("/tmp/test"));
+        
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("LambdaConfig"));
+    }
+
+    #[test]
+    fn test_lambda_config_clone() {
+        let config1 = LambdaConfig::new()
+            .with_storage_path(PathBuf::from("/tmp/test"))
+            .with_schema_service_url("https://example.com".to_string());
+        
+        let config2 = config1.clone();
+        
+        assert_eq!(config1.storage_path, config2.storage_path);
+        assert_eq!(config1.schema_service_url, config2.schema_service_url);
+    }
+
+    #[test]
+    fn test_lambda_config_with_both_options() {
+        let path = PathBuf::from("/tmp/lambda_test");
+        let url = "https://schema.service.com".to_string();
+        
+        let config = LambdaConfig {
+            storage_path: Some(path.clone()),
+            schema_service_url: Some(url.clone()),
+        };
+        
+        assert_eq!(config.storage_path, Some(path));
+        assert_eq!(config.schema_service_url, Some(url));
+    }
+
+    // Note: Context initialization tests are in integration tests
+    // since OnceCell can only be initialized once per test run
 }
