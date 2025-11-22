@@ -39,3 +39,4 @@ COPY --from=builder /lambda_ingestion/target/release/examples/lambda_s3_ingestio
 # Set the handler (required but not used for custom runtime)
 CMD ["bootstrap"]
 
+
