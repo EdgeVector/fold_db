@@ -275,6 +275,250 @@ Increase Lambda memory allocation or optimize data processing.
 ### Timeout
 Increase Lambda timeout or process data in smaller chunks.
 
+## AI Query Methods (Stateless)
+
+DataFold Lambda API includes powerful AI query capabilities using natural language.
+All AI query methods are **fully stateless** - no server-side session management required.
+
+### Configuration
+
+Enable AI query functionality by providing AI configuration during initialization:
+
+#### With OpenRouter
+
+```rust
+use datafold::lambda::LambdaConfig;
+
+let config = LambdaConfig::new()
+    .with_openrouter(
+        "sk-or-v1-your-api-key".to_string(),
+        "anthropic/claude-3.5-sonnet".to_string()
+    );
+
+LambdaContext::init(config).await?;
+```
+
+#### With Ollama
+
+```rust
+let config = LambdaConfig::new()
+    .with_ollama(
+        "http://localhost:11434".to_string(),
+        "llama2".to_string()
+    );
+
+LambdaContext::init(config).await?;
+```
+
+### Simple AI Query
+
+The simplest way to query your data using natural language:
+
+```rust
+use datafold::lambda::LambdaContext;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let query = event.payload["query"]
+        .as_str()
+        .unwrap_or("Show me all products");
+    
+    // Execute AI query - returns interpreted results
+    let response = LambdaContext::ai_query(query).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "body": {
+            "interpretation": response.ai_interpretation,
+            "results_count": response.raw_results.len(),
+            // Optionally include context for follow-ups
+            "context": response.context
+        }
+    }))
+}
+```
+
+### Complete Query Workflow
+
+For more detailed results with query planning and summaries:
+
+```rust
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let query = event.payload["query"].as_str().unwrap_or("");
+    
+    // Run complete workflow: analyze + execute + summarize
+    let response = LambdaContext::run_ai_query(query).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "body": {
+            "query_plan": {
+                "schema": response.query_plan.schema_name,
+                "reasoning": response.query_plan.reasoning,
+            },
+            "summary": response.summary,
+            "results": response.results,
+            "context": response.context  // For follow-ups
+        }
+    }))
+}
+```
+
+### Follow-up Questions (Stateless)
+
+Handle multi-turn conversations by passing context back from the client:
+
+```rust
+use datafold::lambda::{LambdaContext, FollowupRequest, QueryContext};
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    // Check if this is a follow-up or initial query
+    if let Some(context_value) = event.payload.get("context") {
+        // This is a follow-up
+        let question = event.payload["question"]
+            .as_str()
+            .ok_or("Missing question")?;
+        
+        let context: QueryContext = serde_json::from_value(context_value.clone())?;
+        
+        let response = LambdaContext::ask_followup(FollowupRequest {
+            context,
+            question: question.to_string(),
+        }).await?;
+        
+        Ok(json!({
+            "statusCode": 200,
+            "body": {
+                "answer": response.answer,
+                "executed_new_query": response.executed_new_query,
+                "context": response.context  // Updated context
+            }
+        }))
+    } else {
+        // Initial query
+        let query = event.payload["query"]
+            .as_str()
+            .ok_or("Missing query")?;
+        
+        let response = LambdaContext::run_ai_query(query).await?;
+        
+        Ok(json!({
+            "statusCode": 200,
+            "body": {
+                "summary": response.summary,
+                "results": response.results,
+                "context": response.context
+            }
+        }))
+    }
+}
+```
+
+### Multi-turn Conversation Example
+
+Client-side example showing how to maintain conversation context:
+
+```rust
+// First question
+let payload1 = json!({
+    "query": "Show me all electronics products"
+});
+let response1 = invoke_lambda(payload1).await?;
+let context = response1["body"]["context"].clone();
+
+// Second question - follow-up
+let payload2 = json!({
+    "context": context,
+    "question": "Which ones are under $100?"
+});
+let response2 = invoke_lambda(payload2).await?;
+let updated_context = response2["body"]["context"].clone();
+
+// Third question - another follow-up
+let payload3 = json!({
+    "context": updated_context,
+    "question": "Sort by price"
+});
+let response3 = invoke_lambda(payload3).await?;
+```
+
+### Advanced Configuration
+
+```rust
+use datafold::lambda::{LambdaConfig, AIConfig, AIProvider, OpenRouterConfig};
+
+let ai_config = AIConfig {
+    provider: AIProvider::OpenRouter,
+    openrouter: Some(OpenRouterConfig {
+        api_key: "sk-or-v1-...".to_string(),
+        model: "anthropic/claude-3.5-sonnet".to_string(),
+        base_url: None,  // Use default
+    }),
+    ollama: None,
+    timeout_seconds: 180,  // 3 minutes
+    max_retries: 5,
+};
+
+let config = LambdaConfig::new()
+    .with_schema_service_url("https://schema.example.com".to_string())
+    .with_ai_config(ai_config);
+
+LambdaContext::init(config).await?;
+```
+
+### Reading from AWS Secrets Manager
+
+```rust
+use aws_sdk_secretsmanager::Client as SecretsClient;
+
+async fn get_openrouter_key() -> Result<String, Error> {
+    let config = aws_config::load_from_env().await;
+    let client = SecretsClient::new(&config);
+    
+    let response = client
+        .get_secret_value()
+        .secret_id("datafold/openrouter-key")
+        .send()
+        .await?;
+    
+    Ok(response.secret_string().unwrap_or_default().to_string())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    let api_key = get_openrouter_key().await?;
+    
+    let config = LambdaConfig::new()
+        .with_openrouter(api_key, "anthropic/claude-3.5-sonnet".to_string());
+    
+    LambdaContext::init(config).await?;
+    run(service_fn(handler)).await
+}
+```
+
+### Important Notes
+
+- **Stateless**: Each Lambda invocation is independent
+- **Client Manages Context**: Client sends full context with each follow-up
+- **No Session Storage**: No DynamoDB/Redis needed
+- **Context Size**: Be mindful of payload size (6MB Lambda limit)
+- **Error Handling**: AI methods return errors if not configured
+
+### Example Queries
+
+```rust
+// Simple search
+LambdaContext::ai_query("Find all electronics products").await?
+
+// Complex query
+LambdaContext::run_ai_query("Show blog posts about AI from last month").await?
+
+// Follow-up
+LambdaContext::ask_followup(FollowupRequest {
+    context: previous_context,
+    question: "Which have more than 100 views?".to_string(),
+}).await?
+```
+
 ## Complete Example
 
 See `examples/lambda_s3_ingestion.rs` for a complete working example.
@@ -283,5 +527,6 @@ See `examples/lambda_s3_ingestion.rs` for a complete working example.
 
 - Full guide: [docs/LAMBDA_INTEGRATION.md](docs/LAMBDA_INTEGRATION.md)
 - Example with Dockerfile: [examples/Dockerfile.lambda](examples/Dockerfile.lambda)
+- AI Query Examples: [docs/AI_QUERY_EXAMPLES.md](docs/AI_QUERY_EXAMPLES.md)
 
 
