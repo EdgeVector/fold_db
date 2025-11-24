@@ -519,6 +519,314 @@ LambdaContext::ask_followup(FollowupRequest {
 }).await?
 ```
 
+## Multi-Tenant Logging
+
+DataFold Lambda supports pluggable logging backends for multi-tenant deployments.
+
+**All internal datafold logging is automatically captured** - when you configure a logger, all `log::info!()`, `log::error!()`, etc. calls throughout datafold are forwarded to your custom logger implementation.
+
+### How It Works
+
+1. You implement the `Logger` trait with your backend (DynamoDB, S3, etc.)
+2. Pass your logger to `LambdaConfig::with_logger()`
+3. DataFold automatically bridges all internal logging to your logger
+4. Your logger implementation determines how to handle `user_id` (e.g., via task-local storage)
+
+### Basic Logging (Stdout)
+
+```rust
+use datafold::lambda::{LambdaContext, LambdaConfig, StdoutLogger};
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    // Use stdout logger for development/debugging
+    let config = LambdaConfig::new()
+        .with_logger(Arc::new(StdoutLogger));
+    
+    LambdaContext::init(config).await?;
+    run(service_fn(handler)).await
+}
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
+    
+    // Create user-scoped logger
+    let logger = LambdaContext::create_logger(user_id)?;
+    
+    logger.info("request_started", "Processing your request").await?;
+    
+    // Your business logic...
+    let result = LambdaContext::ingest_json(
+        event.payload["data"].clone(),
+        true,
+        0,
+        user_id.to_string()
+    ).await?;
+    
+    logger.info("ingestion_completed", &format!("Started: {}", result)).await?;
+    
+    Ok(json!({ "statusCode": 200, "progress_id": result }))
+}
+```
+
+Output to CloudWatch:
+```
+[user_123] [INFO] request_started - Processing your request
+[user_123] [INFO] ingestion_completed - Started: abc-123-def
+```
+
+### Custom Logger Implementation
+
+Implement the `Logger` trait with your backend of choice (DynamoDB, S3, custom database, etc.):
+
+```rust
+use datafold::lambda::{Logger, LogEntry};
+use async_trait::async_trait;
+
+pub struct MyCustomLogger {
+    // Your backend (DynamoDB, S3, PostgreSQL, etc.)
+}
+
+#[async_trait]
+impl Logger for MyCustomLogger {
+    async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Write to your backend
+        println!("Logging for user {}: {}", entry.user_id, entry.message);
+        Ok(())
+    }
+    
+    // Optional: implement querying
+    async fn query(
+        &self,
+        user_id: &str,
+        limit: Option<usize>,
+        from_timestamp: Option<i64>,
+    ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
+        // Query from your backend
+        Ok(vec![])
+    }
+}
+```
+
+### DynamoDB Logger Example
+
+See `examples/lambda_dynamodb_logger.rs` for a complete DynamoDB implementation.
+
+**In your Lambda project:**
+
+```rust
+// src/dynamodb_logger.rs
+use datafold::lambda::{Logger, LogEntry, LogLevel};
+use async_trait::async_trait;
+use aws_sdk_dynamodb::{Client, types::AttributeValue};
+use std::collections::HashMap;
+use tokio::task_local;
+
+// Task-local storage for current user
+task_local! {
+    pub static CURRENT_USER: String;
+}
+
+pub struct DynamoDbLogger {
+    client: Client,
+    table_name: String,
+}
+
+impl DynamoDbLogger {
+    pub async fn new(table_name: String) -> Self {
+        let config = aws_config::load_from_env().await;
+        let client = Client::new(&config);
+        Self { client, table_name }
+    }
+}
+
+#[async_trait]
+impl Logger for DynamoDbLogger {
+    async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let ttl = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() + (30 * 24 * 60 * 60)) as i64; // 30 days
+        
+        // Get user_id from entry or task-local storage
+        let user_id = entry.user_id
+            .or_else(|| CURRENT_USER.try_with(|id| id.clone()).ok())
+            .unwrap_or_else(|| "system".to_string());
+        
+        let mut item = HashMap::new();
+        item.insert("user_id".to_string(), AttributeValue::S(user_id));
+        item.insert("timestamp".to_string(), AttributeValue::N(entry.timestamp.to_string()));
+        item.insert("level".to_string(), AttributeValue::S(entry.level.as_str().to_string()));
+        item.insert("event_type".to_string(), AttributeValue::S(entry.event_type));
+        item.insert("message".to_string(), AttributeValue::S(entry.message));
+        item.insert("ttl".to_string(), AttributeValue::N(ttl.to_string()));
+        
+        self.client
+            .put_item()
+            .table_name(&self.table_name)
+            .set_item(Some(item))
+            .send()
+            .await?;
+        
+        Ok(())
+    }
+    
+    async fn query(
+        &self,
+        user_id: &str,
+        limit: Option<usize>,
+        from_timestamp: Option<i64>,
+    ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
+        // Query implementation...
+        Ok(vec![])
+    }
+}
+```
+
+**Usage:**
+
+```rust
+// src/main.rs
+use datafold::lambda::{LambdaContext, LambdaConfig};
+use std::sync::Arc;
+
+mod dynamodb_logger;
+use dynamodb_logger::{DynamoDbLogger, CURRENT_USER};
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    // Create DynamoDB logger
+    let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
+    
+    // Initialize datafold with custom logger
+    let config = LambdaConfig::new()
+        .with_logger(Arc::new(logger));
+    
+    LambdaContext::init(config).await?;
+    run(service_fn(handler)).await
+}
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
+    
+    // Set user context for this request
+    CURRENT_USER.scope(user_id.to_string(), async {
+        // All logging (including internal datafold logs) within this scope
+        // will automatically have user_id set to "user_123"
+        
+        let result = LambdaContext::ingest_json(
+            event.payload["data"].clone(),
+            true,
+            0,
+            user_id.to_string()
+        ).await?;
+        
+        // Internal datafold logs during ingestion will also have user_id
+        
+        Ok(json!({ "statusCode": 200, "progress_id": result }))
+    }).await
+}
+```
+
+### DynamoDB Table Setup
+
+```bash
+# Create table
+aws dynamodb create-table \
+  --table-name datafold-logs \
+  --attribute-definitions \
+    AttributeName=user_id,AttributeType=S \
+    AttributeName=timestamp,AttributeType=N \
+  --key-schema \
+    AttributeName=user_id,KeyType=HASH \
+    AttributeName=timestamp,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST
+
+# Enable TTL for automatic cleanup
+aws dynamodb update-time-to-live \
+  --table-name datafold-logs \
+  --time-to-live-specification "Enabled=true, AttributeName=ttl"
+```
+
+### IAM Permissions
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/datafold-logs"
+    }
+  ]
+}
+```
+
+### Querying Logs
+
+```rust
+// Query user's logs
+let logs = LambdaContext::query_logs(
+    "user_123",
+    Some(100),  // limit
+    None        // from_timestamp
+).await?;
+
+for log in logs {
+    println!("{}: {} - {}", log.timestamp, log.event_type, log.message);
+}
+```
+
+### Logger Methods
+
+```rust
+let logger = LambdaContext::create_logger("user_123")?;
+
+// Simple logging
+logger.info("event_type", "message").await?;
+logger.error("event_type", "message").await?;
+logger.warn("event_type", "message").await?;
+logger.debug("event_type", "message").await?;
+logger.trace("event_type", "message").await?;
+
+// Logging with metadata
+use std::collections::HashMap;
+use datafold::lambda::LogLevel;
+
+logger.log(
+    LogLevel::Info,
+    "ingestion_completed",
+    "Successfully ingested data",
+    Some(HashMap::from([
+        ("record_count".to_string(), "1000".to_string()),
+        ("schema".to_string(), "users".to_string()),
+    ]))
+).await?;
+```
+
+### Cost Considerations
+
+**DynamoDB (recommended for multi-tenant):**
+- Writes: $1.25 per million requests
+- Reads: $0.25 per million requests
+- Storage: $0.25/GB/month
+- TTL deletions: FREE
+
+**CloudWatch Logs:**
+- Storage: $0.50/GB/month
+- Ingestion: $0.50/GB
+- GetLogEvents: FREE
+- Insights queries: $0.005/GB scanned (expensive at scale)
+
+**S3 + Athena:**
+- Storage: $0.023/GB/month (cheapest)
+- Athena queries: $5/TB scanned (with partitioning)
+- 5-15 minute query delay
+
 ## Complete Example
 
 See `examples/lambda_s3_ingestion.rs` for a complete working example.

@@ -1,6 +1,6 @@
 [package]
 name = "datafold"
-version = "0.1.18"
+version = "0.1.19"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
 description = "A personal database for data sovereignty with AI-powered ingestion and S3 support"
@@ -82,6 +82,7 @@ aws-sdk-dynamodb = "1.0"
 
 # Lambda runtime (optional, for AWS Lambda deployments)
 lambda_runtime = { version = "0.13", optional = true }
+async-trait = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "full"] }
