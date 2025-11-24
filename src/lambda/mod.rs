@@ -33,3 +33,7 @@ pub use types::{
     AIQueryResponse, CompleteQueryResponse, ConversationMessage, FollowupRequest, 
     FollowupResponse, QueryContext, QueryPlanInfo,
 };
+
+// Re-export schema types for Lambda users
+pub use crate::schema::types::{Mutation, Query, Transform};
+pub use crate::schema::{SchemaState, SchemaWithState};

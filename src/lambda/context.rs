@@ -106,7 +106,7 @@ impl LambdaContext {
         // This captures all internal datafold logging (log::info!(), etc.)
         let log_bridge = LogBridge::new(logger.clone());
         log::set_boxed_logger(Box::new(log_bridge))
-            .map_err(|e| IngestionError::configuration_error(&format!("Failed to set logger: {}", e)))?;
+            .map_err(|e| IngestionError::configuration_error(format!("Failed to set logger: {}", e)))?;
         log::set_max_level(log::LevelFilter::Info);
 
         let context = LambdaContext {
@@ -796,5 +796,259 @@ impl LambdaContext {
             executed_new_query,
             context: updated_context,
         })
+    }
+
+    /// Execute a query and return results
+    ///
+    /// This is for regular (non-AI) queries where you know the schema and fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - Query specification with schema name, fields, and optional filter
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    /// use datafold::schema::types::Query;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let query = Query {
+    ///         schema_name: "users".to_string(),
+    ///         fields: vec!["name".to_string(), "email".to_string()],
+    ///         filter: None,
+    ///     };
+    ///     
+    ///     let results = LambdaContext::query(query).await?;
+    ///     println!("Found {} records", results.len());
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn query(query: crate::schema::types::Query) -> Result<Vec<Value>, IngestionError> {
+        let ctx = Self::get()?;
+        let node_arc = Arc::clone(&ctx.node);
+        let processor = OperationProcessor::new(node_arc);
+        
+        match processor.execute_query_map(query).await {
+            Ok(result_map) => {
+                let records_map = records_from_field_map(&result_map);
+                let results: Vec<Value> = records_map
+                    .into_iter()
+                    .map(|(key, record)| serde_json::json!({
+                        "key": key,
+                        "fields": record.fields,
+                        "metadata": record.metadata
+                    }))
+                    .collect();
+                Ok(results)
+            }
+            Err(e) => Err(IngestionError::InvalidInput(format!("Query failed: {}", e))),
+        }
+    }
+
+    /// Execute a single mutation
+    ///
+    /// Creates a new record or updates an existing one.
+    ///
+    /// # Arguments
+    ///
+    /// * `mutation` - Mutation specification with schema, keys, fields, and values
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    /// use datafold::schema::types::Mutation;
+    /// use serde_json::json;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let mutation = Mutation {
+    ///         schema_name: "users".to_string(),
+    ///         keys_and_values: vec![("id".to_string(), json!("user123"))],
+    ///         fields_and_values: vec![
+    ///             ("name".to_string(), json!("Alice")),
+    ///             ("email".to_string(), json!("alice@example.com")),
+    ///         ],
+    ///         trust_distance: 0,
+    ///         pub_key: "default".to_string(),
+    ///     };
+    ///     
+    ///     let mutation_id = LambdaContext::execute_mutation(mutation).await?;
+    ///     println!("Mutation ID: {}", mutation_id);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn execute_mutation(mutation: crate::schema::types::Mutation) -> Result<String, IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.lock().await;
+        
+        node.mutate_batch(vec![mutation])
+            .map_err(|e| IngestionError::InvalidInput(format!("Mutation failed: {}", e)))?
+            .into_iter()
+            .next()
+            .ok_or_else(|| IngestionError::InvalidInput("No mutation ID returned".to_string()))
+    }
+
+    /// Execute multiple mutations in a batch
+    ///
+    /// More efficient than calling `execute_mutation()` multiple times.
+    ///
+    /// # Arguments
+    ///
+    /// * `mutations` - Vector of mutations to execute
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    /// use datafold::schema::types::Mutation;
+    /// use serde_json::json;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let mutations = vec![
+    ///         Mutation {
+    ///             schema_name: "users".to_string(),
+    ///             keys_and_values: vec![("id".to_string(), json!("user1"))],
+    ///             fields_and_values: vec![("name".to_string(), json!("Alice"))],
+    ///             trust_distance: 0,
+    ///             pub_key: "default".to_string(),
+    ///         },
+    ///         Mutation {
+    ///             schema_name: "users".to_string(),
+    ///             keys_and_values: vec![("id".to_string(), json!("user2"))],
+    ///             fields_and_values: vec![("name".to_string(), json!("Bob"))],
+    ///             trust_distance: 0,
+    ///             pub_key: "default".to_string(),
+    ///         },
+    ///     ];
+    ///     
+    ///     let mutation_ids = LambdaContext::execute_mutations(mutations).await?;
+    ///     println!("Created {} mutations", mutation_ids.len());
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn execute_mutations(mutations: Vec<crate::schema::types::Mutation>) -> Result<Vec<String>, IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.lock().await;
+        
+        node.mutate_batch(mutations)
+            .map_err(|e| IngestionError::InvalidInput(format!("Batch mutations failed: {}", e)))
+    }
+
+    /// List all schemas with their states
+    ///
+    /// Returns schemas along with their approval/pending states.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let schemas = LambdaContext::list_schemas().await?;
+    ///     
+    ///     for schema in schemas {
+    ///         println!("Schema: {} - State: {:?}", schema.schema.name, schema.state);
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn list_schemas() -> Result<Vec<crate::schema::SchemaWithState>, IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.lock().await;
+        let db_guard = node.get_fold_db()
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        
+        db_guard.schema_manager.get_schemas_with_states()
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to list schemas: {}", e)))
+    }
+
+    /// Approve a schema
+    ///
+    /// Approves a schema if it's not already approved (idempotent).
+    ///
+    /// # Arguments
+    ///
+    /// * `schema_name` - Name of the schema to approve
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     LambdaContext::approve_schema("users").await?;
+    ///     println!("Schema approved");
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn approve_schema(schema_name: &str) -> Result<(), IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.lock().await;
+        let db_guard = node.get_fold_db()
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        
+        db_guard.schema_manager.approve(schema_name)
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to approve schema: {}", e)))
+    }
+
+    /// Get the state of a schema
+    ///
+    /// # Arguments
+    ///
+    /// * `schema_name` - Name of the schema
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(SchemaState)` if the schema exists, or `None` if not found.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     if let Some(state) = LambdaContext::get_schema_state("users").await? {
+    ///         println!("Schema state: {:?}", state);
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn get_schema_state(schema_name: &str) -> Result<Option<crate::schema::SchemaState>, IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.lock().await;
+        let db_guard = node.get_fold_db()
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        
+        let states = db_guard.schema_manager.get_schema_states()
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schema states: {}", e)))?;
+        
+        Ok(states.get(schema_name).copied())
+    }
+
+    /// List all registered transforms
+    ///
+    /// Returns a map of transform IDs to their definitions.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let transforms = LambdaContext::list_transforms().await?;
+    ///     
+    ///     for (id, transform) in transforms {
+    ///         println!("Transform: {} - Schema: {}", id, transform.get_schema_name());
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn list_transforms() -> Result<std::collections::HashMap<String, crate::schema::types::Transform>, IngestionError> {
+        let ctx = Self::get()?;
+        let node = ctx.node.lock().await;
+        
+        node.list_transforms()
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to list transforms: {}", e)))
     }
 }
