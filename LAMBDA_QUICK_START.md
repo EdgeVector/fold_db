@@ -203,6 +203,186 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 }
 ```
 
+## Complete API Reference
+
+### Query Data
+
+Execute regular (non-AI) queries when you know the schema and fields:
+
+```rust
+use datafold::lambda::{LambdaContext, Query};
+use serde_json::json;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let query = Query {
+        schema_name: "users".to_string(),
+        fields: vec!["name".to_string(), "email".to_string()],
+        filter: None,
+    };
+    
+    let results = LambdaContext::query(query).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "results": results
+    }))
+}
+```
+
+### Execute Mutations
+
+#### Single Mutation
+
+```rust
+use datafold::lambda::{LambdaContext, Mutation};
+use serde_json::json;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let mutation = Mutation {
+        schema_name: "users".to_string(),
+        keys_and_values: vec![("id".to_string(), json!("user123"))],
+        fields_and_values: vec![
+            ("name".to_string(), json!("Alice")),
+            ("email".to_string(), json!("alice@example.com")),
+        ],
+        trust_distance: 0,
+        pub_key: "default".to_string(),
+    };
+    
+    let mutation_id = LambdaContext::execute_mutation(mutation).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "mutation_id": mutation_id
+    }))
+}
+```
+
+#### Batch Mutations
+
+More efficient for multiple records:
+
+```rust
+use datafold::lambda::{LambdaContext, Mutation};
+use serde_json::json;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let mutations = vec![
+        Mutation {
+            schema_name: "users".to_string(),
+            keys_and_values: vec![("id".to_string(), json!("user1"))],
+            fields_and_values: vec![("name".to_string(), json!("Alice"))],
+            trust_distance: 0,
+            pub_key: "default".to_string(),
+        },
+        Mutation {
+            schema_name: "users".to_string(),
+            keys_and_values: vec![("id".to_string(), json!("user2"))],
+            fields_and_values: vec![("name".to_string(), json!("Bob"))],
+            trust_distance: 0,
+            pub_key: "default".to_string(),
+        },
+    ];
+    
+    let mutation_ids = LambdaContext::execute_mutations(mutations).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "mutation_ids": mutation_ids,
+        "count": mutation_ids.len()
+    }))
+}
+```
+
+### Schema Management
+
+#### List Schemas
+
+```rust
+use datafold::lambda::LambdaContext;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let schemas = LambdaContext::list_schemas().await?;
+    
+    let schema_info: Vec<_> = schemas.iter().map(|s| {
+        json!({
+            "name": s.schema.name,
+            "state": format!("{:?}", s.state),
+            "fields": s.schema.runtime_fields.keys().collect::<Vec<_>>()
+        })
+    }).collect();
+    
+    Ok(json!({
+        "statusCode": 200,
+        "schemas": schema_info
+    }))
+}
+```
+
+#### Approve Schema
+
+```rust
+use datafold::lambda::LambdaContext;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let schema_name = event.payload["schema_name"]
+        .as_str()
+        .ok_or("Missing schema_name")?;
+    
+    LambdaContext::approve_schema(schema_name).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "message": format!("Schema '{}' approved", schema_name)
+    }))
+}
+```
+
+#### Get Schema State
+
+```rust
+use datafold::lambda::LambdaContext;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let schema_name = event.payload["schema_name"]
+        .as_str()
+        .ok_or("Missing schema_name")?;
+    
+    let state = LambdaContext::get_schema_state(schema_name).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "schema_name": schema_name,
+        "state": state.map(|s| format!("{:?}", s))
+    }))
+}
+```
+
+### Transform Management
+
+#### List Transforms
+
+```rust
+use datafold::lambda::LambdaContext;
+
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let transforms = LambdaContext::list_transforms().await?;
+    
+    let transform_info: Vec<_> = transforms.iter().map(|(id, transform)| {
+        json!({
+            "id": id,
+            "schema": transform.get_schema_name()
+        })
+    }).collect();
+    
+    Ok(json!({
+        "statusCode": 200,
+        "transforms": transform_info,
+        "count": transforms.len()
+    }))
+}
+```
+
 ## Accessing DataFold Components
 
 ### Get Node
@@ -807,6 +987,34 @@ logger.log(
     ]))
 ).await?;
 ```
+
+### Automatic Logging for All Operations
+
+Once you configure a custom logger via `LambdaConfig::with_logger()`, **all internal operations automatically log** to your logger:
+
+- ✅ **Data ingestion** - schema detection, mutation generation, execution
+- ✅ **Queries** - both AI and regular queries
+- ✅ **Mutations** - single and batch operations
+- ✅ **Schema operations** - creation, approval, state changes
+- ✅ **Transform execution** - indexing and backfills
+
+The logger is set up via a bridge to Rust's `log` crate, so all `log::info!()`, `log::error!()`, etc. calls throughout the codebase are captured.
+
+**Example:**
+```rust
+// Set up logger once during initialization
+let logger = Arc::new(DynamoDbLogger::new("my-logs".to_string()).await);
+let config = LambdaConfig::new()
+    .with_logger(logger);
+LambdaContext::init(config).await?;
+
+// Now ALL operations log automatically:
+LambdaContext::query(my_query).await?;  // Logs query execution
+LambdaContext::execute_mutation(m).await?;  // Logs mutation
+LambdaContext::ingest_json(data, true, 0, "key".to_string()).await?;  // Logs ingestion steps
+```
+
+For user-scoped logging (to associate logs with specific users), use task-local storage as shown in the DynamoDB logger example.
 
 ### Cost Considerations
 
