@@ -1,12 +1,14 @@
-use datafold::lambda::{LambdaConfig, LambdaContext};
+use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger};
 use serde_json::json;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_lambda_context_initialization() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
     let config = LambdaConfig::new()
         .with_storage_path(temp_dir.clone())
-        .with_schema_service_url("https://schema.example.com".to_string());
+        .with_schema_service_url("https://schema.example.com".to_string())
+        .with_logger(Arc::new(StdoutLogger));
     
     let result = LambdaContext::init(config).await;
     
@@ -18,7 +20,7 @@ async fn test_lambda_context_initialization() {
             assert!(LambdaContext::progress_tracker().is_ok());
         }
         Err(e) => {
-            // Already initialized from another test or configuration error
+            // Already initialized from another test
             let error_msg = e.to_string();
             assert!(
                 error_msg.contains("already initialized") || error_msg.contains("Context already initialized"),
@@ -39,11 +41,13 @@ async fn test_lambda_context_double_init_fails() {
     
     let config1 = LambdaConfig::new()
         .with_storage_path(temp_dir1.clone())
-        .with_schema_service_url("https://schema.example.com".to_string());
+        .with_schema_service_url("https://schema.example.com".to_string())
+        .with_logger(Arc::new(StdoutLogger));
     
     let config2 = LambdaConfig::new()
         .with_storage_path(temp_dir2.clone())
-        .with_schema_service_url("https://schema.example.com".to_string());
+        .with_schema_service_url("https://schema.example.com".to_string())
+        .with_logger(Arc::new(StdoutLogger));
     
     let first_init = LambdaContext::init(config1).await;
     let second_init = LambdaContext::init(config2).await;
@@ -81,7 +85,8 @@ async fn test_lambda_context_with_schema_service_url() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
     let config = LambdaConfig::new()
         .with_storage_path(temp_dir.clone())
-        .with_schema_service_url("https://schema.example.com".to_string());
+        .with_schema_service_url("https://schema.example.com".to_string())
+        .with_logger(Arc::new(StdoutLogger));
     
     let result = LambdaContext::init(config).await;
     
@@ -109,7 +114,10 @@ async fn test_lambda_context_with_schema_service_url() {
 #[tokio::test]
 async fn test_lambda_context_get_progress_nonexistent() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new().with_storage_path(temp_dir.clone());
+    let config = LambdaConfig::new()
+        .with_storage_path(temp_dir.clone())
+        .with_schema_service_url("https://schema.example.com".to_string())
+        .with_logger(Arc::new(StdoutLogger));
     
     // Initialize if not already initialized
     let _ = LambdaContext::init(config).await;
@@ -144,7 +152,10 @@ async fn test_lambda_context_get_progress_nonexistent() {
 #[tokio::test]
 async fn test_lambda_context_access_after_init() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new().with_storage_path(temp_dir.clone());
+    let config = LambdaConfig::new()
+        .with_storage_path(temp_dir.clone())
+        .with_schema_service_url("https://schema.example.com".to_string())
+        .with_logger(Arc::new(StdoutLogger));
     
     // Initialize if not already initialized
     let init_result = LambdaContext::init(config).await;
@@ -174,7 +185,10 @@ async fn test_lambda_context_access_after_init() {
 #[tokio::test]
 async fn test_lambda_context_ingest_json_returns_progress_id() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new().with_storage_path(temp_dir.clone());
+    let config = LambdaConfig::new()
+        .with_storage_path(temp_dir.clone())
+        .with_schema_service_url("https://schema.example.com".to_string())
+        .with_logger(Arc::new(StdoutLogger));
     
     // Initialize if not already initialized
     let _ = LambdaContext::init(config).await;

@@ -269,7 +269,7 @@ mod tests {
         let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
 
         let entry = LogEntry {
-            user_id: Some("test_user_123".to_string()),
+            user_id: "test_user_123".to_string(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -299,7 +299,7 @@ mod tests {
         // Test logging within user context
         CURRENT_USER.scope("test_user_456".to_string(), async {
             let entry = LogEntry {
-                user_id: None, // Will be populated from task-local
+                user_id: "test_user_456".to_string(),
                 timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
