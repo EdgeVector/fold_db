@@ -178,7 +178,7 @@ impl DynamoDbLogger {
             });
 
         Some(LogEntry {
-            user_id,
+            user_id: Some(user_id),
             timestamp,
             level,
             event_type,
@@ -186,6 +186,17 @@ impl DynamoDbLogger {
             metadata,
         })
     }
+}
+
+/// Minimal example entrypoint so the example builds during `cargo test`.
+///
+/// The logger requires AWS credentials and a DynamoDB table to be useful, so
+/// the main function only prints a message indicating how to run the example
+/// in a real environment.
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Configure AWS credentials and run this example inside AWS Lambda to see DynamoDB logging in action.");
+    Ok(())
 }
 
 #[async_trait]
