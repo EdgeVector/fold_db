@@ -988,6 +988,63 @@ logger.log(
 ).await?;
 ```
 
+### Testing Your Logger
+
+DataFold provides a built-in logger test API to verify your logger configuration:
+
+```rust
+async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
+    
+    // Test the logger
+    let result = LambdaContext::test_logger(user_id).await?;
+    
+    Ok(json!({
+        "statusCode": 200,
+        "body": result
+    }))
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "user_id": "test_user_123",
+  "tests_run": 9,
+  "results": [
+    "INFO level test passed",
+    "ERROR level test passed",
+    "WARN level test passed",
+    "DEBUG level test passed",
+    "TRACE level test passed",
+    "Metadata logging test passed",
+    "Rapid-fire logging test passed (5 messages)",
+    "User ID verification passed",
+    "Workflow logging test passed"
+  ],
+  "message": "All logger tests passed successfully",
+  "note": "Check your configured logger backend (CloudWatch, DynamoDB, etc.) for log entries"
+}
+```
+
+The test runs 9 comprehensive tests including all log levels, metadata logging, rapid-fire logging, and workflow simulation. See [LAMBDA_LOGGER_API.md](docs/LAMBDA_LOGGER_API.md) for details.
+
+**Quick test Lambda:**
+```bash
+# Build the simple logger test example
+cargo build --release \
+  --target x86_64-unknown-linux-gnu \
+  --features lambda \
+  --example lambda_simple_logger_test
+
+# Deploy and invoke
+aws lambda invoke \
+  --function-name datafold-logger-test \
+  --payload '{"user_id":"test_user"}' \
+  response.json
+```
+
 ### Automatic Logging for All Operations
 
 Once you configure a custom logger via `LambdaConfig::with_logger()`, **all internal operations automatically log** to your logger:

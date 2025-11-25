@@ -1051,4 +1051,131 @@ impl LambdaContext {
         node.list_transforms()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to list transforms: {}", e)))
     }
+
+    /// Test the logger with all log levels and features
+    ///
+    /// This is a diagnostic endpoint that tests all logger functionality.
+    /// Useful for verifying your logger implementation is working correctly.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User ID to use for logging tests
+    ///
+    /// # Returns
+    ///
+    /// A JSON object with test results
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let result = LambdaContext::test_logger("test_user_123").await?;
+    ///     println!("Logger test results: {}", result);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn test_logger(user_id: &str) -> Result<Value, IngestionError> {
+        use std::collections::HashMap;
+        
+        let logger = Self::create_logger(user_id)?;
+        let mut results = Vec::new();
+
+        // Test 1: INFO level
+        logger.info("test_info", "Testing INFO level logging")
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("INFO test failed: {}", e)))?;
+        results.push("INFO level test passed");
+
+        // Test 2: ERROR level
+        logger.error("test_error", "Testing ERROR level logging")
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("ERROR test failed: {}", e)))?;
+        results.push("ERROR level test passed");
+
+        // Test 3: WARN level
+        logger.warn("test_warn", "Testing WARN level logging")
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("WARN test failed: {}", e)))?;
+        results.push("WARN level test passed");
+
+        // Test 4: DEBUG level
+        logger.debug("test_debug", "Testing DEBUG level logging")
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("DEBUG test failed: {}", e)))?;
+        results.push("DEBUG level test passed");
+
+        // Test 5: TRACE level
+        logger.trace("test_trace", "Testing TRACE level logging")
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("TRACE test failed: {}", e)))?;
+        results.push("TRACE level test passed");
+
+        // Test 6: Metadata logging
+        let mut metadata = HashMap::new();
+        metadata.insert("test_key".to_string(), "test_value".to_string());
+        metadata.insert("event_id".to_string(), "12345".to_string());
+        metadata.insert("status".to_string(), "success".to_string());
+
+        logger.log(
+            crate::lambda::logging::LogLevel::Info,
+            "test_metadata",
+            "Testing logging with custom metadata",
+            Some(metadata),
+        )
+        .await
+        .map_err(|e| IngestionError::InvalidInput(format!("Metadata test failed: {}", e)))?;
+        results.push("Metadata logging test passed");
+
+        // Test 7: Rapid-fire logging
+        for i in 0..5 {
+            logger.info(
+                &format!("rapid_test_{}", i),
+                &format!("Rapid fire log message {}", i),
+            )
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("Rapid test failed: {}", e)))?;
+        }
+        results.push("Rapid-fire logging test passed (5 messages)");
+
+        // Test 8: User ID verification
+        let logger_user_id = logger.user_id();
+        if logger_user_id == user_id {
+            logger.info(
+                "user_id_verified",
+                &format!("User ID correctly set to: {}", logger_user_id),
+            )
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("User ID test failed: {}", e)))?;
+            results.push("User ID verification passed");
+        } else {
+            return Err(IngestionError::InvalidInput(format!(
+                "User ID mismatch: expected {}, got {}",
+                user_id, logger_user_id
+            )));
+        }
+
+        // Test 9: Workflow simulation
+        logger.info("workflow_started", "Beginning test workflow").await
+            .map_err(|e| IngestionError::InvalidInput(format!("Workflow test failed: {}", e)))?;
+        logger.debug("workflow_step_1", "Processing step 1").await
+            .map_err(|e| IngestionError::InvalidInput(format!("Workflow test failed: {}", e)))?;
+        logger.debug("workflow_step_2", "Processing step 2").await
+            .map_err(|e| IngestionError::InvalidInput(format!("Workflow test failed: {}", e)))?;
+        logger.debug("workflow_step_3", "Processing step 3").await
+            .map_err(|e| IngestionError::InvalidInput(format!("Workflow test failed: {}", e)))?;
+        logger.info("workflow_completed", "Workflow completed successfully").await
+            .map_err(|e| IngestionError::InvalidInput(format!("Workflow test failed: {}", e)))?;
+        results.push("Workflow logging test passed");
+
+        Ok(serde_json::json!({
+            "success": true,
+            "user_id": user_id,
+            "tests_run": results.len(),
+            "results": results,
+            "message": "All logger tests passed successfully",
+            "note": "Check your configured logger backend (CloudWatch, DynamoDB, etc.) for log entries"
+        }))
+    }
 }
