@@ -12,8 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Log entry structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
-    /// Optional user_id - logger implementation populates this if needed
-    pub user_id: Option<String>,
+    pub user_id: String,
     pub timestamp: i64,
     pub level: LogLevel,
     pub event_type: String,
@@ -120,11 +119,9 @@ impl Logger for StdoutLogger {
             String::new()
         };
         
-        let user_id = entry.user_id.as_deref().unwrap_or("system");
-        
         eprintln!(
             "[{}] [{}] {} - {}{}",
-            user_id,
+            entry.user_id,
             entry.level.as_str(),
             entry.event_type,
             entry.message,
@@ -199,7 +196,7 @@ impl UserLogger {
             .as_millis() as i64;
         
         let entry = LogEntry {
-            user_id: Some(self.user_id.clone()),
+            user_id: self.user_id.clone(),
             timestamp,
             level,
             event_type: event_type.to_string(),
@@ -300,7 +297,7 @@ impl log::Log for LogBridge {
             };
 
             let entry = LogEntry {
-                user_id: None, // Logger implementation populates this
+                user_id: "system".to_string(),
                 timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
