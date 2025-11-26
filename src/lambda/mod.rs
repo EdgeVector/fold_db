@@ -22,7 +22,12 @@
 
 pub mod config;
 pub mod context;
+pub mod database;
+pub mod ingestion;
 pub mod logging;
+pub mod query;
+pub mod schema;
+pub mod system;
 pub mod types;
 
 // Re-export public API
