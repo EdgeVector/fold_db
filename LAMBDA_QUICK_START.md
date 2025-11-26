@@ -801,23 +801,18 @@ use datafold::lambda::{Logger, LogEntry, LogLevel};
 use async_trait::async_trait;
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
 use std::collections::HashMap;
-use tokio::task_local;
-
-// Task-local storage for current user
-task_local! {
-    pub static CURRENT_USER: String;
-}
 
 pub struct DynamoDbLogger {
     client: Client,
     table_name: String,
+    user_id: String,  // Logger is scoped to a specific user
 }
 
 impl DynamoDbLogger {
-    pub async fn new(table_name: String) -> Self {
+    pub async fn new(table_name: String, user_id: String) -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
-        Self { client, table_name }
+        Self { client, table_name, user_id }
     }
 }
 
@@ -828,13 +823,8 @@ impl Logger for DynamoDbLogger {
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() + (30 * 24 * 60 * 60)) as i64; // 30 days
         
-        // Get user_id from entry or task-local storage
-        let user_id = entry.user_id
-            .or_else(|| CURRENT_USER.try_with(|id| id.clone()).ok())
-            .unwrap_or_else(|| "system".to_string());
-        
         let mut item = HashMap::new();
-        item.insert("user_id".to_string(), AttributeValue::S(user_id));
+        item.insert("user_id".to_string(), AttributeValue::S(self.user_id.clone()));
         item.insert("timestamp".to_string(), AttributeValue::N(entry.timestamp.to_string()));
         item.insert("level".to_string(), AttributeValue::S(entry.level.as_str().to_string()));
         item.insert("event_type".to_string(), AttributeValue::S(entry.event_type));
@@ -853,11 +843,11 @@ impl Logger for DynamoDbLogger {
     
     async fn query(
         &self,
-        user_id: &str,
+        _user_id: &str,  // Ignored - uses logger's user_id
         limit: Option<usize>,
         from_timestamp: Option<i64>,
     ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
-        // Query implementation...
+        // Query implementation uses self.user_id...
         Ok(vec![])
     }
 }
@@ -871,40 +861,32 @@ use datafold::lambda::{LambdaContext, LambdaConfig};
 use std::sync::Arc;
 
 mod dynamodb_logger;
-use dynamodb_logger::{DynamoDbLogger, CURRENT_USER};
-
-#[tokio::main]
-async fn main() -> Result<(), Error> {
-    // Create DynamoDB logger
-    let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
-    
-    // Initialize datafold with custom logger
-    let config = LambdaConfig::new()
-        .with_logger(Arc::new(logger));
-    
-    LambdaContext::init(config).await?;
-    run(service_fn(handler)).await
-}
+use dynamodb_logger::DynamoDbLogger;
 
 async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
     
-    // Set user context for this request
-    CURRENT_USER.scope(user_id.to_string(), async {
-        // All logging (including internal datafold logs) within this scope
-        // will automatically have user_id set to "user_123"
-        
-        let result = LambdaContext::ingest_json(
-            event.payload["data"].clone(),
-            true,
-            0,
-            user_id.to_string()
-        ).await?;
-        
-        // Internal datafold logs during ingestion will also have user_id
-        
-        Ok(json!({ "statusCode": 200, "progress_id": result }))
-    }).await
+    // Create a logger scoped to this user
+    let logger = DynamoDbLogger::new(
+        "datafold-logs".to_string(),
+        user_id.to_string()
+    ).await;
+    
+    // Initialize datafold with user-scoped logger
+    let config = LambdaConfig::new()
+        .with_logger(Arc::new(logger));
+    
+    LambdaContext::init(config).await?;
+    
+    // All logging will be tagged with this user's ID
+    let result = LambdaContext::ingest_json(
+        event.payload["data"].clone(),
+        true,
+        0,
+        user_id.to_string()
+    ).await?;
+    
+    Ok(json!({ "statusCode": 200, "progress_id": result }))
 }
 ```
 
@@ -1059,19 +1041,20 @@ The logger is set up via a bridge to Rust's `log` crate, so all `log::info!()`, 
 
 **Example:**
 ```rust
-// Set up logger once during initialization
-let logger = Arc::new(DynamoDbLogger::new("my-logs".to_string()).await);
+// Set up logger scoped to a specific user
+let user_id = "user_123"; // From event payload
+let logger = Arc::new(DynamoDbLogger::new("my-logs".to_string(), user_id.to_string()).await);
 let config = LambdaConfig::new()
     .with_logger(logger);
 LambdaContext::init(config).await?;
 
-// Now ALL operations log automatically:
+// Now ALL operations log automatically with user_id:
 LambdaContext::query(my_query).await?;  // Logs query execution
 LambdaContext::execute_mutation(m).await?;  // Logs mutation
 LambdaContext::ingest_json(data, true, 0, "key".to_string()).await?;  // Logs ingestion steps
 ```
 
-For user-scoped logging (to associate logs with specific users), use task-local storage as shown in the DynamoDB logger example.
+For multi-tenant deployments, create a new logger instance per request with the user's ID, as shown in the DynamoDB logger example above.
 
 ### Cost Considerations
 
