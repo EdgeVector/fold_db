@@ -126,9 +126,13 @@ impl DynamoDbLogger {
             .as_secs() + (30 * 24 * 60 * 60)) as i64;
 
         // Get user_id from entry or task-local storage
-        let user_id = entry.user_id
-            .or_else(|| CURRENT_USER.try_with(|id| id.clone()).ok())
-            .unwrap_or_else(|| "system".to_string());
+        let user_id = if !entry.user_id.is_empty() {
+            entry.user_id
+        } else {
+            CURRENT_USER
+                .try_with(|id| id.clone())
+                .unwrap_or_else(|_| "system".to_string())
+        };
 
         let mut item = HashMap::new();
         item.insert("user_id".to_string(), AttributeValue::S(user_id));
@@ -178,7 +182,7 @@ impl DynamoDbLogger {
             });
 
         Some(LogEntry {
-            user_id: Some(user_id),
+            user_id,
             timestamp,
             level,
             event_type,
