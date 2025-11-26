@@ -32,39 +32,30 @@
 //! ```rust,no_run
 //! use datafold::lambda::{LambdaContext, LambdaConfig};
 //! use std::sync::Arc;
-//! use tokio::task_local;
 //!
-//! // Define task-local storage for current user
-//! task_local! {
-//!     pub static CURRENT_USER: String;
-//! }
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
+//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+//!     let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
+//!     
+//!     // Create a logger for this specific user
+//!     let logger = DynamoDbLogger::new(
+//!         "datafold-logs".to_string(),
+//!         user_id.to_string()
+//!     ).await;
 //!     
 //!     let config = LambdaConfig::new()
 //!         .with_logger(Arc::new(logger));
 //!     
 //!     LambdaContext::init(config).await?;
-//!     Ok(())
-//! }
-//!
-//! async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-//!     let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
 //!     
-//!     // Run handler logic within user context
-//!     CURRENT_USER.scope(user_id.to_string(), async {
-//!         // All logging within this scope will have user_id set
-//!         let result = LambdaContext::ingest_json(
-//!             event.payload["data"].clone(),
-//!             true,
-//!             0,
-//!             user_id.to_string()
-//!         ).await?;
-//!         
-//!         Ok(json!({ "statusCode": 200, "progress_id": result }))
-//!     }).await
+//!     // Process the request - all logs will be tagged with user_id
+//!     let result = LambdaContext::ingest_json(
+//!         event.payload["data"].clone(),
+//!         true,
+//!         0,
+//!         user_id.to_string()
+//!     ).await?;
+//!     
+//!     Ok(json!({ "statusCode": 200, "progress_id": result }))
 //! }
 //! ```
 
@@ -74,12 +65,6 @@ use aws_sdk_dynamodb::{Client, types::AttributeValue};
 use datafold::lambda::{Logger, LogEntry, LogLevel};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::task_local;
-
-// Task-local storage for current user context
-task_local! {
-    pub static CURRENT_USER: String;
-}
 
 /// DynamoDB-backed logger for multi-tenant Lambda deployments
 ///
@@ -91,6 +76,7 @@ task_local! {
 pub struct DynamoDbLogger {
     client: Client,
     table_name: String,
+    user_id: String,
 }
 
 impl DynamoDbLogger {
@@ -99,22 +85,23 @@ impl DynamoDbLogger {
     /// # Arguments
     ///
     /// * `table_name` - Name of the DynamoDB table
+    /// * `user_id` - User ID for multi-tenant isolation
     ///
     /// # Example
     ///
     /// ```rust,no_run
-    /// let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
+    /// let logger = DynamoDbLogger::new("datafold-logs".to_string(), "user123".to_string()).await;
     /// ```
-    pub async fn new(table_name: String) -> Self {
+    pub async fn new(table_name: String, user_id: String) -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
-        Self { client, table_name }
+        Self { client, table_name, user_id }
     }
 
     /// Create a DynamoDB logger with custom AWS config
-    pub async fn with_config(table_name: String, aws_config: &aws_config::SdkConfig) -> Self {
+    pub async fn with_config(table_name: String, user_id: String, aws_config: &aws_config::SdkConfig) -> Self {
         let client = Client::new(aws_config);
-        Self { client, table_name }
+        Self { client, table_name, user_id }
     }
 
     /// Convert LogEntry to DynamoDB item
@@ -125,13 +112,8 @@ impl DynamoDbLogger {
             .unwrap_or_default()
             .as_secs() + (30 * 24 * 60 * 60)) as i64;
 
-        // Get user_id from entry or task-local storage
-        let user_id = entry.user_id
-            .or_else(|| CURRENT_USER.try_with(|id| id.clone()).ok())
-            .unwrap_or_else(|| "system".to_string());
-
         let mut item = HashMap::new();
-        item.insert("user_id".to_string(), AttributeValue::S(user_id));
+        item.insert("user_id".to_string(), AttributeValue::S(self.user_id.clone()));
         item.insert("timestamp".to_string(), AttributeValue::N(entry.timestamp.to_string()));
         item.insert("level".to_string(), AttributeValue::S(entry.level.as_str().to_string()));
         item.insert("event_type".to_string(), AttributeValue::S(entry.event_type));
@@ -152,7 +134,6 @@ impl DynamoDbLogger {
 
     /// Convert DynamoDB item to LogEntry
     fn item_to_entry(&self, item: &HashMap<String, AttributeValue>) -> Option<LogEntry> {
-        let user_id = item.get("user_id")?.as_s().ok()?.to_string();
         let timestamp = item.get("timestamp")?.as_n().ok()?.parse().ok()?;
         let level_str = item.get("level")?.as_s().ok()?;
         let event_type = item.get("event_type")?.as_s().ok()?.to_string();
@@ -178,7 +159,6 @@ impl DynamoDbLogger {
             });
 
         Some(LogEntry {
-            user_id: Some(user_id),
             timestamp,
             level,
             event_type,
@@ -215,12 +195,13 @@ impl Logger for DynamoDbLogger {
         Ok(())
     }
 
-    /// Query logs for a specific user
+    /// Query logs for this user
     ///
     /// Returns logs in reverse chronological order (most recent first).
+    /// Note: The user_id parameter is ignored - this logger uses its own user_id field.
     async fn query(
         &self,
-        user_id: &str,
+        _user_id: &str,
         limit: Option<usize>,
         from_timestamp: Option<i64>,
     ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
@@ -233,13 +214,13 @@ impl Logger for DynamoDbLogger {
         if let Some(from_ts) = from_timestamp {
             query = query
                 .key_condition_expression("user_id = :uid AND #ts >= :from_ts")
-                .expression_attribute_values(":uid", AttributeValue::S(user_id.to_string()))
+                .expression_attribute_values(":uid", AttributeValue::S(self.user_id.clone()))
                 .expression_attribute_values(":from_ts", AttributeValue::N(from_ts.to_string()))
                 .expression_attribute_names("#ts", "timestamp");
         } else {
             query = query
                 .key_condition_expression("user_id = :uid")
-                .expression_attribute_values(":uid", AttributeValue::S(user_id.to_string()));
+                .expression_attribute_values(":uid", AttributeValue::S(self.user_id.clone()));
         }
 
         if let Some(lim) = limit {
@@ -266,10 +247,12 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires AWS credentials and DynamoDB table
     async fn test_dynamodb_logger() {
-        let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
+        let logger = DynamoDbLogger::new(
+            "datafold-logs".to_string(),
+            "test_user_123".to_string()
+        ).await;
 
         let entry = LogEntry {
-            user_id: "test_user_123".to_string(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -286,35 +269,34 @@ mod tests {
         // Log the entry
         logger.log(entry).await.unwrap();
 
-        // Query back
-        let logs = logger.query("test_user_123", Some(10), None).await.unwrap();
+        // Query back (user_id parameter is ignored - uses logger's user_id)
+        let logs = logger.query("ignored", Some(10), None).await.unwrap();
         assert!(!logs.is_empty());
     }
 
     #[tokio::test]
     #[ignore] // Requires AWS credentials and DynamoDB table
-    async fn test_task_local_user() {
-        let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
+    async fn test_multi_tenant_isolation() {
+        let logger = DynamoDbLogger::new(
+            "datafold-logs".to_string(),
+            "test_user_456".to_string()
+        ).await;
 
-        // Test logging within user context
-        CURRENT_USER.scope("test_user_456".to_string(), async {
-            let entry = LogEntry {
-                user_id: "test_user_456".to_string(),
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as i64,
-                level: LogLevel::Info,
-                event_type: "test_event".to_string(),
-                message: "Test with task-local user".to_string(),
-                metadata: None,
-            };
+        let entry = LogEntry {
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64,
+            level: LogLevel::Info,
+            event_type: "test_event".to_string(),
+            message: "Test multi-tenant isolation".to_string(),
+            metadata: None,
+        };
 
-            logger.log(entry).await.unwrap();
+        logger.log(entry).await.unwrap();
 
-            // Query back
-            let logs = logger.query("test_user_456", Some(10), None).await.unwrap();
-            assert!(!logs.is_empty());
-        }).await;
+        // Query back (user_id parameter is ignored - automatically scoped to logger's user_id)
+        let logs = logger.query("ignored", Some(10), None).await.unwrap();
+        assert!(!logs.is_empty());
     }
 }

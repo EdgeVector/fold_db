@@ -10,9 +10,11 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Log entry structure
+///
+/// Note: user_id is not stored in LogEntry. The Logger implementation
+/// manages user_id internally based on how it was initialized.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
-    pub user_id: String,
     pub timestamp: i64,
     pub level: LogLevel,
     pub event_type: String,
@@ -46,24 +48,37 @@ impl LogLevel {
 ///
 /// Users implement this trait with their choice of backend.
 ///
-/// # Example
+/// # Multi-Tenant Pattern
+///
+/// For multi-tenant deployments, create a logger instance per request with the user_id:
 ///
 /// ```ignore
 /// use datafold::lambda::{Logger, LogEntry};
 /// use async_trait::async_trait;
 ///
-/// pub struct MyLogger {
-///     // Your backend
+/// pub struct DynamoDbLogger {
+///     user_id: String,  // Logger is scoped to a specific user
+///     // ... other fields
+/// }
+///
+/// impl DynamoDbLogger {
+///     pub async fn new(table_name: String, user_id: String) -> Self {
+///         // Initialize with user_id
+///         Self { user_id, /* ... */ }
+///     }
 /// }
 ///
 /// #[async_trait]
-/// impl Logger for MyLogger {
+/// impl Logger for DynamoDbLogger {
 ///     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-///         // Write to your backend
+///         // Use self.user_id instead of entry.user_id for multi-tenant isolation
+///         // Write to your backend...
 ///         Ok(())
 ///     }
 /// }
 /// ```
+///
+/// See `examples/lambda_dynamodb_logger.rs` for a complete implementation.
 #[async_trait]
 pub trait Logger: Send + Sync {
     /// Log an event
@@ -120,8 +135,7 @@ impl Logger for StdoutLogger {
         };
         
         eprintln!(
-            "[{}] [{}] {} - {}{}",
-            entry.user_id,
+            "[{}] [{}] - {}{}",
             entry.level.as_str(),
             entry.event_type,
             entry.message,
@@ -196,7 +210,6 @@ impl UserLogger {
             .as_millis() as i64;
         
         let entry = LogEntry {
-            user_id: self.user_id.clone(),
             timestamp,
             level,
             event_type: event_type.to_string(),
@@ -268,8 +281,10 @@ impl UserLogger {
 /// This allows all internal datafold logging (using `log::info!()`, etc.)
 /// to be captured and sent to your custom logger implementation.
 ///
-/// The logger implementation is responsible for determining the user_id
-/// (e.g., via task-local storage in multi-tenant scenarios).
+/// **Note**: LogEntry does not contain user_id. Your logger implementation
+/// should use its own user_id field (set during logger initialization).
+///
+/// See `examples/lambda_dynamodb_logger.rs` for the recommended pattern.
 pub struct LogBridge {
     logger: Arc<dyn Logger>,
 }
@@ -297,7 +312,6 @@ impl log::Log for LogBridge {
             };
 
             let entry = LogEntry {
-                user_id: "system".to_string(),
                 timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
