@@ -20,6 +20,8 @@ exclude = [
     "*.log",
     ".github/*",
     ".roo/*",
+    "**/.DS_Store",
+    ".DS_Store",
 ]
 
 [features]
