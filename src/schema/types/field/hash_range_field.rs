@@ -11,7 +11,7 @@ use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{FilterApplicator, apply_hash_range_filter, fetch_atoms_for_matches};
 use crate::schema::types::SchemaError;
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use serde::{Deserialize, Serialize};
 // Removed unused JsonValue import
 use crate::atom::{MoleculeHashRange, MoleculeBehavior};
@@ -67,11 +67,11 @@ impl crate::schema::types::field::Field for HashRangeField {
         &mut self.inner
     }
 
-    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
+    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
         // If we have a molecule_uuid, look up the corresponding MoleculeHashRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            if let Ok(Some(molecule_hash_range)) = db_ops.get_item::<MoleculeHashRange>(&ref_key) {
+            if let Ok(Some(molecule_hash_range)) = tokio::runtime::Handle::current().block_on(db_ops.get_item::<MoleculeHashRange>(&ref_key)) {
                 self.molecule = Some(molecule_hash_range);
             }
         }
@@ -94,7 +94,7 @@ impl crate::schema::types::field::Field for HashRangeField {
         }
     }
 
-    fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops);
         let result = self.apply_filter(filter);
         fetch_atoms_for_matches(db_ops, result.matches)

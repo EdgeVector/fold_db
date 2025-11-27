@@ -2,7 +2,7 @@
 //!
 //! This module eliminates duplicate database setup code found across 11+ files
 
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use sled::{Db, Tree};
 use std::sync::Arc;
@@ -17,9 +17,9 @@ impl TestDatabaseFactory {
     }
 
     /// Create temporary DbOperations for testing - consolidates pattern from multiple files
-    pub fn create_temp_db_ops() -> Result<DbOperations, Box<dyn std::error::Error>> {
+    pub async fn create_temp_db_ops() -> Result<DbOperationsV2, Box<dyn std::error::Error>> {
         let db = Self::create_temp_sled_db()?;
-        Ok(DbOperations::new(db)?)
+        Ok(DbOperationsV2::from_sled(db).await?)
     }
 
     /// Create temporary tree for testing - consolidates pattern from orchestration files  
@@ -29,9 +29,9 @@ impl TestDatabaseFactory {
     }
 
     /// Create complete test environment with db_ops and message bus
-    pub fn create_test_environment(
-    ) -> Result<(Arc<DbOperations>, Arc<MessageBus>), Box<dyn std::error::Error>> {
-        let db_ops = Arc::new(Self::create_temp_db_ops()?);
+    pub async fn create_test_environment(
+    ) -> Result<(Arc<DbOperationsV2>, Arc<MessageBus>), Box<dyn std::error::Error>> {
+        let db_ops = Arc::new(Self::create_temp_db_ops().await?);
         let message_bus = Arc::new(MessageBus::new());
         Ok((db_ops, message_bus))
     }

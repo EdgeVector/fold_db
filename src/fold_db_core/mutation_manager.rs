@@ -10,7 +10,7 @@ use std::thread;
 use std::time::Duration;
 use std::collections::HashMap;
 
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::schema::types::{Mutation, KeyValue};
 use crate::schema::types::field::Field;
 use crate::schema::{SchemaCore, SchemaError};
@@ -22,7 +22,7 @@ use log::{debug, error, warn};
 /// Manages mutation operations for the FoldDB system
 pub struct MutationManager {
     /// Database operations for persistence
-    db_ops: Arc<DbOperations>,
+    db_ops: Arc<DbOperationsV2>,
     /// Schema manager for schema operations
     schema_manager: Arc<SchemaCore>,
     /// Message bus for event publishing and listening
@@ -34,7 +34,7 @@ pub struct MutationManager {
 impl MutationManager {
     /// Creates a new MutationManager instance
     pub fn new(
-        db_ops: Arc<DbOperations>,
+        db_ops: Arc<DbOperationsV2>,
         schema_manager: Arc<SchemaCore>,
         message_bus: Arc<MessageBus>,
     ) -> Self {
@@ -79,16 +79,41 @@ impl MutationManager {
             let field_classifications = schema.get_field_classifications(&field_name);
             
             if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
-                // Use the new db_operations method with classifications
-                self.db_ops.process_mutation_field_with_schema(
-                    &mutation.schema_name,
-                    &field_name,
-                    &mutation.pub_key,
-                    value,
-                    &key_value,
-                    schema_field,
-                    field_classifications,
+                // NOTE: process_mutation_field_with_schema is deprecated v1 method
+                // For now, we'll handle the mutation inline with v2 async methods
+                
+                // Create and store atom
+                let new_atom = tokio::runtime::Handle::current().block_on(
+                    self.db_ops.create_and_store_atom_for_mutation_deferred(
+                        &mutation.schema_name,
+                        &mutation.pub_key,
+                        value.clone(),
+                        None, // source_file_name
+                    )
                 )?;
+                
+                // Write mutation to field
+                schema_field.write_mutation(&key_value, new_atom.clone(), mutation.pub_key.clone());
+                
+                // Persist molecule if present
+                if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
+                    tokio::runtime::Handle::current().block_on(
+                        self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
+                    )?;
+                }
+                
+                // Index the field value with classifications
+                if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
+                    // Use batch indexing with a single item
+                    let single_operation = vec![(
+                        mutation.schema_name.clone(),
+                        field_name.clone(),
+                        key_value.clone(),
+                        value.clone(),
+                        field_classifications,
+                    )];
+                    native_index_mgr.batch_index_field_values_with_classifications(&single_operation)?;
+                }
             } else {
                 return Err(SchemaError::InvalidData(format!(
                     "Field '{}' not found in runtime_fields for schema '{}'. Available fields: {:?}",
@@ -100,15 +125,19 @@ impl MutationManager {
         }
 
         // Flush native index after all field operations (single mutation path only)
-        self.db_ops.native_index_manager().flush()?;
+        if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
+            native_index_mgr.flush()?;
+        }
 
         // Sync molecule UUIDs to the persisted field before storing
         schema.sync_molecule_uuids();
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
-        self.db_ops.store_schema(&schema_name, &schema)?;
-        self.schema_manager.load_schema_internal(schema)?;
+        tokio::runtime::Handle::current().block_on(async {
+            self.db_ops.store_schema(&schema_name, &schema).await?;
+            self.schema_manager.load_schema_internal(schema).await
+        })?;
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -133,7 +162,7 @@ impl MutationManager {
         self.message_bus.publish(event)?;
         
         // Flush database to ensure mutation is persisted to disk
-        self.db_ops.flush()?;
+        tokio::runtime::Handle::current().block_on(self.db_ops.flush())?;
         
         // Return the mutation ID
         Ok(mutation_id)
@@ -221,11 +250,13 @@ impl MutationManager {
                         
                         // Create and store atom using deferred storage
                         let atom_start = std::time::Instant::now();
-                        let new_atom = self.db_ops.create_and_store_atom_for_mutation_deferred(
-                            &mutation.schema_name,
-                            &mutation.pub_key,
-                            value.clone(),
-                            mutation.source_file_name.clone(),
+                        let new_atom = tokio::runtime::Handle::current().block_on(
+                            self.db_ops.create_and_store_atom_for_mutation_deferred(
+                                &mutation.schema_name,
+                                &mutation.pub_key,
+                                value.clone(),
+                                mutation.source_file_name.clone(),
+                            )
                         )?;
                         atom_time += atom_start.elapsed();
                         
@@ -235,7 +266,9 @@ impl MutationManager {
                         
                         // Persist molecule using deferred storage
                         if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                            self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)?;
+                            tokio::runtime::Handle::current().block_on(
+                                self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
+                            )?;
                         }
                         molecule_time += mol_start.elapsed();
                     } // Mutable borrow ends here
@@ -272,7 +305,9 @@ impl MutationManager {
                 );
                 
                 // Call batch indexing directly for synchronous processing
-                self.db_ops.native_index_manager().batch_index_field_values_with_classifications(&index_operations)?;
+                if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
+            native_index_mgr.batch_index_field_values_with_classifications(&index_operations)?;
+        }
                 
                 debug!(
                     "MutationManager: Successfully processed batch index for schema '{}'",
@@ -293,11 +328,11 @@ impl MutationManager {
 
             // Single schema persist and reload for this schema group
             let store_start = std::time::Instant::now();
-            self.db_ops.store_schema(&schema_name, &schema)?;
+            tokio::runtime::Handle::current().block_on(self.db_ops.store_schema(&schema_name, &schema))?;
             *timing_breakdown.entry("schema_store").or_insert(std::time::Duration::ZERO) += store_start.elapsed();
             
             let reload_start = std::time::Instant::now();
-            self.schema_manager.load_schema_internal(schema)?;
+            tokio::runtime::Handle::current().block_on(self.schema_manager.load_schema_internal(schema))?;
             *timing_breakdown.entry("schema_reload").or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
 
             // Create events for batch publishing
@@ -324,12 +359,14 @@ impl MutationManager {
 
         // Flush native index after all mutations in the batch
         let native_index_flush_start = std::time::Instant::now();
-        self.db_ops.native_index_manager().flush()?;
+        if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
+            native_index_mgr.flush()?;
+        }
         timing_breakdown.insert("native_index_flush", native_index_flush_start.elapsed());
 
         // Single flush for entire batch
         let flush_start = std::time::Instant::now();
-        self.db_ops.flush()?;
+        tokio::runtime::Handle::current().block_on(self.db_ops.flush())?;
         timing_breakdown.insert("flush", flush_start.elapsed());
 
         // Batch publish events
@@ -440,7 +477,7 @@ impl MutationManager {
     #[allow(deprecated)]
     fn handle_mutation_request_event(
         mutation_request: &MutationRequest,
-        db_ops: &Arc<DbOperations>,
+        db_ops: &Arc<DbOperationsV2>,
         schema_manager: &Arc<SchemaCore>,
         message_bus: &MessageBus,
     ) -> Result<(), SchemaError> {
@@ -466,16 +503,41 @@ impl MutationManager {
             let field_classifications = schema.get_field_classifications(&field_name);
             
             if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
-                // Use the new db_operations method with classifications
-                db_ops.process_mutation_field_with_schema(
-                    &mutation_request.mutation.schema_name,
-                    &field_name,
-                    &mutation_request.mutation.pub_key,
-                    value,
-                    &key_value,
-                    schema_field,
-                    field_classifications,
+                // NOTE: process_mutation_field_with_schema is deprecated v1 method
+                // Handle mutation inline with v2 async methods
+                
+                // Create and store atom
+                let new_atom = tokio::runtime::Handle::current().block_on(
+                    db_ops.create_and_store_atom_for_mutation_deferred(
+                        &mutation_request.mutation.schema_name,
+                        &mutation_request.mutation.pub_key,
+                        value.clone(),
+                        None,
+                    )
                 )?;
+                
+                // Write mutation to field
+                schema_field.write_mutation(&key_value, new_atom.clone(), mutation_request.mutation.pub_key.clone());
+                
+                // Persist molecule if present
+                if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
+                    tokio::runtime::Handle::current().block_on(
+                        db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
+                    )?;
+                }
+                
+                // Index the field value
+                if let Some(native_index_mgr) = db_ops.native_index_manager() {
+                    // Use batch indexing with a single item
+                    let single_operation = vec![(
+                        mutation_request.mutation.schema_name.clone(),
+                        field_name.clone(),
+                        key_value.clone(),
+                        value.clone(),
+                        field_classifications,
+                    )];
+                    native_index_mgr.batch_index_field_values_with_classifications(&single_operation)?;
+                }
             } else {
                 return Err(SchemaError::InvalidData(format!(
                     "Field '{}' not found in runtime_fields for schema '{}'. Available fields: {:?}",
@@ -487,15 +549,19 @@ impl MutationManager {
         }
 
         // Flush native index after all field operations (legacy event handler path)
-        db_ops.native_index_manager().flush()?;
+        if let Some(native_index_mgr) = db_ops.native_index_manager() {
+            native_index_mgr.flush()?;
+        }
 
         // Sync molecule UUIDs to the persisted field before storing
         schema.sync_molecule_uuids();
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
-        db_ops.store_schema(&schema_name, &schema)?;
-        schema_manager.load_schema_internal(schema)?;
+        tokio::runtime::Handle::current().block_on(async {
+            db_ops.store_schema(&schema_name, &schema).await?;
+            schema_manager.load_schema_internal(schema).await
+        })?;
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -520,7 +586,7 @@ impl MutationManager {
         message_bus.publish(event)?;
 
         // Flush database to ensure mutation is persisted to disk
-        db_ops.flush()?;
+        tokio::runtime::Handle::current().block_on(db_ops.flush())?;
 
         Ok(())
     }

@@ -558,6 +558,7 @@ impl SimpleIngestionService {
 
             schema_manager
                 .approve(schema_name)
+                .await
                 .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
             
             return Ok(schema_name.clone());
@@ -695,13 +696,15 @@ impl SimpleIngestionService {
             manager
         };
 
-        schema_manager
-            .load_schema_from_json(&json_str)
-            .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            match schema_manager.load_schema_from_json(&json_str).await {
+                Ok(_) => {},
+                Err(error) => return Err(IngestionError::SchemaCreationError(error.to_string())),
+            };
 
         // Auto-approve the new schema (idempotent - only approves if not already approved)
         schema_manager
             .approve(&schema_response.name)
+            .await
             .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
 
         Ok(schema_response.name)
@@ -825,9 +828,10 @@ impl SimpleIngestionService {
                 manager
             };
 
-            schema_manager
-                .load_schema_from_json(&json_str)
-                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            match schema_manager.load_schema_from_json(&json_str).await {
+                Ok(_) => {},
+                Err(error) => return Err(IngestionError::SchemaCreationError(error.to_string())),
+            };
 
             log_feature!(
                 LogFeature::Ingestion,

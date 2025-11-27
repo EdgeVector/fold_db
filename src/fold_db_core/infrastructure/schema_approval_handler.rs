@@ -49,7 +49,7 @@ fn handle_transform_schema_approval(
     transform_manager: &Arc<TransformManager>,
 ) -> Result<(), crate::schema::SchemaError> {
     // Look up the transform's schema from the database
-    let schema = transform_manager.db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+    let schema = tokio::runtime::Handle::current().block_on(transform_manager.db_ops.get_schema(transform.get_schema_name()))?.ok_or_else(|| {
         crate::schema::SchemaError::InvalidTransform(
             format!("Transform schema '{}' not found in database", transform.get_schema_name())
         )

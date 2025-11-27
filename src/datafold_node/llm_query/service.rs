@@ -140,14 +140,16 @@ impl LlmQueryService {
         // - Word matches + field name matches
         // - All classification types (email, phone, date, name, etc.)
         let mut all_results = Vec::new();
-        for term in &search_terms {
-            match db_ops.native_index_manager().search_all_classifications(term) {
+        if let Some(native_index_mgr) = db_ops.native_index_manager() {
+            for term in &search_terms {
+                match native_index_mgr.search_all_classifications(term) {
                 Ok(mut results) => {
                     log::debug!("LLM Query: Term '{}' returned {} results", term, results.len());
                     all_results.append(&mut results);
                 },
-                Err(e) => {
-                    log::warn!("Native index search failed for term '{}': {}", term, e);
+                    Err(e) => {
+                        log::warn!("Native index search failed for term '{}': {}", term, e);
+                    }
                 }
             }
         }
@@ -163,7 +165,7 @@ impl LlmQueryService {
         &self,
         user_query: &str,
         schemas: &[crate::schema::SchemaWithState],
-        db_ops: &crate::db_operations::DbOperations,
+        db_ops: &crate::db_operations::DbOperationsV2,
     ) -> Result<(String, Vec<crate::db_operations::IndexResult>), String> {
         // Step 1: Generate native index search terms using AI
         let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;
@@ -173,14 +175,16 @@ impl LlmQueryService {
         // - Word matches + field name matches
         // - All classification types (email, phone, date, name, etc.)
         let mut all_results = Vec::new();
-        for term in &search_terms {
-            match db_ops.native_index_manager().search_all_classifications(term) {
-                Ok(mut results) => {
-                    log::debug!("LLM Query: Term '{}' returned {} results", term, results.len());
-                    all_results.append(&mut results);
-                },
-                Err(e) => {
-                    log::warn!("Native index search failed for term '{}': {}", term, e);
+        if let Some(native_index_mgr) = db_ops.native_index_manager() {
+            for term in &search_terms {
+                match native_index_mgr.search_all_classifications(term) {
+                    Ok(mut results) => {
+                        log::debug!("LLM Query: Term '{}' returned {} results", term, results.len());
+                        all_results.append(&mut results);
+                    },
+                    Err(e) => {
+                        log::warn!("Native index search failed for term '{}': {}", term, e);
+                    }
                 }
             }
         }

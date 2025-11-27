@@ -2,7 +2,7 @@
 //!
 //! Handles query processing for HashRange schemas using field resolution.
 
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::schema::{Schema, SchemaError};
 use crate::schema::types::field::HashRangeFilter;
 use std::sync::Arc;
@@ -13,12 +13,12 @@ use crate::schema::types::field::FieldValue;
 
 /// Processor for HashRange schema queries using field resolution
 pub struct HashRangeQueryProcessor {
-    db_ops: Arc<DbOperations>,
+    db_ops: Arc<DbOperationsV2>,
 }
 
 impl HashRangeQueryProcessor {
     /// Create a new HashRange query processor
-    pub fn new(db_ops: Arc<DbOperations>) -> Self {
+    pub fn new(db_ops: Arc<DbOperationsV2>) -> Self {
         Self { db_ops }
     }
 

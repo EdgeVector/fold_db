@@ -344,9 +344,13 @@ mod tests {
         let bus = MessageBus::new();
         // Create a dummy TransformManager for testing
         let db = sled::Config::new().temporary(true).open().unwrap();
-        let db_ops = Arc::new(crate::db_operations::DbOperations::new(db).unwrap());
+        let db_ops = Arc::new(tokio::runtime::Runtime::new().unwrap().block_on(
+            crate::db_operations::DbOperationsV2::from_sled(db)
+        ).unwrap());
         let bus_arc = Arc::new(bus);
-        let transform_manager = Arc::new(crate::transform::manager::TransformManager::new(db_ops, Arc::clone(&bus_arc)).unwrap());
+        let transform_manager = Arc::new(tokio::runtime::Runtime::new().unwrap().block_on(
+            crate::transform::manager::TransformManager::new(db_ops, Arc::clone(&bus_arc))
+        ).unwrap());
         let monitor = EventMonitor::new(Arc::clone(&bus_arc), transform_manager);
 
         // Publish various events

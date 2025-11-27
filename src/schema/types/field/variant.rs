@@ -6,7 +6,7 @@ use crate::schema::types::field::{
     Field, FieldCommon, HashRangeField, RangeField, SingleField,
     HashRangeFilter, FilterApplicator, fetch_atoms_for_matches,
 };
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::schema::types::SchemaError;
 use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
@@ -56,7 +56,7 @@ impl Field for FieldVariant {
         delegate_field_method!(self, common_mut)
     }
 
-    fn refresh_from_db(&mut self, db_ops: &DbOperations) {
+    fn refresh_from_db(&mut self, db_ops: &DbOperationsV2) {
         delegate_field_method!(self, refresh_from_db, db_ops)
     }
 
@@ -66,7 +66,7 @@ impl Field for FieldVariant {
 
     fn resolve_value(
         &mut self,
-        db_ops: &Arc<DbOperations>,
+        db_ops: &Arc<DbOperationsV2>,
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         // Refresh field data from database first

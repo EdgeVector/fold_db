@@ -12,13 +12,14 @@ pub struct SimpleSuccessResponse {
 }
 
 /// Helper closure to execute schema operations with lock management
-async fn with_schema_manager<F, R>(state: &web::Data<AppState>, operation: F) -> Result<R, crate::error::FoldDbError>
+async fn with_schema_manager<F, Fut, R>(state: &web::Data<AppState>, operation: F) -> Result<R, crate::error::FoldDbError>
 where
-    F: FnOnce(std::sync::MutexGuard<'_, crate::fold_db_core::FoldDB>) -> R,
+    F: FnOnce(std::sync::MutexGuard<'_, crate::fold_db_core::FoldDB>) -> Fut,
+    Fut: std::future::Future<Output = R>,
 {
     let node_guard = state.node.lock().await;
     let db_guard = node_guard.get_fold_db()?;
-    let result = operation(db_guard);
+    let result = operation(db_guard).await;
     drop(node_guard);
     Ok(result)
 }
@@ -34,7 +35,12 @@ where
     )
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
-    let result = with_schema_manager(&state, |db| db.schema_manager.get_schemas_with_states()).await;
+    let result = with_schema_manager(&state, |db| {
+        let mgr = db.schema_manager.clone();
+        async move {
+            mgr.get_schemas_with_states()
+        }
+    }).await;
     match result {
         Ok(Ok(schemas)) => HttpResponse::Ok().json(schemas),
         Ok(Err(e)) => HttpResponse::InternalServerError()
@@ -61,13 +67,16 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
     let result = with_schema_manager(&state, |db| {
-        let schema = db.schema_manager.get_schema(&name)?;
-        if let Some(schema) = schema {
-            let state = db.schema_manager.get_schema_states()?;
-            let schema_state = state.get(&name).copied().unwrap_or_default();
-            Ok(Some(SchemaWithState::new(schema, schema_state)))
-        } else {
-            Ok(None)
+        let mgr = db.schema_manager.clone();
+        async move {
+            let schema = mgr.get_schema(&name)?;
+            if let Some(schema) = schema {
+                let state = mgr.get_schema_states()?;
+                let schema_state = state.get(&name).copied().unwrap_or_default();
+                Ok(Some(SchemaWithState::new(schema, schema_state)))
+            } else {
+                Ok(None)
+            }
         }
     }).await;
 
@@ -102,7 +111,7 @@ fn generate_backfill_hash_for_transform(
     };
     
     // Look up the transform's schema from the database
-    let declarative_schema = match transform_manager.db_ops.get_schema(transform.get_schema_name()) {
+    let declarative_schema = match tokio::runtime::Handle::current().block_on(transform_manager.db_ops.get_schema(transform.get_schema_name())) {
         Ok(Some(s)) => s,
         Ok(None) => {
             log::warn!("Transform {} schema not found in database", schema_name);
@@ -152,38 +161,42 @@ fn generate_backfill_hash_for_transform(
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let result = with_schema_manager(&state, |db| -> Result<Option<String>, crate::error::FoldDbError> {
-        // Check if the schema is already approved
-        let current_state = db.schema_manager.get_schema_states()?
-            .get(&schema_name)
-            .copied()
-            .unwrap_or_default();
-        
-        if current_state == SchemaState::Approved {
-            // If already approved, no backfill needed - return None
-            log::info!("Schema '{}' is already approved, no backfill needed", schema_name);
-            return Ok(None);
-        }
-        
-        // Check if this is a transform schema and generate backfill hash if needed
-        let is_transform = match db.transform_manager.transform_exists(&schema_name) {
-            Ok(exists) => exists,
-            Err(e) => {
-                log::warn!("Failed to check if {} is a transform, assuming false: {}", schema_name, e);
-                false
+    let result = with_schema_manager(&state, |db| {
+        let schema_mgr = db.schema_manager.clone();
+        let transform_mgr = db.transform_manager.clone();
+        async move {
+            // Check if the schema is already approved
+            let current_state = schema_mgr.get_schema_states()?
+                .get(&schema_name)
+                .copied()
+                .unwrap_or_default();
+            
+            if current_state == SchemaState::Approved {
+                // If already approved, no backfill needed - return None
+                log::info!("Schema '{}' is already approved, no backfill needed", schema_name);
+                return Ok::<Option<String>, crate::error::FoldDbError>(None);
             }
-        };
-        
-        let backfill_hash = if is_transform {
-            generate_backfill_hash_for_transform(&db.transform_manager, &schema_name)
-        } else {
-            None
-        };
-        
-        // Approve the schema with the backfill hash
-        db.schema_manager.set_schema_state_with_backfill(&schema_name, SchemaState::Approved, backfill_hash.clone())?;
-        
-        Ok(backfill_hash)
+            
+            // Check if this is a transform schema and generate backfill hash if needed
+            let is_transform = match transform_mgr.transform_exists(&schema_name) {
+                Ok(exists) => exists,
+                Err(e) => {
+                    log::warn!("Failed to check if {} is a transform, assuming false: {}", schema_name, e);
+                    false
+                }
+            };
+            
+            let backfill_hash = if is_transform {
+                generate_backfill_hash_for_transform(&transform_mgr, &schema_name)
+            } else {
+                None
+            };
+            
+            // Approve the schema with the backfill hash
+            schema_mgr.set_schema_state_with_backfill(&schema_name, SchemaState::Approved, backfill_hash.clone()).await?;
+            
+            Ok(backfill_hash)
+        }
     }).await;
     
     match result {
@@ -210,7 +223,13 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
 )]
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let result = with_schema_manager(&state, |db| db.schema_manager.block_schema(&schema_name)).await;
+    let schema_name_clone = schema_name.clone();
+    let result = with_schema_manager(&state, |db| {
+        let mgr = db.schema_manager.clone();
+        async move {
+            mgr.block_schema(&schema_name_clone).await
+        }
+    }).await;
     match result {
         Ok(_) => HttpResponse::Ok().json(SimpleSuccessResponse { success: true }),
         Err(e) => HttpResponse::InternalServerError()
@@ -274,7 +293,10 @@ pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
             for schema in schemas {
                 let schema_name = schema.name.clone();
                 let result = with_schema_manager(&state, |db| {
-                    db.schema_manager.load_schema_internal(schema.clone())
+                    let mgr = db.schema_manager.clone();
+                    async move {
+                        mgr.load_schema_internal(schema.clone()).await
+                    }
                 }).await;
                 
                 match result {

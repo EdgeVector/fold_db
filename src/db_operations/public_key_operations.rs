@@ -1,6 +1,9 @@
+// Legacy v1 public key operations - DEPRECATED
+// Use public_key_operations_v2.rs for new code
+#[allow(dead_code)]
 use crate::constants::SINGLE_PUBLIC_KEY_ID;
 use crate::db_operations::error_utils::ErrorUtils;
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2 as DbOperations;
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::types::SchemaError;
 use crate::security::types::PublicKeyInfo;

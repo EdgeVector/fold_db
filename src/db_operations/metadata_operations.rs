@@ -1,4 +1,7 @@
-use super::core::DbOperations;
+// Legacy v1 metadata operations - DEPRECATED
+// Use metadata_operations_v2.rs for new code
+#[allow(dead_code)]
+use super::core_refactored::DbOperationsV2 as DbOperations;
 use crate::schema::SchemaError;
 use uuid::Uuid;
 

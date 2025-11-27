@@ -15,7 +15,7 @@ use std::time::Instant;
 pub struct ExecutionCoordinator {
     manager: Arc<TransformManager>,
     message_bus: Arc<MessageBus>,
-    _db_ops: Arc<crate::db_operations::DbOperations>,
+    _db_ops: Arc<crate::db_operations::DbOperationsV2>,
 }
 
 impl ExecutionCoordinator {
@@ -23,7 +23,7 @@ impl ExecutionCoordinator {
     pub fn new(
         manager: Arc<TransformManager>,
         message_bus: Arc<MessageBus>,
-        db_ops: Arc<crate::db_operations::DbOperations>,
+        db_ops: Arc<crate::db_operations::DbOperationsV2>,
     ) -> Self {
         Self {
             manager,

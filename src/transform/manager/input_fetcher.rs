@@ -16,13 +16,13 @@ impl InputFetcher {
     /// @tomtang keep -- main path
     pub fn fetch_input_values_with_context(
         transform: &Transform,
-        db_ops: &Arc<crate::db_operations::DbOperations>,
+        db_ops: &Arc<crate::db_operations::DbOperationsV2>,
         mutation_context: &Option<MutationContext>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut input_values = HashMap::new();
         
         // Look up the transform's schema from the database
-        let transform_schema = db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+        let transform_schema = tokio::runtime::Handle::current().block_on(db_ops.get_schema(transform.get_schema_name()))?.ok_or_else(|| {
             SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
         })?;
         let inputs_to_process = transform_schema.get_inputs();
@@ -31,14 +31,14 @@ impl InputFetcher {
             if let Some(dot_pos) = input_field.find('.') {
                 let input_schema = &input_field[..dot_pos];
                 let input_field_name = &input_field[dot_pos + 1..];
-                let schema = db_ops.get_schema(input_schema)?.ok_or_else(|| {
+                let schema = tokio::runtime::Handle::current().block_on(db_ops.get_schema(input_schema))?.ok_or_else(|| {
                     SchemaError::InvalidData(format!("Schema '{}' not found", input_schema))
                 })?;
                 let value = Self::fetch_input_for_field_with_context(db_ops, &mut schema.clone(), input_field_name, mutation_context)?;
                 input_values.insert(input_schema.to_string() + "." + input_field_name, value);
             }  else {
                 let input_schema = input_field;
-                let schema = db_ops.get_schema(input_schema.as_str())?.ok_or_else(|| {
+                let schema = tokio::runtime::Handle::current().block_on(db_ops.get_schema(input_schema.as_str()))?.ok_or_else(|| {
                     SchemaError::InvalidData(format!("Schema '{}' not found", input_schema))
                 })?;
                 for field_name in schema.runtime_fields.keys() {
@@ -53,7 +53,7 @@ impl InputFetcher {
     /// Fetch input for a field with mutation context for incremental processing
     /// @tomtang keep -- main path
     fn fetch_input_for_field_with_context(
-        db_ops: &Arc<crate::db_operations::DbOperations>,
+        db_ops: &Arc<crate::db_operations::DbOperationsV2>,
         schema: &mut Schema,
         field_name: &str,
         mutation_context: &Option<MutationContext>,

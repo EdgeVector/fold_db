@@ -96,6 +96,7 @@ impl LambdaContext {
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         db_guard.schema_manager.block_schema(schema_name)
+            .await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to block schema: {}", e)))
     }
 
@@ -139,7 +140,7 @@ impl LambdaContext {
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
             
-            match db_guard.schema_manager.load_schema_internal(schema) {
+            match db_guard.schema_manager.load_schema_internal(schema).await {
                 Ok(_) => {
                     loaded_count += 1;
                     log::debug!("Loaded schema: {}", schema_name);
@@ -183,6 +184,7 @@ impl LambdaContext {
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         db_guard.schema_manager.approve(schema_name)
+            .await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to approve schema: {}", e)))
     }
 

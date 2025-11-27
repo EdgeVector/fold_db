@@ -191,7 +191,7 @@ pub async fn reset_database(
     }
 
     // Create a new node instance (this will recreate the database)
-    match DataFoldNode::new(config) {
+    match DataFoldNode::new(config).await {
         Ok(new_node) => {
             // Replace the node in the state
             *node = new_node;

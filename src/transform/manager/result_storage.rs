@@ -16,14 +16,14 @@ impl ResultStorage {
     /// Generic result storage for any transform using mutations
     pub fn store_transform_result_generic(
         transform: &Transform,
-        db_ops: &Arc<crate::db_operations::DbOperations>,
+        db_ops: &Arc<crate::db_operations::DbOperationsV2>,
         code_hash_to_result: HashMap<String, JsonValue>,
         key_value: KeyValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
         backfill_hash: Option<String>,
     ) -> Result<(), SchemaError> {
         // Look up the transform's schema from the database
-        let transform_schema = db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+        let transform_schema = tokio::runtime::Handle::current().block_on(db_ops.get_schema(transform.get_schema_name()))?.ok_or_else(|| {
             SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
         })?;
         
