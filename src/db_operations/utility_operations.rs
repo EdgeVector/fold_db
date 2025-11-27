@@ -1,4 +1,4 @@
-use super::core::DbOperations;
+use super::core_refactored::DbOperationsV2 as DbOperations;
 use crate::schema::SchemaError;
 use serde::{de::DeserializeOwned, Serialize};
 

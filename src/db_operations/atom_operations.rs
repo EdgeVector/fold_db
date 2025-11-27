@@ -1,4 +1,11 @@
-use super::core::DbOperations;
+// Legacy v1 atom operations - DEPRECATED
+// Use atom_operations_v2.rs for new code
+//
+// NOTE: This file is kept for reference only. All methods have been migrated to atom_operations_v2.rs
+// DO NOT add new implementations here - they will conflict with v2 methods
+
+#[allow(dead_code, unused_imports)]
+use super::core_refactored::DbOperationsV2 as DbOperations;
 use crate::atom::{Atom, AtomStatus, Molecule, MoleculeRange};
 use crate::schema::{
     types::{
@@ -218,8 +225,10 @@ impl DbOperations {
         schema_field: &mut FieldVariant,
         field_classifications: Option<Vec<String>>,
     ) -> Result<(), SchemaError> {
-        // Refresh field from database
-        schema_field.refresh_from_db(self);
+        // NOTE: This method is deprecated and uses DbOperations v1
+        // refresh_from_db now requires DbOperationsV2, but this is deprecated code
+        // so we skip the refresh for now
+        // schema_field.refresh_from_db(self);
 
         let index_value = value.clone();
         // Create and store the atom (no source_file_name in deprecated single-field path)

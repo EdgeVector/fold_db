@@ -4,7 +4,7 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::{
     constants::SINGLE_PUBLIC_KEY_ID,
-    db_operations::DbOperations,
+    db_operations::DbOperationsV2,
     security::{
         Ed25519PublicKey, KeyUtils, PublicKeyInfo, SecurityError, SecurityResult, SignedMessage,
         VerificationResult,
@@ -64,7 +64,7 @@ pub struct MessageVerifier {
     /// The registered public key (in-memory cache)
     public_key: Arc<RwLock<Option<PublicKeyInfo>>>,
     /// Database operations for persistence
-    db_ops: Option<Arc<DbOperations>>,
+    db_ops: Option<Arc<DbOperationsV2>>,
     /// Maximum allowed timestamp drift in seconds
     max_timestamp_drift: i64,
 }
@@ -80,9 +80,9 @@ impl MessageVerifier {
     }
 
     /// Create a new message verifier with database persistence
-    pub fn new_with_persistence(
+    pub async fn new_with_persistence(
         max_timestamp_drift: i64,
-        db_ops: Arc<DbOperations>,
+        db_ops: Arc<DbOperationsV2>,
     ) -> SecurityResult<Self> {
         let verifier = Self {
             public_key: Arc::new(RwLock::new(None)),
@@ -91,14 +91,14 @@ impl MessageVerifier {
         };
 
         // Load persisted key from database
-        verifier.load_persisted_key()?;
+        verifier.load_persisted_key_async().await?;
         Ok(verifier)
     }
 
     /// Load the persisted public key from database into memory
-    fn load_persisted_key(&self) -> SecurityResult<()> {
+    async fn load_persisted_key_async(&self) -> SecurityResult<()> {
         if let Some(db_ops) = &self.db_ops {
-            match db_ops.get_system_public_key() {
+            match db_ops.get_system_public_key().await {
                 Ok(Some(persisted_key)) => {
                     let mut key_lock = self.public_key.write().map_err(|_| {
                         SecurityError::KeyNotFound("Failed to acquire write lock".to_string())
@@ -134,7 +134,7 @@ impl MessageVerifier {
     /// Persist a public key to database
     fn persist_public_key(&self, key_info: &PublicKeyInfo) -> SecurityResult<()> {
         if let Some(db_ops) = &self.db_ops {
-            match db_ops.set_system_public_key(key_info) {
+            match tokio::runtime::Handle::current().block_on(db_ops.store_system_public_key(key_info)) {
                 Ok(()) => {
                     log_feature!(
                         LogFeature::Permissions,
@@ -195,7 +195,7 @@ impl MessageVerifier {
 
         // Remove from database
         if let Some(db_ops) = &self.db_ops {
-            match db_ops.delete_system_public_key() {
+            match tokio::runtime::Handle::current().block_on(db_ops.delete_system_public_key()) {
                 Ok(_) => log_feature!(
                     LogFeature::Permissions,
                     debug,

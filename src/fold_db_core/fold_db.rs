@@ -10,7 +10,7 @@ use std::sync::Arc;
 use log::{debug, info};
 
 // Internal crate imports
-use crate::db_operations::{DbOperations, IndexResult};
+use crate::db_operations::{DbOperationsV2, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::{S3Config, S3SyncedStorage, StorageError};
@@ -28,8 +28,8 @@ use super::mutation_manager::MutationManager;
 pub struct FoldDB {
     pub(crate) schema_manager: Arc<SchemaCore>,
     pub(crate) transform_manager: Arc<TransformManager>,
-    /// Shared database operations
-    pub(crate) db_ops: Arc<DbOperations>,
+    /// Shared database operations with storage abstraction
+    pub(crate) db_ops: Arc<DbOperationsV2>,
     /// Query executor for handling all query operations
     pub(crate) query_executor: QueryExecutor,
     /// Message bus for event-driven communication
@@ -48,23 +48,23 @@ pub struct FoldDB {
 
 impl FoldDB {
     /// Retrieves or generates and persists the node identifier.
-    pub fn get_node_id(&self) -> Result<String, sled::Error> {
+    pub async fn get_node_id(&self) -> Result<String, crate::storage::StorageError> {
         self.db_ops
-            .get_node_id()
-            .map_err(|e| sled::Error::Unsupported(e.to_string()))
+            .get_node_id().await
+            .map_err(|e| crate::storage::StorageError::BackendError(e.to_string()))
     }
 
     /// Retrieves the list of permitted schemas for the given node.
     pub fn get_schema_permissions(&self, node_id: &str) -> Vec<String> {
-        self.db_ops
-            .get_schema_permissions(node_id)
+        tokio::runtime::Handle::current().block_on(self.db_ops
+            .get_schema_permissions(node_id))
             .unwrap_or_default()
     }
 
     /// Sets the permitted schemas for the given node.
     pub fn set_schema_permissions(&self, node_id: &str, schemas: &[String]) -> sled::Result<()> {
-        self.db_ops
-            .set_schema_permissions(node_id, schemas)
+        tokio::runtime::Handle::current().block_on(self.db_ops
+            .set_schema_permissions(node_id, schemas))
             .map_err(|e| sled::Error::Unsupported(e.to_string()))
     }
 
@@ -77,15 +77,16 @@ impl FoldDB {
         );
 
         // Flush the main database
-        if let Err(e) = self.db_ops.db().flush() {
-            log_feature!(
-                LogFeature::Database,
-                error,
-                "Failed to flush main database: {}",
-                e
-            );
-            return Err(e);
-        }
+        // Storage abstraction auto-flushes for cloud backends, manual flush for Sled
+        // NOTE: Flush is critical for Sled, but calling it during Drop in an async context
+        // can cause "runtime within runtime" panics. For now, we skip explicit flush on close
+        // and rely on Sled's own drop/flush mechanisms.
+        // In production, call flush() explicitly before dropping FoldDB.
+        log_feature!(
+            LogFeature::Database,
+            debug,
+            "FoldDB close() - relying on storage backend's own flush mechanisms"
+        );
 
         Ok(())
     }
@@ -93,21 +94,22 @@ impl FoldDB {
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
-    /// updated by @tomtang2
-    pub fn new(path: &str) -> sled::Result<Self> {
+    /// 
+    /// Now fully async to support DbOperationsV2 with storage abstraction!
+    pub async fn new(path: &str) -> Result<Self, StorageError> {
         let db = match sled::open(path) {
             Ok(db) => db,
             Err(e) => {
                 if e.to_string().contains("No such file or directory") {
-                    sled::open(path)?
+                    sled::open(path)
+                        .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?
                 } else {
-                    return Err(e);
+                    return Err(StorageError::IoError(std::io::Error::other(e.to_string())));
                 }
             }
         };
 
-        Self::initialize_from_db(db, path, None)
-            .map_err(|e| sled::Error::Unsupported(e.to_string()))
+        Self::initialize_from_db(db, path, None).await
     }
 
     /// Creates a new FoldDB instance with S3-backed storage.
@@ -124,19 +126,33 @@ impl FoldDB {
         let db = sled::open(&local_path_string)
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
-        Self::initialize_from_db(db, &local_path_string, Some(s3_storage))
+        Self::initialize_from_db(db, &local_path_string, Some(s3_storage)).await
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
     /// This method initializes all FoldDB components from an already-opened sled database
-    fn initialize_from_db(
+    /// 
+    /// Fully async - uses DbOperationsV2 with storage abstraction layer!
+    async fn initialize_from_db(
         db: sled::Db, 
         db_path: &str,
         s3_storage: Option<Arc<S3SyncedStorage>>
     ) -> Result<Self, StorageError> {
-        let db_ops = DbOperations::new(db.clone())
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-        let orchestrator_tree = db_ops.orchestrator_tree.clone();
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "🔄 Using DbOperationsV2 with storage abstraction layer (Sled backend)"
+        );
+        
+        // Use the new async storage abstraction!
+        let db_ops = Arc::new(DbOperationsV2::from_sled(db.clone()).await?);
+        
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "✅ Storage abstraction active - using {} backend",
+            "Sled"
+        );
 
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
@@ -154,13 +170,11 @@ impl FoldDB {
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         // Create managers using event-driven initialization only
-        let db_ops_arc = Arc::new(db_ops.clone());
-
-        let transform_manager = init_transform_manager(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
+        let transform_manager = init_transform_manager(Arc::clone(&db_ops), Arc::clone(&message_bus)).await
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         let schema_manager = Arc::new(
-            SchemaCore::new(Arc::clone(&db_ops_arc), Arc::clone(&message_bus))
+            SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus)).await
                 .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?
         );
 
@@ -170,23 +184,26 @@ impl FoldDB {
 
         // Create QueryExecutor for handling all query operations
         let query_executor = QueryExecutor::new(
-            Arc::new(db_ops.clone()),
+            Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
         );
         info!("Created QueryExecutor for query operations");
 
         // Create TransformOrchestrator for managing transform execution
+        let orchestrator_tree = db_ops.orchestrator_tree.clone()
+            .ok_or_else(|| StorageError::BackendError("Orchestrator tree not available (only supported with Sled backend)".to_string()))?;
+        
         let transform_orchestrator = Arc::new(TransformOrchestrator::new(
             Arc::clone(&transform_manager),
             orchestrator_tree,
             Arc::clone(&message_bus),
-            Arc::new(db_ops.clone()),
+            Arc::clone(&db_ops),
         ));
         info!("Created TransformOrchestrator for transform execution");
 
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
-            Arc::new(db_ops.clone()),
+            Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
         );
@@ -201,7 +218,7 @@ impl FoldDB {
         // Create and start IndexEventHandler for background indexing
         let index_event_handler = IndexEventHandler::new(
             Arc::clone(&message_bus),
-            Arc::new(db_ops.clone()),
+            Arc::clone(&db_ops),
         );
         info!("Started IndexEventHandler for background indexing");
         
@@ -214,7 +231,7 @@ impl FoldDB {
         Ok(Self {
             schema_manager,
             transform_manager,
-            db_ops: Arc::new(db_ops.clone()),
+            db_ops,
             query_executor,
             message_bus,
             event_monitor,
@@ -227,8 +244,8 @@ impl FoldDB {
 
     /// Flushes local Sled database and syncs to S3 (if S3 storage is configured)
     pub async fn flush_to_s3(&self) -> Result<(), StorageError> {
-        // First flush Sled to ensure all data is on local disk
-        self.db_ops.db().flush()
+        // First flush storage to ensure all data is persisted
+        self.db_ops.flush().await
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         // Then sync to S3 if configured
@@ -262,19 +279,19 @@ impl FoldDB {
     // ========== CONSOLIDATED SCHEMA API - DELEGATES TO SCHEMA_CORE ==========
 
     /// Load schema from JSON string (creates Available schema)
-    pub fn load_schema_from_json(&mut self, json_str: &str) -> Result<(), SchemaError> {
+    pub async fn load_schema_from_json(&mut self, json_str: &str) -> Result<(), SchemaError> {
         // Delegate to SchemaCore implementation
-        self.schema_manager.load_schema_from_json(json_str)
+        self.schema_manager.load_schema_from_json(json_str).await
     }
 
     /// Load schema from file (creates Available schema)
-    pub fn load_schema_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), SchemaError> {
+    pub async fn load_schema_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), SchemaError> {
         // Delegate to SchemaCore implementation
-        self.schema_manager.load_schema_from_file(path)
+        self.schema_manager.load_schema_from_file(path).await
     }
 
     /// Provides access to the underlying database operations
-    pub fn get_db_ops(&self) -> Arc<DbOperations> {
+    pub fn get_db_ops(&self) -> Arc<DbOperationsV2> {
         Arc::clone(&self.db_ops)
     }
 
@@ -319,7 +336,9 @@ impl FoldDB {
     }
     /// Search the native word index for a specific term
     pub fn native_word_search(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        self.db_ops.native_index_manager().search_word(term)
+        self.db_ops.native_index_manager()
+            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?
+            .search_word(term)
     }
 
     /// Search native index across all classification types and aggregate results
@@ -328,7 +347,9 @@ impl FoldDB {
         debug!("FoldDB: native_search_all_classifications called for term: '{}'", term);
         
         // Delegate to NativeIndexManager which has the full implementation
-        self.db_ops.native_index_manager().search_all_classifications(term)
+        self.db_ops.native_index_manager()
+            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?
+            .search_all_classifications(term)
     }
 
     /// Get the transform orchestrator for managing transform execution

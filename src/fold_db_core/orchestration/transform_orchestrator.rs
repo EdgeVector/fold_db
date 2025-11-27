@@ -8,6 +8,7 @@ use log::{error, info};
 use sled::Tree;
 use std::sync::Arc;
 
+use crate::db_operations::DbOperationsV2;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::transform::manager::{TransformManager, types::TransformResult};
 use crate::schema::SchemaError;
@@ -49,7 +50,7 @@ impl TransformOrchestrator {
         manager: Arc<TransformManager>,
         tree: Tree,
         message_bus: Arc<MessageBus>,
-        db_ops: Arc<crate::db_operations::DbOperations>,
+        db_ops: Arc<DbOperationsV2>,
     ) -> Self {
         info!("🏗️ Creating TransformOrchestrator with component delegation");
 

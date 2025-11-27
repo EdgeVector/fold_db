@@ -28,9 +28,16 @@ pub struct AddSchemaResponse {
 impl SchemaServiceClient {
     /// Create a new schema service client
     pub fn new(schema_service_url: &str) -> Self {
+        // Create client with timeout to prevent hanging
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        
         Self {
             base_url: schema_service_url.to_string(),
-            client: reqwest::Client::new(),
+            client,
         }
     }
 
@@ -52,7 +59,8 @@ impl SchemaServiceClient {
             .await
             .map_err(|error| {
                 FoldDbError::Config(format!(
-                    "Failed to submit schema to schema service: {}",
+                    "Failed to submit schema to schema service at {}: {}. Is the schema service running?",
+                    url,
                     error
                 ))
             })?;
@@ -206,7 +214,7 @@ impl SchemaServiceClient {
             })?;
 
             schema_manager
-                .load_schema_from_json(&json_str)
+                .load_schema_from_json(&json_str).await
                 .map_err(|e| {
                     FoldDbError::Config(format!("Failed to load schema '{}': {}", name, e))
                 })?;

@@ -10,7 +10,7 @@ use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, apply_range_filter, fetch_atoms_for_matches};
 use crate::schema::types::SchemaError;
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::schema::types::key_value::KeyValue;
 // Removed unused log imports
 
@@ -125,11 +125,11 @@ impl crate::schema::types::field::Field for RangeField {
         &mut self.inner
     }
 
-    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
+    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
         // If we have a molecule_uuid, look up the corresponding MoleculeRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            match db_ops.get_item::<MoleculeRange>(&ref_key) {
+            match tokio::runtime::Handle::current().block_on(db_ops.get_item::<MoleculeRange>(&ref_key)) {
                 Ok(Some(molecule)) => {
                     self.molecule = Some(molecule);
                 }
@@ -163,7 +163,7 @@ impl crate::schema::types::field::Field for RangeField {
         }
     }
 
-    fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops);
 
         // Fetch actual atom content from database using shared helper

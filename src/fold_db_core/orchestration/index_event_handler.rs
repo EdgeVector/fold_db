@@ -8,7 +8,7 @@ use std::thread;
 use std::time::Duration;
 use log::{error, info};
 
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::fold_db_core::infrastructure::MessageBus;
 use crate::fold_db_core::infrastructure::message_bus::request_events::BatchIndexRequest;
 use crate::schema::SchemaError;
@@ -23,7 +23,7 @@ impl IndexEventHandler {
     /// Create a new IndexEventHandler and start monitoring
     pub fn new(
         message_bus: Arc<MessageBus>,
-        db_ops: Arc<DbOperations>,
+        db_ops: Arc<DbOperationsV2>,
     ) -> Self {
         let status_tracker = IndexStatusTracker::new();
         
@@ -52,7 +52,7 @@ impl IndexEventHandler {
     /// Start monitoring for BatchIndexRequest events
     fn start_monitoring(
         message_bus: Arc<MessageBus>,
-        db_ops: Arc<DbOperations>,
+        db_ops: Arc<DbOperationsV2>,
         status_tracker: IndexStatusTracker,
     ) -> thread::JoinHandle<()> {
         let mut consumer = message_bus.subscribe::<BatchIndexRequest>();
@@ -84,7 +84,7 @@ impl IndexEventHandler {
     /// Handle a BatchIndexRequest event by processing all index operations
     fn handle_batch_index_request(
         event: &BatchIndexRequest,
-        db_ops: &Arc<DbOperations>,
+        db_ops: &Arc<DbOperationsV2>,
         status_tracker: &IndexStatusTracker,
     ) -> Result<(), SchemaError> {
         let operation_count = event.operations.len();
@@ -108,7 +108,9 @@ impl IndexEventHandler {
             .collect();
         
         // Process all index operations in a batch
-        let result = db_ops.native_index_manager().batch_index_field_values_with_classifications(&index_operations);
+        let result = db_ops.native_index_manager()
+            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?
+            .batch_index_field_values_with_classifications(&index_operations);
         
         let elapsed = start_time.elapsed();
         

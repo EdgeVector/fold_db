@@ -67,7 +67,7 @@ impl LambdaContext {
         }
 
         // Create DataFold node
-        let node = DataFoldNode::new(node_config)
+        let node = DataFoldNode::new(node_config).await
             .map_err(|e| IngestionError::InvalidInput(e.to_string()))?;
 
         // Create progress tracker

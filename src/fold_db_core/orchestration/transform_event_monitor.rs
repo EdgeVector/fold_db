@@ -259,7 +259,7 @@ impl TransformEventMonitor {
                 // Publish TransformRegistered event to trigger backfill
                 // Extract source schema name from the transform's input fields
                 // Look up the transform's schema from the database
-                let transform_schema = manager.db_ops.get_schema(event.registration.transform.get_schema_name())?.ok_or_else(|| {
+                let transform_schema = tokio::runtime::Handle::current().block_on(manager.db_ops.get_schema(event.registration.transform.get_schema_name()))?.ok_or_else(|| {
                     SchemaError::InvalidData(format!("Transform schema '{}' not found", event.registration.transform.get_schema_name()))
                 })?;
                 let source_schema_name = transform_schema

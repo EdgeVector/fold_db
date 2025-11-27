@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::HashRangeFilter;
@@ -22,7 +22,7 @@ pub trait Field {
     fn common_mut(&mut self) -> &mut FieldCommon;
 
     /// Refreshes the field's data from the database using the provided key configuration.
-    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations);
+    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2);
 
     /// Writes a mutation to the field
     fn write_mutation(&mut self, key_value: &KeyValue, atom: crate::atom::Atom, pub_key: String);
@@ -30,7 +30,7 @@ pub trait Field {
     /// Resolves field values by refreshing the field, applying filters, and fetching atom content
     fn resolve_value(
         &mut self,
-        db_ops: &Arc<DbOperations>,
+        db_ops: &Arc<DbOperationsV2>,
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError>;
 }
@@ -111,7 +111,7 @@ macro_rules! impl_field {
                 &mut self.inner
             }
 
-            fn refresh_from_db(&mut self, db_ops: &$crate::db_operations::DbOperations) {
+            fn refresh_from_db(&mut self, db_ops: &$crate::db_operations::DbOperationsV2) {
                 log::error!("refresh_from_db not implemented for {}", stringify!($t));
             }
 
@@ -126,7 +126,7 @@ macro_rules! impl_field {
 
             fn resolve_value(
                 &mut self,
-                db_ops: &std::sync::Arc<$crate::db_operations::DbOperations>,
+                db_ops: &std::sync::Arc<$crate::db_operations::DbOperationsV2>,
                 filter: Option<$crate::schema::types::field::HashRangeFilter>,
             ) -> Result<serde_json::Value, $crate::schema::types::SchemaError> {
                 log::error!("resolve_value not implemented for {}", stringify!($t));

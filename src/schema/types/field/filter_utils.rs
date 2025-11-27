@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::SchemaError;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult};
@@ -39,13 +39,13 @@ impl FilterUtils {
 
 /// Resolve atom UUID matches into concrete FieldValue map by fetching atoms
 pub fn fetch_atoms_for_matches(
-    db_ops: &Arc<DbOperations>,
+    db_ops: &Arc<DbOperationsV2>,
     matches: impl IntoIterator<Item = (KeyValue, String)>,
 )-> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
 
     for (key, atom_uuid) in matches.into_iter() {
-        match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)) {
+        match tokio::runtime::Handle::current().block_on(db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))) {
             Ok(Some(atom)) => {
                 resolved_values.insert(
                     key,

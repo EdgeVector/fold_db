@@ -1,4 +1,6 @@
-use super::core::DbOperations;
+// Legacy v1 orchestrator operations - DEPRECATED
+#[allow(dead_code)]
+use super::core_refactored::DbOperationsV2 as DbOperations;
 use crate::schema::SchemaError;
 use serde::{de::DeserializeOwned, Serialize};
 

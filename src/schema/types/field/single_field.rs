@@ -8,7 +8,7 @@ use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, fetch_atoms_for_matches, FilterApplicator};
 use crate::schema::types::SchemaError;
 use crate::atom::{Molecule, MoleculeBehavior};
-use crate::db_operations::DbOperations;
+use crate::db_operations::DbOperationsV2;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
 // Removed unused JsonValue import
@@ -42,10 +42,10 @@ impl crate::schema::types::field::Field for SingleField {
         &mut self.inner
     }
 
-    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
+    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            if let Ok(Some(molecule)) = db_ops.get_item::<crate::atom::Molecule>(&ref_key) {
+            if let Ok(Some(molecule)) = tokio::runtime::Handle::current().block_on(db_ops.get_item::<crate::atom::Molecule>(&ref_key)) {
                 self.molecule = Some(molecule.clone());
             }
         }
@@ -66,7 +66,7 @@ impl crate::schema::types::field::Field for SingleField {
         }
     }
 
-    fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, _filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, _filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops);
         if let Some(molecule) = &self.molecule {
             let uuid = molecule.get_atom_uuid().clone();

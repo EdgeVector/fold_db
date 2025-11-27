@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::types::{SchemaError, Transform};
 
@@ -25,7 +24,7 @@ use crate::schema::types::{SchemaError, Transform};
 /// - TransformOrchestrator: Orchestration and event handling
 /// - TransformManager: Registration, execution, mapping, and result storage
 pub struct TransformManager {
-    pub db_ops: Arc<DbOperations>,
+    pub db_ops: Arc<crate::db_operations::DbOperationsV2>,
     pub(super) registered_transforms: RwLock<HashMap<String, Transform>>,
     pub(super) schema_field_to_transforms: RwLock<BTreeMap<String, HashSet<String>>>,
     pub(super) message_bus: Arc<MessageBus>,
@@ -33,16 +32,13 @@ pub struct TransformManager {
 
 impl TransformManager {
     /// Creates a new TransformManager instance with unified database operations
-    pub fn new(
-        db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
+    pub async fn new(
+        db_ops: std::sync::Arc<crate::db_operations::DbOperationsV2>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
-        // Load persisted state from storage by syncing with empty in-memory state
-        let empty_transforms = HashMap::new();
-        let empty_mappings = BTreeMap::new();
-        
+        // Load persisted state from storage
         let (registered_transforms, schema_field_to_transforms) = 
-            db_ops.sync_transform_state(&empty_transforms, &empty_mappings)?;
+            db_ops.load_transform_state().await?;
 
         // Create the TransformManager instance
         let manager = Self {
@@ -72,7 +68,7 @@ impl TransformManager {
 
     /// Get the schema state for a given schema/transform
     pub fn get_schema_state(&self, schema_name: &str) -> Result<Option<crate::schema::SchemaState>, SchemaError> {
-        self.db_ops.get_schema_state(schema_name)
+        tokio::runtime::Handle::current().block_on(self.db_ops.get_schema_state(schema_name))
     }
 
     /// Gets all transforms that should run when the specified field is updated.
@@ -109,7 +105,7 @@ impl TransformManager {
         let mappings = self.schema_field_to_transforms.read()
             .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
         
-        self.db_ops.sync_transform_state(&transforms, &mappings)?;
+        tokio::runtime::Handle::current().block_on(self.db_ops.sync_transform_state(&transforms, &mappings))?;
 
         Ok(())
     }

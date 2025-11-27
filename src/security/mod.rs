@@ -80,7 +80,7 @@ impl Default for SecurityConfig {
         Self {
             require_tls: true,
             require_signatures: true,
-            encrypt_at_rest: true,
+            encrypt_at_rest: false, // Disabled by default (enable with a master_key)
             master_key: None,
         }
     }

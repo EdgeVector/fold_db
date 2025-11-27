@@ -53,9 +53,21 @@ impl OperationProcessor {
             mutation_type,
         );
 
-        let node_guard = self.node.lock().await;
-        // Use batch API even for single mutation for better performance and return the ID
-        let mut ids = node_guard.mutate_batch(vec![mutation])?;
+        // Clone the node (Arc-based, so this is cheap) to move into blocking task
+        let node = {
+            let node_guard = self.node.lock().await;
+            node_guard.clone()
+        };
+        
+        // Execute the blocking mutation operation in a blocking thread pool
+        // This prevents deadlocks when mutate_batch uses block_on internally
+        let mut ids = tokio::task::spawn_blocking(move || {
+            node.mutate_batch(vec![mutation])
+        })
+        .await
+        .map_err(|e| FoldDbError::Config(format!("Failed to execute mutation: {}", e)))?
+        .map_err(|e| FoldDbError::Config(format!("Mutation execution failed: {}", e)))?;
+        
         match ids.pop() {
             Some(id) => Ok(id),
             None => Err(FoldDbError::Config("Batch mutation returned no IDs".to_string())),
@@ -105,8 +117,20 @@ impl OperationProcessor {
             mutations.push(mutation);
         }
 
-        let node_guard = self.node.lock().await;
-        let mutation_ids = node_guard.mutate_batch(mutations)?;
+        // Clone the node (Arc-based, so this is cheap) to move into blocking task
+        let node = {
+            let node_guard = self.node.lock().await;
+            node_guard.clone()
+        };
+        
+        // Execute the blocking mutation operation in a blocking thread pool
+        // This prevents deadlocks when mutate_batch uses block_on internally
+        let mutation_ids = tokio::task::spawn_blocking(move || {
+            node.mutate_batch(mutations)
+        })
+        .await
+        .map_err(|e| FoldDbError::Config(format!("Failed to execute mutations: {}", e)))?
+        .map_err(|e| FoldDbError::Config(format!("Mutation execution failed: {}", e)))?;
 
         Ok(mutation_ids)
     }

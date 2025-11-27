@@ -48,13 +48,15 @@ pub struct NetworkStatus {
 
 impl DataFoldNode {
     /// Creates a new DataFoldNode with the specified configuration.
-    pub fn new(config: NodeConfig) -> FoldDbResult<Self> {
+    /// 
+    /// Now fully async to support storage abstraction!
+    pub async fn new(config: NodeConfig) -> FoldDbResult<Self> {
         let db = Arc::new(Mutex::new(FoldDB::new(
             config
                 .storage_path
                 .to_str()
                 .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?,
-        )?));
+        ).await.map_err(|e| FoldDbError::Config(e.to_string()))?));
 
         // Retrieve or generate the persistent node_id from fold_db
         let node_id = {
@@ -62,7 +64,7 @@ impl DataFoldNode {
                 .lock()
                 .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
             guard
-                .get_node_id()
+                .get_node_id().await
                 .map_err(|e| FoldDbError::Config(format!("Failed to get node_id: {}", e)))?
         };
 
@@ -89,7 +91,7 @@ impl DataFoldNode {
             let db_ops = guard.db_ops.clone();
 
             Arc::new(
-                SecurityManager::new_with_persistence(security_config, db_ops)
+                SecurityManager::new_with_persistence(config.security_config.clone(), Arc::clone(&db_ops)).await
                     .map_err(|e| FoldDbError::SecurityError(e.to_string()))?,
             )
         };
@@ -126,9 +128,8 @@ impl DataFoldNode {
                 // It will be performed by the HTTP server after node initialization
             }
         } else {
-            return Err(FoldDbError::Config(
-                "Schema service URL is required. Please configure schema_service_url in NodeConfig.".to_string()
-            ));
+            // Schema service is optional - log info and continue
+            log::info!("No schema service URL configured - using local schema management only");
         }
 
         log_feature!(

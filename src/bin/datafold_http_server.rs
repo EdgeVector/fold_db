@@ -56,8 +56,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.schema_service_url = Some(url);
     }
 
-    // Create node
-    let node = DataFoldNode::new(config)?;
+    // Create node (now async!)
+    let node = DataFoldNode::new(config).await?;
 
     // Start the HTTP server
     let bind_address = format!("127.0.0.1:{}", http_port);

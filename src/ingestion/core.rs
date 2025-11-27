@@ -438,16 +438,36 @@ impl IngestionCore {
         
         schema.name = topology_hash.clone();
 
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Submitting schema '{}' to schema service...",
+            schema.name
+        );
+
         let add_schema_response = self
             .schema_service_client
             .add_schema(&schema, mutation_mappers)
             .await
             .map_err(|error| {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Failed to create schema via schema service: {}",
+                    error
+                );
                 IngestionError::SchemaCreationError(format!(
                     "Failed to create schema via schema service: {}",
                     error
                 ))
             })?;
+
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Schema service returned schema '{}'",
+            add_schema_response.schema.name
+        );
 
         let json_str = serde_json::to_string(&add_schema_response.schema).map_err(|error| {
             IngestionError::schema_parsing_error(format!(
@@ -456,9 +476,10 @@ impl IngestionCore {
             ))
         })?;
 
-        self.schema_core
-            .load_schema_from_json(&json_str)
-            .map_err(IngestionError::SchemaSystemError)?;
+            match self.schema_core.load_schema_from_json(&json_str).await {
+                Ok(_) => {},
+                Err(e) => return Err(IngestionError::SchemaSystemError(e)),
+            };
 
         let schema_name = add_schema_response.schema.name.clone();
         let returned_mutation_mappers = add_schema_response.mutation_mappers;
@@ -466,6 +487,7 @@ impl IngestionCore {
         // Auto-approve the new schema (idempotent - only approves if not already approved)
         self.schema_core
             .approve(&schema_name)
+            .await
             .map_err(IngestionError::SchemaSystemError)?;
 
         Ok((schema_name, returned_mutation_mappers))
@@ -564,9 +586,10 @@ impl IngestionCore {
                 ))
             })?;
 
-            self.schema_core
-                .load_schema_from_json(&json_str)
-                .map_err(IngestionError::SchemaSystemError)?;
+            match self.schema_core.load_schema_from_json(&json_str).await {
+                Ok(_) => {},
+                Err(e) => return Err(IngestionError::SchemaSystemError(e)),
+            };
 
             log_feature!(
                 LogFeature::Ingestion,

@@ -40,7 +40,7 @@ impl TransformRunner for super::TransformManager {
         )?;
         
         // Look up the transform's schema from the database
-        let schema = self.db_ops.get_schema(transform.get_schema_name())?.ok_or_else(|| {
+        let schema = tokio::runtime::Handle::current().block_on(self.db_ops.get_schema(transform.get_schema_name()))?.ok_or_else(|| {
             SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
         })?;
 

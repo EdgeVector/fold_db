@@ -34,7 +34,7 @@ fn generate_backfill_hash_for_transform(
     };
     
     // Look up the transform's schema from the database
-    let declarative_schema = match transform_manager.db_ops.get_schema(transform.get_schema_name()) {
+    let declarative_schema = match tokio::runtime::Handle::current().block_on(transform_manager.db_ops.get_schema(transform.get_schema_name())) {
         Ok(Some(s)) => s,
         Ok(None) => {
             log::warn!("Transform {} schema not found in database", schema_name);
@@ -233,7 +233,7 @@ pub async fn execute_query_plan(
                 }
             };
 
-            if let Err(e) = db_guard.schema_manager.load_schema_internal(schema) {
+            if let Err(e) = db_guard.schema_manager.load_schema_internal(schema).await {
                 return HttpResponse::InternalServerError()
                     .json(json!({"error": format!("Failed to load schema: {}", e)}));
             }
@@ -256,7 +256,7 @@ pub async fn execute_query_plan(
             if let Err(e) = db_guard.schema_manager.approve_with_backfill(
                 &schema_name,
                 backfill_hash.clone(),
-            ) {
+            ).await {
                 return HttpResponse::InternalServerError()
                     .json(json!({"error": format!("Failed to approve schema: {}", e)}));
             }
@@ -814,7 +814,7 @@ pub async fn run_query(
                 }
             };
 
-            if let Err(e) = db_guard.schema_manager.load_schema_internal(schema) {
+            if let Err(e) = db_guard.schema_manager.load_schema_internal(schema).await {
                 return HttpResponse::InternalServerError()
                     .json(json!({"error": format!("Failed to load schema: {}", e)}));
             }
@@ -844,7 +844,7 @@ pub async fn run_query(
                     &schema_name,
                     SchemaState::Approved,
                     backfill_hash.clone(),
-                ) {
+                ).await {
                     return HttpResponse::InternalServerError()
                         .json(json!({"error": format!("Failed to approve schema: {}", e)}));
                 }
