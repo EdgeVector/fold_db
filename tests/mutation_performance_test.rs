@@ -48,6 +48,7 @@ async fn test_mutation_performance_direct() {
         .with_schema_service_url("test://mock");
     
     let node = DataFoldNode::new(config)
+        .await
         .expect("Failed to create test node");
     
     // Load BlogPost schema
@@ -57,6 +58,7 @@ async fn test_mutation_performance_direct() {
     {
         let mut db_guard = node.get_fold_db().expect("Failed to get database");
         db_guard.load_schema_from_json(&schema_json)
+            .await
             .expect("Failed to load BlogPost schema");
     }
     
@@ -64,6 +66,7 @@ async fn test_mutation_performance_direct() {
     {
         let db_guard = node.get_fold_db().expect("Failed to get database");
         db_guard.schema_manager().approve("BlogPost")
+            .await
             .expect("Failed to approve BlogPost schema");
     }
 

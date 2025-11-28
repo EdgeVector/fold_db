@@ -9,13 +9,13 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 
 /// Test that searching for a field name (like "email") returns all records with that field
-#[test]
-fn test_search_by_field_name() {
+#[tokio::test]
+async fn test_search_by_field_name() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
 
     {
         let fold_db = node.get_fold_db().expect("failed to get FoldDB");
@@ -42,11 +42,13 @@ fn test_search_by_field_name() {
         fold_db
             .schema_manager()
             .load_schema_from_json(&schema_str)
+            .await
             .expect("failed to load schema");
 
         fold_db
             .schema_manager()
             .set_schema_state("UserProfile", SchemaState::Approved)
+            .await
             .expect("failed to approve schema");
     }
 
@@ -121,13 +123,13 @@ fn test_search_by_field_name() {
 }
 
 /// Test searching for field name that doesn't exist
-#[test]
-fn test_search_nonexistent_field_name() {
+#[tokio::test]
+async fn test_search_nonexistent_field_name() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
 
     {
         let fold_db = node.get_fold_db().expect("failed to get FoldDB");
@@ -148,11 +150,13 @@ fn test_search_nonexistent_field_name() {
         fold_db
             .schema_manager()
             .load_schema_from_json(&schema_str)
+            .await
             .expect("failed to load schema");
 
         fold_db
             .schema_manager()
             .set_schema_state("BlogPost", SchemaState::Approved)
+            .await
             .expect("failed to approve schema");
     }
 
@@ -187,13 +191,13 @@ fn test_search_nonexistent_field_name() {
 }
 
 /// Test that field name search works alongside regular word search
-#[test]
-fn test_combined_field_name_and_word_search() {
+#[tokio::test]
+async fn test_combined_field_name_and_word_search() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
 
     {
         let fold_db = node.get_fold_db().expect("failed to get FoldDB");
@@ -214,11 +218,13 @@ fn test_combined_field_name_and_word_search() {
         fold_db
             .schema_manager()
             .load_schema_from_json(&schema_str)
+            .await
             .expect("failed to load schema");
 
         fold_db
             .schema_manager()
             .set_schema_state("Article", SchemaState::Approved)
+            .await
             .expect("failed to approve schema");
     }
 

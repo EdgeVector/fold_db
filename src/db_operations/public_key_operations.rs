@@ -57,9 +57,9 @@ mod tests {
     use crate::security::types::PublicKeyInfo;
     use crate::testing_utils::TestDatabaseFactory;
 
-    #[test]
-    fn test_set_and_get_system_public_key() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
+    #[tokio::test]
+    async fn test_set_and_get_system_public_key() {
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
 
         let key_info = PublicKeyInfo::new(
             "some_id_that_will_be_ignored".to_string(),
@@ -81,18 +81,18 @@ mod tests {
         assert_eq!(retrieved_key.permissions, vec!["read".to_string()]);
     }
 
-    #[test]
-    fn test_get_nonexistent_system_public_key() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
+    #[tokio::test]
+    async fn test_get_nonexistent_system_public_key() {
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
 
         // Try to retrieve a key that doesn't exist
         let result = db_ops.get_system_public_key().unwrap();
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_delete_system_public_key() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
+    #[tokio::test]
+    async fn test_delete_system_public_key() {
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
 
         let key_info = PublicKeyInfo::new(
             "key_to_delete".to_string(),
@@ -117,9 +117,9 @@ mod tests {
         assert!(!deleted_again);
     }
 
-    #[test]
-    fn test_set_system_public_key_overwrites() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
+    #[tokio::test]
+    async fn test_set_system_public_key_overwrites() {
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
 
         // Store initial key
         let key1 = PublicKeyInfo::new(

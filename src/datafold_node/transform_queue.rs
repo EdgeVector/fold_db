@@ -16,7 +16,9 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
-        db.transform_orchestrator
+        let orchestrator = db.transform_orchestrator()
+            .ok_or_else(|| FoldDbError::Config("Transform orchestrator not available (requires Sled backend)".to_string()))?;
+        orchestrator
             .add_transform(transform_id, "manual")?;
         Ok(())
     }
@@ -27,9 +29,11 @@ impl DataFoldNode {
             .db
             .lock()
             .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
-        let queue = db.transform_orchestrator.list_queued_transforms()?;
+        let orchestrator = db.transform_orchestrator()
+            .ok_or_else(|| FoldDbError::Config("Transform orchestrator not available (requires Sled backend)".to_string()))?;
+        let queue = orchestrator.list_queued_transforms()?;
         let queue_length = queue.len();
-        let is_empty = db.transform_orchestrator.is_empty()?;
+        let is_empty = orchestrator.is_empty()?;
         Ok(TransformQueueInfo {
             queue,
             length: queue_length,
@@ -90,8 +94,8 @@ mod tests {
 
     use tempfile::tempdir;
 
-    #[test]
-    fn queue_info_works() {
+    #[tokio::test]
+    async fn queue_info_works() {
         let dir = tempdir().unwrap();
         let config = NodeConfig {
             storage_path: dir.path().to_path_buf(),
@@ -100,7 +104,7 @@ mod tests {
             security_config: crate::security::SecurityConfig::default(),
             schema_service_url: Some("test://mock".to_string()),
         };
-        let node = DataFoldNode::new(config).unwrap();
+        let node = DataFoldNode::new(config).await.unwrap();
         let info = node.get_transform_queue_info().unwrap();
         assert!(info.is_empty);
         assert_eq!(info.length, 0);

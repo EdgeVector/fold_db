@@ -37,6 +37,8 @@
 #[cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext};
 #[cfg(feature = "lambda")]
+use datafold::storage::StorageConfig;
+#[cfg(feature = "lambda")]
 use lambda_runtime::{run, service_fn, Error, LambdaEvent};
 #[cfg(feature = "lambda")]
 use serde_json::{json, Value};
@@ -83,7 +85,10 @@ async fn main() -> Result<(), Error> {
     tracing::info!("Initializing Lambda context...");
 
     // Create Lambda configuration
-    let mut config = LambdaConfig::new();
+    let storage_config = StorageConfig::Local { 
+        path: std::env::temp_dir() 
+    };
+    let mut config = LambdaConfig::new(storage_config);
 
     // Optionally set schema service URL from environment
     if let Ok(schema_url) = std::env::var("SCHEMA_SERVICE_URL") {

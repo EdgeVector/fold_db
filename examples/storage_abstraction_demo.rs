@@ -9,7 +9,7 @@
 ///! ```
 
 use datafold::db_operations::DbOperationsV2;
-use datafold::storage::{SledNamespacedStore, InMemoryNamespacedStore};
+use datafold::storage::{SledNamespacedStore, InMemoryNamespacedStore, NamespacedStore};
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 
@@ -118,8 +118,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ Stored data in different namespaces");
     
-    // List namespaces
-    let namespaces = store.list_namespaces().await?;
+    // List namespaces - Arc implements Deref, so we can call methods directly
+    let namespaces = store.as_ref().list_namespaces().await?;
     println!("✅ Available namespaces: {:?}", namespaces);
     
     // Query specific namespace

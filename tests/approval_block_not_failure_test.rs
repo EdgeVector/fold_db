@@ -9,12 +9,12 @@ use std::time::Duration;
 /// Test to verify that unapproved transforms don't emit TransformTriggered events
 /// With the optimization, unapproved transforms are filtered BEFORE event emission,
 /// preventing unnecessary event traffic and execution attempts
-#[test]
-fn test_approval_block_not_counted_as_failure() {
+#[tokio::test]
+async fn test_approval_block_not_counted_as_failure() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load and approve BlogPost schema
     let blogpost_schema_json = json!({
@@ -31,9 +31,10 @@ fn test_approval_block_not_counted_as_failure() {
     
     fold_db.schema_manager().load_schema_from_json(
         &serde_json::to_string(&blogpost_schema_json).unwrap()
-    ).expect("Failed to load BlogPost schema");
+    ).await.expect("Failed to load BlogPost schema");
     
     fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPost schema");
     
     // Load BlogPostWordIndex schema but DON'T approve it
@@ -55,7 +56,7 @@ fn test_approval_block_not_counted_as_failure() {
     
     fold_db.schema_manager().load_schema_from_json(
         &serde_json::to_string(&wordindex_schema_json).unwrap()
-    ).expect("Failed to load BlogPostWordIndex schema");
+    ).await.expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for registration
     std::thread::sleep(Duration::from_millis(100));

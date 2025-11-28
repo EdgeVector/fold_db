@@ -35,13 +35,15 @@ fn user_public_schema_json() -> String {
     .to_string()
 }
 
-#[test]
-fn approving_schema_applies_field_mappers() {
-    let core = SchemaCore::new_for_testing().expect("init core");
+#[tokio::test]
+async fn approving_schema_applies_field_mappers() {
+    let core = SchemaCore::new_for_testing().await.expect("init core");
 
     core.load_schema_from_json(&user_schema_json())
+        .await
         .expect("load source schema");
     core.load_schema_from_json(&user_public_schema_json())
+        .await
         .expect("load target schema");
 
     let initial_target_schema = core
@@ -59,6 +61,7 @@ fn approving_schema_applies_field_mappers() {
     );
 
     core.set_schema_state("UserPublic", SchemaState::Approved)
+        .await
         .expect("approve schema");
 
     let approved_schema = core

@@ -150,6 +150,12 @@ impl BackfillInfo {
         self.end_time = Some(current_timestamp_secs());
     }
 
+    /// Mark backfill as completed
+    pub fn mark_completed(&mut self) {
+        self.status = BackfillStatus::Completed;
+        self.end_time = Some(current_timestamp_secs());
+    }
+
     /// Calculate duration in seconds
     pub fn duration_seconds(&self) -> u64 {
         let end = self.end_time.unwrap_or_else(current_timestamp_secs);
@@ -194,15 +200,23 @@ impl BackfillTracker {
     /// Set the expected number of mutations for this backfill
     /// If count is 0, immediately mark the backfill as completed (no data to process)
     pub fn set_mutations_expected(&self, backfill_hash: &str, count: u64) {
-        if let Some(info) = self.backfills.lock().unwrap().get_mut(backfill_hash) {
+        let mut backfills = self.backfills.lock().unwrap();
+        if let Some(info) = backfills.get_mut(backfill_hash) {
+            let was_in_progress = info.status == BackfillStatus::InProgress;
             info.mutations_expected = count;
             info.records_produced = count; // Also set records_produced to match
             
             // If no mutations are expected, immediately mark as completed
-            if count == 0 && info.status == BackfillStatus::InProgress {
+            // This handles the case where there's no source data to process
+            // Only mark as completed if it's still InProgress (don't overwrite Completed/Failed)
+            if count == 0 && was_in_progress {
                 info.status = BackfillStatus::Completed;
                 info.end_time = Some(current_timestamp_secs());
             }
+        } else {
+            // Backfill doesn't exist yet - this can happen in race conditions
+            // Log a warning but don't fail
+            log::warn!("Attempted to set_mutations_expected for non-existent backfill: {}", backfill_hash);
         }
     }
 
@@ -265,6 +279,16 @@ impl BackfillTracker {
     /// Get info for a specific backfill by backfill_hash
     pub fn get_backfill_by_hash(&self, backfill_hash: &str) -> Option<BackfillInfo> {
         self.backfills.lock().unwrap().get(backfill_hash).cloned()
+    }
+
+    /// Force mark a backfill as completed by hash (used when we know it should be done)
+    pub fn force_complete(&self, backfill_hash: &str) {
+        let mut backfills = self.backfills.lock().unwrap();
+        if let Some(info) = backfills.get_mut(backfill_hash) {
+            if info.status == BackfillStatus::InProgress {
+                info.mark_completed();
+            }
+        }
     }
 
     /// Get all backfill info

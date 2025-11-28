@@ -1,14 +1,24 @@
 //! Configuration types for Lambda context
 
+use crate::db_operations::DbOperationsV2;
 use crate::lambda::logging::Logger;
-use std::path::PathBuf;
+use crate::storage::StorageConfig;
 use std::sync::Arc;
+
+/// Storage configuration for Lambda - either use StorageConfig or provide a pre-created DbOperationsV2
+#[derive(Clone)]
+pub enum LambdaStorage {
+    /// Use StorageConfig to create DbOperationsV2 automatically (Local or S3)
+    Config(StorageConfig),
+    /// Use a pre-created DbOperationsV2 instance (allows any backend implementation)
+    DbOps(Arc<DbOperationsV2>),
+}
 
 /// Configuration for Lambda context initialization
 #[derive(Clone)]
 pub struct LambdaConfig {
-    /// Optional custom storage path (defaults to /tmp/folddb)
-    pub storage_path: Option<PathBuf>,
+    /// Required storage configuration - either StorageConfig or pre-created DbOperationsV2
+    pub storage: LambdaStorage,
     /// Optional schema service URL
     pub schema_service_url: Option<String>,
     /// Optional AI configuration for query capabilities
@@ -20,7 +30,10 @@ pub struct LambdaConfig {
 impl std::fmt::Debug for LambdaConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LambdaConfig")
-            .field("storage_path", &self.storage_path)
+            .field("storage", &match &self.storage {
+                LambdaStorage::Config(cfg) => format!("Config({:?})", cfg),
+                LambdaStorage::DbOps(_) => "DbOps(<pre-created>)".to_string(),
+            })
             .field("schema_service_url", &self.schema_service_url)
             .field("ai_config", &self.ai_config)
             .field("logger", &self.logger.as_ref().map(|_| "<logger>"))
@@ -28,16 +41,8 @@ impl std::fmt::Debug for LambdaConfig {
     }
 }
 
-impl Default for LambdaConfig {
-    fn default() -> Self {
-        Self {
-            storage_path: None,
-            schema_service_url: None,
-            ai_config: None,
-            logger: None,
-        }
-    }
-}
+// Note: Default is not implemented because storage_config is required
+// Use LambdaConfig::new() or LambdaConfig::with_storage_config() instead
 
 /// AI Provider types
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,22 +77,70 @@ pub struct OllamaConfig {
 }
 
 impl LambdaConfig {
-    /// Create a new Lambda configuration with defaults
+    /// Create a new Lambda configuration with StorageConfig (Local or S3).
     ///
     /// # Example
     ///
     /// ```ignore
     /// use datafold::lambda::LambdaConfig;
+    /// use datafold::StorageConfig;
     ///
-    /// let config = LambdaConfig::new();
+    /// let config = LambdaConfig::new(
+    ///     StorageConfig::Local { path: PathBuf::from("/tmp/folddb") }
+    /// );
     /// ```
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(storage_config: StorageConfig) -> Self {
+        Self {
+            storage: LambdaStorage::Config(storage_config),
+            schema_service_url: None,
+            ai_config: None,
+            logger: None,
+        }
     }
 
-    /// Set a custom storage path (default: /tmp/folddb)
-    pub fn with_storage_path(mut self, path: PathBuf) -> Self {
-        self.storage_path = Some(path);
+    /// Create a new Lambda configuration with a pre-created DbOperationsV2.
+    /// 
+    /// This allows you to use any storage backend implementation (DynamoDB, custom, etc.)
+    /// by creating DbOperationsV2 yourself.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaConfig;
+    /// use datafold::db_operations::DbOperationsV2;
+    /// use std::sync::Arc;
+    ///
+    /// // Create your DbOperationsV2 with any backend
+    /// let db_ops = Arc::new(DbOperationsV2::from_dynamodb(client, table, Some(user_id)).await?);
+    /// let config = LambdaConfig::with_db_ops(db_ops);
+    /// ```
+    pub fn with_db_ops(db_ops: Arc<DbOperationsV2>) -> Self {
+        Self {
+            storage: LambdaStorage::DbOps(db_ops),
+            schema_service_url: None,
+            ai_config: None,
+            logger: None,
+        }
+    }
+
+    /// Set the storage configuration (replaces existing storage)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaConfig;
+    /// use datafold::{StorageConfig, S3Config};
+    ///
+    /// let s3_config = S3Config::new(
+    ///     "my-bucket".to_string(),
+    ///     "us-west-2".to_string(),
+    ///     "folddb".to_string()
+    /// );
+    /// let config = LambdaConfig::new(StorageConfig::Local { path: PathBuf::from("/tmp") })
+    ///     .with_storage_config(StorageConfig::S3 { config: s3_config });
+    /// ```
+    pub fn with_storage_config(mut self, storage_config: StorageConfig) -> Self {
+        self.storage = LambdaStorage::Config(storage_config);
         self
     }
 
@@ -178,52 +231,54 @@ impl LambdaConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::StorageConfig;
+    use std::path::PathBuf;
 
     #[test]
     fn test_lambda_config_creation() {
-        let config = LambdaConfig::new();
-        assert!(config.storage_path.is_none());
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/folddb") };
+        let config = LambdaConfig::new(storage_config);
         assert!(config.schema_service_url.is_none());
     }
 
     #[test]
-    fn test_lambda_config_default() {
-        let config = LambdaConfig::default();
-        assert!(config.storage_path.is_none());
-        assert!(config.schema_service_url.is_none());
-    }
-
-    #[test]
-    fn test_lambda_config_with_storage_path() {
-        let path = PathBuf::from("/tmp/custom_path");
-        let config = LambdaConfig::new().with_storage_path(path.clone());
-        assert_eq!(config.storage_path, Some(path));
+    fn test_lambda_config_with_storage_config() {
+        let storage_config1 = StorageConfig::Local { path: PathBuf::from("/tmp/test1") };
+        let storage_config2 = StorageConfig::Local { path: PathBuf::from("/tmp/test2") };
+        let config = LambdaConfig::new(storage_config1.clone())
+            .with_storage_config(storage_config2.clone());
+        
+        match &config.storage {
+            LambdaStorage::Config(StorageConfig::Local { path }) => {
+                assert_eq!(path, &PathBuf::from("/tmp/test2"));
+            }
+            _ => panic!("Expected Local storage config"),
+        }
     }
 
     #[test]
     fn test_lambda_config_with_schema_service_url() {
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/folddb") };
         let url = "https://schema.example.com".to_string();
-        let config = LambdaConfig::new().with_schema_service_url(url.clone());
+        let config = LambdaConfig::new(storage_config).with_schema_service_url(url.clone());
         assert_eq!(config.schema_service_url, Some(url));
     }
 
     #[test]
     fn test_lambda_config_builder_pattern() {
-        let path = PathBuf::from("/tmp/test");
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/test") };
         let url = "https://schema.example.com".to_string();
         
-        let config = LambdaConfig::new()
-            .with_storage_path(path.clone())
+        let config = LambdaConfig::new(storage_config)
             .with_schema_service_url(url.clone());
         
-        assert_eq!(config.storage_path, Some(path));
         assert_eq!(config.schema_service_url, Some(url));
     }
 
     #[test]
     fn test_lambda_config_debug_impl() {
-        let config = LambdaConfig::new()
-            .with_storage_path(PathBuf::from("/tmp/test"));
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/test") };
+        let config = LambdaConfig::new(storage_config);
         
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("LambdaConfig"));
@@ -231,29 +286,27 @@ mod tests {
 
     #[test]
     fn test_lambda_config_clone() {
-        let config1 = LambdaConfig::new()
-            .with_storage_path(PathBuf::from("/tmp/test"))
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/test") };
+        let config1 = LambdaConfig::new(storage_config)
             .with_schema_service_url("https://example.com".to_string());
         
         let config2 = config1.clone();
         
-        assert_eq!(config1.storage_path, config2.storage_path);
         assert_eq!(config1.schema_service_url, config2.schema_service_url);
     }
 
     #[test]
     fn test_lambda_config_with_both_options() {
-        let path = PathBuf::from("/tmp/lambda_test");
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/lambda_test") };
         let url = "https://schema.service.com".to_string();
         
         let config = LambdaConfig {
-            storage_path: Some(path.clone()),
+            storage: LambdaStorage::Config(storage_config.clone()),
             schema_service_url: Some(url.clone()),
             ai_config: None,
             logger: None,
         };
         
-        assert_eq!(config.storage_path, Some(path));
         assert_eq!(config.schema_service_url, Some(url));
         assert!(config.ai_config.is_none());
         assert!(config.logger.is_none());
@@ -261,7 +314,8 @@ mod tests {
 
     #[test]
     fn test_lambda_config_with_openrouter() {
-        let config = LambdaConfig::new()
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/folddb") };
+        let config = LambdaConfig::new(storage_config)
             .with_openrouter(
                 "test-key".to_string(),
                 "test-model".to_string()
@@ -276,7 +330,8 @@ mod tests {
 
     #[test]
     fn test_lambda_config_with_ollama() {
-        let config = LambdaConfig::new()
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/folddb") };
+        let config = LambdaConfig::new(storage_config)
             .with_ollama(
                 "http://localhost:11434".to_string(),
                 "llama2".to_string()
@@ -291,12 +346,11 @@ mod tests {
 
     #[test]
     fn test_lambda_config_builder_chain() {
-        let config = LambdaConfig::new()
-            .with_storage_path(PathBuf::from("/tmp/test"))
+        let storage_config = StorageConfig::Local { path: PathBuf::from("/tmp/test") };
+        let config = LambdaConfig::new(storage_config)
             .with_schema_service_url("https://schema.example.com".to_string())
             .with_openrouter("key".to_string(), "model".to_string());
         
-        assert_eq!(config.storage_path, Some(PathBuf::from("/tmp/test")));
         assert_eq!(config.schema_service_url, Some("https://schema.example.com".to_string()));
         assert!(config.ai_config.is_some());
     }

@@ -2,13 +2,15 @@
 
 use crate::datafold_node::{DataFoldNode, NodeConfig};
 use crate::datafold_node::llm_query::service::LlmQueryService;
+use crate::fold_db_core::FoldDB;
 use crate::ingestion::{
     create_progress_tracker, IngestionConfig, IngestionError, ProgressTracker,
 };
-use crate::lambda::config::{AIConfig, AIProvider, LambdaConfig};
+use crate::lambda::config::{AIConfig, AIProvider, LambdaConfig, LambdaStorage};
 use crate::lambda::logging::{LogBridge, Logger};
+use crate::storage::StorageConfig;
 use once_cell::sync::OnceCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Lambda context that manages all required state.
 ///
@@ -50,13 +52,41 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn init(config: LambdaConfig) -> Result<(), IngestionError> {
-        // Use custom storage path or default to /tmp/folddb
-        let storage_path = config
-            .storage_path
-            .unwrap_or_else(|| std::env::temp_dir().join("folddb"));
-
-        std::fs::create_dir_all(&storage_path)
-            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+        // Create FoldDB based on storage configuration
+        let (db, storage_path) = match &config.storage {
+            LambdaStorage::Config(storage_config) => {
+                // Create FoldDB from StorageConfig
+                let (fold_db, path) = match storage_config {
+                    StorageConfig::Local { path } => {
+                        // Ensure directory exists for local storage
+                        std::fs::create_dir_all(path)
+                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+                        
+                        let path_str = path
+                            .to_str()
+                            .ok_or_else(|| IngestionError::StorageError("Invalid storage path".to_string()))?;
+                        
+                        let fold_db = FoldDB::new(path_str).await
+                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+                        (fold_db, path.clone())
+                    }
+                    StorageConfig::S3 { config: s3_config } => {
+                        let fold_db = FoldDB::new_with_s3(s3_config.clone()).await
+                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+                        (fold_db, s3_config.local_path.clone())
+                    }
+                };
+                (Arc::new(Mutex::new(fold_db)), path)
+            }
+            LambdaStorage::DbOps(db_ops) => {
+                // Create FoldDB from pre-created DbOperationsV2
+                // Use a placeholder path for NodeConfig (not used when db_ops is provided)
+                let db_path = "custom_backend".to_string();
+                let fold_db = FoldDB::new_with_db_ops(Arc::clone(db_ops), &db_path).await
+                    .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+                (Arc::new(Mutex::new(fold_db)), std::path::PathBuf::from(db_path))
+            }
+        };
 
         // Initialize node config
         let mut node_config = NodeConfig::new(storage_path);
@@ -66,8 +96,8 @@ impl LambdaContext {
             node_config = node_config.with_schema_service_url(&schema_url);
         }
 
-        // Create DataFold node
-        let node = DataFoldNode::new(node_config).await
+        // Create DataFold node with pre-created database
+        let node = DataFoldNode::new_with_db(node_config, db).await
             .map_err(|e| IngestionError::InvalidInput(e.to_string()))?;
 
         // Create progress tracker

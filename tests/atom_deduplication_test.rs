@@ -54,19 +54,21 @@ fn test_atom_content_based_uuid() {
     );
 }
 
-#[test]
-fn test_atom_deduplication_in_db() {
-    let db_ops = TestDatabaseFactory::create_temp_db_ops().expect("Failed to create DB");
+#[tokio::test]
+async fn test_atom_deduplication_in_db() {
+    let db_ops = TestDatabaseFactory::create_temp_db_ops().await.expect("Failed to create DB");
 
     // Create the first atom
     let content = json!({"title": "Duplicate Test", "body": "This is duplicate content"});
     let atom1 = db_ops
-        .create_atom("TestSchema", "user1".to_string(), None, content.clone(), None)
+        .create_and_store_atom_for_mutation_deferred("TestSchema", "user1", content.clone(), None)
+        .await
         .expect("Failed to create atom1");
 
     // Try to create a second atom with the same content
     let atom2 = db_ops
-        .create_atom("TestSchema", "user2".to_string(), None, content.clone(), None)
+        .create_and_store_atom_for_mutation_deferred("TestSchema", "user2", content.clone(), None)
+        .await
         .expect("Failed to create atom2");
 
     // Both should have the same UUID (deduplication)
@@ -85,9 +87,14 @@ fn test_atom_deduplication_in_db() {
     );
 
     // Verify only one atom is stored in the database
+    // Use the same pattern as in atom_operations_v2.rs
     let atom_key = format!("atom:{}", atom1.uuid());
-    let stored_atom: Option<Atom> = db_ops
-        .get_item(&atom_key)
+    // atoms_store() returns &Arc<TypedKvStore>, dereference to get TypedKvStore which implements TypedStore
+    use datafold::storage::traits::TypedStore;
+    let stored_atom: Option<Atom> = (**db_ops.atoms_store())
+        .get_item::<Atom>(&atom_key)
+        .await
+        .map_err(|e| datafold::schema::SchemaError::InvalidData(format!("Failed to check existing atom: {}", e)))
         .expect("Failed to get atom");
 
     assert!(stored_atom.is_some(), "Atom should be stored in database");

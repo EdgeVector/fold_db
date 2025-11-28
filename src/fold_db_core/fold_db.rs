@@ -37,7 +37,8 @@ pub struct FoldDB {
     /// Event monitor for system-wide observability
     pub(crate) event_monitor: Arc<EventMonitor>,
     /// Transform orchestrator for managing transform execution
-    pub(crate) transform_orchestrator: Arc<TransformOrchestrator>,
+    /// Optional for backends that don't support orchestrator_tree (e.g., DynamoDB)
+    pub(crate) transform_orchestrator: Option<Arc<TransformOrchestrator>>,
     /// Mutation manager for handling all mutation operations
     pub(crate) mutation_manager: MutationManager,
     /// Index event handler for background indexing
@@ -129,6 +130,28 @@ impl FoldDB {
         Self::initialize_from_db(db, &local_path_string, Some(s3_storage)).await
     }
 
+    /// Creates a new FoldDB instance with a pre-created DbOperationsV2.
+    /// 
+    /// This allows you to use any storage backend implementation (DynamoDB, custom, etc.)
+    /// by creating DbOperationsV2 yourself and passing it in.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `db_ops` - Pre-created DbOperationsV2 instance with your chosen storage backend
+    /// * `db_path` - Path identifier for logging/debugging (can be any string)
+    pub async fn new_with_db_ops(
+        db_ops: Arc<DbOperationsV2>,
+        db_path: &str,
+    ) -> Result<Self, StorageError> {
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "🔄 Using DbOperationsV2 with custom storage backend"
+        );
+        
+        Self::initialize_from_db_ops(db_ops, db_path, None).await
+    }
+
     /// Common initialization logic shared by both new() and new_with_s3()
     /// This method initializes all FoldDB components from an already-opened sled database
     /// 
@@ -154,6 +177,17 @@ impl FoldDB {
             "Sled"
         );
 
+        Self::initialize_from_db_ops(db_ops, db_path, s3_storage).await
+    }
+
+    /// Common initialization logic that creates all FoldDB components from DbOperationsV2
+    /// 
+    /// This is used by both initialize_from_db (Sled) and new_with_db_ops (custom backends)
+    async fn initialize_from_db_ops(
+        db_ops: Arc<DbOperationsV2>,
+        db_path: &str,
+        s3_storage: Option<Arc<S3SyncedStorage>>,
+    ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
 
@@ -190,16 +224,28 @@ impl FoldDB {
         info!("Created QueryExecutor for query operations");
 
         // Create TransformOrchestrator for managing transform execution
-        let orchestrator_tree = db_ops.orchestrator_tree.clone()
-            .ok_or_else(|| StorageError::BackendError("Orchestrator tree not available (only supported with Sled backend)".to_string()))?;
-        
-        let transform_orchestrator = Arc::new(TransformOrchestrator::new(
-            Arc::clone(&transform_manager),
-            orchestrator_tree,
-            Arc::clone(&message_bus),
-            Arc::clone(&db_ops),
-        ));
-        info!("Created TransformOrchestrator for transform execution");
+        // Note: orchestrator_tree is only available with Sled backend
+        // For non-Sled backends (DynamoDB, etc.), transforms will be limited
+        let transform_orchestrator = if let Some(orchestrator_tree) = db_ops.orchestrator_tree.clone() {
+            let orchestrator = Arc::new(TransformOrchestrator::new(
+                Arc::clone(&transform_manager),
+                orchestrator_tree,
+                Arc::clone(&message_bus),
+                Arc::clone(&db_ops),
+            ));
+            info!("Created TransformOrchestrator for transform execution");
+            Some(orchestrator)
+        } else {
+            // For non-Sled backends, orchestrator is optional
+            // Transform execution will be limited until orchestrator_tree support is added
+            log_feature!(
+                LogFeature::Database,
+                warn,
+                "⚠️  TransformOrchestrator not available (orchestrator_tree only supported with Sled backend). \
+                 Transforms will have limited functionality."
+            );
+            None
+        };
 
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
@@ -221,7 +267,7 @@ impl FoldDB {
             Arc::clone(&db_ops),
         );
         info!("Started IndexEventHandler for background indexing");
-        
+
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
@@ -353,7 +399,8 @@ impl FoldDB {
     }
 
     /// Get the transform orchestrator for managing transform execution
-    pub fn transform_orchestrator(&self) -> Arc<TransformOrchestrator> {
-        Arc::clone(&self.transform_orchestrator)
+    /// Returns None if orchestrator is not available (e.g., with DynamoDB backend)
+    pub fn transform_orchestrator(&self) -> Option<Arc<TransformOrchestrator>> {
+        self.transform_orchestrator.as_ref().map(Arc::clone)
     }
 }

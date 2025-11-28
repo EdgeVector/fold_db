@@ -880,8 +880,8 @@ mod tests {
     // REMOVED: create_test_ingestion_core - dead code marked with #[allow(dead_code)]
     // This duplicated test setup logic available in testing_utils module
 
-    #[test]
-    fn test_ingestion_core_new_with_ollama_provider() {
+    #[tokio::test]
+    async fn test_ingestion_core_new_with_ollama_provider() {
         let config = IngestionConfig {
             provider: AIProvider::Ollama,
             ..Default::default()
@@ -890,8 +890,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path();
 
-        let schema_core = Arc::new(SchemaCore::new_for_testing().unwrap());
-        let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).unwrap()));
+        let schema_core = Arc::new(SchemaCore::new_for_testing().await.unwrap());
+        let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).await.unwrap()));
 
         let schema_client = SchemaServiceClient::new("http://localhost:0");
         let ingestion_core =
@@ -901,8 +901,8 @@ mod tests {
         assert!(ingestion_core.openrouter_service.is_none());
     }
 
-    #[test]
-    fn test_validate_input() {
+    #[tokio::test]
+    async fn test_validate_input() {
         // Create isolated test setup for this test
         let mut config = IngestionConfig::from_env_allow_empty();
         config.enabled = true;
@@ -916,7 +916,7 @@ mod tests {
             .to_string();
 
         // Try to create components with better error handling
-        let schema_core = match SchemaCore::new_for_testing() {
+        let schema_core = match SchemaCore::new_for_testing().await {
             Ok(core) => Arc::new(core),
             Err(_) => {
                 warn!("Skipping test_validate_input: Could not create schema core");
@@ -924,7 +924,7 @@ mod tests {
             }
         };
 
-        let fold_db = match FoldDB::new(&test_path) {
+        let fold_db = match FoldDB::new(&test_path).await {
             Ok(db) => Arc::new(Mutex::new(db)),
             Err(_) => {
                 warn!("Skipping test_validate_input: Could not create database");

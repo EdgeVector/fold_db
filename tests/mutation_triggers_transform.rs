@@ -6,14 +6,14 @@ use tempfile::TempDir;
 use std::time::Duration;
 
 /// Test to verify that a BlogPost mutation triggers the appropriate transforms
-#[test]
-fn test_blogpost_mutation_triggers_transforms() {
+#[tokio::test]
+async fn test_blogpost_mutation_triggers_transforms() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema (source schema)
     let blogpost_schema_json = json!({
@@ -34,6 +34,7 @@ fn test_blogpost_mutation_triggers_transforms() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Load the BlogPostWordIndex schema with transform_fields
@@ -57,6 +58,7 @@ fn test_blogpost_mutation_triggers_transforms() {
         .expect("Failed to serialize BlogPostWordIndex schema");
     
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for schema registration and transform registration to complete
@@ -65,8 +67,10 @@ fn test_blogpost_mutation_triggers_transforms() {
     // Approve both schemas so transforms can be triggered
     use datafold::schema::SchemaState;
     fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPost schema");
     fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPostWordIndex schema");
     
     // Get message bus for publishing and subscribing to events
@@ -159,14 +163,14 @@ fn test_blogpost_mutation_triggers_transforms() {
 }
 
 /// Test to verify that only affected fields trigger their corresponding transforms
-#[test]
-fn test_partial_mutation_triggers_subset_of_transforms() {
+#[tokio::test]
+async fn test_partial_mutation_triggers_subset_of_transforms() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema
     let blogpost_schema_json = json!({
@@ -187,6 +191,7 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Load the BlogPostWordIndex schema
@@ -210,6 +215,7 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
         .expect("Failed to serialize BlogPostWordIndex schema");
     
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for schema registration
@@ -218,8 +224,10 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
     // Approve both schemas so transforms can be triggered
     use datafold::schema::SchemaState;
     fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPost schema");
     fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPostWordIndex schema");
     
     // Get message bus
@@ -270,14 +278,14 @@ fn test_partial_mutation_triggers_subset_of_transforms() {
 }
 
 /// Test to verify that the word transform is triggered when content field changes
-#[test]
-fn test_content_mutation_triggers_word_transform() {
+#[tokio::test]
+async fn test_content_mutation_triggers_word_transform() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load schemas
     let blogpost_schema_json = json!({
@@ -296,7 +304,7 @@ fn test_content_mutation_triggers_word_transform() {
     
     fold_db.schema_manager().load_schema_from_json(
         &serde_json::to_string(&blogpost_schema_json).unwrap()
-    ).expect("Failed to load BlogPost schema");
+    ).await.expect("Failed to load BlogPost schema");
     
     let wordindex_schema_json = json!({
         "name": "BlogPostWordIndex",
@@ -316,7 +324,7 @@ fn test_content_mutation_triggers_word_transform() {
     
     fold_db.schema_manager().load_schema_from_json(
         &serde_json::to_string(&wordindex_schema_json).unwrap()
-    ).expect("Failed to load BlogPostWordIndex schema");
+    ).await.expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for registration
     std::thread::sleep(Duration::from_millis(50));
@@ -324,8 +332,10 @@ fn test_content_mutation_triggers_word_transform() {
     // Approve both schemas so transforms can be triggered
     use datafold::schema::SchemaState;
     fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPost schema");
     fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPostWordIndex schema");
     
     let message_bus = fold_db.message_bus();

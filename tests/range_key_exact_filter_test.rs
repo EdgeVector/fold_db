@@ -22,6 +22,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     let config = NodeConfig::new(temp_db_path.into())
         .with_schema_service_url("test://mock");
     let node = DataFoldNode::new(config)
+        .await
         .expect("Failed to create DataFoldNode");
     
     // Load BlogPost schema from file
@@ -33,6 +34,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     {
         let mut fold_db = node.get_fold_db().expect("Failed to get FoldDB");
         fold_db.load_schema_from_file(&blogpost_schema_path)
+            .await
             .expect("Failed to load BlogPost schema");
     }
     
@@ -165,6 +167,7 @@ async fn test_range_key_set_in_query_object() {
     let config = NodeConfig::new(temp_db_path.into())
         .with_schema_service_url("test://mock");
     let node = DataFoldNode::new(config)
+        .await
         .expect("Failed to create DataFoldNode");
     
     // Load BlogPost schema from file
@@ -176,6 +179,7 @@ async fn test_range_key_set_in_query_object() {
     {
         let mut fold_db = node.get_fold_db().expect("Failed to get FoldDB");
         fold_db.load_schema_from_file(&blogpost_schema_path)
+            .await
             .expect("Failed to load BlogPost schema");
     }
     

@@ -9,14 +9,14 @@ use std::time::Duration;
 /// 1. Load schemas (BlogPost and BlogPostWordIndex)
 /// 2. Approve the BlogPostWordIndex schema
 /// 3. Verify transforms are registered and visible
-#[test]
-fn test_blogpost_wordindex_approval_and_transform_visibility() {
+#[tokio::test]
+async fn test_blogpost_wordindex_approval_and_transform_visibility() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema first (source schema)
     let blogpost_schema_json = json!({
@@ -38,6 +38,7 @@ fn test_blogpost_wordindex_approval_and_transform_visibility() {
     
     // Load BlogPost schema into the database
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Load the BlogPostWordIndex schema with transform_fields
@@ -63,6 +64,7 @@ fn test_blogpost_wordindex_approval_and_transform_visibility() {
     // Load BlogPostWordIndex schema into the database
     // This should trigger the registration of declarative transforms
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait a moment for async event processing
@@ -106,6 +108,7 @@ fn test_blogpost_wordindex_approval_and_transform_visibility() {
     
     // Now approve the BlogPostWordIndex schema
     fold_db.schema_manager().set_schema_state("BlogPostWordIndex", datafold::schema::SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPostWordIndex schema");
     
     // Wait a moment for state change to be processed
@@ -161,14 +164,14 @@ fn test_blogpost_wordindex_approval_and_transform_visibility() {
 }
 
 /// Test to verify that the approval process works with the actual schema file
-#[test]
-fn test_blogpost_wordindex_approval_from_file() {
+#[tokio::test]
+async fn test_blogpost_wordindex_approval_from_file() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let mut fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let mut fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema first
     let blogpost_schema_json = json!({
@@ -189,6 +192,7 @@ fn test_blogpost_wordindex_approval_from_file() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Load the BlogPostWordIndex schema from the actual file
@@ -201,6 +205,7 @@ fn test_blogpost_wordindex_approval_from_file() {
     
     // Load the schema from file - this should trigger transform registration
     fold_db.load_schema_from_file(&wordindex_schema_path)
+        .await
         .expect("Failed to load BlogPostWordIndex schema from file");
     
     // Wait for async event processing
@@ -237,6 +242,7 @@ fn test_blogpost_wordindex_approval_from_file() {
     
     // Now approve the schema
     fold_db.schema_manager().set_schema_state("BlogPostWordIndex", datafold::schema::SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPostWordIndex schema from file");
     
     // Wait for state change

@@ -164,7 +164,9 @@ impl EventMonitor {
         let schema_approved_thread = spawn_event_monitor(
             message_bus.subscribe::<SchemaApproved>(),
             move |event: SchemaApproved| {
-                if let Err(e) = handle_schema_approved(event, &backfill_tracker_clone, &transform_manager_clone) {
+                // Create a runtime for async operations
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                if let Err(e) = rt.block_on(handle_schema_approved(event, &backfill_tracker_clone, &transform_manager_clone)) {
                     log::error!("Failed to handle schema approval: {}", e);
                 }
             },

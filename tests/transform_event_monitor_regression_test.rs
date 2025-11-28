@@ -6,8 +6,8 @@ use tempfile::TempDir;
 /// Test to ensure that duplicate transform registration is prevented
 /// This test verifies the regression fix for preventing re-registration of already existing transforms
 /// by loading the same schema twice and ensuring no duplicate transforms are created
-#[test]
-fn test_duplicate_transform_registration_prevention() {
+#[tokio::test]
+async fn test_duplicate_transform_registration_prevention() {
     use serde_json::json;
     
     // Create temporary directory for test database
@@ -15,7 +15,7 @@ fn test_duplicate_transform_registration_prevention() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
 
     // Load the BlogPost schema first (source schema)
@@ -37,6 +37,7 @@ fn test_duplicate_transform_registration_prevention() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
 
     // Load the BlogPostWordIndex schema with transform_fields (first time)
@@ -61,6 +62,7 @@ fn test_duplicate_transform_registration_prevention() {
     
     // First load of BlogPostWordIndex schema
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for async event processing
@@ -81,6 +83,7 @@ fn test_duplicate_transform_registration_prevention() {
 
     // Now load the same schema again (should be prevented from duplicate registration)
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema again");
     
     // Wait for async event processing
@@ -114,8 +117,8 @@ fn test_duplicate_transform_registration_prevention() {
 
 /// Test to verify that transform registration works correctly through schema loading
 /// This test ensures the TransformEventMonitor can handle valid transform registrations
-#[test]
-fn test_transform_registration_through_schema_loading() {
+#[tokio::test]
+async fn test_transform_registration_through_schema_loading() {
     use serde_json::json;
     
     // Create temporary directory for test database
@@ -123,7 +126,7 @@ fn test_transform_registration_through_schema_loading() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
 
     // Load the BlogPost schema first (source schema)
@@ -145,6 +148,7 @@ fn test_transform_registration_through_schema_loading() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
 
     // Load the BlogPostWordIndex schema with transform_fields
@@ -169,6 +173,7 @@ fn test_transform_registration_through_schema_loading() {
     
     // Load BlogPostWordIndex schema - this should trigger transform registration
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for async event processing
