@@ -25,6 +25,8 @@
 #[cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger};
 #[cfg(feature = "lambda")]
+use datafold::storage::StorageConfig;
+#[cfg(feature = "lambda")]
 use lambda_runtime::{run, service_fn, Error, LambdaEvent};
 #[cfg(feature = "lambda")]
 use serde_json::{json, Value};
@@ -80,7 +82,10 @@ async fn main() -> Result<(), Error> {
 
     // Create Lambda configuration with StdoutLogger
     // In production, replace StdoutLogger with your custom logger (e.g., DynamoDbLogger)
-    let config = LambdaConfig::new()
+    let storage_config = StorageConfig::Local { 
+        path: std::env::temp_dir() 
+    };
+    let config = LambdaConfig::new(storage_config)
         .with_logger(Arc::new(StdoutLogger));
 
     // Initialize Lambda context once (reused across invocations)

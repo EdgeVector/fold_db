@@ -19,7 +19,7 @@ async fn test_node_loads_schemas_for_testing_on_startup() {
     };
     
     // Attempt to create the node - should fail without schema service URL
-    let result = DataFoldNode::new(config);
+    let result = DataFoldNode::new(config).await;
     
     // Verify that node creation fails
     assert!(
@@ -54,6 +54,7 @@ async fn test_node_new_loads_schemas_for_testing() {
     
     // Create a new node using DataFoldNode::new() with mock service
     let node = DataFoldNode::new(config)
+        .await
         .expect("Failed to create DataFoldNode with mock schema service");
     
     // Get the fold_db to verify it was created successfully

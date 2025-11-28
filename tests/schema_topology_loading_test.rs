@@ -1,12 +1,12 @@
 /// Test to verify that schemas with field_topologies can be loaded successfully
 use datafold::schema::SchemaCore;
 
-#[test]
-fn test_load_blogpost_schema_with_topology() {
-    let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
+#[tokio::test]
+async fn test_load_blogpost_schema_with_topology() {
+    let schema_core = SchemaCore::new_for_testing().await.expect("Failed to create SchemaCore");
     
     // Load the BlogPost schema file
-    let result = schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPost.json");
+    let result = schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPost.json").await;
     
     match &result {
         Ok(()) => {
@@ -35,16 +35,17 @@ fn test_load_blogpost_schema_with_topology() {
     }
 }
 
-#[test]
-fn test_load_blogpost_word_index_transform_with_topology() {
-    let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
+#[tokio::test]
+async fn test_load_blogpost_word_index_transform_with_topology() {
+    let schema_core = SchemaCore::new_for_testing().await.expect("Failed to create SchemaCore");
     
     // First load the source schema (BlogPost)
     schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPost.json")
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Then load the transform schema (BlogPostWordIndex)
-    let result = schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPostWordIndex.json");
+    let result = schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPostWordIndex.json").await;
     
     match &result {
         Ok(()) => {
@@ -73,12 +74,13 @@ fn test_load_blogpost_word_index_transform_with_topology() {
     }
 }
 
-#[test]
-fn test_load_all_available_schemas() {
-    let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
+#[tokio::test]
+async fn test_load_all_available_schemas() {
+    let schema_core = SchemaCore::new_for_testing().await.expect("Failed to create SchemaCore");
     
     // Try to load all schemas from tests/schemas_for_testing directory
     let loaded_count = schema_core.load_schemas_from_directory("tests/schemas_for_testing")
+        .await
         .expect("Failed to load schemas from directory");
     
     println!("📋 Loaded {} schemas from tests/schemas_for_testing/", loaded_count);
@@ -103,11 +105,12 @@ fn test_load_all_available_schemas() {
     println!("✅ All schemas loaded successfully");
 }
 
-#[test]
-fn test_schema_with_array_topology() {
-    let schema_core = SchemaCore::new_for_testing().expect("Failed to create SchemaCore");
+#[tokio::test]
+async fn test_schema_with_array_topology() {
+    let schema_core = SchemaCore::new_for_testing().await.expect("Failed to create SchemaCore");
     
     schema_core.load_schema_from_file("tests/schemas_for_testing/BlogPost.json")
+        .await
         .expect("Failed to load BlogPost schema");
     
     let schemas = schema_core.get_schemas().expect("Failed to get schemas");
@@ -130,8 +133,8 @@ fn test_schema_with_array_topology() {
     }
 }
 
-#[test]
-fn test_schema_json_roundtrip() {
+#[tokio::test]
+async fn test_schema_json_roundtrip() {
     use datafold::schema::types::DeclarativeSchemaDefinition;
     
     // Read the BlogPost schema file

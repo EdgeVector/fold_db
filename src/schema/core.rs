@@ -451,17 +451,18 @@ mod tests {
         .to_string()
     }
 
-    #[test]
-    fn new_for_testing_starts_with_empty_schemas() {
-        let core = SchemaCore::new_for_testing().expect("init core");
+    #[tokio::test]
+    async fn new_for_testing_starts_with_empty_schemas() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
         let schemas = core.get_schemas().expect("get_schemas");
         assert!(schemas.is_empty(), "expected no schemas at start");
     }
 
-    #[test]
-    fn load_schema_from_json_adds_available_schema() {
-        let core = SchemaCore::new_for_testing().expect("init core");
+    #[tokio::test]
+    async fn load_schema_from_json_adds_available_schema() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
         core.load_schema_from_json(&blogpost_schema_json())
+            .await
             .expect("load blogpost");
 
         let schemas = core.get_schemas().expect("get_schemas");
@@ -474,10 +475,11 @@ mod tests {
         assert_eq!(states.get("BlogPost"), Some(&SchemaState::Available));
     }
 
-    #[test]
-    fn get_schemas_with_states_returns_default_available() {
-        let core = SchemaCore::new_for_testing().expect("init core");
+    #[tokio::test]
+    async fn get_schemas_with_states_returns_default_available() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
         core.load_schema_from_json(&blogpost_schema_json())
+            .await
             .expect("load blogpost");
 
         let schemas_with_states = core.get_schemas_with_states().expect("get with states");
@@ -489,12 +491,14 @@ mod tests {
         assert_eq!(schema_entry.state, SchemaState::Available);
     }
 
-    #[test]
-    fn load_multiple_schemas_from_json() {
-        let core = SchemaCore::new_for_testing().expect("init core");
+    #[tokio::test]
+    async fn load_multiple_schemas_from_json() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
         core.load_schema_from_json(&blogpost_schema_json())
+            .await
             .expect("load blogpost");
         core.load_schema_from_json(&wordindex_schema_json())
+            .await
             .expect("load wordindex");
 
         let schemas = core.get_schemas().expect("get_schemas");
@@ -521,12 +525,13 @@ mod tests {
         assert!(schemas.contains_key("BlogPost"));
     }
 
-    #[test]
-    fn blogpost_wordindex_sets_hashrange_keyconfig() {
+    #[tokio::test]
+    async fn blogpost_wordindex_sets_hashrange_keyconfig() {
         use crate::schema::types::SchemaType;
 
-        let core = SchemaCore::new_for_testing().expect("init core");
+        let core = SchemaCore::new_for_testing().await.expect("init core");
         core.load_schema_from_json(&wordindex_schema_json())
+            .await
             .expect("load wordindex");
 
         let schemas = core.get_schemas().expect("get_schemas");
@@ -541,9 +546,9 @@ mod tests {
         assert_eq!(key.range_field.as_deref(), Some("publish_date"));
     }
 
-    #[test]
-    fn load_wordindex_schema_from_file() {
-        let core = SchemaCore::new_for_testing().expect("init core");
+    #[tokio::test]
+    async fn load_wordindex_schema_from_file() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("BlogPostWordIndex.json");
         std::fs::write(&path, wordindex_schema_json()).expect("write schema json");

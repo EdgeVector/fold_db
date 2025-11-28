@@ -1,4 +1,5 @@
 use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel};
+use datafold::StorageConfig;
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
@@ -71,8 +72,8 @@ async fn test_lambda_json_ingestion_with_logging() {
     let logger_clone = test_logger.clone();
     
     // Initialize Lambda context with test logger
-    let config = LambdaConfig::new()
-        .with_storage_path(temp_dir.clone())
+    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
+    let config = LambdaConfig::new(storage_config)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(test_logger.clone()));
     
@@ -292,8 +293,8 @@ async fn test_lambda_context_without_logger_throws_error() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_no_logger_test_{}", uuid::Uuid::new_v4()));
     
     // Try to initialize WITHOUT a logger - should fail
-    let config = LambdaConfig::new()
-        .with_storage_path(temp_dir.clone())
+    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
+    let config = LambdaConfig::new(storage_config)
         .with_schema_service_url("https://schema.example.com".to_string());
         // Note: NO .with_logger() call!
     

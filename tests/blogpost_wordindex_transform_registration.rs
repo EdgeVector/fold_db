@@ -3,14 +3,14 @@ use serde_json::json;
 use tempfile::TempDir;
 
 /// Test to verify that loading the BlogPostWordIndex schema properly registers declarative transforms
-#[test]
-fn test_blogpost_wordindex_transform_registration() {
+#[tokio::test]
+async fn test_blogpost_wordindex_transform_registration() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema first (source schema)
     let blogpost_schema_json = json!({
@@ -32,6 +32,7 @@ fn test_blogpost_wordindex_transform_registration() {
     
     // Load BlogPost schema into the database
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Load the BlogPostWordIndex schema with transform_fields
@@ -57,6 +58,7 @@ fn test_blogpost_wordindex_transform_registration() {
     // Load BlogPostWordIndex schema into the database
     // This should trigger the registration of declarative transforms
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait a moment for async event processing
@@ -140,6 +142,7 @@ fn test_blogpost_wordindex_transform_registration() {
         
         // Verify that the transform has the correct key configuration by looking up the schema
         let schema = transform_manager.db_ops.get_schema(transform.get_schema_name())
+            .await
             .expect("Failed to get schema")
             .expect("Schema should exist");
         assert!(schema.key.is_some(), "Transform '{}' should have key configuration", transform_id);
@@ -152,14 +155,14 @@ fn test_blogpost_wordindex_transform_registration() {
 }
 
 /// Test to verify that the declarative transform registration works with the actual schema file
-#[test]
-fn test_blogpost_wordindex_from_file() {
+#[tokio::test]
+async fn test_blogpost_wordindex_from_file() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let mut fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let mut fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema first
     let blogpost_schema_json = json!({
@@ -180,6 +183,7 @@ fn test_blogpost_wordindex_from_file() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Load the BlogPostWordIndex schema from the actual file
@@ -192,6 +196,7 @@ fn test_blogpost_wordindex_from_file() {
     
     // Load the schema from file - this should trigger transform registration
     fold_db.load_schema_from_file(&wordindex_schema_path)
+        .await
         .expect("Failed to load BlogPostWordIndex schema from file");
     
     // Wait for async event processing

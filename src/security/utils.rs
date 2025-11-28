@@ -59,7 +59,7 @@ impl SecurityManager {
     }
 
     /// Register the system-wide public key
-    pub fn register_system_public_key(
+    pub async fn register_system_public_key(
         &self,
         request: KeyRegistrationRequest,
     ) -> SecurityResult<KeyRegistrationResponse> {
@@ -86,7 +86,7 @@ impl SecurityManager {
         }
 
         // Register with the verifier
-        self.verifier.register_system_public_key(key_info.clone())?;
+        self.verifier.register_system_public_key(key_info.clone()).await?;
 
         Ok(KeyRegistrationResponse {
             success: true,
@@ -177,8 +177,8 @@ impl SecurityManager {
     }
 
     /// Remove the system public key
-    pub fn remove_system_public_key(&self) -> SecurityResult<()> {
-        self.verifier.remove_system_public_key()
+    pub async fn remove_system_public_key(&self) -> SecurityResult<()> {
+        self.verifier.remove_system_public_key().await
     }
 }
 
@@ -390,8 +390,8 @@ mod tests {
     use super::*;
     use crate::security::Ed25519KeyPair;
 
-    #[test]
-    fn test_security_manager() {
+    #[tokio::test]
+    async fn test_security_manager() {
         // Test with default config (no encryption)
         let config = crate::security::SecurityConfig {
             require_tls: true,
@@ -415,13 +415,14 @@ mod tests {
 
         let response = manager
             .register_system_public_key(registration_request)
+            .await
             .unwrap();
         assert!(response.success);
         assert!(response.public_key_id.is_some());
     }
 
-    #[test]
-    fn test_security_middleware() {
+    #[tokio::test]
+    async fn test_security_middleware() {
         // Test with default config
         let config = crate::security::SecurityConfig {
             require_tls: true,
@@ -446,6 +447,7 @@ mod tests {
 
         let response = manager
             .register_system_public_key(registration_request)
+            .await
             .unwrap();
         let _public_key_id = response.public_key_id.unwrap();
 

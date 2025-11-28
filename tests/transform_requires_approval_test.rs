@@ -8,14 +8,14 @@ use std::time::Duration;
 
 /// Test to verify that TransformTriggered events are NOT emitted for unapproved transforms
 /// This is an optimization that prevents unnecessary event traffic and execution attempts
-#[test]
-fn test_transform_requires_approval_to_execute() {
+#[tokio::test]
+async fn test_transform_requires_approval_to_execute() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema (source schema) and approve it
     let blogpost_schema_json = json!({
@@ -36,10 +36,12 @@ fn test_transform_requires_approval_to_execute() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Approve the BlogPost schema
     fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPost schema");
     
     // Load the BlogPostWordIndex schema with transform_fields
@@ -63,6 +65,7 @@ fn test_transform_requires_approval_to_execute() {
         .expect("Failed to serialize BlogPostWordIndex schema");
     
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for schema registration and transform registration to complete
@@ -155,14 +158,14 @@ fn test_transform_requires_approval_to_execute() {
 }
 
 /// Test to verify that transforms DO execute when target schema IS approved
-#[test]
-fn test_transform_executes_when_approved() {
+#[tokio::test]
+async fn test_transform_executes_when_approved() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema (source schema) and approve it
     let blogpost_schema_json = json!({
@@ -183,10 +186,12 @@ fn test_transform_executes_when_approved() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Approve the BlogPost schema
     fold_db.schema_manager().set_schema_state("BlogPost", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPost schema");
     
     // Load the BlogPostWordIndex schema with transform_fields
@@ -210,10 +215,12 @@ fn test_transform_executes_when_approved() {
         .expect("Failed to serialize BlogPostWordIndex schema");
     
     fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Approve the BlogPostWordIndex schema
     fold_db.schema_manager().set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+        .await
         .expect("Failed to approve BlogPostWordIndex schema");
     
     // Wait for schema registration and transform registration to complete

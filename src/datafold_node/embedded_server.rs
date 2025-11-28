@@ -140,7 +140,7 @@ mod tests {
         config.schema_service_url = Some("mock://test".to_string());
         
         // Create the node
-        let node = DataFoldNode::new(config).unwrap();
+        let node = DataFoldNode::new(config).await.unwrap();
         
         // Use a random high port to avoid conflicts
         use rand::Rng;

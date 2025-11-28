@@ -14,8 +14,8 @@ use tempfile::TempDir;
 /// Usage:
 ///     cargo test transform_persistence_test -- --nocapture
 
-#[test]
-fn test_transform_registration_persistence_across_restart() {
+#[tokio::test]
+async fn test_transform_registration_persistence_across_restart() {
     // Transform Persistence Test - Cross Restart
 
     // Create separate temporary directories for each database instance to avoid lock issues
@@ -32,7 +32,7 @@ fn test_transform_registration_persistence_across_restart() {
     // PHASE 1: Initial Node Startup and Transform Registration
     
     // Create first FoldDB instance
-    let fold_db_1 = FoldDB::new(test_db_path_1).expect("Failed to create first FoldDB instance");
+    let fold_db_1 = FoldDB::new(test_db_path_1).await.expect("Failed to create first FoldDB instance");
     
     // Load BlogPost schema first
     let blogpost_schema_json = json!({
@@ -53,6 +53,7 @@ fn test_transform_registration_persistence_across_restart() {
         .expect("Failed to serialize BlogPost schema");
     
     fold_db_1.schema_manager().load_schema_from_json(&blogpost_schema_str)
+        .await
         .expect("Failed to load BlogPost schema");
     
     // Load BlogPostWordIndex schema to trigger transform registration
@@ -84,6 +85,7 @@ fn test_transform_registration_persistence_across_restart() {
         .expect("Failed to serialize BlogPostWordIndex schema");
     
     fold_db_1.schema_manager().load_schema_from_json(&wordindex_schema_str)
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for async event processing
@@ -137,12 +139,10 @@ fn test_transform_registration_persistence_across_restart() {
     // Get direct access to the database operations to verify persistence
     let db_ops = fold_db_1.get_db_ops();
     
-    // Verify field mappings are stored by checking the sync operation
-    let empty_transforms = std::collections::HashMap::new();
-    let empty_mappings = std::collections::BTreeMap::new();
-    
-    let (loaded_transforms, loaded_mappings) = db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
-        .expect("Failed to sync transform state");
+    // Verify field mappings are stored by loading the persisted state
+    let (loaded_transforms, loaded_mappings) = db_ops.load_transform_state()
+        .await
+        .expect("Failed to load transform state");
     
     assert!(!loaded_transforms.is_empty(), "Transforms should be loaded from storage");
     assert!(!loaded_mappings.is_empty(), "Field mappings should be loaded from storage");
@@ -184,6 +184,7 @@ fn test_transform_registration_persistence_across_restart() {
         .expect("Failed to serialize BlogPostAuthorIndex schema");
     
     fold_db_1.schema_manager().load_schema_from_json(&authorindex_schema_str)
+        .await
         .expect("Failed to load BlogPostAuthorIndex schema");
     
     // Wait for async event processing
@@ -216,8 +217,9 @@ fn test_transform_registration_persistence_across_restart() {
     // PHASE 4: Verify Both Transforms Persist in Database
     
     // Verify both transforms are stored in the database
-    let (final_loaded_transforms, final_loaded_mappings) = db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
-        .expect("Failed to sync final transform state");
+    let (final_loaded_transforms, final_loaded_mappings) = db_ops.load_transform_state()
+        .await
+        .expect("Failed to load final transform state");
     
     assert_eq!(
         final_loaded_transforms.len(),
@@ -252,8 +254,8 @@ fn test_transform_registration_persistence_across_restart() {
     // Transform persistence test completed successfully
 }
 
-#[test]
-fn test_transform_persistence_with_direct_db_verification() {
+#[tokio::test]
+async fn test_transform_persistence_with_direct_db_verification() {
     // Transform Persistence Test - Direct Database Verification
 
     // Create separate temporary directories to avoid database lock issues
@@ -268,7 +270,7 @@ fn test_transform_persistence_with_direct_db_verification() {
     // PHASE 1: Register Transform and Verify Direct Storage
     
     // Create FoldDB instance and register transform
-    let fold_db = FoldDB::new(test_db_path_1).expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path_1).await.expect("Failed to create FoldDB instance");
     
     // Load schemas to trigger transform registration
     let blogpost_schema_json = json!({
@@ -310,9 +312,11 @@ fn test_transform_persistence_with_direct_db_verification() {
     });
     
     fold_db.schema_manager().load_schema_from_json(&serde_json::to_string(&blogpost_schema_json).unwrap())
+        .await
         .expect("Failed to load BlogPost schema");
     
     fold_db.schema_manager().load_schema_from_json(&serde_json::to_string(&wordindex_schema_json).unwrap())
+        .await
         .expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for async processing
@@ -335,8 +339,13 @@ fn test_transform_persistence_with_direct_db_verification() {
     let empty_transforms = std::collections::HashMap::new();
     let empty_mappings = std::collections::BTreeMap::new();
     
-    let (loaded_transforms, loaded_mappings) = db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
+    // Sync empty state first, then load
+    db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
+        .await
         .expect("Failed to sync transform state");
+    let (loaded_transforms, loaded_mappings) = db_ops.load_transform_state()
+        .await
+        .expect("Failed to load transform state");
     
     assert!(!loaded_transforms.is_empty(), "Transforms should be loaded from storage");
     assert!(!loaded_mappings.is_empty(), "Field mappings should be loaded from storage");
@@ -354,9 +363,10 @@ fn test_transform_persistence_with_direct_db_verification() {
     // PHASE 3: Verify Flush Operation
     
     // Verify that the sync operation properly flushes data to storage
-    // by calling sync again and ensuring data persists
-    let (final_loaded_transforms, final_loaded_mappings) = db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
-        .expect("Failed to sync transform state again");
+    // by loading again and ensuring data persists
+    let (final_loaded_transforms, final_loaded_mappings) = db_ops.load_transform_state()
+        .await
+        .expect("Failed to load transform state again");
     
     assert!(!final_loaded_transforms.is_empty(), "Transforms should persist after sync");
     assert!(!final_loaded_mappings.is_empty(), "Field mappings should persist after sync");

@@ -1,12 +1,14 @@
 use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger};
+use datafold::storage::StorageConfig;
 use serde_json::json;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_lambda_context_initialization() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new()
-        .with_storage_path(temp_dir.clone())
+    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
+    let config = LambdaConfig::new(storage_config)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(StdoutLogger));
     
@@ -39,13 +41,13 @@ async fn test_lambda_context_double_init_fails() {
     let temp_dir1 = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
     let temp_dir2 = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
     
-    let config1 = LambdaConfig::new()
-        .with_storage_path(temp_dir1.clone())
+    let storage_config1 = StorageConfig::Local { path: temp_dir1.clone() };
+    let config1 = LambdaConfig::new(storage_config1)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(StdoutLogger));
     
-    let config2 = LambdaConfig::new()
-        .with_storage_path(temp_dir2.clone())
+    let storage_config2 = StorageConfig::Local { path: temp_dir2.clone() };
+    let config2 = LambdaConfig::new(storage_config2)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(StdoutLogger));
     
@@ -83,8 +85,8 @@ async fn test_lambda_context_double_init_fails() {
 #[tokio::test]
 async fn test_lambda_context_with_schema_service_url() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new()
-        .with_storage_path(temp_dir.clone())
+    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
+    let config = LambdaConfig::new(storage_config)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(StdoutLogger));
     
@@ -114,8 +116,8 @@ async fn test_lambda_context_with_schema_service_url() {
 #[tokio::test]
 async fn test_lambda_context_get_progress_nonexistent() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new()
-        .with_storage_path(temp_dir.clone())
+    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
+    let config = LambdaConfig::new(storage_config)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(StdoutLogger));
     
@@ -152,8 +154,8 @@ async fn test_lambda_context_get_progress_nonexistent() {
 #[tokio::test]
 async fn test_lambda_context_access_after_init() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new()
-        .with_storage_path(temp_dir.clone())
+    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
+    let config = LambdaConfig::new(storage_config)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(StdoutLogger));
     
@@ -185,8 +187,8 @@ async fn test_lambda_context_access_after_init() {
 #[tokio::test]
 async fn test_lambda_context_ingest_json_returns_progress_id() {
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let config = LambdaConfig::new()
-        .with_storage_path(temp_dir.clone())
+    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
+    let config = LambdaConfig::new(storage_config)
         .with_schema_service_url("https://schema.example.com".to_string())
         .with_logger(Arc::new(StdoutLogger));
     

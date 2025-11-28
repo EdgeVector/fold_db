@@ -8,13 +8,13 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use tempfile::TempDir;
 
-#[test]
-fn test_native_word_index_search_updates_with_mutations() {
+#[tokio::test]
+async fn test_native_word_index_search_updates_with_mutations() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
 
     {
         let fold_db = node.get_fold_db().expect("failed to get FoldDB");
@@ -38,11 +38,13 @@ fn test_native_word_index_search_updates_with_mutations() {
         fold_db
             .schema_manager()
             .load_schema_from_json(&schema_str)
+            .await
             .expect("failed to load schema");
 
         fold_db
             .schema_manager()
             .set_schema_state("BlogPost", SchemaState::Approved)
+            .await
             .expect("failed to approve schema");
     }
 

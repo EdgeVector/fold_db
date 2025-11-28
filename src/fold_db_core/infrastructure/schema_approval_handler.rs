@@ -5,13 +5,13 @@
 use std::sync::Arc;
 
 use crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext;
-use crate::transform::manager::types::TransformRunner;
+use crate::transform::manager::types::{TransformResult, TransformRunner};
 use crate::transform::manager::TransformManager;
 
 use super::backfill_tracker::BackfillTracker;
 use super::message_bus::schema_events::SchemaApproved;
 
-pub fn handle_schema_approved(
+pub async fn handle_schema_approved(
     event: SchemaApproved,
     backfill_tracker: &Arc<BackfillTracker>,
     transform_manager: &Arc<TransformManager>,
@@ -29,7 +29,7 @@ pub fn handle_schema_approved(
                     transform,
                     backfill_tracker,
                     transform_manager,
-                )?;
+                ).await?;
             }
             Ok(())
         }
@@ -42,14 +42,14 @@ pub fn handle_schema_approved(
     }
 }
 
-fn handle_transform_schema_approval(
+async fn handle_transform_schema_approval(
     event: &SchemaApproved,
     transform: &crate::schema::types::Transform,
     backfill_tracker: &Arc<BackfillTracker>,
     transform_manager: &Arc<TransformManager>,
 ) -> Result<(), crate::schema::SchemaError> {
     // Look up the transform's schema from the database
-    let schema = tokio::runtime::Handle::current().block_on(transform_manager.db_ops.get_schema(transform.get_schema_name()))?.ok_or_else(|| {
+    let schema = transform_manager.db_ops.get_schema(transform.get_schema_name()).await?.ok_or_else(|| {
         crate::schema::SchemaError::InvalidTransform(
             format!("Transform schema '{}' not found in database", transform.get_schema_name())
         )
@@ -64,7 +64,7 @@ fn handle_transform_schema_approval(
 
     // Ensure all source schemas are in the "approved" state
     for source_schema in &source_schemas {
-        let state = transform_manager.get_schema_state(source_schema)?;
+        let state = transform_manager.db_ops.get_schema_state(source_schema).await?;
         match state {
             Some(crate::schema::SchemaState::Approved) => {},
             Some(other) => {
@@ -94,12 +94,29 @@ fn handle_transform_schema_approval(
         schema_name.clone(),
     );
 
-    handle_transform_backfill(
+    // Execute the transform backfill
+    let result = handle_transform_backfill(
         &schema_name,
         transform_manager,
         backfill_tracker,
         backfill_hash,
-    ).inspect_err(|e| {
+    );
+    
+    // If transform execution succeeded and produced 0 records, ensure backfill is marked complete
+    // This handles the race condition where the event monitor thread might not have processed
+    // the BackfillExpectedMutations event yet
+    if result.is_ok() {
+        // Give a tiny moment for any async operations to complete, then force completion if needed
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        if let Some(info) = backfill_tracker.get_backfill_by_hash(backfill_hash) {
+            if info.status == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::InProgress 
+                && info.mutations_expected == 0 {
+                backfill_tracker.force_complete(backfill_hash);
+            }
+        }
+    }
+    
+    result.inspect_err(|e| {
         backfill_tracker.fail_backfill(&event.schema_name, e.to_string());
     })
 }
@@ -118,7 +135,27 @@ fn handle_transform_backfill(
     });
 
     match transform_manager.execute_transform_with_context(transform_id, &mutation_context) {
-        Ok(_result) => {
+        Ok(result) => {
+            // If the transform produced 0 records, immediately mark the backfill as completed
+            // This handles the case where there's no source data to process
+            // The event monitor will also process BackfillExpectedMutations, but this ensures
+            // immediate completion for the zero-count case
+            if result.records.is_empty() {
+                // Directly mark as completed since there are no records to process
+                // This avoids waiting for the async event monitor thread
+                // We do both set_mutations_expected and force_complete to handle race conditions
+                backfill_tracker.set_mutations_expected(backfill_hash, 0);
+                backfill_tracker.force_complete(backfill_hash);
+                
+                // Verify it was set (for debugging)
+                if let Some(info) = backfill_tracker.get_backfill_by_hash(backfill_hash) {
+                    if info.status != crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::Completed {
+                        log::error!("Failed to mark backfill {} as completed, status is still: {:?}", backfill_hash, info.status);
+                    }
+                } else {
+                    log::error!("Backfill {} not found after attempting to mark as completed", backfill_hash);
+                }
+            }
             Ok(())
         }
         Err(e) => {

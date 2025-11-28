@@ -140,6 +140,96 @@ impl DataFoldNode {
         Ok(node)
     }
 
+    /// Creates a new DataFoldNode with a pre-created FoldDB instance.
+    /// 
+    /// This is useful when you need to control the storage backend (e.g., S3)
+    /// before creating the node.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `config` - Node configuration
+    /// * `db` - Pre-created FoldDB instance
+    pub async fn new_with_db(config: NodeConfig, db: Arc<Mutex<FoldDB>>) -> FoldDbResult<Self> {
+        // Retrieve or generate the persistent node_id from fold_db
+        let node_id = {
+            let guard = db
+                .lock()
+                .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+            guard
+                .get_node_id().await
+                .map_err(|e| FoldDbError::Config(format!("Failed to get node_id: {}", e)))?
+        };
+
+        // Generate a new keypair for this node
+        let keypair = Ed25519KeyPair::generate().map_err(|e| {
+            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
+        })?;
+        let private_key = keypair.secret_key_base64();
+        let public_key = keypair.public_key_base64();
+
+        // Initialize security manager with node configuration
+        let mut security_config = config.security_config.clone();
+
+        // Generate master key if encryption is enabled but no key is set
+        if security_config.encrypt_at_rest && security_config.master_key.is_none() {
+            security_config.master_key = Some(EncryptionManager::generate_master_key());
+        }
+
+        let security_manager = {
+            let guard = db
+                .lock()
+                .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+
+            let db_ops = guard.db_ops.clone();
+
+            Arc::new(
+                SecurityManager::new_with_persistence(config.security_config.clone(), Arc::clone(&db_ops)).await
+                    .map_err(|e| FoldDbError::SecurityError(e.to_string()))?,
+            )
+        };
+
+        let node = Self {
+            db,
+            config: config.clone(),
+            node_id,
+            security_manager,
+            private_key,
+            public_key,
+        };
+
+        // Require schema service to be configured
+        if let Some(schema_service_url) = &config.schema_service_url {
+            // Check if this is a mock/test schema service
+            if schema_service_url.starts_with("test://")
+                || schema_service_url.starts_with("mock://")
+            {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Mock schema service configured: {}. Schemas must be loaded manually.",
+                    schema_service_url
+                );
+            } else {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Schema service URL configured: {}. Schemas will be loaded asynchronously after node startup.",
+                    schema_service_url
+                );
+            }
+        } else {
+            // Schema service is optional - log info and continue
+            log::info!("No schema service URL configured - using local schema management only");
+        }
+
+        log_feature!(
+            LogFeature::Database,
+            info,
+            "DataFoldNode created successfully with pre-created database"
+        );
+        Ok(node)
+    }
+
     /// Get a reference to the underlying FoldDB instance
     pub fn get_fold_db(&self) -> FoldDbResult<MutexGuard<'_, FoldDB>> {
         self.db
@@ -271,12 +361,12 @@ mod tests {
     use base64::{engine::general_purpose, Engine as _};
     use tempfile::tempdir;
 
-    #[test]
-    fn test_node_private_key_generation() {
+    #[tokio::test]
+    async fn test_node_private_key_generation() {
         let temp_dir = tempdir().unwrap();
         let config =
             NodeConfig::new(temp_dir.path().to_path_buf()).with_schema_service_url("test://mock");
-        let node = DataFoldNode::new(config).unwrap();
+        let node = DataFoldNode::new(config).await.unwrap();
 
         // Verify that private and public keys were generated
         let private_key = node.get_node_private_key();

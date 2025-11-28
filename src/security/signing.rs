@@ -132,9 +132,9 @@ impl MessageVerifier {
     }
 
     /// Persist a public key to database
-    fn persist_public_key(&self, key_info: &PublicKeyInfo) -> SecurityResult<()> {
+    async fn persist_public_key(&self, key_info: &PublicKeyInfo) -> SecurityResult<()> {
         if let Some(db_ops) = &self.db_ops {
-            match tokio::runtime::Handle::current().block_on(db_ops.store_system_public_key(key_info)) {
+            match db_ops.store_system_public_key(key_info).await {
                 Ok(()) => {
                     log_feature!(
                         LogFeature::Permissions,
@@ -160,7 +160,7 @@ impl MessageVerifier {
     }
 
     /// Register the system-wide public key with automatic persistence
-    pub fn register_system_public_key(&self, key_info: PublicKeyInfo) -> SecurityResult<()> {
+    pub async fn register_system_public_key(&self, key_info: PublicKeyInfo) -> SecurityResult<()> {
         let mut key_to_store = key_info;
         key_to_store.id = SINGLE_PUBLIC_KEY_ID.to_string();
 
@@ -173,7 +173,7 @@ impl MessageVerifier {
         }
 
         // Then persist to database
-        self.persist_public_key(&key_to_store)?;
+        self.persist_public_key(&key_to_store).await?;
 
         log_feature!(
             LogFeature::Permissions,
@@ -184,7 +184,7 @@ impl MessageVerifier {
     }
 
     /// Remove the system public key from both memory and database
-    pub fn remove_system_public_key(&self) -> SecurityResult<()> {
+    pub async fn remove_system_public_key(&self) -> SecurityResult<()> {
         // Remove from memory
         {
             let mut key = self.public_key.write().map_err(|_| {
@@ -195,7 +195,7 @@ impl MessageVerifier {
 
         // Remove from database
         if let Some(db_ops) = &self.db_ops {
-            match tokio::runtime::Handle::current().block_on(db_ops.delete_system_public_key()) {
+            match db_ops.delete_system_public_key().await {
                 Ok(_) => log_feature!(
                     LogFeature::Permissions,
                     debug,
@@ -381,10 +381,10 @@ mod persistence_tests {
     use crate::security::Ed25519KeyPair;
     use crate::testing_utils::TestDatabaseFactory;
 
-    #[test]
-    fn test_message_verifier_persistence() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
-        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone()).unwrap();
+    #[tokio::test]
+    async fn test_message_verifier_persistence() {
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
+        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone()).await.unwrap();
         let keypair = Ed25519KeyPair::generate().unwrap();
         let public_key_base64 = keypair.public_key_base64();
 
@@ -396,19 +396,20 @@ mod persistence_tests {
         );
         verifier
             .register_system_public_key(key_info.clone())
+            .await
             .unwrap();
 
         // Now create a new verifier with the same database
-        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops).unwrap();
+        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops).await.unwrap();
         let retrieved = verifier2.get_system_public_key().unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id, SINGLE_PUBLIC_KEY_ID.to_string());
     }
 
-    #[test]
-    fn test_remove_public_key_persistence() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().unwrap();
-        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone()).unwrap();
+    #[tokio::test]
+    async fn test_remove_public_key_persistence() {
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
+        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone()).await.unwrap();
         let keypair = Ed25519KeyPair::generate().unwrap();
         let public_key_base64 = keypair.public_key_base64();
 
@@ -418,14 +419,14 @@ mod persistence_tests {
             "test_owner".to_string(),
             vec!["read".to_string()],
         );
-        verifier.register_system_public_key(key_info).unwrap();
+        verifier.register_system_public_key(key_info).await.unwrap();
         assert!(verifier.get_system_public_key().unwrap().is_some());
 
-        verifier.remove_system_public_key().unwrap();
+        verifier.remove_system_public_key().await.unwrap();
         assert!(verifier.get_system_public_key().unwrap().is_none());
 
         // Verify with a new verifier instance
-        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops).unwrap();
+        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops).await.unwrap();
         let retrieved = verifier2.get_system_public_key().unwrap();
         assert!(retrieved.is_none());
     }
@@ -437,8 +438,8 @@ mod tests {
     use crate::security::Ed25519KeyPair;
     use serde_json::json;
 
-    #[test]
-    fn test_message_signing_and_verification() {
+    #[tokio::test]
+    async fn test_message_signing_and_verification() {
         let signer_keypair = Ed25519KeyPair::generate().unwrap();
         let signer = MessageSigner::new(signer_keypair);
         let verifier = MessageVerifier::new(60);
@@ -450,7 +451,7 @@ mod tests {
             "test_owner".to_string(),
             vec!["read".to_string()],
         );
-        verifier.register_system_public_key(key_info).unwrap();
+        verifier.register_system_public_key(key_info).await.unwrap();
 
         let payload = json!({"data": "hello world"});
         let signed_message = signer.sign_message(payload).unwrap();
@@ -464,8 +465,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_permission_verification() {
+    #[tokio::test]
+    async fn test_permission_verification() {
         let signer_keypair = Ed25519KeyPair::generate().unwrap();
         let signer = MessageSigner::new(signer_keypair);
         let verifier = MessageVerifier::new(60);
@@ -477,7 +478,7 @@ mod tests {
             "test_owner".to_string(),
             vec!["read".to_string()],
         );
-        verifier.register_system_public_key(key_info).unwrap();
+        verifier.register_system_public_key(key_info).await.unwrap();
 
         let payload = json!({"action": "read_data"});
         let signed_message = signer.sign_message(payload).unwrap();
@@ -499,8 +500,8 @@ mod tests {
             .contains("Missing required permission"));
     }
 
-    #[test]
-    fn test_timestamp_validation() {
+    #[tokio::test]
+    async fn test_timestamp_validation() {
         let signer_keypair = Ed25519KeyPair::generate().unwrap();
         let signer = MessageSigner::new(signer_keypair);
         let verifier = MessageVerifier::new(5); // 5 second tolerance
@@ -512,7 +513,7 @@ mod tests {
             "test_owner".to_string(),
             vec![],
         );
-        verifier.register_system_public_key(key_info).unwrap();
+        verifier.register_system_public_key(key_info).await.unwrap();
 
         // Message with valid timestamp
         let valid_payload = json!({"msg": "valid"});

@@ -14,8 +14,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use tempfile::TempDir;
 
-#[test]
-fn test_batch_index_merges_existing_entries() {
+#[tokio::test]
+async fn test_batch_index_merges_existing_entries() {
     eprintln!("\n=== Testing batch index merge behavior ===\n");
     
     // Create a test database
@@ -23,7 +23,7 @@ fn test_batch_index_merges_existing_entries() {
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
 
     // Create a simple schema with a text field
     {
@@ -44,11 +44,13 @@ fn test_batch_index_merges_existing_entries() {
         fold_db
             .schema_manager()
             .load_schema_from_json(&schema_str)
+            .await
             .expect("failed to load schema");
 
         fold_db
             .schema_manager()
             .set_schema_state("TestPost", SchemaState::Approved)
+            .await
             .expect("failed to approve schema");
     }
 

@@ -89,12 +89,12 @@ fn test_s3_config_with_custom_local_path() {
     assert_eq!(config.local_path, PathBuf::from("/custom/path"));
 }
 
-#[test]
-fn test_local_folddb_has_no_s3_storage() {
+#[tokio::test]
+async fn test_local_folddb_has_no_s3_storage() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("test_db");
     
-    let db = FoldDB::new(db_path.to_str().unwrap()).unwrap();
+    let db = FoldDB::new(db_path.to_str().unwrap()).await.unwrap();
     
     assert!(!db.has_s3_storage());
 }

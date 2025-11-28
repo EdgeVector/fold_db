@@ -3,17 +3,18 @@ use datafold::fold_db_core::orchestration::queue_manager::QueueManager;
 use tempfile::TempDir;
 
 /// Test to verify that the transform queue properly deduplicates items based on mutation_id
-#[test]
-fn test_transform_queue_deduplication_by_mutation_id() {
+#[tokio::test]
+async fn test_transform_queue_deduplication_by_mutation_id() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Get the transform orchestrator and its queue manager
-    let orchestrator = fold_db.transform_orchestrator();
+    let orchestrator = fold_db.transform_orchestrator()
+        .expect("Transform orchestrator should be available");
     let queue_manager = orchestrator.get_queue_manager();
     
     // Test case 1: Add the same transform with the same mutation_id multiple times
