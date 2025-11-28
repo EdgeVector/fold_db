@@ -14,7 +14,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use tempfile::TempDir;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_batch_index_merges_existing_entries() {
     eprintln!("\n=== Testing batch index merge behavior ===\n");
     

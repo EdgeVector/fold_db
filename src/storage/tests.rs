@@ -170,4 +170,189 @@ mod storage_abstraction_tests {
         let retrieved: Vec<(String, Item)> = typed.scan_items_with_prefix("item").await.unwrap();
         assert_eq!(retrieved.len(), 3);
     }
+    
+    #[tokio::test]
+    async fn test_dynamodb_partition_key_logic() {
+        use crate::storage::dynamodb_backend::DynamoDbKvStore;
+        use aws_sdk_dynamodb::Client;
+        use std::sync::Arc;
+        
+        // Create a mock client (we won't actually use it, just testing the key logic)
+        // In a real test, you'd use LocalStack or a mock
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .load()
+            .await;
+        let client = Arc::new(Client::new(&config));
+        
+        // Test with user_id - partition key should be user_id
+        let store_with_user = DynamoDbKvStore::new(
+            client.clone(),
+            "test-table".to_string(),
+            Some("user_123".to_string())
+        );
+        
+        // Test partition key
+        let pk = store_with_user.get_partition_key();
+        assert_eq!(pk, "user_123");
+        
+        // Test sort key (should not have user_id prefix)
+        let test_key = b"atom:abc123";
+        let sort_key = store_with_user.make_sort_key(test_key);
+        assert_eq!(sort_key, "atom:abc123");
+        
+        // Test without user_id - partition key should be "default"
+        let store_without_user = DynamoDbKvStore::new(
+            client.clone(),
+            "test-table".to_string(),
+            None
+        );
+        
+        let pk_default = store_without_user.get_partition_key();
+        assert_eq!(pk_default, "default");
+        
+        let sort_key_no_user = store_without_user.make_sort_key(test_key);
+        assert_eq!(sort_key_no_user, "atom:abc123");
+    }
+    
+    #[tokio::test]
+    async fn test_dynamodb_namespaced_store_user_isolation() {
+        use crate::storage::dynamodb_backend::DynamoDbNamespacedStore;
+        use aws_sdk_dynamodb::Client;
+        
+        // Create a mock client
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .load()
+            .await;
+        let client = Client::new(&config);
+        
+        // Test table name generation
+        let store = DynamoDbNamespacedStore::new(client, "DataFoldStorage".to_string());
+        let table_name = store.get_table_name_for_namespace("main");
+        assert_eq!(table_name, "DataFoldStorage-main");
+        
+        // Test with user_id
+        let store_with_user = DynamoDbNamespacedStore::new(
+            Client::new(&config),
+            "DataFoldStorage".to_string()
+        ).with_user_id("user_456".to_string());
+        
+        // Verify user_id is stored
+        // (We can't directly access private fields, but we can test through open_namespace)
+        let kv = store_with_user.open_namespace("test").await.unwrap();
+        
+        // The kv store should have user_id set, which will be used as the partition key
+        // (though we'd need actual DynamoDB to test operations)
+        // For now, we just verify the store can be created
+        assert_eq!(kv.backend_name(), "dynamodb");
+    }
+    
+    #[tokio::test]
+    #[ignore] // Run with `cargo test -- --ignored` when DynamoDB is available
+    async fn test_dynamodb_backend_with_localstack() {
+        use crate::storage::dynamodb_backend::DynamoDbNamespacedStore;
+        use aws_sdk_dynamodb::Client;
+        use aws_sdk_dynamodb::types::AttributeDefinition;
+        use aws_sdk_dynamodb::types::KeySchemaElement;
+        use aws_sdk_dynamodb::types::KeyType;
+        use aws_sdk_dynamodb::types::ScalarAttributeType;
+        use aws_sdk_dynamodb::types::BillingMode;
+        
+        // This test requires LocalStack or a real DynamoDB table
+        // Set DYNAMODB_ENDPOINT_URL=http://localhost:4566 for LocalStack
+        
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .load()
+            .await;
+        let client = Client::new(&config);
+        
+        // Create a test table
+        let table_name = "test-dynamodb-storage-main";
+        
+        // Try to create table (will fail if it exists, that's ok)
+        let _ = client
+            .create_table()
+            .table_name(table_name)
+            .attribute_definitions(
+                AttributeDefinition::builder()
+                    .attribute_name("PK")
+                    .attribute_type(ScalarAttributeType::S)
+                    .build()
+                    .unwrap()
+            )
+            .attribute_definitions(
+                AttributeDefinition::builder()
+                    .attribute_name("SK")
+                    .attribute_type(ScalarAttributeType::S)
+                    .build()
+                    .unwrap()
+            )
+            .key_schema(
+                KeySchemaElement::builder()
+                    .attribute_name("PK")
+                    .key_type(KeyType::Hash)
+                    .build()
+                    .unwrap()
+            )
+            .key_schema(
+                KeySchemaElement::builder()
+                    .attribute_name("SK")
+                    .key_type(KeyType::Range)
+                    .build()
+                    .unwrap()
+            )
+            .billing_mode(BillingMode::PayPerRequest)
+            .send()
+            .await;
+        
+        // Test with user_id
+        let store = DynamoDbNamespacedStore::new(client, "test-dynamodb-storage".to_string())
+            .with_user_id("test_user_123".to_string());
+        
+        let kv = store.open_namespace("main").await.unwrap();
+        
+        // Test put and get
+        kv.put(b"test_key", b"test_value".to_vec()).await.unwrap();
+        let value = kv.get(b"test_key").await.unwrap();
+        assert_eq!(value, Some(b"test_value".to_vec()));
+        
+        // Test exists
+        assert!(kv.exists(b"test_key").await.unwrap());
+        assert!(!kv.exists(b"nonexistent").await.unwrap());
+        
+        // Test delete
+        assert!(kv.delete(b"test_key").await.unwrap());
+        assert!(!kv.exists(b"test_key").await.unwrap());
+        
+        // Test scan_prefix with user_id as partition key
+        kv.put(b"prefix:key1", b"value1".to_vec()).await.unwrap();
+        kv.put(b"prefix:key2", b"value2".to_vec()).await.unwrap();
+        kv.put(b"other:key3", b"value3".to_vec()).await.unwrap();
+        
+        let results = kv.scan_prefix(b"prefix:").await.unwrap();
+        assert_eq!(results.len(), 2);
+        
+        // Verify keys returned are the actual keys (no user_id prefix in SK)
+        let keys: Vec<String> = results.iter()
+            .map(|(k, _)| String::from_utf8_lossy(k).to_string())
+            .collect();
+        assert!(keys.contains(&"prefix:key1".to_string()));
+        assert!(keys.contains(&"prefix:key2".to_string()));
+        
+        // Test batch operations
+        let items = vec![
+            (b"batch_key1".to_vec(), b"batch_value1".to_vec()),
+            (b"batch_key2".to_vec(), b"batch_value2".to_vec()),
+        ];
+        kv.batch_put(items).await.unwrap();
+        
+        assert!(kv.exists(b"batch_key1").await.unwrap());
+        assert!(kv.exists(b"batch_key2").await.unwrap());
+        
+        kv.batch_delete(vec![b"batch_key1".to_vec(), b"batch_key2".to_vec()]).await.unwrap();
+        
+        assert!(!kv.exists(b"batch_key1").await.unwrap());
+        assert!(!kv.exists(b"batch_key2").await.unwrap());
+        
+        println!("✅ DynamoDB backend test passed! User ID as partition key works correctly.");
+    }
 }

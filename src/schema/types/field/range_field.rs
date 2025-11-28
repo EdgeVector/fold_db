@@ -129,7 +129,7 @@ impl crate::schema::types::field::Field for RangeField {
         // If we have a molecule_uuid, look up the corresponding MoleculeRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            match tokio::runtime::Handle::current().block_on(db_ops.get_item::<MoleculeRange>(&ref_key)) {
+            match super::run_async(db_ops.get_item::<MoleculeRange>(&ref_key)) {
                 Ok(Some(molecule)) => {
                     self.molecule = Some(molecule);
                 }

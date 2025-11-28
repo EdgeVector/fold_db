@@ -32,6 +32,28 @@ pub struct MutationManager {
 }
 
 impl MutationManager {
+    /// Helper to run async code from sync context, handling both cases where we're
+    /// already in a runtime (use block_in_place) or not (create new runtime)
+    fn run_async<F, T>(future: F) -> Result<T, SchemaError>
+    where
+        F: std::future::Future<Output = Result<T, SchemaError>>,
+    {
+        match tokio::runtime::Handle::try_current() {
+            Ok(_handle) => {
+                // We're already in a runtime, use block_in_place to avoid nested runtime error
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(future)
+                })
+            }
+            Err(_) => {
+                // No runtime, create one
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?
+                    .block_on(future)
+            }
+        }
+    }
+
     /// Creates a new MutationManager instance
     pub fn new(
         db_ops: Arc<DbOperationsV2>,
@@ -83,7 +105,7 @@ impl MutationManager {
                 // For now, we'll handle the mutation inline with v2 async methods
                 
                 // Create and store atom
-                let new_atom = tokio::runtime::Handle::current().block_on(
+                let new_atom = Self::run_async(
                     self.db_ops.create_and_store_atom_for_mutation_deferred(
                         &mutation.schema_name,
                         &mutation.pub_key,
@@ -97,7 +119,7 @@ impl MutationManager {
                 
                 // Persist molecule if present
                 if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                    tokio::runtime::Handle::current().block_on(
+                    Self::run_async(
                         self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
                     )?;
                 }
@@ -134,9 +156,11 @@ impl MutationManager {
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
-        tokio::runtime::Handle::current().block_on(async {
-            self.db_ops.store_schema(&schema_name, &schema).await?;
-            self.schema_manager.load_schema_internal(schema).await
+        let db_ops = self.db_ops.clone();
+        let schema_manager = self.schema_manager.clone();
+        Self::run_async(async move {
+            db_ops.store_schema(&schema_name, &schema).await?;
+            schema_manager.load_schema_internal(schema).await
         })?;
 
         // Calculate execution time
@@ -162,7 +186,8 @@ impl MutationManager {
         self.message_bus.publish(event)?;
         
         // Flush database to ensure mutation is persisted to disk
-        tokio::runtime::Handle::current().block_on(self.db_ops.flush())?;
+        let db_ops = self.db_ops.clone();
+        Self::run_async(db_ops.flush())?;
         
         // Return the mutation ID
         Ok(mutation_id)
@@ -250,7 +275,7 @@ impl MutationManager {
                         
                         // Create and store atom using deferred storage
                         let atom_start = std::time::Instant::now();
-                        let new_atom = tokio::runtime::Handle::current().block_on(
+                        let new_atom = Self::run_async(
                             self.db_ops.create_and_store_atom_for_mutation_deferred(
                                 &mutation.schema_name,
                                 &mutation.pub_key,
@@ -266,7 +291,7 @@ impl MutationManager {
                         
                         // Persist molecule using deferred storage
                         if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                            tokio::runtime::Handle::current().block_on(
+                            Self::run_async(
                                 self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
                             )?;
                         }
@@ -328,11 +353,11 @@ impl MutationManager {
 
             // Single schema persist and reload for this schema group
             let store_start = std::time::Instant::now();
-            tokio::runtime::Handle::current().block_on(self.db_ops.store_schema(&schema_name, &schema))?;
+            Self::run_async(self.db_ops.store_schema(&schema_name, &schema))?;
             *timing_breakdown.entry("schema_store").or_insert(std::time::Duration::ZERO) += store_start.elapsed();
             
             let reload_start = std::time::Instant::now();
-            tokio::runtime::Handle::current().block_on(self.schema_manager.load_schema_internal(schema))?;
+            Self::run_async(self.schema_manager.load_schema_internal(schema))?;
             *timing_breakdown.entry("schema_reload").or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
 
             // Create events for batch publishing
@@ -366,7 +391,7 @@ impl MutationManager {
 
         // Single flush for entire batch
         let flush_start = std::time::Instant::now();
-        tokio::runtime::Handle::current().block_on(self.db_ops.flush())?;
+        Self::run_async(self.db_ops.flush())?;
         timing_breakdown.insert("flush", flush_start.elapsed());
 
         // Batch publish events
@@ -507,7 +532,7 @@ impl MutationManager {
                 // Handle mutation inline with v2 async methods
                 
                 // Create and store atom
-                let new_atom = tokio::runtime::Handle::current().block_on(
+                let new_atom = Self::run_async(
                     db_ops.create_and_store_atom_for_mutation_deferred(
                         &mutation_request.mutation.schema_name,
                         &mutation_request.mutation.pub_key,
@@ -521,7 +546,7 @@ impl MutationManager {
                 
                 // Persist molecule if present
                 if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                    tokio::runtime::Handle::current().block_on(
+                    Self::run_async(
                         db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
                     )?;
                 }
@@ -558,7 +583,7 @@ impl MutationManager {
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
-        tokio::runtime::Handle::current().block_on(async {
+        Self::run_async(async move {
             db_ops.store_schema(&schema_name, &schema).await?;
             schema_manager.load_schema_internal(schema).await
         })?;
@@ -586,7 +611,7 @@ impl MutationManager {
         message_bus.publish(event)?;
 
         // Flush database to ensure mutation is persisted to disk
-        tokio::runtime::Handle::current().block_on(db_ops.flush())?;
+        Self::run_async(db_ops.flush())?;
 
         Ok(())
     }

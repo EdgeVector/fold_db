@@ -6,7 +6,7 @@ use tempfile::TempDir;
 use std::time::Duration;
 
 /// Test to verify that a BlogPost mutation triggers the appropriate transforms
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_blogpost_mutation_triggers_transforms() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
@@ -163,7 +163,7 @@ async fn test_blogpost_mutation_triggers_transforms() {
 }
 
 /// Test to verify that only affected fields trigger their corresponding transforms
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_partial_mutation_triggers_subset_of_transforms() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
@@ -278,7 +278,7 @@ async fn test_partial_mutation_triggers_subset_of_transforms() {
 }
 
 /// Test to verify that the word transform is triggered when content field changes
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_content_mutation_triggers_word_transform() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");

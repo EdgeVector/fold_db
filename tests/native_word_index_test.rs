@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use tempfile::TempDir;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_native_word_index_search_updates_with_mutations() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();

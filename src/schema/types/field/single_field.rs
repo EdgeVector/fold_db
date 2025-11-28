@@ -45,7 +45,7 @@ impl crate::schema::types::field::Field for SingleField {
     fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            if let Ok(Some(molecule)) = tokio::runtime::Handle::current().block_on(db_ops.get_item::<crate::atom::Molecule>(&ref_key)) {
+            if let Ok(Some(molecule)) = super::run_async(db_ops.get_item::<crate::atom::Molecule>(&ref_key)) {
                 self.molecule = Some(molecule.clone());
             }
         }

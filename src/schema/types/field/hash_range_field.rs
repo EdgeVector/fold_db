@@ -71,7 +71,7 @@ impl crate::schema::types::field::Field for HashRangeField {
         // If we have a molecule_uuid, look up the corresponding MoleculeHashRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            if let Ok(Some(molecule_hash_range)) = tokio::runtime::Handle::current().block_on(db_ops.get_item::<MoleculeHashRange>(&ref_key)) {
+            if let Ok(Some(molecule_hash_range)) = super::run_async(db_ops.get_item::<MoleculeHashRange>(&ref_key)) {
                 self.molecule = Some(molecule_hash_range);
             }
         }

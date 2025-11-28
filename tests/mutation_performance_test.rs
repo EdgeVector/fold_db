@@ -29,7 +29,7 @@ use datafold::MutationType;
 /// Usage:
 ///     cargo test test_mutation_performance_direct -- --nocapture
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_mutation_performance_direct() {
     println!("{}", "=".repeat(80));
     println!("Mutation Performance Test: Single vs Batch (Direct DB)");
