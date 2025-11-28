@@ -45,7 +45,7 @@ pub fn fetch_atoms_for_matches(
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
 
     for (key, atom_uuid) in matches.into_iter() {
-        match tokio::runtime::Handle::current().block_on(db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))) {
+        match super::run_async(db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))) {
             Ok(Some(atom)) => {
                 resolved_values.insert(
                     key,

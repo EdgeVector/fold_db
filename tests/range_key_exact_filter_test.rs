@@ -12,7 +12,7 @@ use tempfile::TempDir;
 
 /// Test that querying by an exact range key returns only records matching that range key
 /// This test uses the existing BlogPost schema and creates test data to verify filtering
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_exact_range_key_filtering_with_blogpost() {
     // Set up temporary database
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -157,7 +157,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
 }
 
 /// Test that rangeKey is properly set in the query object structure
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_range_key_set_in_query_object() {
     // Set up temporary database
     let temp_dir = TempDir::new().expect("Failed to create temp dir");

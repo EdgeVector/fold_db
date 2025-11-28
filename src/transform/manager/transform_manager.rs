@@ -31,6 +31,28 @@ pub struct TransformManager {
 }
 
 impl TransformManager {
+    /// Helper to run async code from sync context, handling both cases where we're
+    /// already in a runtime (use block_in_place) or not (create new runtime)
+    fn run_async<F, T>(future: F) -> Result<T, SchemaError>
+    where
+        F: std::future::Future<Output = Result<T, SchemaError>>,
+    {
+        match tokio::runtime::Handle::try_current() {
+            Ok(_handle) => {
+                // We're already in a runtime, use block_in_place to avoid nested runtime error
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(future)
+                })
+            }
+            Err(_) => {
+                // No runtime, create one
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?
+                    .block_on(future)
+            }
+        }
+    }
+
     /// Creates a new TransformManager instance with unified database operations
     pub async fn new(
         db_ops: std::sync::Arc<crate::db_operations::DbOperationsV2>,
@@ -68,7 +90,7 @@ impl TransformManager {
 
     /// Get the schema state for a given schema/transform
     pub fn get_schema_state(&self, schema_name: &str) -> Result<Option<crate::schema::SchemaState>, SchemaError> {
-        tokio::runtime::Handle::current().block_on(self.db_ops.get_schema_state(schema_name))
+        Self::run_async(self.db_ops.get_schema_state(schema_name))
     }
 
     /// Gets all transforms that should run when the specified field is updated.
@@ -105,7 +127,7 @@ impl TransformManager {
         let mappings = self.schema_field_to_transforms.read()
             .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
         
-        tokio::runtime::Handle::current().block_on(self.db_ops.sync_transform_state(&transforms, &mappings))?;
+        Self::run_async(self.db_ops.sync_transform_state(&transforms, &mappings))?;
 
         Ok(())
     }

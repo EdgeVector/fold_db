@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 
 /// Test that searching for a field name (like "email") returns all records with that field
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_search_by_field_name() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
@@ -123,7 +123,7 @@ async fn test_search_by_field_name() {
 }
 
 /// Test searching for field name that doesn't exist
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_search_nonexistent_field_name() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
@@ -191,7 +191,7 @@ async fn test_search_nonexistent_field_name() {
 }
 
 /// Test that field name search works alongside regular word search
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_combined_field_name_and_word_search() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
