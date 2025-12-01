@@ -305,7 +305,7 @@ pub async fn native_index_search(
     };
 
     debug!("API: Acquired database, calling native_search_all_classifications");
-    match fold_db.native_search_all_classifications(&term) {
+    match fold_db.native_search_all_classifications(&term).await {
         Ok(results) => {
             info!("API: Search completed, found {} results", results.len());
             HttpResponse::Ok().json(results)

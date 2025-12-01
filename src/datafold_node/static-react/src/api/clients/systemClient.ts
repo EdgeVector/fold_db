@@ -56,6 +56,27 @@ export interface NodeKeyResponse {
   message: string;
 }
 
+export interface DatabaseConfigDto {
+  type: 'local' | 'dynamodb' | 's3';
+  path?: string;
+  table_name?: string;
+  region?: string;
+  user_id?: string;
+  bucket?: string;
+  prefix?: string;
+  local_path?: string;
+}
+
+export interface DatabaseConfigRequest {
+  database: DatabaseConfigDto;
+}
+
+export interface DatabaseConfigResponse {
+  success: boolean;
+  message: string;
+  requires_restart: boolean;
+}
+
 /**
  * Unified System API Client Implementation
  */
@@ -234,6 +255,44 @@ export class UnifiedSystemClient {
   }
 
   /**
+   * Get database configuration
+   * UNPROTECTED - No authentication required
+   * 
+   * @returns Promise resolving to database configuration
+   */
+  async getDatabaseConfig(): Promise<EnhancedApiResponse<DatabaseConfigDto>> {
+    return this.client.get<DatabaseConfigDto>('/system/database-config', {
+      requiresAuth: false,
+      timeout: API_TIMEOUTS.STANDARD,
+      retries: API_RETRIES.STANDARD,
+      cacheable: true,
+      cacheTtl: API_CACHE_TTL.SYSTEM_STATUS,
+      cacheKey: 'database_config'
+    });
+  }
+
+  /**
+   * Update database configuration
+   * UNPROTECTED - No authentication required
+   * 
+   * @param config - Database configuration to apply
+   * @returns Promise resolving to update result
+   */
+  async updateDatabaseConfig(config: DatabaseConfigDto): Promise<EnhancedApiResponse<DatabaseConfigResponse>> {
+    const request: DatabaseConfigRequest = { database: config };
+    
+    return this.client.post<DatabaseConfigResponse>(
+      '/system/database-config',
+      request,
+      {
+        timeout: API_TIMEOUTS.STANDARD,
+        retries: API_RETRIES.NONE,
+        cacheable: false
+      }
+    );
+  }
+
+  /**
    * Clear system-related cache
    */
   clearCache(): void {
@@ -255,6 +314,8 @@ export const resetDatabase = systemClient.resetDatabase.bind(systemClient);
 export const getSystemStatus = systemClient.getSystemStatus.bind(systemClient);
 export const getNodePrivateKey = systemClient.getNodePrivateKey.bind(systemClient);
 export const getNodePublicKey = systemClient.getNodePublicKey.bind(systemClient);
+export const getDatabaseConfig = systemClient.getDatabaseConfig.bind(systemClient);
+export const updateDatabaseConfig = systemClient.updateDatabaseConfig.bind(systemClient);
 export const createLogStream = systemClient.createLogStream.bind(systemClient);
 export const validateResetRequest = systemClient.validateResetRequest.bind(systemClient);
 

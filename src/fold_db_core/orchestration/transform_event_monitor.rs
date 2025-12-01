@@ -24,6 +24,7 @@ pub struct TransformEventMonitor {
 
 impl TransformEventMonitor {
     /// Create a new TransformEventMonitor and start monitoring
+    /// The persistence parameter is kept for compatibility but not directly used
     pub fn new(
         message_bus: Arc<MessageBus>,
         manager: Arc<TransformManager>,

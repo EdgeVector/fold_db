@@ -4,10 +4,63 @@ use crate::security::SecurityConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Database storage backend configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum DatabaseConfig {
+    /// Local Sled storage (default)
+    #[serde(rename = "local")]
+    Local {
+        /// Path where the node will store its data
+        path: PathBuf,
+    },
+    /// DynamoDB-backed storage
+    #[serde(rename = "dynamodb")]
+    DynamoDb {
+        /// DynamoDB table name (base name, namespaces will be appended)
+        table_name: String,
+        /// AWS region
+        region: String,
+        /// Optional user_id for multi-tenant isolation
+        #[serde(default)]
+        user_id: Option<String>,
+    },
+    /// S3-backed storage with local cache
+    #[serde(rename = "s3")]
+    S3 {
+        /// S3 bucket name
+        bucket: String,
+        /// AWS region
+        region: String,
+        /// Prefix/path within the bucket
+        #[serde(default = "default_s3_prefix")]
+        prefix: String,
+        /// Local cache path
+        local_path: PathBuf,
+    },
+}
+
+fn default_s3_prefix() -> String {
+    "folddb".to_string()
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        DatabaseConfig::Local {
+            path: PathBuf::from("data"),
+        }
+    }
+}
+
 /// Configuration for a DataFoldNode instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
-    /// Path where the node will store its data
+    /// Database storage configuration
+    #[serde(default)]
+    pub database: DatabaseConfig,
+    /// Path where the node will store its data (deprecated, use database.path instead)
+    /// Kept for backward compatibility
+    #[serde(default = "default_storage_path")]
     pub storage_path: PathBuf,
     /// Default trust distance for queries when not explicitly specified
     /// Must be greater than 0
@@ -23,6 +76,10 @@ pub struct NodeConfig {
     pub schema_service_url: Option<String>,
 }
 
+fn default_storage_path() -> PathBuf {
+    PathBuf::from("data")
+}
+
 fn default_network_listen_address() -> String {
     "/ip4/0.0.0.0/tcp/0".to_string()
 }
@@ -30,7 +87,8 @@ fn default_network_listen_address() -> String {
 impl Default for NodeConfig {
     fn default() -> Self {
         Self {
-            storage_path: PathBuf::from("data"),
+            database: DatabaseConfig::default(),
+            storage_path: default_storage_path(),
             default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
@@ -43,11 +101,21 @@ impl NodeConfig {
     /// Create a new node configuration with the specified storage path
     pub fn new(storage_path: PathBuf) -> Self {
         Self {
+            database: DatabaseConfig::Local { path: storage_path.clone() },
             storage_path,
             default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
+        }
+    }
+    
+    /// Get the effective storage path (from database config or legacy storage_path)
+    pub fn get_storage_path(&self) -> PathBuf {
+        match &self.database {
+            DatabaseConfig::Local { path } => path.clone(),
+            DatabaseConfig::DynamoDb { .. } => self.storage_path.clone(),
+            DatabaseConfig::S3 { local_path, .. } => local_path.clone(),
         }
     }
 
@@ -84,6 +152,16 @@ pub fn load_node_config(
     if let Ok(config_str) = fs::read_to_string(&config_path) {
         match serde_json::from_str::<NodeConfig>(&config_str) {
             Ok(mut cfg) => {
+                // Backward compatibility: if database field is default (Local with "data" path)
+                // and storage_path is set, use storage_path for database.path
+                if matches!(cfg.database, DatabaseConfig::Local { path: ref p } if p == &PathBuf::from("data"))
+                    && cfg.storage_path != PathBuf::from("data")
+                {
+                    cfg.database = DatabaseConfig::Local {
+                        path: cfg.storage_path.clone(),
+                    };
+                }
+                
                 if let Some(p) = port {
                     cfg.network_listen_address = format!("/ip4/0.0.0.0/tcp/{}", p);
                 }

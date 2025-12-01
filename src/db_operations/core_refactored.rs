@@ -67,6 +67,9 @@ impl DbOperationsV2 {
         let public_keys_store = Arc::new(TypedKvStore::new(public_keys_kv));
         let transform_queue_store = Arc::new(TypedKvStore::new(transform_queue_kv));
         
+        // Create native index manager with the store
+        let native_index_manager = NativeIndexManager::new_with_store(native_index_kv.clone());
+        
         Ok(Self {
             main_store,
             metadata_store,
@@ -79,7 +82,7 @@ impl DbOperationsV2 {
             transform_queue_store,
             native_index_store: native_index_kv,
             native_index_tree: None,
-            native_index_manager: None,
+            native_index_manager: Some(native_index_manager),
             orchestrator_tree: None,
         })
     }

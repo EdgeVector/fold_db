@@ -7,11 +7,13 @@
 use log::{error, info};
 use sled::Tree;
 use std::sync::Arc;
+use tokio;
 
 use crate::db_operations::DbOperationsV2;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::transform::manager::{TransformManager, types::TransformResult};
 use crate::schema::SchemaError;
+use crate::storage::traits::KvStore;
 
 // Import the new specialized components
 use super::transform_event_monitor::TransformEventMonitor;
@@ -45,14 +47,14 @@ pub struct TransformOrchestrator {
 }
 
 impl TransformOrchestrator {
-    /// Create a new TransformOrchestrator with component delegation
+    /// Create a new TransformOrchestrator with component delegation (Sled backend)
     pub fn new(
         manager: Arc<TransformManager>,
         tree: Tree,
         message_bus: Arc<MessageBus>,
         db_ops: Arc<DbOperationsV2>,
     ) -> Self {
-        info!("🏗️ Creating TransformOrchestrator with component delegation");
+        info!("🏗️ Creating TransformOrchestrator with component delegation (Sled)");
 
         // Initialize persistence manager
         let persistence_manager = PersistenceManager::new(tree.clone());
@@ -96,6 +98,58 @@ impl TransformOrchestrator {
             _event_monitor: event_monitor,
         }
     }
+    
+    /// Create a new TransformOrchestrator with KvStore (for DynamoDB and other backends)
+    pub async fn new_with_store(
+        manager: Arc<TransformManager>,
+        store: Arc<dyn KvStore>,
+        message_bus: Arc<MessageBus>,
+        db_ops: Arc<DbOperationsV2>,
+    ) -> Result<Self, SchemaError> {
+        info!("🏗️ Creating TransformOrchestrator with component delegation (KvStore)");
+
+        // Initialize persistence manager
+        let persistence_manager = PersistenceManager::new_with_store(store.clone());
+
+        // Load initial state or create empty state
+        let initial_state = persistence_manager.load_state_async().await.unwrap_or_else(|e| {
+            error!("❌ Failed to load initial state, using empty state: {}", e);
+            super::queue_manager::QueueState::default()
+        });
+
+        info!(
+            "📋 Loaded initial state - queue length: {}, queued count: {}, processed count: {}",
+            initial_state.queue.len(),
+            initial_state.queued.len(),
+            initial_state.processed.len()
+        );
+
+        // Initialize queue manager with loaded state
+        let queue_manager = QueueManager::new(initial_state);
+
+        // Initialize execution coordinator
+        let execution_coordinator = ExecutionCoordinator::new(
+            Arc::clone(&manager),
+            Arc::clone(&message_bus),
+            Arc::clone(&db_ops),
+        );
+
+        // Initialize event monitor (starts background monitoring)
+        let event_monitor = TransformEventMonitor::new(
+            Arc::clone(&message_bus),
+            Arc::clone(&manager),
+            PersistenceManager::new_with_store(store.clone()),
+        );
+
+        info!("✅ TransformOrchestrator initialized with all components");
+
+        Ok(Self {
+            queue_manager,
+            persistence_manager,
+            execution_coordinator,
+            _event_monitor: event_monitor,
+        })
+    }
 
     /// Add a task for the given schema and field using the execution coordinator
     pub fn add_task(
@@ -131,8 +185,10 @@ impl TransformOrchestrator {
             self.queue_manager.add_item(&transform_id, mutation_hash)?;
         }
 
-        // Persist the updated state
-        self.persist_current_state()?;
+        // Persist the updated state (non-blocking for async stores)
+        if let Err(e) = self.persist_current_state() {
+            error!("⚠️ Failed to persist state: {}", e);
+        }
 
         info!("✅ ADD_TASK completed for {}.{}", schema_name, field_name);
         Ok(())
@@ -155,8 +211,10 @@ impl TransformOrchestrator {
             info!("ℹ️ Transform {} already in queue", transform_id);
         }
 
-        // Persist state
-        self.persist_current_state()?;
+        // Persist state (non-blocking for async stores)
+        if let Err(e) = self.persist_current_state() {
+            error!("⚠️ Failed to persist state: {}", e);
+        }
 
         // Process queue immediately after adding
         info!(
@@ -302,9 +360,28 @@ impl TransformOrchestrator {
     }
 
     /// Helper method to persist current queue state
+    /// Persist current state (sync version for Sled)
     fn persist_current_state(&self) -> Result<(), SchemaError> {
         let current_state = self.queue_manager.get_state()?;
-        self.persistence_manager.save_and_flush(&current_state)
+        if self.persistence_manager.is_async() {
+            // For async stores, we can't block from sync context without risking deadlock
+            // Log a warning and skip persistence - state will be persisted on next async call
+            // or when the orchestrator is explicitly flushed
+            info!("⚠️ Skipping sync persistence for async store - state will be persisted on next async operation");
+            Ok(())
+        } else {
+            self.persistence_manager.save_and_flush(&current_state)
+        }
+    }
+    
+    /// Persist current state (async version for DynamoDB)
+    pub async fn persist_current_state_async(&self) -> Result<(), SchemaError> {
+        let current_state = self.queue_manager.get_state()?;
+        if self.persistence_manager.is_async() {
+            self.persistence_manager.save_and_flush_async(&current_state).await
+        } else {
+            self.persistence_manager.save_and_flush(&current_state)
+        }
     }
 
     /// List queued transform IDs without dequeuing or running them

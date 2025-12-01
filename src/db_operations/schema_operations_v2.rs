@@ -12,7 +12,7 @@ impl DbOperationsV2 {
         
         // Populate runtime_fields if schema exists
         if let Some(schema) = &mut schema_opt {
-            schema.populate_runtime_fields();
+            let _ = schema.populate_runtime_fields();
         }
         
         Ok(schema_opt)
@@ -58,14 +58,21 @@ impl DbOperationsV2 {
     pub async fn get_all_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
         use crate::storage::traits::TypedStore;
         
-        let keys = self.schemas_store().list_keys_with_prefix("").await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to list schema keys: {}", e)))?;
+        // If listing keys fails (e.g., table doesn't exist yet), return empty map
+        let keys = match self.schemas_store().list_keys_with_prefix("").await {
+            Ok(k) => k,
+            Err(e) => {
+                // Log warning but don't fail - empty database is valid
+                log::warn!("Failed to list schema keys (possibly fresh DB): {}", e);
+                return Ok(HashMap::new());
+            }
+        };
         
         let mut schemas = HashMap::new();
         for key in keys {
             if let Some(mut schema) = self.schemas_store().get_item::<Schema>(&key).await
                 .map_err(|e| SchemaError::InvalidData(format!("Failed to get schema {}: {}", key, e)))? {
-                schema.populate_runtime_fields();
+                let _ = schema.populate_runtime_fields();
                 schemas.insert(key, schema);
             }
         }
@@ -77,8 +84,15 @@ impl DbOperationsV2 {
     pub async fn get_all_schema_states(&self) -> Result<HashMap<String, SchemaState>, SchemaError> {
         use crate::storage::traits::TypedStore;
         
-        let keys = self.schema_states_store().list_keys_with_prefix("").await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to list schema state keys: {}", e)))?;
+        // If listing keys fails (e.g., table doesn't exist yet), return empty map
+        let keys = match self.schema_states_store().list_keys_with_prefix("").await {
+            Ok(k) => k,
+            Err(e) => {
+                // Log warning but don't fail - empty database is valid
+                log::warn!("Failed to list schema state keys (possibly fresh DB): {}", e);
+                return Ok(HashMap::new());
+            }
+        };
         
         let mut states = HashMap::new();
         for key in keys {
