@@ -3,6 +3,7 @@ pub mod config;
 pub mod error;
 pub mod upload_storage;
 pub mod dynamodb_store;
+mod dynamodb_utils;
 
 // Storage abstraction layer
 pub mod traits;

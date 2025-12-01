@@ -1,8 +1,10 @@
 use super::error::{StorageError, StorageResult};
 use super::traits::{KvStore, NamespacedStore};
+use super::dynamodb_utils::{MAX_RETRIES, retry_batch_operation};
+use crate::retry_operation;
 use async_trait::async_trait;
 use aws_sdk_dynamodb::types::{
-    AttributeDefinition, AttributeValue, BillingMode, KeySchemaElement, KeyType, ScalarAttributeType,
+    AttributeDefinition, AttributeValue, BillingMode, KeySchemaElement, KeyType, ScalarAttributeType, TableStatus,
 };
 use aws_sdk_dynamodb::Client;
 use std::collections::HashMap;
@@ -63,15 +65,21 @@ impl KvStore for DynamoDbKvStore {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
         let pk = self.get_partition_key_impl();
         let sk = self.make_sort_key_impl(key);
+        let key_str = String::from_utf8_lossy(key);
 
-        let result = self.client
-            .get_item()
-            .table_name(&self.table_name)
-            .key("PK", AttributeValue::S(pk))
-            .key("SK", AttributeValue::S(sk))
-            .send()
-            .await
-            .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+        let result = retry_operation!(
+            self.client
+                .get_item()
+                .table_name(&self.table_name)
+                .key("PK", AttributeValue::S(pk.clone()))
+                .key("SK", AttributeValue::S(sk.clone()))
+                .send(),
+            "get_item",
+            &self.table_name,
+            Some(&key_str),
+            MAX_RETRIES,
+            StorageError::DynamoDbError
+        )?;
 
         if let Some(item) = result.item {
             if let Some(AttributeValue::B(data)) = item.get("Value") {
@@ -85,16 +93,22 @@ impl KvStore for DynamoDbKvStore {
     async fn put(&self, key: &[u8], value: Vec<u8>) -> StorageResult<()> {
         let pk = self.get_partition_key_impl();
         let sk = self.make_sort_key_impl(key);
+        let key_str = String::from_utf8_lossy(key);
 
-        self.client
-            .put_item()
-            .table_name(&self.table_name)
-            .item("PK", AttributeValue::S(pk))
-            .item("SK", AttributeValue::S(sk))
-            .item("Value", AttributeValue::B(value.into()))
-            .send()
-            .await
-            .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+        retry_operation!(
+            self.client
+                .put_item()
+                .table_name(&self.table_name)
+                .item("PK", AttributeValue::S(pk.clone()))
+                .item("SK", AttributeValue::S(sk.clone()))
+                .item("Value", AttributeValue::B(value.clone().into()))
+                .send(),
+            "put_item",
+            &self.table_name,
+            Some(&key_str),
+            MAX_RETRIES,
+            StorageError::DynamoDbError
+        )?;
 
         Ok(())
     }
@@ -102,16 +116,22 @@ impl KvStore for DynamoDbKvStore {
     async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
         let pk = self.get_partition_key_impl();
         let sk = self.make_sort_key_impl(key);
+        let key_str = String::from_utf8_lossy(key);
 
-        let result = self.client
-            .delete_item()
-            .table_name(&self.table_name)
-            .key("PK", AttributeValue::S(pk))
-            .key("SK", AttributeValue::S(sk))
-            .return_values(aws_sdk_dynamodb::types::ReturnValue::AllOld)
-            .send()
-            .await
-            .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+        let result = retry_operation!(
+            self.client
+                .delete_item()
+                .table_name(&self.table_name)
+                .key("PK", AttributeValue::S(pk.clone()))
+                .key("SK", AttributeValue::S(sk.clone()))
+                .return_values(aws_sdk_dynamodb::types::ReturnValue::AllOld)
+                .send(),
+            "delete_item",
+            &self.table_name,
+            Some(&key_str),
+            MAX_RETRIES,
+            StorageError::DynamoDbError
+        )?;
 
         Ok(result.attributes.is_some())
     }
@@ -119,16 +139,22 @@ impl KvStore for DynamoDbKvStore {
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
         let pk = self.get_partition_key_impl();
         let sk = self.make_sort_key_impl(key);
+        let key_str = String::from_utf8_lossy(key);
 
-        let result = self.client
-            .get_item()
-            .table_name(&self.table_name)
-            .key("PK", AttributeValue::S(pk))
-            .key("SK", AttributeValue::S(sk))
-            .projection_expression("PK") // Only fetch key, not value
-            .send()
-            .await
-            .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+        let result = retry_operation!(
+            self.client
+                .get_item()
+                .table_name(&self.table_name)
+                .key("PK", AttributeValue::S(pk.clone()))
+                .key("SK", AttributeValue::S(sk.clone()))
+                .projection_expression("PK") // Only fetch key, not value
+                .send(),
+            "get_item",
+            &self.table_name,
+            Some(&key_str),
+            MAX_RETRIES,
+            StorageError::DynamoDbError
+        )?;
 
         Ok(result.item.is_some())
     }
@@ -150,7 +176,7 @@ impl KvStore for DynamoDbKvStore {
                 .expression_attribute_values(":pk", AttributeValue::S(pk.clone()))
                 .expression_attribute_values(":prefix", AttributeValue::S(prefix_str.clone()));
 
-            if let Some(key) = last_evaluated_key {
+            if let Some(key) = last_evaluated_key.take() {
                 query = query.set_exclusive_start_key(Some(key));
             }
 
@@ -189,9 +215,10 @@ impl KvStore for DynamoDbKvStore {
     
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
         let pk = self.get_partition_key_impl();
+        const BATCH_SIZE: usize = 25;
 
         // DynamoDB batch write supports up to 25 items per request
-        for chunk in items.chunks(25) {
+        for chunk in items.chunks(BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for (key, value) in chunk {
@@ -207,21 +234,31 @@ impl KvStore for DynamoDbKvStore {
                             aws_sdk_dynamodb::types::PutRequest::builder()
                                 .set_item(Some(item))
                                 .build()
-                                .map_err(|e| StorageError::DynamoDbError(e.to_string()))?
+                                .map_err(|e| StorageError::DynamoDbError(format!(
+                                    "Failed to build put request for table '{}': {}",
+                                    self.table_name, e
+                                )))?
                         )
                         .build()
                 );
             }
 
-            let mut requests = HashMap::new();
-            requests.insert(self.table_name.clone(), write_requests);
-
-            self.client
-                .batch_write_item()
-                .set_request_items(Some(requests))
-                .send()
-                .await
-                .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+            retry_batch_operation(
+                |requests| {
+                    let mut req_map = HashMap::new();
+                    req_map.insert(self.table_name.clone(), requests.to_vec());
+                    Box::pin(
+                        self.client
+                            .batch_write_item()
+                            .set_request_items(Some(req_map))
+                            .send()
+                    )
+                },
+                &self.table_name,
+                write_requests,
+            )
+            .await
+            .map_err(StorageError::DynamoDbError)?;
         }
 
         Ok(())
@@ -229,8 +266,9 @@ impl KvStore for DynamoDbKvStore {
     
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
         let pk = self.get_partition_key_impl();
+        const BATCH_SIZE: usize = 25;
 
-        for chunk in keys.chunks(25) {
+        for chunk in keys.chunks(BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for key in chunk {
@@ -245,21 +283,31 @@ impl KvStore for DynamoDbKvStore {
                             aws_sdk_dynamodb::types::DeleteRequest::builder()
                                 .set_key(Some(key_map))
                                 .build()
-                                .map_err(|e| StorageError::DynamoDbError(e.to_string()))?
+                                .map_err(|e| StorageError::DynamoDbError(format!(
+                                    "Failed to build delete request for table '{}': {}",
+                                    self.table_name, e
+                                )))?
                         )
                         .build()
                 );
             }
 
-            let mut requests = HashMap::new();
-            requests.insert(self.table_name.clone(), write_requests);
-
-            self.client
-                .batch_write_item()
-                .set_request_items(Some(requests))
-                .send()
-                .await
-                .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+            retry_batch_operation(
+                |requests| {
+                    let mut req_map = HashMap::new();
+                    req_map.insert(self.table_name.clone(), requests.to_vec());
+                    Box::pin(
+                        self.client
+                            .batch_write_item()
+                            .set_request_items(Some(req_map))
+                            .send()
+                    )
+                },
+                &self.table_name,
+                write_requests,
+            )
+            .await
+            .map_err(StorageError::DynamoDbError)?;
         }
 
         Ok(())
@@ -425,10 +473,42 @@ impl DynamoDbNamespacedStore {
         
         match create_result {
             Ok(_) => {
-                // Wait for table to be active
-                // Note: In production, you might want to wait for ACTIVE status
-                // For now, we'll just return success and let the first operation handle any timing issues
-                Ok(())
+                // Wait for table to be ACTIVE before returning
+                // Poll with exponential backoff (max 30 seconds total)
+                let mut attempts = 0;
+                const MAX_ATTEMPTS: u32 = 30;
+                
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    
+                    match self.client
+                        .describe_table()
+                        .table_name(table_name)
+                        .send()
+                        .await
+                    {
+                        Ok(response) => {
+                            if let Some(table) = response.table {
+                                if let Some(status) = table.table_status {
+                                    if matches!(status, TableStatus::Active) {
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            // Continue polling
+                        }
+                    }
+                    
+                    attempts += 1;
+                    if attempts >= MAX_ATTEMPTS {
+                        return Err(StorageError::DynamoDbError(format!(
+                            "Table '{}' did not become ACTIVE within timeout",
+                            table_name
+                        )));
+                    }
+                }
             }
             Err(e) => {
                 // If table was created by another process between our check and create, that's ok
@@ -548,7 +628,7 @@ impl KvStore for DynamoDbNativeIndexStore {
                 .expression_attribute_values(":pk", AttributeValue::S(pk.clone()))
                 .expression_attribute_values(":prefix", AttributeValue::S(term_prefix.clone()));
             
-            if let Some(key) = last_evaluated_key {
+            if let Some(key) = last_evaluated_key.take() {
                 query = query.set_exclusive_start_key(Some(key));
             }
             
@@ -587,7 +667,9 @@ impl KvStore for DynamoDbNativeIndexStore {
     
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
         // DynamoDB has a 25-item batch limit
-        for chunk in items.chunks(25) {
+        const BATCH_SIZE: usize = 25;
+
+        for chunk in items.chunks(BATCH_SIZE) {
             let mut write_requests = Vec::new();
             
             for (key, value) in chunk {
@@ -599,7 +681,10 @@ impl KvStore for DynamoDbNativeIndexStore {
                     .item("SK", AttributeValue::S(term))
                     .item("Value", AttributeValue::B(value.clone().into()))
                     .build()
-                    .map_err(|e| StorageError::DynamoDbError(format!("Failed to build put request: {}", e)))?;
+                    .map_err(|e| StorageError::DynamoDbError(format!(
+                        "Failed to build put request for table '{}': {}",
+                        self.table_name, e
+                    )))?;
                 
                 let write_request = aws_sdk_dynamodb::types::WriteRequest::builder()
                     .put_request(put_request)
@@ -608,12 +693,20 @@ impl KvStore for DynamoDbNativeIndexStore {
                 write_requests.push(write_request);
             }
             
-            self.client
-                .batch_write_item()
-                .request_items(&self.table_name, write_requests)
-                .send()
-                .await
-                .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+            retry_batch_operation(
+                |requests| {
+                    Box::pin(
+                        self.client
+                            .batch_write_item()
+                            .request_items(&self.table_name, requests.to_vec())
+                            .send()
+                    )
+                },
+                &self.table_name,
+                write_requests,
+            )
+            .await
+            .map_err(StorageError::DynamoDbError)?;
         }
         
         Ok(())
@@ -621,7 +714,9 @@ impl KvStore for DynamoDbNativeIndexStore {
     
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
         // DynamoDB has a 25-item batch limit
-        for chunk in keys.chunks(25) {
+        const BATCH_SIZE: usize = 25;
+
+        for chunk in keys.chunks(BATCH_SIZE) {
             let mut write_requests = Vec::new();
             
             for key in chunk {
@@ -632,7 +727,10 @@ impl KvStore for DynamoDbNativeIndexStore {
                     .key("PK", AttributeValue::S(pk))
                     .key("SK", AttributeValue::S(term))
                     .build()
-                    .map_err(|e| StorageError::DynamoDbError(format!("Failed to build delete request: {}", e)))?;
+                    .map_err(|e| StorageError::DynamoDbError(format!(
+                        "Failed to build delete request for table '{}': {}",
+                        self.table_name, e
+                    )))?;
                 
                 let write_request = aws_sdk_dynamodb::types::WriteRequest::builder()
                     .delete_request(delete_request)
@@ -641,12 +739,20 @@ impl KvStore for DynamoDbNativeIndexStore {
                 write_requests.push(write_request);
             }
             
-            self.client
-                .batch_write_item()
-                .request_items(&self.table_name, write_requests)
-                .send()
-                .await
-                .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
+            retry_batch_operation(
+                |requests| {
+                    Box::pin(
+                        self.client
+                            .batch_write_item()
+                            .request_items(&self.table_name, requests.to_vec())
+                            .send()
+                    )
+                },
+                &self.table_name,
+                write_requests,
+            )
+            .await
+            .map_err(StorageError::DynamoDbError)?;
         }
         
         Ok(())
