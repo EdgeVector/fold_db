@@ -33,6 +33,7 @@ pub mod error;
 pub mod error_handling;
 pub mod fold_db_core;
 pub mod ingestion;
+#[cfg(feature = "lambda")]
 pub mod lambda;
 pub mod logging;
 pub mod schema;
