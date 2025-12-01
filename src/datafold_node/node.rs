@@ -3,10 +3,12 @@ use crate::logging::features::LogFeature;
 use serde::Serialize;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::datafold_node::config::NodeConfig;
+use crate::datafold_node::config::{DatabaseConfig, NodeConfig};
+use crate::db_operations::DbOperationsV2;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityManager};
+use crate::storage::S3Config;
 
 /// A node in the DataFold distributed database system.
 ///
@@ -51,12 +53,64 @@ impl DataFoldNode {
     /// 
     /// Now fully async to support storage abstraction!
     pub async fn new(config: NodeConfig) -> FoldDbResult<Self> {
-        let db = Arc::new(Mutex::new(FoldDB::new(
-            config
-                .storage_path
-                .to_str()
-                .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?,
-        ).await.map_err(|e| FoldDbError::Config(e.to_string()))?));
+        let db = match &config.database {
+            DatabaseConfig::Local { path } => {
+                let path_str = path
+                    .to_str()
+                    .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
+                Arc::new(Mutex::new(FoldDB::new(path_str).await
+                    .map_err(|e| FoldDbError::Config(e.to_string()))?))
+            }
+            DatabaseConfig::DynamoDb { table_name, region, user_id } => {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Initializing DynamoDB backend: table={}, region={}",
+                    table_name,
+                    region
+                );
+                
+                let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(aws_sdk_dynamodb::config::Region::new(region.clone()))
+                    .load()
+                    .await;
+                
+                let client = aws_sdk_dynamodb::Client::new(&aws_config);
+                
+                let db_ops = Arc::new(
+                    DbOperationsV2::from_dynamodb(client, table_name.clone(), user_id.clone()).await
+                        .map_err(|e| FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e)))?
+                );
+                
+                let storage_path = config.get_storage_path();
+                let path_str = storage_path
+                    .to_str()
+                    .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
+                
+                Arc::new(Mutex::new(FoldDB::new_with_db_ops(db_ops, path_str).await
+                    .map_err(|e| FoldDbError::Config(e.to_string()))?))
+            }
+            DatabaseConfig::S3 { bucket, region, prefix, local_path } => {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Initializing S3 backend: bucket={}, region={}, prefix={}",
+                    bucket,
+                    region,
+                    prefix
+                );
+                
+                let s3_config = S3Config {
+                    bucket: bucket.clone(),
+                    region: region.clone(),
+                    prefix: prefix.clone(),
+                    local_path: local_path.clone(),
+                };
+                
+                Arc::new(Mutex::new(FoldDB::new_with_s3(s3_config).await
+                    .map_err(|e| FoldDbError::Config(format!("Failed to initialize S3 backend: {}", e)))?))
+            }
+        };
 
         // Retrieve or generate the persistent node_id from fold_db
         let node_id = {

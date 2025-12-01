@@ -1,8 +1,11 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::datafold_node::config::DatabaseConfig;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fs;
+use std::io::Write;
 
 use super::http_server::AppState;
 use super::DataFoldNode;
@@ -275,6 +278,266 @@ pub async fn reset_schema_service(
             HttpResponse::InternalServerError().json(ResetSchemaServiceResponse {
                 success: false,
                 message: format!("Schema service reset failed: {}", e),
+            })
+        }
+    }
+}
+
+/// Database configuration request/response types
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
+pub struct DatabaseConfigRequest {
+    pub database: DatabaseConfigDto,
+}
+
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum DatabaseConfigDto {
+    #[serde(rename = "local")]
+    Local {
+        path: String,
+    },
+    #[serde(rename = "dynamodb")]
+    DynamoDb {
+        table_name: String,
+        region: String,
+        user_id: Option<String>,
+    },
+    #[serde(rename = "s3")]
+    S3 {
+        bucket: String,
+        region: String,
+        prefix: Option<String>,
+        local_path: String,
+    },
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct DatabaseConfigResponse {
+    pub success: bool,
+    pub message: String,
+    pub requires_restart: bool,
+}
+
+/// Get current database configuration
+#[utoipa::path(
+    get,
+    path = "/api/system/database-config",
+    tag = "system",
+    responses(
+        (status = 200, description = "Database configuration", body = DatabaseConfigDto)
+    )
+)]
+pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
+    let node = state.node.lock().await;
+    let config = &node.config;
+    
+    let db_config = match &config.database {
+        DatabaseConfig::Local { path } => DatabaseConfigDto::Local {
+            path: path.to_string_lossy().to_string(),
+        },
+        DatabaseConfig::DynamoDb { table_name, region, user_id } => DatabaseConfigDto::DynamoDb {
+            table_name: table_name.clone(),
+            region: region.clone(),
+            user_id: user_id.clone(),
+        },
+        DatabaseConfig::S3 { bucket, region, prefix, local_path } => DatabaseConfigDto::S3 {
+            bucket: bucket.clone(),
+            region: region.clone(),
+            prefix: Some(prefix.clone()),
+            local_path: local_path.to_string_lossy().to_string(),
+        },
+    };
+    
+    HttpResponse::Ok().json(db_config)
+}
+
+/// Update database configuration
+///
+/// This endpoint updates the database configuration in the node config file.
+/// The server must be restarted for the changes to take effect.
+#[utoipa::path(
+    post,
+    path = "/api/system/database-config",
+    tag = "system",
+    request_body = DatabaseConfigRequest,
+    responses(
+        (status = 200, description = "Configuration updated", body = DatabaseConfigResponse),
+        (status = 400, description = "Bad request", body = DatabaseConfigResponse),
+        (status = 500, description = "Server error", body = DatabaseConfigResponse)
+    )
+)]
+pub async fn update_database_config(
+    state: web::Data<AppState>,
+    req: web::Json<DatabaseConfigRequest>,
+) -> impl Responder {
+    let node = state.node.lock().await;
+    let mut config = node.config.clone();
+    
+    // Convert DTO to internal config
+    let new_db_config = match &req.database {
+        DatabaseConfigDto::Local { path } => DatabaseConfig::Local {
+            path: std::path::PathBuf::from(path),
+        },
+        DatabaseConfigDto::DynamoDb { table_name, region, user_id } => DatabaseConfig::DynamoDb {
+            table_name: table_name.clone(),
+            region: region.clone(),
+            user_id: user_id.clone(),
+        },
+        DatabaseConfigDto::S3 { bucket, region, prefix, local_path } => DatabaseConfig::S3 {
+            bucket: bucket.clone(),
+            region: region.clone(),
+            prefix: prefix.clone().unwrap_or_else(|| "folddb".to_string()),
+            local_path: std::path::PathBuf::from(local_path),
+        },
+    };
+    
+    config.database = new_db_config;
+    
+    // Update storage_path for backward compatibility
+    match &config.database {
+        DatabaseConfig::Local { path } => {
+            config.storage_path = path.clone();
+        }
+        DatabaseConfig::DynamoDb { .. } => {
+            // Keep existing storage_path for DynamoDB (used for logging/debugging)
+        }
+        DatabaseConfig::S3 { local_path, .. } => {
+            config.storage_path = local_path.clone();
+        }
+    }
+    
+    // Save to config file
+    let config_path = std::env::var("NODE_CONFIG")
+        .unwrap_or_else(|_| "config/node_config.json".to_string());
+    
+    // Ensure config directory exists
+    if let Some(parent) = std::path::Path::new(&config_path).parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            log_feature!(
+                LogFeature::HttpServer,
+                error,
+                "Failed to create config directory: {}",
+                e
+            );
+            return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
+                success: false,
+                message: format!("Failed to create config directory: {}", e),
+                requires_restart: false,
+            });
+        }
+    }
+    
+    // Serialize and write config
+    match serde_json::to_string_pretty(&config) {
+        Ok(config_json) => {
+            match fs::File::create(&config_path) {
+                Ok(mut file) => {
+                    if let Err(e) = file.write_all(config_json.as_bytes()) {
+                        log_feature!(
+                            LogFeature::HttpServer,
+                            error,
+                            "Failed to write config file: {}",
+                            e
+                        );
+                        return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
+                            success: false,
+                            message: format!("Failed to write config file: {}", e),
+                            requires_restart: false,
+                        });
+                    }
+                }
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::HttpServer,
+                        error,
+                        "Failed to create config file: {}",
+                        e
+                    );
+                    return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
+                        success: false,
+                        message: format!("Failed to create config file: {}", e),
+                        requires_restart: false,
+                    });
+                }
+            }
+        }
+        Err(e) => {
+            log_feature!(
+                LogFeature::HttpServer,
+                error,
+                "Failed to serialize config: {}",
+                e
+            );
+            return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
+                success: false,
+                message: format!("Failed to serialize config: {}", e),
+                requires_restart: false,
+            });
+        }
+    }
+    
+    // Now recreate the node with the new database configuration
+    // This preserves existing data but switches to the new database backend
+    log_feature!(
+        LogFeature::HttpServer,
+        info,
+        "Recreating node with new database configuration..."
+    );
+    
+    // Close the current database before recreating
+    if let Ok(db) = node.get_fold_db() {
+        if let Err(e) = db.close() {
+            log_feature!(
+                LogFeature::HttpServer,
+                warn,
+                "Failed to close database during config update: {}",
+                e
+            );
+        }
+    }
+    
+    // Drop the lock before creating a new node
+    drop(node);
+    
+    // Create a new node instance with the updated config
+    match DataFoldNode::new(config.clone()).await {
+        Ok(new_node) => {
+            // Replace the node in the state
+            let mut node = state.node.lock().await;
+            *node = new_node;
+            
+            log_feature!(
+                LogFeature::HttpServer,
+                info,
+                "Database configuration updated and node restarted successfully"
+            );
+            
+            HttpResponse::Ok().json(DatabaseConfigResponse {
+                success: true,
+                message: "Database configuration updated and node restarted successfully.".to_string(),
+                requires_restart: false,
+            })
+        }
+        Err(e) => {
+            log_feature!(
+                LogFeature::HttpServer,
+                error,
+                "Failed to recreate node with new database configuration: {}",
+                e
+            );
+            
+            // Try to reload the old config
+            if let Ok(old_config) = crate::datafold_node::config::load_node_config(Some(&config_path), None) {
+                if let Ok(old_node) = DataFoldNode::new(old_config).await {
+                    let mut node = state.node.lock().await;
+                    *node = old_node;
+                }
+            }
+            
+            HttpResponse::InternalServerError().json(DatabaseConfigResponse {
+                success: false,
+                message: format!("Failed to restart node with new database configuration: {}. The previous configuration has been restored.", e),
+                requires_restart: false,
             })
         }
     }

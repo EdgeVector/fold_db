@@ -52,8 +52,12 @@ impl TestDatabaseFactory {
     /// Create test node config (consolidates create_test_config functions)
     pub fn create_test_node_config() -> crate::datafold_node::config::NodeConfig {
         let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_path_buf();
         crate::datafold_node::config::NodeConfig {
-            storage_path: dir.path().to_path_buf(),
+            database: crate::datafold_node::config::DatabaseConfig::Local {
+                path: path.clone(),
+            },
+            storage_path: path,
             default_trust_distance: 1,
             network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
             security_config: crate::security::SecurityConfig::default(),

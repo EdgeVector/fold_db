@@ -224,27 +224,40 @@ impl FoldDB {
         info!("Created QueryExecutor for query operations");
 
         // Create TransformOrchestrator for managing transform execution
-        // Note: orchestrator_tree is only available with Sled backend
-        // For non-Sled backends (DynamoDB, etc.), transforms will be limited
+        // Now supports both Sled and DynamoDB backends
         let transform_orchestrator = if let Some(orchestrator_tree) = db_ops.orchestrator_tree.clone() {
+            // Sled backend - use sync version
             let orchestrator = Arc::new(TransformOrchestrator::new(
                 Arc::clone(&transform_manager),
                 orchestrator_tree,
                 Arc::clone(&message_bus),
                 Arc::clone(&db_ops),
             ));
-            info!("Created TransformOrchestrator for transform execution");
+            info!("Created TransformOrchestrator for transform execution (Sled backend)");
             Some(orchestrator)
         } else {
-            // For non-Sled backends, orchestrator is optional
-            // Transform execution will be limited until orchestrator_tree support is added
-            log_feature!(
-                LogFeature::Database,
-                warn,
-                "⚠️  TransformOrchestrator not available (orchestrator_tree only supported with Sled backend). \
-                 Transforms will have limited functionality."
-            );
-            None
+            // DynamoDB or other backends - use async version with orchestrator_store
+            let orchestrator_store = db_ops.orchestrator_store().inner().clone();
+            match TransformOrchestrator::new_with_store(
+                Arc::clone(&transform_manager),
+                orchestrator_store,
+                Arc::clone(&message_bus),
+                Arc::clone(&db_ops),
+            ).await {
+                Ok(orchestrator) => {
+                    info!("Created TransformOrchestrator for transform execution (KvStore backend)");
+                    Some(Arc::new(orchestrator))
+                }
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::Database,
+                        warn,
+                        "⚠️  Failed to create TransformOrchestrator: {}. Transforms will have limited functionality.",
+                        e
+                    );
+                    None
+                }
+            }
         };
 
         // Create MutationManager for handling all mutation operations
@@ -389,13 +402,21 @@ impl FoldDB {
 
     /// Search native index across all classification types and aggregate results
     /// This now includes field name matches via search_word
-    pub fn native_search_all_classifications(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
+    pub async fn native_search_all_classifications(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
         debug!("FoldDB: native_search_all_classifications called for term: '{}'", term);
         
         // Delegate to NativeIndexManager which has the full implementation
-        self.db_ops.native_index_manager()
-            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?
-            .search_all_classifications(term)
+        let manager = self.db_ops.native_index_manager()
+            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?;
+        
+        // Use async version if store is available (DynamoDB), otherwise use sync (Sled)
+        if manager.is_async() {
+            // DynamoDB backend - use async
+            manager.search_all_classifications_async(term).await
+        } else {
+            // Sled backend - use sync
+            manager.search_all_classifications(term)
+        }
     }
 
     /// Get the transform orchestrator for managing transform execution

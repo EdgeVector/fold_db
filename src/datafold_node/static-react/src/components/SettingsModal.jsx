@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ingestionClient } from '../api/clients'
+import { getDatabaseConfig, updateDatabaseConfig } from '../api/clients/systemClient'
 import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
 import { useSchemaServiceConfig, SCHEMA_SERVICE_ENVIRONMENTS } from '../contexts/SchemaServiceConfigContext'
@@ -21,10 +22,22 @@ function SettingsModal({ isOpen, onClose }) {
   const [selectedSchemaEnv, setSelectedSchemaEnv] = useState(environment.id)
   const [connectionStatus, setConnectionStatus] = useState({})
   const [checkingStatus, setCheckingStatus] = useState({})
+  
+  // Database configuration
+  const [dbType, setDbType] = useState('local')
+  const [dbPath, setDbPath] = useState('data')
+  const [dynamoTableName, setDynamoTableName] = useState('DataFoldStorage')
+  const [dynamoRegion, setDynamoRegion] = useState('us-west-2')
+  const [dynamoUserId, setDynamoUserId] = useState('')
+  const [s3Bucket, setS3Bucket] = useState('')
+  const [s3Region, setS3Region] = useState('us-east-1')
+  const [s3Prefix, setS3Prefix] = useState('folddb')
+  const [s3LocalPath, setS3LocalPath] = useState('/tmp/folddb-data')
 
   useEffect(() => {
     if (isOpen) {
       loadAiConfig()
+      loadDatabaseConfig()
       setSelectedSchemaEnv(environment.id)
       // Auto-check current environment status when opening the schema service tab
       if (activeTab === 'schema-service') {
@@ -102,6 +115,89 @@ function SettingsModal({ isOpen, onClose }) {
     } finally {
       setCheckingStatus(prev => ({ ...prev, [envId]: false }))
     }
+  }
+
+  const loadDatabaseConfig = async () => {
+    try {
+      const response = await getDatabaseConfig()
+      if (response.success && response.data) {
+        const config = response.data
+        setDbType(config.type)
+        if (config.type === 'local') {
+          setDbPath(config.path || 'data')
+        } else if (config.type === 'dynamodb') {
+          setDynamoTableName(config.table_name || 'DataFoldStorage')
+          setDynamoRegion(config.region || 'us-west-2')
+          setDynamoUserId(config.user_id || '')
+        } else if (config.type === 's3') {
+          setS3Bucket(config.bucket || '')
+          setS3Region(config.region || 'us-east-1')
+          setS3Prefix(config.prefix || 'folddb')
+          setS3LocalPath(config.local_path || '/tmp/folddb-data')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load database config:', error)
+    }
+  }
+
+  const saveDatabaseConfig = async () => {
+    try {
+      let config
+      if (dbType === 'local') {
+        config = {
+          type: 'local',
+          path: dbPath
+        }
+      } else if (dbType === 'dynamodb') {
+        if (!dynamoTableName || !dynamoRegion) {
+          setConfigSaveStatus({ success: false, message: 'Table name and region are required for DynamoDB' })
+          setTimeout(() => setConfigSaveStatus(null), 3000)
+          return
+        }
+        config = {
+          type: 'dynamodb',
+          table_name: dynamoTableName,
+          region: dynamoRegion,
+          user_id: dynamoUserId || undefined
+        }
+      } else if (dbType === 's3') {
+        if (!s3Bucket || !s3Region) {
+          setConfigSaveStatus({ success: false, message: 'Bucket and region are required for S3' })
+          setTimeout(() => setConfigSaveStatus(null), 3000)
+          return
+        }
+        config = {
+          type: 's3',
+          bucket: s3Bucket,
+          region: s3Region,
+          prefix: s3Prefix || 'folddb',
+          local_path: s3LocalPath || '/tmp/folddb-data'
+        }
+      }
+
+      const response = await updateDatabaseConfig(config)
+      
+      if (response.success) {
+        setConfigSaveStatus({ 
+          success: true, 
+          message: response.data.requires_restart 
+            ? 'Database configuration saved. Please restart the server for changes to take effect.'
+            : response.data.message || 'Database configuration saved and restarted successfully'
+        })
+        setTimeout(() => {
+          setConfigSaveStatus(null)
+          if (!response.data.requires_restart) {
+            onClose()
+          }
+        }, 3000)
+      } else {
+        setConfigSaveStatus({ success: false, message: response.error || 'Failed to save database configuration' })
+      }
+    } catch (error) {
+      setConfigSaveStatus({ success: false, message: error.message || 'Failed to save database configuration' })
+    }
+    setTimeout(() => setConfigSaveStatus(null), 5000)
   }
 
   const saveSchemaServiceConfig = () => {
@@ -226,6 +322,16 @@ function SettingsModal({ isOpen, onClose }) {
                   }`}
                 >
                   Schema Service
+                </button>
+                <button
+                  onClick={() => setActiveTab('database')}
+                  className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'database'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Database
                 </button>
               </nav>
             </div>
@@ -423,17 +529,196 @@ function SettingsModal({ isOpen, onClose }) {
                   )}
                 </div>
               )}
+
+              {activeTab === 'database' && (
+                <div className="space-y-4">
+                  <div className="mb-4">
+                    <h4 className="text-md font-semibold text-gray-900 mb-2">Database Storage Backend</h4>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Choose the storage backend for your database. Changes require a server restart.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Storage Type
+                    </label>
+                    <select
+                      value={dbType}
+                      onChange={(e) => setDbType(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm"
+                    >
+                      <option value="local">Local (Sled)</option>
+                      <option value="dynamodb">DynamoDB</option>
+                      <option value="s3">S3</option>
+                    </select>
+                  </div>
+
+                  {dbType === 'local' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Storage Path
+                      </label>
+                      <input
+                        type="text"
+                        value={dbPath}
+                        onChange={(e) => setDbPath(e.target.value)}
+                        placeholder="data"
+                        className="w-full p-2 border border-gray-300 rounded text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Local filesystem path where the database will be stored
+                      </p>
+                    </div>
+                  ) : dbType === 'dynamodb' ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Table Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={dynamoTableName}
+                          onChange={(e) => setDynamoTableName(e.target.value)}
+                          placeholder="DataFoldStorage"
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Base table name (namespaces will be appended automatically)
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          AWS Region <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={dynamoRegion}
+                          onChange={(e) => setDynamoRegion(e.target.value)}
+                          placeholder="us-west-2"
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          AWS region where your DynamoDB tables are located
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          User ID (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={dynamoUserId}
+                          onChange={(e) => setDynamoUserId(e.target.value)}
+                          placeholder="Leave empty for single-tenant"
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          User ID for multi-tenant isolation (uses partition key)
+                        </p>
+                      </div>
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p className="text-xs text-yellow-800">
+                          <strong>Note:</strong> Ensure your AWS credentials are configured (via environment variables, IAM role, or AWS CLI). 
+                          The DynamoDB tables will be created automatically if they don't exist.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          S3 Bucket <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={s3Bucket}
+                          onChange={(e) => setS3Bucket(e.target.value)}
+                          placeholder="my-datafold-bucket"
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          S3 bucket name where the database will be stored
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          AWS Region <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={s3Region}
+                          onChange={(e) => setS3Region(e.target.value)}
+                          placeholder="us-east-1"
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          AWS region where your S3 bucket is located
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          S3 Prefix (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={s3Prefix}
+                          onChange={(e) => setS3Prefix(e.target.value)}
+                          placeholder="folddb"
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Prefix/path within the bucket (defaults to "folddb")
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Local Cache Path
+                        </label>
+                        <input
+                          type="text"
+                          value={s3LocalPath}
+                          onChange={(e) => setS3LocalPath(e.target.value)}
+                          placeholder="/tmp/folddb-data"
+                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Local filesystem path for caching S3 data (defaults to /tmp/folddb-data)
+                        </p>
+                      </div>
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p className="text-xs text-yellow-800">
+                          <strong>Note:</strong> Ensure your AWS credentials are configured (via environment variables, IAM role, or AWS CLI). 
+                          The database will be synced to/from S3 on startup and shutdown.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {configSaveStatus && (
+                    <div className={`p-3 rounded-md ${
+                      configSaveStatus.success 
+                        ? 'bg-green-50 text-green-800 border border-green-200' 
+                        : 'bg-red-50 text-red-800 border border-red-200'
+                    }`}>
+                      <span className="text-sm font-medium">
+                        {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-200">
-            {activeTab === 'ai' || activeTab === 'schema-service' ? (
+            {activeTab === 'ai' || activeTab === 'schema-service' || activeTab === 'database' ? (
               <>
                 <button
-                  onClick={activeTab === 'ai' ? saveAiConfig : saveSchemaServiceConfig}
+                  onClick={activeTab === 'ai' ? saveAiConfig : activeTab === 'schema-service' ? saveSchemaServiceConfig : saveDatabaseConfig}
                   className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
                 >
-                  Save Configuration
+                  {activeTab === 'database' ? 'Save and Restart DB' : 'Save Configuration'}
                 </button>
                 <button
                   onClick={onClose}

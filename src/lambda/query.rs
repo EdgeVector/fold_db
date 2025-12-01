@@ -425,7 +425,7 @@ impl LambdaContext {
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
-        let results = db_guard.native_search_all_classifications(term)
+          let results = db_guard.native_search_all_classifications(term).await
             .map_err(|e| IngestionError::InvalidInput(format!("Native index search failed: {}", e)))?;
         
         Ok(results.into_iter()

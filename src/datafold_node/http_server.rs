@@ -358,6 +358,14 @@ impl DataFoldHttpServer {
                             "/system/reset-schema-service",
                             web::post().to(system_routes::reset_schema_service),
                         )
+                        .route(
+                            "/system/database-config",
+                            web::get().to(system_routes::get_database_config),
+                        )
+                        .route(
+                            "/system/database-config",
+                            web::post().to(system_routes::update_database_config),
+                        )
                         // LLM Query endpoints
                         .route(
                             "/llm-query/run",
