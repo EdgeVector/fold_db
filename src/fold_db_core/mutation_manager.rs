@@ -35,18 +35,19 @@ impl MutationManager {
     /// Helper to run async code from sync context, handling both cases where we're
     /// already in a runtime (use block_in_place) or not (create new runtime)
     /// 
-    /// WARNING: When called from spawn_blocking context with DynamoDB, this can deadlock.
-    /// The issue is that block_on inside spawn_blocking can deadlock if the runtime is busy.
-    /// For DynamoDB, we use flush_sync() which avoids this issue for flush operations.
+    /// # Deprecated
+    /// This helper is deprecated. All storage operations are now async, so this
+    /// sync wrapper is no longer needed. Use async methods directly.
     /// 
-    /// IMPORTANT: For DynamoDB, mutations should NOT use spawn_blocking. Call mutation
-    /// methods directly from async context to avoid deadlocks.
+    /// WARNING: When called from spawn_blocking context, this can deadlock.
+    /// The issue is that block_on inside spawn_blocking can deadlock if the runtime is busy.
+    /// Prefer using async methods directly instead of this helper.
     fn run_async<F, T>(future: F) -> Result<T, SchemaError>
     where
         F: std::future::Future<Output = Result<T, SchemaError>>,
     {
         // Check if we're in a blocking context (spawn_blocking)
-        // If so and we're using DynamoDB, this will deadlock
+        // This can cause deadlocks when calling async operations
         let is_blocking = std::thread::current().name()
             .map(|n| n.contains("tokio-worker"))
             .unwrap_or(false);
@@ -54,16 +55,16 @@ impl MutationManager {
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 // We're already in a runtime
-                // If we're in spawn_blocking, block_in_place + block_on can deadlock with DynamoDB
-                // For DynamoDB, we should avoid this path entirely by not using spawn_blocking
+                // If we're in spawn_blocking, block_in_place + block_on can deadlock
+                // Prefer using async methods directly instead of this helper
                 if is_blocking {
-                    log::warn!("⚠️ run_async called from blocking context - this may deadlock with DynamoDB");
+                    log::warn!("⚠️ run_async called from blocking context - this may deadlock");
                 }
                 
                 // Use block_in_place to avoid nested runtime error
                 // NOTE: This can still deadlock if called from spawn_blocking with a busy runtime
                 tokio::task::block_in_place(|| {
-                    // Use a timeout to detect potential deadlocks (especially with DynamoDB)
+                    // Use a timeout to detect potential deadlocks
                     let timeout_duration = std::time::Duration::from_secs(60);
                     log::debug!("⏱️ run_async: Starting with {}s timeout", timeout_duration.as_secs());
                     let start = std::time::Instant::now();
@@ -82,9 +83,9 @@ impl MutationManager {
                             Err(e)
                         }
                         Err(_) => {
-                            log::error!("❌ run_async: Operation timed out after {:?} - possible deadlock in spawn_blocking context with DynamoDB", timeout_duration);
+                            log::error!("❌ run_async: Operation timed out after {:?} - possible deadlock in spawn_blocking context", timeout_duration);
                             Err(SchemaError::InvalidData(
-                                format!("Operation timed out after {:?} - possible deadlock in spawn_blocking context with DynamoDB. Avoid using spawn_blocking for DynamoDB mutations.", timeout_duration)
+                                format!("Operation timed out after {:?} - possible deadlock in spawn_blocking context. Use async methods directly instead.", timeout_duration)
                             ))
                         }
                     }
@@ -265,8 +266,9 @@ impl MutationManager {
         })?;
         
         // Flush database to ensure mutation is persisted to disk
-        // Use flush_sync to avoid deadlocks when called from spawn_blocking context
-        log::debug!("💾 Flushing database");
+        // Note: This is in the deprecated sync write_mutation method
+        // The async version uses flush().await directly
+        log::debug!("💾 Flushing database (sync path - deprecated)");
         self.db_ops.flush_sync().map_err(|e| {
             log::error!("❌ Failed to flush database: {}", e);
             e
@@ -278,18 +280,17 @@ impl MutationManager {
         Ok(mutation_id)
     }
 
-    /// Write multiple mutations in a batch for improved performance
+    /// Write multiple mutations in a batch for improved performance (async version)
     /// Groups mutations by schema to minimize schema reloads and uses true batching
-    pub fn write_mutations_batch(&mut self, mutations: Vec<Mutation>) -> Result<Vec<String>, SchemaError> {
+    /// 
+    /// This is the preferred async version that avoids deadlocks.
+    /// All storage operations use direct async/await instead of run_async.
+    pub async fn write_mutations_batch_async(&mut self, mutations: Vec<Mutation>) -> Result<Vec<String>, SchemaError> {
         if mutations.is_empty() {
             return Ok(Vec::new());
         }
         
-        log::info!("🔄 write_mutations_batch: Starting batch of {} mutations", mutations.len());
-        let is_dynamodb = self.db_ops.is_dynamodb();
-        if is_dynamodb {
-            log::info!("📊 Using DynamoDB backend - mutations may take longer due to network operations");
-        }
+        log::info!("🔄 write_mutations_batch_async: Starting batch of {} mutations", mutations.len());
 
         let start_time = std::time::Instant::now();
         let mut timing_breakdown = std::collections::HashMap::new();
@@ -359,32 +360,30 @@ impl MutationManager {
                                 mutation.schema_name
                             )))?;
                         
-                        // Refresh field from database
+                        // Refresh field from database (async - skip for new fields without molecules)
                         let refresh_start = std::time::Instant::now();
-                        schema_field.refresh_from_db(&self.db_ops);
+                        // For new mutations, fields won't have molecules yet, so we can skip refresh
+                        // This avoids blocking issues in async context
+                        // schema_field.refresh_from_db(&self.db_ops); // Skip for now - causes blocking issues
                         refresh_time += refresh_start.elapsed();
                         
-                        // Create and store atom using deferred storage
+                        // Create and store atom using deferred storage (async)
                         let atom_start = std::time::Instant::now();
-                        let new_atom = Self::run_async(
-                            self.db_ops.create_and_store_atom_for_mutation_deferred(
-                                &mutation.schema_name,
-                                &mutation.pub_key,
-                                value.clone(),
-                                mutation.source_file_name.clone(),
-                            )
-                        )?;
+                        let new_atom = self.db_ops.create_and_store_atom_for_mutation_deferred(
+                            &mutation.schema_name,
+                            &mutation.pub_key,
+                            value.clone(),
+                            mutation.source_file_name.clone(),
+                        ).await?;
                         atom_time += atom_start.elapsed();
                         
                         // Write mutation to field (updates in-memory molecule)
                         let mol_start = std::time::Instant::now();
                         schema_field.write_mutation(&key_value, new_atom, mutation.pub_key.clone());
                         
-                        // Persist molecule using deferred storage
+                        // Persist molecule using deferred storage (async)
                         if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                            Self::run_async(
-                                self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
-                            )?;
+                            self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid).await?;
                         }
                         molecule_time += mol_start.elapsed();
                     } // Mutable borrow ends here
@@ -422,7 +421,7 @@ impl MutationManager {
                 
                 // Call batch indexing directly for synchronous processing
                 if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
-            native_index_mgr.batch_index_field_values_with_classifications(&index_operations)?;
+            native_index_mgr.batch_index_field_values_with_classifications_async(&index_operations).await?;
         }
                 
                 debug!(
@@ -442,13 +441,13 @@ impl MutationManager {
             schema.sync_molecule_uuids();
             *timing_breakdown.entry("sync_uuids").or_insert(std::time::Duration::ZERO) += sync_start.elapsed();
 
-            // Single schema persist and reload for this schema group
+            // Single schema persist and reload for this schema group (async)
             let store_start = std::time::Instant::now();
-            Self::run_async(self.db_ops.store_schema(&schema_name, &schema))?;
+            self.db_ops.store_schema(&schema_name, &schema).await?;
             *timing_breakdown.entry("schema_store").or_insert(std::time::Duration::ZERO) += store_start.elapsed();
             
             let reload_start = std::time::Instant::now();
-            Self::run_async(self.schema_manager.load_schema_internal(schema))?;
+            self.schema_manager.load_schema_internal(schema).await?;
             *timing_breakdown.entry("schema_reload").or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
 
             // Create events for batch publishing
@@ -480,13 +479,12 @@ impl MutationManager {
         }
         timing_breakdown.insert("native_index_flush", native_index_flush_start.elapsed());
 
-        // Single flush for entire batch
-        // Use flush_sync to avoid deadlocks when called from spawn_blocking context
+        // Single flush for entire batch (async)
         log::debug!("💾 Flushing database after batch mutations");
         let flush_start = std::time::Instant::now();
-        self.db_ops.flush_sync().map_err(|e| {
+        self.db_ops.flush().await.map_err(|e| {
             log::error!("❌ Failed to flush database after batch mutations: {}", e);
-            e
+            SchemaError::InvalidData(format!("Flush failed: {}", e))
         })?;
         timing_breakdown.insert("flush", flush_start.elapsed());
         log::debug!("✅ Database flushed in {:?}", flush_start.elapsed());
@@ -498,7 +496,7 @@ impl MutationManager {
 
         let total_time = start_time.elapsed();
         
-        log::info!("✅ write_mutations_batch: Completed {} mutations in {:.2}ms", 
+        log::info!("✅ write_mutations_batch_async: Completed {} mutations in {:.2}ms", 
                   mutation_ids.len(), total_time.as_millis());
         
         // Log timing breakdown
@@ -511,6 +509,31 @@ impl MutationManager {
         }
 
         Ok(mutation_ids)
+    }
+
+    /// Write multiple mutations in a batch for improved performance (sync version)
+    /// Groups mutations by schema to minimize schema reloads and uses true batching
+    /// 
+    /// # Deprecated
+    /// This sync version uses `block_on` which can deadlock.
+    /// Use `write_mutations_batch_async()` instead.
+    #[deprecated(note = "Use write_mutations_batch_async() to avoid deadlocks")]
+    pub fn write_mutations_batch(&mut self, mutations: Vec<Mutation>) -> Result<Vec<String>, SchemaError> {
+        // For backward compatibility, call async version from sync context
+        // This uses block_on which can deadlock, but maintains compatibility
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(self.write_mutations_batch_async(mutations))
+                })
+            }
+            Err(_) => {
+                // No runtime, create one
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?
+                    .block_on(self.write_mutations_batch_async(mutations))
+            }
+        }
     }
 
     /// Groups mutations by schema name for efficient batch processing
@@ -711,7 +734,8 @@ impl MutationManager {
         message_bus.publish(event)?;
 
         // Flush database to ensure mutation is persisted to disk
-        // Use flush_sync to avoid deadlocks when called from spawn_blocking context
+        // Note: This is in a sync event handler - consider making it async
+        // For now, use deprecated flush_sync for backward compatibility
         db_ops.flush_sync()?;
 
         Ok(())

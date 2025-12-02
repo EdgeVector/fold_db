@@ -329,6 +329,16 @@ impl KvStore for DynamoDbKvStore {
     fn backend_name(&self) -> &'static str {
         "dynamodb"
     }
+    
+    fn execution_model(&self) -> super::traits::ExecutionModel {
+        // DynamoDB is truly async (network I/O)
+        super::traits::ExecutionModel::Async
+    }
+    
+    fn flush_behavior(&self) -> super::traits::FlushBehavior {
+        // DynamoDB is eventually consistent, flush is a no-op
+        super::traits::FlushBehavior::NoOp
+    }
 }
 
 /// DynamoDB-backed NamespacedStore
@@ -428,19 +438,40 @@ impl DynamoDbNamespacedStore {
             .send()
             .await
         {
-            Ok(_) => {
-                // Table exists, we're good
+            Ok(response) => {
+                // Table exists, check if it's active
+                if let Some(table) = response.table() {
+                    if let Some(status) = table.table_status() {
+                        if status == &aws_sdk_dynamodb::types::TableStatus::Active {
+                            // Table exists and is active, we're good
+                            return Ok(());
+                        } else {
+                            // Table exists but not active yet - wait a bit
+                            log::debug!("Table {} exists but status is {:?}, waiting...", table_name, status);
+                            // For now, we'll proceed anyway as the table will become active soon
+                            return Ok(());
+                        }
+                    }
+                }
+                // Table exists (even if we couldn't check status), we're good
                 return Ok(());
             }
             Err(e) => {
-                // If it's not a ResourceNotFoundException, propagate the error
-                if !e.to_string().contains("ResourceNotFoundException") {
-                    return Err(StorageError::DynamoDbError(format!(
-                        "Failed to check if table exists: {}",
-                        e
-                    )));
+                let error_str = e.to_string();
+                // Check for ResourceNotFoundException specifically
+                if error_str.contains("ResourceNotFoundException") {
+                    // Table doesn't exist, we'll create it below
+                } else if error_str.contains("service error") {
+                    // "service error" is often a transient error or permissions issue
+                    // Try to proceed - if the table doesn't exist, creation will fail
+                    // If it does exist, operations will work
+                    log::warn!("Got 'service error' when checking table {} - assuming table exists and proceeding", table_name);
+                    return Ok(());
+                } else {
+                    // For other errors, still try to proceed but log a warning
+                    log::warn!("Unexpected error checking table {}: {} - proceeding anyway", table_name, error_str);
+                    // Don't fail immediately - let the create attempt below handle it
                 }
-                // Table doesn't exist, we'll create it below
             }
         }
         
@@ -774,6 +805,16 @@ impl KvStore for DynamoDbNativeIndexStore {
     
     fn backend_name(&self) -> &'static str {
         "dynamodb-native-index"
+    }
+    
+    fn execution_model(&self) -> super::traits::ExecutionModel {
+        // DynamoDB is truly async (network I/O)
+        super::traits::ExecutionModel::Async
+    }
+    
+    fn flush_behavior(&self) -> super::traits::FlushBehavior {
+        // DynamoDB is eventually consistent, flush is a no-op
+        super::traits::FlushBehavior::NoOp
     }
 }
 

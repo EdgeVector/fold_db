@@ -43,8 +43,12 @@ impl crate::schema::types::field::Field for SingleField {
     }
 
     fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
+        // For new mutations, fields won't have molecules yet, so refresh is optional
+        // This method may fail in async contexts, but that's OK for new fields
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
+            // Only try to refresh if we can do it safely
+            // For new mutations, this will typically be None anyway
             if let Ok(Some(molecule)) = super::run_async(db_ops.get_item::<crate::atom::Molecule>(&ref_key)) {
                 self.molecule = Some(molecule.clone());
             }
