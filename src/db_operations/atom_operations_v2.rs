@@ -28,14 +28,24 @@ impl DbOperationsV2 {
         // Check if atom with this content-based UUID already exists
         let atom_key = format!("atom:{}", new_atom.uuid());
         
+        log::debug!("🔍 Checking for existing atom: {}", atom_key);
         if let Some(existing_atom) = self.atoms_store().get_item::<Atom>(&atom_key).await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to check existing atom: {}", e)))? {
+            .map_err(|e| {
+                log::error!("❌ Failed to check existing atom '{}': {}", atom_key, e);
+                SchemaError::InvalidData(format!("Failed to check existing atom: {}", e))
+            })? {
+            log::debug!("✅ Atom already exists, returning existing: {}", atom_key);
             return Ok(existing_atom);
         }
 
         // Store the new atom (deferred - no immediate flush)
+        log::debug!("💾 Storing new atom: {}", atom_key);
         self.atoms_store().put_item(&atom_key, &new_atom).await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to store atom: {}", e)))?;
+            .map_err(|e| {
+                log::error!("❌ Failed to store atom '{}': {}", atom_key, e);
+                SchemaError::InvalidData(format!("Failed to store atom: {}", e))
+            })?;
+        log::debug!("✅ Atom stored: {}", atom_key);
 
         Ok(new_atom)
     }
@@ -47,23 +57,44 @@ impl DbOperationsV2 {
         field: &FieldVariant,
         molecule_uuid: &str,
     ) -> Result<(), SchemaError> {
+        let ref_key = format!("ref:{}", molecule_uuid);
+        log::debug!("🔗 Persisting molecule: {}", ref_key);
+        
         match field {
             FieldVariant::Single(f) => {
                 if let Some(mol) = &f.molecule {
-                    self.molecules_store().put_item(&format!("ref:{}", molecule_uuid), mol).await
-                        .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
+                    self.molecules_store().put_item(&ref_key, mol).await
+                        .map_err(|e| {
+                            log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
+                            SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
+                        })?;
+                    log::debug!("✅ Molecule stored: {}", ref_key);
+                } else {
+                    log::debug!("⏭️ No molecule to persist for Single field");
                 }
             }
             FieldVariant::Range(f) => {
                 if let Some(mol) = &f.molecule {
-                    self.molecules_store().put_item(&format!("ref:{}", molecule_uuid), mol).await
-                        .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
+                    self.molecules_store().put_item(&ref_key, mol).await
+                        .map_err(|e| {
+                            log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
+                            SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
+                        })?;
+                    log::debug!("✅ Molecule stored: {}", ref_key);
+                } else {
+                    log::debug!("⏭️ No molecule to persist for Range field");
                 }
             }
             FieldVariant::HashRange(f) => {
                 if let Some(mol) = &f.molecule {
-                    self.molecules_store().put_item(&format!("ref:{}", molecule_uuid), mol).await
-                        .map_err(|e| SchemaError::InvalidData(format!("Failed to store molecule: {}", e)))?;
+                    self.molecules_store().put_item(&ref_key, mol).await
+                        .map_err(|e| {
+                            log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
+                            SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
+                        })?;
+                    log::debug!("✅ Molecule stored: {}", ref_key);
+                } else {
+                    log::debug!("⏭️ No molecule to persist for HashRange field");
                 }
             }
         }

@@ -6,9 +6,214 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs;
 use std::io::Write;
+use aws_sdk_dynamodb::types::AttributeValue;
+use aws_sdk_dynamodb::Client as DynamoClient;
+use std::collections::HashMap;
 
 use super::http_server::AppState;
 use super::DataFoldNode;
+
+/// Clear all data from all DynamoDB namespace tables
+/// 
+/// This function scans and deletes all items from all known namespace tables
+/// used by the database. It handles pagination and batch operations.
+///
+/// # WARNING: Multi-Tenancy
+///
+/// **This function clears ALL data from ALL tables, regardless of user_id.**
+/// In a multi-tenancy environment where multiple tenants share the same DynamoDB
+/// tables (differentiated by user_id partition keys), this will delete data
+/// belonging to ALL tenants. This function should NOT be used in production
+/// multi-tenancy setups.
+///
+/// For multi-tenancy, implement tenant-specific clearing that filters by user_id.
+async fn clear_all_dynamodb_tables(
+    base_table_name: &str,
+    region: &str,
+    user_id: Option<&String>,
+) -> Result<(), String> {
+    // Known namespaces used by the database
+    let namespaces = vec![
+        "main",
+        "metadata",
+        "node_id_schema_permissions",
+        "transforms",
+        "orchestrator_state",
+        "schema_states",
+        "schemas",
+        "public_keys",
+        "transform_queue_tree",
+        "native_index",
+    ];
+
+    // Create DynamoDB client
+    let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(aws_sdk_dynamodb::config::Region::new(region.to_string()))
+        .load()
+        .await;
+    
+    let client = aws_sdk_dynamodb::Client::new(&aws_config);
+
+    // Clear each namespace table
+    for namespace in namespaces {
+        let table_name = format!("{}-{}", base_table_name, namespace);
+        
+        log_feature!(
+            LogFeature::HttpServer,
+            info,
+            "Clearing table: {}",
+            table_name
+        );
+
+        // Scan all items from the table and delete them in batches
+        if let Err(e) = clear_dynamodb_table(&client, &table_name, user_id).await {
+            log_feature!(
+                LogFeature::HttpServer,
+                warn,
+                "Failed to clear table {}: {}",
+                table_name,
+                e
+            );
+            // Continue with other tables even if one fails
+        }
+    }
+
+    Ok(())
+}
+
+/// Clear all items from a single DynamoDB table
+async fn clear_dynamodb_table(
+    client: &DynamoClient,
+    table_name: &str,
+    _user_id: Option<&String>,
+) -> Result<(), String> {
+    const BATCH_SIZE: usize = 25; // DynamoDB batch limit
+    
+    let mut last_evaluated_key: Option<HashMap<String, AttributeValue>> = None;
+    let mut total_deleted = 0;
+
+    loop {
+        // Scan the table to get all items
+        let mut scan_request = client.scan().table_name(table_name);
+        
+        if let Some(key) = last_evaluated_key.take() {
+            scan_request = scan_request.set_exclusive_start_key(Some(key));
+        }
+
+        let scan_result = match scan_request.send().await {
+            Ok(result) => result,
+            Err(e) => {
+                let error_str = e.to_string();
+                // If table doesn't exist, that's fine - it's already empty
+                if error_str.contains("ResourceNotFoundException") 
+                    || error_str.contains("cannot do operations on a non-existent table") {
+                    log_feature!(
+                        LogFeature::HttpServer,
+                        info,
+                        "Table {} does not exist, skipping",
+                        table_name
+                    );
+                    return Ok(());
+                }
+                return Err(format!("Failed to scan table {}: {}", table_name, error_str));
+            }
+        };
+
+        let items = scan_result.items.unwrap_or_default();
+        
+        if items.is_empty() {
+            break;
+        }
+
+        // Delete items in batches
+        for chunk in items.chunks(BATCH_SIZE) {
+            let mut write_requests = Vec::new();
+
+            for item in chunk {
+                // Extract keys (PK and SK)
+                let pk = item.get("PK")
+                    .ok_or_else(|| format!("Item missing PK in table {}", table_name))?;
+                let sk = item.get("SK")
+                    .ok_or_else(|| format!("Item missing SK in table {}", table_name))?;
+
+                let mut key_map = HashMap::new();
+                key_map.insert("PK".to_string(), pk.clone());
+                key_map.insert("SK".to_string(), sk.clone());
+
+                let delete_request = aws_sdk_dynamodb::types::DeleteRequest::builder()
+                    .set_key(Some(key_map))
+                    .build()
+                    .map_err(|e| format!("Failed to build delete request: {}", e))?;
+
+                write_requests.push(
+                    aws_sdk_dynamodb::types::WriteRequest::builder()
+                        .delete_request(delete_request)
+                        .build()
+                );
+            }
+
+            // Execute batch delete with retry logic
+            let mut request_items = HashMap::new();
+            request_items.insert(table_name.to_string(), write_requests);
+            
+            let mut retries = 0;
+            const MAX_RETRIES: u32 = 3;
+            let mut current_request_items = request_items;
+            
+            loop {
+                let batch_request = client.batch_write_item()
+                    .set_request_items(Some(current_request_items.clone()));
+                
+                match batch_request.send().await {
+                    Ok(response) => {
+                        // Check for unprocessed items
+                        if let Some(unprocessed) = response.unprocessed_items {
+                            if !unprocessed.is_empty() {
+                                if retries < MAX_RETRIES {
+                                    retries += 1;
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(100 * retries as u64)).await;
+                                    current_request_items = unprocessed;
+                                    continue;
+                                } else {
+                                    return Err(format!("Failed to delete all items after {} retries", MAX_RETRIES));
+                                }
+                            }
+                        }
+                        total_deleted += chunk.len();
+                        break;
+                    }
+                    Err(e) => {
+                        if retries < MAX_RETRIES {
+                            retries += 1;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100 * retries as u64)).await;
+                            continue;
+                        } else {
+                            return Err(format!("Batch delete failed after {} retries: {}", MAX_RETRIES, e));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check if there are more items to scan
+        last_evaluated_key = scan_result.last_evaluated_key;
+        if last_evaluated_key.is_none() {
+            break;
+        }
+    }
+
+    if total_deleted > 0 {
+        log_feature!(
+            LogFeature::HttpServer,
+            info,
+            "Cleared {} items from table {}",
+            total_deleted,
+            table_name
+        );
+    }
+
+    Ok(())
+}
 
 /// Get system status information
 #[utoipa::path(
@@ -117,6 +322,17 @@ pub struct ResetSchemaServiceResponse {
 /// 4. Clearing all data and state
 ///
 /// This is a destructive operation that cannot be undone.
+///
+/// # WARNING: Multi-Tenancy
+///
+/// **DO NOT USE THIS ENDPOINT IN A MULTI-TENANCY ENVIRONMENT.**
+/// This reset operation clears ALL data from ALL DynamoDB tables, including data
+/// from all tenants. In a multi-tenancy setup where multiple users share the same
+/// DynamoDB tables (differentiated by user_id partition keys), this will delete
+/// data belonging to all tenants, not just the current tenant.
+///
+/// For multi-tenancy environments, implement tenant-specific reset operations
+/// that only clear data for a specific user_id.
 #[utoipa::path(
     post,
     path = "/api/system/reset-database",
@@ -177,19 +393,60 @@ pub async fn reset_database(
         }
     }
 
-    // Delete all contents of the database folder
-    if db_path.exists() {
-        if let Err(e) = std::fs::remove_dir_all(&db_path) {
+    // Handle reset based on database backend type
+    match &config.database {
+        DatabaseConfig::DynamoDb { table_name, region, user_id } => {
+            // WARNING: This clears ALL data from ALL tables, including all tenants
+            // DO NOT USE IN MULTI-TENANCY ENVIRONMENTS
+            if user_id.is_some() {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    warn,
+                    "⚠️  WARNING: Database reset in multi-tenancy environment detected (user_id={}). \
+                     This will clear ALL tenant data, not just the current tenant. \
+                     This operation should NOT be used in production multi-tenancy setups.",
+                    user_id.as_ref().unwrap()
+                );
+            }
+            
+            // For DynamoDB, clear all data from all namespace tables
             log_feature!(
                 LogFeature::HttpServer,
-                error,
-                "Failed to delete database folder: {}",
-                e
+                info,
+                "Clearing all data from DynamoDB tables: base_table={}, region={}",
+                table_name,
+                region
             );
-            return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
-                success: false,
-                message: format!("Failed to delete database folder: {}", e),
-            });
+            
+            if let Err(e) = clear_all_dynamodb_tables(table_name, region, user_id.as_ref()).await {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    error,
+                    "Failed to clear DynamoDB tables: {}",
+                    e
+                );
+                return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
+                    success: false,
+                    message: format!("Failed to clear DynamoDB tables: {}", e),
+                });
+            }
+        }
+        DatabaseConfig::Local { .. } | DatabaseConfig::S3 { .. } => {
+            // For local storage, delete the database folder
+            if db_path.exists() {
+                if let Err(e) = std::fs::remove_dir_all(&db_path) {
+                    log_feature!(
+                        LogFeature::HttpServer,
+                        error,
+                        "Failed to delete database folder: {}",
+                        e
+                    );
+                    return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
+                        success: false,
+                        message: format!("Failed to delete database folder: {}", e),
+                    });
+                }
+            }
         }
     }
 

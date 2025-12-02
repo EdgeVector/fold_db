@@ -13,11 +13,11 @@ use std::sync::Arc;
 /// DynamoDB-backed KvStore implementation
 ///
 /// Uses a separate DynamoDB table per namespace with:
-/// - Partition Key (PK): user_id (for multi-tenant) or "default" (for single-tenant)
+/// - Partition Key (PK): user_id:key (format: user_id:actual_key)
 /// - Sort Key (SK): actual_key
 /// - Value: binary data
 ///
-/// The user_id is used as the partition key for multi-tenant isolation.
+/// The user_id:key format ensures all tables use consistent partition key structure.
 /// This design enables efficient Query operations instead of expensive Scans.
 pub struct DynamoDbKvStore {
     client: Arc<Client>,
@@ -46,7 +46,16 @@ impl DynamoDbKvStore {
     }
 
     fn get_partition_key_impl(&self) -> String {
+        // For backward compatibility, return just user_id or "default"
+        // The actual key will be in the sort key
         self.user_id.clone().unwrap_or_else(|| "default".to_string())
+    }
+    
+    /// Get partition key in user_id:key format
+    fn get_partition_key_with_key(&self, key: &[u8]) -> String {
+        let key_str = String::from_utf8_lossy(key);
+        let user_id = self.user_id.clone().unwrap_or_else(|| "default".to_string());
+        format!("{}:{}", user_id, key_str)
     }
 
     /// Convert a byte key to a string for the sort key (no user_id prefixing)
@@ -63,7 +72,7 @@ impl DynamoDbKvStore {
 #[async_trait]
 impl KvStore for DynamoDbKvStore {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
-        let pk = self.get_partition_key_impl();
+        let pk = self.get_partition_key_with_key(key);
         let sk = self.make_sort_key_impl(key);
         let key_str = String::from_utf8_lossy(key);
 
@@ -91,7 +100,7 @@ impl KvStore for DynamoDbKvStore {
     }
     
     async fn put(&self, key: &[u8], value: Vec<u8>) -> StorageResult<()> {
-        let pk = self.get_partition_key_impl();
+        let pk = self.get_partition_key_with_key(key);
         let sk = self.make_sort_key_impl(key);
         let key_str = String::from_utf8_lossy(key);
 
@@ -114,7 +123,7 @@ impl KvStore for DynamoDbKvStore {
     }
     
     async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
-        let pk = self.get_partition_key_impl();
+        let pk = self.get_partition_key_with_key(key);
         let sk = self.make_sort_key_impl(key);
         let key_str = String::from_utf8_lossy(key);
 
@@ -137,7 +146,7 @@ impl KvStore for DynamoDbKvStore {
     }
     
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
-        let pk = self.get_partition_key_impl();
+        let pk = self.get_partition_key_with_key(key);
         let sk = self.make_sort_key_impl(key);
         let key_str = String::from_utf8_lossy(key);
 
@@ -160,27 +169,26 @@ impl KvStore for DynamoDbKvStore {
     }
     
     async fn scan_prefix(&self, prefix: &[u8]) -> StorageResult<Vec<(Vec<u8>, Vec<u8>)>> {
-        let pk = self.get_partition_key_impl();
         let prefix_str = String::from_utf8_lossy(prefix).to_string();
-
-        // Use Query instead of Scan for efficient prefix lookups
-        // Query on partition key + begins_with on sort key
+        
+        // For prefix scans, we need to scan all partitions that match the prefix
+        // Since PK is now user_id:key, we can't efficiently query by prefix on PK
+        // We'll use a scan with filter expression instead
         let mut results = Vec::new();
         let mut last_evaluated_key: Option<HashMap<String, AttributeValue>> = None;
 
         loop {
-            let mut query = self.client
-                .query()
+            let mut scan = self.client
+                .scan()
                 .table_name(&self.table_name)
-                .key_condition_expression("PK = :pk AND begins_with(SK, :prefix)")
-                .expression_attribute_values(":pk", AttributeValue::S(pk.clone()))
+                .filter_expression("begins_with(SK, :prefix)")
                 .expression_attribute_values(":prefix", AttributeValue::S(prefix_str.clone()));
 
             if let Some(key) = last_evaluated_key.take() {
-                query = query.set_exclusive_start_key(Some(key));
+                scan = scan.set_exclusive_start_key(Some(key));
             }
 
-            let response = match query.send().await {
+            let response = match scan.send().await {
                 Ok(r) => r,
                 Err(e) => {
                     let error_str = e.to_string();
@@ -214,7 +222,6 @@ impl KvStore for DynamoDbKvStore {
     }
     
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
-        let pk = self.get_partition_key_impl();
         const BATCH_SIZE: usize = 25;
 
         // DynamoDB batch write supports up to 25 items per request
@@ -222,9 +229,10 @@ impl KvStore for DynamoDbKvStore {
             let mut write_requests = Vec::new();
 
             for (key, value) in chunk {
+                let pk = self.get_partition_key_with_key(key);
                 let sk = self.make_sort_key_impl(key);
                 let mut item = HashMap::new();
-                item.insert("PK".to_string(), AttributeValue::S(pk.clone()));
+                item.insert("PK".to_string(), AttributeValue::S(pk));
                 item.insert("SK".to_string(), AttributeValue::S(sk));
                 item.insert("Value".to_string(), AttributeValue::B(value.clone().into()));
 
@@ -265,16 +273,16 @@ impl KvStore for DynamoDbKvStore {
     }
     
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
-        let pk = self.get_partition_key_impl();
         const BATCH_SIZE: usize = 25;
 
         for chunk in keys.chunks(BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for key in chunk {
+                let pk = self.get_partition_key_with_key(key);
                 let sk = self.make_sort_key_impl(&key);
                 let mut key_map = HashMap::new();
-                key_map.insert("PK".to_string(), AttributeValue::S(pk.clone()));
+                key_map.insert("PK".to_string(), AttributeValue::S(pk));
                 key_map.insert("SK".to_string(), AttributeValue::S(sk));
 
                 write_requests.push(
@@ -337,7 +345,8 @@ pub struct DynamoDbNamespacedStore {
 }
 
 /// Specialized DynamoDB store for native index with simplified key structure
-/// Uses feature (classification) as partition key and term as sort key
+/// Uses user_id:feature (classification) as partition key and term as sort key
+/// Format: PK = user_id:feature, SK = term
 /// This enables efficient queries like "all words starting with 'hel'"
 struct DynamoDbNativeIndexStore {
     client: Arc<Client>,
@@ -369,12 +378,12 @@ impl DynamoDbNativeIndexStore {
     }
     
     /// Get partition key (feature) for native index
+    /// Format: user_id:feature (or default:feature if no user_id)
     fn get_partition_key(&self, feature: &str) -> String {
-        // For multi-tenant, prefix with user_id, otherwise just use feature
         if let Some(ref user_id) = self.user_id {
-            format!("{}#{}", user_id, feature)
+            format!("{}:{}", user_id, feature)
         } else {
-            feature.to_string()
+            format!("default:{}", feature)
         }
     }
 }

@@ -2,6 +2,11 @@
 //!
 //! Uses DynamoDB as the primary storage for schemas, eliminating the need
 //! for distributed locking since topology hashes are deterministic and unique.
+//!
+//! Key structure:
+//! - Partition Key (PK): user_id (or "default" for single-tenant)
+//! - Sort Key (SK): schema_name (topology_hash)
+//! - Value: SchemaJson, MutationMappers, CreatedAt, UpdatedAt
 
 use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_dynamodb::Client as DynamoClient;
@@ -10,13 +15,15 @@ use std::collections::HashMap;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::Schema;
 
-use super::dynamodb_utils::{MAX_RETRIES, retry_batch_operation, format_dynamodb_error};
+use super::dynamodb_utils::{MAX_RETRIES, format_dynamodb_error};
 use crate::retry_operation;
 
 /// DynamoDB-backed schema storage
 pub struct DynamoDbSchemaStore {
     client: DynamoClient,
     table_name: String,
+    /// Optional user_id that will be used as part of the partition key
+    user_id: Option<String>,
 }
 
 /// Configuration for DynamoDB schema storage
@@ -26,16 +33,23 @@ pub struct DynamoDbConfig {
     pub table_name: String,
     /// AWS region
     pub region: String,
+    /// Optional user_id that will be used as the partition key (hash key)
+    pub user_id: Option<String>,
 }
 
 impl DynamoDbConfig {
     pub fn new(table_name: String, region: String) -> Self {
-        Self { table_name, region }
+        Self { 
+            table_name, 
+            region,
+            user_id: None,
+        }
     }
 
     /// Create from environment variables:
     /// - DATAFOLD_DYNAMODB_TABLE (required)
     /// - DATAFOLD_DYNAMODB_REGION (required)
+    /// - DATAFOLD_DYNAMODB_USER_ID (optional)
     pub fn from_env() -> Result<Self, String> {
         let table_name = std::env::var("DATAFOLD_DYNAMODB_TABLE")
             .map_err(|_| "Missing DATAFOLD_DYNAMODB_TABLE environment variable".to_string())?;
@@ -43,7 +57,19 @@ impl DynamoDbConfig {
         let region = std::env::var("DATAFOLD_DYNAMODB_REGION")
             .map_err(|_| "Missing DATAFOLD_DYNAMODB_REGION environment variable".to_string())?;
 
-        Ok(Self { table_name, region })
+        let user_id = std::env::var("DATAFOLD_DYNAMODB_USER_ID").ok();
+
+        Ok(Self { 
+            table_name, 
+            region,
+            user_id,
+        })
+    }
+
+    /// Set user_id for multi-tenant isolation
+    pub fn with_user_id(mut self, user_id: String) -> Self {
+        self.user_id = Some(user_id);
+        self
     }
 }
 
@@ -72,17 +98,27 @@ impl DynamoDbSchemaStore {
         Ok(Self {
             client,
             table_name: config.table_name,
+            user_id: config.user_id,
         })
+    }
+
+    /// Get the partition key (hash key) for schemas
+    /// Format: user_id (or "default" if no user_id)
+    /// The schema_name goes in the sort key (SK)
+    fn get_partition_key(&self) -> String {
+        self.user_id.clone().unwrap_or_else(|| "default".to_string())
     }
 
     /// Get a schema by its topology hash
     /// Includes retry logic for transient failures
     pub async fn get_schema(&self, schema_name: &str) -> FoldDbResult<Option<Schema>> {
+        let pk = self.get_partition_key();
         let result = retry_operation!(
             self.client
                 .get_item()
                 .table_name(&self.table_name)
-                .key("SchemaName", AttributeValue::S(schema_name.to_string()))
+                .key("PK", AttributeValue::S(pk.clone()))
+                .key("SK", AttributeValue::S(schema_name.to_string()))
                 .send(),
             "get_item",
             &self.table_name,
@@ -100,12 +136,14 @@ impl DynamoDbSchemaStore {
                     self.table_name, schema_name
                 )))?;
 
-            let schema: Schema = serde_json::from_str(schema_json)
+            let mut schema: Schema = serde_json::from_str(schema_json)
                 .map_err(|e| FoldDbError::Serialization(format!(
                     "Failed to parse schema '{}' from table '{}': {}",
                     schema_name, self.table_name, e
                 )))?;
 
+            // Ensure schema name matches the requested schema_name (sort key) - this is the source of truth
+            schema.name = schema_name.to_string();
             Ok(Some(schema))
         } else {
             Ok(None)
@@ -138,10 +176,12 @@ impl DynamoDbSchemaStore {
             .as_secs();
 
         // Check if schema already exists to preserve CreatedAt
+        let pk = self.get_partition_key();
         let existing_item = self.client
             .get_item()
             .table_name(&self.table_name)
-            .key("SchemaName", AttributeValue::S(schema.name.clone()))
+            .key("PK", AttributeValue::S(pk.clone()))
+            .key("SK", AttributeValue::S(schema.name.clone()))
             .send()
             .await
             .map_err(|e| {
@@ -162,11 +202,13 @@ impl DynamoDbSchemaStore {
             timestamp.to_string()
         };
 
+        let pk = self.get_partition_key();
         retry_operation!(
             self.client
                 .put_item()
                 .table_name(&self.table_name)
-                .item("SchemaName", AttributeValue::S(schema.name.clone()))
+                .item("PK", AttributeValue::S(pk.clone()))
+                .item("SK", AttributeValue::S(schema.name.clone()))
                 .item("SchemaJson", AttributeValue::S(schema_json.clone()))
                 .item("MutationMappers", AttributeValue::S(mutation_mappers_json.clone()))
                 .item("CreatedAt", AttributeValue::N(created_at.clone()))
@@ -197,7 +239,7 @@ impl DynamoDbSchemaStore {
                     .client
                     .scan()
                     .table_name(&self.table_name)
-                    .projection_expression("SchemaName");
+                    .projection_expression("PK, SK");
 
                 if let Some(ref key) = key_to_use {
                     scan_builder = scan_builder.set_exclusive_start_key(Some(key.clone()));
@@ -224,7 +266,8 @@ impl DynamoDbSchemaStore {
 
             if let Some(items) = result.items {
                 for item in items {
-                    if let Some(name) = item.get("SchemaName").and_then(|v| v.as_s().ok()) {
+                    // Extract schema name from SK (sort key)
+                    if let Some(name) = item.get("SK").and_then(|v| v.as_s().ok()) {
                         schema_names.push(name.clone());
                     }
                 }
@@ -278,16 +321,19 @@ impl DynamoDbSchemaStore {
             if let Some(items) = result.items {
                 for item in items {
                     if let Some(schema_json) = item.get("SchemaJson").and_then(|v| v.as_s().ok()) {
-                        let schema_name = item.get("SchemaName")
+                        let schema_name = item.get("SK")
                             .and_then(|v| v.as_s().ok())
                             .map(|s| s.clone())
                             .unwrap_or_else(|| "unknown".to_string());
                         
-                        let schema: Schema = serde_json::from_str(schema_json)
+                        let mut schema: Schema = serde_json::from_str(schema_json)
                             .map_err(|e| FoldDbError::Serialization(format!(
                                 "Failed to parse schema '{}' from table '{}': {}",
                                 schema_name, self.table_name, e
                             )))?;
+                        
+                        // Ensure schema name matches the sort key (SK) - this is the source of truth
+                        schema.name = schema_name;
                         schemas.push(schema);
                     }
                 }
@@ -318,8 +364,10 @@ impl DynamoDbSchemaStore {
             let mut write_requests = Vec::new();
 
             for name in chunk {
+                let pk = self.get_partition_key();
                 let mut key_map = HashMap::new();
-                key_map.insert("SchemaName".to_string(), AttributeValue::S(name.clone()));
+                key_map.insert("PK".to_string(), AttributeValue::S(pk.clone()));
+                key_map.insert("SK".to_string(), AttributeValue::S(name.clone()));
 
                 write_requests.push(
                     aws_sdk_dynamodb::types::WriteRequest::builder()
@@ -379,6 +427,7 @@ mod tests {
         let config = DynamoDbConfig {
             table_name: "test-schemas".to_string(),
             region: "us-east-1".to_string(),
+            user_id: None,
         };
 
         let store = DynamoDbSchemaStore::new(config).await.unwrap();
@@ -430,6 +479,7 @@ mod tests {
         let config = DynamoDbConfig {
             table_name: "test-schemas".to_string(),
             region: "us-east-1".to_string(),
+            user_id: None,
         };
 
         let store = DynamoDbSchemaStore::new(config).await.unwrap();
