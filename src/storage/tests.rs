@@ -147,6 +147,44 @@ mod storage_abstraction_tests {
     }
     
     #[tokio::test]
+    async fn test_execution_model_metadata() {
+        use crate::storage::traits::{ExecutionModel, FlushBehavior};
+        
+        // Test Sled backend
+        let sled_dir = tempfile::tempdir().unwrap();
+        let sled_store = SledNamespacedStore::open(sled_dir.path()).unwrap();
+        let sled_kv = sled_store.open_namespace("test").await.unwrap();
+        assert_eq!(sled_kv.execution_model(), ExecutionModel::SyncWrapped);
+        assert_eq!(sled_kv.flush_behavior(), FlushBehavior::Persists);
+        
+        // Test InMemory backend
+        let mem_store = InMemoryNamespacedStore::new();
+        let mem_kv = mem_store.open_namespace("test").await.unwrap();
+        assert_eq!(mem_kv.execution_model(), ExecutionModel::SyncWrapped);
+        assert_eq!(mem_kv.flush_behavior(), FlushBehavior::NoOp);
+        
+        // Test DynamoDB backend (if available)
+        use crate::storage::dynamodb_backend::DynamoDbNamespacedStore;
+        use aws_sdk_dynamodb::Client;
+        
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .load()
+            .await;
+        let client = Client::new(&config);
+        let dynamodb_store = DynamoDbNamespacedStore::new(client, "test-table".to_string());
+        
+        match dynamodb_store.open_namespace("test").await {
+            Ok(dynamodb_kv) => {
+                assert_eq!(dynamodb_kv.execution_model(), ExecutionModel::Async);
+                assert_eq!(dynamodb_kv.flush_behavior(), FlushBehavior::NoOp);
+            }
+            Err(_) => {
+                // AWS not available, skip DynamoDB test
+            }
+        }
+    }
+    
+    #[tokio::test]
     async fn test_batch_put_items_typed() {
         use serde::{Serialize, Deserialize};
         

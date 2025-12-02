@@ -38,18 +38,14 @@ impl DbOperationsV2 {
             })?;
         
         // Flush to ensure persistence
-        // For DynamoDB, flush is a no-op, but we still call it for consistency
-        let backend_name = self.schemas_store().inner().backend_name();
-        if backend_name != "dynamodb" && backend_name != "dynamodb-native-index" {
-            log::debug!("💾 Flushing schema store (non-DynamoDB backend)");
-            self.schemas_store().inner().flush().await
-                .map_err(|e| {
-                    log::error!("❌ Failed to flush schemas: {}", e);
-                    SchemaError::InvalidData(format!("Failed to flush schemas: {}", e))
-                })?;
-        } else {
-            log::debug!("⏭️ Skipping flush for DynamoDB (auto-flushed)");
-        }
+        // All backends now support async flush - the backend implementation
+        // will handle whether flush is a no-op or performs actual persistence
+        log::debug!("💾 Flushing schema store");
+        self.schemas_store().inner().flush().await
+            .map_err(|e| {
+                log::error!("❌ Failed to flush schemas: {}", e);
+                SchemaError::InvalidData(format!("Failed to flush schemas: {}", e))
+            })?;
         
         log::debug!("✅ Schema '{}' stored successfully", schema_name);
         Ok(())

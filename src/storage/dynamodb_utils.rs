@@ -40,16 +40,34 @@ macro_rules! retry_operation {
                 Ok(result) => break Ok(result),
                 Err(e) => {
                     let error_str = e.to_string();
+                    // Log detailed error information for debugging
+                    if retries == 0 {
+                        // Only log on first attempt to avoid spam
+                        log::debug!(
+                            "DynamoDB {} error (attempt {}): {}",
+                            $op_name,
+                            retries + 1,
+                            error_str
+                        );
+                        // Log the full error for debugging (the error string should contain details)
+                        log::debug!("Full error details: {:?}", e);
+                    }
                     if retries >= $max_retries {
-                        break Err($err_conv(format_dynamodb_error($op_name, $table, $key, &error_str)));
+                        let detailed_error = format_dynamodb_error($op_name, $table, $key, &error_str);
+                        log::error!("DynamoDB {} failed after {} retries: {}", $op_name, retries + 1, detailed_error);
+                        break Err($err_conv(detailed_error));
                     }
                     if is_retryable_error(&error_str) {
                         let delay = exponential_backoff(retries);
+                        log::debug!("Retrying {} after {:?} delay (attempt {}/{})", $op_name, delay, retries + 1, $max_retries);
                         tokio::time::sleep(delay).await;
                         retries += 1;
                         continue;
                     }
-                    break Err($err_conv(format_dynamodb_error($op_name, $table, $key, &error_str)));
+                    // Non-retryable error
+                    let detailed_error = format_dynamodb_error($op_name, $table, $key, &error_str);
+                    log::error!("DynamoDB {} failed with non-retryable error: {}", $op_name, detailed_error);
+                    break Err($err_conv(detailed_error));
                 }
             }
         }

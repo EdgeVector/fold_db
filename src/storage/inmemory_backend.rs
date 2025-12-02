@@ -94,6 +94,16 @@ impl KvStore for InMemoryKvStore {
     fn backend_name(&self) -> &'static str {
         "in-memory"
     }
+    
+    fn execution_model(&self) -> super::traits::ExecutionModel {
+        // In-memory is sync but wrapped in async
+        super::traits::ExecutionModel::SyncWrapped
+    }
+    
+    fn flush_behavior(&self) -> super::traits::FlushBehavior {
+        // In-memory doesn't need flushing
+        super::traits::FlushBehavior::NoOp
+    }
 }
 
 /// In-memory NamespacedStore for testing

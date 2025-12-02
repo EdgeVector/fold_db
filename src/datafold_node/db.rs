@@ -58,11 +58,22 @@ impl DataFoldNode {
 
     /// Executes multiple mutations in a batch for improved performance.
     pub fn mutate_batch(&self, mutations: Vec<Mutation>) -> FoldDbResult<Vec<String>> {
+        // Use sync version for backward compatibility
+        // Note: This can deadlock with DynamoDB - use mutate_batch_async() instead
         self.with_db_mut(
             |db| db.mutation_manager.write_mutations_batch(mutations),
             "Failed to acquire database lock for batch mutation",
             "Batch mutation operation failed"
         )
+    }
+    
+    /// Executes multiple mutations in a batch (async version - preferred for DynamoDB)
+    pub async fn mutate_batch_async(&self, mutations: Vec<Mutation>) -> FoldDbResult<Vec<String>> {
+        let mut db_guard = self.db.lock()
+            .map_err(|_| FoldDbError::Config("Failed to acquire database lock for batch mutation".to_string()))?;
+        
+        db_guard.mutation_manager.write_mutations_batch_async(mutations).await
+            .map_err(|e| FoldDbError::Config(format!("Batch mutation operation failed: {}", e)))
     }
 
     /// List all registered transforms.

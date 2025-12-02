@@ -4,6 +4,24 @@ use std::sync::Arc;
 
 use super::error::{StorageError, StorageResult};
 
+/// Describes how the backend executes operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionModel {
+    /// Backend is truly async (network I/O, e.g., DynamoDB)
+    Async,
+    /// Backend is sync but wrapped in async (local I/O, e.g., Sled)
+    SyncWrapped,
+}
+
+/// Describes flush behavior for the backend
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlushBehavior {
+    /// Flush is a no-op (eventually consistent backend, e.g., DynamoDB)
+    NoOp,
+    /// Flush performs actual persistence (strongly consistent, e.g., Sled)
+    Persists,
+}
+
 /// Core key-value storage trait
 /// 
 /// This is the fundamental storage interface that all backends must implement.
@@ -36,6 +54,18 @@ pub trait KvStore: Send + Sync {
     
     /// Get storage backend name (for debugging/metrics)
     fn backend_name(&self) -> &'static str;
+    
+    /// Get the execution model of this backend
+    /// 
+    /// This describes whether the backend is truly async (network I/O)
+    /// or sync wrapped in async (local I/O).
+    fn execution_model(&self) -> ExecutionModel;
+    
+    /// Get the flush behavior of this backend
+    /// 
+    /// This describes whether flush is a no-op (eventually consistent)
+    /// or performs actual persistence (strongly consistent).
+    fn flush_behavior(&self) -> FlushBehavior;
 }
 
 /// Namespace storage trait

@@ -228,11 +228,6 @@ impl DbOperationsV2 {
         self.native_index_manager.as_ref()
     }
     
-    /// Check if this DbOperationsV2 is using DynamoDB backend
-    pub fn is_dynamodb(&self) -> bool {
-        let backend_name = self.main_store.inner().backend_name();
-        backend_name == "dynamodb" || backend_name == "dynamodb-native-index"
-    }
     
     /// Get atoms/molecules store (same as main_store for backward compatibility)
     pub fn atoms_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
@@ -254,33 +249,26 @@ impl DbOperationsV2 {
             .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))
     }
     
-    /// Synchronous flush that avoids async calls for DynamoDB to prevent deadlocks
-    /// This is used when calling from blocking contexts (like spawn_blocking)
+    /// Synchronous flush (deprecated - use async flush() instead)
+    /// 
+    /// # Deprecated
+    /// This method is deprecated. Use `flush().await` instead.
+    /// All storage operations are now async, so this sync wrapper is no longer needed.
+    #[deprecated(note = "Use flush().await instead - all storage operations are now async")]
     pub fn flush_sync(&self) -> Result<(), SchemaError> {
-        // Check backend type - for DynamoDB, flush is a no-op, so skip async call
-        let backend_name = self.main_store.inner().backend_name();
-        if backend_name == "dynamodb" || backend_name == "dynamodb-native-index" {
-            // DynamoDB flush is always a no-op, return immediately to avoid deadlock
-            return Ok(());
-        }
-        
-        // For other backends (Sled), we need to use async flush
-        // But we're in a sync context, so we need to handle this carefully
-        // Use try_current to avoid deadlocks
+        // For backward compatibility, call async flush from sync context
+        // This can deadlock with DynamoDB if called from spawn_blocking
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
-                // We're in an async runtime, use block_in_place to avoid deadlock
                 tokio::task::block_in_place(|| {
-                    handle.block_on(self.main_store.inner().flush())
+                    handle.block_on(self.flush())
                 })
-                .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))
             }
             Err(_) => {
-                // No runtime available, create a temporary one
-                let rt = tokio::runtime::Runtime::new()
-                    .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?;
-                rt.block_on(self.main_store.inner().flush())
-                    .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))
+                // No runtime, create one
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?
+                    .block_on(self.flush())
             }
         }
     }
