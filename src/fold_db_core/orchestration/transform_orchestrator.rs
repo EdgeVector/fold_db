@@ -7,7 +7,6 @@
 use log::{error, info};
 use sled::Tree;
 use std::sync::Arc;
-use tokio;
 
 use crate::db_operations::DbOperationsV2;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;

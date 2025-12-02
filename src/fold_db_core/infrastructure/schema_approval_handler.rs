@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext;
-use crate::transform::manager::types::{TransformResult, TransformRunner};
+use crate::transform::manager::types::TransformRunner;
 use crate::transform::manager::TransformManager;
 
 use super::backfill_tracker::BackfillTracker;

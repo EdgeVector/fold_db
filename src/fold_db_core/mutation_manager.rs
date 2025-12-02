@@ -34,18 +34,64 @@ pub struct MutationManager {
 impl MutationManager {
     /// Helper to run async code from sync context, handling both cases where we're
     /// already in a runtime (use block_in_place) or not (create new runtime)
+    /// 
+    /// WARNING: When called from spawn_blocking context with DynamoDB, this can deadlock.
+    /// The issue is that block_on inside spawn_blocking can deadlock if the runtime is busy.
+    /// For DynamoDB, we use flush_sync() which avoids this issue for flush operations.
+    /// 
+    /// IMPORTANT: For DynamoDB, mutations should NOT use spawn_blocking. Call mutation
+    /// methods directly from async context to avoid deadlocks.
     fn run_async<F, T>(future: F) -> Result<T, SchemaError>
     where
         F: std::future::Future<Output = Result<T, SchemaError>>,
     {
+        // Check if we're in a blocking context (spawn_blocking)
+        // If so and we're using DynamoDB, this will deadlock
+        let is_blocking = std::thread::current().name()
+            .map(|n| n.contains("tokio-worker"))
+            .unwrap_or(false);
+        
         match tokio::runtime::Handle::try_current() {
-            Ok(_handle) => {
-                // We're already in a runtime, use block_in_place to avoid nested runtime error
+            Ok(handle) => {
+                // We're already in a runtime
+                // If we're in spawn_blocking, block_in_place + block_on can deadlock with DynamoDB
+                // For DynamoDB, we should avoid this path entirely by not using spawn_blocking
+                if is_blocking {
+                    log::warn!("⚠️ run_async called from blocking context - this may deadlock with DynamoDB");
+                }
+                
+                // Use block_in_place to avoid nested runtime error
+                // NOTE: This can still deadlock if called from spawn_blocking with a busy runtime
                 tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(future)
+                    // Use a timeout to detect potential deadlocks (especially with DynamoDB)
+                    let timeout_duration = std::time::Duration::from_secs(60);
+                    log::debug!("⏱️ run_async: Starting with {}s timeout", timeout_duration.as_secs());
+                    let start = std::time::Instant::now();
+                    let result = handle.block_on(async {
+                        tokio::time::timeout(timeout_duration, future).await
+                    });
+                    let elapsed = start.elapsed();
+                    log::debug!("⏱️ run_async: Completed in {:?}", elapsed);
+                    match result {
+                        Ok(Ok(result)) => {
+                            log::debug!("✅ run_async: Operation succeeded");
+                            Ok(result)
+                        }
+                        Ok(Err(e)) => {
+                            log::error!("❌ run_async: Operation failed: {}", e);
+                            Err(e)
+                        }
+                        Err(_) => {
+                            log::error!("❌ run_async: Operation timed out after {:?} - possible deadlock in spawn_blocking context with DynamoDB", timeout_duration);
+                            Err(SchemaError::InvalidData(
+                                format!("Operation timed out after {:?} - possible deadlock in spawn_blocking context with DynamoDB. Avoid using spawn_blocking for DynamoDB mutations.", timeout_duration)
+                            ))
+                        }
+                    }
                 })
             }
             Err(_) => {
+                log::debug!("🔄 run_async: No runtime handle, creating new runtime");
                 // No runtime, create one
                 tokio::runtime::Runtime::new()
                     .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?
@@ -77,22 +123,34 @@ impl MutationManager {
     #[allow(deprecated)]
     pub fn write_mutation(&mut self, mutation: Mutation) -> Result<String, SchemaError> {
         let start_time = std::time::Instant::now();
+        log::info!("🔄 write_mutation: Starting mutation for schema '{}', mutation_id: {}", 
+                   mutation.schema_name, mutation.uuid);
         
         // Capture backfill_hash before mutation is consumed
         let backfill_hash = mutation.backfill_hash.clone();
         
         // Get the schema definition
+        log::debug!("📋 Getting schema: {}", mutation.schema_name);
         let mut schema = self.schema_manager.get_schema(&mutation.schema_name)?
-            .ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name)))?;
+            .ok_or_else(|| {
+                log::error!("❌ Schema '{}' not found", mutation.schema_name);
+                SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name))
+            })?;
+        log::debug!("✅ Schema found: {}", mutation.schema_name);
         
         let key_config = schema.key.clone();
         let key_value = KeyValue::from_mutation(&mutation.fields_and_values, key_config.as_ref().unwrap());
         let mutation_id = mutation.uuid.clone();
         
         // Validate all field values against their topologies before processing
+        log::debug!("🔍 Validating {} fields", mutation.fields_and_values.len());
         for (field_name, value) in &mutation.fields_and_values {
-            schema.validate_field_value(field_name, value)?;
+            schema.validate_field_value(field_name, value).map_err(|e| {
+                log::error!("❌ Field validation failed for '{}': {}", field_name, e);
+                e
+            })?;
         }
+        log::debug!("✅ All fields validated");
         
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
@@ -105,6 +163,7 @@ impl MutationManager {
                 // For now, we'll handle the mutation inline with v2 async methods
                 
                 // Create and store atom
+                log::debug!("⚛️ Creating atom for field '{}'", field_name);
                 let new_atom = Self::run_async(
                     self.db_ops.create_and_store_atom_for_mutation_deferred(
                         &mutation.schema_name,
@@ -112,16 +171,25 @@ impl MutationManager {
                         value.clone(),
                         None, // source_file_name
                     )
-                )?;
+                ).map_err(|e| {
+                    log::error!("❌ Failed to create atom for field '{}': {}", field_name, e);
+                    e
+                })?;
+                log::debug!("✅ Atom created: {}", new_atom.uuid());
                 
                 // Write mutation to field
                 schema_field.write_mutation(&key_value, new_atom.clone(), mutation.pub_key.clone());
                 
                 // Persist molecule if present
                 if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
+                    log::debug!("🔗 Persisting molecule: {}", molecule_uuid);
                     Self::run_async(
                         self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
-                    )?;
+                    ).map_err(|e| {
+                        log::error!("❌ Failed to persist molecule '{}': {}", molecule_uuid, e);
+                        e
+                    })?;
+                    log::debug!("✅ Molecule persisted");
                 }
                 
                 // Index the field value with classifications
@@ -156,12 +224,19 @@ impl MutationManager {
 
         // Persist the updated schema back to the database and schema_manager
         let schema_name = schema.name.clone();
+        let schema_name_for_log = schema_name.clone();
+        log::debug!("💾 Persisting schema: {}", schema_name_for_log);
         let db_ops = self.db_ops.clone();
         let schema_manager = self.schema_manager.clone();
+        let schema_name_for_error = schema_name.clone();
         Self::run_async(async move {
             db_ops.store_schema(&schema_name, &schema).await?;
             schema_manager.load_schema_internal(schema).await
+        }).map_err(|e| {
+            log::error!("❌ Failed to persist schema '{}': {}", schema_name_for_error, e);
+            e
         })?;
+        log::debug!("✅ Schema persisted: {}", schema_name_for_log);
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -183,13 +258,23 @@ impl MutationManager {
             mutation_context,
         );
         
-        self.message_bus.publish(event)?;
+        log::debug!("📢 Publishing MutationExecuted event");
+        self.message_bus.publish(event).map_err(|e| {
+            log::error!("❌ Failed to publish mutation event: {}", e);
+            e
+        })?;
         
         // Flush database to ensure mutation is persisted to disk
-        let db_ops = self.db_ops.clone();
-        Self::run_async(db_ops.flush())?;
+        // Use flush_sync to avoid deadlocks when called from spawn_blocking context
+        log::debug!("💾 Flushing database");
+        self.db_ops.flush_sync().map_err(|e| {
+            log::error!("❌ Failed to flush database: {}", e);
+            e
+        })?;
+        log::debug!("✅ Database flushed");
         
         // Return the mutation ID
+        log::info!("✅ write_mutation: Completed successfully, mutation_id: {}", mutation_id);
         Ok(mutation_id)
     }
 
@@ -198,6 +283,12 @@ impl MutationManager {
     pub fn write_mutations_batch(&mut self, mutations: Vec<Mutation>) -> Result<Vec<String>, SchemaError> {
         if mutations.is_empty() {
             return Ok(Vec::new());
+        }
+        
+        log::info!("🔄 write_mutations_batch: Starting batch of {} mutations", mutations.len());
+        let is_dynamodb = self.db_ops.is_dynamodb();
+        if is_dynamodb {
+            log::info!("📊 Using DynamoDB backend - mutations may take longer due to network operations");
         }
 
         let start_time = std::time::Instant::now();
@@ -390,9 +481,15 @@ impl MutationManager {
         timing_breakdown.insert("native_index_flush", native_index_flush_start.elapsed());
 
         // Single flush for entire batch
+        // Use flush_sync to avoid deadlocks when called from spawn_blocking context
+        log::debug!("💾 Flushing database after batch mutations");
         let flush_start = std::time::Instant::now();
-        Self::run_async(self.db_ops.flush())?;
+        self.db_ops.flush_sync().map_err(|e| {
+            log::error!("❌ Failed to flush database after batch mutations: {}", e);
+            e
+        })?;
         timing_breakdown.insert("flush", flush_start.elapsed());
+        log::debug!("✅ Database flushed in {:?}", flush_start.elapsed());
 
         // Batch publish events
         let publish_start = std::time::Instant::now();
@@ -401,8 +498,11 @@ impl MutationManager {
 
         let total_time = start_time.elapsed();
         
+        log::info!("✅ write_mutations_batch: Completed {} mutations in {:.2}ms", 
+                  mutation_ids.len(), total_time.as_millis());
+        
         // Log timing breakdown
-        debug!("Batch mutation timing breakdown (total: {:.2}ms):", total_time.as_millis());
+        log::debug!("Batch mutation timing breakdown (total: {:.2}ms):", total_time.as_millis());
         let mut sorted_timings: Vec<_> = timing_breakdown.iter().collect();
         sorted_timings.sort_by(|a, b| b.1.cmp(a.1));
         for (operation, duration) in sorted_timings {
@@ -611,7 +711,8 @@ impl MutationManager {
         message_bus.publish(event)?;
 
         // Flush database to ensure mutation is persisted to disk
-        Self::run_async(db_ops.flush())?;
+        // Use flush_sync to avoid deadlocks when called from spawn_blocking context
+        db_ops.flush_sync()?;
 
         Ok(())
     }

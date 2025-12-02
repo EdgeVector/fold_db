@@ -44,6 +44,7 @@ impl OperationProcessor {
             return Err(FoldDbError::Config("No fields to mutate".to_string()));
         }
 
+        let schema_name = schema.clone();
         let mutation = Mutation::new(
             schema,
             fields_and_values,
@@ -53,24 +54,65 @@ impl OperationProcessor {
             mutation_type,
         );
 
-        // Clone the node (Arc-based, so this is cheap) to move into blocking task
-        let node = {
+        // Check if we're using DynamoDB - if so, avoid spawn_blocking to prevent deadlocks
+        let is_dynamodb = {
             let node_guard = self.node.lock().await;
-            node_guard.clone()
+            let db_guard = node_guard.get_fold_db()?;
+            db_guard.db_ops.is_dynamodb()
         };
         
-        // Execute the blocking mutation operation in a blocking thread pool
-        // This prevents deadlocks when mutate_batch uses block_on internally
-        let mut ids = tokio::task::spawn_blocking(move || {
-            node.mutate_batch(vec![mutation])
-        })
-        .await
-        .map_err(|e| FoldDbError::Config(format!("Failed to execute mutation: {}", e)))?
-        .map_err(|e| FoldDbError::Config(format!("Mutation execution failed: {}", e)))?;
+        log::info!("🔄 Starting mutation execution for schema: {}", schema_name);
         
+        let mut ids = if is_dynamodb {
+            // For DynamoDB, call mutation directly in async context (no spawn_blocking)
+            // This avoids the deadlock from block_on inside spawn_blocking
+            log::info!("📊 Using direct async path for DynamoDB to avoid deadlocks");
+            let node_guard = self.node.lock().await;
+            let mut db_guard = node_guard.get_fold_db()?;
+            // Call mutate_batch directly - it will use run_async which should work
+            // since we're already in an async context (not spawn_blocking)
+            db_guard.mutation_manager.write_mutations_batch(vec![mutation])
+                .map_err(|e| {
+                    log::error!("❌ Mutation execution failed: {}", e);
+                    FoldDbError::Config(format!("Mutation execution failed: {}", e))
+                })?
+        } else {
+            // For non-DynamoDB backends, use spawn_blocking as before
+            let node = {
+                let node_guard = self.node.lock().await;
+                node_guard.clone()
+            };
+            
+            match tokio::task::spawn_blocking(move || {
+                log::info!("📝 Executing mutation in blocking context");
+                node.mutate_batch(vec![mutation])
+            })
+            .await
+            {
+                Ok(result) => {
+                    log::info!("✅ Mutation task completed, processing result");
+                    result.map_err(|e| {
+                        log::error!("❌ Mutation execution failed: {}", e);
+                        FoldDbError::Config(format!("Mutation execution failed: {}", e))
+                    })?
+                }
+                Err(e) => {
+                    log::error!("❌ Failed to spawn blocking task for mutation: {}", e);
+                    return Err(FoldDbError::Config(format!("Failed to execute mutation: {}", e)));
+                }
+            }
+        };
+        
+        log::info!("📊 Mutation returned {} IDs", ids.len());
         match ids.pop() {
-            Some(id) => Ok(id),
-            None => Err(FoldDbError::Config("Batch mutation returned no IDs".to_string())),
+            Some(id) => {
+                log::info!("✅ Mutation succeeded with ID: {}", id);
+                Ok(id)
+            }
+            None => {
+                log::error!("❌ Batch mutation returned no IDs");
+                Err(FoldDbError::Config("Batch mutation returned no IDs".to_string()))
+            }
         }
     }
 

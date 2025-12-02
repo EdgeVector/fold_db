@@ -868,8 +868,9 @@ impl SimpleIngestionService {
             .map(|(idx, mutation)| {
                 // Update progress more frequently (every 5 items) to ensure frontend catches updates
                 if (idx + 1) % 5 == 0 || idx + 1 == total_mutations {
-                    // Calculate progress: 90% base + up to 10% for this step
-                    let percent_of_step = ((idx + 1) as f32 / total_mutations as f32 * 10.0) as u8;
+                    // Calculate progress: 90% base + up to 5% for this step (max 95%, not 100%)
+                    // 100% is reserved for the Completed step
+                    let percent_of_step = ((idx + 1) as f32 / total_mutations as f32 * 5.0) as u8;
                     let progress_percent = 90 + percent_of_step;
                     progress_service.update_progress_with_percentage(
                         progress_id,

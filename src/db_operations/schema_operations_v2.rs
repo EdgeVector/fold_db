@@ -30,13 +30,28 @@ impl DbOperationsV2 {
     pub async fn store_schema(&self, schema_name: &str, schema: &Schema) -> Result<(), SchemaError> {
         use crate::storage::traits::TypedStore;
         
+        log::debug!("💾 store_schema: Storing schema '{}'", schema_name);
         self.schemas_store().put_item(schema_name, schema).await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to store schema: {}", e)))?;
+            .map_err(|e| {
+                log::error!("❌ Failed to store schema '{}': {}", schema_name, e);
+                SchemaError::InvalidData(format!("Failed to store schema: {}", e))
+            })?;
         
         // Flush to ensure persistence
-        self.schemas_store().inner().flush().await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to flush schemas: {}", e)))?;
+        // For DynamoDB, flush is a no-op, but we still call it for consistency
+        let backend_name = self.schemas_store().inner().backend_name();
+        if backend_name != "dynamodb" && backend_name != "dynamodb-native-index" {
+            log::debug!("💾 Flushing schema store (non-DynamoDB backend)");
+            self.schemas_store().inner().flush().await
+                .map_err(|e| {
+                    log::error!("❌ Failed to flush schemas: {}", e);
+                    SchemaError::InvalidData(format!("Failed to flush schemas: {}", e))
+                })?;
+        } else {
+            log::debug!("⏭️ Skipping flush for DynamoDB (auto-flushed)");
+        }
         
+        log::debug!("✅ Schema '{}' stored successfully", schema_name);
         Ok(())
     }
 

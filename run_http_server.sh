@@ -90,8 +90,21 @@ fi
 # Build the React frontend (prebuild will read OPENAPI_URL file)
 echo "Building the React frontend..."
 cd src/datafold_node/static-react
+
+# Clean up node_modules if it exists to avoid ENOTEMPTY errors
+if [ -d "node_modules" ]; then
+    echo "Cleaning up existing node_modules..."
+    rm -rf node_modules
+fi
+
+# Remove package-lock.json if it exists to ensure a clean install
+if [ -f "package-lock.json" ]; then
+    echo "Removing package-lock.json for clean install..."
+    rm -f package-lock.json
+fi
+
 echo "Installing frontend dependencies..."
-npm ci
+npm install
 
 if [ $? -ne 0 ]; then
     echo "Failed to install frontend dependencies. Exiting."
