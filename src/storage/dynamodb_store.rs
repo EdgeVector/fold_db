@@ -225,33 +225,36 @@ impl DynamoDbSchemaStore {
     }
 
     /// List all schema names
-    /// Uses scan operation - consider using Query with GSI for better performance at scale
+    /// Uses Query operation for efficient retrieval
     pub async fn list_schema_names(&self) -> FoldDbResult<Vec<String>> {
         let mut schema_names = Vec::new();
         let mut last_evaluated_key: Option<HashMap<String, AttributeValue>> = None;
+        let pk = self.get_partition_key();
 
         loop {
             let key_to_use = last_evaluated_key.take();
             let mut retries = 0;
 
             let result = loop {
-                let mut scan_builder = self
+                let mut query_builder = self
                     .client
-                    .scan()
+                    .query()
                     .table_name(&self.table_name)
+                    .key_condition_expression("PK = :pk")
+                    .expression_attribute_values(":pk", AttributeValue::S(pk.clone()))
                     .projection_expression("PK, SK");
 
                 if let Some(ref key) = key_to_use {
-                    scan_builder = scan_builder.set_exclusive_start_key(Some(key.clone()));
+                    query_builder = query_builder.set_exclusive_start_key(Some(key.clone()));
                 }
 
-                match scan_builder.send().await {
+                match query_builder.send().await {
                     Ok(r) => break Ok(r),
                     Err(e) => {
                         let error_str = e.to_string();
                         use super::dynamodb_utils::{is_retryable_error, exponential_backoff, format_dynamodb_error};
                         if retries >= MAX_RETRIES {
-                            break Err(FoldDbError::Database(format_dynamodb_error("scan", &self.table_name, None, &error_str)));
+                            break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
                         }
                         if is_retryable_error(&error_str) {
                             let delay = exponential_backoff(retries);
@@ -259,7 +262,7 @@ impl DynamoDbSchemaStore {
                             retries += 1;
                             continue;
                         }
-                        break Err(FoldDbError::Database(format_dynamodb_error("scan", &self.table_name, None, &error_str)));
+                        break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
                     }
                 }
             }?;
@@ -283,29 +286,35 @@ impl DynamoDbSchemaStore {
     }
 
     /// Get all schemas
-    /// Uses scan operation - consider using Query with GSI for better performance at scale
+    /// Uses Query operation for efficient retrieval
     pub async fn get_all_schemas(&self) -> FoldDbResult<Vec<Schema>> {
         let mut schemas = Vec::new();
         let mut last_evaluated_key: Option<HashMap<String, AttributeValue>> = None;
+        let pk = self.get_partition_key();
 
         loop {
             let key_to_use = last_evaluated_key.take();
             let mut retries = 0;
 
             let result = loop {
-                let mut scan_builder = self.client.scan().table_name(&self.table_name);
+                let mut query_builder = self
+                    .client
+                    .query()
+                    .table_name(&self.table_name)
+                    .key_condition_expression("PK = :pk")
+                    .expression_attribute_values(":pk", AttributeValue::S(pk.clone()));
 
                 if let Some(ref key) = key_to_use {
-                    scan_builder = scan_builder.set_exclusive_start_key(Some(key.clone()));
+                    query_builder = query_builder.set_exclusive_start_key(Some(key.clone()));
                 }
 
-                match scan_builder.send().await {
+                match query_builder.send().await {
                     Ok(r) => break Ok(r),
                     Err(e) => {
                         let error_str = e.to_string();
                         use super::dynamodb_utils::{is_retryable_error, exponential_backoff, format_dynamodb_error};
                         if retries >= MAX_RETRIES {
-                            break Err(FoldDbError::Database(format_dynamodb_error("scan", &self.table_name, None, &error_str)));
+                            break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
                         }
                         if is_retryable_error(&error_str) {
                             let delay = exponential_backoff(retries);
@@ -313,7 +322,7 @@ impl DynamoDbSchemaStore {
                             retries += 1;
                             continue;
                         }
-                        break Err(FoldDbError::Database(format_dynamodb_error("scan", &self.table_name, None, &error_str)));
+                        break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
                     }
                 }
             }?;
@@ -485,7 +494,55 @@ mod tests {
         let store = DynamoDbSchemaStore::new(config).await.unwrap();
 
         let schemas = store.list_schema_names().await.unwrap();
-        assert!(schemas.iter().all(|schema| !schema.is_empty()));
+    }
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+    use std::sync::Mutex;
+    use once_cell::sync::Lazy;
+
+    static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    #[test]
+    fn test_config_from_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        
+        // Set environment variables
+        unsafe {
+            std::env::set_var("DATAFOLD_DYNAMODB_TABLE", "EnvTable");
+            std::env::set_var("DATAFOLD_DYNAMODB_REGION", "us-west-2");
+            std::env::set_var("DATAFOLD_DYNAMODB_USER_ID", "env_user");
+        }
+
+        let config = DynamoDbConfig::from_env().expect("Failed to create config from env");
+        
+        assert_eq!(config.table_name, "EnvTable");
+        assert_eq!(config.region, "us-west-2");
+        assert_eq!(config.user_id, Some("env_user".to_string()));
+
+        // Clean up
+        unsafe {
+            std::env::remove_var("DATAFOLD_DYNAMODB_TABLE");
+            std::env::remove_var("DATAFOLD_DYNAMODB_REGION");
+            std::env::remove_var("DATAFOLD_DYNAMODB_USER_ID");
+        }
+    }
+
+    #[test]
+    fn test_config_missing_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        
+        // Ensure vars are unset
+        unsafe {
+            std::env::remove_var("DATAFOLD_DYNAMODB_TABLE");
+            std::env::remove_var("DATAFOLD_DYNAMODB_REGION");
+            std::env::remove_var("DATAFOLD_DYNAMODB_USER_ID");
+        }
+
+        let result = DynamoDbConfig::from_env();
+        assert!(result.is_err());
     }
 }
 

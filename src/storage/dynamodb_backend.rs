@@ -51,11 +51,11 @@ impl DynamoDbKvStore {
         self.user_id.clone().unwrap_or_else(|| "default".to_string())
     }
     
-    /// Get partition key in user_id:key format
-    fn get_partition_key_with_key(&self, key: &[u8]) -> String {
-        let key_str = String::from_utf8_lossy(key);
-        let user_id = self.user_id.clone().unwrap_or_else(|| "default".to_string());
-        format!("{}:{}", user_id, key_str)
+    /// Get partition key (user_id or default)
+    /// Note: This is a change from previous implementation where PK was user_id:key
+    /// This change enables Query operations with SK prefix
+    fn get_partition_key_with_key(&self, _key: &[u8]) -> String {
+        self.user_id.clone().unwrap_or_else(|| "default".to_string())
     }
 
     /// Convert a byte key to a string for the sort key (no user_id prefixing)
@@ -173,32 +173,34 @@ impl KvStore for DynamoDbKvStore {
     
     async fn scan_prefix(&self, prefix: &[u8]) -> StorageResult<Vec<(Vec<u8>, Vec<u8>)>> {
         let prefix_str = String::from_utf8_lossy(prefix).to_string();
+        let pk = self.get_partition_key_impl();
         
-        // For prefix scans, we need to scan all partitions that match the prefix
-        // Since PK is now user_id:key, we can't efficiently query by prefix on PK
-        // We'll use a scan with filter expression instead
+        // Use Query instead of Scan for efficiency
+        // PK = user_id, SK begins_with prefix
         let mut results = Vec::new();
         let mut last_evaluated_key: Option<HashMap<String, AttributeValue>> = None;
 
         loop {
-            let mut scan = self.client
-                .scan()
+            let mut query = self.client
+                .query()
                 .table_name(&self.table_name)
-                .filter_expression("begins_with(SK, :prefix)")
+                .key_condition_expression("PK = :pk AND begins_with(SK, :prefix)")
+                .expression_attribute_values(":pk", AttributeValue::S(pk.clone()))
                 .expression_attribute_values(":prefix", AttributeValue::S(prefix_str.clone()));
 
             if let Some(key) = last_evaluated_key.take() {
-                scan = scan.set_exclusive_start_key(Some(key));
+                query = query.set_exclusive_start_key(Some(key));
             }
 
-            let response = match scan.send().await {
+            let response = match query.send().await {
                 Ok(r) => r,
                 Err(e) => {
                     let error_str = e.to_string();
                     // If table doesn't exist or is still being created, return empty results
                     if error_str.contains("ResourceNotFoundException") 
                         || error_str.contains("ResourceInUseException")
-                        || error_str.contains("cannot do operations on a non-existent table") {
+                        || error_str.contains("cannot do operations on a non-existent table") 
+                    {
                         return Ok(Vec::new());
                     }
                     return Err(StorageError::DynamoDbError(error_str));
@@ -870,5 +872,106 @@ impl NamespacedStore for DynamoDbNamespacedStore {
         Err(StorageError::InvalidOperation(
             "delete_namespace not implemented for DynamoDB - requires custom implementation".to_string()
         ))
+    }
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+    use aws_sdk_dynamodb::config::Region;
+
+    // Helper to create a dummy client (won't actually be used for network calls in these tests)
+    async fn create_dummy_client() -> Arc<Client> {
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .load()
+            .await;
+        Arc::new(Client::new(&config))
+    }
+
+    #[tokio::test]
+    async fn test_kv_store_key_generation() {
+        let client = create_dummy_client().await;
+        
+        // Case 1: With user_id
+        let store = DynamoDbKvStore::new(
+            client.clone(), 
+            "TestTable".to_string(), 
+            Some("user123".to_string())
+        );
+        
+        let key = b"my_key";
+        let pk = store.get_partition_key_with_key(key);
+        let sk = store.make_sort_key_impl(key);
+        
+        // PK should now be just user_id (or default)
+        // SK should be the key itself
+        assert_eq!(pk, "user123");
+        assert_eq!(sk, "my_key");
+
+        // Case 2: Without user_id (default)
+        let store_default = DynamoDbKvStore::new(
+            client.clone(), 
+            "TestTable".to_string(), 
+            None
+        );
+        
+        let pk_default = store_default.get_partition_key_with_key(key);
+        assert_eq!(pk_default, "default");
+    }
+
+    #[tokio::test]
+    async fn test_native_index_key_parsing() {
+        let client = create_dummy_client().await;
+        let store = DynamoDbNativeIndexStore::new(
+            client,
+            "IndexTable".to_string(),
+            Some("user123".to_string())
+        );
+
+        // Case 1: Standard feature:term key
+        let (feature, term) = store.parse_key(b"word:hello");
+        assert_eq!(feature, "word");
+        assert_eq!(term, "hello");
+
+        // Case 2: Email feature
+        let (feature, term) = store.parse_key(b"email:test@example.com");
+        assert_eq!(feature, "email");
+        assert_eq!(term, "test@example.com");
+
+        // Case 3: No colon (fallback)
+        let (feature, term) = store.parse_key(b"just_a_word");
+        assert_eq!(feature, "word");
+        assert_eq!(term, "just_a_word");
+        
+        // Case 4: Empty term
+        let (feature, term) = store.parse_key(b"word:");
+        assert_eq!(feature, "word");
+        assert_eq!(term, "");
+    }
+
+    #[tokio::test]
+    async fn test_native_index_partition_key() {
+        let client = create_dummy_client().await;
+        
+        // Case 1: With user_id
+        let store = DynamoDbNativeIndexStore::new(
+            client.clone(),
+            "IndexTable".to_string(),
+            Some("user123".to_string())
+        );
+        
+        let pk = store.get_partition_key("word");
+        assert_eq!(pk, "user123:word");
+
+        // Case 2: Without user_id
+        let store_default = DynamoDbNativeIndexStore::new(
+            client,
+            "IndexTable".to_string(),
+            None
+        );
+        
+        let pk_default = store_default.get_partition_key("email");
+        assert_eq!(pk_default, "default:email");
     }
 }
