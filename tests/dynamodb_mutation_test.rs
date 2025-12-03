@@ -245,6 +245,7 @@ async fn test_dynamodb_mutations_no_deadlock() {
         db_ops.clone(),
         schema_manager.clone(),
         message_bus.clone(),
+        None,
     );
 
     // Create and store test schema

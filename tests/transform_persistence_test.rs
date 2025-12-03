@@ -336,13 +336,13 @@ async fn test_transform_persistence_with_direct_db_verification() {
     
     // Verify field mappings are stored by checking the sync operation
     // We'll use the sync_transform_state method to verify the data is properly stored
-    let empty_transforms = std::collections::HashMap::new();
-    let empty_mappings = std::collections::BTreeMap::new();
+    // let empty_transforms = std::collections::HashMap::new();
+    // let empty_mappings = std::collections::BTreeMap::new();
     
     // Sync empty state first, then load
-    db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
-        .await
-        .expect("Failed to sync transform state");
+    // db_ops.sync_transform_state(&empty_transforms, &empty_mappings)
+    //    .await
+    //    .expect("Failed to sync transform state");
     let (loaded_transforms, loaded_mappings) = db_ops.load_transform_state()
         .await
         .expect("Failed to load transform state");

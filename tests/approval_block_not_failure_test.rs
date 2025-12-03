@@ -59,7 +59,7 @@ async fn test_approval_block_not_counted_as_failure() {
     ).await.expect("Failed to load BlogPostWordIndex schema");
     
     // Wait for registration
-    std::thread::sleep(Duration::from_millis(100));
+    tokio::time::sleep(Duration::from_millis(100)).await;
     
     // Get initial statistics
     let initial_stats = fold_db.get_event_statistics();
@@ -86,7 +86,7 @@ async fn test_approval_block_not_counted_as_failure() {
         .expect("Failed to publish MutationExecuted event");
     
     // Wait for transform triggering attempt
-    std::thread::sleep(Duration::from_millis(300));
+    tokio::time::sleep(Duration::from_millis(300)).await;
     
     // Collect TransformTriggered events - should be NONE for unapproved schemas
     let mut triggered_transforms = Vec::new();

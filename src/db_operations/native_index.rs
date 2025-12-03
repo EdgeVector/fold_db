@@ -70,8 +70,8 @@ impl NativeIndexManager {
             // Keys are in format: "feature:term" (e.g., "word:hello", "email:test@example.com")
             let key_str = String::from_utf8_lossy(key);
             if let Some(colon_pos) = key_str.find(':') {
-                let feature = &key_str[..colon_pos];
-                let term = &key_str[colon_pos + 1..];
+                let _feature = &key_str[..colon_pos];
+                let _term = &key_str[colon_pos + 1..];
                 
                 // Use simplified structure: feature as PK, term as SK
                 // This enables efficient queries by feature type
@@ -637,7 +637,7 @@ impl NativeIndexManager {
     /// Read entries from index (async version for DynamoDB)
     /// Uses simplified key structure: feature as PK, term as SK
     async fn read_entries_async(&self, key: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        if let Some(ref store) = self.store {
+        if let Some(ref _store) = self.store {
             // Keys are in format: "feature:term" (e.g., "word:hello", "email:test@example.com")
             // For DynamoDB, this enables efficient queries by feature type
             let bytes = self.get(key.as_bytes()).await?;
@@ -680,7 +680,7 @@ impl NativeIndexManager {
     /// Write entries to index (async version for DynamoDB)
     /// Uses simplified key structure: feature as PK, term as SK
     async fn write_entries_async(&self, key: &str, entries: &[IndexResult]) -> Result<(), SchemaError> {
-        if let Some(ref store) = self.store {
+        if let Some(ref _store) = self.store {
             if entries.is_empty() {
                 log::debug!("Native Index: Removing empty index key: {}", key);
                 self.delete(key.as_bytes()).await?;
@@ -749,7 +749,7 @@ impl NativeIndexManager {
         field_name: &str,
         key_value: &KeyValue,
     ) -> Result<(), SchemaError> {
-        if let Some(ref store) = self.store {
+        if let Some(ref _store) = self.store {
             let bytes = self.get(record_key.as_bytes()).await?;
             
             let Some(bytes) = bytes else {

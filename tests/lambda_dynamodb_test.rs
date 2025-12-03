@@ -1,3 +1,4 @@
+#![cfg(feature = "lambda")]
 /// Test Lambda with DynamoDB-style DbOperationsV2
 /// 
 /// This test demonstrates using Lambda with a custom DbOperationsV2 implementation.

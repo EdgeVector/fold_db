@@ -1,3 +1,4 @@
+#![cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger};
 use datafold::storage::StorageConfig;
 use serde_json::json;

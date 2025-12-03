@@ -1,3 +1,4 @@
+#![cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel};
 use datafold::StorageConfig;
 use async_trait::async_trait;
