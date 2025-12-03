@@ -17,21 +17,29 @@ vi.mock('../../../api/clients/schemaClient', () => ({
 // Mock Redux actions
 vi.mock('../../../store/schemaSlice', async () => {
   const actual = await vi.importActual('../../../store/schemaSlice')
-  
+
   const createMockAction = (actionType) => vi.fn(() => {
-    const action = {
-      type: actionType,
-      payload: undefined,
-      meta: {
-        requestId: 'test-id',
-        requestStatus: 'fulfilled'
+    // Return a thunk function that returns a Promise
+    const thunk = (dispatch) => {
+      const action = {
+        type: actionType,
+        payload: undefined,
+        meta: {
+          requestId: 'test-id',
+          requestStatus: 'fulfilled'
+        }
       }
+      // Add fulfilled matcher to the action object itself for the test checks
+      // Note: In real Redux Toolkit, the action creator has the match method, 
+      // but here we're mocking the result of dispatch(actionCreator())
+      return Promise.resolve(action)
     }
-    // Add fulfilled matcher
-    action.fulfilled = { match: () => true }
-    return Promise.resolve(action)
+
+    // Add fulfilled property to the thunk so it matches what createAsyncThunk returns
+    thunk.fulfilled = { match: () => true }
+    return thunk
   })
-  
+
   return {
     ...actual,
     approveSchema: createMockAction('schemas/approveSchema/fulfilled'),
@@ -68,11 +76,11 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: createTestSchemaState()
     })
-    
+
     await waitFor(() => {
       expect(screen.getByText('Available Schemas')).toBeInTheDocument()
     })
-    
+
     expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
   })
 
@@ -90,7 +98,7 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
-    
+
     await waitFor(() => {
       expect(screen.getByText('Available Schemas (2)')).toBeInTheDocument()
     })
@@ -100,7 +108,7 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: createTestSchemaState()
     })
-    
+
     await waitFor(() => {
       expect(screen.getByText('No available schemas')).toBeInTheDocument()
     })
@@ -116,11 +124,11 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
-    
+
     await waitFor(() => {
       expect(screen.getByText('ApprovedSchema')).toBeInTheDocument()
     })
-    
+
     expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
   })
 
@@ -134,13 +142,13 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
-    
+
     // Expand the available schemas section
     await waitFor(() => {
       const summary = screen.getByText('Available Schemas (1)')
       fireEvent.click(summary)
     })
-    
+
     await waitFor(() => {
       expect(screen.getByText('Approve')).toBeInTheDocument()
       // Available schemas should only have Approve button, not Block
@@ -158,7 +166,7 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
-    
+
     await waitFor(() => {
       expect(screen.getByText('Block')).toBeInTheDocument()
     })
@@ -176,19 +184,19 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
-    
+
     // Expand available schemas
     await waitFor(() => {
       const summary = screen.getByText('Available Schemas (1)')
       fireEvent.click(summary)
     })
-    
+
     // Click approve button
     await waitFor(() => {
       const approveButton = screen.getByText('Approve')
       fireEvent.click(approveButton)
     })
-    
+
     await waitFor(() => {
       expect(approveSchema).toHaveBeenCalledWith({ schemaName: 'TestSchema' })
     })
@@ -206,13 +214,13 @@ describe('SchemaTab Component', () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: schemaState
     })
-    
+
     // Click block button
     await waitFor(() => {
       const blockButton = screen.getByText('Block')
       fireEvent.click(blockButton)
     })
-    
+
     await waitFor(() => {
       expect(blockSchema).toHaveBeenCalledWith({ schemaName: 'ApprovedSchema' })
     })

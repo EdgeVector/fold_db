@@ -33,16 +33,34 @@ impl TransformRunner for super::TransformManager {
             .ok_or_else(|| SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)))?;
         drop(transforms); // Release the lock early
         // Execute the transform using the execution module with mutation context
-        let input_values = tokio::runtime::Handle::current().block_on(
-            InputFetcher::fetch_input_values_with_context(
-                &transform, 
-                &self.db_ops, 
-                mutation_context,
-            )
-        )?;
+        // Execute the transform using the execution module with mutation context
+        // Handle both runtime and non-runtime contexts
+        let input_values = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle.block_on(
+                InputFetcher::fetch_input_values_with_context(
+                    &transform, 
+                    &self.db_ops, 
+                    mutation_context,
+                )
+            ),
+            Err(_) => tokio::runtime::Runtime::new()
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?
+                .block_on(
+                    InputFetcher::fetch_input_values_with_context(
+                        &transform, 
+                        &self.db_ops, 
+                        mutation_context,
+                    )
+                )
+        }?;
         
         // Look up the transform's schema from the database
-        let schema = tokio::runtime::Handle::current().block_on(self.db_ops.get_schema(transform.get_schema_name()))?.ok_or_else(|| {
+        let schema = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle.block_on(self.db_ops.get_schema(transform.get_schema_name())),
+            Err(_) => tokio::runtime::Runtime::new()
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?
+                .block_on(self.db_ops.get_schema(transform.get_schema_name()))
+        }?.ok_or_else(|| {
             SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
         })?;
 

@@ -69,7 +69,7 @@ impl EmbeddedServerHandle {
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // Build a NodeConfig and create the node with the current API:
 ///     let config = NodeConfig::new(PathBuf::from("./data"));
-///     let node = DataFoldNode::new(config)?;
+///     let node = DataFoldNode::new(config).await?;
 ///     let handle = start_embedded_server(node, 9001).await?;
 ///
 ///     println!("Server running on {}", handle.bind_address());

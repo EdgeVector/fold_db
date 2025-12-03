@@ -26,7 +26,7 @@ pub struct DbOperationsV2 {
     transform_queue_store: Arc<TypedKvStore<dyn KvStore>>,
     
     /// Raw KV store for native index (doesn't need typed operations)
-    native_index_store: Arc<dyn KvStore>,
+    _native_index_store: Arc<dyn KvStore>,
     
     /// Optional reference to underlying sled tree for NativeIndexManager
     /// This is a temporary bridge until NativeIndexManager is also abstracted
@@ -80,7 +80,7 @@ impl DbOperationsV2 {
             schemas_store,
             public_keys_store,
             transform_queue_store,
-            native_index_store: native_index_kv,
+            _native_index_store: native_index_kv,
             native_index_tree: None,
             native_index_manager: Some(native_index_manager),
             orchestrator_tree: None,

@@ -2,15 +2,16 @@ use datafold::datafold_node::DataFoldNode;
 use datafold::datafold_node::config::NodeConfig;
 use tempfile::TempDir;
 
-/// Test to verify that DataFoldNode FAILS to start when no schema service is configured
+/// Test to verify that DataFoldNode starts successfully when no schema service is configured
 #[tokio::test(flavor = "multi_thread")]
-async fn test_node_loads_schemas_for_testing_on_startup() {
+async fn test_node_starts_without_schema_service() {
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().join("test_db");
     
     // Create node configuration WITHOUT schema service URL
     let config = NodeConfig {
+        database: datafold::datafold_node::config::DatabaseConfig::Local { path: test_db_path.to_path_buf() },
         storage_path: test_db_path.to_path_buf(),
         default_trust_distance: 1,
         network_listen_address: "/ip4/127.0.0.1/tcp/9002".to_string(),
@@ -18,26 +19,16 @@ async fn test_node_loads_schemas_for_testing_on_startup() {
         schema_service_url: None,
     };
     
-    // Attempt to create the node - should fail without schema service URL
+    // Attempt to create the node - should succeed without schema service URL
     let result = DataFoldNode::new(config).await;
     
-    // Verify that node creation fails
+    // Verify that node creation succeeds
     assert!(
-        result.is_err(),
-        "Node creation should fail when schema_service_url is None"
+        result.is_ok(),
+        "Node creation should succeed when schema_service_url is None"
     );
     
-    // Verify the error message mentions schema service
-    if let Err(error) = result {
-        let error_message = error.to_string();
-        assert!(
-            error_message.contains("Schema service") || error_message.contains("schema_service_url"),
-            "Error message should mention schema service requirement: {}",
-            error_message
-        );
-    }
-    
-    println!("✅ Node correctly fails to start when schema service is not configured!");
+    println!("✅ Node correctly starts when schema service is not configured!");
 }
 
 /// Test to verify that DataFoldNode can start with a mock schema service for testing

@@ -860,8 +860,7 @@ impl IngestionCore {
         // Use block_in_place to acquire std::sync::Mutex without blocking the async runtime
         let mut db = tokio::task::block_in_place(|| {
             self.fold_db.lock()
-        });
-        let mut db = db.map_err(|_| {
+        }).map_err(|_| {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 

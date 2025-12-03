@@ -59,11 +59,22 @@
 //! }
 //! ```
 
+#[cfg(not(feature = "lambda"))]
+fn main() {
+    println!("This example requires the 'lambda' feature to be enabled.");
+}
+
+#[cfg(feature = "lambda")]
 use async_trait::async_trait;
+#[cfg(feature = "lambda")]
 use aws_config;
+#[cfg(feature = "lambda")]
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
-use datafold::lambda::{Logger, LogEntry, LogLevel};
+#[cfg(feature = "lambda")]
+use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger, Logger, LogEntry, LogLevel};
+#[cfg(feature = "lambda")]
 use std::collections::HashMap;
+#[cfg(feature = "lambda")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// DynamoDB-backed logger for multi-tenant Lambda deployments
@@ -73,12 +84,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// - Sort key: timestamp (chronological ordering)
 /// - TTL: 30 days automatic cleanup
 /// - Metadata support via DynamoDB Map
+#[cfg(feature = "lambda")]
 pub struct DynamoDbLogger {
     client: Client,
     table_name: String,
     user_id: String,
 }
 
+#[cfg(feature = "lambda")]
 impl DynamoDbLogger {
     /// Create a new DynamoDB logger
     ///
@@ -173,12 +186,14 @@ impl DynamoDbLogger {
 /// The logger requires AWS credentials and a DynamoDB table to be useful, so
 /// the main function only prints a message indicating how to run the example
 /// in a real environment.
+#[cfg(feature = "lambda")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Configure AWS credentials and run this example inside AWS Lambda to see DynamoDB logging in action.");
     Ok(())
 }
 
+#[cfg(feature = "lambda")]
 #[async_trait]
 impl Logger for DynamoDbLogger {
     /// Log an event to DynamoDB
@@ -240,7 +255,7 @@ impl Logger for DynamoDbLogger {
 }
 
 /// Example usage
-#[cfg(test)]
+#[cfg(all(test, feature = "lambda"))]
 mod tests {
     use super::*;
 
