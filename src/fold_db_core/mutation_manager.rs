@@ -17,6 +17,7 @@ use crate::schema::{SchemaCore, SchemaError};
 use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 use super::infrastructure::message_bus::request_events::MutationRequest;
 use super::infrastructure::MessageBus;
+use super::orchestration::index_status::IndexStatusTracker;
 use log::{debug, error, warn};
 
 /// Manages mutation operations for the FoldDB system
@@ -27,6 +28,8 @@ pub struct MutationManager {
     schema_manager: Arc<SchemaCore>,
     /// Message bus for event publishing and listening
     message_bus: Arc<MessageBus>,
+    /// Index status tracker for reporting indexing progress
+    index_status_tracker: Option<IndexStatusTracker>,
     /// Flag to track if the event listener is running
     is_listening: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -106,11 +109,13 @@ impl MutationManager {
         db_ops: Arc<DbOperationsV2>,
         schema_manager: Arc<SchemaCore>,
         message_bus: Arc<MessageBus>,
+        index_status_tracker: Option<IndexStatusTracker>,
     ) -> Self {
         Self {
             db_ops,
             schema_manager,
             message_bus,
+            index_status_tracker,
             is_listening: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -180,17 +185,20 @@ impl MutationManager {
                 
                 // Write mutation to field
                 schema_field.write_mutation(&key_value, new_atom.clone(), mutation.pub_key.clone());
+                log::debug!("✅ Mutation written to field '{}'", field_name);
                 
                 // Persist molecule if present
                 if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                    log::debug!("🔗 Persisting molecule: {}", molecule_uuid);
+                    log::info!("🔗 Sync path: Persisting molecule for field '{}': uuid={}", field_name, molecule_uuid);
                     Self::run_async(
                         self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid)
                     ).map_err(|e| {
                         log::error!("❌ Failed to persist molecule '{}': {}", molecule_uuid, e);
                         e
                     })?;
-                    log::debug!("✅ Molecule persisted");
+                    log::info!("✅ Sync path: Molecule persisted for field '{}'", field_name);
+                } else {
+                    log::warn!("⚠️ Sync path: No molecule_uuid set for field '{}' after write_mutation", field_name);
                 }
                 
                 // Index the field value with classifications
@@ -203,7 +211,27 @@ impl MutationManager {
                         value.clone(),
                         field_classifications,
                     )];
-                    native_index_mgr.batch_index_field_values_with_classifications(&single_operation)?;
+                    
+                    // Update index status
+                    if let Some(tracker) = &self.index_status_tracker {
+                        let _ = Self::run_async(async {
+                            tracker.start_batch(1).await;
+                            Ok(())
+                        });
+                    }
+                    
+                    let index_start = std::time::Instant::now();
+                    let result = native_index_mgr.batch_index_field_values_with_classifications(&single_operation);
+                    
+                    // Update index status completion
+                    if let Some(tracker) = &self.index_status_tracker {
+                        let _ = Self::run_async(async {
+                            tracker.complete_batch(1, index_start.elapsed().as_millis()).await;
+                            Ok(())
+                        });
+                    }
+                    
+                    result?;
                 }
             } else {
                 return Err(SchemaError::InvalidData(format!(
@@ -379,11 +407,16 @@ impl MutationManager {
                         
                         // Write mutation to field (updates in-memory molecule)
                         let mol_start = std::time::Instant::now();
-                        schema_field.write_mutation(&key_value, new_atom, mutation.pub_key.clone());
+                        schema_field.write_mutation(&key_value, new_atom.clone(), mutation.pub_key.clone());
+                        log::debug!("✅ Mutation written to field '{}'", field_name);
                         
                         // Persist molecule using deferred storage (async)
                         if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
+                            log::info!("🔗 Async batch: Persisting molecule for field '{}': uuid={}", field_name, molecule_uuid);
                             self.db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid).await?;
+                            log::info!("✅ Async batch: Molecule persisted for field '{}'", field_name);
+                        } else {
+                            log::warn!("⚠️ Async batch: No molecule_uuid set for field '{}' after write_mutation", field_name);
                         }
                         molecule_time += mol_start.elapsed();
                     } // Mutable borrow ends here
@@ -421,8 +454,26 @@ impl MutationManager {
                 
                 // Call batch indexing directly for synchronous processing
                 if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
-            native_index_mgr.batch_index_field_values_with_classifications_async(&index_operations).await?;
-        }
+                    // Update index status
+                    if let Some(tracker) = &self.index_status_tracker {
+                        tracker.start_batch(index_operations.len()).await;
+                    }
+                    
+                    let batch_index_start = std::time::Instant::now();
+                    
+                    let result = if native_index_mgr.is_async() {
+                        native_index_mgr.batch_index_field_values_with_classifications_async(&index_operations).await
+                    } else {
+                        native_index_mgr.batch_index_field_values_with_classifications(&index_operations)
+                    };
+                    
+                    // Update index status completion
+                    if let Some(tracker) = &self.index_status_tracker {
+                        tracker.complete_batch(index_operations.len(), batch_index_start.elapsed().as_millis()).await;
+                    }
+                    
+                    result?;
+                }
                 
                 debug!(
                     "MutationManager: Successfully processed batch index for schema '{}'",
@@ -684,6 +735,10 @@ impl MutationManager {
                         value.clone(),
                         field_classifications,
                     )];
+                    
+                    // Note: This static method doesn't have access to self.index_status_tracker
+                    // We would need to pass it in or change the method signature
+                    // For now, we'll skip tracking for this legacy path or we could pass it if we change signature
                     native_index_mgr.batch_index_field_values_with_classifications(&single_operation)?;
                 }
             } else {

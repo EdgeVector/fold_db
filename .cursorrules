@@ -11,3 +11,16 @@ Coding standards.  Follow these to avoid creating spagetti code.
 - Don't use inline crate imports, import in headers only to keep code clean.
 - Keep imports organized.
 - Don't create fallbacks.
+- validate your changes -- in the browser.
+
+current UI test:
+./run_http_server_dynamo_db.sh
+ingestion tab
+click twitter
+click Process Data
+wait for ingestion to complete
+indexing should run in the background
+wait for indexing to complete
+click on native index query tab
+search for a term
+it should show up.

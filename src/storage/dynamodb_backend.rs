@@ -91,8 +91,8 @@ impl KvStore for DynamoDbKvStore {
         )?;
 
         if let Some(item) = result.item {
-            if let Some(AttributeValue::B(data)) = item.get("Value") {
-                return Ok(Some(data.as_ref().to_vec()));
+            if let Some(AttributeValue::S(json_str)) = item.get("Value") {
+                return Ok(Some(json_str.as_bytes().to_vec()));
             }
         }
 
@@ -104,13 +104,16 @@ impl KvStore for DynamoDbKvStore {
         let sk = self.make_sort_key_impl(key);
         let key_str = String::from_utf8_lossy(key);
 
+        let json_str = String::from_utf8(value.clone())
+            .map_err(|e| StorageError::SerializationError(format!("Invalid UTF-8 in value: {}", e)))?;
+
         retry_operation!(
             self.client
                 .put_item()
                 .table_name(&self.table_name)
                 .item("PK", AttributeValue::S(pk.clone()))
                 .item("SK", AttributeValue::S(sk.clone()))
-                .item("Value", AttributeValue::B(value.clone().into()))
+                .item("Value", AttributeValue::S(json_str.clone()))
                 .send(),
             "put_item",
             &self.table_name,
@@ -204,10 +207,10 @@ impl KvStore for DynamoDbKvStore {
 
             if let Some(items) = response.items {
                 for item in items {
-                    if let (Some(AttributeValue::S(sk)), Some(AttributeValue::B(value))) =
+                    if let (Some(AttributeValue::S(sk)), Some(AttributeValue::S(json_str))) =
                         (item.get("SK"), item.get("Value")) {
                         // The sort key is the actual key (no user_id prefix to remove)
-                        results.push((sk.as_bytes().to_vec(), value.as_ref().to_vec()));
+                        results.push((sk.as_bytes().to_vec(), json_str.as_bytes().to_vec()));
                     }
                 }
             }
@@ -232,9 +235,12 @@ impl KvStore for DynamoDbKvStore {
                 let pk = self.get_partition_key_with_key(key);
                 let sk = self.make_sort_key_impl(key);
                 let mut item = HashMap::new();
+                let json_str = String::from_utf8(value.clone())
+                    .map_err(|e| StorageError::SerializationError(format!("Invalid UTF-8 in batch value: {}", e)))?;
+                
                 item.insert("PK".to_string(), AttributeValue::S(pk));
                 item.insert("SK".to_string(), AttributeValue::S(sk));
-                item.insert("Value".to_string(), AttributeValue::B(value.clone().into()));
+                item.insert("Value".to_string(), AttributeValue::S(json_str));
 
                 write_requests.push(
                     aws_sdk_dynamodb::types::WriteRequest::builder()
@@ -581,8 +587,8 @@ impl KvStore for DynamoDbNativeIndexStore {
             .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
         
         if let Some(item) = result.item {
-            if let Some(AttributeValue::B(data)) = item.get("Value") {
-                return Ok(Some(data.as_ref().to_vec()));
+            if let Some(AttributeValue::S(json_str)) = item.get("Value") {
+                return Ok(Some(json_str.as_bytes().to_vec()));
             }
         }
         
@@ -593,12 +599,15 @@ impl KvStore for DynamoDbNativeIndexStore {
         let (feature, term) = self.parse_key(key);
         let pk = self.get_partition_key(&feature);
         
+        let json_str = String::from_utf8(value)
+            .map_err(|e| StorageError::SerializationError(format!("Invalid UTF-8 in value: {}", e)))?;
+
         self.client
             .put_item()
             .table_name(&self.table_name)
             .item("PK", AttributeValue::S(pk))
             .item("SK", AttributeValue::S(term))
-            .item("Value", AttributeValue::B(value.into()))
+            .item("Value", AttributeValue::S(json_str))
             .send()
             .await
             .map_err(|e| StorageError::DynamoDbError(e.to_string()))?;
@@ -687,11 +696,11 @@ impl KvStore for DynamoDbNativeIndexStore {
             
             if let Some(items) = response.items {
                 for item in items {
-                    if let (Some(AttributeValue::S(sk)), Some(AttributeValue::B(value))) =
+                    if let (Some(AttributeValue::S(sk)), Some(AttributeValue::S(json_str))) =
                         (item.get("SK"), item.get("Value")) {
                         // Reconstruct full key: "feature:term"
                         let full_key = format!("{}:{}", feature, sk);
-                        results.push((full_key.as_bytes().to_vec(), value.as_ref().to_vec()));
+                        results.push((full_key.as_bytes().to_vec(), json_str.as_bytes().to_vec()));
                     }
                 }
             }
@@ -716,10 +725,13 @@ impl KvStore for DynamoDbNativeIndexStore {
                 let (feature, term) = self.parse_key(key);
                 let pk = self.get_partition_key(&feature);
                 
+                let json_str = String::from_utf8(value.clone())
+                    .map_err(|e| StorageError::SerializationError(format!("Invalid UTF-8 in batch value: {}", e)))?;
+                
                 let put_request = aws_sdk_dynamodb::types::PutRequest::builder()
                     .item("PK", AttributeValue::S(pk))
                     .item("SK", AttributeValue::S(term))
-                    .item("Value", AttributeValue::B(value.clone().into()))
+                    .item("Value", AttributeValue::S(json_str))
                     .build()
                     .map_err(|e| StorageError::DynamoDbError(format!(
                         "Failed to build put request for table '{}': {}",

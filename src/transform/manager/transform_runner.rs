@@ -33,10 +33,12 @@ impl TransformRunner for super::TransformManager {
             .ok_or_else(|| SchemaError::InvalidData(format!("Transform '{}' not found", transform_id)))?;
         drop(transforms); // Release the lock early
         // Execute the transform using the execution module with mutation context
-        let input_values = InputFetcher::fetch_input_values_with_context(
-            &transform, 
-            &self.db_ops, 
-            mutation_context,
+        let input_values = tokio::runtime::Handle::current().block_on(
+            InputFetcher::fetch_input_values_with_context(
+                &transform, 
+                &self.db_ops, 
+                mutation_context,
+            )
         )?;
         
         // Look up the transform's schema from the database

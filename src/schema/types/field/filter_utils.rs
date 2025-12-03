@@ -37,7 +37,61 @@ impl FilterUtils {
 
 }
 
-/// Resolve atom UUID matches into concrete FieldValue map by fetching atoms
+/// Resolve atom UUID matches into concrete FieldValue map by fetching atoms (async version)
+pub async fn fetch_atoms_for_matches_async(
+    db_ops: &Arc<DbOperationsV2>,
+    matches: impl IntoIterator<Item = (KeyValue, String)>,
+) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
+
+    for (key, atom_uuid) in matches.into_iter() {
+        match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)).await {
+            Ok(Some(atom)) => {
+                resolved_values.insert(
+                    key,
+                    FieldValue { 
+                        value: atom.content().clone(), 
+                        atom_uuid: atom_uuid.clone(),
+                        source_file_name: atom.source_file_name().cloned(),
+                    },
+                );
+            }
+            Ok(None) => {
+                let key_str = key.to_string();
+                if key_str.is_empty() {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Atom '{}' not found",
+                        atom_uuid
+                    )));
+                } else {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Atom '{}' not found for key '{}'",
+                        atom_uuid, key
+                    )));
+                }
+            }
+            Err(e) => {
+                let key_str = key.to_string();
+                if key_str.is_empty() {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Failed to fetch atom '{}': {}",
+                        atom_uuid, e
+                    )));
+                } else {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Failed to fetch atom '{}' for key '{}': {}",
+                        atom_uuid, key, e
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(resolved_values)
+}
+
+/// Resolve atom UUID matches into concrete FieldValue map by fetching atoms (sync version - deprecated)
+#[deprecated(note = "Use fetch_atoms_for_matches_async instead")]
 pub fn fetch_atoms_for_matches(
     db_ops: &Arc<DbOperationsV2>,
     matches: impl IntoIterator<Item = (KeyValue, String)>,

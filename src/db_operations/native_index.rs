@@ -810,7 +810,12 @@ impl NativeIndexManager {
                     continue;
                 }
 
-                let classifications = classifications.clone().unwrap_or_else(|| vec!["word".to_string()]);
+                let classifications = classifications.clone().unwrap_or_default();
+                let classifications = if classifications.is_empty() {
+                    vec!["word".to_string()]
+                } else {
+                    classifications
+                };
                 let record_key = self.build_record_key(schema_name, field_name, key_value)?;
                 self.remove_record_entries(&record_key, schema_name, field_name, key_value)?;
 
@@ -854,7 +859,12 @@ impl NativeIndexManager {
                 continue;
             }
 
-            let classifications = classifications.clone().unwrap_or_else(|| vec!["word".to_string()]);
+            let classifications = classifications.clone().unwrap_or_default();
+            let classifications = if classifications.is_empty() {
+                vec!["word".to_string()]
+            } else {
+                classifications
+            };
             let record_key = self.build_record_key(schema_name, field_name, key_value)?;
             self.remove_record_entries_async(&record_key, schema_name, field_name, key_value).await?;
 
@@ -1072,5 +1082,39 @@ impl NativeIndexManager {
                 .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::types::key_value::KeyValue;
+
+    #[test]
+    fn test_indexing_with_empty_classifications() {
+        let tree = sled::Config::new().temporary(true).open().unwrap().open_tree("test_index").unwrap();
+        let manager = NativeIndexManager::new(tree);
+
+        let operations = vec![
+            (
+                "TestSchema".to_string(),
+                "test_field".to_string(),
+                KeyValue::new(Some("key1".to_string()), None),
+                serde_json::Value::String("hello world".to_string()),
+                Some(vec![]), // Empty classifications
+            ),
+        ];
+
+        // Should default to "word" indexing
+        manager.batch_index_field_values_with_classifications(&operations).unwrap();
+
+        // Verify "word" search works
+        let results = manager.search_word("hello").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].key_value, KeyValue::new(Some("key1".to_string()), None));
+        
+        // Verify classification metadata is "word"
+        let metadata = results[0].metadata.as_ref().unwrap();
+        assert_eq!(metadata["classification"], "word");
     }
 }

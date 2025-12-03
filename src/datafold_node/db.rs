@@ -34,12 +34,11 @@ impl DataFoldNode {
     }
 
     /// Executes a query against the database.
-    pub fn query(&self, query: Query) -> FoldDbResult<HashMap<String, HashMap<KeyValue, FieldValue>>> {
-        self.with_db(
-            |db| db.query_executor.query(query),
-            "Failed to acquire database lock for query",
-            "Query operation failed"
-        )
+    pub async fn query(&self, query: Query) -> FoldDbResult<HashMap<String, HashMap<KeyValue, FieldValue>>> {
+        let db = self.db.lock()
+            .map_err(|_| FoldDbError::Config("Failed to acquire database lock for query".to_string()))?;
+        db.query_executor.query(query).await
+            .map_err(|e| FoldDbError::Config(format!("Query operation failed: {}", e)))
     }
 
     /// Executes a mutation on the database.
@@ -69,11 +68,26 @@ impl DataFoldNode {
     
     /// Executes multiple mutations in a batch (async version - preferred for DynamoDB)
     pub async fn mutate_batch_async(&self, mutations: Vec<Mutation>) -> FoldDbResult<Vec<String>> {
-        let mut db_guard = self.db.lock()
-            .map_err(|_| FoldDbError::Config("Failed to acquire database lock for batch mutation".to_string()))?;
+        // Since DataFoldNode uses std::sync::Mutex, we need to use spawn_blocking
+        // to avoid blocking the async runtime. The entire operation runs in a blocking context.
+        let db = self.db.clone(); // Clone Arc, not the Mutex
         
-        db_guard.mutation_manager.write_mutations_batch_async(mutations).await
+        tokio::task::spawn_blocking(move || {
+            let mut db_guard = db.lock()
+                .map_err(|_| FoldDbError::Config("Failed to acquire database lock for batch mutation".to_string()))?;
+            
+            // Get the runtime handle to run async code
+            let handle = tokio::runtime::Handle::try_current()
+                .map_err(|_| FoldDbError::Config("No tokio runtime available".to_string()))?;
+            
+            // Run the async mutation operation
+            handle.block_on(
+                db_guard.mutation_manager.write_mutations_batch_async(mutations)
+            )
             .map_err(|e| FoldDbError::Config(format!("Batch mutation operation failed: {}", e)))
+        })
+        .await
+        .map_err(|e| FoldDbError::Config(format!("Failed to execute mutation in blocking context: {}", e)))?
     }
 
     /// List all registered transforms.

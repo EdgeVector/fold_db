@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { getRangeSchemaInfo, getHashRangeSchemaInfo } from '../../utils/rangeSchemaHelpers'
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
@@ -20,6 +20,12 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   const _isLoadingSchemas = useAppSelector(selectFetchLoading)
   const _schemasError = useAppSelector(selectFetchError)
   const [expandedSchemas, setExpandedSchemas] = useState({})
+
+  // Fetch schemas when component mounts
+  useEffect(() => {
+    console.log('🟢 SchemaTab: Fetching schemas on mount')
+    dispatch(fetchSchemas({ forceRefresh: true }))
+  }, [dispatch])
 
   // Helper to get display name (descriptive_name if available, otherwise name)
   const getDisplayName = (schema) => schema.descriptive_name || schema.name

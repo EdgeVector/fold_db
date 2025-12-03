@@ -13,12 +13,12 @@ use super::response_types::QueryResultMap;
 /// This eliminates code duplication across HTTP routes, TCP server, CLI, and direct API usage.
 /// All operation execution goes through this single processor to ensure consistent behavior.
 pub struct OperationProcessor {
-    node: Arc<Mutex<DataFoldNode>>,
+    node: Arc<tokio::sync::Mutex<DataFoldNode>>,
 }
 
 impl OperationProcessor {
     /// Creates a new operation processor with a reference to the DataFoldNode.
-    pub fn new(node: Arc<Mutex<DataFoldNode>>) -> Self {
+    pub fn new(node: Arc<tokio::sync::Mutex<DataFoldNode>>) -> Self {
         Self { node }
     }
 
@@ -28,7 +28,7 @@ impl OperationProcessor {
         query: Query,
     ) -> FoldDbResult<QueryResultMap> {
         let node_guard = self.node.lock().await;
-        let results = DataFoldNode::query(&node_guard, query)?;
+        let results = node_guard.query(query).await?;
         Ok(results)
     }
 
@@ -40,7 +40,9 @@ impl OperationProcessor {
         key_value: KeyValue,
         mutation_type: MutationType,
     ) -> FoldDbResult<String> {
-        if fields_and_values.is_empty() {
+        // Delete mutations are allowed to have empty fields_and_values
+        // They only need the key_value to identify what to delete
+        if fields_and_values.is_empty() && mutation_type != MutationType::Delete {
             return Err(FoldDbError::Config("No fields to mutate".to_string()));
         }
 
@@ -100,7 +102,8 @@ impl OperationProcessor {
                 }
             };
 
-            if fields_and_values.is_empty() {
+            // Delete mutations are allowed to have empty fields_and_values
+            if fields_and_values.is_empty() && mutation_type != MutationType::Delete {
                 return Err(FoldDbError::Config("No fields to mutate".to_string()));
             }
 
@@ -121,21 +124,12 @@ impl OperationProcessor {
             mutations.push(mutation);
         }
 
-        // Clone the node (Arc-based, so this is cheap) to move into blocking task
-        let node = {
-            let node_guard = self.node.lock().await;
-            node_guard.clone()
-        };
+        // Use async version directly - all backends now support async operations
+        // This avoids deadlocks and provides consistent behavior across all backends
+        let node_guard = self.node.lock().await;
+        let mutation_ids = node_guard.mutate_batch_async(mutations).await
+            .map_err(|e| FoldDbError::Config(format!("Mutation execution failed: {}", e)))?;
         
-        // Execute the blocking mutation operation in a blocking thread pool
-        // This prevents deadlocks when mutate_batch uses block_on internally
-        let mutation_ids = tokio::task::spawn_blocking(move || {
-            node.mutate_batch(mutations)
-        })
-        .await
-        .map_err(|e| FoldDbError::Config(format!("Failed to execute mutations: {}", e)))?
-        .map_err(|e| FoldDbError::Config(format!("Mutation execution failed: {}", e)))?;
-
         Ok(mutation_ids)
     }
 

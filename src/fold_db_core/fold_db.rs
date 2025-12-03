@@ -21,6 +21,7 @@ use super::infrastructure::init::{init_transform_manager};
 use super::infrastructure::message_bus::request_events::SystemInitializationRequest;
 use super::infrastructure::{EventMonitor, MessageBus};
 use super::orchestration::{TransformOrchestrator, IndexEventHandler};
+use super::orchestration::index_status::IndexStatusTracker;
 use super::query::QueryExecutor;
 use super::mutation_manager::MutationManager;
 
@@ -260,11 +261,33 @@ impl FoldDB {
             }
         };
 
+        // Create shared IndexStatusTracker for tracking indexing progress
+        // This is shared between MutationManager (direct indexing) and IndexEventHandler (background indexing)
+        // Use DynamoDB progress store if configured, otherwise in-memory
+        let progress_store: Arc<dyn super::orchestration::ProgressStore> = if let Ok(table_name) = std::env::var("DATAFOLD_DYNAMODB_TABLE") {
+             let region = std::env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+             let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(aws_sdk_dynamodb::config::Region::new(region))
+                .load()
+                .await;
+             let client = aws_sdk_dynamodb::Client::new(&config);
+             let pk = std::env::var("DATAFOLD_DYNAMODB_USER_ID").unwrap_or_else(|_| "default".to_string());
+             
+             info!("Using DynamoDB progress store (table: {})", table_name);
+             Arc::new(super::orchestration::DynamoDbProgressStore::new(client, table_name, pk))
+        } else {
+             info!("Using in-memory progress store");
+             Arc::new(super::orchestration::InMemoryProgressStore::new())
+        };
+
+        let index_status_tracker = IndexStatusTracker::new(Some(progress_store));
+        
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
+            Some(index_status_tracker.clone()),
         );
         
         info!("Created MutationManager for mutation operations");
@@ -278,6 +301,7 @@ impl FoldDB {
         let index_event_handler = IndexEventHandler::new(
             Arc::clone(&message_bus),
             Arc::clone(&db_ops),
+            Some(index_status_tracker),
         );
         info!("Started IndexEventHandler for background indexing");
 
@@ -326,13 +350,13 @@ impl FoldDB {
     // ========== INDEXING STATUS API ==========
     
     /// Get the current indexing status
-    pub fn get_indexing_status(&self) -> super::orchestration::IndexingStatus {
-        self.index_event_handler.get_status()
+    pub async fn get_indexing_status(&self) -> super::orchestration::IndexingStatus {
+        self.index_event_handler.get_status().await
     }
     
     /// Check if indexing is currently in progress
-    pub fn is_indexing(&self) -> bool {
-        self.index_event_handler.is_indexing()
+    pub async fn is_indexing(&self) -> bool {
+        self.index_event_handler.is_indexing().await
     }
 
     // ========== CONSOLIDATED SCHEMA API - DELEGATES TO SCHEMA_CORE ==========

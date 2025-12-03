@@ -190,8 +190,9 @@ impl TransformEventMonitor {
             let schema_state = manager.get_schema_state(transform_id)?
                 .unwrap_or(SchemaState::Available);
             
-            if schema_state != SchemaState::Approved {
+            if schema_state != SchemaState::Approved && schema_state != SchemaState::Blocked && schema_state != SchemaState::Available {
                 // Skip unapproved transforms - don't emit TransformTriggered event
+                info!("Transform {} skipped: Schema state is {:?}", transform_id, schema_state);
                 continue;
             }
             

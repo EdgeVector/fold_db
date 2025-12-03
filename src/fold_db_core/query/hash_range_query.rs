@@ -23,20 +23,25 @@ impl HashRangeQueryProcessor {
     }
 
 
-    pub fn query_with_filter(
+    pub async fn query_with_filter(
         &self,
         schema: &mut Schema,
         fields: &[String],
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+        log::debug!("🔍 HashRangeQueryProcessor::query_with_filter: schema={}, fields={:?}, filter={:?}", 
+            schema.name, fields, filter);
         let mut result = HashMap::new();
         for (field_name, field) in schema.runtime_fields.iter_mut() {
             if !fields.contains(field_name) {
                 continue;
             }
-            let field_value = field.resolve_value(&self.db_ops, filter.clone())?;
+            log::debug!("🔍 Resolving field: {}", field_name);
+            let field_value = field.resolve_value(&self.db_ops, filter.clone()).await?;
+            log::debug!("✅ Field '{}' resolved {} values", field_name, field_value.len());
             result.insert(field_name.clone(), field_value);
         }
+        log::debug!("✅ HashRangeQueryProcessor::query_with_filter: returning {} fields", result.len());
         Ok(result)
     }
 }

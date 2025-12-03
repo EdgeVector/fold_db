@@ -395,17 +395,21 @@ impl DataFoldNode {
     }
     
     /// Get the current indexing status
-    pub fn get_indexing_status(&self) -> crate::fold_db_core::orchestration::IndexingStatus {
-        self.db.lock()
-            .map(|db| db.get_indexing_status())
-            .unwrap_or_default()
+    pub async fn get_indexing_status(&self) -> crate::fold_db_core::orchestration::IndexingStatus {
+        if let Ok(db) = self.db.lock() {
+            db.get_indexing_status().await
+        } else {
+            crate::fold_db_core::orchestration::IndexingStatus::default()
+        }
     }
     
     /// Check if indexing is currently in progress
-    pub fn is_indexing(&self) -> bool {
-        self.db.lock()
-            .map(|db| db.is_indexing())
-            .unwrap_or(false)
+    pub async fn is_indexing(&self) -> bool {
+        if let Ok(db) = self.db.lock() {
+            db.is_indexing().await
+        } else {
+            false
+        }
     }
 }
 
