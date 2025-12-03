@@ -35,12 +35,12 @@ impl QueryExecutor {
     }
 
     /// Query multiple fields from a schema
-    pub fn query(&self, query: Query) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+    pub async fn query(&self, query: Query) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut schema = self.schema_manager.get_schema(&query.schema_name)?.ok_or_else(|| SchemaError::InvalidData(format!("Schema '{}' not found", query.schema_name)))?;
         self.hash_range_processor.query_with_filter(
             &mut schema,
             &query.fields,
             query.filter,
-        )
+        ).await
     }
 }

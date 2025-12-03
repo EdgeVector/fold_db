@@ -116,6 +116,7 @@ impl FilterApplicator for RangeField {
     }
 }
 
+#[async_trait::async_trait]
 impl crate::schema::types::field::Field for RangeField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
         &self.inner
@@ -125,11 +126,11 @@ impl crate::schema::types::field::Field for RangeField {
         &mut self.inner
     }
 
-    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
+    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
         // If we have a molecule_uuid, look up the corresponding MoleculeRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            match super::run_async(db_ops.get_item::<MoleculeRange>(&ref_key)) {
+            match db_ops.get_item::<MoleculeRange>(&ref_key).await {
                 Ok(Some(molecule)) => {
                     self.molecule = Some(molecule);
                 }
@@ -163,12 +164,12 @@ impl crate::schema::types::field::Field for RangeField {
         }
     }
 
-    fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-        self.refresh_from_db(db_ops);
+    async fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+        self.refresh_from_db(db_ops).await;
 
         // Fetch actual atom content from database using shared helper
         let result = self.apply_filter(filter);
-        fetch_atoms_for_matches(db_ops, result.matches)
+        super::fetch_atoms_for_matches_async(db_ops, result.matches).await
     }
 }
 

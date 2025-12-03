@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use async_trait::async_trait;
 
 use crate::schema::types::field::{
     Field, FieldCommon, HashRangeField, RangeField, SingleField,
-    HashRangeFilter, FilterApplicator, fetch_atoms_for_matches,
+    HashRangeFilter, FilterApplicator, fetch_atoms_for_matches_async,
 };
 use crate::db_operations::DbOperationsV2;
 use crate::schema::types::SchemaError;
@@ -47,6 +48,7 @@ macro_rules! delegate_field_method {
     };
 }
 
+#[async_trait]
 impl Field for FieldVariant {
     fn common(&self) -> &FieldCommon {
         delegate_field_method!(self, common)
@@ -56,21 +58,25 @@ impl Field for FieldVariant {
         delegate_field_method!(self, common_mut)
     }
 
-    fn refresh_from_db(&mut self, db_ops: &DbOperationsV2) {
-        delegate_field_method!(self, refresh_from_db, db_ops)
+    async fn refresh_from_db(&mut self, db_ops: &DbOperationsV2) {
+        match self {
+            Self::Single(f) => f.refresh_from_db(db_ops).await,
+            Self::Range(f) => f.refresh_from_db(db_ops).await,
+            Self::HashRange(f) => f.refresh_from_db(db_ops).await,
+        }
     }
 
     fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
         delegate_field_method!(self, write_mutation, key_value, atom, pub_key)
     }
 
-    fn resolve_value(
+    async fn resolve_value(
         &mut self,
         db_ops: &Arc<DbOperationsV2>,
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         // Refresh field data from database first
-        self.refresh_from_db(db_ops);
+        self.refresh_from_db(db_ops).await;
 
         // Fetch actual atom content from database using shared helper
         let results = match self {
@@ -78,6 +84,6 @@ impl Field for FieldVariant {
             FieldVariant::Range(f) => f.apply_filter(filter),
             FieldVariant::HashRange(f) => f.apply_filter(filter),
         };
-        fetch_atoms_for_matches(db_ops, results.matches)
+        fetch_atoms_for_matches_async(db_ops, results.matches).await
     }
 }

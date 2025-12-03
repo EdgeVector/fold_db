@@ -32,7 +32,9 @@ import {
   SCHEMA_OPERATION_REQUIREMENTS,
   READABLE_SCHEMA_STATES
 } from '../constants/redux';
-import { getConfiguredSchemaClient } from '../api/clients/configuredSchemaClient';
+import { createApiClient } from '../api/core/client';
+import { UnifiedSchemaClient } from '../api/clients/schemaClient';
+import { API_CONFIG } from '../constants/api';
 import {
   SCHEMA_OPERATION_TYPES,
   isCacheValid,
@@ -93,10 +95,21 @@ export const fetchSchemas = createAsyncThunk<
       };
     }
 
+    // Create schema client with main API base URL (not schema service)
+    // The schema endpoints are on the main API server, not a separate service
+    const schemaClient = new UnifiedSchemaClient(
+      createApiClient({
+        baseUrl: API_CONFIG.BASE_URL, // Use main API base URL (/api)
+        enableCache: true,
+        enableLogging: true,
+        enableMetrics: true
+      })
+    );
+
     // Clear API client cache when force refresh is requested
     if (params.forceRefresh) {
       console.log('🔄 Force refresh requested - clearing API client cache');
-      getConfiguredSchemaClient().clearCache();
+      schemaClient.clearCache();
     }
 
     // Fetch with retry logic
@@ -105,7 +118,7 @@ export const fetchSchemas = createAsyncThunk<
     for (let attempt = 1; attempt <= SCHEMA_FETCH_RETRY_ATTEMPTS; attempt++) {
       try {
         // Fetch schemas with their states from the backend
-        const availableResponse = await getConfiguredSchemaClient().getSchemas();
+        const availableResponse = await schemaClient.getSchemas();
         
         if (!availableResponse.success) {
           const error = new Error(`Failed to fetch schemas: ${availableResponse.error || 'Unknown error'}`);
@@ -124,6 +137,19 @@ export const fetchSchemas = createAsyncThunk<
         // Use the backend schema objects directly without transformation
         // Only normalize the state field to lowercase for consistency
         const schemas = rawSchemas.map((schema: any) => {
+          // Ensure schema has a name field - this is critical for display
+          if (!schema.name) {
+            console.warn('⚠️ Schema missing name field:', schema);
+            // Try to extract name from nested structure if present
+            if (schema.schema && schema.schema.name) {
+              schema.name = schema.schema.name;
+            } else {
+              console.error('❌ Schema has no name field and cannot be displayed:', schema);
+              // Skip schemas without names - they can't be displayed
+              return null;
+            }
+          }
+          
           // Normalize state to lowercase string if it exists
           let normalizedState = SCHEMA_STATES.AVAILABLE;
           
@@ -145,9 +171,9 @@ export const fetchSchemas = createAsyncThunk<
             ...schema,
             state: normalizedState
           };
-        });
+        }).filter((schema: any) => schema !== null); // Remove any null schemas (those without names)
         
-        console.log('✅ Using backend schemas directly:', schemas);
+        console.log('✅ Using backend schemas directly:', schemas.map((s: any) => ({ name: s.name, state: s.state })));
         
         const timestamp = Date.now();
         
@@ -175,33 +201,45 @@ export const fetchSchemas = createAsyncThunk<
   }
 );
 
+// Create a shared schema client instance for operations
+const getMainApiSchemaClient = () => {
+  return new UnifiedSchemaClient(
+    createApiClient({
+      baseUrl: API_CONFIG.BASE_URL, // Use main API base URL (/api)
+      enableCache: true,
+      enableLogging: true,
+      enableMetrics: true
+    })
+  );
+};
+
 /**
  * Schema operation thunks using the factory function
  */
 export const approveSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.APPROVE_SCHEMA,
-  (name: string) => getConfiguredSchemaClient().approveSchema(name),
+  (name: string) => getMainApiSchemaClient().approveSchema(name),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.APPROVE_FAILED
 );
 
 export const blockSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.BLOCK_SCHEMA,
-  (name: string) => getConfiguredSchemaClient().blockSchema(name),
+  (name: string) => getMainApiSchemaClient().blockSchema(name),
   SCHEMA_STATES.BLOCKED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.BLOCK_FAILED
 );
 
 export const unloadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.UNLOAD_SCHEMA,
-  (name: string) => getConfiguredSchemaClient().unloadSchema(name),
+  (name: string) => getMainApiSchemaClient().unloadSchema(name),
   SCHEMA_STATES.AVAILABLE as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED
 );
 
 export const loadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.LOAD_SCHEMA,
-  (name: string) => getConfiguredSchemaClient().loadSchema(name),
+  (name: string) => getMainApiSchemaClient().loadSchema(name),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.LOAD_FAILED
 );

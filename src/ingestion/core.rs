@@ -18,6 +18,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
+use crate::schema::types::topology::{TopologyNode, PrimitiveValueType};
 
 /// Core ingestion service that orchestrates the entire ingestion process
 pub struct IngestionCore {
@@ -398,6 +399,10 @@ impl IngestionCore {
                 ))
             })?;
 
+
+        // Ensure default classifications for all fields (e.g. "word" for strings)
+        // This ensures that even if AI didn't provide classifications, we still index text
+        Self::ensure_default_classifications(&mut schema);
 
         // Compute topology hash for the AI-generated topologies
         if !schema.field_topologies.is_empty() {
@@ -799,6 +804,39 @@ impl IngestionCore {
         }
     }
 
+    /// Ensures that all String fields have at least the "word" classification
+    /// This is crucial for the native index to work by default for text fields
+    fn ensure_default_classifications(schema: &mut crate::schema::types::Schema) {
+        for topology in schema.field_topologies.values_mut() {
+            Self::ensure_default_classifications_recursive(&mut topology.root);
+        }
+    }
+
+    fn ensure_default_classifications_recursive(node: &mut TopologyNode) {
+        match node {
+            TopologyNode::Primitive { value, classifications } => {
+                if let PrimitiveValueType::String = value {
+                    if classifications.is_none() {
+                        *classifications = Some(vec!["word".to_string()]);
+                    } else if let Some(classes) = classifications {
+                        if classes.is_empty() {
+                            classes.push("word".to_string());
+                        }
+                    }
+                }
+            }
+            TopologyNode::Object { value } => {
+                for node in value.values_mut() {
+                    Self::ensure_default_classifications_recursive(node);
+                }
+            }
+            TopologyNode::Array { value } => {
+                Self::ensure_default_classifications_recursive(value);
+            }
+            _ => {}
+        }
+    }
+
     /// Execute mutations
     async fn execute_mutations(&self, mutations: &[Mutation]) -> IngestionResult<usize> {
         let mut executed_count = 0;
@@ -819,14 +857,19 @@ impl IngestionCore {
 
     /// Execute a single mutation (now uses batch internally for efficiency) and return its ID
     async fn execute_single_mutation(&self, mutation: &Mutation) -> IngestionResult<String> {
-        let mut db = self.fold_db.lock().map_err(|_| {
+        // Use block_in_place to acquire std::sync::Mutex without blocking the async runtime
+        let mut db = tokio::task::block_in_place(|| {
+            self.fold_db.lock()
+        });
+        let mut db = db.map_err(|_| {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 
-        // Use batch API even for single mutation for better performance
+        // Use async batch API to avoid deadlocks with DynamoDB
         let mut ids = db
             .mutation_manager
-            .write_mutations_batch(vec![mutation.clone()])
+            .write_mutations_batch_async(vec![mutation.clone()])
+            .await
             .map_err(IngestionError::SchemaSystemError)?;
 
         ids.pop().ok_or_else(|| {

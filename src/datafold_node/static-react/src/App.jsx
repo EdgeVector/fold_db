@@ -23,9 +23,48 @@ import { DEFAULT_TAB } from './constants'
 import { SchemaServiceConfigProvider } from './contexts/SchemaServiceConfigContext'
 
 export function AppContent() {
-  const [activeTab, setActiveTab] = useState(DEFAULT_TAB)
+  // Initialize activeTab from URL hash if present, otherwise use DEFAULT_TAB
+  const getInitialTab = () => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.slice(1); // Remove '#'
+      // Map common hash values to tab IDs
+      if (hash === 'schemas' || hash === 'schema') return 'schemas';
+      if (hash === 'query') return 'query';
+      if (hash === 'mutation') return 'mutation';
+      if (hash === 'ingestion') return 'ingestion';
+      if (hash === 'file-upload') return 'file-upload';
+      if (hash === 'native-index') return 'native-index';
+      if (hash === 'llm-query' || hash === 'ai-query') return 'llm-query';
+    }
+    return DEFAULT_TAB;
+  };
+  
+  const [activeTab, setActiveTab] = useState(getInitialTab())
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [results, setResults] = useState(null)
+  
+  // Sync activeTab with URL hash changes
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash && hash !== activeTab) {
+        // Map hash to tab ID
+        if (hash === 'schemas' || hash === 'schema') setActiveTab('schemas');
+        else if (hash === 'query') setActiveTab('query');
+        else if (hash === 'mutation') setActiveTab('mutation');
+        else if (hash === 'ingestion') setActiveTab('ingestion');
+        else if (hash === 'file-upload') setActiveTab('file-upload');
+        else if (hash === 'native-index') setActiveTab('native-index');
+        else if (hash === 'llm-query' || hash === 'ai-query') setActiveTab('llm-query');
+      }
+    };
+    
+    window.addEventListener('hashchange', handleHashChange);
+    // Check initial hash
+    handleHashChange();
+    
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [activeTab]);
   
   // Use the new useApprovedSchemas hook (TASK-001)
   const {
@@ -55,6 +94,10 @@ export function AppContent() {
   const handleTabChange = (tab) => {
     setActiveTab(tab)
     setResults(null)
+    // Update URL hash to match active tab
+    if (typeof window !== 'undefined') {
+      window.location.hash = tab;
+    }
   }
 
   const handleOperationResult = (result) => {

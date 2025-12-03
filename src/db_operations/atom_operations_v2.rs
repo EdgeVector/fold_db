@@ -39,13 +39,13 @@ impl DbOperationsV2 {
         }
 
         // Store the new atom (deferred - no immediate flush)
-        log::debug!("💾 Storing new atom: {}", atom_key);
+        log::info!("💾 Writing atom to DynamoDB: key={}, uuid={}", atom_key, new_atom.uuid());
         self.atoms_store().put_item(&atom_key, &new_atom).await
             .map_err(|e| {
                 log::error!("❌ Failed to store atom '{}': {}", atom_key, e);
                 SchemaError::InvalidData(format!("Failed to store atom: {}", e))
             })?;
-        log::debug!("✅ Atom stored: {}", atom_key);
+        log::info!("✅ Atom written to DynamoDB: {}", atom_key);
 
         Ok(new_atom)
     }
@@ -58,43 +58,49 @@ impl DbOperationsV2 {
         molecule_uuid: &str,
     ) -> Result<(), SchemaError> {
         let ref_key = format!("ref:{}", molecule_uuid);
-        log::debug!("🔗 Persisting molecule: {}", ref_key);
+        log::info!("🔗 persist_field_molecule_deferred: molecule_uuid={}, ref_key={}", molecule_uuid, ref_key);
         
         match field {
             FieldVariant::Single(f) => {
                 if let Some(mol) = &f.molecule {
+                    log::info!("💾 Writing Single molecule to DynamoDB: ref_key={}, has_atom={}", 
+                        ref_key, !mol.get_atom_uuid().is_empty());
                     self.molecules_store().put_item(&ref_key, mol).await
                         .map_err(|e| {
                             log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
                             SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
                         })?;
-                    log::debug!("✅ Molecule stored: {}", ref_key);
+                    log::info!("✅ Single molecule written to DynamoDB: {}", ref_key);
                 } else {
-                    log::debug!("⏭️ No molecule to persist for Single field");
+                    log::warn!("⚠️ No molecule to persist for Single field (molecule is None)");
                 }
             }
             FieldVariant::Range(f) => {
                 if let Some(mol) = &f.molecule {
+                    log::info!("💾 Writing Range molecule to DynamoDB: ref_key={}, atom_count={}", 
+                        ref_key, mol.atom_uuids.len());
                     self.molecules_store().put_item(&ref_key, mol).await
                         .map_err(|e| {
                             log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
                             SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
                         })?;
-                    log::debug!("✅ Molecule stored: {}", ref_key);
+                    log::info!("✅ Range molecule written to DynamoDB: {}", ref_key);
                 } else {
-                    log::debug!("⏭️ No molecule to persist for Range field");
+                    log::warn!("⚠️ No molecule to persist for Range field (molecule is None)");
                 }
             }
             FieldVariant::HashRange(f) => {
                 if let Some(mol) = &f.molecule {
+                    log::info!("💾 Writing HashRange molecule to DynamoDB: ref_key={}, hash_count={}, total_atoms={}", 
+                        ref_key, mol.hash_values().count(), mol.atom_count());
                     self.molecules_store().put_item(&ref_key, mol).await
                         .map_err(|e| {
                             log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
                             SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
                         })?;
-                    log::debug!("✅ Molecule stored: {}", ref_key);
+                    log::info!("✅ HashRange molecule written to DynamoDB: {}", ref_key);
                 } else {
-                    log::debug!("⏭️ No molecule to persist for HashRange field");
+                    log::warn!("⚠️ No molecule to persist for HashRange field (molecule is None)");
                 }
             }
         }

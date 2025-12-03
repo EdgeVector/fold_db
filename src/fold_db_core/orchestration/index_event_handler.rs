@@ -15,7 +15,7 @@ use crate::schema::SchemaError;
 use super::index_status::IndexStatusTracker;
 
 pub struct IndexEventHandler {
-    _monitoring_thread: Option<thread::JoinHandle<()>>,
+    _monitoring_task: Option<tokio::task::JoinHandle<()>>,
     status_tracker: IndexStatusTracker,
 }
 
@@ -24,29 +24,30 @@ impl IndexEventHandler {
     pub fn new(
         message_bus: Arc<MessageBus>,
         db_ops: Arc<DbOperationsV2>,
+        status_tracker: Option<IndexStatusTracker>,
     ) -> Self {
-        let status_tracker = IndexStatusTracker::new();
+        let status_tracker = status_tracker.unwrap_or_else(|| IndexStatusTracker::new(None));
         
-        let monitoring_thread = Self::start_monitoring(
+        let monitoring_task = Self::start_monitoring(
             Arc::clone(&message_bus),
             Arc::clone(&db_ops),
             status_tracker.clone(),
         );
 
         Self {
-            _monitoring_thread: Some(monitoring_thread),
+            _monitoring_task: Some(monitoring_task),
             status_tracker,
         }
     }
     
     /// Get the current indexing status
-    pub fn get_status(&self) -> super::index_status::IndexingStatus {
-        self.status_tracker.get_status()
+    pub async fn get_status(&self) -> super::index_status::IndexingStatus {
+        self.status_tracker.get_status().await
     }
     
     /// Check if indexing is currently in progress
-    pub fn is_indexing(&self) -> bool {
-        self.status_tracker.is_indexing()
+    pub async fn is_indexing(&self) -> bool {
+        self.status_tracker.is_indexing().await
     }
 
     /// Start monitoring for BatchIndexRequest events
@@ -54,23 +55,25 @@ impl IndexEventHandler {
         message_bus: Arc<MessageBus>,
         db_ops: Arc<DbOperationsV2>,
         status_tracker: IndexStatusTracker,
-    ) -> thread::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<()> {
         let mut consumer = message_bus.subscribe::<BatchIndexRequest>();
         
-        thread::spawn(move || {
+        tokio::spawn(async move {
             info!("🔍 IndexEventHandler: Starting monitoring for BatchIndexRequest events");
 
             loop {
                 // Check for BatchIndexRequest events
+                // Note: try_recv is non-blocking, so we still need to poll
+                // In a real async system, we'd want an async channel
                 match consumer.try_recv() {
                     Ok(event) => {
-                        if let Err(e) = Self::handle_batch_index_request(&event, &db_ops, &status_tracker) {
+                        if let Err(e) = Self::handle_batch_index_request(&event, &db_ops, &status_tracker).await {
                             error!("❌ IndexEventHandler: Error handling batch index request: {}", e);
                         }
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {
                         // No events available, sleep briefly to avoid busy waiting
-                        thread::sleep(Duration::from_millis(10));
+                        tokio::time::sleep(Duration::from_millis(10)).await;
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         error!("❌ IndexEventHandler: Message bus consumer disconnected");
@@ -82,7 +85,7 @@ impl IndexEventHandler {
     }
 
     /// Handle a BatchIndexRequest event by processing all index operations
-    fn handle_batch_index_request(
+    async fn handle_batch_index_request(
         event: &BatchIndexRequest,
         db_ops: &Arc<DbOperationsV2>,
         status_tracker: &IndexStatusTracker,
@@ -90,7 +93,7 @@ impl IndexEventHandler {
         let operation_count = event.operations.len();
         
         // Update status: indexing started
-        status_tracker.start_batch(operation_count);
+        status_tracker.start_batch(operation_count).await;
         
         let start_time = std::time::Instant::now();
         
@@ -108,20 +111,27 @@ impl IndexEventHandler {
             .collect();
         
         // Process all index operations in a batch
-        let result = db_ops.native_index_manager()
-            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?
-            .batch_index_field_values_with_classifications(&index_operations);
+        // We need to handle both sync and async index managers
+        let result = if let Some(native_index_mgr) = db_ops.native_index_manager() {
+            if native_index_mgr.is_async() {
+                native_index_mgr.batch_index_field_values_with_classifications_async(&index_operations).await
+            } else {
+                native_index_mgr.batch_index_field_values_with_classifications(&index_operations)
+            }
+        } else {
+            Err(SchemaError::InvalidData("Native index manager not available".to_string()))
+        };
         
         let elapsed = start_time.elapsed();
         
         // Keep the "Indexing" state visible for at least 500ms so UI can display it
         // This is purely for UI feedback - the actual indexing is already done
         if elapsed.as_millis() < 500 {
-            thread::sleep(Duration::from_millis(500 - elapsed.as_millis() as u64));
+            tokio::time::sleep(Duration::from_millis(500 - elapsed.as_millis() as u64)).await;
         }
         
         // Update status: indexing completed
-        status_tracker.complete_batch(operation_count, elapsed.as_millis());
+        status_tracker.complete_batch(operation_count, elapsed.as_millis()).await;
         
         match result {
             Ok(_) => {

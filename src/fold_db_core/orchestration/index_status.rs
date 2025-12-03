@@ -3,10 +3,11 @@
 //! This module provides real-time status information about background indexing
 //! operations for UI display and monitoring.
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use super::progress_store::{ProgressStore, InMemoryProgressStore};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
 pub enum IndexingState {
@@ -54,75 +55,87 @@ impl Default for IndexingStatus {
 
 #[derive(Clone)]
 pub struct IndexStatusTracker {
-    status: Arc<RwLock<IndexingStatus>>,
+    store: Arc<dyn ProgressStore>,
 }
 
 impl IndexStatusTracker {
-    pub fn new() -> Self {
+    pub fn new(store: Option<Arc<dyn ProgressStore>>) -> Self {
         Self {
-            status: Arc::new(RwLock::new(IndexingStatus::default())),
+            store: store.unwrap_or_else(|| Arc::new(InMemoryProgressStore::new())),
         }
     }
 
     /// Mark the start of a batch indexing operation
-    pub fn start_batch(&self, batch_size: usize) {
-        if let Ok(mut status) = self.status.write() {
-            status.state = IndexingState::Indexing;
-            status.operations_in_progress = batch_size;
-            status.current_batch_size = Some(batch_size);
-            status.current_batch_start_time = Some(Self::current_timestamp());
-        }
+    pub async fn start_batch(&self, batch_size: usize) {
+        log::info!("IndexStatusTracker: Starting batch of size {}", batch_size);
+        let mut status = self.store.load_status().await.unwrap_or_default();
+        
+        status.state = IndexingState::Indexing;
+        status.operations_in_progress = batch_size;
+        status.current_batch_size = Some(batch_size);
+        status.current_batch_start_time = Some(Self::current_timestamp());
+        
+        let _ = self.store.save_status(&status).await;
+        log::info!("IndexStatusTracker: Batch started, status saved");
     }
 
     /// Mark the completion of a batch indexing operation
-    pub fn complete_batch(&self, batch_size: usize, duration_ms: u128) {
-        if let Ok(mut status) = self.status.write() {
-            status.state = IndexingState::Idle;
-            status.operations_in_progress = 0;
-            status.total_operations_processed += batch_size as u64;
-            status.last_operation_time = Some(Self::current_timestamp());
-            status.current_batch_size = None;
-            status.current_batch_start_time = None;
-            
-            // Update average processing time (exponential moving average)
-            let new_avg = duration_ms as f64 / batch_size as f64;
-            if status.avg_processing_time_ms == 0.0 {
-                status.avg_processing_time_ms = new_avg;
-            } else {
-                // EMA with alpha = 0.3 (weight recent operations more)
-                status.avg_processing_time_ms = 
-                    0.3 * new_avg + 0.7 * status.avg_processing_time_ms;
-            }
-            
-            // Calculate operations per second (ops/sec)
-            // duration_ms is milliseconds, so we convert to seconds
-            if duration_ms > 0 {
-                status.operations_per_second = (batch_size as f64 * 1000.0) / duration_ms as f64;
-            } else {
-                status.operations_per_second = 0.0;
+    pub async fn complete_batch(&self, batch_size: usize, duration_ms: u128) {
+        log::info!("IndexStatusTracker: Completing batch of size {}, duration {}ms", batch_size, duration_ms);
+        let mut status = self.store.load_status().await.unwrap_or_default();
+        
+        // Ensure the "Indexing" state is visible for at least 500ms
+        if let Some(start_time) = status.current_batch_start_time {
+            let elapsed = Self::current_timestamp() - start_time;
+            if elapsed < 500 {
+                log::info!("IndexStatusTracker: Sleeping for {}ms to ensure visibility", 500 - elapsed);
+                tokio::time::sleep(tokio::time::Duration::from_millis(500 - elapsed)).await;
             }
         }
+        
+        status.state = IndexingState::Idle;
+        status.operations_in_progress = 0;
+        status.total_operations_processed += batch_size as u64;
+        status.last_operation_time = Some(Self::current_timestamp());
+        status.current_batch_size = None;
+        status.current_batch_start_time = None;
+        
+        // Update statistics
+        let current_avg = status.avg_processing_time_ms;
+        let total_ops = status.total_operations_processed;
+        
+        // Moving average
+        if total_ops > batch_size as u64 {
+            status.avg_processing_time_ms = (current_avg * 0.9) + (duration_ms as f64 * 0.1);
+        } else {
+            status.avg_processing_time_ms = duration_ms as f64;
+        }
+        
+        if duration_ms > 0 {
+            status.operations_per_second = (batch_size as f64 / duration_ms as f64) * 1000.0;
+        }
+        
+        let _ = self.store.save_status(&status).await;
+        log::info!("IndexStatusTracker: Batch completed, status saved. Total ops: {}", status.total_operations_processed);
     }
 
     /// Update the number of operations queued
-    pub fn set_queued(&self, count: usize) {
-        if let Ok(mut status) = self.status.write() {
-            status.operations_queued = count;
-        }
+    pub async fn set_queued(&self, count: usize) {
+        let mut status = self.store.load_status().await.unwrap_or_default();
+        status.operations_queued = count;
+        let _ = self.store.save_status(&status).await;
     }
 
     /// Get the current indexing status
-    pub fn get_status(&self) -> IndexingStatus {
-        self.status.read()
-            .map(|s| s.clone())
-            .unwrap_or_default()
+    pub async fn get_status(&self) -> IndexingStatus {
+        let status = self.store.load_status().await.unwrap_or_default();
+        log::debug!("IndexStatusTracker: get_status returning {:?}", status);
+        status
     }
 
     /// Check if indexing is currently in progress
-    pub fn is_indexing(&self) -> bool {
-        self.status.read()
-            .map(|s| s.state == IndexingState::Indexing)
-            .unwrap_or(false)
+    pub async fn is_indexing(&self) -> bool {
+        self.get_status().await.state == IndexingState::Indexing
     }
 
     /// Get current timestamp in seconds since Unix epoch
@@ -133,10 +146,3 @@ impl IndexStatusTracker {
             .unwrap_or(0)
     }
 }
-
-impl Default for IndexStatusTracker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-

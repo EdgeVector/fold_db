@@ -33,20 +33,29 @@ pub struct MutationResponse {
     )
 )]
 pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) -> impl Responder {
+    let query_inner = query.into_inner();
+    log::info!("🔍 execute_query: schema={}, fields={:?}, filter={:?}", 
+        query_inner.schema_name, query_inner.fields, query_inner.filter);
+    
     let node_arc = Arc::clone(&state.node);
     let processor = OperationProcessor::new(node_arc);
 
-    match processor.execute_query_map(query.into_inner()).await {
+    match processor.execute_query_map(query_inner).await {
         Ok(result_map) => {
+            log::debug!("✅ Query returned {} fields", result_map.len());
             let records_map = records_from_field_map(&result_map);
             let data: Vec<Value> = records_map
                 .into_iter()
                 .map(|(key, record)| json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
                 .collect();
+            log::info!("✅ Query completed: {} records returned", data.len());
             HttpResponse::Ok().json(data)
         },
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to execute query: {}", e)})),
+        Err(e) => {
+            log::error!("❌ Query failed: {}", e);
+            HttpResponse::InternalServerError()
+                .json(json!({"error": format!("Failed to execute query: {}", e)}))
+        },
     }
 }
 
@@ -380,7 +389,7 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
 )]
 pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    let status = node.get_indexing_status();
+    let status = node.get_indexing_status().await;
     HttpResponse::Ok().json(status)
 }
 

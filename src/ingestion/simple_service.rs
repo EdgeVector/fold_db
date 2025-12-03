@@ -129,10 +129,13 @@ impl SimpleIngestionService {
             IngestionStep::SettingUpSchema,
             "Setting up schema and preparing for data storage...".to_string(),
         );
+        // Check if we'll use an existing schema before calling determine_schema_to_use
+        let will_use_existing = !ai_response.existing_schemas.is_empty();
         let schema_name = self
             .determine_schema_to_use(&ai_response, &request.data, node.clone())
             .await?;
-        let new_schema_created = ai_response.new_schemas.is_some();
+        // Only mark as new if AI suggested a new schema AND we didn't use an existing one
+        let new_schema_created = ai_response.new_schemas.is_some() && !will_use_existing;
 
         // Step 5: Generate mutations
         progress_service.update_progress(
@@ -293,10 +296,13 @@ impl SimpleIngestionService {
 
 
         // Step 5: Determine schema to use
+        // Check if we'll use an existing schema before calling determine_schema_to_use
+        let will_use_existing = !ai_response.existing_schemas.is_empty();
         let schema_name = self
             .determine_schema_to_use(&ai_response, &request.data, node.clone())
             .await?;
-        let new_schema_created = ai_response.new_schemas.is_some();
+        // Only mark as new if AI suggested a new schema AND we didn't use an existing one
+        let new_schema_created = ai_response.new_schemas.is_some() && !will_use_existing;
 
         // Step 6: Generate mutations
         // Handle both single objects and arrays of objects
@@ -601,6 +607,20 @@ impl SimpleIngestionService {
             schema.field_topologies.len()
         );
 
+        // Ensure default classifications for String fields (force indexing)
+        for topology in schema.field_topologies.values_mut() {
+            if let crate::schema::types::topology::TopologyNode::Primitive { value: crate::schema::types::topology::PrimitiveValueType::String, classifications } = &mut topology.root {
+                if classifications.is_none() || classifications.as_ref().map(|c| c.is_empty()).unwrap_or(false) {
+                    *classifications = Some(vec!["word".to_string()]);
+                    crate::log_feature!(
+                        crate::logging::features::LogFeature::Ingestion,
+                        info,
+                        "Added default 'word' classification to string field"
+                    );
+                }
+            }
+        }
+
         // Ensure schema has a key configuration (add default if missing)
         if schema.key.is_none() {
             if let Some(fields) = &schema.fields {
@@ -796,6 +816,20 @@ impl SimpleIngestionService {
                 sample_map.len(),
                 schema_name
             );
+
+            // Ensure default classifications for String fields (force indexing)
+            for topology in schema.field_topologies.values_mut() {
+                if let crate::schema::types::topology::TopologyNode::Primitive { value: crate::schema::types::topology::PrimitiveValueType::String, classifications } = &mut topology.root {
+                    if classifications.is_none() || classifications.as_ref().map(|c| c.is_empty()).unwrap_or(false) {
+                        *classifications = Some(vec!["word".to_string()]);
+                        crate::log_feature!(
+                            crate::logging::features::LogFeature::Ingestion,
+                            info,
+                            "Added default 'word' classification to string field in existing schema"
+                        );
+                    }
+                }
+            }
 
             // Update the schema in the schema service via node
             {

@@ -33,6 +33,7 @@ impl SingleField {
     }
 }
 
+#[async_trait::async_trait]
 impl crate::schema::types::field::Field for SingleField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
         &self.inner
@@ -42,15 +43,12 @@ impl crate::schema::types::field::Field for SingleField {
         &mut self.inner
     }
 
-    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
+    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
         // For new mutations, fields won't have molecules yet, so refresh is optional
-        // This method may fail in async contexts, but that's OK for new fields
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            // Only try to refresh if we can do it safely
-            // For new mutations, this will typically be None anyway
-            if let Ok(Some(molecule)) = super::run_async(db_ops.get_item::<crate::atom::Molecule>(&ref_key)) {
-                self.molecule = Some(molecule.clone());
+            if let Ok(Some(molecule)) = db_ops.get_item::<crate::atom::Molecule>(&ref_key).await {
+                self.molecule = Some(molecule);
             }
         }
     }
@@ -70,14 +68,14 @@ impl crate::schema::types::field::Field for SingleField {
         }
     }
 
-    fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, _filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-        self.refresh_from_db(db_ops);
+    async fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, _filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+        self.refresh_from_db(db_ops).await;
         if let Some(molecule) = &self.molecule {
             let uuid = molecule.get_atom_uuid().clone();
-            let result = fetch_atoms_for_matches(
+            let result = super::fetch_atoms_for_matches_async(
                 db_ops,
                 vec![(KeyValue::new(None, None), uuid)].into_iter(),
-            )?;
+            ).await?;
             Ok(result)
         } else {
             Ok(HashMap::new())

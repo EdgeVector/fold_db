@@ -58,6 +58,7 @@ impl HashRangeField {
     }
 }
 
+#[async_trait::async_trait]
 impl crate::schema::types::field::Field for HashRangeField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
         &self.inner
@@ -67,13 +68,24 @@ impl crate::schema::types::field::Field for HashRangeField {
         &mut self.inner
     }
 
-    fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
+    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
         // If we have a molecule_uuid, look up the corresponding MoleculeHashRange
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            if let Ok(Some(molecule_hash_range)) = super::run_async(db_ops.get_item::<MoleculeHashRange>(&ref_key)) {
-                self.molecule = Some(molecule_hash_range);
+            match db_ops.get_item::<MoleculeHashRange>(&ref_key).await {
+                Ok(Some(molecule_hash_range)) => {
+                    log::debug!("✅ Loaded molecule from DB: {}", ref_key);
+                    self.molecule = Some(molecule_hash_range);
+                }
+                Ok(None) => {
+                    log::warn!("⚠️ Molecule not found in DB: {}", ref_key);
+                }
+                Err(e) => {
+                    log::error!("❌ Failed to load molecule from DB '{}': {}", ref_key, e);
+                }
             }
+        } else {
+            log::debug!("⏭️ No molecule_uuid set on field, skipping refresh");
         }
     }
 
@@ -94,10 +106,18 @@ impl crate::schema::types::field::Field for HashRangeField {
         }
     }
 
-    fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-        self.refresh_from_db(db_ops);
+    async fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+        self.refresh_from_db(db_ops).await;
+        let filter_debug = filter.clone();
         let result = self.apply_filter(filter);
-        fetch_atoms_for_matches(db_ops, result.matches)
+        log::debug!("🔍 HashRangeField::resolve_value: filter={:?}, matches={}", filter_debug, result.matches.len());
+        if result.matches.is_empty() {
+            log::warn!("⚠️ HashRangeField::resolve_value: No matches found. molecule={:?}, molecule_uuid={:?}", 
+                self.molecule.is_some(), 
+                self.inner.molecule_uuid()
+            );
+        }
+        super::fetch_atoms_for_matches_async(db_ops, result.matches).await
     }
 }
 

@@ -183,7 +183,15 @@ echo "Make sure AWS credentials are configured (AWS_ACCESS_KEY_ID, AWS_SECRET_AC
 
 # Export OPENROUTER_API_KEY if set in .zshrc
 source ~/.zshrc 2>/dev/null || true
-nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
+
+# Export DynamoDB config for ProgressStore
+export DATAFOLD_DYNAMODB_TABLE="$TABLE_NAME"
+export DATAFOLD_DYNAMODB_REGION="$REGION"
+if [ -n "$USER_ID" ]; then
+    export DATAFOLD_DYNAMODB_USER_ID="$USER_ID"
+fi
+
+RUST_LOG=debug nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
 
 # Get the process ID
 SERVER_PID=$!
