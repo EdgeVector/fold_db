@@ -75,8 +75,11 @@ impl IndexStatusTracker {
         status.current_batch_size = Some(batch_size);
         status.current_batch_start_time = Some(Self::current_timestamp());
         
-        let _ = self.store.save_status(&status).await;
-        log::info!("IndexStatusTracker: Batch started, status saved");
+        if let Err(e) = self.store.save_status(&status).await {
+            log::error!("IndexStatusTracker: Failed to save status in start_batch: {}", e);
+        } else {
+            log::info!("IndexStatusTracker: Batch started, status saved");
+        }
     }
 
     /// Mark the completion of a batch indexing operation
@@ -115,22 +118,34 @@ impl IndexStatusTracker {
             status.operations_per_second = (batch_size as f64 / duration_ms as f64) * 1000.0;
         }
         
-        let _ = self.store.save_status(&status).await;
-        log::info!("IndexStatusTracker: Batch completed, status saved. Total ops: {}", status.total_operations_processed);
+        if let Err(e) = self.store.save_status(&status).await {
+            log::error!("IndexStatusTracker: Failed to save status in complete_batch: {}", e);
+        } else {
+            log::info!("IndexStatusTracker: Batch completed, status saved. Total ops: {}", status.total_operations_processed);
+        }
     }
 
     /// Update the number of operations queued
     pub async fn set_queued(&self, count: usize) {
         let mut status = self.store.load_status().await.unwrap_or_default();
         status.operations_queued = count;
-        let _ = self.store.save_status(&status).await;
+        if let Err(e) = self.store.save_status(&status).await {
+            log::error!("IndexStatusTracker: Failed to save status in set_queued: {}", e);
+        }
     }
 
     /// Get the current indexing status
     pub async fn get_status(&self) -> IndexingStatus {
-        let status = self.store.load_status().await.unwrap_or_default();
-        log::debug!("IndexStatusTracker: get_status returning {:?}", status);
-        status
+        match self.store.load_status().await {
+            Ok(status) => {
+                log::debug!("IndexStatusTracker: get_status loaded: {:?}", status);
+                status
+            },
+            Err(e) => {
+                log::error!("IndexStatusTracker: Failed to load status: {}", e);
+                IndexingStatus::default()
+            }
+        }
     }
 
     /// Check if indexing is currently in progress
