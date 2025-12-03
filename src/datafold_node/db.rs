@@ -57,13 +57,37 @@ impl DataFoldNode {
 
     /// Executes multiple mutations in a batch for improved performance.
     pub fn mutate_batch(&self, mutations: Vec<Mutation>) -> FoldDbResult<Vec<String>> {
-        // Use sync version for backward compatibility
-        // Note: This can deadlock with DynamoDB - use mutate_batch_async() instead
-        self.with_db_mut(
-            |db| db.mutation_manager.write_mutations_batch(mutations),
-            "Failed to acquire database lock for batch mutation",
-            "Batch mutation operation failed"
-        )
+        // Use async version to avoid deadlocks, blocking on the current thread
+        // Since DataFoldNode uses std::sync::Mutex, we need to use spawn_blocking
+        // to avoid blocking the async runtime if we are in one.
+        
+        let db = self.db.clone();
+        
+        // Check if we are in a tokio runtime
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // We are in a runtime, use spawn_blocking to bridge sync -> async
+            tokio::task::block_in_place(|| {
+                handle.block_on(async {
+                    let mut db_guard = db.lock()
+                        .map_err(|_| FoldDbError::Config("Failed to acquire database lock for batch mutation".to_string()))?;
+                    
+                    db_guard.mutation_manager.write_mutations_batch_async(mutations).await
+                        .map_err(|e| FoldDbError::Config(format!("Batch mutation operation failed: {}", e)))
+                })
+            })
+        } else {
+            // Not in a runtime, create a temporary one (fallback)
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| FoldDbError::Config(format!("Failed to create tokio runtime: {}", e)))?;
+                
+            rt.block_on(async {
+                let mut db_guard = db.lock()
+                    .map_err(|_| FoldDbError::Config("Failed to acquire database lock for batch mutation".to_string()))?;
+                
+                db_guard.mutation_manager.write_mutations_batch_async(mutations).await
+                    .map_err(|e| FoldDbError::Config(format!("Batch mutation operation failed: {}", e)))
+            })
+        }
     }
     
     /// Executes multiple mutations in a batch (async version - preferred for DynamoDB)

@@ -669,44 +669,7 @@ async fn closeness_field_overlap_below_threshold_without_high_similarity() {
     }
 }
 
-#[tokio::test]
-#[ignore = "empty schemas cannot have topology hashes computed - not supported with topology-based system"]
-async fn closeness_with_empty_schemas() {
-    let temp_dir = tempdir().expect("failed to create temp directory");
-    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let state = SchemaServiceState::new(db_path.clone())
-        .expect("failed to initialize schema service state");
-
-    let first_empty = json_to_schema(json!({
-        "name": "Empty1",
-        "fields": []
-    }));
-
-    let outcome1 = state
-        .add_schema(first_empty, HashMap::new())
-        .await.expect("failed to add first empty schema");
-
-    assert!(matches!(outcome1, SchemaAddOutcome::Added(_, _)));
-
-    let second_empty = json_to_schema(json!({
-        "name": "Empty2",
-        "fields": []
-    }));
-
-    let outcome2 = state
-        .add_schema(second_empty, HashMap::new())
-        .await.expect("failed to evaluate empty schema similarity");
-
-    match outcome2 {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(!conflict.closest_schema.name.is_empty(), "closest schema must have a name");
-        }
-        SchemaAddOutcome::Added(_, _) => {
-            panic!("two empty schemas should be detected as similar")
-        }
-    }
-}
 
 #[tokio::test]
 async fn closeness_respects_field_mapper_preservation() {
@@ -760,74 +723,4 @@ async fn closeness_respects_field_mapper_preservation() {
     }
 }
 
-#[tokio::test]
-#[ignore = "field_mappers are no longer automatically created - this feature needs to be reimplemented"]
-async fn mutation_mappers_updated_when_field_mappers_added() {
-    let temp_dir = tempdir().expect("failed to create temp directory");
-    let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
 
-    let state = SchemaServiceState::new(db_path.clone())
-        .expect("failed to initialize schema service state");
-
-    // Add an existing schema
-    let existing_schema = json_to_schema(add_string_topologies(
-        json!({
-        "name": "UserProfile",
-        "schema_type": "Single",
-        "fields": ["user_id", "username", "email"]
-    }),
-        &["user_id", "username", "email"]
-    ));
-
-    state
-        .add_schema(existing_schema, HashMap::new())
-        .await.expect("failed to add existing schema");
-
-    // Propose a new schema with mutation_mappers that map JSON fields to schema fields
-    let mut mutation_mappers = HashMap::new();
-    mutation_mappers.insert("id".to_string(), "UserProfilePublic.user_id".to_string());
-    mutation_mappers.insert("name".to_string(), "UserProfilePublic.username".to_string());
-    mutation_mappers.insert("email".to_string(), "UserProfilePublic.email".to_string());
-    mutation_mappers.insert("display_name".to_string(), "UserProfilePublic.display_name".to_string());
-
-    let new_schema = json_to_schema(add_string_topologies(
-        json!({
-        "name": "UserProfilePublic",
-        "schema_type": "Single",
-        "fields": ["user_id", "username", "email", "display_name"]
-    }),
-        &["user_id", "username", "email", "display_name"]
-    ));
-
-    let outcome = state
-        .add_schema(new_schema, mutation_mappers)
-        .await.expect("failed to add schema with mutation mappers");
-
-    match outcome {
-        SchemaAddOutcome::Added(response, updated_mutation_mappers) => {
-            assert!(!response.name.is_empty(), "schema must have a name");
-            
-            // Verify field_mappers were created for shared fields
-            let field_mappers = response
-                .field_mappers
-                .as_ref()
-                .expect("field mappers should exist");
-            assert!(field_mappers.contains_key("user_id"));
-            assert!(field_mappers.contains_key("username"));
-            assert!(field_mappers.contains_key("email"));
-            assert!(!field_mappers.contains_key("display_name"), "display_name is new, should not have field mapper");
-
-            // Verify mutation_mappers were updated to point to existing schema
-            assert_eq!(updated_mutation_mappers.get("id").unwrap(), "UserProfile.user_id");
-            assert_eq!(updated_mutation_mappers.get("name").unwrap(), "UserProfile.username");
-            assert_eq!(updated_mutation_mappers.get("email").unwrap(), "UserProfile.email");
-            // display_name is a new field, so it should remain unchanged
-            assert_eq!(updated_mutation_mappers.get("display_name").unwrap(), "UserProfilePublic.display_name");
-            
-            println!("Updated mutation_mappers: {:?}", updated_mutation_mappers);
-        }
-        SchemaAddOutcome::TooSimilar(_) => {
-            panic!("schema with extra field should be accepted with field mappers")
-        }
-    }
-}

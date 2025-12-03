@@ -99,35 +99,5 @@ async fn test_local_folddb_has_no_s3_storage() {
     assert!(!db.has_s3_storage());
 }
 
-// Integration tests with actual S3 would require AWS credentials and a test bucket
-// These are marked as ignored and can be run manually with proper AWS setup
 
-#[tokio::test]
-#[ignore]
-async fn test_s3_folddb_creation() {
-    // This test requires:
-    // - AWS credentials configured
-    // - DATAFOLD_S3_BUCKET, DATAFOLD_S3_REGION env vars set
-    // Run with: cargo test test_s3_folddb_creation -- --ignored --nocapture
-    
-    let config = S3Config::from_env().expect("S3 config from environment");
-    let db = FoldDB::new_with_s3(config).await.expect("Create FoldDB with S3");
-    
-    assert!(db.has_s3_storage());
-}
-
-#[tokio::test]
-#[ignore]
-async fn test_s3_flush() {
-    // This test requires:
-    // - AWS credentials configured
-    // - DATAFOLD_S3_BUCKET, DATAFOLD_S3_REGION env vars set
-    // Run with: cargo test test_s3_flush -- --ignored --nocapture
-    
-    let config = S3Config::from_env().expect("S3 config from environment");
-    let db = FoldDB::new_with_s3(config).await.expect("Create FoldDB with S3");
-    
-    // Perform a flush to S3
-    db.flush_to_s3().await.expect("Flush to S3 should succeed");
-}
 
