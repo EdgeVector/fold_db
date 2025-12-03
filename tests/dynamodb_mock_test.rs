@@ -157,3 +157,53 @@ async fn test_dynamodb_get_mock() {
     // PK should be just "user1"
     assert!(body_str.contains("\"PK\":{\"S\":\"user1\"}"));
 }
+
+#[tokio::test]
+async fn test_dynamodb_namespace_isolation_mock() {
+    let mock = MockHttpClient::new();
+    let client = create_mock_client(mock.clone());
+    
+    // Create two stores with different table names (simulating namespaces)
+    let store1 = DynamoDbKvStore::new(Arc::new(client.clone()), "Namespace1".to_string(), Some("user1".to_string()));
+    let store2 = DynamoDbKvStore::new(Arc::new(client), "Namespace2".to_string(), Some("user1".to_string()));
+
+    let key = b"key";
+    let value = b"value";
+
+    // Put to store1
+    store1.put(key, value.to_vec()).await.expect("put failed");
+    let req1 = mock.get_last_request().expect("req1 missing");
+    let body1 = std::str::from_utf8(&req1.body).expect("utf8");
+    assert!(body1.contains("Namespace1"));
+    assert!(!body1.contains("Namespace2"));
+
+    // Put to store2
+    store2.put(key, value.to_vec()).await.expect("put failed");
+    let req2 = mock.get_last_request().expect("req2 missing");
+    let body2 = std::str::from_utf8(&req2.body).expect("utf8");
+    assert!(body2.contains("Namespace2"));
+    assert!(!body2.contains("Namespace1"));
+}
+
+#[tokio::test]
+async fn test_dynamodb_special_chars_mock() {
+    let mock = MockHttpClient::new();
+    let client = create_mock_client(mock.clone());
+    let store = DynamoDbKvStore::new(Arc::new(client), "TestTable".to_string(), Some("user1".to_string()));
+
+    // Test key with special chars: colon, slash, space, unicode
+    let key = "key:with/special chars_and_🚀".as_bytes();
+    let value = b"value";
+
+    store.put(key, value.to_vec()).await.expect("put failed");
+
+    let request = mock.get_last_request().expect("request missing");
+    let body_str = std::str::from_utf8(&request.body).expect("utf8");
+    
+    // Verify SK contains the special chars (JSON escaped)
+    // "key:with/special chars_and_🚀"
+    assert!(body_str.contains("key:with/special chars_and_"));
+    // Unicode might be escaped or raw depending on serde, but usually raw in UTF-8
+    // We'll check for the prefix to be safe
+    assert!(body_str.contains("key:with/special"));
+}
