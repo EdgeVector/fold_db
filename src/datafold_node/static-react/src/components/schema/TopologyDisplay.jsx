@@ -20,10 +20,21 @@ function TopologyNode({ node, depth = 0, name = null }) {
       Boolean: 'text-purple-600',
       Null: 'text-gray-500'
     }[primitiveType] || 'text-gray-600'
-    
+
     return (
-      <span className={`font-mono text-sm ${typeColor}`}>
-        {primitiveType.toLowerCase()}
+      <span className="inline-flex items-center space-x-2">
+        <span className={`font-mono text-sm ${typeColor}`}>
+          {primitiveType.toLowerCase()}
+        </span>
+        {node.classifications && node.classifications.length > 0 && (
+          <span className="flex space-x-1">
+            {node.classifications.map(cls => (
+              <span key={cls} className="px-1.5 py-0.5 text-xs bg-gray-200 text-gray-700 rounded-full font-sans">
+                {cls}
+              </span>
+            ))}
+          </span>
+        )}
       </span>
     )
   }
@@ -51,7 +62,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
   // Handle Object type
   if (node.type === 'Object' && node.value) {
     const fields = Object.entries(node.value)
-    
+
     if (fields.length === 0) {
       return <span className="font-mono text-sm text-gray-500">{'{}'}</span>
     }
@@ -75,7 +86,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
             </span>
           </button>
         </div>
-        
+
         {isExpanded && (
           <div className="ml-4 border-l-2 border-gray-200 pl-3 mt-1">
             {fields.map(([fieldName, fieldNode], index) => (
