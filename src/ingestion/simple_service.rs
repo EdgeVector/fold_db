@@ -607,47 +607,6 @@ impl SimpleIngestionService {
             schema.field_topologies.len()
         );
 
-        // Ensure default classifications for String fields (force indexing)
-        for topology in schema.field_topologies.values_mut() {
-            if let crate::schema::types::topology::TopologyNode::Primitive { value: crate::schema::types::topology::PrimitiveValueType::String, classifications } = &mut topology.root {
-                if classifications.is_none() || classifications.as_ref().map(|c| c.is_empty()).unwrap_or(false) {
-                    *classifications = Some(vec!["word".to_string()]);
-                    crate::log_feature!(
-                        crate::logging::features::LogFeature::Ingestion,
-                        info,
-                        "Added default 'word' classification to string field"
-                    );
-                }
-            }
-        }
-
-        // Ensure schema has a key configuration (add default if missing)
-        if schema.key.is_none() {
-            if let Some(fields) = &schema.fields {
-                if let Some(first_field) = fields.first() {
-                    // Use the first field as the hash key for simple schemas
-                    schema.key = Some(crate::schema::types::KeyConfig::new(
-                        Some(first_field.clone()),
-                        None, // No range field for simple Hash schemas
-                    ));
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Added default Hash key configuration using field '{}'",
-                        first_field
-                    );
-                }
-            }
-        }
-
-        // Compute topology hash for the AI-generated topologies
-        if !schema.field_topologies.is_empty() {
-            schema.compute_schema_topology_hash();
-        }
-
-        // DON'T infer topologies - AI already provided them with classifications
-        // Inferring would overwrite AI-generated classifications
-        
         // Only infer if the schema is completely missing topologies
         if schema.field_topologies.is_empty() {
             log_feature!(
@@ -672,6 +631,21 @@ impl SimpleIngestionService {
                     "Inferred topologies for {} fields (no AI topologies)",
                     sample_map.len()
                 );
+            }
+        }
+
+        // Ensure default classifications for String fields (force indexing)
+        // This must run AFTER inference to catch inferred fields
+        for topology in schema.field_topologies.values_mut() {
+            if let crate::schema::types::topology::TopologyNode::Primitive { value: crate::schema::types::topology::PrimitiveValueType::String, classifications } = &mut topology.root {
+                if classifications.is_none() || classifications.as_ref().map(|c| c.is_empty()).unwrap_or(false) {
+                    *classifications = Some(vec!["word".to_string()]);
+                    crate::log_feature!(
+                        crate::logging::features::LogFeature::Ingestion,
+                        info,
+                        "Added default 'word' classification to string field"
+                    );
+                }
             }
         }
 
@@ -782,6 +756,24 @@ impl SimpleIngestionService {
                     field_name
                 );
                 break;
+            } else if let Some(topology) = schema.field_topologies.get(field_name) {
+                // Check if it's a string field without "word" classification
+                if let crate::schema::types::topology::TopologyNode::Primitive { 
+                    value: crate::schema::types::topology::PrimitiveValueType::String, 
+                    classifications 
+                } = &topology.root {
+                    if classifications.is_none() || classifications.as_ref().map(|c| c.is_empty()).unwrap_or(false) {
+                        needs_update = true;
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            info,
+                            "Schema '{}' field '{}' is missing 'word' classification",
+                            schema_name,
+                            field_name
+                        );
+                        break;
+                    }
+                }
             }
         }
 
