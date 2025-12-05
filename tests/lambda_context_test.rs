@@ -19,7 +19,7 @@ async fn test_lambda_context_initialization() {
     match result {
         Ok(_) => {
             // Successfully initialized
-            assert!(LambdaContext::node().is_ok());
+            assert!(LambdaContext::node().await.is_ok());
             assert!(LambdaContext::progress_tracker().is_ok());
         }
         Err(e) => {
@@ -97,7 +97,7 @@ async fn test_lambda_context_with_schema_service_url() {
     match result {
         Ok(_) => {
             // Successfully initialized with schema service URL
-            assert!(LambdaContext::node().is_ok());
+            assert!(LambdaContext::node().await.is_ok());
         }
         Err(e) => {
             // Already initialized from another test
@@ -166,7 +166,7 @@ async fn test_lambda_context_access_after_init() {
     // If init succeeded or was already initialized, accessors should work
     if init_result.is_ok() || init_result.as_ref().err().map(|e| e.to_string().contains("already initialized")).unwrap_or(false) {
         // All accessors should work
-        let node_result = LambdaContext::node();
+        let node_result = LambdaContext::node().await;
         let tracker_result = LambdaContext::progress_tracker();
         
         // At least one should work if properly initialized

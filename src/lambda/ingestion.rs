@@ -153,7 +153,7 @@ impl LambdaContext {
         pub_key: String,
     ) -> Result<String, IngestionError> {
         let ctx = Self::get()?;
-        let node = ctx.node.clone();
+        let node = Self::node().await?; // Use async accessor
         let progress_tracker = ctx.progress_tracker.clone();
 
         // Generate unique progress ID
@@ -252,7 +252,7 @@ impl LambdaContext {
         pub_key: String,
     ) -> Result<IngestionResponse, IngestionError> {
         let ctx = Self::get()?;
-        let node = ctx.node.clone();
+        let node = Self::node().await?; // Use async accessor
         let progress_tracker = ctx.progress_tracker.clone();
 
         // Generate unique progress ID

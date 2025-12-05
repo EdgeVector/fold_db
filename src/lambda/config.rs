@@ -12,6 +12,11 @@ pub enum LambdaStorage {
     Config(StorageConfig),
     /// Use a pre-created DbOperationsV2 instance (allows any backend implementation)
     DbOps(Arc<DbOperationsV2>),
+    /// Use DynamoDB with auto-configuration (enables multi-tenancy)
+    DynamoDb {
+        table_name: String,
+        region: String,
+    },
 }
 
 /// Configuration for Lambda context initialization
@@ -33,6 +38,7 @@ impl std::fmt::Debug for LambdaConfig {
             .field("storage", &match &self.storage {
                 LambdaStorage::Config(cfg) => format!("Config({:?})", cfg),
                 LambdaStorage::DbOps(_) => "DbOps(<pre-created>)".to_string(),
+                LambdaStorage::DynamoDb { table_name, region } => format!("DynamoDb(table={}, region={})", table_name, region),
             })
             .field("schema_service_url", &self.schema_service_url)
             .field("ai_config", &self.ai_config)

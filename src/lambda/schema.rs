@@ -24,8 +24,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn list_schemas() -> Result<Vec<crate::schema::SchemaWithState>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
@@ -54,8 +54,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_schema(schema_name: &str) -> Result<Option<crate::schema::SchemaWithState>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
@@ -90,8 +90,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn block_schema(schema_name: &str) -> Result<(), IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
@@ -120,8 +120,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn load_schemas() -> Result<(usize, usize, Vec<String>), IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         // Fetch schemas from schema service
         let schemas = node.fetch_available_schemas().await
@@ -136,7 +136,9 @@ impl LambdaContext {
         
         for schema in schemas {
             let schema_name = schema.name.clone();
-            let node = ctx.node.lock().await;
+            // Re-acquire node lock for each operation to avoid holding it too long
+            let node_mutex = Self::node().await?;
+            let node = node_mutex.lock().await;
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
             
@@ -178,8 +180,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn approve_schema(schema_name: &str) -> Result<(), IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
@@ -211,8 +213,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_schema_state(schema_name: &str) -> Result<Option<crate::schema::SchemaState>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         

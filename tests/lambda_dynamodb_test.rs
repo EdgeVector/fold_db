@@ -40,7 +40,7 @@ async fn test_lambda_with_dynamodb_style_db_ops() {
             // Successfully initialized - test basic operations
             
             // Test 1: Verify node is accessible
-            let node_result = LambdaContext::node();
+            let node_result = LambdaContext::node().await;
             assert!(node_result.is_ok(), "Node should be accessible");
             
             // Test 2: Verify progress tracker is accessible

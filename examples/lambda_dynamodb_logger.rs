@@ -126,7 +126,9 @@ impl DynamoDbLogger {
             .as_secs() + (30 * 24 * 60 * 60)) as i64;
 
         let mut item = HashMap::new();
-        item.insert("user_id".to_string(), AttributeValue::S(self.user_id.clone()));
+        // Use user_id from entry if available (request-scoped), otherwise fallback to logger's user_id
+        let user_id = entry.user_id.clone().unwrap_or_else(|| self.user_id.clone());
+        item.insert("user_id".to_string(), AttributeValue::S(user_id));
         item.insert("timestamp".to_string(), AttributeValue::N(entry.timestamp.to_string()));
         item.insert("level".to_string(), AttributeValue::S(entry.level.as_str().to_string()));
         item.insert("event_type".to_string(), AttributeValue::S(entry.event_type));
@@ -177,6 +179,7 @@ impl DynamoDbLogger {
             event_type,
             message,
             metadata,
+            user_id: None, // We don't necessarily store it back or need it for display here
         })
     }
 }
@@ -279,6 +282,7 @@ mod tests {
                 ("key1".to_string(), "value1".to_string()),
                 ("key2".to_string(), "value2".to_string()),
             ])),
+            user_id: None,
         };
 
         // Log the entry
@@ -306,6 +310,7 @@ mod tests {
             event_type: "test_event".to_string(),
             message: "Test multi-tenant isolation".to_string(),
             metadata: None,
+            user_id: None,
         };
 
         logger.log(entry).await.unwrap();
