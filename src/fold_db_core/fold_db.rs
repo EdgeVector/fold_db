@@ -118,7 +118,7 @@ impl FoldDB {
     /// The database is downloaded from S3 on initialization and can be synced back with flush_to_s3().
     pub async fn new_with_s3(config: S3Config) -> Result<Self, StorageError> {
         // Initialize S3 storage (downloads from S3 if exists)
-        let s3_storage = Arc::new(S3SyncedStorage::new(config).await?);
+        let s3_storage: Arc<S3SyncedStorage> = Arc::new(S3SyncedStorage::new(config).await?);
         
         // Get local path as a String to avoid borrowing issues
         let local_path_string = s3_storage.local_path().to_str()

@@ -406,4 +406,40 @@ mod storage_abstraction_tests {
         
         println!("✅ DynamoDB backend test passed! User ID as partition key works correctly.");
     }
+
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_dynamodb_reset_manager() {
+        use crate::storage::reset_manager::DynamoDbResetManager;
+        use crate::storage::dynamodb_backend::DynamoDbNamespacedStore;
+        use aws_sdk_dynamodb::Client;
+        use std::sync::Arc;
+
+        // This test requires LocalStack or a real DynamoDB table
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .load()
+            .await;
+        let client = Arc::new(Client::new(&config));
+        let base_table_name = "test-reset-storage".to_string();
+        let user_id = "test_user_reset";
+
+        // 1. Setup: Create some data for the user
+        let store = DynamoDbNamespacedStore::new((*client).clone(), base_table_name.clone())
+            .with_user_id(user_id.to_string());
+        
+        // Ensure table exists (this might fail if not running against real DB/LocalStack)
+        let _ = store.open_namespace("metadata").await;
+        
+        if let Ok(kv) = store.open_namespace("metadata").await {
+            kv.put(b"key1", b"value1".to_vec()).await.unwrap();
+            
+            // 2. Reset
+            let manager = DynamoDbResetManager::new(client.clone(), base_table_name.clone());
+            manager.reset_user(user_id).await.unwrap();
+            
+            // 3. Verify
+            assert!(!kv.exists(b"key1").await.unwrap());
+        }
+    }
 }
