@@ -1,4 +1,6 @@
 //! Lambda context implementation
+//!
+//! Now supports multi-tenancy via NodeManager.
 
 use crate::datafold_node::{DataFoldNode, NodeConfig};
 use crate::datafold_node::llm_query::service::LlmQueryService;
@@ -8,6 +10,7 @@ use crate::ingestion::{
 };
 use crate::lambda::config::{AIConfig, AIProvider, LambdaConfig, LambdaStorage};
 use crate::lambda::logging::{LogBridge, Logger};
+use crate::lambda::node_manager::NodeManager;
 use crate::storage::StorageConfig;
 use once_cell::sync::OnceCell;
 use std::sync::{Arc, Mutex};
@@ -17,7 +20,7 @@ use std::sync::{Arc, Mutex};
 /// This should be initialized once during Lambda cold start and reused
 /// across all invocations to minimize latency.
 pub struct LambdaContext {
-    pub(crate) node: Arc<tokio::sync::Mutex<DataFoldNode>>,
+    pub(crate) node_manager: Arc<NodeManager>,
     pub(crate) progress_tracker: ProgressTracker,
     pub(crate) llm_service: Option<Arc<LlmQueryService>>,
     pub(crate) logger: Arc<dyn Logger>,
@@ -52,53 +55,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn init(config: LambdaConfig) -> Result<(), IngestionError> {
-        // Create FoldDB based on storage configuration
-        let (db, storage_path) = match &config.storage {
-            LambdaStorage::Config(storage_config) => {
-                // Create FoldDB from StorageConfig
-                let (fold_db, path) = match storage_config {
-                    StorageConfig::Local { path } => {
-                        // Ensure directory exists for local storage
-                        std::fs::create_dir_all(path)
-                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                        
-                        let path_str = path
-                            .to_str()
-                            .ok_or_else(|| IngestionError::StorageError("Invalid storage path".to_string()))?;
-                        
-                        let fold_db = FoldDB::new(path_str).await
-                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                        (fold_db, path.clone())
-                    }
-                    StorageConfig::S3 { config: s3_config } => {
-                        let fold_db = FoldDB::new_with_s3(s3_config.clone()).await
-                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                        (fold_db, s3_config.local_path.clone())
-                    }
-                };
-                (Arc::new(Mutex::new(fold_db)), path)
-            }
-            LambdaStorage::DbOps(db_ops) => {
-                // Create FoldDB from pre-created DbOperationsV2
-                // Use a placeholder path for NodeConfig (not used when db_ops is provided)
-                let db_path = "custom_backend".to_string();
-                let fold_db = FoldDB::new_with_db_ops(Arc::clone(db_ops), &db_path).await
-                    .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                (Arc::new(Mutex::new(fold_db)), std::path::PathBuf::from(db_path))
-            }
-        };
-
-        // Initialize node config
-        let mut node_config = NodeConfig::new(storage_path);
-
-        // Set schema service URL if provided
-        if let Some(schema_url) = config.schema_service_url {
-            node_config = node_config.with_schema_service_url(&schema_url);
-        }
-
-        // Create DataFold node with pre-created database
-        let node = DataFoldNode::new_with_db(node_config, db).await
-            .map_err(|e| IngestionError::InvalidInput(e.to_string()))?;
+        // Initialize NodeManager handles node creation (single or multi-tenant)
+        let node_manager = Arc::new(NodeManager::new(config.clone()).await?);
 
         // Create progress tracker
         let progress_tracker = create_progress_tracker();
@@ -132,7 +90,7 @@ impl LambdaContext {
         log::set_max_level(log::LevelFilter::Info);
 
         let context = LambdaContext {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
+            node_manager,
             progress_tracker,
             llm_service,
             logger,
@@ -188,9 +146,10 @@ impl LambdaContext {
         })
     }
 
-    /// Get a reference to the DataFold node.
+    /// Get a reference to the DataFold node for the default user.
     ///
-    /// Use this to access the node for custom operations.
+    /// Use this to access the node for custom operations in single-tenant mode.
+    /// For multi-tenant mode, use `get_node(user_id)`.
     ///
     /// # Example
     ///
@@ -198,14 +157,21 @@ impl LambdaContext {
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let node = LambdaContext::node()?;
+    ///     let node = LambdaContext::node().await?;
     ///     let node_guard = node.lock().await;
     ///     // Use node...
     ///     Ok(())
     /// }
     /// ```
-    pub fn node() -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
-        Ok(Self::get()?.node.clone())
+    pub async fn node() -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
+        Self::get()?.node_manager.get_node("default").await
+    }
+
+    /// Get a reference to the DataFold node for a specific user.
+    ///
+    /// Required for multi-tenant deployments using DynamoDB.
+    pub async fn get_node(user_id: &str) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
+        Self::get()?.node_manager.get_node(user_id).await
     }
 
     /// Get a reference to the progress tracker.
@@ -225,5 +191,17 @@ impl LambdaContext {
     /// ```
     pub fn progress_tracker() -> Result<ProgressTracker, IngestionError> {
         Ok(Self::get()?.progress_tracker.clone())
+    }
+
+    /// Get a user-scoped logger.
+    ///
+    /// This logger will automatically attach the user_id to all logs.
+    /// Use this in multi-tenant handlers to ensure logs are correctly attributed.
+    pub fn get_user_logger(user_id: &str) -> Result<crate::lambda::logging::UserLogger, IngestionError> {
+        let ctx = Self::get()?;
+        Ok(crate::lambda::logging::UserLogger::new(
+            user_id.to_string(),
+            ctx.logger.clone(),
+        ))
     }
 }

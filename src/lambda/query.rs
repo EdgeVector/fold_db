@@ -46,7 +46,8 @@ impl LambdaContext {
 
         // Get available schemas
         let schemas = {
-            let node = ctx.node.lock().await;
+            let node_mutex = Self::node().await?;
+            let node = node_mutex.lock().await;
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
             db_guard.schema_manager.get_schemas_with_states()
@@ -55,7 +56,8 @@ impl LambdaContext {
 
         // Execute AI-native index query workflow
         let (ai_interpretation, raw_results) = {
-            let node = ctx.node.lock().await;
+            let node_mutex = Self::node().await?;
+            let node = node_mutex.lock().await;
             let db_ops = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?
                 .get_db_ops();
@@ -137,7 +139,8 @@ impl LambdaContext {
 
         // Get available schemas
         let schemas = {
-            let node = ctx.node.lock().await;
+            let node_mutex = Self::node().await?;
+            let node = node_mutex.lock().await;
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
             db_guard.schema_manager.get_schemas_with_states()
@@ -149,7 +152,8 @@ impl LambdaContext {
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to analyze query: {}", e)))?;
 
         // Execute the query
-        let node_arc = Arc::clone(&ctx.node);
+        let node_mutex = Self::node().await?;
+        let node_arc = Arc::clone(&node_mutex);
         let processor = OperationProcessor::new(node_arc);
         let results = match processor.execute_query_map(query_plan.query.clone()).await {
             Ok(result_map) => {
@@ -255,7 +259,8 @@ impl LambdaContext {
 
         // Get available schemas
         let schemas = {
-            let node = ctx.node.lock().await;
+            let node_mutex = Self::node().await?;
+            let node = node_mutex.lock().await;
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
             db_guard.schema_manager.get_schemas_with_states()
@@ -291,7 +296,8 @@ impl LambdaContext {
         if analysis.needs_query {
             if let Some(new_query) = analysis.query {
                 executed_new_query = true;
-                let node_arc = Arc::clone(&ctx.node);
+                let node_mutex = Self::node().await?;
+                let node_arc = Arc::clone(&node_mutex);
                 let processor = OperationProcessor::new(node_arc);
                 match processor.execute_query_map(new_query).await {
                     Ok(result_map) => {
@@ -379,8 +385,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn query(query: crate::schema::types::Query) -> Result<Vec<Value>, IngestionError> {
-        let ctx = Self::get()?;
-        let node_arc = Arc::clone(&ctx.node);
+        let node_mutex = Self::node().await?;
+        let node_arc = Arc::clone(&node_mutex);
         let processor = OperationProcessor::new(node_arc);
         
         match processor.execute_query_map(query).await {
@@ -420,8 +426,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn native_index_search(term: &str) -> Result<Vec<Value>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         

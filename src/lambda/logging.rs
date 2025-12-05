@@ -8,6 +8,42 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::future::Future;
+
+tokio::task_local! {
+    /// Task-local storage for the current user ID
+    /// This allows implicit propagation of user context through the async call stack.
+    static CURRENT_USER_ID: String;
+}
+
+/// Execute a future within the context of a specific user.
+///
+/// Any logs generated within this future (including standard `log::*` macros)
+/// will automatically have the user_id attached.
+///
+/// # Example
+///
+/// ```ignore
+/// use datafold::lambda::logging::run_with_user;
+///
+/// async fn handler() {
+///     run_with_user("user_123", async {
+///         // This log will automatically have user_id="user_123"
+///         log::info!("Processing request");
+///     }).await;
+/// }
+/// ```
+pub async fn run_with_user<F>(user_id: &str, f: F) -> F::Output
+where
+    F: Future,
+{
+    CURRENT_USER_ID.scope(user_id.to_string(), f).await
+}
+
+/// Get the current user ID from task-local storage, if set.
+pub fn get_current_user_id() -> Option<String> {
+    CURRENT_USER_ID.try_with(|id| id.clone()).ok()
+}
 
 /// Log entry structure
 ///
@@ -19,6 +55,7 @@ pub struct LogEntry {
     pub level: LogLevel,
     pub event_type: String,
     pub message: String,
+    pub user_id: Option<String>,
     pub metadata: Option<HashMap<String, String>>,
 }
 
@@ -214,6 +251,7 @@ impl UserLogger {
             level,
             event_type: event_type.to_string(),
             message: message.to_string(),
+            user_id: Some(self.user_id.clone()),
             metadata,
         };
         
@@ -319,6 +357,7 @@ impl log::Log for LogBridge {
                 level,
                 event_type: record.target().to_string(),
                 message: format!("{}", record.args()),
+                user_id: get_current_user_id(),
                 metadata: None,
             };
 

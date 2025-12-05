@@ -108,8 +108,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_node_private_key() -> Result<String, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         Ok(node.get_node_private_key().to_string())
     }
@@ -130,8 +130,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_node_public_key() -> Result<String, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         Ok(node.get_node_public_key().to_string())
     }
@@ -153,8 +153,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_system_public_key() -> Result<Option<Value>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         let security_manager = node.get_security_manager();
         let key_info = security_manager.get_system_public_key()
@@ -190,8 +190,8 @@ impl LambdaContext {
             ));
         }
 
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         // Reset the schema service database first
         let schema_client = node.get_schema_client();
@@ -235,8 +235,8 @@ impl LambdaContext {
             ));
         }
 
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let schema_client = node.get_schema_client();
 
         schema_client.reset_schema_service().await

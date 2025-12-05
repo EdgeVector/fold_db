@@ -25,6 +25,7 @@ pub mod context;
 pub mod database;
 pub mod ingestion;
 pub mod logging;
+pub mod node_manager;
 pub mod query;
 pub mod schema;
 pub mod system;

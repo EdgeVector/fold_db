@@ -39,8 +39,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn execute_mutation(mutation: crate::schema::types::Mutation) -> Result<String, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         node.mutate_batch(vec![mutation])
             .map_err(|e| IngestionError::InvalidInput(format!("Mutation failed: {}", e)))?
@@ -88,9 +88,9 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn execute_mutations(mutations: Vec<crate::schema::types::Mutation>) -> Result<Vec<String>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
-        
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
+
         node.mutate_batch(mutations)
             .map_err(|e| IngestionError::InvalidInput(format!("Batch mutations failed: {}", e)))
     }
@@ -114,8 +114,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn list_transforms() -> Result<std::collections::HashMap<String, crate::schema::types::Transform>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         node.list_transforms()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to list transforms: {}", e)))
@@ -137,8 +137,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_transform_queue() -> Result<Value, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         let queue_info = node.get_transform_queue_info()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get transform queue: {}", e)))?;
@@ -164,8 +164,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn add_to_transform_queue(transform_id: &str) -> Result<(), IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         node.add_transform_to_queue(transform_id)
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to add transform to queue: {}", e)))
@@ -187,8 +187,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_transform_statistics() -> Result<Value, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         let stats = node.get_event_statistics()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get transform statistics: {}", e)))?;
@@ -215,8 +215,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_backfill_status(backfill_hash: &str) -> Result<Option<Value>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
@@ -240,8 +240,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_all_backfills() -> Result<Vec<Value>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         let backfills = node.get_all_backfills()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get backfills: {}", e)))?;
@@ -267,8 +267,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_active_backfills() -> Result<Vec<Value>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         let backfills = node.get_active_backfills()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get active backfills: {}", e)))?;
@@ -294,8 +294,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_backfill_statistics() -> Result<Value, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         let backfills = node.get_all_backfills()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get backfills: {}", e)))?;
@@ -344,8 +344,8 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_backfill(transform_id: &str) -> Result<Option<Value>, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
         let backfill = node.get_backfill(transform_id)
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get backfill: {}", e)))?;
@@ -369,10 +369,10 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn get_indexing_status() -> Result<Value, IngestionError> {
-        let ctx = Self::get()?;
-        let node = ctx.node.lock().await;
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
         
-        let status = node.get_indexing_status();
+        let status = node.get_indexing_status().await;
         Ok(serde_json::to_value(status).unwrap_or(serde_json::json!({})))
     }
 }
