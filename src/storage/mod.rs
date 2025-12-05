@@ -1,28 +1,25 @@
-pub mod s3_sync;
 pub mod config;
-pub mod error;
-pub mod upload_storage;
-pub mod dynamodb_store;
-mod dynamodb_utils;
-
-// Storage abstraction layer
-pub mod traits;
-pub mod sled_backend;
 pub mod dynamodb_backend;
+pub mod dynamodb_store;
+pub mod dynamodb_utils;
+pub mod error;
 pub mod inmemory_backend;
+pub mod reset_manager;
+pub mod s3_sync;
+pub mod sled_backend;
+pub mod traits;
+pub mod upload_storage;
 
 #[cfg(test)]
 mod tests;
 
+// Re-exports for convenience and backward compatibility
 pub use config::{S3Config, StorageConfig, UploadStorageConfig};
-pub use error::{StorageError, StorageResult};
+pub use dynamodb_backend::DynamoDbNamespacedStore;
+pub use dynamodb_store::{DynamoDbConfig, DynamoDbSchemaStore};
+pub use error::StorageError;
+pub use inmemory_backend::InMemoryNamespacedStore;
 pub use s3_sync::S3SyncedStorage;
+pub use sled_backend::SledNamespacedStore;
+pub use traits::{NamespacedStore, TypedKvStore};
 pub use upload_storage::UploadStorage;
-pub use dynamodb_store::{DynamoDbSchemaStore, DynamoDbConfig};
-
-// Export storage abstraction types
-pub use traits::{KvStore, NamespacedStore, TypedStore, TypedKvStore};
-pub use sled_backend::{SledKvStore, SledNamespacedStore};
-pub use dynamodb_backend::{DynamoDbKvStore, DynamoDbNamespacedStore};
-pub use inmemory_backend::{InMemoryKvStore, InMemoryNamespacedStore};
-
