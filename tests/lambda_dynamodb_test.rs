@@ -58,6 +58,7 @@ async fn test_lambda_with_dynamodb_style_db_ops() {
                 false, // Don't auto-execute to avoid mutation errors in test
                 0,
                 "test_key".to_string(),
+                "test_user".to_string(),
             ).await;
             
             // Ingestion should return a progress ID (or fail gracefully with config error)

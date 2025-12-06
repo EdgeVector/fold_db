@@ -207,6 +207,7 @@ async fn test_lambda_context_ingest_json_returns_progress_id() {
         false, // Don't auto-execute to avoid mutation errors
         0,
         "test_key".to_string(),
+        "test_user".to_string(),
     ).await;
     
     // Should return a progress ID

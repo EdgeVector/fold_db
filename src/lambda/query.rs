@@ -35,7 +35,7 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn ai_query(query: &str) -> Result<AIQueryResponse, IngestionError> {
+    pub async fn ai_query(query: &str, user_id: String) -> Result<AIQueryResponse, IngestionError> {
         let ctx = Self::get()?;
         
         // Check if AI is configured
@@ -46,7 +46,7 @@ impl LambdaContext {
 
         // Get available schemas
         let schemas = {
-            let node_mutex = Self::node().await?;
+            let node_mutex = Self::get_node(&user_id).await?;
             let node = node_mutex.lock().await;
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
@@ -56,7 +56,7 @@ impl LambdaContext {
 
         // Execute AI-native index query workflow
         let (ai_interpretation, raw_results) = {
-            let node_mutex = Self::node().await?;
+            let node_mutex = Self::get_node(&user_id).await?;
             let node = node_mutex.lock().await;
             let db_ops = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?
@@ -128,7 +128,7 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn run_ai_query(query: &str) -> Result<CompleteQueryResponse, IngestionError> {
+    pub async fn run_ai_query(query: &str, user_id: String) -> Result<CompleteQueryResponse, IngestionError> {
         let ctx = Self::get()?;
         
         // Check if AI is configured
@@ -139,7 +139,7 @@ impl LambdaContext {
 
         // Get available schemas
         let schemas = {
-            let node_mutex = Self::node().await?;
+            let node_mutex = Self::get_node(&user_id).await?;
             let node = node_mutex.lock().await;
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
@@ -152,7 +152,7 @@ impl LambdaContext {
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to analyze query: {}", e)))?;
 
         // Execute the query
-        let node_mutex = Self::node().await?;
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_arc = Arc::clone(&node_mutex);
         let processor = OperationProcessor::new(node_arc);
         let results = match processor.execute_query_map(query_plan.query.clone()).await {
@@ -245,7 +245,7 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn ask_followup(request: FollowupRequest) -> Result<FollowupResponse, IngestionError> {
+    pub async fn ask_followup(request: FollowupRequest, user_id: String) -> Result<FollowupResponse, IngestionError> {
         let ctx = Self::get()?;
         
         // Check if AI is configured
@@ -259,7 +259,7 @@ impl LambdaContext {
 
         // Get available schemas
         let schemas = {
-            let node_mutex = Self::node().await?;
+            let node_mutex = Self::get_node(&user_id).await?;
             let node = node_mutex.lock().await;
             let db_guard = node.get_fold_db()
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
@@ -296,7 +296,7 @@ impl LambdaContext {
         if analysis.needs_query {
             if let Some(new_query) = analysis.query {
                 executed_new_query = true;
-                let node_mutex = Self::node().await?;
+                let node_mutex = Self::get_node(&user_id).await?;
                 let node_arc = Arc::clone(&node_mutex);
                 let processor = OperationProcessor::new(node_arc);
                 match processor.execute_query_map(new_query).await {
@@ -384,8 +384,8 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn query(query: crate::schema::types::Query) -> Result<Vec<Value>, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn query(query: crate::schema::types::Query, user_id: String) -> Result<Vec<Value>, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_arc = Arc::clone(&node_mutex);
         let processor = OperationProcessor::new(node_arc);
         
@@ -425,8 +425,8 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn native_index_search(term: &str) -> Result<Vec<Value>, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn native_index_search(term: &str, user_id: String) -> Result<Vec<Value>, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node = node_mutex.lock().await;
         let db_guard = node.get_fold_db()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
