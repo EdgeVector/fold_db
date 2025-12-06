@@ -151,9 +151,10 @@ impl LambdaContext {
         auto_execute: bool,
         trust_distance: u32,
         pub_key: String,
+        user_id: String,
     ) -> Result<String, IngestionError> {
         let ctx = Self::get()?;
-        let node = Self::node().await?; // Use async accessor
+        let node = Self::get_node(&user_id).await?; // Use user-specific node
         let progress_tracker = ctx.progress_tracker.clone();
 
         // Generate unique progress ID
@@ -166,50 +167,59 @@ impl LambdaContext {
         // Load ingestion config
         let config = IngestionConfig::from_env()?;
 
-        // Create ingestion request
-        let request = IngestionRequest {
-            data: json_data,
-            auto_execute: Some(auto_execute),
-            trust_distance: Some(trust_distance),
-            pub_key: Some(pub_key),
-            source_file_name: None,
-        };
+
 
         // Clone for background task
         let progress_id_clone = progress_id.clone();
+        let json_data_clone = json_data.clone();
+        let pub_key_clone = pub_key.clone();
+        let user_id_clone = user_id.clone();
 
         // Spawn background ingestion task
         tokio::spawn(async move {
-            // Create ingestion service
-            let service = match SimpleIngestionService::new(config) {
-                Ok(service) => service,
-                Err(e) => {
-                    progress_service.fail_progress(
-                        &progress_id_clone,
-                        format!("Failed to create ingestion service: {}", e),
-                    );
-                    return;
-                }
-            };
+            use crate::lambda::logging::run_with_user;
+            
+            run_with_user(&user_id_clone, async move {
+                // Create ingestion service
+                let service = match SimpleIngestionService::new(config) {
+                    Ok(service) => service,
+                    Err(e) => {
+                        progress_service.fail_progress(
+                            &progress_id_clone,
+                            format!("Failed to create ingestion service: {}", e),
+                        );
+                        return;
+                    }
+                };
 
-            // Process ingestion
-            match service
-                .process_json_with_node_and_progress(
-                    request,
-                    node,
-                    &progress_service,
-                    progress_id_clone.clone(),
-                )
-                .await
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    progress_service.fail_progress(
-                        &progress_id_clone,
-                        format!("Ingestion failed: {}", e),
-                    );
+                // Create ingestion request
+                let request = IngestionRequest {
+                    data: json_data_clone,
+                    auto_execute: Some(auto_execute),
+                    trust_distance: Some(trust_distance),
+                    pub_key: Some(pub_key_clone),
+                    source_file_name: None,
+                };
+
+                // Process ingestion
+                match service
+                    .process_json_with_node_and_progress(
+                        request,
+                        node,
+                        &progress_service,
+                        progress_id_clone.clone(),
+                    )
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        progress_service.fail_progress(
+                            &progress_id_clone,
+                            format!("Ingestion failed: {}", e),
+                        );
+                    }
                 }
-            }
+            }).await;
         });
 
         Ok(progress_id)
@@ -250,9 +260,10 @@ impl LambdaContext {
         auto_execute: bool,
         trust_distance: u32,
         pub_key: String,
+        user_id: String,
     ) -> Result<IngestionResponse, IngestionError> {
         let ctx = Self::get()?;
-        let node = Self::node().await?; // Use async accessor
+        let node = Self::get_node(&user_id).await?; // Use user-specific node
         let progress_tracker = ctx.progress_tracker.clone();
 
         // Generate unique progress ID

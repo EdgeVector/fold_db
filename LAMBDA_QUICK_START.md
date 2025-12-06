@@ -135,7 +135,8 @@ async fn s3_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         flattened_json,
         true,  // auto_execute
         0,     // trust_distance
-        "default".to_string()
+        "default".to_string(), // pub_key
+        "default".to_string(), // user_id
     ).await?;
     
     Ok(json!({ 
@@ -163,7 +164,8 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         data,
         true,              // auto_execute
         0,                 // trust_distance
-        "default".to_string()  // pub_key
+        "default".to_string(), // pub_key
+        "user_123".to_string() // user_id (safe for multi-tenancy)
     ).await?;
     
     Ok(json!({
@@ -189,7 +191,8 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         data,
         true,              // auto_execute
         0,                 // trust_distance
-        "default".to_string()  // pub_key
+        "default".to_string(), // pub_key
+        "user_123".to_string() // user_id
     ).await?;
     
     Ok(json!({
@@ -502,8 +505,9 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         .as_str()
         .unwrap_or("Show me all products");
     
+    let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
     // Execute AI query - returns interpreted results
-    let response = LambdaContext::ai_query(query).await?;
+    let response = LambdaContext::ai_query(query, user_id.to_string()).await?;
     
     Ok(json!({
         "statusCode": 200,
@@ -524,9 +528,10 @@ For more detailed results with query planning and summaries:
 ```rust
 async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     let query = event.payload["query"].as_str().unwrap_or("");
+    let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
     
     // Run complete workflow: analyze + execute + summarize
-    let response = LambdaContext::run_ai_query(query).await?;
+    let response = LambdaContext::run_ai_query(query, user_id.to_string()).await?;
     
     Ok(json!({
         "statusCode": 200,
@@ -551,6 +556,7 @@ Handle multi-turn conversations by passing context back from the client:
 use datafold::lambda::{LambdaContext, FollowupRequest, QueryContext};
 
 async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
     // Check if this is a follow-up or initial query
     if let Some(context_value) = event.payload.get("context") {
         // This is a follow-up
@@ -563,7 +569,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         let response = LambdaContext::ask_followup(FollowupRequest {
             context,
             question: question.to_string(),
-        }).await?;
+        }, user_id.to_string()).await?;
         
         Ok(json!({
             "statusCode": 200,
@@ -579,7 +585,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             .as_str()
             .ok_or("Missing query")?;
         
-        let response = LambdaContext::run_ai_query(query).await?;
+        let response = LambdaContext::run_ai_query(query, user_id.to_string()).await?;
         
         Ok(json!({
             "statusCode": 200,
@@ -600,7 +606,8 @@ Client-side example showing how to maintain conversation context:
 ```rust
 // First question
 let payload1 = json!({
-    "query": "Show me all electronics products"
+    "query": "Show me all electronics products",
+    "user_id": "test_user"
 });
 let response1 = invoke_lambda(payload1).await?;
 let context = response1["body"]["context"].clone();
@@ -608,7 +615,8 @@ let context = response1["body"]["context"].clone();
 // Second question - follow-up
 let payload2 = json!({
     "context": context,
-    "question": "Which ones are under $100?"
+    "question": "Which ones are under $100?",
+    "user_id": "test_user"
 });
 let response2 = invoke_lambda(payload2).await?;
 let updated_context = response2["body"]["context"].clone();
@@ -616,7 +624,8 @@ let updated_context = response2["body"]["context"].clone();
 // Third question - another follow-up
 let payload3 = json!({
     "context": updated_context,
-    "question": "Sort by price"
+    "question": "Sort by price",
+    "user_id": "test_user"
 });
 let response3 = invoke_lambda(payload3).await?;
 ```
@@ -687,16 +696,16 @@ async fn main() -> Result<(), Error> {
 
 ```rust
 // Simple search
-LambdaContext::ai_query("Find all electronics products").await?
+LambdaContext::ai_query("Find all electronics products", "user_123".to_string()).await?
 
 // Complex query
-LambdaContext::run_ai_query("Show blog posts about AI from last month").await?
+LambdaContext::run_ai_query("Show blog posts about AI from last month", "user_123".to_string()).await?
 
 // Follow-up
 LambdaContext::ask_followup(FollowupRequest {
     context: previous_context,
     question: "Which have more than 100 views?".to_string(),
-}).await?
+}, "user_123".to_string()).await?
 ```
 
 ## Multi-Tenant Logging
@@ -741,7 +750,8 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         event.payload["data"].clone(),
         true,
         0,
-        user_id.to_string()
+        "default".to_string(), // pub_key
+        user_id.to_string()    // user_id
     ).await?;
     
     logger.info("ingestion_completed", &format!("Started: {}", result)).await?;

@@ -128,6 +128,7 @@ async fn test_lambda_json_ingestion_with_logging() {
         false, // auto_execute = false
         0,     // trust_distance
         "test_lambda_key".to_string(),
+        "test_user".to_string(), // New user_id parameter
     ).await;
     
     // Verify ingestion started successfully

@@ -52,7 +52,8 @@
 //!         event.payload["data"].clone(),
 //!         true,
 //!         0,
-//!         user_id.to_string()
+//!         "default".to_string(), // pub_key
+//!         user_id.to_string()    // user_id
 //!     ).await?;
 //!     
 //!     Ok(json!({ "statusCode": 200, "progress_id": result }))
