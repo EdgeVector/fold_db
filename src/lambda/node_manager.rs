@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use crate::datafold_node::{DataFoldNode, NodeConfig};
 use crate::ingestion::IngestionError;
-use crate::lambda::config::{LambdaConfig, LambdaStorage};
+use crate::lambda::config::{LambdaConfig, LambdaStorage, TableConfig};
+use crate::storage::TableNameResolver;
 
 /// Manages DataFold nodes for different tenants
 pub struct NodeManager {
@@ -27,7 +28,7 @@ impl NodeManager {
 
         // Pre-initialize single node if not in DynamoDB mode (single tenant optimization)
         match &config.storage {
-            LambdaStorage::DynamoDb { .. } => {
+            LambdaStorage::DynamoDb(_) => {
                 // Multi-tenant mode: Nodes created on demand
             }
             _ => {
@@ -105,21 +106,45 @@ impl NodeManager {
                     .map_err(|e| IngestionError::StorageError(e.to_string()))?;
                 (Arc::new(Mutex::new(fold_db)), std::path::PathBuf::from(db_path))
             }
-            LambdaStorage::DynamoDb { table_name, region } => {
+            LambdaStorage::DynamoDb(dynamo_config) => {
                 // Multi-tenant DynamoDB creation
                 let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(aws_sdk_dynamodb::config::Region::new(region.clone()))
+                    .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
                     .load()
                     .await;
                 
                 let client = aws_sdk_dynamodb::Client::new(&config);
                 
+                let resolver = match &dynamo_config.table_config {
+                    TableConfig::Prefix(prefix) => TableNameResolver::Prefix(prefix.clone()),
+                    TableConfig::Explicit(tables) => {
+                        let mut map = HashMap::new();
+                        map.insert("main".to_string(), tables.main.clone());
+                        map.insert("metadata".to_string(), tables.metadata.clone());
+                        map.insert("node_id_schema_permissions".to_string(), tables.permissions.clone());
+                        map.insert("transforms".to_string(), tables.transforms.clone());
+                        map.insert("orchestrator_state".to_string(), tables.orchestrator.clone());
+                        map.insert("schema_states".to_string(), tables.schema_states.clone());
+                        map.insert("schemas".to_string(), tables.schemas.clone());
+                        map.insert("public_keys".to_string(), tables.public_keys.clone());
+                        map.insert("transform_queue_tree".to_string(), tables.transform_queue.clone());
+                        map.insert("native_index".to_string(), tables.native_index.clone());
+                        TableNameResolver::Explicit(map)
+                    }
+                };
+                
                 let db_ops = Arc::new(
-                    DbOperationsV2::from_dynamodb(client, table_name.clone(), Some(user_id.to_string())).await
+                    DbOperationsV2::from_dynamodb_flexible(
+                        client, 
+                        resolver, 
+                        dynamo_config.auto_create,
+                        Some(user_id.to_string())
+                    ).await
                         .map_err(|e| IngestionError::StorageError(format!("Failed to initialize DynamoDB backend: {}", e)))?
                 );
                 
-                let db_path = format!("dynamodb_{}_{}", table_name, user_id);
+                // Use a derived path for internal consistency (though DB ops handles actual storage)
+                let db_path = format!("dynamodb_{}", user_id);
                 let fold_db = FoldDB::new_with_db_ops(db_ops, &db_path).await
                     .map_err(|e| IngestionError::StorageError(e.to_string()))?;
                 

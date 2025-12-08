@@ -49,7 +49,7 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     tracing::info!("Received event: {:?}", event.payload);
 
     // Access the DataFold node from the context
-    let node = LambdaContext::node()?;
+    let node = LambdaContext::node().await?;
     
     // Example: Get node information
     let node_id = {

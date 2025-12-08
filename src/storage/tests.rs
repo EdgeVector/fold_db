@@ -171,7 +171,7 @@ mod storage_abstraction_tests {
             .load()
             .await;
         let client = Client::new(&config);
-        let dynamodb_store = DynamoDbNamespacedStore::new(client, "test-table".to_string());
+        let dynamodb_store = DynamoDbNamespacedStore::new_with_prefix(client, "test-table".to_string());
         
         match dynamodb_store.open_namespace("test").await {
             Ok(dynamodb_kv) => {
@@ -264,12 +264,12 @@ mod storage_abstraction_tests {
         let client = Client::new(&config);
         
         // Test table name generation
-        let store = DynamoDbNamespacedStore::new(client, "DataFoldStorage".to_string());
+        let store = DynamoDbNamespacedStore::new_with_prefix(client, "DataFoldStorage".to_string());
         let table_name = store.get_table_name_for_namespace("main");
         assert_eq!(table_name, "DataFoldStorage-main");
         
         // Test with user_id
-        let store_with_user = DynamoDbNamespacedStore::new(
+        let store_with_user = DynamoDbNamespacedStore::new_with_prefix(
             Client::new(&config),
             "DataFoldStorage".to_string()
         ).with_user_id("user_456".to_string());
@@ -356,7 +356,7 @@ mod storage_abstraction_tests {
             .await;
         
         // Test with user_id
-        let store = DynamoDbNamespacedStore::new(client, "test-dynamodb-storage".to_string())
+        let store = DynamoDbNamespacedStore::new_with_prefix(client, "test-dynamodb-storage".to_string())
             .with_user_id("test_user_123".to_string());
         
         let kv = store.open_namespace("main").await.unwrap();
@@ -425,7 +425,7 @@ mod storage_abstraction_tests {
         let user_id = "test_user_reset";
 
         // 1. Setup: Create some data for the user
-        let store = DynamoDbNamespacedStore::new((*client).clone(), base_table_name.clone())
+        let store = DynamoDbNamespacedStore::new_with_prefix((*client).clone(), base_table_name.clone())
             .with_user_id(user_id.to_string());
         
         // Ensure table exists (this might fail if not running against real DB/LocalStack)

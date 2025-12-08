@@ -405,6 +405,57 @@ export DATAFOLD_UPLOAD_S3_REGION=us-west-2
 
 See [S3 Configuration Guide](docs/S3_CONFIGURATION.md) for complete setup instructions, AWS Lambda deployment, and cost optimization.
 
+## ⚡ AWS Lambda & DynamoDB
+
+DataFold provides first-class support for AWS Lambda with a multi-tenant DynamoDB backend. This allows you to build serverless, user-isolated applications without managing servers.
+
+### Setup
+
+Add the `lambda` feature to your `Cargo.toml`:
+
+```toml
+[dependencies]
+datafold = { version = "0.1.0", features = ["lambda"] }
+```
+
+### Configuration
+
+Initialize the `LambdaContext` with `LambdaStorage::DynamoDb`:
+
+```rust
+use datafold::lambda::{LambdaConfig, LambdaContext, LambdaStorage, DynamoDbConfig, TableConfig};
+
+let config = LambdaConfig {
+    storage: LambdaStorage::DynamoDb(DynamoDbConfig {
+        region: "us-east-1".to_string(),
+        table_config: TableConfig::Prefix("MyApp".to_string()), // Tables: MyApp-main, etc.
+        auto_create: true,
+    }),
+    // ... other config
+};
+
+LambdaContext::init(config).await?;
+```
+
+### DynamoDB Tables
+
+The system requires and automatically manages **10 tables** per deployment. Using `table_name: "MyApp"`, they are:
+
+*   `MyApp-main` (Data)
+*   `MyApp-metadata`
+*   `MyApp-node_id_schema_permissions`
+*   `MyApp-transforms`
+*   `MyApp-orchestrator_state`
+*   `MyApp-schema_states`
+*   `MyApp-schemas`
+*   `MyApp-public_keys`
+*   `MyApp-transform_queue_tree`
+*   `MyApp-native_index`
+
+### Multi-Tenancy
+
+DataFold automatically handles multi-tenancy. When you pass a `user_id` to ingestion or node retrieval methods, operations are scoped to that user within the DynamoDB tables.
+
 ## 📊 Examples
 
 ### Loading Sample Data
