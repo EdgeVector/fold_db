@@ -289,8 +289,11 @@ impl LambdaContext {
         };
 
         // Process synchronously
-        service
-            .process_json_with_node_and_progress(request, node, &progress_service, progress_id)
-            .await
+        use crate::lambda::logging::run_with_user;
+        run_with_user(&user_id, async {
+            service
+                .process_json_with_node_and_progress(request, node, &progress_service, progress_id)
+                .await
+        }).await
     }
 }

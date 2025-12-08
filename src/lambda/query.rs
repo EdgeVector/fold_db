@@ -55,7 +55,8 @@ impl LambdaContext {
         };
 
         // Execute AI-native index query workflow
-        let (ai_interpretation, raw_results) = {
+        use crate::lambda::logging::run_with_user;
+        let (ai_interpretation, raw_results) = run_with_user(&user_id, async {
             let node_mutex = Self::get_node(&user_id).await?;
             let node = node_mutex.lock().await;
             let db_ops = node.get_fold_db()
@@ -64,8 +65,8 @@ impl LambdaContext {
             drop(node); // Drop lock before await
             
             service.execute_ai_native_index_query_with_results(query, &schemas, &db_ops).await
-                .map_err(|e| IngestionError::InvalidInput(format!("AI query failed: {}", e)))?
-        };
+                .map_err(|e| IngestionError::InvalidInput(format!("AI query failed: {}", e)))
+        }).await?;
 
         // Convert results to JSON
         let results_as_json: Vec<Value> = raw_results
@@ -147,75 +148,78 @@ impl LambdaContext {
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schemas: {}", e)))?
         };
 
-        // Analyze query with LLM
-        let query_plan = service.analyze_query(query, &schemas).await
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to analyze query: {}", e)))?;
+        use crate::lambda::logging::run_with_user;
+        run_with_user(&user_id, async {
+             // Analyze query with LLM
+            let query_plan = service.analyze_query(query, &schemas).await
+                .map_err(|e| IngestionError::InvalidInput(format!("Failed to analyze query: {}", e)))?;
 
-        // Execute the query
-        let node_mutex = Self::get_node(&user_id).await?;
-        let node_arc = Arc::clone(&node_mutex);
-        let processor = OperationProcessor::new(node_arc);
-        let results = match processor.execute_query_map(query_plan.query.clone()).await {
-            Ok(result_map) => {
-                let records_map = records_from_field_map(&result_map);
-                records_map
-                    .into_iter()
-                    .map(|(key, record)| serde_json::json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
-                    .collect::<Vec<Value>>()
+            // Execute the query
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_arc = Arc::clone(&node_mutex);
+            let processor = OperationProcessor::new(node_arc);
+            let results = match processor.execute_query_map(query_plan.query.clone()).await {
+                Ok(result_map) => {
+                    let records_map = records_from_field_map(&result_map);
+                    records_map
+                        .into_iter()
+                        .map(|(key, record)| serde_json::json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
+                        .collect::<Vec<Value>>()
+                }
+                Err(e) => {
+                    return Err(IngestionError::InvalidInput(format!("Failed to execute query: {}", e)));
+                }
+            };
+
+            // Summarize results with LLM
+            let summary = service.summarize_results(query, &results).await.ok();
+
+            // Build query plan info
+            let filter_type = query_plan.query.filter.as_ref().map(|f| format!("{:?}", f));
+            let query_plan_info = QueryPlanInfo {
+                schema_name: query_plan.query.schema_name.clone(),
+                fields: query_plan.query.fields.clone(),
+                filter_type,
+                reasoning: query_plan.reasoning.clone(),
+            };
+
+            // Build context for follow-ups
+            let mut conversation_history = vec![
+                ConversationMessage {
+                    role: "user".to_string(),
+                    content: query.to_string(),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                },
+            ];
+
+            if let Some(ref s) = summary {
+                conversation_history.push(ConversationMessage {
+                    role: "assistant".to_string(),
+                    content: s.clone(),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                });
             }
-            Err(e) => {
-                return Err(IngestionError::InvalidInput(format!("Failed to execute query: {}", e)));
-            }
-        };
 
-        // Summarize results with LLM
-        let summary = service.summarize_results(query, &results).await.ok();
+            let context = QueryContext {
+                original_query: query.to_string(),
+                query_results: results.clone(),
+                conversation_history,
+                query_plan: Some(query_plan_info.clone()),
+            };
 
-        // Build query plan info
-        let filter_type = query_plan.query.filter.as_ref().map(|f| format!("{:?}", f));
-        let query_plan_info = QueryPlanInfo {
-            schema_name: query_plan.query.schema_name.clone(),
-            fields: query_plan.query.fields.clone(),
-            filter_type,
-            reasoning: query_plan.reasoning.clone(),
-        };
-
-        // Build context for follow-ups
-        let mut conversation_history = vec![
-            ConversationMessage {
-                role: "user".to_string(),
-                content: query.to_string(),
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-            },
-        ];
-
-        if let Some(ref s) = summary {
-            conversation_history.push(ConversationMessage {
-                role: "assistant".to_string(),
-                content: s.clone(),
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-            });
-        }
-
-        let context = QueryContext {
-            original_query: query.to_string(),
-            query_results: results.clone(),
-            conversation_history,
-            query_plan: Some(query_plan_info.clone()),
-        };
-
-        Ok(CompleteQueryResponse {
-            query_plan: query_plan_info,
-            results,
-            summary,
-            context,
-        })
+            Ok(CompleteQueryResponse {
+                query_plan: query_plan_info,
+                results,
+                summary,
+                context,
+            })
+        }).await
     }
 
     /// Ask a follow-up question about previous query results
@@ -267,70 +271,72 @@ impl LambdaContext {
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schemas: {}", e)))?
         };
 
-        // Convert conversation history to Message format
-        let conversation_history: Vec<crate::datafold_node::llm_query::types::Message> = context
-            .conversation_history
-            .iter()
-            .map(|msg| crate::datafold_node::llm_query::types::Message {
-                role: msg.role.clone(),
-                content: msg.content.clone(),
-                timestamp: SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(msg.timestamp),
-            })
-            .collect();
+        use crate::lambda::logging::run_with_user;
+        run_with_user(&user_id, async {
+            // Convert conversation history to Message format
+            let conversation_history: Vec<crate::datafold_node::llm_query::types::Message> = context
+                .conversation_history
+                .iter()
+                .map(|msg| crate::datafold_node::llm_query::types::Message {
+                    role: msg.role.clone(),
+                    content: msg.content.clone(),
+                    timestamp: SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(msg.timestamp),
+                })
+                .collect();
 
-        // Analyze if follow-up needs a new query
-        let analysis = service
-            .analyze_followup_question(
-                &context.original_query,
-                &context.query_results,
-                &question,
-                &schemas,
-            )
-            .await
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to analyze followup: {}", e)))?;
+            // Analyze if follow-up needs a new query
+            let analysis = service
+                .analyze_followup_question(
+                    &context.original_query,
+                    &context.query_results,
+                    &question,
+                    &schemas,
+                )
+                .await
+                .map_err(|e| IngestionError::InvalidInput(format!("Failed to analyze followup: {}", e)))?;
 
-        let mut combined_results = context.query_results.clone();
-        let mut executed_new_query = false;
+            let mut combined_results = context.query_results.clone();
+            let mut executed_new_query = false;
 
-        // If a new query is needed, execute it
-        if analysis.needs_query {
-            if let Some(new_query) = analysis.query {
-                executed_new_query = true;
-                let node_mutex = Self::get_node(&user_id).await?;
-                let node_arc = Arc::clone(&node_mutex);
-                let processor = OperationProcessor::new(node_arc);
-                match processor.execute_query_map(new_query).await {
-                    Ok(result_map) => {
-                        let records_map = records_from_field_map(&result_map);
-                        combined_results = records_map
-                            .into_iter()
-                            .map(|(key, record)| serde_json::json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
-                            .collect();
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to execute followup query: {}", e);
+            // If a new query is needed, execute it
+            if analysis.needs_query {
+                if let Some(new_query) = analysis.query {
+                    executed_new_query = true;
+                    let node_mutex = Self::get_node(&user_id).await?;
+                    let node_arc = Arc::clone(&node_mutex);
+                    let processor = OperationProcessor::new(node_arc);
+                    match processor.execute_query_map(new_query).await {
+                        Ok(result_map) => {
+                            let records_map = records_from_field_map(&result_map);
+                            combined_results = records_map
+                                .into_iter()
+                                .map(|(key, record)| serde_json::json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
+                                .collect();
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to execute followup query: {}", e);
+                        }
                     }
                 }
             }
-        }
 
-        // Get answer from AI
-        let answer = service
-            .answer_question(
-                &context.original_query,
-                &combined_results,
-                &conversation_history,
-                &question,
-            )
-            .await
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to get answer: {}", e)))?;
+            // Get answer from AI
+            let answer = service
+                .answer_question(
+                    &context.original_query,
+                    &combined_results,
+                    &conversation_history,
+                    &question,
+                )
+                .await
+                .map_err(|e| IngestionError::InvalidInput(format!("Failed to get answer: {}", e)))?;
 
-        // Build updated context
-        let mut updated_conversation = context.conversation_history.clone();
-        updated_conversation.push(ConversationMessage {
-            role: "user".to_string(),
-            content: question.clone(),
-            timestamp: SystemTime::now()
+            // Build updated context
+            let mut updated_conversation = context.conversation_history.clone();
+            updated_conversation.push(ConversationMessage {
+                role: "user".to_string(),
+                content: question.clone(),
+                timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
@@ -356,6 +362,7 @@ impl LambdaContext {
             executed_new_query,
             context: updated_context,
         })
+        }).await
     }
 
     /// Execute a query and return results
@@ -385,25 +392,28 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn query(query: crate::schema::types::Query, user_id: String) -> Result<Vec<Value>, IngestionError> {
-        let node_mutex = Self::get_node(&user_id).await?;
-        let node_arc = Arc::clone(&node_mutex);
-        let processor = OperationProcessor::new(node_arc);
-        
-        match processor.execute_query_map(query).await {
-            Ok(result_map) => {
-                let records_map = records_from_field_map(&result_map);
-                let results: Vec<Value> = records_map
-                    .into_iter()
-                    .map(|(key, record)| serde_json::json!({
-                        "key": key,
-                        "fields": record.fields,
-                        "metadata": record.metadata
-                    }))
-                    .collect();
-                Ok(results)
+        use crate::lambda::logging::run_with_user;
+        run_with_user(&user_id, async {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_arc = Arc::clone(&node_mutex);
+            let processor = OperationProcessor::new(node_arc);
+            
+            match processor.execute_query_map(query).await {
+                Ok(result_map) => {
+                    let records_map = records_from_field_map(&result_map);
+                    let results: Vec<Value> = records_map
+                        .into_iter()
+                        .map(|(key, record)| serde_json::json!({
+                            "key": key,
+                            "fields": record.fields,
+                            "metadata": record.metadata
+                        }))
+                        .collect();
+                    Ok(results)
+                }
+                Err(e) => Err(IngestionError::InvalidInput(format!("Query failed: {}", e))),
             }
-            Err(e) => Err(IngestionError::InvalidInput(format!("Query failed: {}", e))),
-        }
+        }).await
     }
 
     /// Search the native word index
@@ -426,16 +436,19 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn native_index_search(term: &str, user_id: String) -> Result<Vec<Value>, IngestionError> {
-        let node_mutex = Self::get_node(&user_id).await?;
-        let node = node_mutex.lock().await;
-        let db_guard = node.get_fold_db()
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
-        
-          let results = db_guard.native_search_all_classifications(term).await
-            .map_err(|e| IngestionError::InvalidInput(format!("Native index search failed: {}", e)))?;
-        
-        Ok(results.into_iter()
-            .map(|r| serde_json::to_value(r).unwrap_or(serde_json::json!({})))
-            .collect())
+        use crate::lambda::logging::run_with_user;
+        run_with_user(&user_id, async {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node = node_mutex.lock().await;
+            let db_guard = node.get_fold_db()
+                .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+            
+              let results = db_guard.native_search_all_classifications(term).await
+                .map_err(|e| IngestionError::InvalidInput(format!("Native index search failed: {}", e)))?;
+            
+            Ok(results.into_iter()
+                .map(|r| serde_json::to_value(r).unwrap_or(serde_json::json!({})))
+                .collect())
+        }).await
     }
 }
