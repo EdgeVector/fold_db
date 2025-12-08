@@ -38,6 +38,9 @@ pub enum StorageError {
     
     #[error("Sled error: {0}")]
     SledError(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

@@ -12,11 +12,43 @@ pub enum LambdaStorage {
     Config(StorageConfig),
     /// Use a pre-created DbOperationsV2 instance (allows any backend implementation)
     DbOps(Arc<DbOperationsV2>),
-    /// Use DynamoDB with auto-configuration (enables multi-tenancy)
-    DynamoDb {
-        table_name: String,
-        region: String,
-    },
+    /// Use DynamoDB with specific configuration
+    DynamoDb(DynamoDbConfig),
+}
+
+/// Configuration for DynamoDB storage
+#[derive(Clone, Debug)]
+pub struct DynamoDbConfig {
+    /// AWS Region
+    pub region: String,
+    /// Table naming configuration
+    pub table_config: TableConfig,
+    /// If true, tables will be automatically created if missing.
+    pub auto_create: bool,
+}
+
+/// DynamoDB Table Naming Configuration
+#[derive(Clone, Debug)]
+pub enum TableConfig {
+    /// Tables are named "{prefix}-{namespace}"
+    Prefix(String),
+    /// Exact names provided for each namespace
+    Explicit(ExplicitTables),
+}
+
+/// Explicit table names for all required namespaces
+#[derive(Clone, Debug, Default)]
+pub struct ExplicitTables {
+    pub main: String,
+    pub metadata: String,
+    pub permissions: String,
+    pub transforms: String,
+    pub orchestrator: String,
+    pub schema_states: String,
+    pub schemas: String,
+    pub public_keys: String,
+    pub transform_queue: String,
+    pub native_index: String,
 }
 
 /// Configuration for Lambda context initialization
@@ -38,7 +70,7 @@ impl std::fmt::Debug for LambdaConfig {
             .field("storage", &match &self.storage {
                 LambdaStorage::Config(cfg) => format!("Config({:?})", cfg),
                 LambdaStorage::DbOps(_) => "DbOps(<pre-created>)".to_string(),
-                LambdaStorage::DynamoDb { table_name, region } => format!("DynamoDb(table={}, region={})", table_name, region),
+                LambdaStorage::DynamoDb(config) => format!("DynamoDb({:?})", config),
             })
             .field("schema_service_url", &self.schema_service_url)
             .field("ai_config", &self.ai_config)

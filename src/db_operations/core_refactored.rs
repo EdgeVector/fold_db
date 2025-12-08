@@ -107,13 +107,27 @@ impl DbOperationsV2 {
         Ok(db_ops)
     }
     
-    /// Convenience constructor for DynamoDB backend
+    /// Convenience constructor for DynamoDB backend with simplified config
     pub async fn from_dynamodb(
         client: aws_sdk_dynamodb::Client,
         table_name: String,
         user_id: Option<String>
     ) -> Result<Self, crate::storage::StorageError> {
-        let mut store = DynamoDbNamespacedStore::new(client, table_name);
+        let mut store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
+        if let Some(uid) = user_id {
+            store = store.with_user_id(uid);
+        }
+        Self::from_namespaced_store(Arc::new(store)).await
+    }
+
+    /// Constructor for DynamoDB backend with detailed configuration
+    pub async fn from_dynamodb_flexible(
+        client: aws_sdk_dynamodb::Client,
+        resolver: crate::storage::TableNameResolver,
+        auto_create: bool,
+        user_id: Option<String>
+    ) -> Result<Self, crate::storage::StorageError> {
+        let mut store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
         if let Some(uid) = user_id {
             store = store.with_user_id(uid);
         }

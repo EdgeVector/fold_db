@@ -15,7 +15,7 @@ mod tests;
 
 // Re-exports for convenience and backward compatibility
 pub use config::{S3Config, StorageConfig, UploadStorageConfig};
-pub use dynamodb_backend::DynamoDbNamespacedStore;
+pub use dynamodb_backend::{DynamoDbNamespacedStore, TableNameResolver};
 pub use dynamodb_store::{DynamoDbConfig, DynamoDbSchemaStore};
 pub use error::StorageError;
 pub use inmemory_backend::InMemoryNamespacedStore;
