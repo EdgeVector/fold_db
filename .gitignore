@@ -102,6 +102,9 @@ fold_node/output.txt
 fold_node/simple_output.txt
 fold_node/transform_output.txt
 fold_node/tmp/
+check_output*.txt
+check_error*.txt
+curl_output.txt
 
 # Rust analyzer
 rust-project.json

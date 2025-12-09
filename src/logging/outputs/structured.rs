@@ -51,16 +51,19 @@ impl StructuredOutput {
         let writer = if self.config.path.is_some() {
             // Use file writer - this would need the actual non-blocking writer
             // For now, using stdout as placeholder
-            Box::new(io::stdout()) as Box<dyn io::Write + Send>
+            std::sync::Mutex::new(Box::new(io::stdout()) as Box<dyn io::Write + Send>)
         } else {
-            Box::new(io::stdout()) as Box<dyn io::Write + Send>
+            std::sync::Mutex::new(Box::new(io::stdout()) as Box<dyn io::Write + Send>)
         };
 
         let layer = fmt::Layer::default()
+            .with_writer(writer)
             .json() // Enable JSON formatting
             .with_current_span(self.config.include_context)
-            .with_span_list(self.config.include_context)
-            .with_filter(parse_log_level(&self.config.level)?);
+            .with_span_list(self.config.include_context);
+
+        let layer = layer.with_filter(parse_log_level(&self.config.level)?);
+
 
         Ok(layer)
     }

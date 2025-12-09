@@ -1,6 +1,6 @@
 #![cfg(feature = "lambda")]
 
-use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger};
+use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, StdoutLogger};
 use datafold::schema::types::Query;
 use datafold::storage::StorageConfig;
 use serde_json::json;
@@ -32,8 +32,7 @@ async fn test_lambda_query_multi_tenancy() {
     // The "default" node will be returned for all user_ids, but the API calls should succeed.
     
     let storage_config = StorageConfig::Local { path: temp_dir.clone() };
-    let config = LambdaConfig::new(storage_config)
-        .with_logger(Arc::new(StdoutLogger))
+    let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)
         .with_schema_service_url("https://example.com".to_string());
 
     // Initialize context

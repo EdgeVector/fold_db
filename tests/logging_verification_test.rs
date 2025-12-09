@@ -2,7 +2,7 @@
 #![cfg(feature = "lambda")]
 
 use async_trait::async_trait;
-use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel};
+use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel, LambdaLogging};
 use std::sync::{Arc, Mutex};
 use datafold::storage::StorageConfig;
 use std::time::Duration;
@@ -41,8 +41,7 @@ async fn test_lambda_logging_integration() {
     let mock_logger = Arc::new(MockLogger::new());
     
     // Configure LambdaContext with this logger
-    let config = LambdaConfig::new(storage_config)
-        .with_logger(mock_logger.clone());
+    let config = LambdaConfig::new(storage_config, LambdaLogging::Custom(mock_logger.clone()));
         
     // Initialize context
     // This will install the LogBridge which redirects log::* macros to our mock logger

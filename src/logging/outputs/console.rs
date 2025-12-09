@@ -23,20 +23,15 @@ impl ConsoleOutput {
     }
 
     /// Create a tracing layer for console output
-    pub fn create_layer(&self) -> Result<impl Layer<Registry> + Send + Sync, LoggingError> {
+    pub fn create_layer(&self) -> Result<Box<dyn Layer<Registry> + Send + Sync>, LoggingError> {
         let mut layer = fmt::Layer::default()
-            .with_writer(io::stdout)
-            .with_filter(parse_log_level(&self.config.level)?);
+            .with_writer(io::stdout);
 
         // Configure formatting based on config
         if self.config.colors {
             layer = layer.with_ansi(true);
         } else {
             layer = layer.with_ansi(false);
-        }
-
-        if !self.config.include_timestamp {
-            layer = layer.without_time();
         }
 
         if self.config.include_module {
@@ -49,7 +44,15 @@ impl ConsoleOutput {
             layer = layer.with_thread_ids(true).with_thread_names(true);
         }
 
-        Ok(layer)
+        if !self.config.include_timestamp {
+            let layer = layer.without_time()
+                .with_filter(parse_log_level(&self.config.level)?);
+            Ok(Box::new(layer))
+        } else {
+            let layer = layer
+                .with_filter(parse_log_level(&self.config.level)?);
+            Ok(Box::new(layer))
+        }
     }
 
 }

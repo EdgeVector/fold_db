@@ -9,7 +9,7 @@
 /// will have limited functionality. Core operations (queries, mutations, ingestion) work fine.
 
 use datafold::db_operations::DbOperationsV2;
-use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger};
+use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
 use datafold::storage::InMemoryNamespacedStore;
 use serde_json::json;
 use std::sync::Arc;
@@ -27,9 +27,8 @@ async fn test_lambda_with_dynamodb_style_db_ops() {
     );
     
     // Create LambdaConfig with the pre-created DbOperationsV2
-    let config = LambdaConfig::with_db_ops(db_ops)
-        .with_schema_service_url("test://mock".to_string())
-        .with_logger(Arc::new(StdoutLogger));
+    let config = LambdaConfig::with_db_ops(db_ops, LambdaLogging::Stdout)
+        .with_schema_service_url("test://mock".to_string());
     
     // Initialize Lambda context
     let init_result = LambdaContext::init(config).await;

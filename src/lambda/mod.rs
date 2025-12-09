@@ -32,7 +32,7 @@ pub mod system;
 pub mod types;
 
 // Re-export public API
-pub use config::{AIConfig, AIProvider, LambdaConfig, LambdaStorage, OllamaConfig, OpenRouterConfig};
+pub use config::{AIConfig, AIProvider, LambdaConfig, LambdaLogging, LambdaStorage, OllamaConfig, OpenRouterConfig};
 pub use context::LambdaContext;
 pub use logging::{LogBridge, LogEntry, LogLevel, Logger, NoOpLogger, StdoutLogger, UserLogger};
 pub use types::{

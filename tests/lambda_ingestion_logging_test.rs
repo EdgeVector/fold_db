@@ -1,5 +1,5 @@
 #![cfg(feature = "lambda")]
-use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel};
+use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel, LambdaLogging};
 use datafold::StorageConfig;
 use async_trait::async_trait;
 use serde_json::json;
@@ -74,9 +74,8 @@ async fn test_lambda_json_ingestion_with_logging() {
     
     // Initialize Lambda context with test logger
     let storage_config = StorageConfig::Local { path: temp_dir.clone() };
-    let config = LambdaConfig::new(storage_config)
-        .with_schema_service_url("https://schema.example.com".to_string())
-        .with_logger(Arc::new(test_logger.clone()));
+    let config = LambdaConfig::new(storage_config, LambdaLogging::Custom(Arc::new(test_logger.clone())))
+        .with_schema_service_url("https://schema.example.com".to_string());
     
     // Initialize context (may fail if already initialized from another test)
     let init_result = LambdaContext::init(config).await;
@@ -286,48 +285,4 @@ async fn test_lambda_logger_test_endpoint() {
     println!("✅ Logger test endpoint documented!");
 }
 
-#[tokio::test]
-async fn test_lambda_context_without_logger_throws_error() {
-    // This test verifies that an error is thrown when no logger is configured
-    
-    println!("\n=== Testing Logger Requirement ===");
-    
-    let temp_dir = std::env::temp_dir().join(format!("lambda_no_logger_test_{}", uuid::Uuid::new_v4()));
-    
-    // Try to initialize WITHOUT a logger - should fail
-    let storage_config = StorageConfig::Local { path: temp_dir.clone() };
-    let config = LambdaConfig::new(storage_config)
-        .with_schema_service_url("https://schema.example.com".to_string());
-        // Note: NO .with_logger() call!
-    
-    let result = LambdaContext::init(config).await;
-    
-    // Should return an error
-    assert!(result.is_err(), "Expected error when no logger is configured");
-    
-    if let Err(e) = result {
-        let error_msg = e.to_string();
-        println!("Got expected error: {}", error_msg);
-        
-        // Verify error message contains helpful info
-        assert!(
-            error_msg.contains("Logger is required") || error_msg.contains("already initialized"),
-            "Error message should mention logger requirement or already initialized, got: {}",
-            error_msg
-        );
-        
-        // If it's the logger error (not already initialized), verify it has helpful guidance
-        if error_msg.contains("Logger is required") {
-            assert!(
-                error_msg.contains("StdoutLogger") || error_msg.contains("with_logger"),
-                "Error should provide guidance on how to fix it"
-            );
-        }
-    }
-    
-    // Cleanup
-    let _ = std::fs::remove_dir_all(temp_dir);
-    
-    println!("✅ Logger requirement enforced - users will get clear error!");
-    println!("=================================\n");
-}
+

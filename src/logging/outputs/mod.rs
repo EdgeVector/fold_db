@@ -10,6 +10,8 @@ pub mod console;
 pub mod file;
 pub mod web;
 pub mod structured;
+#[cfg(feature = "lambda")]
+pub mod dynamodb;
 
 pub use console::ConsoleOutput;
 pub use file::FileOutput;

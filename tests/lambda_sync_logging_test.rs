@@ -1,5 +1,5 @@
 #![cfg(feature = "lambda")]
-use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel};
+use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel, LambdaLogging};
 use datafold::ingestion::IngestionError;
 use datafold::StorageConfig;
 use async_trait::async_trait;
@@ -53,9 +53,8 @@ async fn test_sync_ingestion_logging_context() {
     
     // Initialize Lambda context
     let storage_config = StorageConfig::Local { path: temp_dir.clone() };
-    let config = LambdaConfig::new(storage_config)
-        .with_schema_service_url("https://schema.example.com".to_string())
-        .with_logger(Arc::new(test_logger.clone()));
+    let config = LambdaConfig::new(storage_config, LambdaLogging::Custom(Arc::new(test_logger.clone())))
+        .with_schema_service_url("https://schema.example.com".to_string());
     
     // Initialize context
     let _ = LambdaContext::init(config).await; 
