@@ -75,12 +75,20 @@ impl LambdaContext {
             None
         };
 
-        // Logger is required - fail if not provided
-        let logger = config.logger.ok_or_else(|| {
-            IngestionError::configuration_error(
-                "Logger is required for LambdaContext. Add .with_logger(Arc::new(StdoutLogger)) to your LambdaConfig. See LAMBDA_LOGGING_QUICKSTART.md for details."
-            )
-        })?;
+        // Initialize Logger based on required configuration
+        let logger: Arc<dyn Logger> = match config.logging {
+            crate::lambda::config::LambdaLogging::DynamoDb { table_name } => {
+                use crate::logging::outputs::dynamodb::DynamoDbLogger;
+                Arc::new(DynamoDbLogger::new(table_name).await)
+            },
+            crate::lambda::config::LambdaLogging::Stdout => {
+                Arc::new(crate::lambda::logging::StdoutLogger::new())
+            },
+            crate::lambda::config::LambdaLogging::Custom(logger) => logger,
+            crate::lambda::config::LambdaLogging::NoOp => {
+                Arc::new(crate::lambda::logging::NoOpLogger::new())
+            }
+        };
 
         // Bridge Rust's log crate to our custom logger
         // This captures all internal datafold logging (log::info!(), etc.)

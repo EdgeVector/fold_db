@@ -35,7 +35,7 @@
 //! ```
 
 #[cfg(feature = "lambda")]
-use datafold::lambda::{LambdaConfig, LambdaContext};
+use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
 #[cfg(feature = "lambda")]
 use datafold::storage::StorageConfig;
 #[cfg(feature = "lambda")]
@@ -88,7 +88,7 @@ async fn main() -> Result<(), Error> {
     let storage_config = StorageConfig::Local { 
         path: std::env::temp_dir() 
     };
-    let mut config = LambdaConfig::new(storage_config);
+    let mut config = LambdaConfig::new(storage_config, LambdaLogging::Stdout);
 
     // Optionally set schema service URL from environment
     if let Ok(schema_url) = std::env::var("SCHEMA_SERVICE_URL") {

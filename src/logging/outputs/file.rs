@@ -57,14 +57,9 @@ impl FileOutput {
     }
 
     /// Create a tracing layer for file output
-    pub fn create_layer(&self) -> Result<impl Layer<Registry> + Send + Sync, LoggingError> {
+    pub fn create_layer(&self) -> Result<Box<dyn Layer<Registry> + Send + Sync>, LoggingError> {
         let mut layer = fmt::Layer::default()
-            .with_ansi(false) // No colors in file output
-            .with_filter(parse_log_level(&self.config.level)?);
-
-        if !self.config.include_timestamp {
-            layer = layer.without_time();
-        }
+            .with_ansi(false); // No colors in file output
 
         if self.config.include_module {
             layer = layer.with_target(true);
@@ -76,7 +71,15 @@ impl FileOutput {
             layer = layer.with_thread_ids(true).with_thread_names(true);
         }
 
-        Ok(layer)
+        if !self.config.include_timestamp {
+            let layer = layer.without_time()
+                .with_filter(parse_log_level(&self.config.level)?);
+            Ok(Box::new(layer))
+        } else {
+            let layer = layer
+                .with_filter(parse_log_level(&self.config.level)?);
+            Ok(Box::new(layer))
+        }
     }
 
     /// Parse file size string to bytes

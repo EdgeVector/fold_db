@@ -140,6 +140,12 @@ pub trait Logger: Send + Sync {
 /// Use this when you don't need logging or want to disable it.
 pub struct NoOpLogger;
 
+impl NoOpLogger {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
 #[async_trait]
 impl Logger for NoOpLogger {
     async fn log(&self, _entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -161,6 +167,12 @@ impl Logger for NoOpLogger {
 ///     .with_logger(Arc::new(StdoutLogger));
 /// ```
 pub struct StdoutLogger;
+
+impl StdoutLogger {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl Logger for StdoutLogger {

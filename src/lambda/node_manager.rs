@@ -183,7 +183,8 @@ mod tests {
         let config = LambdaConfig::new(
             crate::storage::StorageConfig::Local {
                 path: db_path,
-            }
+            },
+            crate::lambda::config::LambdaLogging::Stdout
         );
 
         let manager = NodeManager::new(config).await.expect("Failed to create manager");

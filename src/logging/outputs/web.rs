@@ -13,7 +13,7 @@ use std::io::{self, Write};
 /// Web output handler that provides streaming log output for web interfaces
 pub struct WebOutput {
     config: WebConfig,
-    buffer: Mutex<VecDeque<String>>,
+    buffer: std::sync::Arc<Mutex<VecDeque<String>>>,
     sender: broadcast::Sender<String>,
 }
 
@@ -24,7 +24,7 @@ impl WebOutput {
         
         Ok(Self {
             config: config.clone(),
-            buffer: Mutex::new(VecDeque::with_capacity(config.max_logs)),
+            buffer: std::sync::Arc::new(Mutex::new(VecDeque::with_capacity(config.max_logs))),
             sender,
         })
     }
@@ -39,8 +39,9 @@ impl WebOutput {
 
         let layer = fmt::Layer::default()
             .with_writer(writer)
-            .with_ansi(false) // No ANSI colors for web
-            .with_filter(parse_log_level(&self.config.level)?);
+            .with_ansi(false); // No ANSI colors for web
+            
+        let layer = layer.with_filter(parse_log_level(&self.config.level)?);
 
         Ok(layer)
     }
@@ -72,12 +73,12 @@ struct WebWriter {
 
 impl WebWriter {
     fn new(
-        buffer: Mutex<VecDeque<String>>,
+        buffer: std::sync::Arc<Mutex<VecDeque<String>>>,
         sender: broadcast::Sender<String>,
         max_logs: usize,
     ) -> Self {
         Self {
-            buffer: std::sync::Arc::new(buffer),
+            buffer,
             sender,
             max_logs,
         }

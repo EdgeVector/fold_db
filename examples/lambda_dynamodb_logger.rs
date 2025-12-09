@@ -42,8 +42,10 @@
 //!         user_id.to_string()
 //!     ).await;
 //!     
-//!     let config = LambdaConfig::new()
-//!         .with_logger(Arc::new(logger));
+//!     let config = LambdaConfig::new(
+//!         StorageConfig::Local { path: PathBuf::from("/tmp/folddb") }, // Using local for example
+//!         LambdaLogging::Custom(Arc::new(logger))
+//!     );
 //!     
 //!     LambdaContext::init(config).await?;
 //!     
@@ -72,7 +74,7 @@ use aws_config;
 #[cfg(feature = "lambda")]
 use aws_sdk_dynamodb::{Client, types::AttributeValue};
 #[cfg(feature = "lambda")]
-use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger, Logger, LogEntry, LogLevel};
+use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger, Logger, LogEntry, LogLevel, LambdaLogging};
 #[cfg(feature = "lambda")]
 use std::collections::HashMap;
 #[cfg(feature = "lambda")]

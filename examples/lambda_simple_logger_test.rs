@@ -23,7 +23,7 @@
 //! ```
 
 #[cfg(feature = "lambda")]
-use datafold::lambda::{LambdaConfig, LambdaContext, StdoutLogger};
+use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, StdoutLogger};
 #[cfg(feature = "lambda")]
 use datafold::storage::StorageConfig;
 #[cfg(feature = "lambda")]
@@ -85,8 +85,7 @@ async fn main() -> Result<(), Error> {
     let storage_config = StorageConfig::Local { 
         path: std::env::temp_dir() 
     };
-    let config = LambdaConfig::new(storage_config)
-        .with_logger(Arc::new(StdoutLogger));
+    let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout);
 
     // Initialize Lambda context once (reused across invocations)
     LambdaContext::init(config)

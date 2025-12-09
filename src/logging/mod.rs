@@ -7,6 +7,7 @@
 pub mod config;
 pub mod features;
 pub mod util;
+pub mod outputs;
 
 use config::LogConfig;
 use once_cell::sync::OnceCell;
