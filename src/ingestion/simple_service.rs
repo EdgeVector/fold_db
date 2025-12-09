@@ -650,6 +650,7 @@ impl SimpleIngestionService {
         }
 
         // Use topology_hash as schema name for structure-based deduplication
+        schema.compute_schema_topology_hash();
         let topology_hash = schema.get_topology_hash()
             .ok_or_else(|| IngestionError::SchemaCreationError(
                 "Schema must have topology_hash computed".to_string()

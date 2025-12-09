@@ -497,8 +497,8 @@ impl DynamoDbNamespacedStore {
                     // "service error" is often a transient error or permissions issue
                     // Try to proceed - if the table doesn't exist, creation will fail
                     // If it does exist, operations will work
-                    log::warn!("Got 'service error' when checking table {} - assuming table exists and proceeding", table_name);
-                    return Ok(());
+                    log::warn!("Got 'service error' when checking table {} - proceeding to attempt creation", table_name);
+                    // Do NOT return Ok(()) here; let it fall through to create_table
                 } else {
                     // For other errors, still try to proceed but log a warning
                     log::warn!("Unexpected error checking table {}: {} - proceeding anyway", table_name, error_str);

@@ -43,7 +43,11 @@ struct Cli {
 /// * The HTTP server cannot be started
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    datafold::web_logger::init().ok();
+    // Initialize logging system with environment configuration
+    let log_config = datafold::logging::config::LogConfig::from_env().unwrap_or_default();
+    if let Err(e) = datafold::logging::LoggingSystem::init_with_config(log_config).await {
+        eprintln!("Failed to initialize logging system: {}", e);
+    }
 
     // Parse command-line arguments using clap
     let Cli { port: http_port, schema_service_url } = Cli::parse();
