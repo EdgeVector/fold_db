@@ -71,7 +71,48 @@ def test_ingestion(data, data_type: str):
     try:
         response = requests.post(INGESTION_ENDPOINT, json=payload, timeout=30)
         
-        if response.status_code == 200:
+        # Handle async 202 response
+        if response.status_code == 202:
+            result = response.json()
+            progress_id = result.get("progress_id")
+            print(f"   ⏳ Ingestion started async (ID: {progress_id}). Polling for status...")
+            
+            # Poll for completion
+            import time
+            max_retries = 30
+            for i in range(max_retries):
+                time.sleep(1)
+                status_url = f"{SERVER_URL}/api/ingestion/progress/{progress_id}"
+                status_resp = requests.get(status_url, timeout=5)
+                
+                if status_resp.status_code == 200:
+                    status = status_resp.json()
+                    if status.get("is_complete") or status.get("is_failed"):
+                        if status.get("is_failed"):
+                            print(f"❌ {data_type}: Ingestion failed async - {status.get('error_message')}")
+                            return False
+                        
+                        # Success
+                        results = status.get("results", {})
+                        mutations_generated = results.get("mutations_generated", 0)
+                        mutations_executed = results.get("mutations_executed", 0)
+                        
+                        print(f"✅ {data_type}: {mutations_generated} mutations generated, {mutations_executed} executed")
+                        
+                        if mutations_generated > 0:
+                            print(f"   🎉 SUCCESS: Mutations are being generated!")
+                            return True
+                        else:
+                            print(f"   ⚠️  WARNING: No mutations generated")
+                            return False
+                else:
+                    print(f"   ⚠️  Status poll failed: {status_resp.status_code}")
+            
+            print(f"❌ {data_type}: Timed out waiting for ingestion")
+            return False
+
+        # Handle legacy synchronous 200 response (just in case)
+        elif response.status_code == 200:
             result = response.json()
             if result.get("success", False):
                 mutations_generated = result.get("mutations_generated", 0)

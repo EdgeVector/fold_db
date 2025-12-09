@@ -55,8 +55,12 @@ impl log::Log for WebLogger {
     fn flush(&self) {}
 }
 
+pub fn get_instance() -> &'static WebLogger {
+    LOGGER.get_or_init(WebLogger::new)
+}
+
 pub fn init() -> Result<(), SetLoggerError> {
-    let logger = LOGGER.get_or_init(WebLogger::new);
+    let logger = get_instance();
     log::set_logger(logger)?;
     log::set_max_level(LevelFilter::Info);
     Ok(())

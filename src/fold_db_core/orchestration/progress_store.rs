@@ -44,6 +44,7 @@ pub struct DynamoDbProgressStore {
 }
 
 use aws_sdk_dynamodb::types::{AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, BillingMode, TableStatus};
+use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 
 // ... (existing imports)
 
@@ -81,13 +82,19 @@ impl DynamoDbProgressStore {
                 // actually, we should jump to wait logic.
             },
             Err(e) => {
-                let error_str = e.to_string(); // Use to_string() for simple check
-                // Check debug string too just in case
-                let error_debug = format!("{:?}", e);
+                let is_resource_not_found = if let Some(code) = e.code() {
+                    code == "ResourceNotFoundException"
+                } else {
+                    // Fallback to string matching if code is not available
+                    let error_str = e.to_string();
+                    let error_debug = format!("{:?}", e);
+                    error_str.contains("ResourceNotFoundException") || error_debug.contains("ResourceNotFoundException")
+                };
                 
-                if !error_str.contains("ResourceNotFoundException") && !error_debug.contains("ResourceNotFoundException") {
-                    return Err(FoldDbError::Database(format!("Failed to check table existence: {}", error_str)));
+                if !is_resource_not_found {
+                    return Err(FoldDbError::Database(format!("Failed to check table existence: {:?}", e)));
                 }
+                
                 // Table doesn't exist, proceed to create
                 log::info!("Creating DynamoDB table: {}", self.table_name);
         
@@ -153,9 +160,7 @@ impl DynamoDbProgressStore {
 
         Err(FoldDbError::Database("Table creation/activation timed out".to_string()))
     }
-
-    }
-
+}
 
 #[async_trait]
 impl ProgressStore for DynamoDbProgressStore {
@@ -174,10 +179,16 @@ impl ProgressStore for DynamoDbProgressStore {
         match result {
             Ok(_) => Ok(()),
             Err(e) => {
-                let error_str = format!("{:?}", e);
+                let is_resource_not_found = if let Some(code) = e.code() {
+                    code == "ResourceNotFoundException"
+                } else {
+                    let error_str = format!("{:?}", e);
+                    error_str.contains("ResourceNotFoundException")
+                };
                 
-                if error_str.contains("ResourceNotFoundException") {
+                if is_resource_not_found {
                     // Try to create table and retry
+                    log::info!("Table {} not found during save, creating...", self.table_name);
                     self.ensure_table_exists().await?;
                     
                     self.client.put_item()
@@ -220,9 +231,16 @@ impl ProgressStore for DynamoDbProgressStore {
                 Ok(IndexingStatus::default())
             },
             Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("ResourceNotFoundException") {
+                let is_resource_not_found = if let Some(code) = e.code() {
+                    code == "ResourceNotFoundException"
+                } else {
+                    let error_str = e.to_string();
+                    error_str.contains("ResourceNotFoundException")
+                };
+
+                if is_resource_not_found {
                     // Table doesn't exist, return default status (it will be created on first save)
+                    log::debug!("Table {} not found during load, returning default status", self.table_name);
                     Ok(IndexingStatus::default())
                 } else {
                     Err(FoldDbError::Database(format!("Failed to load status: {:?}", e)))

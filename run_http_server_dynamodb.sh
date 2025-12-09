@@ -109,6 +109,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Build the React frontend (prebuild will read OPENAPI_URL file)
+# Build the React frontend (prebuild will read OPENAPI_URL file)
 echo "Building the React frontend..."
 cd src/datafold_node/static-react
 
@@ -152,7 +153,7 @@ SCHEMA_SERVICE_PID=$!
 # Wait for schema service to be healthy with proper health check
 echo "Waiting for schema service to be ready..."
 SCHEMA_READY=false
-for i in {1..30}; do
+for i in {1..60}; do
     if kill -0 $SCHEMA_SERVICE_PID 2>/dev/null; then
         if curl -s http://127.0.0.1:9002/api/health > /dev/null 2>&1; then
             SCHEMA_READY=true
@@ -181,6 +182,8 @@ echo "Starting the HTTP server on port 9001 with DynamoDB backend..."
 echo "Note: DynamoDB tables will be created automatically if they don't exist."
 echo "Make sure AWS credentials are configured (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, or IAM role)"
 
+# Debug: Print AWS Credential Status
+
 # Export OPENROUTER_API_KEY if set in .zshrc
 source ~/.zshrc 2>/dev/null || true
 
@@ -190,6 +193,11 @@ export DATAFOLD_DYNAMODB_REGION="$REGION"
 if [ -n "$USER_ID" ]; then
     export DATAFOLD_DYNAMODB_USER_ID="$USER_ID"
 fi
+
+# Export DynamoDB Logging config
+export DATAFOLD_LOG_DYNAMODB_ENABLED="true"
+export DATAFOLD_LOG_DYNAMODB_TABLE="DataFoldLogs"
+export DATAFOLD_LOG_DYNAMODB_REGION="$REGION"
 
 RUST_LOG=debug nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
 

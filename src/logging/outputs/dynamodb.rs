@@ -1,9 +1,11 @@
 use async_trait::async_trait;
-use aws_config;
-use aws_sdk_dynamodb::{Client, types::AttributeValue};
+use aws_sdk_dynamodb::{
+    Client, 
+    types::{AttributeValue, AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, ProvisionedThroughput}
+};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::lambda::logging::{Logger, LogEntry, LogLevel};
+use crate::logging::core::{Logger, LogEntry, LogLevel, get_current_user_id};
 
 /// DynamoDB-backed logger for multi-tenant Lambda deployments
 ///
@@ -22,35 +24,86 @@ pub struct DynamoDbLogger {
 }
 
 impl DynamoDbLogger {
-    /// Create a new DynamoDB logger
-    ///
-    /// # Arguments
-    ///
-    /// * `table_name` - Name of the DynamoDB table
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # async fn example() {
-    /// use datafold::logging::outputs::dynamodb::DynamoDbLogger;
-    /// let logger = DynamoDbLogger::new("datafold-logs".to_string()).await;
-    /// # }
-    /// ```
+    /// Create a new DynamoDB logger and ensure table exists
     pub async fn new(table_name: String) -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
-        Self { client, table_name }
+        let logger = Self { client, table_name };
+        let _ = logger.ensure_table_exists().await;
+        logger
     }
 
     /// Create a DynamoDB logger with custom AWS config
     pub async fn with_config(table_name: String, aws_config: &aws_config::SdkConfig) -> Self {
         let client = Client::new(aws_config);
-        Self { client, table_name }
+        let logger = Self { client, table_name };
+        let _ = logger.ensure_table_exists().await;
+        logger
     }
     
     /// Create a DynamoDB logger with an existing client
     pub fn with_client(table_name: String, client: Client) -> Self {
+        // Note: Can't easily ensure table exists here without async, 
+        // so we assume caller handled it or it will happen lazily/fail.
         Self { client, table_name }
+    }
+
+    /// Ensure the log table exists, creating it if necessary
+    pub async fn ensure_table_exists(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let result = self.client.create_table()
+            .table_name(&self.table_name)
+            .attribute_definitions(
+                AttributeDefinition::builder()
+                    .attribute_name("user_id")
+                    .attribute_type(ScalarAttributeType::S)
+                    .build()
+                    .unwrap()
+            )
+            .attribute_definitions(
+                AttributeDefinition::builder()
+                    .attribute_name("timestamp")
+                    .attribute_type(ScalarAttributeType::N)
+                    .build()
+                    .unwrap()
+            )
+            .key_schema(
+                KeySchemaElement::builder()
+                    .attribute_name("user_id")
+                    .key_type(KeyType::Hash)
+                    .build()
+                    .unwrap()
+            )
+            .key_schema(
+                KeySchemaElement::builder()
+                    .attribute_name("timestamp")
+                    .key_type(KeyType::Range)
+                    .build()
+                    .unwrap()
+            )
+            .provisioned_throughput(
+                ProvisionedThroughput::builder()
+                    .read_capacity_units(5)
+                    .write_capacity_units(5)
+                    .build()
+                    .unwrap()
+            )
+            .send()
+            .await;
+            
+        match result {
+            Ok(_) => {
+                // Wait a bit for table to be active?
+                Ok(())
+            },
+            Err(err) => {
+                if let Some(service_err) = err.as_service_error() {
+                   if service_err.is_resource_in_use_exception() {
+                       return Ok(());
+                   }
+                }
+                Err(Box::new(err))
+            }
+        }
     }
 
     /// Convert LogEntry to DynamoDB item
