@@ -18,6 +18,24 @@ pub struct DynamoDbConfig {
     pub user_id: Option<String>,
 }
 
+impl DynamoDbConfig {
+    /// Create config from environment variables
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let region = env::var("DATAFOLD_DYNAMODB_REGION")
+            .map_err(|_| ConfigError::MissingVariable("DATAFOLD_DYNAMODB_REGION".to_string()))?;
+            
+        let table_name = env::var("DATAFOLD_DYNAMODB_TABLE")
+            .map_err(|_| ConfigError::MissingVariable("DATAFOLD_DYNAMODB_TABLE".to_string()))?;
+            
+        Ok(Self {
+            region,
+            table_config: TableConfig::Prefix(table_name),
+            auto_create: true,
+            user_id: env::var("DATAFOLD_DYNAMODB_USER_ID").ok(),
+        })
+    }
+}
+
 /// DynamoDB Table Naming Configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
