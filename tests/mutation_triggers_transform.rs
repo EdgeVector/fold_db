@@ -13,7 +13,7 @@ async fn test_blogpost_mutation_triggers_transforms() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema (source schema)
     let blogpost_schema_json = json!({
@@ -170,7 +170,7 @@ async fn test_partial_mutation_triggers_subset_of_transforms() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema
     let blogpost_schema_json = json!({
@@ -285,7 +285,7 @@ async fn test_content_mutation_triggers_word_transform() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
     
     // Load schemas
     let blogpost_schema_json = json!({

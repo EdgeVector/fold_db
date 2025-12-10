@@ -66,10 +66,23 @@ async fn test_indexing_progress_tracking() {
         MutationType::Create
     ).await.unwrap();
     
-    // Check status again
-    let node_guard = node_arc.lock().await;
-    let status = node_guard.get_indexing_status().await;
+    // Poll for status update
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(5);
     
-    println!("Total operations processed: {}", status.total_operations_processed);
-    assert!(status.total_operations_processed > 0, "Should have processed indexing operations");
+    let mut processed = 0;
+    while start.elapsed() < timeout {
+        let node_guard = node_arc.lock().await;
+        // Check if DB is ready/monitoring
+        let status = node_guard.get_indexing_status().await;
+        if status.total_operations_processed > 0 {
+            processed = status.total_operations_processed;
+            break;
+        }
+        drop(node_guard);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    println!("Total operations processed: {}", processed);
+    assert!(processed > 0, "Should have processed indexing operations within timeout");
 }

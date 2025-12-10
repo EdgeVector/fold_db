@@ -94,7 +94,7 @@ async fn test_local_folddb_has_no_s3_storage() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("test_db");
     
-    let db = FoldDB::new(db_path.to_str().unwrap()).await.unwrap();
+    let db = FoldDB::new(db_path.to_str().unwrap(), None).await.unwrap();
     
     assert!(!db.has_s3_storage());
 }

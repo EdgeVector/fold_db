@@ -15,7 +15,7 @@ async fn test_transform_requires_approval_to_execute() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema (source schema) and approve it
     let blogpost_schema_json = json!({
@@ -165,7 +165,7 @@ async fn test_transform_executes_when_approved() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
     
     // Load the BlogPost schema (source schema) and approve it
     let blogpost_schema_json = json!({

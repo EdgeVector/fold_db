@@ -14,7 +14,7 @@ async fn test_transform_execution_states() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
     let db_ops = transform_manager.db_ops.clone();
 

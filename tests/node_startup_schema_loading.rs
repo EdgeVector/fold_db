@@ -17,6 +17,7 @@ async fn test_node_starts_without_schema_service() {
         network_listen_address: "/ip4/127.0.0.1/tcp/9002".to_string(),
         security_config: Default::default(),
         schema_service_url: None,
+        indexing_progress_table: None,
     };
     
     // Attempt to create the node - should succeed without schema service URL
