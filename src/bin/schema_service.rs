@@ -64,7 +64,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check if DynamoDB configuration is available from environment
     let server = if let Ok(dynamodb_config) = DynamoDbConfig::from_env() {
         println!("🚀 Schema service starting with DynamoDB storage");
-        println!("   Table: {}", dynamodb_config.table_name);
+        match &dynamodb_config.table_config {
+            datafold::storage::config::TableConfig::Prefix(p) => println!("   Table Prefix: {}", p),
+            _ => println!("   Table Config: Explicit"),
+        }
         println!("   Region: {}", dynamodb_config.region);
         println!("   ✨ No locking needed - topology hashes ensure idempotent writes!");
         
