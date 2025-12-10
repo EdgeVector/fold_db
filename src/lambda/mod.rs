@@ -11,7 +11,10 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     // Initialize once during cold start
-//!     let config = LambdaConfig::new();
+//!     let config = LambdaConfig::new(
+//!         StorageConfig::Local { path: PathBuf::from("/tmp/folddb") },
+//!         LambdaLogging::Stdout
+//!     );
 //!     LambdaContext::init(config).await.expect("Failed to initialize");
 //!     
 //!     // Access node in handler

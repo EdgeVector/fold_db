@@ -163,8 +163,10 @@ impl Logger for NoOpLogger {
 /// use datafold::lambda::{LambdaConfig, StdoutLogger};
 /// use std::sync::Arc;
 ///
-/// let config = LambdaConfig::new()
-///     .with_logger(Arc::new(StdoutLogger));
+/// let config = LambdaConfig::new(
+///     StorageConfig::Local { path: PathBuf::from("/tmp/folddb") },
+///     LambdaLogging::Custom(Arc::new(StdoutLogger))
+/// );
 /// ```
 pub struct StdoutLogger;
 

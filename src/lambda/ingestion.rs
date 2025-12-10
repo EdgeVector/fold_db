@@ -85,12 +85,10 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub fn get_progress(progress_id: &str) -> Result<Option<IngestionProgress>, IngestionError> {
+    pub async fn get_progress(progress_id: &str) -> Result<Option<IngestionProgress>, IngestionError> {
         let ctx = Self::get()?;
-        let tracker = ctx.progress_tracker.lock().map_err(|_| {
-            IngestionError::InvalidInput("Failed to lock progress tracker".to_string())
-        })?;
-        Ok(tracker.get(progress_id).cloned())
+        let tracker = ctx.progress_tracker.clone();
+        Ok(tracker.load(progress_id).await.unwrap_or(None))
     }
 
     /// Get all active ingestion progress
@@ -108,12 +106,10 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub fn get_all_progress() -> Result<Vec<IngestionProgress>, IngestionError> {
+    pub async fn get_all_progress() -> Result<Vec<IngestionProgress>, IngestionError> {
         let ctx = Self::get()?;
-        let tracker = ctx.progress_tracker.lock().map_err(|_| {
-            IngestionError::InvalidInput("Failed to lock progress tracker".to_string())
-        })?;
-        Ok(tracker.values().cloned().collect())
+        let tracker = ctx.progress_tracker.clone();
+        Ok(tracker.list().await.unwrap_or_default())
     }
 
     /// Ingest JSON data asynchronously (returns immediately with progress_id)
@@ -162,7 +158,7 @@ impl LambdaContext {
 
         // Start progress tracking
         let progress_service = ProgressService::new(progress_tracker);
-        progress_service.start_progress(progress_id.clone());
+        progress_service.start_progress(progress_id.clone()).await;
 
         // Load ingestion config
         let config = IngestionConfig::from_env()?;
@@ -187,7 +183,7 @@ impl LambdaContext {
                         progress_service.fail_progress(
                             &progress_id_clone,
                             format!("Failed to create ingestion service: {}", e),
-                        );
+                        ).await;
                         return;
                     }
                 };
@@ -216,7 +212,7 @@ impl LambdaContext {
                         progress_service.fail_progress(
                             &progress_id_clone,
                             format!("Ingestion failed: {}", e),
-                        );
+                        ).await;
                     }
                 }
             }).await;
@@ -271,7 +267,7 @@ impl LambdaContext {
 
         // Start progress tracking
         let progress_service = ProgressService::new(progress_tracker);
-        progress_service.start_progress(progress_id.clone());
+        progress_service.start_progress(progress_id.clone()).await;
 
         // Load ingestion config
         let config = IngestionConfig::from_env()?;

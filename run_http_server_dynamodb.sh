@@ -145,7 +145,7 @@ cd ../../..
 
 # Start the schema service first
 echo "Starting the schema service on port 9002 in the background..."
-nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
+DATAFOLD_DYNAMODB_TABLE="$TABLE_NAME" DATAFOLD_DYNAMODB_REGION="$REGION" DATAFOLD_DYNAMODB_USER_ID="$USER_ID" RUST_LOG=debug nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
 
 # Get the schema service process ID
 SCHEMA_SERVICE_PID=$!

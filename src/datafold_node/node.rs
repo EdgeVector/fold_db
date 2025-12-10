@@ -87,7 +87,7 @@ impl DataFoldNode {
                     .to_str()
                     .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
                 
-                Arc::new(Mutex::new(FoldDB::new_with_db_ops(db_ops, path_str).await
+                Arc::new(Mutex::new(FoldDB::new_with_db_ops(db_ops, path_str, None).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))
             }
             DatabaseConfig::S3 { bucket, region, prefix, local_path } => {

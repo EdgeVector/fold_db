@@ -100,7 +100,7 @@ impl IngestionCore {
             &progress_id,
             IngestionStep::ValidatingConfig,
             "Validating ingestion configuration...".to_string(),
-        );
+        ).await;
         self.validate_configuration()?;
 
         // Step 2: Prepare schemas
@@ -108,7 +108,7 @@ impl IngestionCore {
             &progress_id,
             IngestionStep::PreparingSchemas,
             "Preparing available schemas...".to_string(),
-        );
+        ).await;
         let available_schemas = self.prepare_schemas().await?;
 
         // Step 2.5: Flatten Twitter data structure for AI analysis
@@ -116,7 +116,7 @@ impl IngestionCore {
             &progress_id,
             IngestionStep::FlatteningData,
             "Processing and flattening data structure...".to_string(),
-        );
+        ).await;
         let flattened_data = self.flatten_twitter_data(&request.data);
 
         // Step 3: Get AI recommendation
@@ -124,7 +124,7 @@ impl IngestionCore {
             &progress_id,
             IngestionStep::GettingAIRecommendation,
             "Analyzing data with AI to determine schema...".to_string(),
-        );
+        ).await;
         let ai_response = self
             .get_ai_recommendation(&flattened_data, &available_schemas)
             .await?;
@@ -134,7 +134,7 @@ impl IngestionCore {
             &progress_id,
             IngestionStep::SettingUpSchema,
             "Setting up schema and preparing for data storage...".to_string(),
-        );
+        ).await;
         let (schema_name, new_schema_created, mutation_mappers) = self.setup_schema(&ai_response, &flattened_data).await?;
 
         // Step 5: Generate mutations using the returned mutation_mappers (which may have been updated by schema service)
@@ -142,7 +142,7 @@ impl IngestionCore {
             &progress_id,
             IngestionStep::GeneratingMutations,
             "Generating database mutations...".to_string(),
-        );
+        ).await;
         let mutations = self.generate_mutations_for_data(
             &schema_name,
             &flattened_data,
@@ -157,7 +157,7 @@ impl IngestionCore {
             &progress_id,
             IngestionStep::ExecutingMutations,
             "Executing mutations to store data...".to_string(),
-        );
+        ).await;
         let mutations_executed = self
             .execute_mutations_if_requested(&request, &mutations)
             .await?;
@@ -169,7 +169,7 @@ impl IngestionCore {
             mutations_generated: mutations.len(),
             mutations_executed,
         };
-        progress_service.complete_progress(&progress_id, results);
+        progress_service.complete_progress(&progress_id, results).await;
 
         self.log_completion(&schema_name, mutations.len(), mutations_executed);
 

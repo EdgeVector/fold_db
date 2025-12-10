@@ -48,7 +48,16 @@ pub struct ExplicitTables {
     pub schemas: String,
     pub public_keys: String,
     pub transform_queue: String,
+    /// Native index table
     pub native_index: String,
+    /// Process tracking table (ingestion, backfills)
+    ///
+    /// This table is used to track long-running operations.
+    /// If using `TableConfig::Prefix`, this is automatically set to `{prefix}-process`.
+    /// If using `TableConfig::Explicit`, you must provide this table name.
+    ///
+    /// NOTE: If using DynamoDB storage, this table MUST exist or initialization will fail.
+    pub process: String,
 }
 
 /// Configuration for Lambda logging
@@ -63,6 +72,8 @@ pub enum LambdaLogging {
     /// Disable logging (not recommended)
     NoOp,
 }
+
+// LambdaProcess enum removed
 
 impl std::fmt::Debug for LambdaLogging {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -148,7 +159,6 @@ impl LambdaConfig {
     /// use datafold::lambda::{LambdaConfig, LambdaLogging};
     /// use datafold::StorageConfig;
     ///
-    /// let config = LambdaConfig::new(
     ///     StorageConfig::Local { path: PathBuf::from("/tmp/folddb") },
     ///     LambdaLogging::Stdout
     /// );
@@ -176,7 +186,12 @@ impl LambdaConfig {
     ///
     /// // Create your DbOperationsV2 with any backend
     /// let db_ops = Arc::new(DbOperationsV2::from_dynamodb(client, table, Some(user_id)).await?);
-    /// let config = LambdaConfig::with_db_ops(db_ops, LambdaLogging::DynamoDb { table_name: "logs".into() });
+    /// // Create your DbOperationsV2 with any backend
+    /// let db_ops = Arc::new(DbOperationsV2::from_dynamodb(client, table, Some(user_id)).await?);
+    /// let config = LambdaConfig::with_db_ops(
+    ///     db_ops, 
+    ///     LambdaLogging::DynamoDb { table_name: "logs".into() }
+    /// );
     /// ```
     pub fn with_db_ops(db_ops: Arc<DbOperationsV2>, logging: LambdaLogging) -> Self {
         Self {
