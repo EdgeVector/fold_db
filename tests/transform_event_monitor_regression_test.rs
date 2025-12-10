@@ -15,7 +15,7 @@ async fn test_duplicate_transform_registration_prevention() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
 
     // Load the BlogPost schema first (source schema)
@@ -126,7 +126,7 @@ async fn test_transform_registration_through_schema_loading() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
 
     // Load the BlogPost schema first (source schema)

@@ -77,7 +77,7 @@ impl NodeManager {
 
         let (db, storage_path) = match &self.config.storage {
             LambdaStorage::Config(storage_config) => {
-                // Legacy path for Local/S3 storage
+                // Legacy path for Local storage
                 let (fold_db, path) = match storage_config {
                     StorageConfig::Local { path } => {
                         std::fs::create_dir_all(path)
@@ -90,11 +90,6 @@ impl NodeManager {
                         let fold_db = FoldDB::new(path_str).await
                             .map_err(|e| IngestionError::StorageError(e.to_string()))?;
                         (fold_db, path.clone())
-                    }
-                    StorageConfig::S3 { config: s3_config } => {
-                        let fold_db = FoldDB::new_with_s3(s3_config.clone()).await
-                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                        (fold_db, s3_config.local_path.clone())
                     }
                 };
                 (Arc::new(Mutex::new(fold_db)), path)

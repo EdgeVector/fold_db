@@ -1,15 +1,15 @@
 [package]
 name = "datafold"
-version = "0.1.34"
+version = "0.1.36"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
-description = "A personal database for data sovereignty with AI-powered ingestion and S3 support"
+description = "A personal database for data sovereignty with AI-powered ingestion"
 documentation = "https://docs.rs/datafold"
 homepage = "https://datafold.ai"
 repository = "https://github.com/shiba4life/fold_db"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
-keywords = ["database", "distributed", "schema", "ingestion", "s3"]
+keywords = ["database", "distributed", "schema", "ingestion"]
 categories = ["database", "data-structures", "network-programming"]
 exclude = [
     "data/*",
@@ -79,7 +79,7 @@ file_to_json = "0.1.5"
 
 # AWS SDK for S3 storage and DynamoDB
 aws-config = "1.0"
-aws-sdk-s3 = "1.0"
+
 aws-sdk-dynamodb = "1.0"
 
 # Lambda runtime (optional, for AWS Lambda deployments)

@@ -5,7 +5,6 @@ pub mod dynamodb_utils;
 pub mod error;
 pub mod inmemory_backend;
 pub mod reset_manager;
-pub mod s3_sync;
 pub mod sled_backend;
 pub mod traits;
 pub mod upload_storage;
@@ -14,12 +13,12 @@ pub mod upload_storage;
 mod tests;
 
 // Re-exports for convenience and backward compatibility
-pub use config::{S3Config, StorageConfig, UploadStorageConfig};
+pub use config::{StorageConfig};
 pub use dynamodb_backend::{DynamoDbNamespacedStore, TableNameResolver};
 pub use dynamodb_store::{DynamoDbConfig, DynamoDbSchemaStore};
 pub use error::StorageError;
 pub use inmemory_backend::InMemoryNamespacedStore;
-pub use s3_sync::S3SyncedStorage;
+
 pub use sled_backend::SledNamespacedStore;
 pub use traits::{NamespacedStore, TypedKvStore};
 pub use upload_storage::UploadStorage;

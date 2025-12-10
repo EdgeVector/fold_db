@@ -37,7 +37,7 @@ pub mod ollama_service;
 pub mod openrouter_service;
 pub mod progress;
 pub mod routes;
-pub mod s3_ingestion;
+
 pub mod simple_service;
 pub mod structure_analyzer;
 
@@ -51,7 +51,6 @@ pub use config::IngestionConfig;
 pub use core::IngestionCore;
 pub use error::IngestionError;
 pub use progress::{IngestionProgress, IngestionStep, IngestionResults, ProgressService, ProgressTracker, create_progress_tracker};
-pub use s3_ingestion::{S3IngestionRequest, ingest_from_s3_path_async, ingest_from_s3_path_sync};
 pub use structure_analyzer::StructureAnalyzer;
 
 /// Result type for ingestion operations

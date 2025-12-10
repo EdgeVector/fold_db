@@ -934,7 +934,7 @@ mod tests {
         let db_path = temp_dir.path();
 
         let schema_core = Arc::new(SchemaCore::new_for_testing().await.unwrap());
-        let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap(), None).await.unwrap()));
+        let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).await.unwrap()));
 
         let schema_client = SchemaServiceClient::new("http://localhost:0");
         let ingestion_core =
@@ -950,7 +950,7 @@ mod tests {
         let test_path = temp_dir.path().to_str().unwrap().to_string();
         
         // Should succeed even if schema directory doesn't exist (FolderDB will create necessary files)
-        let fold_db = FoldDB::new(&test_path, None).await.unwrap();
+        let fold_db = FoldDB::new(&test_path).await.unwrap();
         // Just assert that we got a valid instance, there is no is_closed method directly exposed
         // If new() succeeded, the DB is open.
         assert!(true); 
@@ -979,7 +979,7 @@ mod tests {
             }
         };
 
-        let fold_db = match FoldDB::new(&test_path, None).await {
+        let fold_db = match FoldDB::new(&test_path).await {
             Ok(db) => Arc::new(Mutex::new(db)),
             Err(_) => {
                 warn!("Skipping test_validate_input: Could not create database");

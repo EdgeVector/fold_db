@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::env;
+use serde::{Deserialize, Serialize};
 
 /// S3 configuration for remote storage
 #[derive(Debug, Clone)]
@@ -32,56 +33,17 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-impl S3Config {
-    pub fn new(bucket: String, region: String, prefix: String) -> Self {
-        Self {
-            bucket,
-            region,
-            prefix,
-            local_path: PathBuf::from("/tmp/folddb-data"),
-        }
-    }
 
-    pub fn with_local_path(mut self, path: PathBuf) -> Self {
-        self.local_path = path;
-        self
-    }
-
-    /// Creates S3Config from environment variables:
-    /// - DATAFOLD_S3_BUCKET (required)
-    /// - DATAFOLD_S3_REGION (required)
-    /// - DATAFOLD_S3_PREFIX (optional, defaults to "folddb")
-    /// - DATAFOLD_S3_LOCAL_PATH (optional, defaults to "/tmp/folddb-data")
-    pub fn from_env() -> Result<Self, ConfigError> {
-        let bucket = env::var("DATAFOLD_S3_BUCKET")
-            .map_err(|_| ConfigError::MissingVariable("DATAFOLD_S3_BUCKET".to_string()))?;
-        
-        let region = env::var("DATAFOLD_S3_REGION")
-            .map_err(|_| ConfigError::MissingVariable("DATAFOLD_S3_REGION".to_string()))?;
-        
-        let prefix = env::var("DATAFOLD_S3_PREFIX")
-            .unwrap_or_else(|_| "folddb".to_string());
-        
-        let local_path = env::var("DATAFOLD_S3_LOCAL_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/tmp/folddb-data"));
-
-        Ok(Self {
-            bucket,
-            region,
-            prefix,
-            local_path,
-        })
-    }
-}
 
 /// Storage configuration enum for different backends
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StorageConfig {
-    /// Local Sled storage (default)
-    Local { path: PathBuf },
-    /// S3-backed storage with local cache
-    S3 { config: S3Config },
+    /// Local filesystem storage
+    #[serde(rename = "local")]
+    Local {
+        /// Path to the local database file/directory
+        path: PathBuf,
+    },
 }
 
 impl Default for StorageConfig {
@@ -97,12 +59,6 @@ impl Default for StorageConfig {
 pub enum UploadStorageConfig {
     /// Local filesystem storage (default)
     Local { path: PathBuf },
-    /// S3 storage for uploads
-    S3 { 
-        bucket: String, 
-        region: String,
-        prefix: String,
-    },
 }
 
 impl Default for UploadStorageConfig {
@@ -131,22 +87,7 @@ impl UploadStorageConfig {
                     .unwrap_or_else(|_| PathBuf::from("data/uploads"));
                 Ok(UploadStorageConfig::Local { path })
             }
-            "s3" => {
-                let bucket = env::var("DATAFOLD_UPLOAD_S3_BUCKET")
-                    .map_err(|_| ConfigError::MissingVariable("DATAFOLD_UPLOAD_S3_BUCKET".to_string()))?;
-                
-                let region = env::var("DATAFOLD_UPLOAD_S3_REGION")
-                    .map_err(|_| ConfigError::MissingVariable("DATAFOLD_UPLOAD_S3_REGION".to_string()))?;
-                
-                let prefix = env::var("DATAFOLD_UPLOAD_S3_PREFIX")
-                    .unwrap_or_else(|_| "uploads".to_string());
 
-                Ok(UploadStorageConfig::S3 {
-                    bucket,
-                    region,
-                    prefix,
-                })
-            }
             _ => Err(ConfigError::InvalidValue(format!(
                 "Invalid DATAFOLD_UPLOAD_STORAGE_MODE: {}. Must be 'local' or 's3'",
                 mode
@@ -165,10 +106,7 @@ impl StorageConfig {
             .unwrap_or_else(|_| "local".to_string());
 
         match mode.to_lowercase().as_str() {
-            "s3" => {
-                let s3_config = S3Config::from_env()?;
-                Ok(StorageConfig::S3 { config: s3_config })
-            }
+
             "local" => {
                 let path = env::var("DATAFOLD_STORAGE_PATH")
                     .map(PathBuf::from)

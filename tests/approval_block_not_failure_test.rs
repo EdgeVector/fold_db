@@ -14,7 +14,7 @@ async fn test_approval_block_not_counted_as_failure() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
-    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load and approve BlogPost schema
     let blogpost_schema_json = json!({
