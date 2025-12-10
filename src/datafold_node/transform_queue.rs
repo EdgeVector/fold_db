@@ -102,8 +102,9 @@ mod tests {
             storage_path: dir.path().to_path_buf(),
             default_trust_distance: 1,
             network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
-            security_config: crate::security::SecurityConfig::default(),
-            schema_service_url: Some("test://mock".to_string()),
+            security_config: Default::default(),
+            schema_service_url: None,
+            indexing_progress_table: None,
         };
         let node = DataFoldNode::new(config).await.unwrap();
         let info = node.get_transform_queue_info().unwrap();

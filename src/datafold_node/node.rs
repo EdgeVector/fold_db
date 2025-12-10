@@ -58,7 +58,8 @@ impl DataFoldNode {
                 let path_str = path
                     .to_str()
                     .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
-                Arc::new(Mutex::new(FoldDB::new(path_str).await
+                let progress_table = config.indexing_progress_table.clone();
+                Arc::new(Mutex::new(FoldDB::new(path_str, progress_table).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))
             }
             DatabaseConfig::DynamoDb { table_name, region, user_id } => {
@@ -86,8 +87,9 @@ impl DataFoldNode {
                 let path_str = storage_path
                     .to_str()
                     .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
-                
-                Arc::new(Mutex::new(FoldDB::new_with_db_ops(db_ops, path_str, None).await
+                let progress_table = config.indexing_progress_table.clone();
+
+                Arc::new(Mutex::new(FoldDB::new_with_db_ops(db_ops, path_str, progress_table).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))
             }
             DatabaseConfig::S3 { bucket, region, prefix, local_path } => {
@@ -106,8 +108,9 @@ impl DataFoldNode {
                     prefix: prefix.clone(),
                     local_path: local_path.clone(),
                 };
+                let progress_table = config.indexing_progress_table.clone();
                 
-                Arc::new(Mutex::new(FoldDB::new_with_s3(s3_config).await
+                Arc::new(Mutex::new(FoldDB::new_with_s3(s3_config, progress_table).await
                     .map_err(|e| FoldDbError::Config(format!("Failed to initialize S3 backend: {}", e)))?))
             }
         };

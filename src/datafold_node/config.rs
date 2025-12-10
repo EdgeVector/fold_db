@@ -74,6 +74,9 @@ pub struct NodeConfig {
     /// URL of the schema service (optional, if not provided will load from local directories)
     #[serde(default)]
     pub schema_service_url: Option<String>,
+    /// Table name for tracking indexing progress in DynamoDB (optional)
+    #[serde(default)]
+    pub indexing_progress_table: Option<String>,
 }
 
 fn default_storage_path() -> PathBuf {
@@ -93,6 +96,7 @@ impl Default for NodeConfig {
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
+            indexing_progress_table: None,
         }
     }
 }
@@ -107,6 +111,7 @@ impl NodeConfig {
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
+            indexing_progress_table: None,
         }
     }
     

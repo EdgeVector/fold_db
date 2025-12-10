@@ -97,8 +97,12 @@ impl FoldDB {
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
     /// 
+    /// Creates a new FoldDB instance with the specified storage path.
+    /// All initializations happen here. This is the main entry point for the FoldDB system.
+    /// Do not initialize anywhere else.
+    /// 
     /// Now fully async to support DbOperationsV2 with storage abstraction!
-    pub async fn new(path: &str) -> Result<Self, StorageError> {
+    pub async fn new(path: &str, progress_table_name: Option<String>) -> Result<Self, StorageError> {
         let db = match sled::open(path) {
             Ok(db) => db,
             Err(e) => {
@@ -111,12 +115,14 @@ impl FoldDB {
             }
         };
 
-        Self::initialize_from_db(db, path, None).await
+        Self::initialize_from_db(db, path, None, progress_table_name).await
     }
 
     /// Creates a new FoldDB instance with S3-backed storage.
     /// The database is downloaded from S3 on initialization and can be synced back with flush_to_s3().
-    pub async fn new_with_s3(config: S3Config) -> Result<Self, StorageError> {
+    /// Creates a new FoldDB instance with S3-backed storage.
+    /// The database is downloaded from S3 on initialization and can be synced back with flush_to_s3().
+    pub async fn new_with_s3(config: S3Config, progress_table_name: Option<String>) -> Result<Self, StorageError> {
         // Initialize S3 storage (downloads from S3 if exists)
         let s3_storage: Arc<S3SyncedStorage> = Arc::new(S3SyncedStorage::new(config).await?);
         
@@ -128,7 +134,7 @@ impl FoldDB {
         let db = sled::open(&local_path_string)
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
-        Self::initialize_from_db(db, &local_path_string, Some(s3_storage)).await
+        Self::initialize_from_db(db, &local_path_string, Some(s3_storage), progress_table_name).await
     }
 
     /// Creates a new FoldDB instance with a pre-created DbOperationsV2.
@@ -161,7 +167,8 @@ impl FoldDB {
     async fn initialize_from_db(
         db: sled::Db, 
         db_path: &str,
-        s3_storage: Option<Arc<S3SyncedStorage>>
+        s3_storage: Option<Arc<S3SyncedStorage>>,
+        progress_table_name: Option<String>,
     ) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
@@ -179,7 +186,7 @@ impl FoldDB {
             "Sled"
         );
 
-        Self::initialize_from_db_ops(db_ops, db_path, s3_storage, None).await
+        Self::initialize_from_db_ops(db_ops, db_path, s3_storage, progress_table_name).await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperationsV2
@@ -278,18 +285,6 @@ impl FoldDB {
              // Actually IndexStatusTracker needs to be multi-tenant aware?
              // The old code used DATAFOLD_DYNAMODB_USER_ID which defaults to "default".
              // We should probably rely on the same PK strategy.
-             let pk = std::env::var("DATAFOLD_DYNAMODB_USER_ID").unwrap_or_else(|_| "default".to_string());
-             
-             info!("Using DynamoDB progress store (table: {})", table_name);
-             Arc::new(super::orchestration::DynamoDbProgressStore::new(client, table_name, pk))
-        } else if let Ok(table_name) = std::env::var("DATAFOLD_DYNAMODB_TABLE") {
-             // ... existing fallback ...
-             let region = std::env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-             let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(aws_sdk_dynamodb::config::Region::new(region))
-                .load()
-                .await;
-             let client = aws_sdk_dynamodb::Client::new(&config);
              let pk = std::env::var("DATAFOLD_DYNAMODB_USER_ID").unwrap_or_else(|_| "default".to_string());
              
              info!("Using DynamoDB progress store (table: {})", table_name);

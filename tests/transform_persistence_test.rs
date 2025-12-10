@@ -32,7 +32,7 @@ async fn test_transform_registration_persistence_across_restart() {
     // PHASE 1: Initial Node Startup and Transform Registration
     
     // Create first FoldDB instance
-    let fold_db_1 = FoldDB::new(test_db_path_1).await.expect("Failed to create first FoldDB instance");
+    let fold_db_1 = FoldDB::new(test_db_path_1, None).await.expect("Failed to create first FoldDB instance");
     
     // Load BlogPost schema first
     let blogpost_schema_json = json!({
@@ -270,7 +270,7 @@ async fn test_transform_persistence_with_direct_db_verification() {
     // PHASE 1: Register Transform and Verify Direct Storage
     
     // Create FoldDB instance and register transform
-    let fold_db = FoldDB::new(test_db_path_1).await.expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path_1, None).await.expect("Failed to create FoldDB instance");
     
     // Load schemas to trigger transform registration
     let blogpost_schema_json = json!({
