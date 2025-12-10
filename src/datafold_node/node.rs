@@ -62,24 +62,56 @@ impl DataFoldNode {
                 Arc::new(Mutex::new(FoldDB::new(path_str).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))
             }
-            DatabaseConfig::DynamoDb { table_name, region, user_id } => {
+            DatabaseConfig::DynamoDb(dynamo_config) => {
                 log_feature!(
                     LogFeature::Database,
                     info,
-                    "Initializing DynamoDB backend: table={}, region={}",
-                    table_name,
-                    region
+                    "Initializing DynamoDB backend: region={}",
+                    dynamo_config.region
                 );
                 
                 let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(aws_sdk_dynamodb::config::Region::new(region.clone()))
+                    .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
                     .load()
                     .await;
                 
                 let client = aws_sdk_dynamodb::Client::new(&aws_config);
+
+                // Convert TableConfig to TableNameResolver and determine progress table
+                let (resolver, progress_table_name) = match &dynamo_config.table_config {
+                    crate::storage::TableConfig::Prefix(prefix) => {
+                        (
+                            crate::storage::TableNameResolver::Prefix(prefix.clone()),
+                            format!("{}-process", prefix)
+                        )
+                    },
+                    crate::storage::TableConfig::Explicit(explicit) => {
+                        let mut map = std::collections::HashMap::new();
+                        map.insert("main".to_string(), explicit.main.clone());
+                        map.insert("metadata".to_string(), explicit.metadata.clone());
+                        map.insert("node_id_schema_permissions".to_string(), explicit.permissions.clone());
+                        map.insert("transforms".to_string(), explicit.transforms.clone());
+                        map.insert("orchestrator_state".to_string(), explicit.orchestrator.clone());
+                        map.insert("schema_states".to_string(), explicit.schema_states.clone());
+                        map.insert("schemas".to_string(), explicit.schemas.clone());
+                        map.insert("public_keys".to_string(), explicit.public_keys.clone());
+                        map.insert("transform_queue_tree".to_string(), explicit.transform_queue.clone());
+                        map.insert("native_index".to_string(), explicit.native_index.clone());
+                        
+                        (
+                            crate::storage::TableNameResolver::Explicit(map),
+                            explicit.process.clone()
+                        )
+                    }
+                };
                 
                 let db_ops = Arc::new(
-                    DbOperationsV2::from_dynamodb(client, table_name.clone(), user_id.clone()).await
+                    DbOperationsV2::from_dynamodb_flexible(
+                        client, 
+                        resolver, 
+                        dynamo_config.auto_create, 
+                        dynamo_config.user_id.clone()
+                    ).await
                         .map_err(|e| FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e)))?
                 );
                 
@@ -87,7 +119,7 @@ impl DataFoldNode {
                 let path_str = storage_path
                     .to_str()
                     .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
-                let progress_table = config.indexing_progress_table.clone();
+                let progress_table = Some(progress_table_name);
 
                 Arc::new(Mutex::new(FoldDB::new_with_db_ops(db_ops, path_str, progress_table).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))

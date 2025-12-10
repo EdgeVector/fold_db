@@ -395,14 +395,19 @@ pub async fn reset_database(
 
     // Handle reset based on database backend type
     match &config.database {
-        DatabaseConfig::DynamoDb { table_name, region, user_id } => {
+        DatabaseConfig::DynamoDb(dynamo_config) => {
+            let table_name = match &dynamo_config.table_config {
+                crate::storage::TableConfig::Prefix(p) => p.clone(),
+                crate::storage::TableConfig::Explicit(e) => e.main.clone(), // Best effort for explicit config
+            };
+            
             let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(aws_sdk_dynamodb::config::Region::new(region.clone()))
+                .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
                 .load()
                 .await;
             let client = std::sync::Arc::new(aws_sdk_dynamodb::Client::new(&aws_config));
 
-            if let Some(uid) = user_id {
+            if let Some(uid) = &dynamo_config.user_id {
                 // Multi-tenancy: Use DynamoDbResetManager to safely reset only this user's data
                 log_feature!(
                     LogFeature::HttpServer,
@@ -443,10 +448,10 @@ pub async fn reset_database(
                     info,
                     "Clearing all data from DynamoDB tables (Single Tenant): base_table={}, region={}",
                     table_name,
-                    region
+                    dynamo_config.region
                 );
                 
-                if let Err(e) = clear_all_dynamodb_tables(table_name, region, None).await {
+                if let Err(e) = clear_all_dynamodb_tables(&table_name, &dynamo_config.region, None).await {
                     log_feature!(
                         LogFeature::HttpServer,
                         error,
@@ -583,12 +588,43 @@ pub enum DatabaseConfigDto {
         path: String,
     },
     #[serde(rename = "dynamodb")]
-    DynamoDb {
-        table_name: String,
-        region: String,
-        user_id: Option<String>,
-    },
+    DynamoDb(DynamoDbConfigDto),
 
+}
+
+/// DTO for ExplicitTables
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone, Default)]
+pub struct ExplicitTablesDto {
+    pub main: String,
+    pub metadata: String,
+    pub permissions: String,
+    pub transforms: String,
+    pub orchestrator: String,
+    pub schema_states: String,
+    pub schemas: String,
+    pub public_keys: String,
+    pub transform_queue: String,
+    pub native_index: String,
+    pub process: String,
+}
+
+/// DTO for TableConfig
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
+#[serde(tag = "type", content = "value")]
+pub enum TableConfigDto {
+    #[serde(rename = "prefix")]
+    Prefix(String),
+    #[serde(rename = "explicit")]
+    Explicit(ExplicitTablesDto),
+}
+
+/// DTO for DynamoDbConfig
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
+pub struct DynamoDbConfigDto {
+    pub region: String,
+    pub table_config: TableConfigDto,
+    pub auto_create: bool,
+    pub user_id: Option<String>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -615,11 +651,27 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
         DatabaseConfig::Local { path } => DatabaseConfigDto::Local {
             path: path.to_string_lossy().to_string(),
         },
-        DatabaseConfig::DynamoDb { table_name, region, user_id } => DatabaseConfigDto::DynamoDb {
-            table_name: table_name.clone(),
-            region: region.clone(),
-            user_id: user_id.clone(),
-        },
+        DatabaseConfig::DynamoDb(config) => DatabaseConfigDto::DynamoDb(DynamoDbConfigDto {
+            region: config.region.clone(),
+            auto_create: config.auto_create,
+            user_id: config.user_id.clone(),
+            table_config: match &config.table_config {
+                crate::storage::TableConfig::Prefix(p) => TableConfigDto::Prefix(p.clone()),
+                crate::storage::TableConfig::Explicit(e) => TableConfigDto::Explicit(ExplicitTablesDto {
+                    main: e.main.clone(),
+                    metadata: e.metadata.clone(),
+                    permissions: e.permissions.clone(),
+                    transforms: e.transforms.clone(),
+                    orchestrator: e.orchestrator.clone(),
+                    schema_states: e.schema_states.clone(),
+                    schemas: e.schemas.clone(),
+                    public_keys: e.public_keys.clone(),
+                    transform_queue: e.transform_queue.clone(),
+                    native_index: e.native_index.clone(),
+                    process: e.process.clone(),
+                }),
+            },
+        }),
 
     };
     
@@ -653,11 +705,27 @@ pub async fn update_database_config(
         DatabaseConfigDto::Local { path } => DatabaseConfig::Local {
             path: std::path::PathBuf::from(path),
         },
-        DatabaseConfigDto::DynamoDb { table_name, region, user_id } => DatabaseConfig::DynamoDb {
-            table_name: table_name.clone(),
-            region: region.clone(),
-            user_id: user_id.clone(),
-        },
+        DatabaseConfigDto::DynamoDb(dto) => DatabaseConfig::DynamoDb(crate::storage::DynamoDbConfig {
+            region: dto.region.clone(),
+            auto_create: dto.auto_create,
+            user_id: dto.user_id.clone(),
+            table_config: match &dto.table_config {
+                TableConfigDto::Prefix(p) => crate::storage::TableConfig::Prefix(p.clone()),
+                TableConfigDto::Explicit(e) => crate::storage::TableConfig::Explicit(crate::storage::ExplicitTables {
+                    main: e.main.clone(),
+                    metadata: e.metadata.clone(),
+                    permissions: e.permissions.clone(),
+                    transforms: e.transforms.clone(),
+                    orchestrator: e.orchestrator.clone(),
+                    schema_states: e.schema_states.clone(),
+                    schemas: e.schemas.clone(),
+                    public_keys: e.public_keys.clone(),
+                    transform_queue: e.transform_queue.clone(),
+                    native_index: e.native_index.clone(),
+                    process: e.process.clone(),
+                }),
+            },
+        }),
 
     };
     
@@ -668,7 +736,7 @@ pub async fn update_database_config(
         DatabaseConfig::Local { path } => {
             config.storage_path = path.clone();
         }
-        DatabaseConfig::DynamoDb { .. } => {
+        DatabaseConfig::DynamoDb(_) => {
             // Keep existing storage_path for DynamoDB (used for logging/debugging)
         }
 

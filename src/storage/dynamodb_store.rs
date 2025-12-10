@@ -17,6 +17,7 @@ use crate::schema::types::Schema;
 
 use super::dynamodb_utils::{MAX_RETRIES, format_dynamodb_error};
 use crate::retry_operation;
+use crate::storage::{DynamoDbConfig, TableConfig};
 
 /// DynamoDB-backed schema storage
 pub struct DynamoDbSchemaStore {
@@ -26,57 +27,20 @@ pub struct DynamoDbSchemaStore {
     user_id: Option<String>,
 }
 
-/// Configuration for DynamoDB schema storage
-#[derive(Debug, Clone)]
-pub struct DynamoDbConfig {
-    /// DynamoDB table name
-    pub table_name: String,
-    /// AWS region
-    pub region: String,
-    /// Optional user_id that will be used as the partition key (hash key)
-    pub user_id: Option<String>,
-}
 
-impl DynamoDbConfig {
-    pub fn new(table_name: String, region: String) -> Self {
-        Self { 
-            table_name, 
-            region,
-            user_id: None,
-        }
-    }
-
-    /// Create from environment variables:
-    /// - DATAFOLD_DYNAMODB_TABLE (required)
-    /// - DATAFOLD_DYNAMODB_REGION (required)
-    /// - DATAFOLD_DYNAMODB_USER_ID (optional)
-    pub fn from_env() -> Result<Self, String> {
-        let table_name = std::env::var("DATAFOLD_DYNAMODB_TABLE")
-            .map_err(|_| "Missing DATAFOLD_DYNAMODB_TABLE environment variable".to_string())?;
-        
-        let region = std::env::var("DATAFOLD_DYNAMODB_REGION")
-            .map_err(|_| "Missing DATAFOLD_DYNAMODB_REGION environment variable".to_string())?;
-
-        let user_id = std::env::var("DATAFOLD_DYNAMODB_USER_ID").ok();
-
-        Ok(Self { 
-            table_name, 
-            region,
-            user_id,
-        })
-    }
-
-    /// Set user_id for multi-tenant isolation
-    pub fn with_user_id(mut self, user_id: String) -> Self {
-        self.user_id = Some(user_id);
-        self
-    }
-}
 
 impl DynamoDbSchemaStore {
     /// Create a new DynamoDB schema store
     /// Validates that the table exists before returning
+    /// Create a new DynamoDB schema store
+    /// Validates that the table exists before returning
     pub async fn new(config: DynamoDbConfig) -> FoldDbResult<Self> {
+        // Resolve table name
+        let table_name = match &config.table_config {
+            TableConfig::Prefix(p) => format!("{}-schemas", p),
+            TableConfig::Explicit(e) => e.schemas.clone(),
+        };
+
         let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(aws_sdk_dynamodb::config::Region::new(config.region.clone()))
             .load()
@@ -85,23 +49,23 @@ impl DynamoDbSchemaStore {
         let client = DynamoClient::new(&aws_config);
 
         // Validate table exists or create it
-        match client.describe_table().table_name(&config.table_name).send().await {
+        match client.describe_table().table_name(&table_name).send().await {
             Ok(resp) => {
                 if let Some(table) = resp.table {
                     if let Some(status) = table.table_status {
-                        log::info!("Table {} exists, status: {:?}", config.table_name, status);
+                        log::info!("Table {} exists, status: {:?}", table_name, status);
                     }
                 }
             },
             Err(e) => {
-                log::warn!("Describe table failed: {}. Attempting to create table '{}'...", e, config.table_name);
+                log::warn!("Describe table failed: {}. Attempting to create table '{}'...", e, table_name);
                 
                 // Try to create table regardless of the specific error from describe
                 // If it already exists, create will fail with ResourceInUse, which we can handle
                 use aws_sdk_dynamodb::types::{AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, BillingMode};
                 
                 match client.create_table()
-                    .table_name(&config.table_name)
+                    .table_name(&table_name)
                     .attribute_definitions(
                         AttributeDefinition::builder()
                             .attribute_name("PK")
@@ -135,12 +99,12 @@ impl DynamoDbSchemaStore {
                     .await 
                 {
                     Ok(_) => {
-                        log::info!("Table creation initiated for {}", config.table_name);
+                        log::info!("Table creation initiated for {}", table_name);
                     },
                     Err(e) => {
                         let error_str = e.to_string();
                         if error_str.contains("ResourceInUseException") {
-                             log::info!("Table {} already exists (ResourceInUse), waiting for it to be active...", config.table_name);
+                             log::info!("Table {} already exists (ResourceInUse), waiting for it to be active...", table_name);
                         } else {
                              // If create failed for another reason, we return that error
                              return Err(FoldDbError::Config(format!("Failed to create table: {}", e)));
@@ -152,13 +116,13 @@ impl DynamoDbSchemaStore {
                 let mut attempts = 0;
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                    match client.describe_table().table_name(&config.table_name).send().await {
+                    match client.describe_table().table_name(&table_name).send().await {
                         Ok(resp) => {
                             if let Some(table) = resp.table {
                                 if let Some(status) = table.table_status {
                                     use aws_sdk_dynamodb::types::TableStatus;
                                     if matches!(status, TableStatus::Active) {
-                                        log::info!("Table {} is now ACTIVE", config.table_name);
+                                        log::info!("Table {} is now ACTIVE", table_name);
                                         break;
                                     }
                                 }
@@ -178,7 +142,7 @@ impl DynamoDbSchemaStore {
 
         Ok(Self {
             client,
-            table_name: config.table_name,
+            table_name,
             user_id: config.user_id,
         })
     }
@@ -515,8 +479,9 @@ mod tests {
     #[ignore] // Run with `cargo test -- --ignored` when DynamoDB is available
     async fn test_put_and_get_schema() {
         let config = DynamoDbConfig {
-            table_name: "test-schemas".to_string(),
             region: "us-east-1".to_string(),
+            table_config: TableConfig::Prefix("test".to_string()),
+            auto_create: true,
             user_id: None,
         };
 
@@ -567,8 +532,9 @@ mod tests {
     #[ignore]
     async fn test_list_schemas() {
         let config = DynamoDbConfig {
-            table_name: "test-schemas".to_string(),
             region: "us-east-1".to_string(),
+            table_config: TableConfig::Prefix("test".to_string()),
+            auto_create: true,
             user_id: None,
         };
 
@@ -578,52 +544,5 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod unit_tests {
-    use super::*;
-    use std::sync::Mutex;
-    use once_cell::sync::Lazy;
 
-    static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
-    #[test]
-    fn test_config_from_env() {
-        let _lock = ENV_LOCK.lock().unwrap();
-        
-        // Set environment variables
-        unsafe {
-            std::env::set_var("DATAFOLD_DYNAMODB_TABLE", "EnvTable");
-            std::env::set_var("DATAFOLD_DYNAMODB_REGION", "us-west-2");
-            std::env::set_var("DATAFOLD_DYNAMODB_USER_ID", "env_user");
-        }
-
-        let config = DynamoDbConfig::from_env().expect("Failed to create config from env");
-        
-        assert_eq!(config.table_name, "EnvTable");
-        assert_eq!(config.region, "us-west-2");
-        assert_eq!(config.user_id, Some("env_user".to_string()));
-
-        // Clean up
-        unsafe {
-            std::env::remove_var("DATAFOLD_DYNAMODB_TABLE");
-            std::env::remove_var("DATAFOLD_DYNAMODB_REGION");
-            std::env::remove_var("DATAFOLD_DYNAMODB_USER_ID");
-        }
-    }
-
-    #[test]
-    fn test_config_missing_env() {
-        let _lock = ENV_LOCK.lock().unwrap();
-        
-        // Ensure vars are unset
-        unsafe {
-            std::env::remove_var("DATAFOLD_DYNAMODB_TABLE");
-            std::env::remove_var("DATAFOLD_DYNAMODB_REGION");
-            std::env::remove_var("DATAFOLD_DYNAMODB_USER_ID");
-        }
-
-        let result = DynamoDbConfig::from_env();
-        assert!(result.is_err());
-    }
-}
 
