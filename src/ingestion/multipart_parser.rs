@@ -197,29 +197,7 @@ async fn save_uploaded_file(
     // Handle duplicate detection
     if already_exists {
         // File already exists (duplicate upload detected atomically)
-        let filepath = match upload_storage {
-            UploadStorage::Local { .. } => {
-                // File is already on local disk, return permanent path
-                storage_path
-            }
-            UploadStorage::S3 { .. } => {
-                // File is in S3, need to save to /tmp for processing
-                let temp_path = std::env::temp_dir().join(&unique_filename);
-                if let Err(e) = fs::write(&temp_path, &file_data).await {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        error,
-                        "Failed to write temp file for duplicate: {}",
-                        e
-                    );
-                    return Err(HttpResponse::InternalServerError().json(json!({
-                        "success": false,
-                        "error": format!("Failed to write temp file: {}", e)
-                    })));
-                }
-                temp_path
-            }
-        };
+        let filepath = storage_path; // storage_path is already the permanent path
         
         log_feature!(
             LogFeature::Ingestion,
@@ -243,40 +221,6 @@ async fn save_uploaded_file(
                 upload_storage.get_display_path(&unique_filename)
             );
             storage_path
-        }
-        UploadStorage::S3 { .. } => {
-            // For S3 storage: file already saved to S3, also save to /tmp for processing
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "File saved to S3: {} at {}",
-                unique_filename,
-                upload_storage.get_display_path(&unique_filename)
-            );
-            
-            // Also save to /tmp for processing (file_to_json needs local file)
-            let temp_path = std::env::temp_dir().join(&unique_filename);
-            if let Err(e) = fs::write(&temp_path, &file_data).await {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    error,
-                    "Failed to write temp file for processing: {}",
-                    e
-                );
-                return Err(HttpResponse::InternalServerError().json(json!({
-                    "success": false,
-                    "error": format!("Failed to write temp file for processing: {}", e)
-                })));
-            }
-            
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "File saved to /tmp for processing: {:?}",
-                temp_path
-            );
-            
-            temp_path
         }
     };
 
@@ -478,4 +422,3 @@ mod tests {
         assert_ne!(hash1, hash2);
     }
 }
-

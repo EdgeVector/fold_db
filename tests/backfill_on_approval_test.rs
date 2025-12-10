@@ -12,7 +12,7 @@ async fn test_backfill_triggered_on_schema_approval() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load and approve the BlogPost schema (source schema)
     let blogpost_schema_json = json!({
@@ -177,7 +177,7 @@ async fn test_no_backfill_for_regular_schema_approval() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Load a regular schema (no transform_fields)
     let blogpost_schema_json = json!({

@@ -10,7 +10,7 @@ async fn test_transform_queue_deduplication_by_mutation_id() {
     let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
     
     // Create a new FoldDB instance
-    let fold_db = FoldDB::new(test_db_path, None).await.expect("Failed to create FoldDB");
+    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB");
     
     // Get the transform orchestrator and its queue manager
     let orchestrator = fold_db.transform_orchestrator()

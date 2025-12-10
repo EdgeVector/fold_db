@@ -13,7 +13,7 @@ use log::{debug, info};
 use crate::db_operations::{DbOperationsV2, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
-use crate::storage::{S3Config, S3SyncedStorage, StorageError};
+use crate::storage::{StorageError};
 use crate::transform::manager::TransformManager;
 
 // Infrastructure components that are used internally
@@ -44,8 +44,8 @@ pub struct FoldDB {
     pub(crate) mutation_manager: MutationManager,
     /// Index event handler for background indexing
     pub(crate) index_event_handler: IndexEventHandler,
-    /// Optional S3 storage for syncing to cloud
-    s3_storage: Option<Arc<S3SyncedStorage>>,
+
+
 }
 
 impl FoldDB {
@@ -102,7 +102,7 @@ impl FoldDB {
     /// Do not initialize anywhere else.
     /// 
     /// Now fully async to support DbOperationsV2 with storage abstraction!
-    pub async fn new(path: &str, progress_table_name: Option<String>) -> Result<Self, StorageError> {
+    pub async fn new(path: &str) -> Result<Self, StorageError> {
         let db = match sled::open(path) {
             Ok(db) => db,
             Err(e) => {
@@ -115,27 +115,10 @@ impl FoldDB {
             }
         };
 
-        Self::initialize_from_db(db, path, None, progress_table_name).await
+        Self::initialize_from_db(db, path, None).await
     }
 
-    /// Creates a new FoldDB instance with S3-backed storage.
-    /// The database is downloaded from S3 on initialization and can be synced back with flush_to_s3().
-    /// Creates a new FoldDB instance with S3-backed storage.
-    /// The database is downloaded from S3 on initialization and can be synced back with flush_to_s3().
-    pub async fn new_with_s3(config: S3Config, progress_table_name: Option<String>) -> Result<Self, StorageError> {
-        // Initialize S3 storage (downloads from S3 if exists)
-        let s3_storage: Arc<S3SyncedStorage> = Arc::new(S3SyncedStorage::new(config).await?);
-        
-        // Get local path as a String to avoid borrowing issues
-        let local_path_string = s3_storage.local_path().to_str()
-            .ok_or_else(|| StorageError::InvalidPath("Invalid local path".to_string()))?
-            .to_string();
-        
-        let db = sled::open(&local_path_string)
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
-        Self::initialize_from_db(db, &local_path_string, Some(s3_storage), progress_table_name).await
-    }
 
     /// Creates a new FoldDB instance with a pre-created DbOperationsV2.
     /// 
@@ -157,7 +140,7 @@ impl FoldDB {
             "🔄 Using DbOperationsV2 with custom storage backend"
         );
         
-        Self::initialize_from_db_ops(db_ops, db_path, None, process_table_name).await
+        Self::initialize_from_db_ops(db_ops, db_path, process_table_name).await
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
@@ -167,7 +150,6 @@ impl FoldDB {
     async fn initialize_from_db(
         db: sled::Db, 
         db_path: &str,
-        s3_storage: Option<Arc<S3SyncedStorage>>,
         progress_table_name: Option<String>,
     ) -> Result<Self, StorageError> {
         log_feature!(
@@ -186,7 +168,7 @@ impl FoldDB {
             "Sled"
         );
 
-        Self::initialize_from_db_ops(db_ops, db_path, s3_storage, progress_table_name).await
+        Self::initialize_from_db_ops(db_ops, db_path, progress_table_name).await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperationsV2
@@ -195,7 +177,6 @@ impl FoldDB {
     async fn initialize_from_db_ops(
         db_ops: Arc<DbOperationsV2>,
         db_path: &str,
-        s3_storage: Option<Arc<S3SyncedStorage>>,
         process_table_name: Option<String>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
@@ -335,30 +316,14 @@ impl FoldDB {
             transform_orchestrator,
             mutation_manager,
             index_event_handler,
-            s3_storage,
+
         })
     }
 
-    /// Flushes local Sled database and syncs to S3 (if S3 storage is configured)
-    pub async fn flush_to_s3(&self) -> Result<(), StorageError> {
-        // First flush storage to ensure all data is persisted
+    /// Flushes local storage to ensure all data is persisted
+    pub async fn flush(&self) -> Result<(), StorageError> {
         self.db_ops.flush().await
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-
-        // Then sync to S3 if configured
-        if let Some(s3_storage) = &self.s3_storage {
-            s3_storage.sync_to_s3().await?;
-            info!("Successfully synced database to S3");
-        } else {
-            return Err(StorageError::S3Error("S3 storage not configured".to_string()));
-        }
-
-        Ok(())
-    }
-    
-    /// Returns true if this FoldDB instance is configured with S3 storage
-    pub fn has_s3_storage(&self) -> bool {
-        self.s3_storage.is_some()
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))
     }
     
     // ========== INDEXING STATUS API ==========

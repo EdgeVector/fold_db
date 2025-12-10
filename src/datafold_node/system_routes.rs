@@ -460,7 +460,7 @@ pub async fn reset_database(
                 }
             }
         }
-        DatabaseConfig::Local { .. } | DatabaseConfig::S3 { .. } => {
+        DatabaseConfig::Local { .. } => {
             // For local storage, delete the database folder
             if db_path.exists() {
                 if let Err(e) = std::fs::remove_dir_all(&db_path) {
@@ -588,13 +588,7 @@ pub enum DatabaseConfigDto {
         region: String,
         user_id: Option<String>,
     },
-    #[serde(rename = "s3")]
-    S3 {
-        bucket: String,
-        region: String,
-        prefix: Option<String>,
-        local_path: String,
-    },
+
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -626,12 +620,7 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
             region: region.clone(),
             user_id: user_id.clone(),
         },
-        DatabaseConfig::S3 { bucket, region, prefix, local_path } => DatabaseConfigDto::S3 {
-            bucket: bucket.clone(),
-            region: region.clone(),
-            prefix: Some(prefix.clone()),
-            local_path: local_path.to_string_lossy().to_string(),
-        },
+
     };
     
     HttpResponse::Ok().json(db_config)
@@ -669,12 +658,7 @@ pub async fn update_database_config(
             region: region.clone(),
             user_id: user_id.clone(),
         },
-        DatabaseConfigDto::S3 { bucket, region, prefix, local_path } => DatabaseConfig::S3 {
-            bucket: bucket.clone(),
-            region: region.clone(),
-            prefix: prefix.clone().unwrap_or_else(|| "folddb".to_string()),
-            local_path: std::path::PathBuf::from(local_path),
-        },
+
     };
     
     config.database = new_db_config;
@@ -687,9 +671,7 @@ pub async fn update_database_config(
         DatabaseConfig::DynamoDb { .. } => {
             // Keep existing storage_path for DynamoDB (used for logging/debugging)
         }
-        DatabaseConfig::S3 { local_path, .. } => {
-            config.storage_path = local_path.clone();
-        }
+
     }
     
     // Save to config file

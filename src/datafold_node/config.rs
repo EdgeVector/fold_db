@@ -25,23 +25,6 @@ pub enum DatabaseConfig {
         #[serde(default)]
         user_id: Option<String>,
     },
-    /// S3-backed storage with local cache
-    #[serde(rename = "s3")]
-    S3 {
-        /// S3 bucket name
-        bucket: String,
-        /// AWS region
-        region: String,
-        /// Prefix/path within the bucket
-        #[serde(default = "default_s3_prefix")]
-        prefix: String,
-        /// Local cache path
-        local_path: PathBuf,
-    },
-}
-
-fn default_s3_prefix() -> String {
-    "folddb".to_string()
 }
 
 impl Default for DatabaseConfig {
@@ -120,7 +103,7 @@ impl NodeConfig {
         match &self.database {
             DatabaseConfig::Local { path } => path.clone(),
             DatabaseConfig::DynamoDb { .. } => self.storage_path.clone(),
-            DatabaseConfig::S3 { local_path, .. } => local_path.clone(),
+
         }
     }
 

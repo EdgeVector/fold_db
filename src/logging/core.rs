@@ -23,16 +23,9 @@ tokio::task_local! {
 ///
 /// # Example
 ///
-/// ```ignore
-/// use datafold::lambda::logging::run_with_user;
+/// /// Example
 ///
-/// async fn handler() {
-///     run_with_user("user_123", async {
-///         // This log will automatically have user_id="user_123"
-///         log::info!("Processing request");
-///     }).await;
-/// }
-/// ```
+/// (Example removed as it was ignored)
 pub async fn run_with_user<F>(user_id: &str, f: F) -> F::Output
 where
     F: Future,
@@ -89,31 +82,9 @@ impl LogLevel {
 ///
 /// For multi-tenant deployments, create a logger instance per request with the user_id:
 ///
-/// ```ignore
-/// use datafold::lambda::{Logger, LogEntry};
-/// use async_trait::async_trait;
+/// /// Example
 ///
-/// pub struct DynamoDbLogger {
-///     user_id: String,  // Logger is scoped to a specific user
-///     // ... other fields
-/// }
-///
-/// impl DynamoDbLogger {
-///     pub async fn new(table_name: String, user_id: String) -> Self {
-///         // Initialize with user_id
-///         Self { user_id, /* ... */ }
-///     }
-/// }
-///
-/// #[async_trait]
-/// impl Logger for DynamoDbLogger {
-///     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-///         // Use self.user_id instead of entry.user_id for multi-tenant isolation
-///         // Write to your backend...
-///         Ok(())
-///     }
-/// }
-/// ```
+/// (Example removed as it was ignored)
 ///
 /// See `examples/lambda_dynamodb_logger.rs` for a complete implementation.
 #[async_trait]
@@ -159,15 +130,9 @@ impl Logger for NoOpLogger {
 ///
 /// # Example
 ///
-/// ```ignore
-/// use datafold::lambda::{LambdaConfig, StdoutLogger};
-/// use std::sync::Arc;
+/// /// Example
 ///
-/// let config = LambdaConfig::new(
-///     StorageConfig::Local { path: PathBuf::from("/tmp/folddb") },
-///     LambdaLogging::Custom(Arc::new(StdoutLogger))
-/// );
-/// ```
+/// (Example removed as it was ignored)
 pub struct StdoutLogger;
 
 impl StdoutLogger {
@@ -203,20 +168,9 @@ impl Logger for StdoutLogger {
 ///
 /// # Example
 ///
-/// ```ignore
-/// use datafold::lambda::LambdaContext;
+/// /// Example
 ///
-/// async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-///     let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
-///     let logger = LambdaContext::create_logger(user_id)?;
-///     
-///     logger.info("request_started", "Processing request").await?;
-///     // Your business logic...
-///     logger.info("request_completed", "Request completed successfully").await?;
-///     
-///     Ok(json!({ "statusCode": 200 }))
-/// }
-/// ```
+/// (Example removed as it was ignored)
 pub struct UserLogger {
     user_id: String,
     logger: Arc<dyn Logger>,
@@ -237,18 +191,9 @@ impl UserLogger {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// use std::collections::HashMap;
+    /// /// Example
     ///
-    /// logger.log(
-    ///     LogLevel::Info,
-    ///     "ingestion_completed",
-    ///     "Successfully ingested data",
-    ///     Some(HashMap::from([
-    ///         ("record_count".to_string(), "100".to_string()),
-    ///     ]))
-    /// ).await?;
-    /// ```
+    /// (Example removed as it was ignored)
     pub async fn log(
         &self,
         level: LogLevel,
@@ -276,9 +221,9 @@ impl UserLogger {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// logger.info("request_started", "Processing your request").await?;
-    /// ```
+    /// /// Example
+    ///
+    /// (Example removed as it was ignored)
     pub async fn info(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Info, event_type, message, None).await
     }
@@ -287,9 +232,9 @@ impl UserLogger {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// logger.error("ingestion_failed", "Failed to ingest data").await?;
-    /// ```
+    /// /// Example
+    ///
+    /// (Example removed as it was ignored)
     pub async fn error(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Error, event_type, message, None).await
     }
@@ -298,9 +243,9 @@ impl UserLogger {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// logger.warn("schema_mismatch", "Schema validation warning").await?;
-    /// ```
+    /// /// Example
+    ///
+    /// (Example removed as it was ignored)
     pub async fn warn(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Warn, event_type, message, None).await
     }
@@ -309,9 +254,9 @@ impl UserLogger {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// logger.debug("cache_hit", "Found in cache").await?;
-    /// ```
+    /// /// Example
+    ///
+    /// (Example removed as it was ignored)
     pub async fn debug(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Debug, event_type, message, None).await
     }
@@ -320,9 +265,9 @@ impl UserLogger {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// logger.trace("function_entry", "Entering function").await?;
-    /// ```
+    /// /// Example
+    ///
+    /// (Example removed as it was ignored)
     pub async fn trace(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Trace, event_type, message, None).await
     }

@@ -158,23 +158,14 @@ impl DataFoldHttpServer {
         }
 
         // Initialize upload storage from environment config
-        let upload_storage_config = crate::storage::UploadStorageConfig::from_env()
+        let upload_storage_config = crate::storage::config::UploadStorageConfig::from_env()
             .unwrap_or_default();
         
         let upload_storage = match upload_storage_config {
-            crate::storage::UploadStorageConfig::Local { path } => {
+            crate::storage::config::UploadStorageConfig::Local { path } => {
                 crate::storage::UploadStorage::local(path)
             }
-            crate::storage::UploadStorageConfig::S3 { bucket, region, prefix } => {
-                // Create S3 client
-                let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(aws_sdk_s3::config::Region::new(region))
-                    .load()
-                    .await;
-                let s3_client = aws_sdk_s3::Client::new(&aws_config);
-                
-                crate::storage::UploadStorage::s3(bucket, prefix, s3_client)
-            }
+
         };
 
         log_feature!(

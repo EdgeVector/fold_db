@@ -8,7 +8,7 @@ use crate::db_operations::DbOperationsV2;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityManager};
-use crate::storage::S3Config;
+
 
 /// A node in the DataFold distributed database system.
 ///
@@ -58,8 +58,8 @@ impl DataFoldNode {
                 let path_str = path
                     .to_str()
                     .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
-                let progress_table = config.indexing_progress_table.clone();
-                Arc::new(Mutex::new(FoldDB::new(path_str, progress_table).await
+                // progress_table is ignored for local backend
+                Arc::new(Mutex::new(FoldDB::new(path_str).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))
             }
             DatabaseConfig::DynamoDb { table_name, region, user_id } => {
@@ -92,27 +92,7 @@ impl DataFoldNode {
                 Arc::new(Mutex::new(FoldDB::new_with_db_ops(db_ops, path_str, progress_table).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))
             }
-            DatabaseConfig::S3 { bucket, region, prefix, local_path } => {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Initializing S3 backend: bucket={}, region={}, prefix={}",
-                    bucket,
-                    region,
-                    prefix
-                );
-                
-                let s3_config = S3Config {
-                    bucket: bucket.clone(),
-                    region: region.clone(),
-                    prefix: prefix.clone(),
-                    local_path: local_path.clone(),
-                };
-                let progress_table = config.indexing_progress_table.clone();
-                
-                Arc::new(Mutex::new(FoldDB::new_with_s3(s3_config, progress_table).await
-                    .map_err(|e| FoldDbError::Config(format!("Failed to initialize S3 backend: {}", e)))?))
-            }
+
         };
 
         // Retrieve or generate the persistent node_id from fold_db
