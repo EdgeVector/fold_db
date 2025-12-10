@@ -143,6 +143,7 @@ impl FoldDB {
     pub async fn new_with_db_ops(
         db_ops: Arc<DbOperationsV2>,
         db_path: &str,
+        process_table_name: Option<String>,
     ) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
@@ -150,7 +151,7 @@ impl FoldDB {
             "🔄 Using DbOperationsV2 with custom storage backend"
         );
         
-        Self::initialize_from_db_ops(db_ops, db_path, None).await
+        Self::initialize_from_db_ops(db_ops, db_path, None, process_table_name).await
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
@@ -178,7 +179,7 @@ impl FoldDB {
             "Sled"
         );
 
-        Self::initialize_from_db_ops(db_ops, db_path, s3_storage).await
+        Self::initialize_from_db_ops(db_ops, db_path, s3_storage, None).await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperationsV2
@@ -188,6 +189,7 @@ impl FoldDB {
         db_ops: Arc<DbOperationsV2>,
         db_path: &str,
         s3_storage: Option<Arc<S3SyncedStorage>>,
+        process_table_name: Option<String>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
@@ -264,7 +266,24 @@ impl FoldDB {
         // Create shared IndexStatusTracker for tracking indexing progress
         // This is shared between MutationManager (direct indexing) and IndexEventHandler (background indexing)
         // Use DynamoDB progress store if configured, otherwise in-memory
-        let progress_store: Arc<dyn super::orchestration::ProgressStore> = if let Ok(table_name) = std::env::var("DATAFOLD_DYNAMODB_TABLE") {
+        let progress_store: Arc<dyn super::orchestration::ProgressStore> = if let Some(table_name) = process_table_name {
+             let region = std::env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+             let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(aws_sdk_dynamodb::config::Region::new(region))
+                .load()
+                .await;
+             let client = aws_sdk_dynamodb::Client::new(&config);
+             // Use user_id scope if available, else default? 
+             // FoldDB init doesn't know "current user" context yet, but IndexStatusTracker tracks across users?
+             // Actually IndexStatusTracker needs to be multi-tenant aware?
+             // The old code used DATAFOLD_DYNAMODB_USER_ID which defaults to "default".
+             // We should probably rely on the same PK strategy.
+             let pk = std::env::var("DATAFOLD_DYNAMODB_USER_ID").unwrap_or_else(|_| "default".to_string());
+             
+             info!("Using DynamoDB progress store (table: {})", table_name);
+             Arc::new(super::orchestration::DynamoDbProgressStore::new(client, table_name, pk))
+        } else if let Ok(table_name) = std::env::var("DATAFOLD_DYNAMODB_TABLE") {
+             // ... existing fallback ...
              let region = std::env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-east-1".to_string());
              let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(aws_sdk_dynamodb::config::Region::new(region))

@@ -186,7 +186,7 @@ impl DataFoldHttpServer {
 
         // Create individual dependencies for ingestion routes
         let node = web::Data::new(self.node.clone());
-        let progress_tracker_data = web::Data::new(create_progress_tracker());
+        let progress_tracker_data = web::Data::new(create_progress_tracker().await);
         let upload_storage_data = web::Data::new(upload_storage.clone());
 
         // Create shared application state for routes that still need it

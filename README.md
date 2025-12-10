@@ -451,6 +451,7 @@ The system requires and automatically manages **10 tables** per deployment. Usin
 *   `MyApp-public_keys`
 *   `MyApp-transform_queue_tree`
 *   `MyApp-native_index`
+*   `MyApp-process` (Process Tracking)
 
 ### Multi-Tenancy
 

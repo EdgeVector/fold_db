@@ -124,7 +124,7 @@ pub async fn upload_file(
         spawn_config, 
         progress_tracker.get_ref(),
         Arc::clone(node.get_ref())
-    );
+    ).await;
 
     // Return immediately with the progress_id
     log_feature!(

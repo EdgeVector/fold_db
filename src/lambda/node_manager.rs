@@ -102,7 +102,7 @@ impl NodeManager {
             LambdaStorage::DbOps(db_ops) => {
                 // Pre-created ops - usually single tenant
                 let db_path = "custom_backend".to_string();
-                let fold_db = FoldDB::new_with_db_ops(Arc::clone(db_ops), &db_path).await
+                let fold_db = FoldDB::new_with_db_ops(Arc::clone(db_ops), &db_path, None).await
                     .map_err(|e| IngestionError::StorageError(e.to_string()))?;
                 (Arc::new(Mutex::new(fold_db)), std::path::PathBuf::from(db_path))
             }
@@ -144,8 +144,13 @@ impl NodeManager {
                 );
                 
                 // Use a derived path for internal consistency (though DB ops handles actual storage)
+                let process_table_name = match &dynamo_config.table_config {
+                     TableConfig::Prefix(prefix) => Some(format!("{}-process", prefix)),
+                     TableConfig::Explicit(tables) => Some(tables.process.clone()),
+                };
+                
                 let db_path = format!("dynamodb_{}", user_id);
-                let fold_db = FoldDB::new_with_db_ops(db_ops, &db_path).await
+                let fold_db = FoldDB::new_with_db_ops(db_ops, &db_path, process_table_name).await
                     .map_err(|e| IngestionError::StorageError(e.to_string()))?;
                 
                 (Arc::new(Mutex::new(fold_db)), std::path::PathBuf::from(db_path))

@@ -80,7 +80,7 @@ impl SimpleIngestionService {
     ) -> IngestionResult<IngestionResponse> {
 
         if !self.config.is_ready() {
-            progress_service.fail_progress(&progress_id, "Ingestion module is not properly configured or disabled".to_string());
+            progress_service.fail_progress(&progress_id, "Ingestion module is not properly configured or disabled".to_string()).await;
             return Ok(IngestionResponse::failure(vec![
                 "Ingestion module is not properly configured or disabled".to_string(),
             ]));
@@ -91,7 +91,7 @@ impl SimpleIngestionService {
             &progress_id,
             IngestionStep::ValidatingConfig,
             "Validating input data...".to_string(),
-        );
+        ).await;
         self.validate_input(&request.data)?;
 
         // Step 2: Get available schemas and strip them
@@ -99,7 +99,7 @@ impl SimpleIngestionService {
             &progress_id,
             IngestionStep::PreparingSchemas,
             "Preparing available schemas...".to_string(),
-        );
+        ).await;
         let available_schemas = self
             .get_stripped_available_schemas_from_node(node.clone())
             .await?;
@@ -109,7 +109,7 @@ impl SimpleIngestionService {
             &progress_id,
             IngestionStep::FlatteningData,
             "Processing and flattening data structure...".to_string(),
-        );
+        ).await;
         let flattened_data = self.flatten_twitter_data(&request.data);
 
         // Step 3: Get AI recommendation
@@ -117,7 +117,7 @@ impl SimpleIngestionService {
             &progress_id,
             IngestionStep::GettingAIRecommendation,
             "Analyzing data with AI to determine schema...".to_string(),
-        );
+        ).await;
         let ai_response = self
             .get_ai_recommendation(&flattened_data, &available_schemas)
             .await?;
@@ -128,7 +128,7 @@ impl SimpleIngestionService {
             &progress_id,
             IngestionStep::SettingUpSchema,
             "Setting up schema and preparing for data storage...".to_string(),
-        );
+        ).await;
         // Check if we'll use an existing schema before calling determine_schema_to_use
         let will_use_existing = !ai_response.existing_schemas.is_empty();
         let schema_name = self
@@ -142,7 +142,7 @@ impl SimpleIngestionService {
             &progress_id,
             IngestionStep::GeneratingMutations,
             "Generating database mutations...".to_string(),
-        );
+        ).await;
         // Handle both single objects and arrays of objects
         let mutations = if let Some(array) = flattened_data.as_array() {
             // Generate a mutation for each element in the array
@@ -187,7 +187,7 @@ impl SimpleIngestionService {
                         IngestionStep::GeneratingMutations,
                         format!("Generating mutations... ({}/{})", idx + 1, total_items),
                         progress_percent,
-                    );
+                    ).await;
                 }
             }
 
@@ -225,7 +225,7 @@ impl SimpleIngestionService {
             &progress_id,
             IngestionStep::ExecutingMutations,
             "Executing mutations to store data...".to_string(),
-        );
+        ).await;
         let mutations_executed = if request
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
@@ -248,7 +248,7 @@ impl SimpleIngestionService {
             mutations_generated: mutations.len(),
             mutations_executed,
         };
-        progress_service.complete_progress(&progress_id, results);
+        progress_service.complete_progress(&progress_id, results).await;
 
 
         Ok(IngestionResponse::success_with_progress(
@@ -889,10 +889,10 @@ impl SimpleIngestionService {
 
         // Convert mutations to operation format for batch processing
         // Update progress for every 5 items to ensure visibility
-        let mutations_data: Vec<Value> = mutations
-            .iter()
-            .enumerate()
-            .map(|(idx, mutation)| {
+        // Convert mutations to operation format for batch processing
+        // Update progress for every 5 items to ensure visibility
+        let mut mutations_data = Vec::with_capacity(mutations.len());
+        for (idx, mutation) in mutations.iter().enumerate() {
                 // Update progress more frequently (every 5 items) to ensure frontend catches updates
                 if (idx + 1) % 5 == 0 || idx + 1 == total_mutations {
                     // Calculate progress: 90% base + up to 5% for this step (max 95%, not 100%)
@@ -904,7 +904,7 @@ impl SimpleIngestionService {
                         IngestionStep::ExecutingMutations,
                         format!("Executing mutations... ({}/{})", idx + 1, total_mutations),
                         progress_percent,
-                    );
+                    ).await;
                 }
                 
                 let operation = Operation::Mutation {
@@ -914,9 +914,8 @@ impl SimpleIngestionService {
                     mutation_type: mutation.mutation_type.clone(),
                     source_file_name: mutation.source_file_name.clone(),
                 };
-                serde_json::to_value(operation).expect("Failed to serialize operation")
-            })
-            .collect();
+                mutations_data.push(serde_json::to_value(operation).expect("Failed to serialize operation"));
+        }
 
         // Execute all mutations in a batch
         processor

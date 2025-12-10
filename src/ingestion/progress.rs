@@ -1,9 +1,16 @@
 //! Progress tracking for ingestion operations
+//! 
+//! Now supports pluggable backends (InMemory, DynamoDB) via ProgressStore trait.
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
+use aws_sdk_dynamodb::types::{AttributeValue, AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, ProvisionedThroughput};
+use aws_sdk_dynamodb::Client;
+use std::time::{SystemTime, UNIX_EPOCH};
+use crate::logging::core::get_current_user_id;
 
 /// Progress tracking for ingestion operations
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -31,7 +38,7 @@ pub struct IngestionProgress {
 }
 
 /// Steps in the ingestion process
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub enum IngestionStep {
     /// Validating configuration
     ValidatingConfig,
@@ -133,15 +140,279 @@ impl IngestionProgress {
     }
 }
 
-/// Global progress tracker
-pub type ProgressTracker = Arc<Mutex<HashMap<String, IngestionProgress>>>;
+/// Helper to get current user ID
+fn current_user() -> String {
+    get_current_user_id().unwrap_or_else(|| "default".to_string())
+}
 
-/// Create a new progress tracker
-pub fn create_progress_tracker() -> ProgressTracker {
-    Arc::new(Mutex::new(HashMap::new()))
+/// Abstract storage for ingestion progress
+#[async_trait]
+pub trait ProgressStore: Send + Sync {
+    async fn save(&self, progress: &IngestionProgress) -> Result<(), String>;
+    async fn load(&self, id: &str) -> Result<Option<IngestionProgress>, String>;
+    async fn list(&self) -> Result<Vec<IngestionProgress>, String>;
+    async fn delete(&self, id: &str) -> Result<(), String>;
+}
+
+/// In-memory implementation (for testing/single-tenant)
+pub struct InMemoryProgressStore {
+    store: Mutex<HashMap<String, IngestionProgress>>,
+}
+
+impl InMemoryProgressStore {
+    pub fn new() -> Self {
+        Self {
+            store: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl ProgressStore for InMemoryProgressStore {
+    async fn save(&self, progress: &IngestionProgress) -> Result<(), String> {
+        let mut store = self.store.lock().unwrap();
+        store.insert(progress.id.clone(), progress.clone());
+        Ok(())
+    }
+
+    async fn load(&self, id: &str) -> Result<Option<IngestionProgress>, String> {
+        let store = self.store.lock().unwrap();
+        Ok(store.get(id).cloned())
+    }
+
+    async fn list(&self) -> Result<Vec<IngestionProgress>, String> {
+        let store = self.store.lock().unwrap();
+        Ok(store.values().cloned().collect())
+    }
+
+    async fn delete(&self, id: &str) -> Result<(), String> {
+        let mut store = self.store.lock().unwrap();
+        store.remove(id);
+        Ok(())
+    }
+}
+
+/// DynamoDB implementation (for multi-tenant)
+pub struct DynamoDbProgressStore {
+    client: Client,
+    table_name: String,
+}
+
+impl DynamoDbProgressStore {
+    pub async fn new(table_name: String) -> Result<Self, String> {
+        let config = aws_config::load_from_env().await;
+        let client = Client::new(&config);
+        let store = Self { client, table_name };
+        store.ensure_table_exists().await?;
+        Ok(store)
+    }
+
+    pub fn with_client(table_name: String, client: Client) -> Self {
+        Self { client, table_name }
+    }
+
+    async fn ensure_table_exists(&self) -> Result<(), String> {
+        let result = self.client.create_table()
+            .table_name(&self.table_name)
+            .attribute_definitions(
+                AttributeDefinition::builder()
+                    .attribute_name("PK")
+                    .attribute_type(ScalarAttributeType::S) // Partition Key
+                    .build()
+                    .unwrap()
+            )
+            .attribute_definitions(
+                AttributeDefinition::builder()
+                    .attribute_name("SK")
+                    .attribute_type(ScalarAttributeType::S) // Sort Key
+                    .build()
+                    .unwrap()
+            )
+            .key_schema(
+                KeySchemaElement::builder()
+                    .attribute_name("PK")
+                    .key_type(KeyType::Hash)
+                    .build()
+                    .unwrap()
+            )
+            .key_schema(
+                KeySchemaElement::builder()
+                    .attribute_name("SK")
+                    .key_type(KeyType::Range)
+                    .build()
+                    .unwrap()
+            )
+            .provisioned_throughput(
+                ProvisionedThroughput::builder()
+                    .read_capacity_units(5)
+                    .write_capacity_units(5)
+                    .build()
+                    .unwrap()
+            )
+            .send()
+            .await;
+            
+        match result {
+            Ok(_) => {
+                // Wait for table to be active
+                self.wait_for_table_active().await
+            },
+            Err(err) => {
+                if let Some(service_err) = err.as_service_error() {
+                   if service_err.is_resource_in_use_exception() {
+                       // Table exists or is being created, wait for it to be active
+                       return self.wait_for_table_active().await;
+                   }
+                }
+                Err(format!("Failed to create table: {}", err))
+            }
+        }
+    }
+
+    async fn wait_for_table_active(&self) -> Result<(), String> {
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(60);
+        
+        loop {
+            if start.elapsed() > timeout {
+                return Err("Timeout waiting for table to become active".to_string());
+            }
+
+            let describe = self.client.describe_table()
+                .table_name(&self.table_name)
+                .send()
+                .await
+                .map_err(|e| format!("Failed to describe table: {}", e))?;
+                
+            if let Some(table) = describe.table {
+                if let Some(status) = table.table_status {
+                    if status == aws_sdk_dynamodb::types::TableStatus::Active {
+                        return Ok(());
+                    }
+                }
+            }
+            
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+
+    fn item_to_progress(&self, item: &HashMap<String, AttributeValue>) -> Option<IngestionProgress> {
+        let json = item.get("data")?.as_s().ok()?;
+        serde_json::from_str(json).ok()
+    }
+}
+
+#[async_trait]
+impl ProgressStore for DynamoDbProgressStore {
+    async fn save(&self, progress: &IngestionProgress) -> Result<(), String> {
+        let user_id = current_user();
+        let json = serde_json::to_string(progress).map_err(|e| e.to_string())?;
+        
+        // TTL: 24 hours
+        let ttl = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() + (24 * 60 * 60)) as i64;
+
+        self.client.put_item()
+            .table_name(&self.table_name)
+            .item("PK", AttributeValue::S(user_id))
+            .item("SK", AttributeValue::S(progress.id.clone()))
+            .item("data", AttributeValue::S(json))
+            .item("ttl", AttributeValue::N(ttl.to_string()))
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    async fn load(&self, id: &str) -> Result<Option<IngestionProgress>, String> {
+        let user_id = current_user();
+        
+        let result = self.client.get_item()
+            .table_name(&self.table_name)
+            .key("PK", AttributeValue::S(user_id))
+            .key("SK", AttributeValue::S(id.to_string()))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if let Some(item) = result.item {
+            Ok(self.item_to_progress(&item))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn list(&self) -> Result<Vec<IngestionProgress>, String> {
+        let user_id = current_user();
+        
+        let result = self.client.query()
+            .table_name(&self.table_name)
+            .key_condition_expression("PK = :uid")
+            .expression_attribute_values(":uid", AttributeValue::S(user_id))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let items = result.items.unwrap_or_default();
+        Ok(items.iter().filter_map(|i| self.item_to_progress(i)).collect())
+    }
+
+    async fn delete(&self, id: &str) -> Result<(), String> {
+        let user_id = current_user();
+        
+        self.client.delete_item()
+            .table_name(&self.table_name)
+            .key("PK", AttributeValue::S(user_id))
+            .key("SK", AttributeValue::S(id.to_string()))
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Global progress tracker
+pub type ProgressTracker = Arc<dyn ProgressStore>;
+
+/// Create a new progress tracker (in-memory or DynamoDB based on env)
+pub async fn create_progress_tracker() -> ProgressTracker {
+    use std::env;
+    
+    // Check for specific ingestion progress table first, then fall back to general table
+    let table_name = env::var("DATAFOLD_INGESTION_PROGRESS_TABLE")
+        .or_else(|_| env::var("DATAFOLD_DYNAMODB_TABLE"));
+
+    if let Ok(table_name) = table_name {
+        let region = env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-west-2".to_string());
+        log::info!("Initializing DynamoDB Progress Tracker: table={}, region={}", table_name, region);
+        
+        // Initialize DynamoDB client with correct region
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_sdk_dynamodb::config::Region::new(region))
+            .load()
+            .await;
+        let client = Client::new(&config);
+        
+        let store = DynamoDbProgressStore::with_client(table_name, client);
+        // Ensure table exists 
+        if let Err(e) = store.ensure_table_exists().await {
+            log::error!("Failed to ensure DynamoDB process table exists: {}", e);
+            // If we are explicitly configured with env vars, we should probably fail?
+            // But this function signature returns ProgressTracker, not Result.
+            // For now, let's panic to match "no graceful fallback" if configured.
+            panic!("Failed to ensure DynamoDB process table exists: {}", e);
+        }
+        Arc::new(store)
+    } else {
+        log::info!("Initializing In-Memory Progress Tracker (default)");
+        Arc::new(InMemoryProgressStore::new())
+    }
 }
 
 /// Progress tracking service
+#[derive(Clone)]
 pub struct ProgressService {
     tracker: ProgressTracker,
 }
@@ -153,72 +424,73 @@ impl ProgressService {
     }
 
     /// Start tracking progress for an ingestion operation
-    pub fn start_progress(&self, id: String) -> IngestionProgress {
+    pub async fn start_progress(&self, id: String) -> IngestionProgress {
         let progress = IngestionProgress::new(id.clone());
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.insert(id, progress.clone());
+        let _ = self.tracker.save(&progress).await;
         progress
     }
 
     /// Update progress for an operation
-    pub fn update_progress(&self, id: &str, step: IngestionStep, message: String) -> Option<IngestionProgress> {
-        let mut tracker = self.tracker.lock().unwrap();
-        if let Some(progress) = tracker.get_mut(id) {
+    pub async fn update_progress(&self, id: &str, step: IngestionStep, message: String) -> Option<IngestionProgress> {
+        if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.update_step(step, message);
-            Some(progress.clone())
+            let _ = self.tracker.save(&progress).await;
+            Some(progress)
         } else {
             None
         }
     }
 
-    /// Update progress with custom percentage (for granular progress within a step)
-    pub fn update_progress_with_percentage(&self, id: &str, step: IngestionStep, message: String, percentage: u8) -> Option<IngestionProgress> {
-        let mut tracker = self.tracker.lock().unwrap();
-        if let Some(progress) = tracker.get_mut(id) {
+    /// Update progress with custom percentage
+    pub async fn update_progress_with_percentage(&self, id: &str, step: IngestionStep, message: String, percentage: u8) -> Option<IngestionProgress> {
+        if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.update_step_with_percentage(step, message, percentage);
-            Some(progress.clone())
+            let _ = self.tracker.save(&progress).await;
+            Some(progress)
         } else {
             None
         }
     }
 
     /// Mark progress as completed
-    pub fn complete_progress(&self, id: &str, results: IngestionResults) -> Option<IngestionProgress> {
-        let mut tracker = self.tracker.lock().unwrap();
-        if let Some(progress) = tracker.get_mut(id) {
+    pub async fn complete_progress(&self, id: &str, results: IngestionResults) -> Option<IngestionProgress> {
+        if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.mark_completed(results);
-            Some(progress.clone())
+            let _ = self.tracker.save(&progress).await;
+            Some(progress)
         } else {
             None
         }
     }
 
     /// Mark progress as failed
-    pub fn fail_progress(&self, id: &str, error_message: String) -> Option<IngestionProgress> {
-        let mut tracker = self.tracker.lock().unwrap();
-        if let Some(progress) = tracker.get_mut(id) {
+    pub async fn fail_progress(&self, id: &str, error_message: String) -> Option<IngestionProgress> {
+        if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.mark_failed(error_message);
-            Some(progress.clone())
+            let _ = self.tracker.save(&progress).await;
+            Some(progress)
         } else {
             None
         }
     }
 
     /// Get current progress for an operation
-    pub fn get_progress(&self, id: &str) -> Option<IngestionProgress> {
-        let tracker = self.tracker.lock().unwrap();
-        tracker.get(id).cloned()
+    pub async fn get_progress(&self, id: &str) -> Option<IngestionProgress> {
+        self.tracker.load(id).await.unwrap_or(None)
     }
 
-    /// Remove completed progress (cleanup)
-    pub fn remove_progress(&self, id: &str) -> Option<IngestionProgress> {
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.remove(id)
+    /// Remove completed progress
+    pub async fn remove_progress(&self, id: &str) -> Option<IngestionProgress> {
+        if let Ok(Some(progress)) = self.tracker.load(id).await {
+            let _ = self.tracker.delete(id).await;
+            Some(progress)
+        } else {
+            None
+        }
     }
 
     /// Get all active progress operations
-    pub fn get_all_progress(&self) -> Vec<IngestionProgress> {
-        let tracker = self.tracker.lock().unwrap();
-        tracker.values().cloned().collect()
+    pub async fn get_all_progress(&self) -> Vec<IngestionProgress> {
+        self.tracker.list().await.unwrap_or_default()
     }
 }

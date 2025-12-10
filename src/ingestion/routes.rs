@@ -41,7 +41,7 @@ pub async fn process_json(
     
     // Start progress tracking
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    progress_service.start_progress(progress_id.clone());
+    progress_service.start_progress(progress_id.clone()).await;
 
     // Try to create a simple ingestion service
     let service = match create_simple_ingestion_service().await {
@@ -53,7 +53,7 @@ pub async fn process_json(
                 "Failed to initialize ingestion service: {}",
                 e
             );
-            progress_service.fail_progress(&progress_id, format!("Ingestion service not available: {}", e));
+            progress_service.fail_progress(&progress_id, format!("Ingestion service not available: {}", e)).await;
             return HttpResponse::ServiceUnavailable().json(IngestionResponse::failure(vec![
                 format!("Ingestion service not available: {}", e),
             ]));
@@ -101,7 +101,7 @@ pub async fn process_json(
                     "Background ingestion processing failed: {}",
                     e
                 );
-                progress_service.fail_progress(&progress_id_clone, format!("Processing failed: {}", e));
+                progress_service.fail_progress(&progress_id_clone, format!("Processing failed: {}", e)).await;
             }
         }
     });
@@ -381,7 +381,7 @@ pub async fn get_progress(
     // Get progress tracker from data
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
     
-    match progress_service.get_progress(&id) {
+    match progress_service.get_progress(&id).await {
         Some(progress) => {
             HttpResponse::Ok().json(progress)
         }
@@ -412,7 +412,7 @@ pub async fn get_all_progress(
     );
 
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    let all_progress = progress_service.get_all_progress();
+    let all_progress = progress_service.get_all_progress().await;
     
     HttpResponse::Ok().json(all_progress)
 }

@@ -25,7 +25,7 @@ pub struct IngestionSpawnConfig {
 }
 
 /// Spawn background ingestion task and return progress_id
-pub fn spawn_background_ingestion(
+pub async fn spawn_background_ingestion(
     config: IngestionSpawnConfig,
     progress_tracker: &ProgressTracker,
     node: Arc<Mutex<DataFoldNode>>,
@@ -34,7 +34,7 @@ pub fn spawn_background_ingestion(
     
     // Start progress tracking
     let progress_service = ProgressService::new(progress_tracker.clone());
-    progress_service.start_progress(progress_id.clone());
+    progress_service.start_progress(progress_id.clone()).await;
     
     // Create ingestion request
     let ingestion_request = IngestionRequest {
@@ -86,9 +86,9 @@ async fn run_background_ingestion(
     );
     
     // Create ingestion service
-    let service = create_simple_ingestion_service(ingestion_config)
-        .await
-        .map_err(|e| {
+    let service = match create_simple_ingestion_service(ingestion_config).await {
+        Ok(s) => s,
+        Err(e) => {
             let error_msg = format!("Ingestion service not available: {}", e);
             log_feature!(
                 LogFeature::Ingestion,
@@ -96,9 +96,10 @@ async fn run_background_ingestion(
                 "Failed to initialize ingestion service: {}",
                 e
             );
-            progress_service.fail_progress(&progress_id, error_msg.clone());
-            error_msg
-        })?;
+            progress_service.fail_progress(&progress_id, error_msg.clone()).await;
+            return Err(error_msg);
+        }
+    };
     
     // Process the ingestion
     match service
@@ -136,7 +137,7 @@ async fn run_background_ingestion(
                 "File ingestion processing failed: {}",
                 e
             );
-            progress_service.fail_progress(&progress_id, error_msg.clone());
+            progress_service.fail_progress(&progress_id, error_msg.clone()).await;
             Err(error_msg)
         }
     }

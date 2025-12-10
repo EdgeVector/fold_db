@@ -84,16 +84,97 @@ impl DynamoDbSchemaStore {
 
         let client = DynamoClient::new(&aws_config);
 
-        // Validate table exists
-        client
-            .describe_table()
-            .table_name(&config.table_name)
-            .send()
-            .await
-            .map_err(|e| FoldDbError::Config(format!(
-                "DynamoDB table '{}' does not exist or is not accessible: {}",
-                config.table_name, e
-            )))?;
+        // Validate table exists or create it
+        match client.describe_table().table_name(&config.table_name).send().await {
+            Ok(resp) => {
+                if let Some(table) = resp.table {
+                    if let Some(status) = table.table_status {
+                        log::info!("Table {} exists, status: {:?}", config.table_name, status);
+                    }
+                }
+            },
+            Err(e) => {
+                log::warn!("Describe table failed: {}. Attempting to create table '{}'...", e, config.table_name);
+                
+                // Try to create table regardless of the specific error from describe
+                // If it already exists, create will fail with ResourceInUse, which we can handle
+                use aws_sdk_dynamodb::types::{AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, BillingMode};
+                
+                match client.create_table()
+                    .table_name(&config.table_name)
+                    .attribute_definitions(
+                        AttributeDefinition::builder()
+                            .attribute_name("PK")
+                            .attribute_type(ScalarAttributeType::S)
+                            .build()
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                    )
+                    .attribute_definitions(
+                        AttributeDefinition::builder()
+                            .attribute_name("SK")
+                            .attribute_type(ScalarAttributeType::S)
+                            .build()
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                    )
+                    .key_schema(
+                        KeySchemaElement::builder()
+                            .attribute_name("PK")
+                            .key_type(KeyType::Hash)
+                            .build()
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                    )
+                    .key_schema(
+                        KeySchemaElement::builder()
+                            .attribute_name("SK")
+                            .key_type(KeyType::Range)
+                            .build()
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                    )
+                    .billing_mode(BillingMode::PayPerRequest)
+                    .send()
+                    .await 
+                {
+                    Ok(_) => {
+                        log::info!("Table creation initiated for {}", config.table_name);
+                    },
+                    Err(e) => {
+                        let error_str = e.to_string();
+                        if error_str.contains("ResourceInUseException") {
+                             log::info!("Table {} already exists (ResourceInUse), waiting for it to be active...", config.table_name);
+                        } else {
+                             // If create failed for another reason, we return that error
+                             return Err(FoldDbError::Config(format!("Failed to create table: {}", e)));
+                        }
+                    }
+                }
+                    
+                // Wait for table to be active
+                let mut attempts = 0;
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    match client.describe_table().table_name(&config.table_name).send().await {
+                        Ok(resp) => {
+                            if let Some(table) = resp.table {
+                                if let Some(status) = table.table_status {
+                                    use aws_sdk_dynamodb::types::TableStatus;
+                                    if matches!(status, TableStatus::Active) {
+                                        log::info!("Table {} is now ACTIVE", config.table_name);
+                                        break;
+                                    }
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            // Ignore errors while waiting (e.g. still creating)
+                        }
+                    }
+                    attempts += 1;
+                    if attempts >= 60 {
+                         return Err(FoldDbError::Config("Table creation timed out".to_string()));
+                    }
+                }
+            }
+        }
 
         Ok(Self {
             client,

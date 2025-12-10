@@ -174,7 +174,7 @@ pub async fn ingest_from_s3_path_async(
         ingestion_config: config,
     };
 
-    let progress_id = spawn_background_ingestion(spawn_config, progress_tracker, node);
+    let progress_id = spawn_background_ingestion(spawn_config, progress_tracker, node).await;
 
     Ok(IngestionResponse {
         success: true,
@@ -247,9 +247,8 @@ pub async fn ingest_from_s3_path_sync(
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         
-        let progress_map = progress_tracker.lock().unwrap();
-        let progress = progress_map.get(&progress_id).cloned();
-        drop(progress_map);
+        let progress = progress_tracker.load(&progress_id).await
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to load progress: {}", e)))?;
         
         if let Some(progress) = progress {
             if progress.is_complete {

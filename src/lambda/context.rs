@@ -46,7 +46,10 @@ impl LambdaContext {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let config = LambdaConfig::new()
+    ///     let config = LambdaConfig::new(
+    ///         StorageConfig::Local { path: PathBuf::from("/tmp/folddb") },
+    ///         LambdaLogging::Stdout
+    ///     )
     ///         .with_schema_service_url("https://schema.example.com".to_string());
     ///     
     ///     LambdaContext::init(config)
@@ -58,8 +61,25 @@ impl LambdaContext {
         // Initialize NodeManager handles node creation (single or multi-tenant)
         let node_manager = Arc::new(NodeManager::new(config.clone()).await?);
 
-        // Create progress tracker
-        let progress_tracker = create_progress_tracker();
+        // Initialize Progress Store based on storage configuration
+        let progress_tracker: ProgressTracker = match &config.storage {
+            crate::lambda::config::LambdaStorage::DynamoDb(dynamo_config) => {
+                 use crate::ingestion::progress::DynamoDbProgressStore;
+                 use crate::lambda::config::TableConfig;
+                 
+                 let table_name = match &dynamo_config.table_config {
+                     TableConfig::Prefix(prefix) => format!("{}-process", prefix),
+                     TableConfig::Explicit(tables) => tables.process.clone(),
+                 };
+                 
+                 Arc::new(DynamoDbProgressStore::new(table_name).await
+                     .map_err(|e| IngestionError::StorageError(format!("Failed to initialize process table: {}", e)))?)
+            },
+            _ => {
+                // For Local/S3/DbOps, fallback to environment variable or in-memory
+                create_progress_tracker().await
+            }
+        };
 
         // Initialize AI service if configured
         let llm_service = if let Some(ai_config) = config.ai_config {
