@@ -2,7 +2,7 @@
 
 use crate::db_operations::DbOperationsV2;
 use crate::lambda::logging::Logger;
-use crate::storage::StorageConfig;
+use crate::storage::{StorageConfig, DynamoDbConfig, TableConfig};
 use std::sync::Arc;
 
 /// Storage configuration for Lambda - either use StorageConfig or provide a pre-created DbOperationsV2
@@ -16,49 +16,7 @@ pub enum LambdaStorage {
     DynamoDb(DynamoDbConfig),
 }
 
-/// Configuration for DynamoDB storage
-#[derive(Clone, Debug)]
-pub struct DynamoDbConfig {
-    /// AWS Region
-    pub region: String,
-    /// Table naming configuration
-    pub table_config: TableConfig,
-    /// If true, tables will be automatically created if missing.
-    pub auto_create: bool,
-}
 
-/// DynamoDB Table Naming Configuration
-#[derive(Clone, Debug)]
-pub enum TableConfig {
-    /// Tables are named "{prefix}-{namespace}"
-    Prefix(String),
-    /// Exact names provided for each namespace
-    Explicit(ExplicitTables),
-}
-
-/// Explicit table names for all required namespaces
-#[derive(Clone, Debug, Default)]
-pub struct ExplicitTables {
-    pub main: String,
-    pub metadata: String,
-    pub permissions: String,
-    pub transforms: String,
-    pub orchestrator: String,
-    pub schema_states: String,
-    pub schemas: String,
-    pub public_keys: String,
-    pub transform_queue: String,
-    /// Native index table
-    pub native_index: String,
-    /// Process tracking table (ingestion, backfills)
-    ///
-    /// This table is used to track long-running operations.
-    /// If using `TableConfig::Prefix`, this is automatically set to `{prefix}-process`.
-    /// If using `TableConfig::Explicit`, you must provide this table name.
-    ///
-    /// NOTE: If using DynamoDB storage, this table MUST exist or initialization will fail.
-    pub process: String,
-}
 
 /// Configuration for Lambda logging
 #[derive(Clone)]

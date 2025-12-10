@@ -173,8 +173,8 @@ impl SchemaServiceState {
         log_feature!(
             LogFeature::Schema,
             info,
-            "Initializing schema service with DynamoDB: table={}",
-            config.table_name
+            "Initializing schema service with DynamoDB in region: {}",
+            config.region
         );
 
         let store = DynamoDbSchemaStore::new(config).await?;

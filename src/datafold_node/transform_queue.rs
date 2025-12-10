@@ -104,7 +104,6 @@ mod tests {
             network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
             security_config: Default::default(),
             schema_service_url: None,
-            indexing_progress_table: None,
         };
         let node = DataFoldNode::new(config).await.unwrap();
         let info = node.get_transform_queue_info().unwrap();

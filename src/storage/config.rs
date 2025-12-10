@@ -2,17 +2,56 @@ use std::path::PathBuf;
 use std::env;
 use serde::{Deserialize, Serialize};
 
-/// S3 configuration for remote storage
-#[derive(Debug, Clone)]
-pub struct S3Config {
-    /// S3 bucket name
-    pub bucket: String,
-    /// AWS region (e.g., "us-west-2")
+
+
+/// Configuration for DynamoDB storage
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DynamoDbConfig {
+    /// AWS Region
     pub region: String,
-    /// Prefix/path within the bucket (e.g., "production/folddb")
-    pub prefix: String,
-    /// Local cache path (defaults to /tmp/folddb-data for Lambda)
-    pub local_path: PathBuf,
+    /// Table naming configuration
+    pub table_config: TableConfig,
+    /// If true, tables will be automatically created if missing.
+    pub auto_create: bool,
+    /// Optional user_id for multi-tenant isolation
+    #[serde(default)]
+    pub user_id: Option<String>,
+}
+
+/// DynamoDB Table Naming Configuration
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum TableConfig {
+    /// Tables are named "{prefix}-{namespace}"
+    #[serde(rename = "prefix")]
+    Prefix(String),
+    /// Exact names provided for each namespace
+    #[serde(rename = "explicit")]
+    Explicit(ExplicitTables),
+}
+
+/// Explicit table names for all required namespaces
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ExplicitTables {
+    pub main: String,
+    pub metadata: String,
+    pub permissions: String,
+    pub transforms: String,
+    pub orchestrator: String,
+    pub schema_states: String,
+    pub schemas: String,
+    pub public_keys: String,
+    pub transform_queue: String,
+    /// Native index table
+    pub native_index: String,
+    /// Process tracking table (ingestion, backfills)
+    ///
+    /// This table is used to track long-running operations.
+    /// If using `TableConfig::Prefix`, this is automatically set to `{prefix}-process`.
+    /// If using `TableConfig::Explicit`, you must provide this table name.
+    ///
+    /// NOTE: If using DynamoDB storage, this table MUST exist or initialization will fail.
+    pub process: String,
 }
 
 /// Error type for configuration parsing

@@ -1,6 +1,7 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::security::SecurityConfig;
+use crate::storage::DynamoDbConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -16,15 +17,7 @@ pub enum DatabaseConfig {
     },
     /// DynamoDB-backed storage
     #[serde(rename = "dynamodb")]
-    DynamoDb {
-        /// DynamoDB table name (base name, namespaces will be appended)
-        table_name: String,
-        /// AWS region
-        region: String,
-        /// Optional user_id for multi-tenant isolation
-        #[serde(default)]
-        user_id: Option<String>,
-    },
+    DynamoDb(DynamoDbConfig),
 }
 
 impl Default for DatabaseConfig {
@@ -57,9 +50,6 @@ pub struct NodeConfig {
     /// URL of the schema service (optional, if not provided will load from local directories)
     #[serde(default)]
     pub schema_service_url: Option<String>,
-    /// Table name for tracking indexing progress in DynamoDB (optional)
-    #[serde(default)]
-    pub indexing_progress_table: Option<String>,
 }
 
 fn default_storage_path() -> PathBuf {
@@ -79,7 +69,6 @@ impl Default for NodeConfig {
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
-            indexing_progress_table: None,
         }
     }
 }
@@ -94,7 +83,6 @@ impl NodeConfig {
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
-            indexing_progress_table: None,
         }
     }
     
@@ -102,7 +90,7 @@ impl NodeConfig {
     pub fn get_storage_path(&self) -> PathBuf {
         match &self.database {
             DatabaseConfig::Local { path } => path.clone(),
-            DatabaseConfig::DynamoDb { .. } => self.storage_path.clone(),
+            DatabaseConfig::DynamoDb(_) => self.storage_path.clone(),
 
         }
     }
