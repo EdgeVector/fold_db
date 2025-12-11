@@ -614,6 +614,7 @@ pub struct DynamoDbConfigDto {
     pub tables: ExplicitTablesDto,
     pub auto_create: bool,
     pub user_id: Option<String>,
+    pub file_storage_bucket: Option<String>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -644,6 +645,7 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
             region: config.region.clone(),
             auto_create: config.auto_create,
             user_id: config.user_id.clone(),
+            file_storage_bucket: config.file_storage_bucket.clone(),
             tables: ExplicitTablesDto {
                 main: config.tables.main.clone(),
                 metadata: config.tables.metadata.clone(),
@@ -695,6 +697,7 @@ pub async fn update_database_config(
             region: dto.region.clone(),
             auto_create: dto.auto_create,
             user_id: dto.user_id.clone(),
+            file_storage_bucket: dto.file_storage_bucket.clone(),
             tables: crate::storage::ExplicitTables {
                 main: dto.tables.main.clone(),
                 metadata: dto.tables.metadata.clone(),

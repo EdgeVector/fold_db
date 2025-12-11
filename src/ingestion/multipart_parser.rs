@@ -178,7 +178,9 @@ async fn save_uploaded_file(
     let unique_filename = format!("{}_{}", short_hash, &filename);
 
     // Atomically save file only if it doesn't exist (prevents race condition)
-    let (storage_path, already_exists) = match upload_storage.save_file_if_not_exists(&unique_filename, &file_data).await {
+    // Note: user_id is None here - HTTP endpoints don't have user context
+    // For multi-tenant Lambda, user_id should be extracted from request/auth
+    let (storage_path, already_exists) = match upload_storage.save_file_if_not_exists(&unique_filename, &file_data, None).await {
         Ok((path, exists)) => (path, exists),
         Err(e) => {
             log_feature!(
@@ -204,7 +206,7 @@ async fn save_uploaded_file(
             info,
             "File already exists (duplicate upload): {} at {}",
             unique_filename,
-            upload_storage.get_display_path(&unique_filename)
+            upload_storage.get_display_path(&unique_filename, None)
         );
         return Ok((filepath, unique_filename, true));
     }
@@ -218,9 +220,33 @@ async fn save_uploaded_file(
                 info,
                 "File saved to local storage: {} at {}",
                 unique_filename,
-                upload_storage.get_display_path(&unique_filename)
+                upload_storage.get_display_path(&unique_filename, None)
             );
             storage_path
+        }
+        UploadStorage::S3 { .. } => {
+            // For S3 storage: file is in S3, but file_to_json needs local file
+            // Write to /tmp for processing
+            let temp_path = std::env::temp_dir().join(&unique_filename);
+            if let Err(e) = fs::write(&temp_path, &file_data).await {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Failed to write S3-uploaded file to /tmp: {}",
+                    e
+                );
+                return Err(HttpResponse::InternalServerError().json(json!({
+                    "success": false,
+                    "error": format!("Failed to write file to temp directory: {}", e)
+                })));
+            }
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "File saved to S3: {} and copied to temp for processing",
+                upload_storage.get_display_path(&unique_filename, None)
+            );
+            temp_path
         }
     };
 

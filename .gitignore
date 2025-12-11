@@ -106,6 +106,9 @@ fold_node/tmp/
 check_output*.txt
 check_error*.txt
 curl_output.txt
+*_output.txt
+*_output_*.txt
+test_db_perf/
 
 # Rust analyzer
 rust-project.json
