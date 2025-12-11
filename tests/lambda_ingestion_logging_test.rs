@@ -184,14 +184,14 @@ async fn test_lambda_json_ingestion_with_logging() {
     );
     
     // Check progress using the progress_id
-    let progress = LambdaContext::get_progress(&progress_id);
+    let progress_result = LambdaContext::get_progress(&progress_id).await;
     assert!(
-        progress.is_ok(),
+        progress_result.is_ok(),
         "Failed to get progress: {:?}",
-        progress
+        progress_result
     );
     
-    if let Ok(Some(progress_info)) = progress {
+    if let Ok(Some(progress_info)) = progress_result {
         println!("\nProgress info:");
         println!("  Current step: {:?}", progress_info.current_step);
         println!("  Is complete: {}", progress_info.is_complete);
