@@ -396,10 +396,8 @@ pub async fn reset_database(
     // Handle reset based on database backend type
     match &config.database {
         DatabaseConfig::DynamoDb(dynamo_config) => {
-            let table_name = match &dynamo_config.table_config {
-                crate::storage::TableConfig::Prefix(p) => p.clone(),
-                crate::storage::TableConfig::Explicit(e) => e.main.clone(), // Best effort for explicit config
-            };
+            // Use main table name for reset manager operations
+            let table_name = dynamo_config.tables.main.clone();
             
             let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
@@ -608,21 +606,12 @@ pub struct ExplicitTablesDto {
     pub process: String,
 }
 
-/// DTO for TableConfig
-#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
-#[serde(tag = "type", content = "value")]
-pub enum TableConfigDto {
-    #[serde(rename = "prefix")]
-    Prefix(String),
-    #[serde(rename = "explicit")]
-    Explicit(ExplicitTablesDto),
-}
-
 /// DTO for DynamoDbConfig
 #[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
 pub struct DynamoDbConfigDto {
     pub region: String,
-    pub table_config: TableConfigDto,
+    /// Explicit table names for all required namespaces
+    pub tables: ExplicitTablesDto,
     pub auto_create: bool,
     pub user_id: Option<String>,
 }
@@ -655,21 +644,18 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
             region: config.region.clone(),
             auto_create: config.auto_create,
             user_id: config.user_id.clone(),
-            table_config: match &config.table_config {
-                crate::storage::TableConfig::Prefix(p) => TableConfigDto::Prefix(p.clone()),
-                crate::storage::TableConfig::Explicit(e) => TableConfigDto::Explicit(ExplicitTablesDto {
-                    main: e.main.clone(),
-                    metadata: e.metadata.clone(),
-                    permissions: e.permissions.clone(),
-                    transforms: e.transforms.clone(),
-                    orchestrator: e.orchestrator.clone(),
-                    schema_states: e.schema_states.clone(),
-                    schemas: e.schemas.clone(),
-                    public_keys: e.public_keys.clone(),
-                    transform_queue: e.transform_queue.clone(),
-                    native_index: e.native_index.clone(),
-                    process: e.process.clone(),
-                }),
+            tables: ExplicitTablesDto {
+                main: config.tables.main.clone(),
+                metadata: config.tables.metadata.clone(),
+                permissions: config.tables.permissions.clone(),
+                transforms: config.tables.transforms.clone(),
+                orchestrator: config.tables.orchestrator.clone(),
+                schema_states: config.tables.schema_states.clone(),
+                schemas: config.tables.schemas.clone(),
+                public_keys: config.tables.public_keys.clone(),
+                transform_queue: config.tables.transform_queue.clone(),
+                native_index: config.tables.native_index.clone(),
+                process: config.tables.process.clone(),
             },
         }),
 
@@ -709,21 +695,18 @@ pub async fn update_database_config(
             region: dto.region.clone(),
             auto_create: dto.auto_create,
             user_id: dto.user_id.clone(),
-            table_config: match &dto.table_config {
-                TableConfigDto::Prefix(p) => crate::storage::TableConfig::Prefix(p.clone()),
-                TableConfigDto::Explicit(e) => crate::storage::TableConfig::Explicit(crate::storage::ExplicitTables {
-                    main: e.main.clone(),
-                    metadata: e.metadata.clone(),
-                    permissions: e.permissions.clone(),
-                    transforms: e.transforms.clone(),
-                    orchestrator: e.orchestrator.clone(),
-                    schema_states: e.schema_states.clone(),
-                    schemas: e.schemas.clone(),
-                    public_keys: e.public_keys.clone(),
-                    transform_queue: e.transform_queue.clone(),
-                    native_index: e.native_index.clone(),
-                    process: e.process.clone(),
-                }),
+            tables: crate::storage::ExplicitTables {
+                main: dto.tables.main.clone(),
+                metadata: dto.tables.metadata.clone(),
+                permissions: dto.tables.permissions.clone(),
+                transforms: dto.tables.transforms.clone(),
+                orchestrator: dto.tables.orchestrator.clone(),
+                schema_states: dto.tables.schema_states.clone(),
+                schemas: dto.tables.schemas.clone(),
+                public_keys: dto.tables.public_keys.clone(),
+                transform_queue: dto.tables.transform_queue.clone(),
+                native_index: dto.tables.native_index.clone(),
+                process: dto.tables.process.clone(),
             },
         }),
 

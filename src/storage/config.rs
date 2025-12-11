@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct DynamoDbConfig {
     /// AWS Region
     pub region: String,
-    /// Table naming configuration
-    pub table_config: TableConfig,
+    /// Explicit table names for all required namespaces
+    pub tables: ExplicitTables,
     /// If true, tables will be automatically created if missing.
     pub auto_create: bool,
     /// Optional user_id for multi-tenant isolation
@@ -19,36 +19,48 @@ pub struct DynamoDbConfig {
 }
 
 impl DynamoDbConfig {
-    /// Create config from environment variables
+    /// Create config from environment variables.
+    /// 
+    /// Required environment variables:
+    /// - `DATAFOLD_DYNAMODB_REGION`: AWS region
+    /// - `DATAFOLD_DYNAMODB_TABLE_PREFIX`: Prefix for table names (tables will be named `{prefix}-{namespace}`)
+    /// 
+    /// Optional:
+    /// - `DATAFOLD_DYNAMODB_USER_ID`: User ID for multi-tenant isolation
     pub fn from_env() -> Result<Self, ConfigError> {
         let region = env::var("DATAFOLD_DYNAMODB_REGION")
             .map_err(|_| ConfigError::MissingVariable("DATAFOLD_DYNAMODB_REGION".to_string()))?;
             
-        let table_name = env::var("DATAFOLD_DYNAMODB_TABLE")
-            .map_err(|_| ConfigError::MissingVariable("DATAFOLD_DYNAMODB_TABLE".to_string()))?;
+        let table_prefix = env::var("DATAFOLD_DYNAMODB_TABLE_PREFIX")
+            .or_else(|_| env::var("DATAFOLD_DYNAMODB_TABLE")) // Backward compatibility
+            .map_err(|_| ConfigError::MissingVariable("DATAFOLD_DYNAMODB_TABLE_PREFIX".to_string()))?;
+        
+        // Generate explicit table names from prefix
+        let tables = ExplicitTables::from_prefix(&table_prefix);
             
         Ok(Self {
             region,
-            table_config: TableConfig::Prefix(table_name),
+            tables,
             auto_create: true,
             user_id: env::var("DATAFOLD_DYNAMODB_USER_ID").ok(),
         })
     }
 }
 
-/// DynamoDB Table Naming Configuration
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", content = "value")]
-pub enum TableConfig {
-    /// Tables are named "{prefix}-{namespace}"
-    #[serde(rename = "prefix")]
-    Prefix(String),
-    /// Exact names provided for each namespace
-    #[serde(rename = "explicit")]
-    Explicit(ExplicitTables),
-}
-
-/// Explicit table names for all required namespaces
+/// Explicit table names for all required DynamoDB namespaces.
+/// 
+/// All 11 tables must be explicitly configured:
+/// - `main`: Primary data storage
+/// - `metadata`: Metadata storage  
+/// - `permissions`: Node/schema permission mappings
+/// - `transforms`: Schema transformations
+/// - `orchestrator`: Orchestration state
+/// - `schema_states`: Schema state tracking
+/// - `schemas`: Schema definitions
+/// - `public_keys`: Public key storage
+/// - `transform_queue`: Transform processing queue
+/// - `native_index`: Native index data
+/// - `process`: Process tracking (ingestion, backfills)
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ExplicitTables {
     pub main: String,
@@ -65,11 +77,28 @@ pub struct ExplicitTables {
     /// Process tracking table (ingestion, backfills)
     ///
     /// This table is used to track long-running operations.
-    /// If using `TableConfig::Prefix`, this is automatically set to `{prefix}-process`.
-    /// If using `TableConfig::Explicit`, you must provide this table name.
-    ///
     /// NOTE: If using DynamoDB storage, this table MUST exist or initialization will fail.
     pub process: String,
+}
+
+impl ExplicitTables {
+    /// Create ExplicitTables from a prefix.
+    /// Tables are named `{prefix}-{namespace}`.
+    pub fn from_prefix(prefix: &str) -> Self {
+        Self {
+            main: format!("{}-main", prefix),
+            metadata: format!("{}-metadata", prefix),
+            permissions: format!("{}-node_id_schema_permissions", prefix),
+            transforms: format!("{}-transforms", prefix),
+            orchestrator: format!("{}-orchestrator_state", prefix),
+            schema_states: format!("{}-schema_states", prefix),
+            schemas: format!("{}-schemas", prefix),
+            public_keys: format!("{}-public_keys", prefix),
+            transform_queue: format!("{}-transform_queue_tree", prefix),
+            native_index: format!("{}-native_index", prefix),
+            process: format!("{}-process", prefix),
+        }
+    }
 }
 
 /// Error type for configuration parsing

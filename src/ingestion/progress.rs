@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
-use aws_sdk_dynamodb::types::{AttributeValue, AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, ProvisionedThroughput};
+use aws_sdk_dynamodb::types::{AttributeValue, AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType};
 use aws_sdk_dynamodb::Client;
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::logging::core::get_current_user_id;
@@ -212,6 +212,8 @@ impl DynamoDbProgressStore {
     }
 
     async fn ensure_table_exists(&self) -> Result<(), String> {
+        use aws_sdk_dynamodb::types::BillingMode;
+        
         let result = self.client.create_table()
             .table_name(&self.table_name)
             .attribute_definitions(
@@ -242,13 +244,7 @@ impl DynamoDbProgressStore {
                     .build()
                     .unwrap()
             )
-            .provisioned_throughput(
-                ProvisionedThroughput::builder()
-                    .read_capacity_units(5)
-                    .write_capacity_units(5)
-                    .build()
-                    .unwrap()
-            )
+            .billing_mode(BillingMode::PayPerRequest)
             .send()
             .await;
             

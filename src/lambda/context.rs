@@ -65,12 +65,8 @@ impl LambdaContext {
         let progress_tracker: ProgressTracker = match &config.storage {
             crate::lambda::config::LambdaStorage::DynamoDb(dynamo_config) => {
                  use crate::ingestion::progress::DynamoDbProgressStore;
-                 use crate::storage::TableConfig;
                  
-                 let table_name = match &dynamo_config.table_config {
-                     TableConfig::Prefix(prefix) => format!("{}-process", prefix),
-                     TableConfig::Explicit(tables) => tables.process.clone(),
-                 };
+                 let table_name = dynamo_config.tables.process.clone();
                  
                  Arc::new(DynamoDbProgressStore::new(table_name).await
                      .map_err(|e| IngestionError::StorageError(format!("Failed to initialize process table: {}", e)))?)
