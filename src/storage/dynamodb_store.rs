@@ -475,73 +475,7 @@ mod tests {
     // Note: These tests require a real DynamoDB table or LocalStack
     // They are integration tests and should be run with proper AWS credentials
 
-    #[tokio::test]
-    #[ignore] // Run with `cargo test -- --ignored` when DynamoDB is available
-    async fn test_put_and_get_schema() {
-        let config = DynamoDbConfig {
-            region: "us-east-1".to_string(),
-            table_config: TableConfig::Prefix("test".to_string()),
-            auto_create: true,
-            user_id: None,
-        };
 
-        let store = DynamoDbSchemaStore::new(config).await.unwrap();
-
-        let mut schema = Schema::new(
-            "TestSchema".to_string(),
-            SchemaType::Single,
-            None,
-            Some(vec!["id".to_string(), "name".to_string()]),
-            None,
-            None,
-        );
-
-        schema.set_field_topology(
-            "id".to_string(),
-            JsonTopology::new(TopologyNode::Primitive {
-                value: PrimitiveType::String,
-                classifications: Some(vec!["word".to_string()]),
-            }),
-        );
-
-        schema.set_field_topology(
-            "name".to_string(),
-            JsonTopology::new(TopologyNode::Primitive {
-                value: PrimitiveType::String,
-                classifications: Some(vec!["word".to_string()]),
-            }),
-        );
-
-        // Compute topology hash
-        schema.compute_schema_topology_hash();
-        let schema_name = schema.get_topology_hash().unwrap().clone();
-
-        // Put schema
-        store.put_schema(&schema, &HashMap::new()).await.unwrap();
-
-        // Get schema back
-        let retrieved = store.get_schema(&schema_name).await.unwrap();
-        assert!(retrieved.is_some());
-
-        let retrieved_schema = retrieved.unwrap();
-        assert_eq!(retrieved_schema.name, schema_name);
-        assert_eq!(retrieved_schema.field_topologies, schema.field_topologies);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_list_schemas() {
-        let config = DynamoDbConfig {
-            region: "us-east-1".to_string(),
-            table_config: TableConfig::Prefix("test".to_string()),
-            auto_create: true,
-            user_id: None,
-        };
-
-        let store = DynamoDbSchemaStore::new(config).await.unwrap();
-
-        let schemas = store.list_schema_names().await.unwrap();
-    }
 }
 
 

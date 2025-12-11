@@ -43,41 +43,29 @@ async fn test_lambda_context_double_init_fails() {
     let config1 = LambdaConfig::new(storage_config1, LambdaLogging::Stdout)
         .with_schema_service_url("https://schema1.com".to_string());
     
-    // Initialize first context
-    LambdaContext::init(config1.clone()).await.unwrap();
+    // Initialize first context (might already be initialized by other tests)
+    let _ = LambdaContext::init(config1.clone()).await;
 
     // Verify context is initialized
     LambdaContext::progress_tracker().unwrap();
 
     // Try to re-initialize (should fail)
+    // Try to re-initialize with different config (should fail because context is singleton)
     let storage_config2 = StorageConfig::Local { path: temp_dir2.clone() };
     let config2 = LambdaConfig::new(storage_config2, LambdaLogging::Stdout)
         .with_schema_service_url("https://schema.example.com".to_string());
     
-    let first_init = LambdaContext::init(config1).await;
     let second_init = LambdaContext::init(config2).await;
     
-    // Either first succeeded and second failed, or both failed (already initialized)
-    if first_init.is_ok() {
-        assert!(second_init.is_err());
-        if let Err(e) = second_init {
-            let error_msg = e.to_string();
-            assert!(
-                error_msg.contains("already initialized") || error_msg.contains("Context already initialized"),
-                "Unexpected error: {}",
-                error_msg
-            );
-        }
-    } else {
-        // First failed because already initialized
-        if let Err(e) = first_init {
-            let error_msg = e.to_string();
-            assert!(
-                error_msg.contains("already initialized") || error_msg.contains("Context already initialized"),
-                "Unexpected error: {}",
-                error_msg
-            );
-        }
+    // Should fail because already initialized
+    assert!(second_init.is_err(), "Second initialization should fail");
+    if let Err(e) = second_init {
+        let error_msg = e.to_string();
+        assert!(
+            error_msg.contains("already initialized") || error_msg.contains("Context already initialized"),
+            "Unexpected error: {}",
+            error_msg
+        );
     }
     
     // Cleanup
@@ -126,7 +114,7 @@ async fn test_lambda_context_get_progress_nonexistent() {
     let _ = LambdaContext::init(config).await;
     
     // Try to get non-existent progress
-    let result = LambdaContext::get_progress("nonexistent-progress-id");
+    let result = LambdaContext::get_progress("nonexistent-progress-id").await;
     
     // Should return Ok(None) for non-existent progress or be uninitialized
     match result {
@@ -215,7 +203,7 @@ async fn test_lambda_context_ingest_json_returns_progress_id() {
             
             // Should be able to check progress
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            let progress = LambdaContext::get_progress(&progress_id);
+            let progress = LambdaContext::get_progress(&progress_id).await;
             assert!(progress.is_ok());
         }
         Err(e) => {

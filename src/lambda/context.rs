@@ -113,8 +113,11 @@ impl LambdaContext {
         // Bridge Rust's log crate to our custom logger
         // This captures all internal datafold logging (log::info!(), etc.)
         let log_bridge = LogBridge::new(logger.clone());
-        log::set_boxed_logger(Box::new(log_bridge))
-            .map_err(|e| IngestionError::configuration_error(format!("Failed to set logger: {}", e)))?;
+        if let Err(e) = log::set_boxed_logger(Box::new(log_bridge)) {
+            // It's possible the logger was already set (e.g. during tests).
+            // This is not a fatal error, so we just log it to stderr and continue.
+            eprintln!("Warning: Failed to set logger (probably already initialized): {}", e);
+        }
         log::set_max_level(log::LevelFilter::Info);
 
         let context = LambdaContext {

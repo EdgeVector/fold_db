@@ -1,29 +1,0 @@
-Note: Unnecessary use of -X or --request, POST is already inferred.
-* Host localhost:9001 was resolved.
-* IPv6: ::1
-* IPv4: 127.0.0.1
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying [::1]:9001...
-* connect to ::1 port 9001 from ::1 port 62316 failed: Connection refused
-*   Trying 127.0.0.1:9001...
-* Connected to localhost (127.0.0.1) port 9001
-> POST /api/llm-query/native-index HTTP/1.1
-> Host: localhost:9001
-> User-Agent: curl/8.7.1
-> Accept: */*
-> Content-Type: application/json
-> Content-Length: 45
-> 
-} [45 bytes data]
-* upload completely sent off: 45 bytes
-100    45    0     0  100    45      0    217 --:--:-- --:--:-- --:--:--   217100    45    0     0  100    45      0     37  0:00:01  0:00:01 --:--:--    37100    45    0     0  100    45      0     20  0:00:02  0:00:02 --:--:--    20100    45    0     0  100    45      0     13  0:00:03  0:00:03 --:--:--    13100    45    0     0  100    45      0     10  0:00:04  0:00:04 --:--:--    10100    45    0     0  100    45      0      8  0:00:05  0:00:05 --:--:--     0100    45    0     0  100    45      0      7  0:00:06  0:00:06 --:--:--     0100    45    0     0  100    45      0      6  0:00:07  0:00:07 --:--:--     0100    45    0     0  100    45      0      5  0:00:09  0:00:08  0:00:01     0100    45    0     0  100    45      0      4  0:00:11  0:00:09  0:00:02     0100    45    0     0  100    45      0      4  0:00:11  0:00:10  0:00:01     0100    45    0     0  100    45      0      3  0:00:15  0:00:11  0:00:04     0100    45    0     0  100    45      0      3  0:00:15  0:00:12  0:00:03     0< HTTP/1.1 200 OK
-< content-length: 1877
-< vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
-< content-type: application/json
-< date: Wed, 03 Dec 2025 17:07:03 GMT
-< 
-{ [1877 bytes data]
-100  1922  100  1877  100    45    146      3  0:00:15  0:00:12  0:00:03   411
-* Connection #0 to host localhost left intact
-{"ai_interpretation":"Here's my analysis of the search results for \"testing\":\n\n1. Summary:\n- Found 2 relevant results containing variations of \"testing/test\"\n- Results appear to come from different schemas/contexts (likely different data collections)\n- One result is from what appears to be a tweet, the other from a database description\n\n2. Key Insights:\n- The first result discusses testing of \"FoldDB\" with positive feedback about schema inference\n- The second result appears to be a simple test database entry\n- Both matches found in \"content\" fields\n\n3. Notable Patterns:\n- The search matched both \"testing\" and \"test\" variations\n- Both entries appear to be related to database/technical contexts\n- The first result contains more substantive information about actual testing activities\n\nThe results seem most relevant if you're looking for information about database testing or test entries. If you're looking for something more specific, you might want to try:\n- \"testing benchmarks\" for performance data\n- \"testing methodology\" for process information\n- Adding specific technology names (like \"FoldDB testing\")","query":"find testing","raw_results":[{"field":"content","key_value":{"hash":null,"range":"tweet_1234567891"},"metadata":{"classification":"word","normalized":"testing"},"schema_name":"a497a362fd0832f7552c7b655891f6a01f5b096273e74033fd75d90e1194be5a","value":"Amazing work @techinfluencer! Been testing FoldDB for the past week. The automatic schema inference saved us hours of setup time. Here are my benchmarks:"},{"field":"content","key_value":{"hash":null,"range":"1"},"metadata":{"classification":"word","normalized":"test"},"schema_name":"abd81bbd4ba51d6d14afedc0f9cb90b406ecbbe67ba4143e35e13ca5d97bc711","value":"This is a test database for native indexing."}],"session_id":"4aac4aa5-5c3b-4292-9619-27a58db01e81"}

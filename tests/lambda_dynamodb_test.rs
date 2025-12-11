@@ -67,7 +67,7 @@ async fn test_lambda_with_dynamodb_style_db_ops() {
                     
                     // Verify we can get progress
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    let progress = LambdaContext::get_progress(&progress_id);
+                    let progress = LambdaContext::get_progress(&progress_id).await;
                     assert!(progress.is_ok(), "Should be able to get progress");
                 }
                 Err(e) => {
