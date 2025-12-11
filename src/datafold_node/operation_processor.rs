@@ -3,7 +3,7 @@ use crate::schema::types::{Mutation, Query, KeyValue};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+
 use crate::schema::types::operations::{MutationType, Operation};
 use super::DataFoldNode;
 use super::response_types::QueryResultMap;

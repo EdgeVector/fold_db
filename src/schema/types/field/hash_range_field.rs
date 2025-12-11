@@ -9,7 +9,7 @@ use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{FilterApplicator, apply_hash_range_filter, fetch_atoms_for_matches};
+use crate::schema::types::field::{FilterApplicator, apply_hash_range_filter};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperationsV2;
 use serde::{Deserialize, Serialize};

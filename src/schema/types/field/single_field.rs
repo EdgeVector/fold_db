@@ -5,7 +5,7 @@ use std::sync::Arc;
 // Removed unused impl_field import
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::common::FieldCommon;
-use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, fetch_atoms_for_matches, FilterApplicator};
+use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator};
 use crate::schema::types::SchemaError;
 use crate::atom::{Molecule, MoleculeBehavior};
 use crate::db_operations::DbOperationsV2;
