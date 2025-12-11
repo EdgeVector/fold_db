@@ -65,7 +65,7 @@ impl LambdaContext {
         let progress_tracker: ProgressTracker = match &config.storage {
             crate::lambda::config::LambdaStorage::DynamoDb(dynamo_config) => {
                  use crate::ingestion::progress::DynamoDbProgressStore;
-                 use crate::lambda::config::TableConfig;
+                 use crate::storage::TableConfig;
                  
                  let table_name = match &dynamo_config.table_config {
                      TableConfig::Prefix(prefix) => format!("{}-process", prefix),

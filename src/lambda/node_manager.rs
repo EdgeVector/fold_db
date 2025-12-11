@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use crate::datafold_node::{DataFoldNode, NodeConfig};
 use crate::ingestion::IngestionError;
-use crate::lambda::config::{LambdaConfig, LambdaStorage, TableConfig};
-use crate::storage::TableNameResolver;
+use crate::lambda::config::{LambdaConfig, LambdaStorage};
+use crate::storage::{TableConfig, TableNameResolver};
 
 /// Manages DataFold nodes for different tenants
 pub struct NodeManager {
