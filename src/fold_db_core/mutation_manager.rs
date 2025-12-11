@@ -10,7 +10,7 @@ use std::thread;
 use std::time::Duration;
 use std::collections::HashMap;
 
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::types::{Mutation, KeyValue};
 use crate::schema::types::field::Field;
 use crate::schema::{SchemaCore, SchemaError};
@@ -23,7 +23,7 @@ use log::{debug, error, warn};
 /// Manages mutation operations for the FoldDB system
 pub struct MutationManager {
     /// Database operations for persistence
-    db_ops: Arc<DbOperationsV2>,
+    db_ops: Arc<DbOperations>,
     /// Schema manager for schema operations
     schema_manager: Arc<SchemaCore>,
     /// Message bus for event publishing and listening
@@ -106,7 +106,7 @@ impl MutationManager {
 
     /// Creates a new MutationManager instance
     pub fn new(
-        db_ops: Arc<DbOperationsV2>,
+        db_ops: Arc<DbOperations>,
         schema_manager: Arc<SchemaCore>,
         message_bus: Arc<MessageBus>,
         index_status_tracker: Option<IndexStatusTracker>,
@@ -676,7 +676,7 @@ impl MutationManager {
     #[allow(deprecated)]
     fn handle_mutation_request_event(
         mutation_request: &MutationRequest,
-        db_ops: &Arc<DbOperationsV2>,
+        db_ops: &Arc<DbOperations>,
         schema_manager: &Arc<SchemaCore>,
         message_bus: &MessageBus,
     ) -> Result<(), SchemaError> {

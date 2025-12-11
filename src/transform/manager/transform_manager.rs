@@ -24,7 +24,7 @@ use crate::schema::types::{SchemaError, Transform};
 /// - TransformOrchestrator: Orchestration and event handling
 /// - TransformManager: Registration, execution, mapping, and result storage
 pub struct TransformManager {
-    pub db_ops: Arc<crate::db_operations::DbOperationsV2>,
+    pub db_ops: Arc<crate::db_operations::DbOperations>,
     pub(super) registered_transforms: RwLock<HashMap<String, Transform>>,
     pub(super) schema_field_to_transforms: RwLock<BTreeMap<String, HashSet<String>>>,
     pub(super) message_bus: Arc<MessageBus>,
@@ -55,7 +55,7 @@ impl TransformManager {
 
     /// Creates a new TransformManager instance with unified database operations
     pub async fn new(
-        db_ops: std::sync::Arc<crate::db_operations::DbOperationsV2>,
+        db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
         // Load persisted state from storage

@@ -178,7 +178,7 @@ impl LlmQueryService {
         &self,
         user_query: &str,
         schemas: &[crate::schema::SchemaWithState],
-        db_ops: &crate::db_operations::DbOperationsV2,
+        db_ops: &crate::db_operations::DbOperations,
     ) -> Result<(String, Vec<crate::db_operations::IndexResult>), String> {
         // Step 1: Generate native index search terms using AI
         let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;

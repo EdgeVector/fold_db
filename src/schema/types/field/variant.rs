@@ -7,7 +7,7 @@ use crate::schema::types::field::{
     Field, FieldCommon, HashRangeField, RangeField, SingleField,
     HashRangeFilter, FilterApplicator, fetch_atoms_for_matches_async,
 };
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::types::SchemaError;
 use crate::schema::types::key_value::KeyValue;
 use serde_json::Value as JsonValue;
@@ -58,7 +58,7 @@ impl Field for FieldVariant {
         delegate_field_method!(self, common_mut)
     }
 
-    async fn refresh_from_db(&mut self, db_ops: &DbOperationsV2) {
+    async fn refresh_from_db(&mut self, db_ops: &DbOperations) {
         match self {
             Self::Single(f) => f.refresh_from_db(db_ops).await,
             Self::Range(f) => f.refresh_from_db(db_ops).await,
@@ -72,7 +72,7 @@ impl Field for FieldVariant {
 
     async fn resolve_value(
         &mut self,
-        db_ops: &Arc<DbOperationsV2>,
+        db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         // Refresh field data from database first

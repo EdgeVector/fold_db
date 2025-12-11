@@ -1,16 +1,16 @@
-use super::core_refactored::DbOperationsV2;
+use super::core::DbOperations;
 use crate::atom::Atom;
 use crate::schema::types::field::FieldVariant;
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
 use serde_json::Value;
 
-impl DbOperationsV2 {
+impl DbOperations {
     /// Creates and stores an atom for a mutation field with deferred flush.
     /// If an atom with the same content already exists (content-based deduplication),
     /// returns the existing atom instead of creating a duplicate.
     /// 
-    /// This is the async V2 version for use with DbOperationsV2.
+    /// This is the async V2 version for use with DbOperations.
     pub async fn create_and_store_atom_for_mutation_deferred(
         &self,
         schema_name: &str,
@@ -51,7 +51,7 @@ impl DbOperationsV2 {
     }
 
     /// Persists a field's molecule to storage with deferred flush.
-    /// This is the async V2 version for use with DbOperationsV2.
+    /// This is the async V2 version for use with DbOperations.
     pub async fn persist_field_molecule_deferred(
         &self,
         field: &FieldVariant,

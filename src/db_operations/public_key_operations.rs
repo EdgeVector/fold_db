@@ -1,9 +1,9 @@
-use super::core_refactored::DbOperationsV2;
+use super::core::DbOperations;
 use crate::schema::SchemaError;
 use crate::security::PublicKeyInfo;
 use crate::constants::SINGLE_PUBLIC_KEY_ID;
 
-impl DbOperationsV2 {
+impl DbOperations {
     /// Gets the system-wide public key
     pub async fn get_system_public_key(&self) -> Result<Option<PublicKeyInfo>, SchemaError> {
         use crate::storage::traits::TypedStore;

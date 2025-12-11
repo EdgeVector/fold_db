@@ -1,4 +1,4 @@
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::fold_db_core::{
     infrastructure::message_bus::MessageBus, orchestration::TransformOrchestrator
 };
@@ -7,7 +7,7 @@ use sled::Tree;
 use std::sync::Arc;
 
 pub async fn init_transform_manager(
-    db_ops: Arc<DbOperationsV2>,
+    db_ops: Arc<DbOperations>,
     message_bus: Arc<MessageBus>,
 ) -> Result<Arc<TransformManager>, sled::Error> {
     let mgr = TransformManager::new(db_ops.clone(), message_bus).await
@@ -19,7 +19,7 @@ pub fn init_transform_orchestrator(
     transform_manager: Arc<TransformManager>,
     tree: Tree,
     message_bus: Arc<MessageBus>,
-    db_ops: Arc<DbOperationsV2>,
+    db_ops: Arc<DbOperations>,
 ) -> Result<Arc<TransformOrchestrator>, sled::Error> {
     // In event-driven mode, transform manager and orchestrator integration happens through events
     let orchestrator = Arc::new(TransformOrchestrator::new(

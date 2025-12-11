@@ -3,7 +3,7 @@
 //! Main query execution logic extracted from FoldDB core, handling all query types
 //! including HashRange schemas with proper delegation to specialized processors.
 
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::types::Query;
 use crate::schema::SchemaCore;
 use crate::schema::SchemaError;
@@ -23,7 +23,7 @@ pub struct QueryExecutor {
 impl QueryExecutor {
     /// Create a new query executor with storage abstraction
     pub fn new(
-        db_ops: Arc<DbOperationsV2>,
+        db_ops: Arc<DbOperations>,
         schema_manager: Arc<SchemaCore>,
     ) -> Self {
         let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops));

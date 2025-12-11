@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use async_trait::async_trait;
 
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::HashRangeFilter;
@@ -24,7 +24,7 @@ pub trait Field: Send + Sync {
     fn common_mut(&mut self) -> &mut FieldCommon;
 
     /// Refreshes the field's data from the database using the provided key configuration.
-    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2);
+    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations);
 
     /// Writes a mutation to the field
     fn write_mutation(&mut self, key_value: &KeyValue, atom: crate::atom::Atom, pub_key: String);
@@ -32,7 +32,7 @@ pub trait Field: Send + Sync {
     /// Resolves field values by refreshing the field, applying filters, and fetching atom content
     async fn resolve_value(
         &mut self,
-        db_ops: &Arc<DbOperationsV2>,
+        db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError>;
 }
@@ -114,7 +114,7 @@ macro_rules! impl_field {
                 &mut self.inner
             }
 
-            async fn refresh_from_db(&mut self, db_ops: &$crate::db_operations::DbOperationsV2) {
+            async fn refresh_from_db(&mut self, db_ops: &$crate::db_operations::DbOperations) {
                 log::error!("refresh_from_db not implemented for {}", stringify!($t));
             }
 
@@ -129,7 +129,7 @@ macro_rules! impl_field {
 
             async fn resolve_value(
                 &mut self,
-                db_ops: &std::sync::Arc<$crate::db_operations::DbOperationsV2>,
+                db_ops: &std::sync::Arc<$crate::db_operations::DbOperations>,
                 filter: Option<$crate::schema::types::field::HashRangeFilter>,
             ) -> Result<std::collections::HashMap<$crate::schema::types::key_value::KeyValue, $crate::schema::types::field::FieldValue>, $crate::schema::types::SchemaError> {
                 log::error!("resolve_value not implemented for {}", stringify!($t));

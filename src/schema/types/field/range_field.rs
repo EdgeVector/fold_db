@@ -10,7 +10,7 @@ use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, apply_range_filter};
 use crate::schema::types::SchemaError;
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::base::FieldBase;
 
@@ -127,7 +127,7 @@ impl crate::schema::types::field::Field for RangeField {
         &mut self.base.inner
     }
 
-    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
+    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
         self.base.refresh_from_db(db_ops).await;
     }
 
@@ -149,7 +149,7 @@ impl crate::schema::types::field::Field for RangeField {
         }
     }
 
-    async fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    async fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
 
         // Fetch actual atom content from database using shared helper

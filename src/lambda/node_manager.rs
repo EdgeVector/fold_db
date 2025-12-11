@@ -71,7 +71,7 @@ impl NodeManager {
 
     /// Create a new node instance
     async fn create_node(&self, user_id: &str) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
-        use crate::db_operations::DbOperationsV2;
+        use crate::db_operations::DbOperations;
         use crate::fold_db_core::FoldDB;
         use crate::storage::{StorageConfig, DynamoDbConfig};
 
@@ -125,7 +125,7 @@ impl NodeManager {
                 let resolver = TableNameResolver::Explicit(map);
                 
                 let db_ops = Arc::new(
-                    DbOperationsV2::from_dynamodb_flexible(
+                    DbOperations::from_dynamodb_flexible(
                         client, 
                         resolver, 
                         dynamo_config.auto_create,

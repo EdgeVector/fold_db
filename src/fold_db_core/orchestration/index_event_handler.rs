@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use log::{error, info};
 
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::MessageBus;
 use crate::fold_db_core::infrastructure::message_bus::request_events::BatchIndexRequest;
 use crate::schema::SchemaError;
@@ -23,7 +23,7 @@ impl IndexEventHandler {
     /// Create a new IndexEventHandler and start monitoring
     pub fn new(
         message_bus: Arc<MessageBus>,
-        db_ops: Arc<DbOperationsV2>,
+        db_ops: Arc<DbOperations>,
         status_tracker: Option<IndexStatusTracker>,
     ) -> Self {
         let status_tracker = status_tracker.unwrap_or_else(|| IndexStatusTracker::new(None));
@@ -53,7 +53,7 @@ impl IndexEventHandler {
     /// Start monitoring for BatchIndexRequest events
     fn start_monitoring(
         message_bus: Arc<MessageBus>,
-        db_ops: Arc<DbOperationsV2>,
+        db_ops: Arc<DbOperations>,
         status_tracker: IndexStatusTracker,
     ) -> tokio::task::JoinHandle<()> {
         let mut consumer = message_bus.subscribe::<BatchIndexRequest>();
@@ -87,7 +87,7 @@ impl IndexEventHandler {
     /// Handle a BatchIndexRequest event by processing all index operations
     async fn handle_batch_index_request(
         event: &BatchIndexRequest,
-        db_ops: &Arc<DbOperationsV2>,
+        db_ops: &Arc<DbOperations>,
         status_tracker: &IndexStatusTracker,
     ) -> Result<(), SchemaError> {
         let operation_count = event.operations.len();

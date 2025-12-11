@@ -1,26 +1,26 @@
-//! Synchronous wrapper for DbOperationsV2
+//! Synchronous wrapper for DbOperations
 //!
-//! This module provides a compatibility layer to use async DbOperationsV2
+//! This module provides a compatibility layer to use async DbOperations
 //! in synchronous contexts by using a Tokio runtime.
 
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::SchemaError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Synchronous wrapper around DbOperationsV2 for backward compatibility
+/// Synchronous wrapper around DbOperations for backward compatibility
 ///
 /// This wrapper allows using the new async storage abstraction in
 /// existing synchronous code by using Tokio's blocking runtime.
 #[derive(Clone)]
 pub struct DbOperationsSync {
-    inner: Arc<DbOperationsV2>,
+    inner: Arc<DbOperations>,
 }
 
 impl DbOperationsSync {
-    /// Create a new synchronous wrapper from DbOperationsV2
-    pub fn new(db_ops: DbOperationsV2) -> Self {
+    /// Create a new synchronous wrapper from DbOperations
+    pub fn new(db_ops: DbOperations) -> Self {
         Self {
             inner: Arc::new(db_ops),
         }
@@ -35,13 +35,13 @@ impl DbOperationsSync {
         let db_ops = match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 // We're in an async context, spawn and block
-                handle.block_on(DbOperationsV2::from_sled(db))?
+                handle.block_on(DbOperations::from_sled(db))?
             }
             Err(_) => {
                 // No runtime, create one
                 let runtime = tokio::runtime::Runtime::new()
                     .expect("Failed to create Tokio runtime");
-                runtime.block_on(DbOperationsV2::from_sled(db))?
+                runtime.block_on(DbOperations::from_sled(db))?
             }
         };
         
@@ -50,8 +50,8 @@ impl DbOperationsSync {
         })
     }
     
-    /// Get the inner async DbOperationsV2 (for use in async contexts)
-    pub fn inner(&self) -> &Arc<DbOperationsV2> {
+    /// Get the inner async DbOperations (for use in async contexts)
+    pub fn inner(&self) -> &Arc<DbOperations> {
         &self.inner
     }
     

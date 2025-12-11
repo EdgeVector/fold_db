@@ -1,8 +1,8 @@
-use super::core_refactored::DbOperationsV2;
+use super::core::DbOperations;
 use crate::schema::SchemaError;
 use uuid::Uuid;
 
-impl DbOperationsV2 {
+impl DbOperations {
     /// Retrieves or generates and persists the node identifier
     pub async fn get_node_id(&self) -> Result<String, SchemaError> {
         use crate::storage::traits::TypedStore;

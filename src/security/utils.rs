@@ -42,7 +42,7 @@ impl SecurityManager {
     /// Create a new security manager with database persistence
     pub async fn new_with_persistence(
         config: crate::security::SecurityConfig,
-        db_ops: Arc<crate::db_operations::DbOperationsV2>,
+        db_ops: Arc<crate::db_operations::DbOperations>,
     ) -> SecurityResult<Self> {
         let verifier = Arc::new(MessageVerifier::new_with_persistence(300, db_ops).await?);
 

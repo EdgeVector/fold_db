@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::datafold_node::config::{DatabaseConfig, NodeConfig};
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityManager};
@@ -94,7 +94,7 @@ impl DataFoldNode {
                 let progress_table_name = dynamo_config.tables.process.clone();
                 
                 let db_ops = Arc::new(
-                    DbOperationsV2::from_dynamodb_flexible(
+                    DbOperations::from_dynamodb_flexible(
                         client, 
                         resolver, 
                         dynamo_config.auto_create, 

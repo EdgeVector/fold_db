@@ -1,5 +1,5 @@
 use super::common::FieldCommon;
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::schema::types::declarative_schemas::FieldMapper;
@@ -40,7 +40,7 @@ where
     M: DeserializeOwned + Send + Sync + Clone
 {
     /// Refresh molecule state from database
-    pub async fn refresh_from_db(&mut self, db_ops: &DbOperationsV2) {
+    pub async fn refresh_from_db(&mut self, db_ops: &DbOperations) {
         // If we have a molecule_uuid, look up the corresponding Molecule
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);

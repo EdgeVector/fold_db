@@ -16,7 +16,7 @@ impl ResultStorage {
     /// Generic result storage for any transform using mutations
     pub fn store_transform_result_generic(
         transform: &Transform,
-        db_ops: &Arc<crate::db_operations::DbOperationsV2>,
+        db_ops: &Arc<crate::db_operations::DbOperations>,
         code_hash_to_result: HashMap<String, JsonValue>,
         key_value: KeyValue,
         message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
