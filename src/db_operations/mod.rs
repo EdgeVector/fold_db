@@ -1,9 +1,9 @@
 // Core database operations
-// mod atom_operations; // Legacy v1 - Disabled to avoid conflicts with v2
+// Core database operations
 pub mod core_refactored;
 pub mod sync_wrapper;
 pub mod error_utils;
-// mod metadata_operations; // Legacy v1 - Disabled to avoid conflicts with v2
+// Legacy v1 - Disabled to avoid conflicts with v2
 mod metadata_operations_v2;
 mod schema_operations_v2;
 mod public_key_operations_v2;
@@ -12,11 +12,6 @@ mod atom_operations_v2;
 mod native_index;
 mod native_index_classification;
 mod native_index_ai_classifier;
-// mod orchestrator_operations; // Legacy v1 - Disabled to avoid conflicts
-// mod public_key_operations; // Legacy v1 - Disabled to avoid conflicts with v2
-// mod schema_operations; // Legacy v1 - Disabled to avoid conflicts with v2
-// mod transform_operations; // Legacy v1 - Disabled to avoid conflicts with v2
-// mod utility_operations; // Legacy v1 - Methods migrated to core_refactored batch operations
 
 // Re-export the main DbOperations struct and error utilities
 pub use core_refactored::DbOperationsV2;

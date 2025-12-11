@@ -8,7 +8,7 @@ use crate::atom::{MoleculeRange, MoleculeBehavior};
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, apply_range_filter, fetch_atoms_for_matches};
+use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator, apply_range_filter};
 use crate::schema::types::SchemaError;
 use crate::db_operations::DbOperationsV2;
 use crate::schema::types::key_value::KeyValue;

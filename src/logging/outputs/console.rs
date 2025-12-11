@@ -4,7 +4,7 @@ use crate::logging::config::ConsoleConfig;
 use crate::logging::util::parse_log_level;
 use crate::logging::LoggingError;
 use tracing_subscriber::fmt;
-use tracing_subscriber::layer::SubscriberExt;
+
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
 use std::io;

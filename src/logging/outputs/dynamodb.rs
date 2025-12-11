@@ -5,7 +5,7 @@ use aws_sdk_dynamodb::{
 };
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::logging::core::{Logger, LogEntry, LogLevel, get_current_user_id};
+use crate::logging::core::{Logger, LogEntry, LogLevel};
 
 /// DynamoDB-backed logger for multi-tenant Lambda deployments
 ///

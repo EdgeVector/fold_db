@@ -4,7 +4,7 @@
 //! asynchronously to avoid blocking mutation operations.
 
 use std::sync::Arc;
-use std::thread;
+
 use std::time::Duration;
 use log::{error, info};
 

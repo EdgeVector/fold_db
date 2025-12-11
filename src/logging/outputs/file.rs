@@ -4,7 +4,7 @@ use crate::logging::config::FileConfig;
 use crate::logging::util::parse_log_level;
 use crate::logging::LoggingError;
 use tracing_subscriber::fmt;
-use tracing_subscriber::layer::SubscriberExt;
+
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
 use tracing_appender::{non_blocking, rolling};
@@ -48,7 +48,7 @@ impl FileOutput {
             )
         };
 
-        let (non_blocking, guard) = non_blocking(file_appender);
+        let (_non_blocking, guard) = non_blocking(file_appender);
 
         Ok(Self {
             config: config.clone(),
