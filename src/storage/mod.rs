@@ -16,7 +16,7 @@ mod tests;
 pub use config::{StorageConfig};
 pub use dynamodb_backend::{DynamoDbNamespacedStore, TableNameResolver};
 pub use dynamodb_store::DynamoDbSchemaStore;
-pub use config::{DynamoDbConfig, TableConfig, ExplicitTables};
+pub use config::{DynamoDbConfig, ExplicitTables};
 pub use error::StorageError;
 pub use inmemory_backend::InMemoryNamespacedStore;
 

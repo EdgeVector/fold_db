@@ -17,7 +17,7 @@ use crate::schema::types::Schema;
 
 use super::dynamodb_utils::{MAX_RETRIES, format_dynamodb_error};
 use crate::retry_operation;
-use crate::storage::{DynamoDbConfig, TableConfig};
+use crate::storage::DynamoDbConfig;
 
 /// DynamoDB-backed schema storage
 pub struct DynamoDbSchemaStore {
@@ -35,11 +35,8 @@ impl DynamoDbSchemaStore {
     /// Create a new DynamoDB schema store
     /// Validates that the table exists before returning
     pub async fn new(config: DynamoDbConfig) -> FoldDbResult<Self> {
-        // Resolve table name
-        let table_name = match &config.table_config {
-            TableConfig::Prefix(p) => format!("{}-schemas", p),
-            TableConfig::Explicit(e) => e.schemas.clone(),
-        };
+        // Resolve table name from explicit tables config
+        let table_name = config.tables.schemas.clone();
 
         let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(aws_sdk_dynamodb::config::Region::new(config.region.clone()))

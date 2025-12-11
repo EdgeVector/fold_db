@@ -77,33 +77,21 @@ impl DataFoldNode {
                 
                 let client = aws_sdk_dynamodb::Client::new(&aws_config);
 
-                // Convert TableConfig to TableNameResolver and determine progress table
-                let (resolver, progress_table_name) = match &dynamo_config.table_config {
-                    crate::storage::TableConfig::Prefix(prefix) => {
-                        (
-                            crate::storage::TableNameResolver::Prefix(prefix.clone()),
-                            format!("{}-process", prefix)
-                        )
-                    },
-                    crate::storage::TableConfig::Explicit(explicit) => {
-                        let mut map = std::collections::HashMap::new();
-                        map.insert("main".to_string(), explicit.main.clone());
-                        map.insert("metadata".to_string(), explicit.metadata.clone());
-                        map.insert("node_id_schema_permissions".to_string(), explicit.permissions.clone());
-                        map.insert("transforms".to_string(), explicit.transforms.clone());
-                        map.insert("orchestrator_state".to_string(), explicit.orchestrator.clone());
-                        map.insert("schema_states".to_string(), explicit.schema_states.clone());
-                        map.insert("schemas".to_string(), explicit.schemas.clone());
-                        map.insert("public_keys".to_string(), explicit.public_keys.clone());
-                        map.insert("transform_queue_tree".to_string(), explicit.transform_queue.clone());
-                        map.insert("native_index".to_string(), explicit.native_index.clone());
-                        
-                        (
-                            crate::storage::TableNameResolver::Explicit(map),
-                            explicit.process.clone()
-                        )
-                    }
-                };
+                // Convert ExplicitTables to TableNameResolver
+                let mut map = std::collections::HashMap::new();
+                map.insert("main".to_string(), dynamo_config.tables.main.clone());
+                map.insert("metadata".to_string(), dynamo_config.tables.metadata.clone());
+                map.insert("node_id_schema_permissions".to_string(), dynamo_config.tables.permissions.clone());
+                map.insert("transforms".to_string(), dynamo_config.tables.transforms.clone());
+                map.insert("orchestrator_state".to_string(), dynamo_config.tables.orchestrator.clone());
+                map.insert("schema_states".to_string(), dynamo_config.tables.schema_states.clone());
+                map.insert("schemas".to_string(), dynamo_config.tables.schemas.clone());
+                map.insert("public_keys".to_string(), dynamo_config.tables.public_keys.clone());
+                map.insert("transform_queue_tree".to_string(), dynamo_config.tables.transform_queue.clone());
+                map.insert("native_index".to_string(), dynamo_config.tables.native_index.clone());
+                
+                let resolver = crate::storage::TableNameResolver::Explicit(map);
+                let progress_table_name = dynamo_config.tables.process.clone();
                 
                 let db_ops = Arc::new(
                     DbOperationsV2::from_dynamodb_flexible(

@@ -2,7 +2,7 @@
 
 use crate::db_operations::DbOperationsV2;
 use crate::lambda::logging::Logger;
-use crate::storage::{StorageConfig, DynamoDbConfig, TableConfig};
+use crate::storage::{StorageConfig, DynamoDbConfig};
 use std::sync::Arc;
 
 /// Storage configuration for Lambda - either use StorageConfig or provide a pre-created DbOperationsV2

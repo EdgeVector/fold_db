@@ -423,23 +423,26 @@ datafold = { version = "0.1.0", features = ["lambda"] }
 Initialize the `LambdaContext` with `LambdaStorage::DynamoDb`:
 
 ```rust
-use datafold::lambda::{LambdaConfig, LambdaContext, LambdaStorage, DynamoDbConfig, TableConfig};
+use datafold::lambda::{LambdaConfig, LambdaContext, LambdaStorage, LambdaLogging};
+use datafold::storage::{DynamoDbConfig, ExplicitTables};
 
-let config = LambdaConfig {
-    storage: LambdaStorage::DynamoDb(DynamoDbConfig {
+// Using ExplicitTables::from_prefix for convenience
+let config = LambdaConfig::new(
+    LambdaStorage::DynamoDb(DynamoDbConfig {
         region: "us-east-1".to_string(),
-        table_config: TableConfig::Prefix("MyApp".to_string()), // Tables: MyApp-main, etc.
+        tables: ExplicitTables::from_prefix("MyApp"), // Creates: MyApp-main, MyApp-schemas, etc.
         auto_create: true,
+        user_id: None,
     }),
-    // ... other config
-};
+    LambdaLogging::Stdout,
+);
 
 LambdaContext::init(config).await?;
 ```
 
 ### DynamoDB Tables
 
-The system requires and automatically manages **10 tables** per deployment. Using `table_name: "MyApp"`, they are:
+The system requires and automatically manages **11 tables** per deployment. Using `ExplicitTables::from_prefix("MyApp")`, they are:
 
 *   `MyApp-main` (Data)
 *   `MyApp-metadata`
