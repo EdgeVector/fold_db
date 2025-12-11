@@ -374,6 +374,7 @@ pub struct ExplicitTablesDto {
     pub transform_queue: String,
     pub native_index: String,
     pub process: String,
+    pub logs: String,
 }
 
 /// DTO for DynamoDbConfig
@@ -428,6 +429,7 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
                 transform_queue: config.tables.transform_queue.clone(),
                 native_index: config.tables.native_index.clone(),
                 process: config.tables.process.clone(),
+                logs: config.tables.logs.clone(),
             },
         }),
 
@@ -480,6 +482,7 @@ pub async fn update_database_config(
                 transform_queue: dto.tables.transform_queue.clone(),
                 native_index: dto.tables.native_index.clone(),
                 process: dto.tables.process.clone(),
+                logs: dto.tables.logs.clone(),
             },
         }),
 

@@ -8,21 +8,18 @@ use std::sync::Arc;
 /// Storage configuration for Lambda - either use StorageConfig or provide a pre-created DbOperationsV2
 #[derive(Clone)]
 pub enum LambdaStorage {
-    /// Use StorageConfig to create DbOperationsV2 automatically (Local or S3)
+    /// Use StorageConfig to create DbOperationsV2 automatically (Local, S3, or DynamoDB)
     Config(StorageConfig),
     /// Use a pre-created DbOperationsV2 instance (allows any backend implementation)
     DbOps(Arc<DbOperationsV2>),
-    /// Use DynamoDB with specific configuration
-    DynamoDb(DynamoDbConfig),
 }
-
-
 
 /// Configuration for Lambda logging
 #[derive(Clone)]
 pub enum LambdaLogging {
     /// Use DynamoDB for logging (recommended for multi-tenant)
-    DynamoDb { table_name: String },
+    /// Table name is now taken from ExplicitTables.logs in StorageConfig (if applicable)
+    DynamoDb,
     /// Use stdout for logging (good for development/single-tenant)
     Stdout,
     /// Use a custom logger implementation
@@ -36,7 +33,7 @@ pub enum LambdaLogging {
 impl std::fmt::Debug for LambdaLogging {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::DynamoDb { table_name } => f.debug_struct("DynamoDb").field("table_name", table_name).finish(),
+            Self::DynamoDb => write!(f, "DynamoDb"),
             Self::Stdout => write!(f, "Stdout"),
             Self::Custom(_) => write!(f, "Custom(<logger>)"),
             Self::NoOp => write!(f, "NoOp"),
@@ -64,7 +61,6 @@ impl std::fmt::Debug for LambdaConfig {
             .field("storage", &match &self.storage {
                 LambdaStorage::Config(cfg) => format!("Config({:?})", cfg),
                 LambdaStorage::DbOps(_) => "DbOps(<pre-created>)".to_string(),
-                LambdaStorage::DynamoDb(config) => format!("DynamoDb({:?})", config),
             })
             .field("schema_service_url", &self.schema_service_url)
             .field("ai_config", &self.ai_config)

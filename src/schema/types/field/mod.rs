@@ -14,7 +14,7 @@ pub use filter_utils::{
     HashRangeOperations,
     apply_range_filter,
     apply_hash_range_filter,
-    fetch_atoms_for_matches,
+
     fetch_atoms_for_matches_async,
 };
 pub use hash_range_field::HashRangeField;
@@ -45,3 +45,4 @@ where
         }
     }
 }
+pub mod base;

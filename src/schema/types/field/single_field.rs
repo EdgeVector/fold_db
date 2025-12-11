@@ -11,13 +11,14 @@ use crate::atom::{Molecule, MoleculeBehavior};
 use crate::db_operations::DbOperationsV2;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
+use crate::schema::types::field::base::FieldBase;
 // Removed unused JsonValue import
 // Removed unused log imports
 /// Field storing a single value.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SingleField {
-    pub inner: FieldCommon,
-    pub molecule: Option<Molecule>,
+    #[serde(flatten)]
+    pub base: FieldBase<Molecule>,
 }
 
 impl SingleField {
@@ -27,8 +28,7 @@ impl SingleField {
         molecule: Option<Molecule>,
     ) -> Self {
         Self {
-            inner: FieldCommon::new(field_mappers),
-            molecule,
+            base: FieldBase::new(field_mappers, molecule),
         }
     }
 }
@@ -36,41 +36,35 @@ impl SingleField {
 #[async_trait::async_trait]
 impl crate::schema::types::field::Field for SingleField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
-        &self.inner
+        &self.base.inner
     }
     
     fn common_mut(&mut self) -> &mut crate::schema::types::field::FieldCommon {
-        &mut self.inner
+        &mut self.base.inner
     }
 
     async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
-        // For new mutations, fields won't have molecules yet, so refresh is optional
-        if let Some(molecule_uuid) = self.inner.molecule_uuid() {
-            let ref_key = format!("ref:{}", molecule_uuid);
-            if let Ok(Some(molecule)) = db_ops.get_item::<crate::atom::Molecule>(&ref_key).await {
-                self.molecule = Some(molecule);
-            }
-        }
+        self.base.refresh_from_db(db_ops).await;
     }
 
     fn write_mutation(&mut self, _key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
-        if self.molecule.is_none() {
+        if self.base.molecule.is_none() {
             let new_molecule = crate::atom::Molecule::new(atom.uuid().to_string(), pub_key.clone());
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
-            self.inner.set_molecule_uuid(new_molecule.uuid().to_string());
-            self.molecule = Some(new_molecule);
+            self.base.inner.set_molecule_uuid(new_molecule.uuid().to_string());
+            self.base.molecule = Some(new_molecule);
         }
         
         // For SingleField, we store the atom using the pub_key
-        if let Some(molecule) = &mut self.molecule {
+        if let Some(molecule) = &mut self.base.molecule {
             molecule.set_atom_uuid(atom.uuid().to_string());
         }
     }
 
     async fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, _filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
-        if let Some(molecule) = &self.molecule {
+        if let Some(molecule) = &self.base.molecule {
             let uuid = molecule.get_atom_uuid().clone();
             let result = super::fetch_atoms_for_matches_async(
                 db_ops,
@@ -85,7 +79,7 @@ impl crate::schema::types::field::Field for SingleField {
 
 impl FilterApplicator for SingleField {
     fn apply_filter(&self, filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
-        let Some(molecule) = &self.molecule else {
+        let Some(molecule) = &self.base.molecule else {
             return HashRangeFilterResult::empty();
         };
 

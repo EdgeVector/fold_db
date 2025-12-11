@@ -62,7 +62,7 @@ impl DbOperationsV2 {
         
         match field {
             FieldVariant::Single(f) => {
-                if let Some(mol) = &f.molecule {
+                if let Some(mol) = &f.base.molecule {
                     log::info!("💾 Writing Single molecule to DynamoDB: ref_key={}, has_atom={}", 
                         ref_key, !mol.get_atom_uuid().is_empty());
                     self.molecules_store().put_item(&ref_key, mol).await
@@ -76,7 +76,7 @@ impl DbOperationsV2 {
                 }
             }
             FieldVariant::Range(f) => {
-                if let Some(mol) = &f.molecule {
+                if let Some(mol) = &f.base.molecule {
                     log::info!("💾 Writing Range molecule to DynamoDB: ref_key={}, atom_count={}", 
                         ref_key, mol.atom_uuids.len());
                     self.molecules_store().put_item(&ref_key, mol).await
@@ -90,7 +90,7 @@ impl DbOperationsV2 {
                 }
             }
             FieldVariant::HashRange(f) => {
-                if let Some(mol) = &f.molecule {
+                if let Some(mol) = &f.base.molecule {
                     log::info!("💾 Writing HashRange molecule to DynamoDB: ref_key={}, hash_count={}, total_atoms={}", 
                         ref_key, mol.hash_values().count(), mol.atom_count());
                     self.molecules_store().put_item(&ref_key, mol).await

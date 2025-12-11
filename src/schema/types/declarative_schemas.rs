@@ -325,24 +325,15 @@ impl DeclarativeSchemaDefinition {
             let schema_type = self.schema_type.clone();
             match &schema_type {
                 SchemaType::HashRange => {
-                    let hashrange_field = HashRangeField {
-                        inner: default_inner_field.clone(),
-                        molecule: None,
-                    };
+                    let hashrange_field = HashRangeField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
                 }
                 SchemaType::Range => {
-                    let range_field = RangeField {
-                        inner: default_inner_field.clone(),
-                        molecule: None,
-                    };
+                    let range_field = RangeField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::Range(range_field));
                 }
                 SchemaType::Single => {
-                    let single_field = SingleField {
-                        inner: default_inner_field.clone(),
-                        molecule: None,
-                    };
+                    let single_field = SingleField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::Single(single_field));
                 }
             }
