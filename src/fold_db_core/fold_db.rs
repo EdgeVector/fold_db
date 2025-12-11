@@ -10,7 +10,7 @@ use std::sync::Arc;
 use log::{debug, info};
 
 // Internal crate imports
-use crate::db_operations::{DbOperationsV2, IndexResult};
+use crate::db_operations::{DbOperations, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::{StorageError};
@@ -30,7 +30,7 @@ pub struct FoldDB {
     pub(crate) schema_manager: Arc<SchemaCore>,
     pub(crate) transform_manager: Arc<TransformManager>,
     /// Shared database operations with storage abstraction
-    pub(crate) db_ops: Arc<DbOperationsV2>,
+    pub(crate) db_ops: Arc<DbOperations>,
     /// Query executor for handling all query operations
     pub(crate) query_executor: QueryExecutor,
     /// Message bus for event-driven communication
@@ -101,7 +101,7 @@ impl FoldDB {
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
     /// 
-    /// Now fully async to support DbOperationsV2 with storage abstraction!
+    /// Now fully async to support DbOperations with storage abstraction!
     pub async fn new(path: &str) -> Result<Self, StorageError> {
         let db = match sled::open(path) {
             Ok(db) => db,
@@ -120,24 +120,24 @@ impl FoldDB {
 
 
 
-    /// Creates a new FoldDB instance with a pre-created DbOperationsV2.
+    /// Creates a new FoldDB instance with a pre-created DbOperations.
     /// 
     /// This allows you to use any storage backend implementation (DynamoDB, custom, etc.)
-    /// by creating DbOperationsV2 yourself and passing it in.
+    /// by creating DbOperations yourself and passing it in.
     /// 
     /// # Arguments
     /// 
-    /// * `db_ops` - Pre-created DbOperationsV2 instance with your chosen storage backend
+    /// * `db_ops` - Pre-created DbOperations instance with your chosen storage backend
     /// * `db_path` - Path identifier for logging/debugging (can be any string)
     pub async fn new_with_db_ops(
-        db_ops: Arc<DbOperationsV2>,
+        db_ops: Arc<DbOperations>,
         db_path: &str,
         process_table_name: Option<String>,
     ) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
-            "🔄 Using DbOperationsV2 with custom storage backend"
+            "🔄 Using DbOperations with custom storage backend"
         );
         
         Self::initialize_from_db_ops(db_ops, db_path, process_table_name).await
@@ -146,7 +146,7 @@ impl FoldDB {
     /// Common initialization logic shared by both new() and new_with_s3()
     /// This method initializes all FoldDB components from an already-opened sled database
     /// 
-    /// Fully async - uses DbOperationsV2 with storage abstraction layer!
+    /// Fully async - uses DbOperations with storage abstraction layer!
     async fn initialize_from_db(
         db: sled::Db, 
         db_path: &str,
@@ -155,11 +155,11 @@ impl FoldDB {
         log_feature!(
             LogFeature::Database,
             info,
-            "🔄 Using DbOperationsV2 with storage abstraction layer (Sled backend)"
+            "🔄 Using DbOperations with storage abstraction layer (Sled backend)"
         );
         
         // Use the new async storage abstraction!
-        let db_ops = Arc::new(DbOperationsV2::from_sled(db.clone()).await?);
+        let db_ops = Arc::new(DbOperations::from_sled(db.clone()).await?);
         
         log_feature!(
             LogFeature::Database,
@@ -171,11 +171,11 @@ impl FoldDB {
         Self::initialize_from_db_ops(db_ops, db_path, progress_table_name).await
     }
 
-    /// Common initialization logic that creates all FoldDB components from DbOperationsV2
+    /// Common initialization logic that creates all FoldDB components from DbOperations
     /// 
     /// This is used by both initialize_from_db (Sled) and new_with_db_ops (custom backends)
     async fn initialize_from_db_ops(
-        db_ops: Arc<DbOperationsV2>,
+        db_ops: Arc<DbOperations>,
         db_path: &str,
         process_table_name: Option<String>,
     ) -> Result<Self, StorageError> {
@@ -353,7 +353,7 @@ impl FoldDB {
     }
 
     /// Provides access to the underlying database operations
-    pub fn get_db_ops(&self) -> Arc<DbOperationsV2> {
+    pub fn get_db_ops(&self) -> Arc<DbOperations> {
         Arc::clone(&self.db_ops)
     }
 

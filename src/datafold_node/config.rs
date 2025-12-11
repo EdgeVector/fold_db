@@ -34,10 +34,9 @@ pub struct NodeConfig {
     /// Database storage configuration
     #[serde(default)]
     pub database: DatabaseConfig,
-    /// Path where the node will store its data (deprecated, use database.path instead)
-    /// Kept for backward compatibility
-    #[serde(default = "default_storage_path")]
-    pub storage_path: PathBuf,
+
+    // storage_path and its attributes have been removed
+
     /// Default trust distance for queries when not explicitly specified
     /// Must be greater than 0
     pub default_trust_distance: u32,
@@ -52,9 +51,6 @@ pub struct NodeConfig {
     pub schema_service_url: Option<String>,
 }
 
-fn default_storage_path() -> PathBuf {
-    PathBuf::from("data")
-}
 
 fn default_network_listen_address() -> String {
     "/ip4/0.0.0.0/tcp/0".to_string()
@@ -64,7 +60,6 @@ impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             database: DatabaseConfig::default(),
-            storage_path: default_storage_path(),
             default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
@@ -77,8 +72,7 @@ impl NodeConfig {
     /// Create a new node configuration with the specified storage path
     pub fn new(storage_path: PathBuf) -> Self {
         Self {
-            database: DatabaseConfig::Local { path: storage_path.clone() },
-            storage_path,
+            database: DatabaseConfig::Local { path: storage_path },
             default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
@@ -86,11 +80,11 @@ impl NodeConfig {
         }
     }
     
-    /// Get the effective storage path (from database config or legacy storage_path)
+    /// Get the effective storage path (from database config)
     pub fn get_storage_path(&self) -> PathBuf {
         match &self.database {
             DatabaseConfig::Local { path } => path.clone(),
-            DatabaseConfig::DynamoDb(_) => self.storage_path.clone(),
+            DatabaseConfig::DynamoDb(_) => PathBuf::from("data"), // Default callback for DynamoDB if local path needed
 
         }
     }
@@ -128,19 +122,6 @@ pub fn load_node_config(
     if let Ok(config_str) = fs::read_to_string(&config_path) {
         match serde_json::from_str::<NodeConfig>(&config_str) {
             Ok(mut cfg) => {
-                // Backward compatibility: if database field is default (Local with "data" path)
-                // and storage_path is set, use storage_path for database.path
-                if matches!(cfg.database, DatabaseConfig::Local { path: ref p } if p == &PathBuf::from("data"))
-                    && cfg.storage_path != PathBuf::from("data")
-                {
-                    cfg.database = DatabaseConfig::Local {
-                        path: cfg.storage_path.clone(),
-                    };
-                }
-                
-                if let Some(p) = port {
-                    cfg.network_listen_address = format!("/ip4/0.0.0.0/tcp/{}", p);
-                }
                 Ok(cfg)
             }
             Err(e) => {
@@ -164,7 +145,9 @@ pub fn load_node_config(
             if let Ok(temp_dir) = tempfile::tempdir() {
                 #[allow(deprecated)]
                 {
-                    config.storage_path = temp_dir.into_path();
+                    config.database = DatabaseConfig::Local {
+                        path: temp_dir.into_path(),
+                    };
                 }
             }
         }

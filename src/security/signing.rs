@@ -4,7 +4,7 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::{
     constants::SINGLE_PUBLIC_KEY_ID,
-    db_operations::DbOperationsV2,
+    db_operations::DbOperations,
     security::{
         Ed25519PublicKey, KeyUtils, PublicKeyInfo, SecurityError, SecurityResult, SignedMessage,
         VerificationResult,
@@ -64,7 +64,7 @@ pub struct MessageVerifier {
     /// The registered public key (in-memory cache)
     public_key: Arc<RwLock<Option<PublicKeyInfo>>>,
     /// Database operations for persistence
-    db_ops: Option<Arc<DbOperationsV2>>,
+    db_ops: Option<Arc<DbOperations>>,
     /// Maximum allowed timestamp drift in seconds
     max_timestamp_drift: i64,
 }
@@ -82,7 +82,7 @@ impl MessageVerifier {
     /// Create a new message verifier with database persistence
     pub async fn new_with_persistence(
         max_timestamp_drift: i64,
-        db_ops: Arc<DbOperationsV2>,
+        db_ops: Arc<DbOperations>,
     ) -> SecurityResult<Self> {
         let verifier = Self {
             public_key: Arc::new(RwLock::new(None)),

@@ -179,7 +179,7 @@ pub async fn reset_database(
 
     // Perform the database reset by deleting database files and creating a new node
     let config = node.config.clone();
-    let db_path = config.storage_path.clone();
+    let db_path = config.get_storage_path();
     
     // Close the current database
     if let Ok(db) = node.get_fold_db() {
@@ -493,7 +493,7 @@ pub async fn update_database_config(
     // Update storage_path for backward compatibility
     match &config.database {
         DatabaseConfig::Local { path } => {
-            config.storage_path = path.clone();
+            // No need to update storage_path as it is removed
         }
         DatabaseConfig::DynamoDb(_) => {
             // Keep existing storage_path for DynamoDB (used for logging/debugging)

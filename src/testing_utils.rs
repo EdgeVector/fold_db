@@ -2,7 +2,7 @@
 //!
 //! This module eliminates duplicate database setup code found across 11+ files
 
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use sled::{Db, Tree};
 use std::sync::Arc;
@@ -17,9 +17,9 @@ impl TestDatabaseFactory {
     }
 
     /// Create temporary DbOperations for testing - consolidates pattern from multiple files
-    pub async fn create_temp_db_ops() -> Result<DbOperationsV2, Box<dyn std::error::Error>> {
+    pub async fn create_temp_db_ops() -> Result<DbOperations, Box<dyn std::error::Error>> {
         let db = Self::create_temp_sled_db()?;
-        Ok(DbOperationsV2::from_sled(db).await?)
+        Ok(DbOperations::from_sled(db).await?)
     }
 
     /// Create temporary tree for testing - consolidates pattern from orchestration files  
@@ -30,7 +30,7 @@ impl TestDatabaseFactory {
 
     /// Create complete test environment with db_ops and message bus
     pub async fn create_test_environment(
-    ) -> Result<(Arc<DbOperationsV2>, Arc<MessageBus>), Box<dyn std::error::Error>> {
+    ) -> Result<(Arc<DbOperations>, Arc<MessageBus>), Box<dyn std::error::Error>> {
         let db_ops = Arc::new(Self::create_temp_db_ops().await?);
         let message_bus = Arc::new(MessageBus::new());
         Ok((db_ops, message_bus))
@@ -57,7 +57,6 @@ impl TestDatabaseFactory {
             database: crate::datafold_node::config::DatabaseConfig::Local {
                 path: path.clone(),
             },
-            storage_path: path,
             default_trust_distance: 1,
             network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
             security_config: crate::security::SecurityConfig::default(),

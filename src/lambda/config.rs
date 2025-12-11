@@ -1,17 +1,17 @@
 //! Configuration types for Lambda context
 
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::lambda::logging::Logger;
 use crate::storage::{StorageConfig, DynamoDbConfig};
 use std::sync::Arc;
 
-/// Storage configuration for Lambda - either use StorageConfig or provide a pre-created DbOperationsV2
+/// Storage configuration for Lambda - either use StorageConfig or provide a pre-created DbOperations
 #[derive(Clone)]
 pub enum LambdaStorage {
-    /// Use StorageConfig to create DbOperationsV2 automatically (Local, S3, or DynamoDB)
+    /// Use StorageConfig to create DbOperations automatically (Local, S3, or DynamoDB)
     Config(StorageConfig),
-    /// Use a pre-created DbOperationsV2 instance (allows any backend implementation)
-    DbOps(Arc<DbOperationsV2>),
+    /// Use a pre-created DbOperations instance (allows any backend implementation)
+    DbOps(Arc<DbOperations>),
 }
 
 /// Configuration for Lambda logging
@@ -44,7 +44,7 @@ impl std::fmt::Debug for LambdaLogging {
 /// Configuration for Lambda context initialization
 #[derive(Clone)]
 pub struct LambdaConfig {
-    /// Required storage configuration - either StorageConfig or pre-created DbOperationsV2
+    /// Required storage configuration - either StorageConfig or pre-created DbOperations
     pub storage: LambdaStorage,
     /// Required logging configuration
     pub logging: LambdaLogging,
@@ -126,28 +126,28 @@ impl LambdaConfig {
         }
     }
 
-    /// Create a new Lambda configuration with a pre-created DbOperationsV2 and Logging.
+    /// Create a new Lambda configuration with a pre-created DbOperations and Logging.
     /// 
     /// This allows you to use any storage backend implementation (DynamoDB, custom, etc.)
-    /// by creating DbOperationsV2 yourself.
+    /// by creating DbOperations yourself.
     ///
     /// # Example
     ///
     /// ```ignore
     /// use datafold::lambda::{LambdaConfig, LambdaLogging};
-    /// use datafold::db_operations::DbOperationsV2;
+    /// use datafold::db_operations::DbOperations;
     /// use std::sync::Arc;
     ///
-    /// // Create your DbOperationsV2 with any backend
-    /// let db_ops = Arc::new(DbOperationsV2::from_dynamodb(client, table, Some(user_id)).await?);
-    /// // Create your DbOperationsV2 with any backend
-    /// let db_ops = Arc::new(DbOperationsV2::from_dynamodb(client, table, Some(user_id)).await?);
+    /// // Create your DbOperations with any backend
+    /// let db_ops = Arc::new(DbOperations::from_dynamodb(client, table, Some(user_id)).await?);
+    /// // Create your DbOperations with any backend
+    /// let db_ops = Arc::new(DbOperations::from_dynamodb(client, table, Some(user_id)).await?);
     /// let config = LambdaConfig::with_db_ops(
     ///     db_ops, 
     ///     LambdaLogging::DynamoDb { table_name: "logs".into() }
     /// );
     /// ```
-    pub fn with_db_ops(db_ops: Arc<DbOperationsV2>, logging: LambdaLogging) -> Self {
+    pub fn with_db_ops(db_ops: Arc<DbOperations>, logging: LambdaLogging) -> Self {
         Self {
             storage: LambdaStorage::DbOps(db_ops),
             logging,

@@ -1,8 +1,8 @@
-use super::core_refactored::DbOperationsV2;
+use super::core::DbOperations;
 use crate::schema::SchemaError;
 use crate::schema::types::Transform;
 
-impl DbOperationsV2 {
+impl DbOperations {
     /// Synchronize in-memory transform state with persistent storage
     pub async fn sync_transform_state(
         &self,

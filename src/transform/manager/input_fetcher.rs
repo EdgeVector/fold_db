@@ -16,7 +16,7 @@ impl InputFetcher {
     /// @tomtang keep -- main path
     pub async fn fetch_input_values_with_context(
         transform: &Transform,
-        db_ops: &Arc<crate::db_operations::DbOperationsV2>,
+        db_ops: &Arc<crate::db_operations::DbOperations>,
         mutation_context: &Option<MutationContext>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let mut input_values = HashMap::new();
@@ -53,7 +53,7 @@ impl InputFetcher {
     /// Fetch input for a field with mutation context for incremental processing
     /// @tomtang keep -- main path
     async fn fetch_input_for_field_with_context(
-        db_ops: &Arc<crate::db_operations::DbOperationsV2>,
+        db_ops: &Arc<crate::db_operations::DbOperations>,
         schema: &mut Schema,
         field_name: &str,
         mutation_context: &Option<MutationContext>,

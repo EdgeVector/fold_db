@@ -11,7 +11,7 @@ use std::collections::HashMap;
 /// This version uses the storage abstraction layer, allowing the same
 /// DbOperations API to work with different backends (Sled, DynamoDB, etc.)
 #[derive(Clone)]
-pub struct DbOperationsV2 {
+pub struct DbOperations {
     /// Main storage namespace - using concrete type instead of trait object
     main_store: Arc<TypedKvStore<dyn KvStore>>,
     
@@ -39,7 +39,7 @@ pub struct DbOperationsV2 {
     pub orchestrator_tree: Option<sled::Tree>,
 }
 
-impl DbOperationsV2 {
+impl DbOperations {
     /// Create from a NamespacedStore (works with any backend)
     pub async fn from_namespaced_store(
         store: Arc<dyn NamespacedStore>

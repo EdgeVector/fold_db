@@ -8,7 +8,7 @@ use crate::schema::types::field::common::FieldCommon;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult, FilterApplicator};
 use crate::schema::types::SchemaError;
 use crate::atom::{Molecule, MoleculeBehavior};
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::base::FieldBase;
@@ -43,7 +43,7 @@ impl crate::schema::types::field::Field for SingleField {
         &mut self.base.inner
     }
 
-    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperationsV2) {
+    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
         self.base.refresh_from_db(db_ops).await;
     }
 
@@ -62,7 +62,7 @@ impl crate::schema::types::field::Field for SingleField {
         }
     }
 
-    async fn resolve_value(&mut self, db_ops: &Arc<DbOperationsV2>, _filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    async fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, _filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
         if let Some(molecule) = &self.base.molecule {
             let uuid = molecule.get_atom_uuid().clone();

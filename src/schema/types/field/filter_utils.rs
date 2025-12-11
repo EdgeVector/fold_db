@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::db_operations::DbOperationsV2;
+use crate::db_operations::DbOperations;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::SchemaError;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult};
@@ -39,7 +39,7 @@ impl FilterUtils {
 
 /// Resolve atom UUID matches into concrete FieldValue map by fetching atoms (async version)
 pub async fn fetch_atoms_for_matches_async(
-    db_ops: &Arc<DbOperationsV2>,
+    db_ops: &Arc<DbOperations>,
     matches: impl IntoIterator<Item = (KeyValue, String)>,
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
@@ -93,7 +93,7 @@ pub async fn fetch_atoms_for_matches_async(
 /// Resolve atom UUID matches into concrete FieldValue map by fetching atoms (sync version - deprecated)
 #[deprecated(note = "Use fetch_atoms_for_matches_async instead")]
 pub fn fetch_atoms_for_matches(
-    db_ops: &Arc<DbOperationsV2>,
+    db_ops: &Arc<DbOperations>,
     matches: impl IntoIterator<Item = (KeyValue, String)>,
 )-> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();

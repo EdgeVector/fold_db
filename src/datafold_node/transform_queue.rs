@@ -98,8 +98,9 @@ mod tests {
     async fn queue_info_works() {
         let dir = tempdir().unwrap();
         let config = NodeConfig {
-            database: crate::datafold_node::config::DatabaseConfig::default(),
-            storage_path: dir.path().to_path_buf(),
+            database: crate::datafold_node::config::DatabaseConfig::Local {
+                path: dir.path().to_path_buf(),
+            },
             default_trust_distance: 1,
             network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
             security_config: Default::default(),

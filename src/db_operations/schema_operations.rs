@@ -1,8 +1,8 @@
-use super::core_refactored::DbOperationsV2;
+use super::core::DbOperations;
 use crate::schema::{Schema, SchemaError, SchemaState};
 use std::collections::HashMap;
 
-impl DbOperationsV2 {
+impl DbOperations {
     /// Get a specific schema by name
     pub async fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
         use crate::storage::traits::TypedStore;

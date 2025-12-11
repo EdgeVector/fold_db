@@ -26,15 +26,15 @@ pub struct SchemaCore {
     /// Storage for all schemas known to the system and their load state
     schema_states: Arc<Mutex<HashMap<String, SchemaState>>>,
     /// Unified database operations with storage abstraction
-    db_ops: std::sync::Arc<crate::db_operations::DbOperationsV2>,
+    db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
     /// Message bus for event-driven communication
     message_bus: Arc<MessageBus>,
 }
 
 impl SchemaCore {
-    /// Creates a new SchemaCore with DbOperationsV2 (storage abstraction)
+    /// Creates a new SchemaCore with DbOperations (storage abstraction)
     pub async fn new(
-        db_ops: std::sync::Arc<crate::db_operations::DbOperationsV2>,
+        db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
         message_bus: Arc<MessageBus>,
     ) -> Result<Self, SchemaError> {
         // load schemas from db (async)
@@ -412,7 +412,7 @@ impl SchemaCore {
     pub async fn new_for_testing() -> Result<Self, SchemaError> {
         let db = sled::Config::new().temporary(true).open()
             .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
-        let db_ops = std::sync::Arc::new(crate::db_operations::DbOperationsV2::from_sled(db).await
+        let db_ops = std::sync::Arc::new(crate::db_operations::DbOperations::from_sled(db).await
             .map_err(|e| SchemaError::InvalidData(e.to_string()))?);
         let message_bus = Arc::new(MessageBus::new());
         Self::new(db_ops, message_bus).await
