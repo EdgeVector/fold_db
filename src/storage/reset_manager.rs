@@ -63,6 +63,8 @@ impl DynamoDbResetManager {
             "transform_queue_tree",
             "public_keys",
             "node_id_schema_permissions",
+            "main",
+            "process",
         ];
 
         for table in tables {
