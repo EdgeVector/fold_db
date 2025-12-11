@@ -54,6 +54,7 @@ pub struct LogEntry {
 
 /// Log levels
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum LogLevel {
     Trace,
     Debug,

@@ -55,7 +55,7 @@ impl DynamoDbConfig {
 
 /// Explicit table names for all required DynamoDB namespaces.
 /// 
-/// All 11 tables must be explicitly configured:
+/// All 12 tables must be explicitly configured:
 /// - `main`: Primary data storage
 /// - `metadata`: Metadata storage  
 /// - `permissions`: Node/schema permission mappings
@@ -67,6 +67,7 @@ impl DynamoDbConfig {
 /// - `transform_queue`: Transform processing queue
 /// - `native_index`: Native index data
 /// - `process`: Process tracking (ingestion, backfills)
+/// - `logs`: System logs
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ExplicitTables {
     pub main: String,
@@ -85,6 +86,8 @@ pub struct ExplicitTables {
     /// This table is used to track long-running operations.
     /// NOTE: If using DynamoDB storage, this table MUST exist or initialization will fail.
     pub process: String,
+    /// System logs table
+    pub logs: String,
 }
 
 impl ExplicitTables {
@@ -103,6 +106,7 @@ impl ExplicitTables {
             transform_queue: format!("{}-transform_queue_tree", prefix),
             native_index: format!("{}-native_index", prefix),
             process: format!("{}-process", prefix),
+            logs: format!("{}-logs", prefix),
         }
     }
 }
@@ -129,6 +133,7 @@ impl std::error::Error for ConfigError {}
 
 /// Storage configuration enum for different backends
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum StorageConfig {
     /// Local filesystem storage
     #[serde(rename = "local")]
@@ -136,6 +141,9 @@ pub enum StorageConfig {
         /// Path to the local database file/directory
         path: PathBuf,
     },
+    /// DynamoDB storage
+    #[serde(rename = "dynamodb")]
+    DynamoDb(DynamoDbConfig),
 }
 
 impl Default for StorageConfig {

@@ -83,7 +83,8 @@ cat > "$CONFIG_FILE" <<EOF
       "public_keys": "${TABLE_NAME}-public_keys",
       "transform_queue": "${TABLE_NAME}-transform_queue_tree",
       "native_index": "${TABLE_NAME}-native_index",
-      "process": "${TABLE_NAME}-process"
+      "process": "${TABLE_NAME}-process",
+      "logs": "${TABLE_NAME}-logs"
     },
     "auto_create": true,
     "user_id": $(if [ -n "$USER_ID" ]; then echo "\"$USER_ID\""; else echo "null"; fi)
@@ -158,7 +159,14 @@ cd ../../..
 
 # Start the schema service first
 echo "Starting the schema service on port 9002 in the background..."
-DATAFOLD_DYNAMODB_TABLE_PREFIX="$TABLE_NAME" DATAFOLD_DYNAMODB_REGION="$REGION" DATAFOLD_DYNAMODB_USER_ID="$USER_ID" RUST_LOG=debug nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
+# Export DynamoDB config for ProgressStore (uses prefix to generate table names)
+export DATAFOLD_DYNAMODB_TABLE_PREFIX="$TABLE_NAME"
+export DATAFOLD_DYNAMODB_REGION="$REGION"
+if [ -n "$USER_ID" ]; then
+    export DATAFOLD_DYNAMODB_USER_ID="$USER_ID"
+fi
+
+RUST_LOG=debug nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
 
 # Get the schema service process ID
 SCHEMA_SERVICE_PID=$!
@@ -200,12 +208,7 @@ echo "Make sure AWS credentials are configured (AWS_ACCESS_KEY_ID, AWS_SECRET_AC
 # Export OPENROUTER_API_KEY if set in .zshrc
 source ~/.zshrc 2>/dev/null || true
 
-# Export DynamoDB config for ProgressStore (uses prefix to generate table names)
-export DATAFOLD_DYNAMODB_TABLE_PREFIX="$TABLE_NAME"
-export DATAFOLD_DYNAMODB_REGION="$REGION"
-if [ -n "$USER_ID" ]; then
-    export DATAFOLD_DYNAMODB_USER_ID="$USER_ID"
-fi
+
 
 # Export DynamoDB Logging config
 export DATAFOLD_LOG_DYNAMODB_ENABLED="true"

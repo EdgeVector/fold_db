@@ -81,30 +81,4 @@ impl FileOutput {
             Ok(Box::new(layer))
         }
     }
-
-    /// Parse file size string to bytes
-    fn parse_file_size(size_str: &str) -> Result<u64, LoggingError> {
-        let size_str = size_str.to_uppercase();
-        
-        if let Some(num_str) = size_str.strip_suffix("GB") {
-            let num: u64 = num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))?;
-            Ok(num * 1024 * 1024 * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("MB") {
-            let num: u64 = num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))?;
-            Ok(num * 1024 * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("KB") {
-            let num: u64 = num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))?;
-            Ok(num * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("B") {
-            num_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))
-        } else {
-            // Default to bytes if no suffix
-            size_str.parse()
-                .map_err(|_| LoggingError::Config(format!("Invalid file size: {}", size_str)))
-        }
-    }
 }

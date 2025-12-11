@@ -1,11 +1,56 @@
 use async_trait::async_trait;
 use aws_sdk_dynamodb::{
     Client, 
-    types::{AttributeValue, AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, ProvisionedThroughput}
+    types::{AttributeDefinition, AttributeValue, KeySchemaElement, KeyType, ScalarAttributeType, ProvisionedThroughput}
 };
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::logging::core::{Logger, LogEntry, LogLevel};
+use serde::{Deserialize, Serialize};
+
+/// Internal struct for DynamoDB serialization
+#[derive(Debug, Serialize, Deserialize)]
+struct DynamoDbLogItem {
+    user_id: String,
+    timestamp: i64,
+    level: LogLevel,
+    event_type: String,
+    message: String,
+    ttl: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<HashMap<String, String>>,
+}
+
+impl DynamoDbLogItem {
+    fn from_entry(entry: LogEntry) -> Self {
+        // TTL: 30 days from now
+        let ttl = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() + (30 * 24 * 60 * 60)) as i64;
+    
+        Self {
+            user_id: entry.user_id.unwrap_or_else(|| "anonymous".to_string()),
+            timestamp: entry.timestamp,
+            level: entry.level,
+            event_type: entry.event_type,
+            message: entry.message,
+            ttl,
+            metadata: entry.metadata,
+        }
+    }
+    
+    fn into_entry(self) -> LogEntry {
+        LogEntry {
+            timestamp: self.timestamp,
+            level: self.level,
+            event_type: self.event_type,
+            message: self.message,
+            user_id: Some(self.user_id),
+            metadata: self.metadata,
+        }
+    }
+}
 
 /// DynamoDB-backed logger for multi-tenant Lambda deployments
 ///
@@ -97,81 +142,13 @@ impl DynamoDbLogger {
             },
             Err(err) => {
                 if let Some(service_err) = err.as_service_error() {
-                   if service_err.is_resource_in_use_exception() {
-                       return Ok(());
-                   }
+                    if service_err.is_resource_in_use_exception() {
+                        return Ok(());
+                    }
                 }
                 Err(Box::new(err))
             }
         }
-    }
-
-    /// Convert LogEntry to DynamoDB item
-    fn entry_to_item(&self, entry: LogEntry) -> HashMap<String, AttributeValue> {
-        // TTL: 30 days from now
-        let ttl = (SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() + (30 * 24 * 60 * 60)) as i64;
-
-        let mut item = HashMap::new();
-        // Use user_id from entry, defaulting to "anonymous" if missing
-        let user_id = entry.user_id.clone().unwrap_or_else(|| "anonymous".to_string());
-        
-        item.insert("user_id".to_string(), AttributeValue::S(user_id));
-        item.insert("timestamp".to_string(), AttributeValue::N(entry.timestamp.to_string()));
-        item.insert("level".to_string(), AttributeValue::S(entry.level.as_str().to_string()));
-        item.insert("event_type".to_string(), AttributeValue::S(entry.event_type));
-        item.insert("message".to_string(), AttributeValue::S(entry.message));
-        item.insert("ttl".to_string(), AttributeValue::N(ttl.to_string()));
-
-        // Add metadata if present
-        if let Some(meta) = entry.metadata {
-            let meta_av: HashMap<String, AttributeValue> = meta
-                .into_iter()
-                .map(|(k, v)| (k, AttributeValue::S(v)))
-                .collect();
-            item.insert("metadata".to_string(), AttributeValue::M(meta_av));
-        }
-
-        item
-    }
-
-    /// Convert DynamoDB item to LogEntry
-    fn item_to_entry(&self, item: &HashMap<String, AttributeValue>) -> Option<LogEntry> {
-        let timestamp = item.get("timestamp")?.as_n().ok()?.parse().ok()?;
-        let level_str = item.get("level")?.as_s().ok()?;
-        let event_type = item.get("event_type")?.as_s().ok()?.to_string();
-        let message = item.get("message")?.as_s().ok()?.to_string();
-        let user_id = item.get("user_id").and_then(|v| v.as_s().ok()).map(|s| s.to_string());
-
-        let level = match level_str.as_str() {
-            "TRACE" => LogLevel::Trace,
-            "DEBUG" => LogLevel::Debug,
-            "INFO" => LogLevel::Info,
-            "WARN" => LogLevel::Warn,
-            "ERROR" => LogLevel::Error,
-            _ => LogLevel::Info,
-        };
-
-        let metadata = item.get("metadata")
-            .and_then(|v| v.as_m().ok())
-            .map(|m| {
-                m.iter()
-                    .filter_map(|(k, v)| {
-                        v.as_s().ok().map(|s| (k.clone(), s.to_string()))
-                    })
-                    .collect()
-            });
-
-        Some(LogEntry {
-            timestamp,
-            level,
-            event_type,
-            message,
-            metadata,
-            user_id,
-        })
     }
 }
 
@@ -179,7 +156,8 @@ impl DynamoDbLogger {
 impl Logger for DynamoDbLogger {
     /// Log an event to DynamoDB
     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let item = self.entry_to_item(entry);
+        let item_struct = DynamoDbLogItem::from_entry(entry);
+        let item = serde_dynamo::to_item(item_struct)?;
 
         self.client
             .put_item()
@@ -223,13 +201,12 @@ impl Logger for DynamoDbLogger {
         }
 
         let response = query.send().await?;
-        let items = response.items.unwrap_or_default();
-
-        let logs: Vec<LogEntry> = items
-            .iter()
-            .filter_map(|item| self.item_to_entry(item))
-            .collect();
-
-        Ok(logs)
+        
+        if let Some(items) = response.items {
+            let log_items: Vec<DynamoDbLogItem> = serde_dynamo::from_items(items)?;
+            Ok(log_items.into_iter().map(|item| item.into_entry()).collect())
+        } else {
+            Ok(vec![])
+        }
     }
 }
