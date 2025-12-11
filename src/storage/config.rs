@@ -16,6 +16,10 @@ pub struct DynamoDbConfig {
     /// Optional user_id for multi-tenant isolation
     #[serde(default)]
     pub user_id: Option<String>,
+    /// Optional S3 bucket for file storage (uploads/ingestion)
+    /// When set, files will be stored in S3 instead of local filesystem
+    #[serde(default)]
+    pub file_storage_bucket: Option<String>,
 }
 
 impl DynamoDbConfig {
@@ -27,6 +31,7 @@ impl DynamoDbConfig {
     /// 
     /// Optional:
     /// - `DATAFOLD_DYNAMODB_USER_ID`: User ID for multi-tenant isolation
+    /// - `DATAFOLD_S3_FILE_STORAGE_BUCKET`: S3 bucket for file storage (uploads/ingestion)
     pub fn from_env() -> Result<Self, ConfigError> {
         let region = env::var("DATAFOLD_DYNAMODB_REGION")
             .map_err(|_| ConfigError::MissingVariable("DATAFOLD_DYNAMODB_REGION".to_string()))?;
@@ -43,6 +48,7 @@ impl DynamoDbConfig {
             tables,
             auto_create: true,
             user_id: env::var("DATAFOLD_DYNAMODB_USER_ID").ok(),
+            file_storage_bucket: env::var("DATAFOLD_S3_FILE_STORAGE_BUCKET").ok(),
         })
     }
 }
