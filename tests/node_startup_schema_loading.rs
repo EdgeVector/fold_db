@@ -10,14 +10,8 @@ async fn test_node_starts_without_schema_service() {
     let test_db_path = temp_dir.path().join("test_db");
     
     // Create node configuration WITHOUT schema service URL
-    let config = NodeConfig {
-        database: datafold::datafold_node::config::DatabaseConfig::Local { path: test_db_path.to_path_buf() },
-        storage_path: test_db_path.to_path_buf(),
-        default_trust_distance: 1,
-        network_listen_address: "/ip4/127.0.0.1/tcp/9002".to_string(),
-        security_config: Default::default(),
-        schema_service_url: None,
-    };
+    let config = NodeConfig::new(test_db_path.to_path_buf())
+        .with_network_listen_address("/ip4/127.0.0.1/tcp/9002");
     
     // Attempt to create the node - should succeed without schema service URL
     let result = DataFoldNode::new(config).await;

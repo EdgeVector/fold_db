@@ -1,6 +1,6 @@
 ///! Storage Abstraction Demonstration
 ///!
-///! This example shows how to use the new storage abstraction layer (DbOperationsV2)
+///! This example shows how to use the storage abstraction layer (DbOperations)
 ///! with different backends: Sled, DynamoDB, and In-Memory.
 ///!
 ///! Run with:
@@ -8,8 +8,8 @@
 ///! cargo run --example storage_abstraction_demo
 ///! ```
 
-use datafold::db_operations::DbOperationsV2;
-use datafold::storage::{SledNamespacedStore, InMemoryNamespacedStore, NamespacedStore};
+use datafold::db_operations::DbOperations;
+use datafold::storage::{InMemoryNamespacedStore, NamespacedStore};
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let temp_dir = tempfile::tempdir()?;
     let sled_db = sled::open(temp_dir.path())?;
-    let db_ops_sled = DbOperationsV2::from_sled(sled_db).await?;
+    let db_ops_sled = DbOperations::from_sled(sled_db).await?;
     
     // Store data
     let user = User {
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("────────────────────────────────────────────");
     
     let mem_store = Arc::new(InMemoryNamespacedStore::new());
-    let db_ops_mem = DbOperationsV2::from_namespaced_store(mem_store).await?;
+    let db_ops_mem = DbOperations::from_namespaced_store(mem_store).await?;
     
     // Batch insert
     let users = vec![
@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("────────────────────────────────────────────");
     
     let store = Arc::new(InMemoryNamespacedStore::new());
-    let db_ops = DbOperationsV2::from_namespaced_store(store.clone()).await?;
+    let db_ops = DbOperations::from_namespaced_store(store.clone()).await?;
     
     // Store in different namespaces
     db_ops.store_in_namespace("users", "alice", &User {
@@ -135,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("────────────────────────────────────────────");
     
     async fn store_and_retrieve<T>(
-        db_ops: &DbOperationsV2,
+        db_ops: &DbOperations,
         backend_name: &str
     ) -> Result<(), Box<dyn std::error::Error>>
     where
