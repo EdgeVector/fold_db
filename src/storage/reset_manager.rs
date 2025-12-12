@@ -5,18 +5,19 @@ use std::sync::Arc;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::Schema;
 use super::dynamodb_utils::{retry_batch_operation, format_dynamodb_error};
+use crate::storage::config::ExplicitTables;
 
 /// Manager for resetting (deleting) user data from DynamoDB
 pub struct DynamoDbResetManager {
     client: Arc<Client>,
-    base_table_name: String,
+    tables: ExplicitTables,
 }
 
 impl DynamoDbResetManager {
-    pub fn new(client: Arc<Client>, base_table_name: String) -> Self {
+    pub fn new(client: Arc<Client>, tables: ExplicitTables) -> Self {
         Self {
             client,
-            base_table_name,
+            tables,
         }
     }
 
@@ -52,22 +53,22 @@ impl DynamoDbResetManager {
         }
 
         // 4. Delete Schemas
-        self.delete_items_by_pk("schemas", user_id).await?;
+        self.delete_items_by_pk(&self.tables.schemas, user_id).await?;
 
         // 5. Delete from all other tables
-        let tables = vec![
-            "orchestrator_state",
-            "metadata",
-            "schema_states",
-            "transforms",
-            "transform_queue_tree",
-            "public_keys",
-            "node_id_schema_permissions",
-            "main",
-            "process",
+        let tables_to_clean = vec![
+            &self.tables.orchestrator,
+            &self.tables.metadata,
+            &self.tables.schema_states,
+            &self.tables.transforms,
+            &self.tables.transform_queue,
+            &self.tables.public_keys,
+            &self.tables.permissions,
+            &self.tables.main,
+            &self.tables.process,
         ];
 
-        for table in tables {
+        for table in tables_to_clean {
             self.delete_items_by_pk(table, user_id).await?;
         }
 
@@ -77,14 +78,14 @@ impl DynamoDbResetManager {
 
     /// Helper to get all schemas for a user
     async fn get_user_schemas(&self, user_id: &str) -> FoldDbResult<Vec<Schema>> {
-        let table_name = format!("{}-schemas", self.base_table_name);
+        let table_name = &self.tables.schemas;
         let mut schemas = Vec::new();
         let mut last_evaluated_key = None;
 
         loop {
             let mut query = self.client
                 .query()
-                .table_name(&table_name)
+                .table_name(table_name)
                 .key_condition_expression("PK = :pk")
                 .expression_attribute_values(":pk", AttributeValue::S(user_id.to_string()));
 
@@ -93,7 +94,7 @@ impl DynamoDbResetManager {
             }
 
             let result = query.send().await.map_err(|e| {
-                FoldDbError::Database(format_dynamodb_error("query", &table_name, None, &e.to_string()))
+                FoldDbError::Database(format_dynamodb_error("query", table_name, None, &e.to_string()))
             })?;
 
             if let Some(items) = result.items {
@@ -116,9 +117,7 @@ impl DynamoDbResetManager {
     }
 
     /// Delete all items for a user in a specific table (where PK = user_id)
-    async fn delete_items_by_pk(&self, table_suffix: &str, user_id: &str) -> FoldDbResult<()> {
-        let table_name = format!("{}-{}", self.base_table_name, table_suffix);
-        
+    async fn delete_items_by_pk(&self, table_name: &str, user_id: &str) -> FoldDbResult<()> {
         // 1. Query to find all items (we need SK to delete)
         let mut keys_to_delete = Vec::new();
         let mut last_evaluated_key = None;
@@ -126,7 +125,7 @@ impl DynamoDbResetManager {
         loop {
             let mut query = self.client
                 .query()
-                .table_name(&table_name)
+                .table_name(table_name)
                 .key_condition_expression("PK = :pk")
                 .expression_attribute_values(":pk", AttributeValue::S(user_id.to_string()))
                 .projection_expression("PK, SK"); // Only need keys
@@ -138,11 +137,19 @@ impl DynamoDbResetManager {
             let result = match query.send().await {
                 Ok(r) => r,
                 Err(e) => {
+                    // Log the full error for debugging
+                    log::warn!("Query failed for table {}: {:?}", table_name, e);
+                    
                     // If table doesn't exist, just ignore
-                    if e.to_string().contains("ResourceNotFoundException") {
+                    // Check both string representation and service error code if available
+                    let error_str = e.to_string();
+                    let is_resource_not_found = error_str.contains("ResourceNotFoundException") || 
+                                              format!("{:?}", e).contains("ResourceNotFoundException");
+                                              
+                    if is_resource_not_found {
                         return Ok(());
                     }
-                    return Err(FoldDbError::Database(format_dynamodb_error("query", &table_name, None, &e.to_string())));
+                    return Err(FoldDbError::Database(format_dynamodb_error("query", table_name, None, &error_str)));
                 }
             };
 
@@ -188,7 +195,7 @@ impl DynamoDbResetManager {
             retry_batch_operation(
                 |requests| {
                     let mut req_map = HashMap::new();
-                    req_map.insert(table_name.clone(), requests.to_vec());
+                    req_map.insert(table_name.to_string(), requests.to_vec());
                     Box::pin(
                         self.client
                             .batch_write_item()
@@ -196,7 +203,7 @@ impl DynamoDbResetManager {
                             .send()
                     )
                 },
-                &table_name,
+                table_name,
                 write_requests,
             )
             .await
@@ -209,7 +216,7 @@ impl DynamoDbResetManager {
     /// Delete native index entries for a specific feature
     /// PK = user_id:feature
     async fn delete_native_index_for_feature(&self, user_id: &str, feature: &str) -> FoldDbResult<()> {
-        let table_name = format!("{}-native_index", self.base_table_name);
+        let table_name = &self.tables.native_index;
         let pk_val = format!("{}:{}", user_id, feature);
 
         // 1. Query keys
@@ -219,7 +226,7 @@ impl DynamoDbResetManager {
         loop {
             let mut query = self.client
                 .query()
-                .table_name(&table_name)
+                .table_name(table_name)
                 .key_condition_expression("PK = :pk")
                 .expression_attribute_values(":pk", AttributeValue::S(pk_val.clone()))
                 .projection_expression("PK, SK");
@@ -231,10 +238,17 @@ impl DynamoDbResetManager {
             let result = match query.send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    if e.to_string().contains("ResourceNotFoundException") {
+                    // Log the full error for debugging
+                    log::warn!("Query failed for native index table {}: {:?}", table_name, e);
+
+                    let error_str = e.to_string();
+                    let is_resource_not_found = error_str.contains("ResourceNotFoundException") || 
+                                              format!("{:?}", e).contains("ResourceNotFoundException");
+                                              
+                    if is_resource_not_found {
                         return Ok(());
                     }
-                    return Err(FoldDbError::Database(format_dynamodb_error("query", &table_name, None, &e.to_string())));
+                    return Err(FoldDbError::Database(format_dynamodb_error("query", table_name, None, &error_str)));
                 }
             };
 
@@ -279,7 +293,7 @@ impl DynamoDbResetManager {
             retry_batch_operation(
                 |requests| {
                     let mut req_map = HashMap::new();
-                    req_map.insert(table_name.clone(), requests.to_vec());
+                    req_map.insert(table_name.to_string(), requests.to_vec());
                     Box::pin(
                         self.client
                             .batch_write_item()
@@ -287,7 +301,7 @@ impl DynamoDbResetManager {
                             .send()
                     )
                 },
-                &table_name,
+                table_name,
                 write_requests,
             )
             .await

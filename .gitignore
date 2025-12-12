@@ -93,6 +93,8 @@ yarn-error.log
 *.swo
 *~
 logs
+src/datafold_node/static-react/node_modules/
+src/datafold_node/static-react/node_modules_trash/
 
 # Debug files
 *.pdb

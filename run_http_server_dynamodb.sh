@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -e
 # Function to kill existing datafold processes and clean up locks
 cleanup_locks() {
     echo "Checking for existing datafold processes..."
@@ -28,10 +29,11 @@ REGION="us-west-2"
 USER_ID=""
 for arg in "$@"; do
     case "$arg" in
-        --table-name=*)
-            TABLE_NAME="${arg#*=}"
-            shift
-            ;;
+        # --table-name is deprecated/removed to prevent temporary table creation
+        # --table-name=*)
+        #     echo "WARNING: --table-name is disabled. Using default 'DataFoldStorage'."
+        #     shift
+        #     ;;
         --region=*)
             REGION="${arg#*=}"
             shift
@@ -44,6 +46,12 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# Enforce strict table naming to prevent temporary table creation
+if [ "$TABLE_NAME" != "DataFoldStorage" ]; then
+    echo "WARNING: TABLE_NAME was modified. Resetting to 'DataFoldStorage' to prevent temporary table creation."
+    TABLE_NAME="DataFoldStorage"
+fi
 
 # Clean up any existing locks and processes
 cleanup_locks
@@ -107,20 +115,14 @@ echo "DynamoDB configuration saved to $CONFIG_FILE"
 echo "Building the Rust project..."
 cargo build
 
-if [ $? -ne 0 ]; then
-    echo "Rust build failed. Exiting."
-    exit 1
-fi
+
 
 # Generate OpenAPI spec to a local file for the UI prebuild
 echo "Generating OpenAPI spec..."
 mkdir -p target
 cargo run --quiet --bin openapi_dump > target/openapi.json
 
-if [ $? -ne 0 ]; then
-    echo "Failed to generate OpenAPI spec. Exiting."
-    exit 1
-fi
+
 
 # Build the React frontend (prebuild will read OPENAPI_URL file)
 # Build the React frontend (prebuild will read OPENAPI_URL file)
@@ -142,17 +144,11 @@ fi
 echo "Installing frontend dependencies..."
 npm install
 
-if [ $? -ne 0 ]; then
-    echo "Failed to install frontend dependencies. Exiting."
-    exit 1
-fi
+
 
 OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
 
-if [ $? -ne 0 ]; then
-    echo "React build failed. Exiting."
-    exit 1
-fi
+
 
 # Go back to root directory
 cd ../../..
@@ -223,7 +219,7 @@ SERVER_PID=$!
 # Wait for HTTP server to be healthy with proper health check
 echo "Waiting for HTTP server to be ready..."
 HTTP_READY=false
-for i in {1..60}; do
+for i in {1..180}; do
     if kill -0 $SERVER_PID 2>/dev/null; then
         if curl -s http://127.0.0.1:9001/api/system/status > /dev/null 2>&1; then
             HTTP_READY=true

@@ -196,9 +196,6 @@ pub async fn reset_database(
     // Handle reset based on database backend type
     match &config.database {
         DatabaseConfig::DynamoDb(dynamo_config) => {
-            // Use main table name for reset manager operations
-            let table_name = dynamo_config.tables.main.clone();
-            
             let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
                 .load()
@@ -217,7 +214,7 @@ pub async fn reset_database(
 
             let manager = crate::storage::reset_manager::DynamoDbResetManager::new(
                 client.clone(),
-                table_name.clone(),
+                dynamo_config.tables.clone(),
             );
 
             if let Err(e) = manager.reset_user(&uid).await {
