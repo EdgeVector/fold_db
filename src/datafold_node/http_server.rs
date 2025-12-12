@@ -62,15 +62,22 @@ impl DataFoldHttpServer {
     /// * There is an error starting the HTTP server
     pub async fn new(node: DataFoldNode, bind_address: &str) -> FoldDbResult<Self> {
         // Initialize the enhanced logging system
-        if let Err(e) = crate::logging::LoggingSystem::init_default().await {
-            log_feature!(
-                LogFeature::HttpServer,
-                warn,
-                "Failed to initialize enhanced logging system, falling back to web logger: {}",
-                e
-            );
-            // Fall back to old web logger for backward compatibility
-            crate::web_logger::init().ok();
+        // Initialize the enhanced logging system
+        match crate::logging::LoggingSystem::init_default().await {
+            Ok(_) => {}
+            Err(crate::logging::LoggingError::AlreadyInitialized) => {
+                // Logging system already initialized, which is expected if running from binary
+            }
+            Err(e) => {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    warn,
+                    "Failed to initialize enhanced logging system, falling back to web logger: {}",
+                    e
+                );
+                // Fall back to old web logger for backward compatibility
+                crate::web_logger::init().ok();
+            }
         }
 
         Ok(Self {

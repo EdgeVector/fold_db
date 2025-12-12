@@ -394,15 +394,14 @@ impl DynamoDbNativeIndexStore {
     
     /// Parse key to extract feature and term
     /// Keys are in format: "feature:term" (e.g., "word:hello", "email:test@example.com")
-    fn parse_key(&self, key: &[u8]) -> (String, String) {
+    fn parse_key(&self, key: &[u8]) -> StorageResult<(String, String)> {
         let key_str = String::from_utf8_lossy(key);
         if let Some(colon_pos) = key_str.find(':') {
             let feature = key_str[..colon_pos].to_string();
             let term = key_str[colon_pos + 1..].to_string();
-            (feature, term)
+            Ok((feature, term))
         } else {
-            // Fallback: treat entire key as term, use "word" as default feature
-            ("word".to_string(), key_str.to_string())
+            Err(StorageError::SerializationError(format!("Invalid key format: missing colon in '{}'", key_str)))
         }
     }
     
@@ -600,7 +599,7 @@ impl DynamoDbNamespacedStore {
 #[async_trait]
 impl KvStore for DynamoDbNativeIndexStore {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
-        let (feature, term) = self.parse_key(key);
+        let (feature, term) = self.parse_key(key)?;
         let pk = self.get_partition_key(&feature);
         
         let result = self.client
@@ -622,7 +621,7 @@ impl KvStore for DynamoDbNativeIndexStore {
     }
     
     async fn put(&self, key: &[u8], value: Vec<u8>) -> StorageResult<()> {
-        let (feature, term) = self.parse_key(key);
+        let (feature, term) = self.parse_key(key)?;
         let pk = self.get_partition_key(&feature);
         
         let json_str = String::from_utf8(value)
@@ -642,7 +641,7 @@ impl KvStore for DynamoDbNativeIndexStore {
     }
     
     async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
-        let (feature, term) = self.parse_key(key);
+        let (feature, term) = self.parse_key(key)?;
         let pk = self.get_partition_key(&feature);
         
         let result = self.client
@@ -659,7 +658,7 @@ impl KvStore for DynamoDbNativeIndexStore {
     }
     
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
-        let (feature, term) = self.parse_key(key);
+        let (feature, term) = self.parse_key(key)?;
         let pk = self.get_partition_key(&feature);
         
         let result = self.client
@@ -685,8 +684,7 @@ impl KvStore for DynamoDbNativeIndexStore {
             let term_prefix = prefix_str[colon_pos + 1..].to_string();
             (feature, term_prefix)
         } else {
-            // Fallback: treat entire prefix as term prefix, use "word" as default feature
-            ("word".to_string(), prefix_str.to_string())
+            return Err(StorageError::SerializationError(format!("Invalid prefix format: missing colon in '{}'", prefix_str)));
         };
         
         let pk = self.get_partition_key(&feature);
@@ -748,7 +746,7 @@ impl KvStore for DynamoDbNativeIndexStore {
             let mut write_requests = Vec::new();
             
             for (key, value) in chunk {
-                let (feature, term) = self.parse_key(key);
+                let (feature, term) = self.parse_key(key)?;
                 let pk = self.get_partition_key(&feature);
                 
                 let json_str = String::from_utf8(value.clone())
@@ -798,7 +796,7 @@ impl KvStore for DynamoDbNativeIndexStore {
             let mut write_requests = Vec::new();
             
             for key in chunk {
-                let (feature, term) = self.parse_key(key);
+                let (feature, term) = self.parse_key(key)?;
                 let pk = self.get_partition_key(&feature);
                 
                 let delete_request = aws_sdk_dynamodb::types::DeleteRequest::builder()
@@ -956,22 +954,21 @@ mod unit_tests {
         );
 
         // Case 1: Standard feature:term key
-        let (feature, term) = store.parse_key(b"word:hello");
+        let (feature, term) = store.parse_key(b"word:hello").unwrap();
         assert_eq!(feature, "word");
         assert_eq!(term, "hello");
 
         // Case 2: Email feature
-        let (feature, term) = store.parse_key(b"email:test@example.com");
+        let (feature, term) = store.parse_key(b"email:test@example.com").unwrap();
         assert_eq!(feature, "email");
         assert_eq!(term, "test@example.com");
 
-        // Case 3: No colon (fallback)
-        let (feature, term) = store.parse_key(b"just_a_word");
-        assert_eq!(feature, "word");
-        assert_eq!(term, "just_a_word");
+        // Case 3: No colon (error)
+        let result = store.parse_key(b"just_a_word");
+        assert!(result.is_err());
         
         // Case 4: Empty term
-        let (feature, term) = store.parse_key(b"word:");
+        let (feature, term) = store.parse_key(b"word:").unwrap();
         assert_eq!(feature, "word");
         assert_eq!(term, "");
     }

@@ -191,17 +191,40 @@ impl ProgressStore for DynamoDbProgressStore {
                     log::info!("Table {} not found during save, creating...", self.table_name);
                     self.ensure_table_exists().await?;
                     
-                    self.client.put_item()
-                        .table_name(&self.table_name)
-                        .item("PK", AttributeValue::S(self.pk.clone()))
-                        .item("SK", AttributeValue::S("indexing_status".to_string()))
-                        .item("StatusJson", AttributeValue::S(json))
-                        .item("UpdatedAt", AttributeValue::N(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs().to_string()))
-                        .send()
-                        .await
-                        .map_err(|e| FoldDbError::Database(format!("Failed to save status after table creation: {:?}", e)))?;
-                    
-                    Ok(())
+                    // Retry put_item with backoff to handle eventual consistency
+                    let mut put_attempts = 0;
+                    loop {
+                        let put_result = self.client.put_item()
+                            .table_name(&self.table_name)
+                            .item("PK", AttributeValue::S(self.pk.clone()))
+                            .item("SK", AttributeValue::S("indexing_status".to_string()))
+                            .item("StatusJson", AttributeValue::S(json.clone()))
+                            .item("UpdatedAt", AttributeValue::N(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs().to_string()))
+                            .send()
+                            .await;
+
+                        match put_result {
+                            Ok(_) => return Ok(()),
+                            Err(e) => {
+                                let is_rxf = if let Some(code) = e.code() {
+                                    code == "ResourceNotFoundException"
+                                } else {
+                                    let error_str = format!("{:?}", e);
+                                    error_str.contains("ResourceNotFoundException")
+                                };
+
+                                if is_rxf && put_attempts < 5 {
+                                    put_attempts += 1;
+                                    log::info!("Table {} still not ready for writes, retrying ({}/5)...", self.table_name, put_attempts);
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                    continue;
+                                }
+                                
+                                return Err(FoldDbError::Database(format!("Failed to save status after table creation: {:?}", e)));
+                            }
+                        }
+                    }
+
                 } else {
                     Err(FoldDbError::Database(format!("Failed to save status: {:?}", e)))
                 }
