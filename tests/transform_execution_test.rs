@@ -74,20 +74,6 @@ async fn test_transform_execution_states() {
     // Case 1: Set BlogPostWordIndex to Approved (should execute)
     db_ops.store_schema_state("BlogPostWordIndex", &SchemaState::Approved).await.expect("Failed to set BlogPostWordIndex state");
 
-    // Perform mutation on BlogPost
-    let mutation_json = json!({
-        "schema_name": "BlogPost",
-        "uuid": "mutation_1",
-        "pub_key": "test_key",
-        "fields_and_values": {
-            "title": "Test Post 1",
-            "content": "Hello World",
-            "author": "Author 1",
-            "publish_date": "2023-01-01",
-            "tags": "tag1"
-        }
-    });
-
     // We need to construct a Mutation object manually or use a helper if available.
     // Since we don't have easy access to Mutation struct construction from JSON in this test context without more boilerplate,
     // we'll skip the actual mutation execution test for now and focus on the state check logic which we modified.

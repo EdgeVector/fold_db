@@ -313,13 +313,10 @@ impl DeclarativeSchemaDefinition {
     /// This is called after deserializing from database to ensure runtime state is initialized
     /// Also regenerates transform metadata (hash mappings, inputs, source schemas) which are not persisted
     pub fn populate_runtime_fields(&mut self) -> Result<(), crate::schema::SchemaError> {
-        use crate::schema::types::field::common::FieldCommon;
         use crate::schema::types::field::{FieldVariant, HashRangeField, RangeField, SingleField};
         use std::collections::HashMap;
 
         let default_field_mappers = HashMap::new();
-        let default_inner_field = FieldCommon::new(default_field_mappers.clone());
-
         let mut runtime_fields = HashMap::new();
         let mut add_field = |field_name: String| {
             let schema_type = self.schema_type.clone();

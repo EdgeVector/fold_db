@@ -489,7 +489,7 @@ pub async fn update_database_config(
     
     // Update storage_path for backward compatibility
     match &config.database {
-        DatabaseConfig::Local { path } => {
+        DatabaseConfig::Local { path: _ } => {
             // No need to update storage_path as it is removed
         }
         DatabaseConfig::DynamoDb(_) => {

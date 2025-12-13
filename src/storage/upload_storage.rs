@@ -302,18 +302,18 @@ impl UploadStorage {
                     .send()
                     .await
                     .map_err(|e| StorageError::DownloadFailed(format!("S3 download from s3://{}/{} failed: {}", bucket, key, e)))?;
-                
-                let bytes = response.body
-                    .collect()
-                    .await
-                    .map_err(|e| StorageError::DownloadFailed(format!("Failed to read S3 response body: {}", e)))?
-                    .into_bytes();
-                
-                Ok(bytes.to_vec())
+
+                    let bytes = response.body
+                        .collect()
+                        .await
+                        .map_err(|e| StorageError::DownloadFailed(format!("Failed to read S3 response body: {}", e)))?
+                        .into_bytes();
+
+                    Ok(bytes.to_vec())
+                }
             }
         }
     }
-}
 
 #[cfg(test)]
 mod tests {

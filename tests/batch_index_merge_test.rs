@@ -137,10 +137,12 @@ async fn test_batch_index_merges_existing_entries() {
     eprintln!("  recordA: {}", record_a_count);
     eprintln!("  recordB: {}", record_b_count);
     
-    assert_eq!(record_a_count, 1, 
-        "BUG: recordA disappeared after second batch! The batch indexing is replacing instead of merging.");
-    assert_eq!(record_b_count, 1, 
-        "recordB should be present after second batch");
+    assert_eq!(
+        record_a_count,
+        1,
+        "BUG: recordA disappeared after second batch! The batch indexing is replacing instead of merging."
+    );
+    assert_eq!(record_b_count, 1, "recordB should be present after second batch");
     
     eprintln!("\n✅ SUCCESS: Both records are present in the index!");
     eprintln!("The batch indexing correctly merged new entries with existing ones.\n");

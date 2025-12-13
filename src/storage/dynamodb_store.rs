@@ -466,9 +466,6 @@ impl DynamoDbSchemaStore {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::schema::types::{JsonTopology, PrimitiveType, SchemaType, TopologyNode};
-
     // Note: These tests require a real DynamoDB table or LocalStack
     // They are integration tests and should be run with proper AWS credentials
 
