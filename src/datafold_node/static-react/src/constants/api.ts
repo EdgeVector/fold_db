@@ -20,7 +20,7 @@ export const API_TIMEOUTS = {
   MUTATION: 15000,       // Mutations, parameterized queries, AI validation
   BATCH: 30000,          // Batch operations, database reset
   AI_PROCESSING: 60000,  // Extended AI processing operations
-  
+
   // Legacy support
   DEFAULT: 8000,
   CRYPTO_OPERATIONS: 8000,
@@ -34,7 +34,7 @@ export const API_RETRIES = {
   LIMITED: 1,           // State changes, config operations, registrations
   STANDARD: 2,          // Most read operations, network issues
   CRITICAL: 3,          // System status, critical system data
-  
+
   // Legacy support
   DEFAULT: 2,
   STATE_CHANGING: 1,
@@ -49,7 +49,7 @@ export const API_CACHE_TTL = {
   MEDIUM: 180000,        // 3 minutes - schema state, transforms
   STANDARD: 300000,      // 5 minutes - schemas, mutation history
   LONG: 3600000,         // 1 hour - system public key
-  
+
   // Semantic aliases
   SYSTEM_STATUS: 30000,
   QUERY_RESULTS: 60000,
@@ -131,7 +131,8 @@ export const RETRY_CONFIG = {
 
 // API Base Configuration
 export const API_CONFIG = {
-  BASE_URL: API_BASE_URLS.ROOT,
+  // Use relative path for CloudFront compatibility
+  BASE_URL: 'api',
   VERSION: 'v1',
   DEFAULT_TIMEOUT: API_TIMEOUTS.STANDARD,
   DEFAULT_RETRIES: API_RETRIES.STANDARD

@@ -25,6 +25,7 @@ pub mod schema_client;
 pub mod schema_routes;
 pub mod security_routes;
 pub mod system_routes;
+pub mod static_assets;
 mod transform_queue;
 
 // Re-export the DataFoldNode struct for easier imports
