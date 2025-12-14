@@ -121,7 +121,7 @@ pub fn load_node_config(
 
     if let Ok(config_str) = fs::read_to_string(&config_path) {
         match serde_json::from_str::<NodeConfig>(&config_str) {
-            Ok(mut cfg) => {
+            Ok(cfg) => {
                 Ok(cfg)
             }
             Err(e) => {

@@ -1,6 +1,5 @@
 use aws_smithy_runtime_api::client::http::HttpClient;
-use aws_smithy_runtime_api::client::orchestrator::{HttpRequest, HttpResponse};
-use aws_smithy_runtime_api::box_error::BoxError;
+use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
 use std::sync::{Arc, Mutex};
 

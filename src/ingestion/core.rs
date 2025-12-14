@@ -950,7 +950,7 @@ mod tests {
         let test_path = temp_dir.path().to_str().unwrap().to_string();
         
         // Should succeed even if schema directory doesn't exist (FolderDB will create necessary files)
-        let fold_db = FoldDB::new(&test_path).await.unwrap();
+        let _ = FoldDB::new(&test_path).await.unwrap();
         // Just assert that we got a valid instance, there is no is_closed method directly exposed
         // If new() succeeded, the DB is open.
         assert!(true); 
