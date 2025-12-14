@@ -75,7 +75,7 @@ async fn test_transform_execution_states() {
     db_ops.store_schema_state("BlogPostWordIndex", &SchemaState::Approved).await.expect("Failed to set BlogPostWordIndex state");
 
     // Perform mutation on BlogPost
-    let mutation_json = json!({
+    let _mutation_json = json!({
         "schema_name": "BlogPost",
         "uuid": "mutation_1",
         "pub_key": "test_key",
