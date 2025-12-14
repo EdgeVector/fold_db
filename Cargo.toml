@@ -112,3 +112,7 @@ path = "src/bin/datafold_http_server.rs"
 
 
 
+
+[[example]]
+name = "lambda_ui_demo"
+required-features = ["lambda"]
