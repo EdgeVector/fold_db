@@ -33,6 +33,7 @@ pub mod query;
 pub mod schema;
 pub mod system;
 pub mod types;
+pub mod ui;
 
 // Re-export public API
 pub use config::{AIConfig, AIProvider, LambdaConfig, LambdaLogging, LambdaStorage, OllamaConfig, OpenRouterConfig};

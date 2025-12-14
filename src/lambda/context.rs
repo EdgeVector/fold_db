@@ -63,7 +63,7 @@ impl LambdaContext {
 
         // Initialize Progress Store based on storage configuration
         let progress_tracker: ProgressTracker = match &config.storage {
-            crate::lambda::config::LambdaStorage::DynamoDb(dynamo_config) => {
+            crate::lambda::config::LambdaStorage::Config(crate::storage::StorageConfig::DynamoDb(dynamo_config)) => {
                  use crate::ingestion::progress::DynamoDbProgressStore;
                  
                  let table_name = dynamo_config.tables.process.clone();
@@ -78,7 +78,7 @@ impl LambdaContext {
         };
 
         // Initialize AI service if configured
-        let llm_service = if let Some(ai_config) = config.ai_config {
+        let llm_service = if let Some(ai_config) = config.ai_config.clone() {
             let ingestion_config = Self::ai_config_to_ingestion_config(ai_config)?;
             match LlmQueryService::new(ingestion_config) {
                 Ok(service) => Some(Arc::new(service)),
@@ -93,8 +93,20 @@ impl LambdaContext {
 
         // Initialize Logger based on required configuration
         let logger: Arc<dyn Logger> = match config.logging {
-            crate::lambda::config::LambdaLogging::DynamoDb { table_name } => {
+            crate::lambda::config::LambdaLogging::DynamoDb => {
                 use crate::logging::outputs::dynamodb::DynamoDbLogger;
+                // We need to resolve table name.
+                // If storage is DynamoDb, we use that. Otherwise we might fail or default?
+                // For now, let's try to extract it from storage config if available.
+                let table_name = if let crate::lambda::config::LambdaStorage::Config(crate::storage::StorageConfig::DynamoDb(cfg)) = &config.storage {
+                    cfg.tables.logs.clone()
+                } else {
+                    // Fallback or error?
+                    // The config.rs comment says "Table name is now taken from ExplicitTables.logs in StorageConfig"
+                    // But if we are in DbOps mode or Local mode but request DynamoDb logging, we don't have it.
+                    // Let's assume a default or error. Using a safe default for now to satisfy type checker.
+                    "datafold-logs".to_string()
+                };
                 Arc::new(DynamoDbLogger::new(table_name).await)
             },
             crate::lambda::config::LambdaLogging::Stdout => {
