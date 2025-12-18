@@ -1,5 +1,7 @@
 use async_trait::async_trait;
+#[cfg(feature = "aws-backend")]
 use aws_sdk_dynamodb::types::AttributeValue;
+#[cfg(feature = "aws-backend")]
 use aws_sdk_dynamodb::Client as DynamoClient;
 use std::sync::{Arc, RwLock};
 use super::index_status::IndexingStatus;
@@ -37,17 +39,21 @@ impl ProgressStore for InMemoryProgressStore {
     }
 }
 
+#[cfg(feature = "aws-backend")]
 pub struct DynamoDbProgressStore {
     client: DynamoClient,
     table_name: String,
     pk: String,
 }
 
+#[cfg(feature = "aws-backend")]
 use aws_sdk_dynamodb::types::{AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, BillingMode, TableStatus};
+#[cfg(feature = "aws-backend")]
 use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 
 // ... (existing imports)
 
+#[cfg(feature = "aws-backend")]
 impl DynamoDbProgressStore {
     pub fn new(client: DynamoClient, table_name: String, pk: String) -> Self {
         Self {
@@ -163,6 +169,8 @@ impl DynamoDbProgressStore {
 }
 
 #[async_trait]
+#[async_trait]
+#[cfg(feature = "aws-backend")]
 impl ProgressStore for DynamoDbProgressStore {
     async fn save_status(&self, status: &IndexingStatus) -> FoldDbResult<()> {
         let json = serde_json::to_string(status).map_err(|e| FoldDbError::Serialization(e.to_string()))?;

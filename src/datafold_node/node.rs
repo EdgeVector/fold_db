@@ -62,6 +62,7 @@ impl DataFoldNode {
                 Arc::new(Mutex::new(FoldDB::new(path_str).await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?))
             }
+            #[cfg(feature = "aws-backend")]
             DatabaseConfig::DynamoDb(dynamo_config) => {
                 log_feature!(
                     LogFeature::Database,

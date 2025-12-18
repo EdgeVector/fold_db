@@ -36,6 +36,7 @@ pub async fn parse_multipart(
     let mut auto_execute = true;
     let mut trust_distance = 0;
     let mut pub_key = "default".to_string();
+    #[cfg(feature = "aws-backend")]
     let mut s3_file_path: Option<String> = None;
 
     while let Some(item) = payload.next().await {
@@ -64,6 +65,7 @@ pub async fn parse_multipart(
                 original_filename = Some(filename);
                 already_exists = exists;
             }
+            #[cfg(feature = "aws-backend")]
             Some("s3FilePath") => {
                 s3_file_path = parse_field_as_string(&mut field).await;
             }
@@ -81,6 +83,7 @@ pub async fn parse_multipart(
     }
 
     // Handle S3 file path if provided (alternative to file upload)
+    #[cfg(feature = "aws-backend")]
     if let Some(s3_path) = s3_file_path {
         if file_path.is_some() {
             log_feature!(
@@ -224,6 +227,7 @@ async fn save_uploaded_file(
             );
             storage_path
         }
+        #[cfg(feature = "aws-backend")]
         UploadStorage::S3 { .. } => {
             // For S3 storage: file is in S3, but file_to_json needs local file
             // Write to /tmp for processing
@@ -296,6 +300,7 @@ async fn parse_field_as_string(field: &mut actix_multipart::Field) -> Option<Str
 /// Handle S3 file path input
 /// Downloads file from S3 to /tmp for processing
 /// Returns (local_path, filename)
+#[cfg(feature = "aws-backend")]
 async fn handle_s3_file_path(
     s3_path: &str,
     upload_storage: &UploadStorage,

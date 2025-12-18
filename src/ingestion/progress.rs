@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
+#[cfg(feature = "aws-backend")]
 use aws_sdk_dynamodb::types::{AttributeValue, AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType};
+#[cfg(feature = "aws-backend")]
 use aws_sdk_dynamodb::Client;
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::logging::core::get_current_user_id;
@@ -193,11 +195,13 @@ impl ProgressStore for InMemoryProgressStore {
 }
 
 /// DynamoDB implementation (for multi-tenant)
+#[cfg(feature = "aws-backend")]
 pub struct DynamoDbProgressStore {
     client: Client,
     table_name: String,
 }
 
+#[cfg(feature = "aws-backend")]
 impl DynamoDbProgressStore {
     pub async fn new(table_name: String) -> Result<Self, String> {
         let config = aws_config::load_from_env().await;
@@ -299,6 +303,7 @@ impl DynamoDbProgressStore {
 }
 
 #[async_trait]
+#[cfg(feature = "aws-backend")]
 impl ProgressStore for DynamoDbProgressStore {
     async fn save(&self, progress: &IngestionProgress) -> Result<(), String> {
         let user_id = current_user();
@@ -381,26 +386,34 @@ pub async fn create_progress_tracker() -> ProgressTracker {
         .or_else(|_| env::var("DATAFOLD_DYNAMODB_TABLE"));
 
     if let Ok(table_name) = table_name {
-        let region = env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-west-2".to_string());
-        log::info!("Initializing DynamoDB Progress Tracker: table={}, region={}", table_name, region);
-        
-        // Initialize DynamoDB client with correct region
-        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_sdk_dynamodb::config::Region::new(region))
-            .load()
-            .await;
-        let client = Client::new(&config);
-        
-        let store = DynamoDbProgressStore::with_client(table_name, client);
-        // Ensure table exists 
-        if let Err(e) = store.ensure_table_exists().await {
-            log::error!("Failed to ensure DynamoDB process table exists: {}", e);
-            // If we are explicitly configured with env vars, we should probably fail?
-            // But this function signature returns ProgressTracker, not Result.
-            // For now, let's panic to match "no graceful fallback" if configured.
-            panic!("Failed to ensure DynamoDB process table exists: {}", e);
+        #[cfg(feature = "aws-backend")]
+        {
+            let region = env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-west-2".to_string());
+            log::info!("Initializing DynamoDB Progress Tracker: table={}, region={}", table_name, region);
+            
+            // Initialize DynamoDB client with correct region
+            let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(aws_sdk_dynamodb::config::Region::new(region))
+                .load()
+                .await;
+            let client = Client::new(&config);
+            
+            let store = DynamoDbProgressStore::with_client(table_name, client);
+            // Ensure table exists 
+            if let Err(e) = store.ensure_table_exists().await {
+                log::error!("Failed to ensure DynamoDB process table exists: {}", e);
+                // If we are explicitly configured with env vars, we should probably fail?
+                // But this function signature returns ProgressTracker, not Result.
+                // For now, let's panic to match "no graceful fallback" if configured.
+                panic!("Failed to ensure DynamoDB process table exists: {}", e);
+            }
+            Arc::new(store)
         }
-        Arc::new(store)
+        #[cfg(not(feature = "aws-backend"))]
+        {
+            log::warn!("DynamoDB progress table configured but aws-backend feature is disabled. Falling back to in-memory.");
+            Arc::new(InMemoryProgressStore::new())
+        }
     } else {
         log::info!("Initializing In-Memory Progress Tracker (default)");
         Arc::new(InMemoryProgressStore::new())
