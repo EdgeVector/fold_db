@@ -1,6 +1,8 @@
 use crate::schema::SchemaError;
 use crate::storage::traits::*;
-use crate::storage::{SledNamespacedStore, DynamoDbNamespacedStore, TypedKvStore};
+use crate::storage::{SledNamespacedStore, TypedKvStore};
+#[cfg(feature = "aws-backend")]
+use crate::storage::DynamoDbNamespacedStore;
 use super::NativeIndexManager;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
@@ -108,6 +110,7 @@ impl DbOperations {
     }
     
     /// Convenience constructor for DynamoDB backend with simplified config
+    #[cfg(feature = "aws-backend")]
     pub async fn from_dynamodb(
         client: aws_sdk_dynamodb::Client,
         table_name: String,
@@ -121,6 +124,7 @@ impl DbOperations {
     }
 
     /// Constructor for DynamoDB backend with detailed configuration
+    #[cfg(feature = "aws-backend")]
     pub async fn from_dynamodb_flexible(
         client: aws_sdk_dynamodb::Client,
         resolver: crate::storage::TableNameResolver,

@@ -8,8 +8,10 @@ use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Schema;
+#[cfg(feature = "aws-backend")]
 use crate::storage::DynamoDbSchemaStore;
 
+#[cfg(feature = "aws-backend")]
 pub use crate::storage::DynamoDbConfig;
 
 /// Response containing a list of available schema names
@@ -86,6 +88,7 @@ pub enum SchemaStorage {
         schemas_tree: sled::Tree,
     },
     /// DynamoDB storage (serverless, no locking needed!)
+    #[cfg(feature = "aws-backend")]
     DynamoDB {
         store: Arc<DynamoDbSchemaStore>,
     },
@@ -169,6 +172,7 @@ impl SchemaServiceState {
 
     /// Create a new schema service state with DynamoDB storage
     /// No locking needed - topology hashes ensure idempotent writes!
+    #[cfg(feature = "aws-backend")]
     pub async fn new_with_dynamodb(config: DynamoDbConfig) -> FoldDbResult<Self> {
         log_feature!(
             LogFeature::Schema,
@@ -244,6 +248,7 @@ impl SchemaServiceState {
                     count
                 );
             }
+            #[cfg(feature = "aws-backend")]
             SchemaStorage::DynamoDB { store } => {
                 let all_schemas = store.get_all_schemas().await?;
                 let count = all_schemas.len();
@@ -371,6 +376,7 @@ impl SchemaServiceState {
                     schema_name
                 );
             }
+            #[cfg(feature = "aws-backend")]
             SchemaStorage::DynamoDB { store } => {
                 // No locking needed! Topology hash ensures idempotent writes
                 store.put_schema(&schema, &mutation_mappers).await?;
@@ -659,6 +665,7 @@ async fn reset_database(
                 );
             }
         }
+        #[cfg(feature = "aws-backend")]
         SchemaStorage::DynamoDB { store } => {
             // Clear all schemas from DynamoDB
             if let Err(e) = store.clear_all_schemas().await {
@@ -707,6 +714,7 @@ impl SchemaServiceServer {
 
     /// Create a new schema service server with DynamoDB storage
     /// No locking needed - topology hashes ensure idempotent concurrent writes!
+    #[cfg(feature = "aws-backend")]
     pub async fn new_with_dynamodb(config: DynamoDbConfig, bind_address: &str) -> FoldDbResult<Self> {
         let state = SchemaServiceState::new_with_dynamodb(config).await?;
 

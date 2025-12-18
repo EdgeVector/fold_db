@@ -195,12 +195,14 @@ pub async fn reset_database(
 
     // Handle reset based on database backend type
     match &config.database {
+        #[cfg(feature = "aws-backend")]
         DatabaseConfig::DynamoDb(dynamo_config) => {
             let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
                 .load()
                 .await;
             let client = std::sync::Arc::new(aws_sdk_dynamodb::Client::new(&aws_config));
+
 
             let uid = dynamo_config.user_id.clone().unwrap_or_else(|| "default".to_string());
 
@@ -352,6 +354,7 @@ pub enum DatabaseConfigDto {
     Local {
         path: String,
     },
+    #[cfg(feature = "aws-backend")]
     #[serde(rename = "dynamodb")]
     DynamoDb(DynamoDbConfigDto),
 
@@ -375,6 +378,7 @@ pub struct ExplicitTablesDto {
 }
 
 /// DTO for DynamoDbConfig
+#[cfg(feature = "aws-backend")]
 #[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
 pub struct DynamoDbConfigDto {
     pub region: String,
@@ -409,6 +413,7 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
         DatabaseConfig::Local { path } => DatabaseConfigDto::Local {
             path: path.to_string_lossy().to_string(),
         },
+        #[cfg(feature = "aws-backend")]
         DatabaseConfig::DynamoDb(config) => DatabaseConfigDto::DynamoDb(DynamoDbConfigDto {
             region: config.region.clone(),
             auto_create: config.auto_create,
@@ -462,6 +467,7 @@ pub async fn update_database_config(
         DatabaseConfigDto::Local { path } => DatabaseConfig::Local {
             path: std::path::PathBuf::from(path),
         },
+        #[cfg(feature = "aws-backend")]
         DatabaseConfigDto::DynamoDb(dto) => DatabaseConfig::DynamoDb(crate::storage::DynamoDbConfig {
             region: dto.region.clone(),
             auto_create: dto.auto_create,
@@ -492,6 +498,7 @@ pub async fn update_database_config(
         DatabaseConfig::Local { path: _ } => {
             // No need to update storage_path as it is removed
         }
+        #[cfg(feature = "aws-backend")]
         DatabaseConfig::DynamoDb(_) => {
             // Keep existing storage_path for DynamoDB (used for logging/debugging)
         }

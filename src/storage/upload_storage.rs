@@ -13,6 +13,7 @@ pub enum UploadStorage {
         path: PathBuf 
     },
     /// S3 storage for cloud deployments
+    #[cfg(feature = "aws-backend")]
     S3 {
         client: aws_sdk_s3::Client,
         bucket: String,
@@ -38,6 +39,16 @@ impl UploadStorage {
     /// 
     /// Note: user_id is passed per-operation, not at construction time,
     /// to support multi-tenant Lambda invocations.
+    /// Create S3 upload storage
+    /// 
+    /// # Arguments
+    /// * `bucket` - S3 bucket name
+    /// * `region` - AWS region (e.g., "us-east-1")
+    /// * `prefix` - Optional base prefix for organizing files (defaults to "uploads/")
+    /// 
+    /// Note: user_id is passed per-operation, not at construction time,
+    /// to support multi-tenant Lambda invocations.
+    #[cfg(feature = "aws-backend")]
     pub async fn s3(bucket: String, region: String, prefix: Option<String>) -> Result<Self, StorageError> {
         let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(aws_sdk_s3::config::Region::new(region.clone()))
@@ -89,6 +100,7 @@ impl UploadStorage {
                 
                 Ok(filepath)
             }
+            #[cfg(feature = "aws-backend")]
             Self::S3 { client, bucket, prefix, .. } => {
                 let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
                 let key = format!("{}{}", full_prefix, filename);
@@ -121,6 +133,7 @@ impl UploadStorage {
                 let filepath = target_path.join(filename);
                 Ok(fs::read(&filepath).await?)
             }
+            #[cfg(feature = "aws-backend")]
             Self::S3 { client, bucket, prefix, .. } => {
                 let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
                 let key = format!("{}{}", full_prefix, filename);
@@ -195,6 +208,7 @@ impl UploadStorage {
                     }
                 }
             }
+            #[cfg(feature = "aws-backend")]
             Self::S3 { client, bucket, prefix, .. } => {
                 let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
                 let key = format!("{}{}", full_prefix, filename);
@@ -240,6 +254,7 @@ impl UploadStorage {
                 };
                 Ok(target_path.join(filename).exists())
             }
+            #[cfg(feature = "aws-backend")]
             Self::S3 { client, bucket, prefix, .. } => {
                 let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
                 let key = format!("{}{}", full_prefix, filename);
@@ -269,6 +284,7 @@ impl UploadStorage {
                 };
                 target_path.join(filename).display().to_string()
             }
+            #[cfg(feature = "aws-backend")]
             Self::S3 { bucket, prefix, .. } => {
                 let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
                 format!("s3://{}/{}{}", bucket, full_prefix, filename)
@@ -283,7 +299,14 @@ impl UploadStorage {
 
     /// Returns true if this is S3 storage
     pub fn is_s3(&self) -> bool {
-        matches!(self, Self::S3 { .. })
+        #[cfg(feature = "aws-backend")]
+        {
+            matches!(self, Self::S3 { .. })
+        }
+        #[cfg(not(feature = "aws-backend"))]
+        {
+            false
+        }
     }
 
     /// Download a file from an external S3 path (bucket/key)
@@ -295,6 +318,7 @@ impl UploadStorage {
                     "S3 download not supported in local mode. Configure S3 storage to enable S3 downloads.".to_string()
                 ))
             }
+            #[cfg(feature = "aws-backend")]
             Self::S3 { client, .. } => {
                 let response = client.get_object()
                     .bucket(bucket)

@@ -26,4 +26,6 @@ pub use transform_orchestrator::{TransformOrchestrator, TransformQueue};
 pub use mutation_event_manager::MutationEventManager;
 pub use index_event_handler::IndexEventHandler;
 pub use index_status::{IndexStatusTracker, IndexingStatus, IndexingState};
-pub use progress_store::{ProgressStore, InMemoryProgressStore, DynamoDbProgressStore};
+pub use progress_store::{ProgressStore, InMemoryProgressStore};
+#[cfg(feature = "aws-backend")]
+pub use progress_store::DynamoDbProgressStore;

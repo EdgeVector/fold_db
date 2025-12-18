@@ -28,7 +28,8 @@ exclude = [
 default = []
 test-utils = []  # Feature flag for test utilities
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
-lambda = ["lambda_runtime"]  # AWS Lambda support with simplified API
+aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "serde_dynamo"]  # AWS backends (DynamoDB, S3)
+lambda = ["lambda_runtime", "aws-backend"]  # AWS Lambda support with simplified API
 
 [dependencies]
 # Utilities
@@ -82,15 +83,15 @@ rust-embed = "6.6"
 mime_guess = "2.0"
 
 # AWS SDK for S3 storage and DynamoDB
-aws-config = "1.0"
+aws-config = { version = "1.0", optional = true }
 
-aws-sdk-dynamodb = "1.0"
-aws-sdk-s3 = "1.0"
+aws-sdk-dynamodb = { version = "1.0", optional = true }
+aws-sdk-s3 = { version = "1.0", optional = true }
 
 # Lambda runtime (optional, for AWS Lambda deployments)
 lambda_runtime = { version = "0.13", optional = true }
 async-trait = "0.1"
-serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
+serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "full"] }

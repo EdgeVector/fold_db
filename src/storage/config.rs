@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 
 /// Configuration for DynamoDB storage
+#[cfg(feature = "aws-backend")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DynamoDbConfig {
     /// AWS Region
@@ -22,6 +23,7 @@ pub struct DynamoDbConfig {
     pub file_storage_bucket: Option<String>,
 }
 
+#[cfg(feature = "aws-backend")]
 impl DynamoDbConfig {
     /// Create config from environment variables.
     /// 
@@ -68,6 +70,7 @@ impl DynamoDbConfig {
 /// - `native_index`: Native index data
 /// - `process`: Process tracking (ingestion, backfills)
 /// - `logs`: System logs
+#[cfg(feature = "aws-backend")]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ExplicitTables {
     pub main: String,
@@ -90,6 +93,7 @@ pub struct ExplicitTables {
     pub logs: String,
 }
 
+#[cfg(feature = "aws-backend")]
 impl ExplicitTables {
     /// Create ExplicitTables from a prefix.
     /// Tables are named `{prefix}-{namespace}`.
@@ -142,6 +146,7 @@ pub enum StorageConfig {
         path: PathBuf,
     },
     /// DynamoDB storage
+    #[cfg(feature = "aws-backend")]
     #[serde(rename = "dynamodb")]
     DynamoDb(DynamoDbConfig),
 }
@@ -213,8 +218,13 @@ impl StorageConfig {
                     .unwrap_or_else(|_| PathBuf::from("data"));
                 Ok(StorageConfig::Local { path })
             }
+            #[cfg(feature = "aws-backend")]
+            "dynamodb" => {
+                let config = DynamoDbConfig::from_env()?;
+                Ok(StorageConfig::DynamoDb(config))
+            }
             _ => Err(ConfigError::InvalidValue(
-                format!("Invalid DATAFOLD_STORAGE_MODE: '{}'. Must be 'local' or 's3'", mode)
+                format!("Invalid DATAFOLD_STORAGE_MODE: '{}'. Must be 'local' or 's3'{}", mode, if cfg!(feature = "aws-backend") { ", 'dynamodb'" } else { "" })
             )),
         }
     }

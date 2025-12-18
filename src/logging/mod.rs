@@ -15,6 +15,7 @@ use once_cell::sync::OnceCell;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::logging::core::LogBridge;
+#[cfg(feature = "aws-backend")]
 use crate::logging::outputs::dynamodb::DynamoDbLogger;
 
 /// Global logging configuration instance
@@ -89,6 +90,7 @@ impl LoggingSystem {
         }
 
         // 2. DynamoDB Logger
+        #[cfg(feature = "aws-backend")]
         if config.outputs.dynamodb.enabled {
             let table_name = config.outputs.dynamodb.table_name.clone();
             

@@ -255,21 +255,31 @@ impl FoldDB {
         // This is shared between MutationManager (direct indexing) and IndexEventHandler (background indexing)
         // Use DynamoDB progress store if configured, otherwise in-memory
         let progress_store: Arc<dyn super::orchestration::ProgressStore> = if let Some(table_name) = process_table_name {
-             let region = std::env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-             let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(aws_sdk_dynamodb::config::Region::new(region))
-                .load()
-                .await;
-             let client = aws_sdk_dynamodb::Client::new(&config);
-             // Use user_id scope if available, else default? 
-             // FoldDB init doesn't know "current user" context yet, but IndexStatusTracker tracks across users?
-             // Actually IndexStatusTracker needs to be multi-tenant aware?
-             // The old code used DATAFOLD_DYNAMODB_USER_ID which defaults to "default".
-             // We should probably rely on the same PK strategy.
-             let pk = std::env::var("DATAFOLD_DYNAMODB_USER_ID").unwrap_or_else(|_| "default".to_string());
-             
-             info!("Using DynamoDB progress store (table: {})", table_name);
-             Arc::new(super::orchestration::DynamoDbProgressStore::new(client, table_name, pk))
+             #[cfg(feature = "aws-backend")]
+             {
+                 let region = std::env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+                 let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(aws_sdk_dynamodb::config::Region::new(region))
+                    .load()
+                    .await;
+                 let client = aws_sdk_dynamodb::Client::new(&config);
+                 // Use user_id scope if available, else default? 
+                 // FoldDB init doesn't know "current user" context yet, but IndexStatusTracker tracks across users?
+                 // Actually IndexStatusTracker needs to be multi-tenant aware?
+                 // The old code used DATAFOLD_DYNAMODB_USER_ID which defaults to "default".
+                 // We should probably rely on the same PK strategy.
+                 let pk = std::env::var("DATAFOLD_DYNAMODB_USER_ID").unwrap_or_else(|_| "default".to_string());
+                 
+                 info!("Using DynamoDB progress store (table: {})", table_name);
+                 Arc::new(super::orchestration::DynamoDbProgressStore::new(client, table_name, pk))
+             }
+             #[cfg(not(feature = "aws-backend"))]
+             {
+                 use log::warn;
+                 warn!("DynamoDB configured for progress store but aws-backend feature is disabled. Falling back to in-memory store.");
+                 info!("Using in-memory progress store");
+                 Arc::new(super::orchestration::InMemoryProgressStore::new())
+             }
         } else {
              info!("Using in-memory progress store");
              Arc::new(super::orchestration::InMemoryProgressStore::new())

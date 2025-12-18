@@ -1,6 +1,7 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::security::SecurityConfig;
+#[cfg(feature = "aws-backend")]
 use crate::storage::DynamoDbConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -16,6 +17,8 @@ pub enum DatabaseConfig {
         path: PathBuf,
     },
     /// DynamoDB-backed storage
+    /// DynamoDB-backed storage
+    #[cfg(feature = "aws-backend")]
     #[serde(rename = "dynamodb")]
     DynamoDb(DynamoDbConfig),
 }
@@ -84,6 +87,7 @@ impl NodeConfig {
     pub fn get_storage_path(&self) -> PathBuf {
         match &self.database {
             DatabaseConfig::Local { path } => path.clone(),
+            #[cfg(feature = "aws-backend")]
             DatabaseConfig::DynamoDb(_) => PathBuf::from("data"), // Default callback for DynamoDB if local path needed
 
         }

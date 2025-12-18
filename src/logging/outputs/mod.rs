@@ -10,9 +10,12 @@ pub mod console;
 pub mod file;
 pub mod web;
 pub mod structured;
+#[cfg(feature = "aws-backend")]
 pub mod dynamodb;
 
 pub use console::ConsoleOutput;
 pub use file::FileOutput;
 pub use web::WebOutput;
 pub use structured::StructuredOutput;
+#[cfg(feature = "aws-backend")]
+pub use dynamodb::DynamoDbLogger;
