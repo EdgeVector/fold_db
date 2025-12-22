@@ -1,20 +1,20 @@
-use super::log_routes;
 use super::llm_query;
+use super::log_routes;
 use super::{query_routes, schema_routes, security_routes, system_routes};
 use crate::datafold_node::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::error_handling::http_errors;
-use crate::ingestion::routes as ingestion_routes;
 use crate::ingestion::create_progress_tracker;
+use crate::ingestion::routes as ingestion_routes;
 
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use actix_cors::Cors;
 
+use crate::datafold_node::static_assets::Asset;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::datafold_node::static_assets::Asset;
 
 /// HTTP server for the DataFold node.
 ///
@@ -37,7 +37,11 @@ pub struct DataFoldHttpServer {
 }
 
 async fn serve_ui(req: HttpRequest) -> HttpResponse {
-    let path: String = req.match_info().query("filename").parse().unwrap_or_default();
+    let path: String = req
+        .match_info()
+        .query("filename")
+        .parse()
+        .unwrap_or_default();
     let path = if path.is_empty() { "index.html" } else { &path };
 
     match Asset::get(path) {
@@ -52,14 +56,12 @@ async fn serve_ui(req: HttpRequest) -> HttpResponse {
             // Otherwise serve index.html
             // Simple heuristic since we don't know all extensions.
             // But usually SPA routers don't have dots in paths unless parameters.
-            // Let's just always fallback to index.html for simplicity, 
+            // Let's just always fallback to index.html for simplicity,
             // except maybe specific API paths which are handled by other routes anyway.
             match Asset::get("index.html") {
-                Some(content) => {
-                    HttpResponse::Ok()
-                        .content_type("text/html")
-                        .body(content.data.into_owned())
-                }
+                Some(content) => HttpResponse::Ok()
+                    .content_type("text/html")
+                    .body(content.data.into_owned()),
                 None => HttpResponse::NotFound().body("404 Not Found"),
             }
         }
@@ -145,7 +147,7 @@ impl DataFoldHttpServer {
             let node_guard = self.node.lock().await;
             node_guard.config.schema_service_url.clone()
         };
-        
+
         if let Some(url) = schema_service_url {
             // Skip loading for mock/test schema services
             if url.starts_with("test://") || url.starts_with("mock://") {
@@ -162,7 +164,7 @@ impl DataFoldHttpServer {
                     "Loading schemas from schema service at {}...",
                     url
                 );
-                
+
                 let schema_manager = {
                     let node_guard = self.node.lock().await;
                     let db_guard = node_guard.get_fold_db()?;
@@ -171,9 +173,9 @@ impl DataFoldHttpServer {
                     drop(node_guard);
                     manager
                 };
-                
+
                 let client = crate::datafold_node::SchemaServiceClient::new(&url);
-                
+
                 match client.load_all_schemas(&schema_manager).await {
                     Ok(loaded_count) => {
                         log_feature!(
@@ -196,26 +198,42 @@ impl DataFoldHttpServer {
         }
 
         // Initialize upload storage from environment config
-        let upload_storage_config = crate::storage::config::UploadStorageConfig::from_env()
-            .unwrap_or_default();
-        
+        let upload_storage_config =
+            crate::storage::config::UploadStorageConfig::from_env().unwrap_or_default();
+
         let upload_storage = match upload_storage_config {
             crate::storage::config::UploadStorageConfig::Local { path } => {
                 crate::storage::UploadStorage::local(path)
             }
-
         };
 
         log_feature!(
             LogFeature::HttpServer,
             info,
             "Upload storage initialized: {}",
-            if upload_storage.is_local() { "Local" } else { "S3" }
+            if upload_storage.is_local() {
+                "Local"
+            } else {
+                "S3"
+            }
         );
 
         // Create individual dependencies for ingestion routes
         let node = web::Data::new(self.node.clone());
-        let progress_tracker_data = web::Data::new(create_progress_tracker().await);
+
+        // Extract DynamoDB config for progress tracker if available
+        let dynamo_config = {
+            let node_guard = self.node.lock().await;
+            match &node_guard.config.database {
+                #[cfg(feature = "aws-backend")]
+                crate::datafold_node::config::DatabaseConfig::DynamoDb(d) => {
+                    Some((d.tables.process.clone(), d.region.clone()))
+                }
+                _ => None,
+            }
+        };
+
+        let progress_tracker_data = web::Data::new(create_progress_tracker(dynamo_config).await);
         let upload_storage_data = web::Data::new(upload_storage.clone());
 
         // Create shared application state for routes that still need it
@@ -254,7 +272,9 @@ impl DataFoldHttpServer {
                             "/openapi.json",
                             web::get().to(|| async move {
                                 let doc = crate::datafold_node::openapi::build_openapi();
-                                HttpResponse::Ok().content_type("application/json").body(doc)
+                                HttpResponse::Ok()
+                                    .content_type("application/json")
+                                    .body(doc)
                             }),
                         )
                         // Schema endpoints
@@ -270,10 +290,16 @@ impl DataFoldHttpServer {
                             web::post().to(schema_routes::block_schema),
                         )
                         // Backfill endpoints
-                        .route("/backfill/{hash}", web::get().to(schema_routes::get_backfill_status))
+                        .route(
+                            "/backfill/{hash}",
+                            web::get().to(schema_routes::get_backfill_status),
+                        )
                         .route("/query", web::post().to(query_routes::execute_query))
                         .route("/mutation", web::post().to(query_routes::execute_mutation))
-                        .route("/mutations/batch", web::post().to(query_routes::execute_mutations_batch))
+                        .route(
+                            "/mutations/batch",
+                            web::post().to(query_routes::execute_mutations_batch),
+                        )
                         // Ingestion endpoints
                         .route(
                             "/ingestion/process",
@@ -396,10 +422,7 @@ impl DataFoldHttpServer {
                             web::post().to(system_routes::update_database_config),
                         )
                         // LLM Query endpoints
-                        .route(
-                            "/llm-query/run",
-                            web::post().to(llm_query::run_query),
-                        )
+                        .route("/llm-query/run", web::post().to(llm_query::run_query))
                         .route(
                             "/llm-query/analyze",
                             web::post().to(llm_query::analyze_query),
@@ -408,10 +431,7 @@ impl DataFoldHttpServer {
                             "/llm-query/execute",
                             web::post().to(llm_query::execute_query_plan),
                         )
-                        .route(
-                            "/llm-query/chat",
-                            web::post().to(llm_query::chat),
-                        )
+                        .route("/llm-query/chat", web::post().to(llm_query::chat))
                         .route(
                             "/llm-query/analyze-followup",
                             web::post().to(llm_query::analyze_followup),
@@ -426,16 +446,12 @@ impl DataFoldHttpServer {
                         )
                         // Security endpoints
                         .service(
-                            web::scope("/security")
-                                .service(
-                                    web::resource("/system-key")
-                                        .route(
-                                            web::get().to(security_routes::get_system_public_key),
-                                        ),
-                                ),
-                        )
+                            web::scope("/security").service(
+                                web::resource("/system-key")
+                                    .route(web::get().to(security_routes::get_system_public_key)),
+                            ),
+                        ),
                 )
-
                 // Serve the built React UI from embedded assets
                 .route("/", web::get().to(serve_ui))
                 .route("/{filename:.*}", web::get().to(serve_ui))
@@ -464,21 +480,28 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .route("/", web::get().to(serve_ui))
-                .route("/{filename:.*}", web::get().to(serve_ui))
-        ).await;
+                .route("/{filename:.*}", web::get().to(serve_ui)),
+        )
+        .await;
 
         // Test root request
         let req = test::TestRequest::get().uri("/").to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
-        
+
         let body = test::read_body(resp).await;
         let body_str = std::str::from_utf8(&body).unwrap();
-        
+
         // Verify relative paths in index.html - critical for CloudFront compatibility
-        assert!(body_str.contains("href=\"./database.svg\""), "index.html missing relative href for database.svg");
+        assert!(
+            body_str.contains("href=\"./database.svg\""),
+            "index.html missing relative href for database.svg"
+        );
         // matched regex src="./"
-        assert!(body_str.contains("src=\"./"), "index.html missing relative src attribute");
+        assert!(
+            body_str.contains("src=\"./"),
+            "index.html missing relative src attribute"
+        );
     }
 
     #[actix_web::test]
@@ -486,8 +509,9 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .route("/", web::get().to(serve_ui))
-                .route("/{filename:.*}", web::get().to(serve_ui))
-        ).await;
+                .route("/{filename:.*}", web::get().to(serve_ui)),
+        )
+        .await;
 
         // Test asset request
         let req = test::TestRequest::get().uri("/database.svg").to_request();
@@ -501,11 +525,14 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .route("/", web::get().to(serve_ui))
-                .route("/{filename:.*}", web::get().to(serve_ui))
-        ).await;
+                .route("/{filename:.*}", web::get().to(serve_ui)),
+        )
+        .await;
 
         // Test missing path -> fallback to index.html (SPA)
-        let req = test::TestRequest::get().uri("/some/random/page").to_request();
+        let req = test::TestRequest::get()
+            .uri("/some/random/page")
+            .to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         let body = test::read_body(resp).await;

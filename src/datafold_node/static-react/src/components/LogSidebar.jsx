@@ -34,7 +34,31 @@ function LogSidebar() {
       }
     )
 
-    return () => eventSource.close()
+    // Fallback polling for serverless/stateless environments where SSE might miss cross-instance logs
+    // or if the stream disconnects. Since we updated /api/logs to query DynamoDB, this ensures consistency.
+    const pollInterval = setInterval(() => {
+      systemClient.getLogs()
+        .then(response => {
+          if (response.success && response.data) {
+            const fetchedLogs = response.data.logs || []
+            setLogs(currentLogs => {
+              // Simple optimization: only update if length changed or last log is different
+              // to avoid unnecessary re-renders/scrolls
+              if (fetchedLogs.length !== currentLogs.length || 
+                  (fetchedLogs.length > 0 && fetchedLogs[fetchedLogs.length - 1] !== currentLogs[currentLogs.length - 1])) {
+                return Array.isArray(fetchedLogs) ? fetchedLogs : []
+              }
+              return currentLogs
+            })
+          }
+        })
+        .catch(err => console.warn('Log polling error:', err))
+    }, 2000)
+
+    return () => {
+      eventSource.close()
+      clearInterval(pollInterval)
+    }
   }, [])
 
   useEffect(() => {

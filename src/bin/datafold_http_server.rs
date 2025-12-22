@@ -11,7 +11,7 @@ struct Cli {
     /// Port for the HTTP server
     #[arg(long, default_value_t = DEFAULT_HTTP_PORT)]
     port: u16,
-    
+
     /// Schema service URL (if provided, node will fetch schemas from this service)
     #[arg(long)]
     schema_service_url: Option<String>,
@@ -43,18 +43,35 @@ struct Cli {
 /// * The HTTP server cannot be started
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load node configuration first to determine backend
+    let mut config = load_node_config(None, None)?;
+
     // Initialize logging system with environment configuration
-    let log_config = datafold::logging::config::LogConfig::from_env().unwrap_or_default();
+    let mut log_config = datafold::logging::config::LogConfig::from_env().unwrap_or_default();
+
+    // If using DynamoDB backend, automatically enable DynamoDB logging
+    #[cfg(feature = "aws-backend")]
+    if let datafold::datafold_node::config::DatabaseConfig::DynamoDb(ref db_config) =
+        config.database
+    {
+        // Only enable if not explicitly disabled via env vars
+        if std::env::var("DATAFOLD_LOG_DYNAMODB_ENABLED").is_err() {
+            log_config.outputs.dynamodb.enabled = true;
+            log_config.outputs.dynamodb.table_name = db_config.tables.logs.clone();
+            log_config.outputs.dynamodb.region = Some(db_config.region.clone());
+        }
+    }
+
     if let Err(e) = datafold::logging::LoggingSystem::init_with_config(log_config).await {
         eprintln!("Failed to initialize logging system: {}", e);
     }
 
     // Parse command-line arguments using clap
-    let Cli { port: http_port, schema_service_url } = Cli::parse();
+    let Cli {
+        port: http_port,
+        schema_service_url,
+    } = Cli::parse();
 
-    // Load node configuration
-    let mut config = load_node_config(None, None)?;
-    
     // Set schema service URL if provided
     if let Some(url) = schema_service_url {
         config.schema_service_url = Some(url);
@@ -67,7 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind_address = format!("127.0.0.1:{}", http_port);
     let http_server = DataFoldHttpServer::new(node, &bind_address).await?;
 
-    http_server.run().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    http_server
+        .run()
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
 #[cfg(test)]

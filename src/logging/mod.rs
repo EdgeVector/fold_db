@@ -5,21 +5,24 @@
 //! feature-specific logging support.
 
 pub mod config;
-pub mod features;
-pub mod util;
-pub mod outputs;
 pub mod core;
+pub mod features;
+pub mod outputs;
+pub mod util;
 
+use crate::logging::core::LogBridge;
+#[cfg(feature = "aws-backend")]
+use crate::logging::outputs::dynamodb::DynamoDbLogger;
 use config::LogConfig;
 use once_cell::sync::OnceCell;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::logging::core::LogBridge;
-#[cfg(feature = "aws-backend")]
-use crate::logging::outputs::dynamodb::DynamoDbLogger;
 
 /// Global logging configuration instance
 static LOGGING_CONFIG: OnceCell<Arc<RwLock<LogConfig>>> = OnceCell::new();
+
+/// Global logger instance for querying
+static GLOBAL_LOGGER: OnceCell<Arc<dyn crate::logging::core::Logger>> = OnceCell::new();
 
 /// Multi-logger implementation that broadcasts logs to multiple backends
 struct MultiLogger {
@@ -71,7 +74,7 @@ impl LoggingSystem {
             "ERROR" => log::LevelFilter::Error,
             _ => log::LevelFilter::Info,
         };
-        
+
         // Also set the web logger level dynamically
         crate::web_logger::set_log_level(level_filter);
 
@@ -93,7 +96,7 @@ impl LoggingSystem {
         #[cfg(feature = "aws-backend")]
         if config.outputs.dynamodb.enabled {
             let table_name = config.outputs.dynamodb.table_name.clone();
-            
+
             // Create DynamoDB logger
             let dynamodb_logger = if let Some(region) = &config.outputs.dynamodb.region {
                 let region_provider = aws_config::Region::new(region.clone());
@@ -104,8 +107,12 @@ impl LoggingSystem {
             };
 
             // Bridge it to log::Log
-            let bridge = LogBridge::new(Arc::new(dynamodb_logger));
+            let logger_arc = Arc::new(dynamodb_logger);
+            let bridge = LogBridge::new(logger_arc.clone());
             loggers.push(Box::new(bridge));
+
+            // Set global logger for querying
+            let _ = GLOBAL_LOGGER.set(logger_arc);
         }
 
         // 3. File Logger (Placeholder logic, assuming FileOutput implements Log or similar?)
@@ -116,7 +123,7 @@ impl LoggingSystem {
         let multi_logger = MultiLogger::new(loggers);
         log::set_logger(Box::leak(Box::new(multi_logger)))
             .map_err(|_| LoggingError::AlreadyInitialized)?;
-        
+
         log::set_max_level(level_filter);
 
         Ok(())
@@ -189,6 +196,27 @@ impl LoggingSystem {
             ))
         }
     }
+
+    /// Query recent logs from the active backend (or fallback to web logger)
+    pub async fn query_recent_logs(limit: usize) -> Vec<String> {
+        // Try to query from the global logger (e.g. DynamoDB)
+        if let Some(logger) = GLOBAL_LOGGER.get() {
+            // In standalone/dev mode, we use "anonymous" user ID since we don't have authentication context
+            // stored in the request for this endpoint yet.
+            // Ingestions triggered via HTTP also default to anonymous/no-user context.
+            if let Ok(entries) = logger.query("anonymous", Some(limit), None).await {
+                if !entries.is_empty() {
+                    return entries
+                        .into_iter()
+                        .map(|entry| format!("{} - {}", entry.level.as_str(), entry.message))
+                        .collect();
+                }
+            }
+        }
+
+        // Fallback to in-memory web logger
+        crate::web_logger::get_logs()
+    }
 }
 
 /// Logging system errors
@@ -219,9 +247,9 @@ pub fn subscribe() -> Option<tokio::sync::broadcast::Receiver<String>> {
 /// Initialize logging with backward compatibility
 /// This calls init_default() but blocks on async execution
 pub fn init() -> Result<(), LoggingError> {
-    // We cannot easily run async here without a runtime. 
+    // We cannot easily run async here without a runtime.
     // This is for backward compatibility where sync initialization was expected.
-    // However, DynamoDB requires async. 
+    // However, DynamoDB requires async.
     // We'll just fallback to web_logger::init() if we can't do async properties
     crate::web_logger::init().map_err(|_| LoggingError::AlreadyInitialized)
 }

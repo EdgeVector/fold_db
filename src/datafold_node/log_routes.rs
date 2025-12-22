@@ -25,7 +25,7 @@ pub struct LogConfigResponse {
     responses((status = 200, description = "List logs", body = serde_json::Value))
 )]
 pub async fn list_logs() -> impl Responder {
-    let logs = web_logger::get_logs();
+    let logs = crate::logging::LoggingSystem::query_recent_logs(1000).await;
     HttpResponse::Ok().json(serde_json::json!({
         "logs": logs,
         "count": logs.len(),

@@ -1,18 +1,20 @@
 //! Progress tracking for ingestion operations
-//! 
+//!
 //! Now supports pluggable backends (InMemory, DynamoDB) via ProgressStore trait.
 
+use crate::logging::core::get_current_user_id;
 use async_trait::async_trait;
+#[cfg(feature = "aws-backend")]
+use aws_sdk_dynamodb::types::{
+    AttributeDefinition, AttributeValue, KeySchemaElement, KeyType, ScalarAttributeType,
+};
+#[cfg(feature = "aws-backend")]
+use aws_sdk_dynamodb::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use utoipa::ToSchema;
-#[cfg(feature = "aws-backend")]
-use aws_sdk_dynamodb::types::{AttributeValue, AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType};
-#[cfg(feature = "aws-backend")]
-use aws_sdk_dynamodb::Client;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::logging::core::get_current_user_id;
+use utoipa::ToSchema;
 
 /// Progress tracking for ingestion operations
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -81,7 +83,7 @@ impl IngestionProgress {
         Self {
             id,
             current_step: IngestionStep::ValidatingConfig,
-            progress_percentage: 5,  // Start at 5% for ValidatingConfig step
+            progress_percentage: 5, // Start at 5% for ValidatingConfig step
             status_message: "Starting ingestion process...".to_string(),
             is_complete: false,
             is_failed: false,
@@ -100,7 +102,12 @@ impl IngestionProgress {
     }
 
     /// Update progress with a custom percentage (for granular progress within a step)
-    pub fn update_step_with_percentage(&mut self, step: IngestionStep, message: String, percentage: u8) {
+    pub fn update_step_with_percentage(
+        &mut self,
+        step: IngestionStep,
+        message: String,
+        percentage: u8,
+    ) {
         self.current_step = step;
         self.status_message = message;
         self.progress_percentage = percentage.min(100);
@@ -217,52 +224,54 @@ impl DynamoDbProgressStore {
 
     async fn ensure_table_exists(&self) -> Result<(), String> {
         use aws_sdk_dynamodb::types::BillingMode;
-        
-        let result = self.client.create_table()
+
+        let result = self
+            .client
+            .create_table()
             .table_name(&self.table_name)
             .attribute_definitions(
                 AttributeDefinition::builder()
                     .attribute_name("PK")
                     .attribute_type(ScalarAttributeType::S) // Partition Key
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .attribute_definitions(
                 AttributeDefinition::builder()
                     .attribute_name("SK")
                     .attribute_type(ScalarAttributeType::S) // Sort Key
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .key_schema(
                 KeySchemaElement::builder()
                     .attribute_name("PK")
                     .key_type(KeyType::Hash)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .key_schema(
                 KeySchemaElement::builder()
                     .attribute_name("SK")
                     .key_type(KeyType::Range)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .billing_mode(BillingMode::PayPerRequest)
             .send()
             .await;
-            
+
         match result {
             Ok(_) => {
                 // Wait for table to be active
                 self.wait_for_table_active().await
-            },
+            }
             Err(err) => {
                 if let Some(service_err) = err.as_service_error() {
-                   if service_err.is_resource_in_use_exception() {
-                       // Table exists or is being created, wait for it to be active
-                       return self.wait_for_table_active().await;
-                   }
+                    if service_err.is_resource_in_use_exception() {
+                        // Table exists or is being created, wait for it to be active
+                        return self.wait_for_table_active().await;
+                    }
                 }
                 Err(format!("Failed to create table: {}", err))
             }
@@ -272,18 +281,20 @@ impl DynamoDbProgressStore {
     async fn wait_for_table_active(&self) -> Result<(), String> {
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(60);
-        
+
         loop {
             if start.elapsed() > timeout {
                 return Err("Timeout waiting for table to become active".to_string());
             }
 
-            let describe = self.client.describe_table()
+            let describe = self
+                .client
+                .describe_table()
                 .table_name(&self.table_name)
                 .send()
                 .await
                 .map_err(|e| format!("Failed to describe table: {}", e))?;
-                
+
             if let Some(table) = describe.table {
                 if let Some(status) = table.table_status {
                     if status == aws_sdk_dynamodb::types::TableStatus::Active {
@@ -291,12 +302,15 @@ impl DynamoDbProgressStore {
                     }
                 }
             }
-            
+
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
     }
 
-    fn item_to_progress(&self, item: &HashMap<String, AttributeValue>) -> Option<IngestionProgress> {
+    fn item_to_progress(
+        &self,
+        item: &HashMap<String, AttributeValue>,
+    ) -> Option<IngestionProgress> {
         let json = item.get("data")?.as_s().ok()?;
         serde_json::from_str(json).ok()
     }
@@ -308,14 +322,16 @@ impl ProgressStore for DynamoDbProgressStore {
     async fn save(&self, progress: &IngestionProgress) -> Result<(), String> {
         let user_id = current_user();
         let json = serde_json::to_string(progress).map_err(|e| e.to_string())?;
-        
+
         // TTL: 24 hours
         let ttl = (SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs() + (24 * 60 * 60)) as i64;
+            .as_secs()
+            + (24 * 60 * 60)) as i64;
 
-        self.client.put_item()
+        self.client
+            .put_item()
             .table_name(&self.table_name)
             .item("PK", AttributeValue::S(user_id))
             .item("SK", AttributeValue::S(progress.id.clone()))
@@ -329,8 +345,10 @@ impl ProgressStore for DynamoDbProgressStore {
 
     async fn load(&self, id: &str) -> Result<Option<IngestionProgress>, String> {
         let user_id = current_user();
-        
-        let result = self.client.get_item()
+
+        let result = self
+            .client
+            .get_item()
             .table_name(&self.table_name)
             .key("PK", AttributeValue::S(user_id))
             .key("SK", AttributeValue::S(id.to_string()))
@@ -347,8 +365,10 @@ impl ProgressStore for DynamoDbProgressStore {
 
     async fn list(&self) -> Result<Vec<IngestionProgress>, String> {
         let user_id = current_user();
-        
-        let result = self.client.query()
+
+        let result = self
+            .client
+            .query()
             .table_name(&self.table_name)
             .key_condition_expression("PK = :uid")
             .expression_attribute_values(":uid", AttributeValue::S(user_id))
@@ -357,13 +377,17 @@ impl ProgressStore for DynamoDbProgressStore {
             .map_err(|e| e.to_string())?;
 
         let items = result.items.unwrap_or_default();
-        Ok(items.iter().filter_map(|i| self.item_to_progress(i)).collect())
+        Ok(items
+            .iter()
+            .filter_map(|i| self.item_to_progress(i))
+            .collect())
     }
 
     async fn delete(&self, id: &str) -> Result<(), String> {
         let user_id = current_user();
-        
-        self.client.delete_item()
+
+        self.client
+            .delete_item()
             .table_name(&self.table_name)
             .key("PK", AttributeValue::S(user_id))
             .key("SK", AttributeValue::S(id.to_string()))
@@ -377,32 +401,48 @@ impl ProgressStore for DynamoDbProgressStore {
 /// Global progress tracker
 pub type ProgressTracker = Arc<dyn ProgressStore>;
 
-/// Create a new progress tracker (in-memory or DynamoDB based on env)
-pub async fn create_progress_tracker() -> ProgressTracker {
+/// Create a new progress tracker (in-memory or DynamoDB based on env or config)
+pub async fn create_progress_tracker(dynamo_config: Option<(String, String)>) -> ProgressTracker {
     use std::env;
-    
-    // Check for specific ingestion progress table first, then fall back to general table
-    let table_name = env::var("DATAFOLD_INGESTION_PROGRESS_TABLE")
-        .or_else(|_| env::var("DATAFOLD_DYNAMODB_TABLE"));
 
-    if let Ok(table_name) = table_name {
+    // Check for provided config first, then env vars
+    let config = if let Some((table, region)) = dynamo_config {
+        Some((table, region))
+    } else {
+        // Fallback to env vars
+        match env::var("DATAFOLD_INGESTION_PROGRESS_TABLE")
+            .or_else(|_| env::var("DATAFOLD_DYNAMODB_TABLE"))
+        {
+            Ok(table) => {
+                let region = env::var("DATAFOLD_DYNAMODB_REGION")
+                    .unwrap_or_else(|_| "us-west-2".to_string());
+                Some((table, region))
+            }
+            Err(_) => None,
+        }
+    };
+
+    if let Some((table_name, region)) = config {
         #[cfg(feature = "aws-backend")]
         {
-            let region = env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-west-2".to_string());
-            log::info!("Initializing DynamoDB Progress Tracker: table={}, region={}", table_name, region);
-            
+            log::info!(
+                "Initializing DynamoDB Progress Tracker: table={}, region={}",
+                table_name,
+                region
+            );
+
             // Initialize DynamoDB client with correct region
             let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(aws_sdk_dynamodb::config::Region::new(region))
                 .load()
                 .await;
             let client = Client::new(&config);
-            
+
             let store = DynamoDbProgressStore::with_client(table_name, client);
-            // Ensure table exists 
+            // Ensure table exists
             if let Err(e) = store.ensure_table_exists().await {
                 log::error!("Failed to ensure DynamoDB process table exists: {}", e);
-                // If we are explicitly configured with env vars, we should probably fail?
+                // If we are explicitly configured we should probably fail?
                 // But this function signature returns ProgressTracker, not Result.
                 // For now, let's panic to match "no graceful fallback" if configured.
                 panic!("Failed to ensure DynamoDB process table exists: {}", e);
@@ -440,7 +480,12 @@ impl ProgressService {
     }
 
     /// Update progress for an operation
-    pub async fn update_progress(&self, id: &str, step: IngestionStep, message: String) -> Option<IngestionProgress> {
+    pub async fn update_progress(
+        &self,
+        id: &str,
+        step: IngestionStep,
+        message: String,
+    ) -> Option<IngestionProgress> {
         if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.update_step(step, message);
             let _ = self.tracker.save(&progress).await;
@@ -451,7 +496,13 @@ impl ProgressService {
     }
 
     /// Update progress with custom percentage
-    pub async fn update_progress_with_percentage(&self, id: &str, step: IngestionStep, message: String, percentage: u8) -> Option<IngestionProgress> {
+    pub async fn update_progress_with_percentage(
+        &self,
+        id: &str,
+        step: IngestionStep,
+        message: String,
+        percentage: u8,
+    ) -> Option<IngestionProgress> {
         if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.update_step_with_percentage(step, message, percentage);
             let _ = self.tracker.save(&progress).await;
@@ -462,7 +513,11 @@ impl ProgressService {
     }
 
     /// Mark progress as completed
-    pub async fn complete_progress(&self, id: &str, results: IngestionResults) -> Option<IngestionProgress> {
+    pub async fn complete_progress(
+        &self,
+        id: &str,
+        results: IngestionResults,
+    ) -> Option<IngestionProgress> {
         if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.mark_completed(results);
             let _ = self.tracker.save(&progress).await;
@@ -473,7 +528,11 @@ impl ProgressService {
     }
 
     /// Mark progress as failed
-    pub async fn fail_progress(&self, id: &str, error_message: String) -> Option<IngestionProgress> {
+    pub async fn fail_progress(
+        &self,
+        id: &str,
+        error_message: String,
+    ) -> Option<IngestionProgress> {
         if let Ok(Some(mut progress)) = self.tracker.load(id).await {
             progress.mark_failed(error_message);
             let _ = self.tracker.save(&progress).await;

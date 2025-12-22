@@ -1,12 +1,23 @@
 {
   "name": "datafold-node-ui",
-  "private": true,
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
+  "files": [
+    "dist-lib"
+  ],
+  "main": "./dist-lib/datafold-node-ui.umd.js",
+  "module": "./dist-lib/datafold-node-ui.es.js",
+  "exports": {
+    ".": {
+      "import": "./dist-lib/datafold-node-ui.es.js",
+      "require": "./dist-lib/datafold-node-ui.umd.js"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "prebuild": "npm run generate:endpoints",
     "build": "vite build",
+    "build:lib": "vite build --config vite.config.lib.js",
     "preview": "vite preview",
     "test": "vitest --run",
     "test:watch": "vitest",
