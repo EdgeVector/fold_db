@@ -2,12 +2,10 @@
 //!
 //! Now supports multi-tenancy via NodeManager.
 
-use crate::datafold_node::{DataFoldNode, NodeConfig};
 use crate::datafold_node::llm_query::service::LlmQueryService;
+use crate::datafold_node::{DataFoldNode, NodeConfig};
 use crate::fold_db_core::FoldDB;
-use crate::ingestion::{
-    create_progress_tracker, IngestionConfig, IngestionError, ProgressTracker,
-};
+use crate::ingestion::{create_progress_tracker, IngestionConfig, IngestionError, ProgressTracker};
 use crate::lambda::config::{AIConfig, AIProvider, LambdaConfig, LambdaStorage};
 use crate::lambda::logging::{LogBridge, Logger};
 use crate::lambda::node_manager::NodeManager;
@@ -63,17 +61,23 @@ impl LambdaContext {
 
         // Initialize Progress Store based on storage configuration
         let progress_tracker: ProgressTracker = match &config.storage {
-            crate::lambda::config::LambdaStorage::Config(crate::storage::StorageConfig::DynamoDb(dynamo_config)) => {
-                 use crate::ingestion::progress::DynamoDbProgressStore;
-                 
-                 let table_name = dynamo_config.tables.process.clone();
-                 
-                 Arc::new(DynamoDbProgressStore::new(table_name).await
-                     .map_err(|e| IngestionError::StorageError(format!("Failed to initialize process table: {}", e)))?)
-            },
+            crate::lambda::config::LambdaStorage::Config(
+                crate::storage::StorageConfig::DynamoDb(dynamo_config),
+            ) => {
+                use crate::ingestion::progress::DynamoDbProgressStore;
+
+                let table_name = dynamo_config.tables.process.clone();
+
+                Arc::new(DynamoDbProgressStore::new(table_name).await.map_err(|e| {
+                    IngestionError::StorageError(format!(
+                        "Failed to initialize process table: {}",
+                        e
+                    ))
+                })?)
+            }
             _ => {
                 // For Local/S3/DbOps, fallback to environment variable or in-memory
-                create_progress_tracker().await
+                create_progress_tracker(None).await
             }
         };
 
@@ -98,7 +102,10 @@ impl LambdaContext {
                 // We need to resolve table name.
                 // If storage is DynamoDb, we use that. Otherwise we might fail or default?
                 // For now, let's try to extract it from storage config if available.
-                let table_name = if let crate::lambda::config::LambdaStorage::Config(crate::storage::StorageConfig::DynamoDb(cfg)) = &config.storage {
+                let table_name = if let crate::lambda::config::LambdaStorage::Config(
+                    crate::storage::StorageConfig::DynamoDb(cfg),
+                ) = &config.storage
+                {
                     cfg.tables.logs.clone()
                 } else {
                     // Fallback or error?
@@ -108,10 +115,10 @@ impl LambdaContext {
                     "datafold-logs".to_string()
                 };
                 Arc::new(DynamoDbLogger::new(table_name).await)
-            },
+            }
             crate::lambda::config::LambdaLogging::Stdout => {
                 Arc::new(crate::lambda::logging::StdoutLogger::new())
-            },
+            }
             crate::lambda::config::LambdaLogging::Custom(logger) => logger,
             crate::lambda::config::LambdaLogging::NoOp => {
                 Arc::new(crate::lambda::logging::NoOpLogger::new())
@@ -124,7 +131,10 @@ impl LambdaContext {
         if let Err(e) = log::set_boxed_logger(Box::new(log_bridge)) {
             // It's possible the logger was already set (e.g. during tests).
             // This is not a fatal error, so we just log it to stderr and continue.
-            eprintln!("Warning: Failed to set logger (probably already initialized): {}", e);
+            eprintln!(
+                "Warning: Failed to set logger (probably already initialized): {}",
+                e
+            );
         }
         log::set_max_level(log::LevelFilter::Info);
 
@@ -143,8 +153,13 @@ impl LambdaContext {
     }
 
     /// Convert AIConfig to IngestionConfig for LLM service
-    fn ai_config_to_ingestion_config(ai_config: AIConfig) -> Result<IngestionConfig, IngestionError> {
-        use crate::ingestion::config::{AIProvider as IngestionAIProvider, OllamaConfig as IngestionOllamaConfig, OpenRouterConfig as IngestionOpenRouterConfig};
+    fn ai_config_to_ingestion_config(
+        ai_config: AIConfig,
+    ) -> Result<IngestionConfig, IngestionError> {
+        use crate::ingestion::config::{
+            AIProvider as IngestionAIProvider, OllamaConfig as IngestionOllamaConfig,
+            OpenRouterConfig as IngestionOpenRouterConfig,
+        };
 
         let provider = match ai_config.provider {
             AIProvider::OpenRouter => IngestionAIProvider::OpenRouter,
@@ -154,7 +169,9 @@ impl LambdaContext {
         let openrouter = ai_config.openrouter.map(|cfg| IngestionOpenRouterConfig {
             api_key: cfg.api_key,
             model: cfg.model,
-            base_url: cfg.base_url.unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string()),
+            base_url: cfg
+                .base_url
+                .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string()),
         });
 
         let ollama = ai_config.ollama.map(|cfg| IngestionOllamaConfig {
@@ -169,8 +186,8 @@ impl LambdaContext {
             enabled: true,
             max_retries: ai_config.max_retries,
             timeout_seconds: ai_config.timeout_seconds,
-            auto_execute_mutations: false,  // Not used for AI queries
-            default_trust_distance: 0,      // Not used for AI queries
+            auto_execute_mutations: false, // Not used for AI queries
+            default_trust_distance: 0,     // Not used for AI queries
         })
     }
 
@@ -209,7 +226,9 @@ impl LambdaContext {
     /// Get a reference to the DataFold node for a specific user.
     ///
     /// Required for multi-tenant deployments using DynamoDB.
-    pub async fn get_node(user_id: &str) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
+    pub async fn get_node(
+        user_id: &str,
+    ) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
         Self::get()?.node_manager.get_node(user_id).await
     }
 
@@ -236,7 +255,9 @@ impl LambdaContext {
     ///
     /// This logger will automatically attach the user_id to all logs.
     /// Use this in multi-tenant handlers to ensure logs are correctly attributed.
-    pub fn get_user_logger(user_id: &str) -> Result<crate::lambda::logging::UserLogger, IngestionError> {
+    pub fn get_user_logger(
+        user_id: &str,
+    ) -> Result<crate::lambda::logging::UserLogger, IngestionError> {
         let ctx = Self::get()?;
         Ok(crate::lambda::logging::UserLogger::new(
             user_id.to_string(),
