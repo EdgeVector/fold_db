@@ -113,14 +113,14 @@ echo "DynamoDB configuration saved to $CONFIG_FILE"
 
 # Build the Rust project first (needed to generate OpenAPI spec)
 echo "Building the Rust project..."
-cargo build
+cargo build --features aws-backend
 
 
 
 # Generate OpenAPI spec to a local file for the UI prebuild
 echo "Generating OpenAPI spec..."
 mkdir -p target
-cargo run --quiet --bin openapi_dump > target/openapi.json
+cargo run --features aws-backend --quiet --bin openapi_dump > target/openapi.json
 
 
 
@@ -162,7 +162,7 @@ if [ -n "$USER_ID" ]; then
     export DATAFOLD_DYNAMODB_USER_ID="$USER_ID"
 fi
 
-RUST_LOG=debug nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
+RUST_LOG=debug nohup cargo run --features aws-backend --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
 
 # Get the schema service process ID
 SCHEMA_SERVICE_PID=$!
@@ -206,12 +206,9 @@ source ~/.zshrc 2>/dev/null || true
 
 
 
-# Export DynamoDB Logging config
-export DATAFOLD_LOG_DYNAMODB_ENABLED="true"
-export DATAFOLD_LOG_DYNAMODB_TABLE="DataFoldLogs"
-export DATAFOLD_LOG_DYNAMODB_REGION="$REGION"
 
-RUST_LOG=debug nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
+
+RUST_LOG=debug nohup cargo run --features aws-backend --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
 
 # Get the process ID
 SERVER_PID=$!
