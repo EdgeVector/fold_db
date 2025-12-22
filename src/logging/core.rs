@@ -6,9 +6,9 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::future::Future;
 
 tokio::task_local! {
     /// Task-local storage for the current user ID
@@ -92,7 +92,7 @@ impl LogLevel {
 pub trait Logger: Send + Sync {
     /// Log an event
     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    
+
     /// Query logs for a user (optional - not all backends support this)
     ///
     /// Default implementation returns empty vector for write-only loggers.
@@ -150,7 +150,7 @@ impl Logger for StdoutLogger {
         } else {
             String::new()
         };
-        
+
         eprintln!(
             "[{}] [{}] - {}{}",
             entry.level.as_str(),
@@ -182,12 +182,12 @@ impl UserLogger {
     pub fn new(user_id: String, logger: Arc<dyn Logger>) -> Self {
         Self { user_id, logger }
     }
-    
+
     /// Get the user_id for this logger
     pub fn user_id(&self) -> &str {
         &self.user_id
     }
-    
+
     /// Log with custom level and metadata
     ///
     /// # Example
@@ -202,10 +202,8 @@ impl UserLogger {
         message: &str,
         metadata: Option<HashMap<String, String>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_millis() as i64;
-        
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
+
         let entry = LogEntry {
             timestamp,
             level,
@@ -214,10 +212,10 @@ impl UserLogger {
             user_id: Some(self.user_id.clone()),
             metadata,
         };
-        
+
         self.logger.log(entry).await
     }
-    
+
     /// Log info message
     ///
     /// # Example
@@ -225,10 +223,14 @@ impl UserLogger {
     /// /// Example
     ///
     /// (Example removed as it was ignored)
-    pub async fn info(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn info(
+        &self,
+        event_type: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Info, event_type, message, None).await
     }
-    
+
     /// Log error message
     ///
     /// # Example
@@ -236,10 +238,14 @@ impl UserLogger {
     /// /// Example
     ///
     /// (Example removed as it was ignored)
-    pub async fn error(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn error(
+        &self,
+        event_type: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Error, event_type, message, None).await
     }
-    
+
     /// Log warning message
     ///
     /// # Example
@@ -247,10 +253,14 @@ impl UserLogger {
     /// /// Example
     ///
     /// (Example removed as it was ignored)
-    pub async fn warn(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn warn(
+        &self,
+        event_type: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Warn, event_type, message, None).await
     }
-    
+
     /// Log debug message
     ///
     /// # Example
@@ -258,10 +268,14 @@ impl UserLogger {
     /// /// Example
     ///
     /// (Example removed as it was ignored)
-    pub async fn debug(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn debug(
+        &self,
+        event_type: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Debug, event_type, message, None).await
     }
-    
+
     /// Log trace message
     ///
     /// # Example
@@ -269,7 +283,11 @@ impl UserLogger {
     /// /// Example
     ///
     /// (Example removed as it was ignored)
-    pub async fn trace(&self, event_type: &str, message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn trace(
+        &self,
+        event_type: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.log(LogLevel::Trace, event_type, message, None).await
     }
 }
@@ -300,7 +318,7 @@ impl LogBridge {
     /// Create a new log bridge
     /// Must be called from within a Tokio runtime
     pub fn new(logger: Arc<dyn Logger>) -> Self {
-        Self { 
+        Self {
             logger,
             handle: tokio::runtime::Handle::current(),
         }
@@ -329,7 +347,7 @@ impl log::Log for LogBridge {
                     .as_millis() as i64,
                 level,
                 event_type: record.target().to_string(),
-                message: format!("{}", record.args()),
+                message: format!("exemem: {}", record.args()),
                 user_id: get_current_user_id(),
                 metadata: None,
             };
