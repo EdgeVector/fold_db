@@ -13,17 +13,17 @@ use log::{debug, info};
 use crate::db_operations::{DbOperations, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
-use crate::storage::{StorageError};
+use crate::storage::StorageError;
 use crate::transform::manager::TransformManager;
 
 // Infrastructure components that are used internally
-use super::infrastructure::init::{init_transform_manager};
+use super::infrastructure::init::init_transform_manager;
 use super::infrastructure::message_bus::request_events::SystemInitializationRequest;
 use super::infrastructure::{EventMonitor, MessageBus};
-use super::orchestration::{TransformOrchestrator, IndexEventHandler};
-use super::orchestration::index_status::IndexStatusTracker;
-use super::query::QueryExecutor;
 use super::mutation_manager::MutationManager;
+use super::orchestration::index_status::IndexStatusTracker;
+use super::orchestration::{IndexEventHandler, TransformOrchestrator};
+use super::query::QueryExecutor;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
@@ -44,29 +44,28 @@ pub struct FoldDB {
     pub(crate) mutation_manager: MutationManager,
     /// Index event handler for background indexing
     pub(crate) index_event_handler: IndexEventHandler,
-
-
 }
 
 impl FoldDB {
     /// Retrieves or generates and persists the node identifier.
     pub async fn get_node_id(&self) -> Result<String, crate::storage::StorageError> {
         self.db_ops
-            .get_node_id().await
+            .get_node_id()
+            .await
             .map_err(|e| crate::storage::StorageError::BackendError(e.to_string()))
     }
 
     /// Retrieves the list of permitted schemas for the given node.
     pub fn get_schema_permissions(&self, node_id: &str) -> Vec<String> {
-        tokio::runtime::Handle::current().block_on(self.db_ops
-            .get_schema_permissions(node_id))
+        tokio::runtime::Handle::current()
+            .block_on(self.db_ops.get_schema_permissions(node_id))
             .unwrap_or_default()
     }
 
     /// Sets the permitted schemas for the given node.
     pub fn set_schema_permissions(&self, node_id: &str, schemas: &[String]) -> sled::Result<()> {
-        tokio::runtime::Handle::current().block_on(self.db_ops
-            .set_schema_permissions(node_id, schemas))
+        tokio::runtime::Handle::current()
+            .block_on(self.db_ops.set_schema_permissions(node_id, schemas))
             .map_err(|e| sled::Error::Unsupported(e.to_string()))
     }
 
@@ -96,11 +95,11 @@ impl FoldDB {
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
-    /// 
+    ///
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
-    /// 
+    ///
     /// Now fully async to support DbOperations with storage abstraction!
     pub async fn new(path: &str) -> Result<Self, StorageError> {
         let db = match sled::open(path) {
@@ -118,49 +117,49 @@ impl FoldDB {
         Self::initialize_from_db(db, path, None).await
     }
 
-
-
     /// Creates a new FoldDB instance with a pre-created DbOperations.
-    /// 
+    ///
     /// This allows you to use any storage backend implementation (DynamoDB, custom, etc.)
     /// by creating DbOperations yourself and passing it in.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `db_ops` - Pre-created DbOperations instance with your chosen storage backend
     /// * `db_path` - Path identifier for logging/debugging (can be any string)
+    /// # Arguments
+    /// * `process_table_config` - Optional (table_name, region) tuple for DynamoDB progress store
     pub async fn new_with_db_ops(
         db_ops: Arc<DbOperations>,
         db_path: &str,
-        process_table_name: Option<String>,
+        process_table_config: Option<(String, String)>,
     ) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
             "🔄 Using DbOperations with custom storage backend"
         );
-        
-        Self::initialize_from_db_ops(db_ops, db_path, process_table_name).await
+
+        Self::initialize_from_db_ops(db_ops, db_path, process_table_config).await
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
     /// This method initializes all FoldDB components from an already-opened sled database
-    /// 
+    ///
     /// Fully async - uses DbOperations with storage abstraction layer!
     async fn initialize_from_db(
-        db: sled::Db, 
+        db: sled::Db,
         db_path: &str,
-        progress_table_name: Option<String>,
+        progress_table_config: Option<(String, String)>,
     ) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
             "🔄 Using DbOperations with storage abstraction layer (Sled backend)"
         );
-        
+
         // Use the new async storage abstraction!
         let db_ops = Arc::new(DbOperations::from_sled(db.clone()).await?);
-        
+
         log_feature!(
             LogFeature::Database,
             info,
@@ -168,16 +167,16 @@ impl FoldDB {
             "Sled"
         );
 
-        Self::initialize_from_db_ops(db_ops, db_path, progress_table_name).await
+        Self::initialize_from_db_ops(db_ops, db_path, progress_table_config).await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperations
-    /// 
+    ///
     /// This is used by both initialize_from_db (Sled) and new_with_db_ops (custom backends)
     async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
         db_path: &str,
-        process_table_name: Option<String>,
+        process_table_config: Option<(String, String)>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
@@ -191,32 +190,38 @@ impl FoldDB {
         };
 
         // Send system initialization request via message bus
-        message_bus.publish(init_request)
+        message_bus
+            .publish(init_request)
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         // Create managers using event-driven initialization only
-        let transform_manager = init_transform_manager(Arc::clone(&db_ops), Arc::clone(&message_bus)).await
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
+        let transform_manager =
+            init_transform_manager(Arc::clone(&db_ops), Arc::clone(&message_bus))
+                .await
+                .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         let schema_manager = Arc::new(
-            SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus)).await
-                .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?
+            SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+                .await
+                .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?,
         );
 
         // Create and start EventMonitor for system-wide observability
-        let event_monitor = Arc::new(EventMonitor::new(Arc::clone(&message_bus), Arc::clone(&transform_manager)));
+        let event_monitor = Arc::new(EventMonitor::new(
+            Arc::clone(&message_bus),
+            Arc::clone(&transform_manager),
+        ));
         info!("Started EventMonitor for system-wide event tracking");
 
         // Create QueryExecutor for handling all query operations
-        let query_executor = QueryExecutor::new(
-            Arc::clone(&db_ops),
-            Arc::clone(&schema_manager),
-        );
+        let query_executor = QueryExecutor::new(Arc::clone(&db_ops), Arc::clone(&schema_manager));
         info!("Created QueryExecutor for query operations");
 
         // Create TransformOrchestrator for managing transform execution
         // Now supports both Sled and DynamoDB backends
-        let transform_orchestrator = if let Some(orchestrator_tree) = db_ops.orchestrator_tree.clone() {
+        let transform_orchestrator = if let Some(orchestrator_tree) =
+            db_ops.orchestrator_tree.clone()
+        {
             // Sled backend - use sync version
             let orchestrator = Arc::new(TransformOrchestrator::new(
                 Arc::clone(&transform_manager),
@@ -234,9 +239,13 @@ impl FoldDB {
                 orchestrator_store,
                 Arc::clone(&message_bus),
                 Arc::clone(&db_ops),
-            ).await {
+            )
+            .await
+            {
                 Ok(orchestrator) => {
-                    info!("Created TransformOrchestrator for transform execution (KvStore backend)");
+                    info!(
+                        "Created TransformOrchestrator for transform execution (KvStore backend)"
+                    );
                     Some(Arc::new(orchestrator))
                 }
                 Err(e) => {
@@ -254,39 +263,44 @@ impl FoldDB {
         // Create shared IndexStatusTracker for tracking indexing progress
         // This is shared between MutationManager (direct indexing) and IndexEventHandler (background indexing)
         // Use DynamoDB progress store if configured, otherwise in-memory
-        let progress_store: Arc<dyn super::orchestration::ProgressStore> = if let Some(table_name) = process_table_name {
-             #[cfg(feature = "aws-backend")]
-             {
-                 let region = std::env::var("DATAFOLD_DYNAMODB_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-                 let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        // process_table_config is a tuple of (table_name, region) for explicit config
+        let progress_store: Arc<dyn super::orchestration::ProgressStore> = if let Some((
+            table_name,
+            region,
+        )) =
+            process_table_config
+        {
+            #[cfg(feature = "aws-backend")]
+            {
+                let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                     .region(aws_sdk_dynamodb::config::Region::new(region))
                     .load()
                     .await;
-                 let client = aws_sdk_dynamodb::Client::new(&config);
-                 // Use user_id scope if available, else default? 
-                 // FoldDB init doesn't know "current user" context yet, but IndexStatusTracker tracks across users?
-                 // Actually IndexStatusTracker needs to be multi-tenant aware?
-                 // The old code used DATAFOLD_DYNAMODB_USER_ID which defaults to "default".
-                 // We should probably rely on the same PK strategy.
-                 let pk = std::env::var("DATAFOLD_DYNAMODB_USER_ID").unwrap_or_else(|_| "default".to_string());
-                 
-                 info!("Using DynamoDB progress store (table: {})", table_name);
-                 Arc::new(super::orchestration::DynamoDbProgressStore::new(client, table_name, pk))
-             }
-             #[cfg(not(feature = "aws-backend"))]
-             {
-                 use log::warn;
-                 warn!("DynamoDB configured for progress store but aws-backend feature is disabled. Falling back to in-memory store.");
-                 info!("Using in-memory progress store");
-                 Arc::new(super::orchestration::InMemoryProgressStore::new())
-             }
+                let client = aws_sdk_dynamodb::Client::new(&config);
+                // Use "default" as the partition key prefix
+                // Multi-tenancy is handled at higher levels (user_id in requests)
+                let pk = "default".to_string();
+
+                info!("Using DynamoDB progress store (table: {})", table_name);
+                Arc::new(super::orchestration::DynamoDbProgressStore::new(
+                    client, table_name, pk,
+                ))
+            }
+            #[cfg(not(feature = "aws-backend"))]
+            {
+                use log::warn;
+                let _ = (table_name, region); // Suppress unused variable warning
+                warn!("DynamoDB configured for progress store but aws-backend feature is disabled. Falling back to in-memory store.");
+                info!("Using in-memory progress store");
+                Arc::new(super::orchestration::InMemoryProgressStore::new())
+            }
         } else {
-             info!("Using in-memory progress store");
-             Arc::new(super::orchestration::InMemoryProgressStore::new())
+            info!("Using in-memory progress store");
+            Arc::new(super::orchestration::InMemoryProgressStore::new())
         };
 
         let index_status_tracker = IndexStatusTracker::new(Some(progress_store));
-        
+
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
             Arc::clone(&db_ops),
@@ -294,14 +308,15 @@ impl FoldDB {
             Arc::clone(&message_bus),
             Some(index_status_tracker.clone()),
         );
-        
+
         info!("Created MutationManager for mutation operations");
 
         // Start the MutationManager event listener
-        mutation_manager.start_event_listener()
+        mutation_manager
+            .start_event_listener()
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
         info!("Started MutationManager event listener");
-        
+
         // Create and start IndexEventHandler for background indexing
         let index_event_handler = IndexEventHandler::new(
             Arc::clone(&message_bus),
@@ -326,23 +341,24 @@ impl FoldDB {
             transform_orchestrator,
             mutation_manager,
             index_event_handler,
-
         })
     }
 
     /// Flushes local storage to ensure all data is persisted
     pub async fn flush(&self) -> Result<(), StorageError> {
-        self.db_ops.flush().await
+        self.db_ops
+            .flush()
+            .await
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))
     }
-    
+
     // ========== INDEXING STATUS API ==========
-    
+
     /// Get the current indexing status
     pub async fn get_indexing_status(&self) -> super::orchestration::IndexingStatus {
         self.index_event_handler.get_status().await
     }
-    
+
     /// Check if indexing is currently in progress
     pub async fn is_indexing(&self) -> bool {
         self.index_event_handler.is_indexing().await
@@ -357,7 +373,10 @@ impl FoldDB {
     }
 
     /// Load schema from file (creates Available schema)
-    pub async fn load_schema_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), SchemaError> {
+    pub async fn load_schema_from_file<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<(), SchemaError> {
         // Delegate to SchemaCore implementation
         self.schema_manager.load_schema_from_file(path).await
     }
@@ -373,7 +392,9 @@ impl FoldDB {
     }
 
     /// Get the backfill tracker
-    pub fn get_backfill_tracker(&self) -> Arc<super::infrastructure::backfill_tracker::BackfillTracker> {
+    pub fn get_backfill_tracker(
+        &self,
+    ) -> Arc<super::infrastructure::backfill_tracker::BackfillTracker> {
         self.event_monitor.get_backfill_tracker()
     }
 
@@ -383,12 +404,17 @@ impl FoldDB {
     }
 
     /// Get active (in-progress) backfills
-    pub fn get_active_backfills(&self) -> Vec<super::infrastructure::backfill_tracker::BackfillInfo> {
+    pub fn get_active_backfills(
+        &self,
+    ) -> Vec<super::infrastructure::backfill_tracker::BackfillInfo> {
         self.event_monitor.get_active_backfills()
     }
 
     /// Get specific backfill info
-    pub fn get_backfill(&self, transform_id: &str) -> Option<super::infrastructure::backfill_tracker::BackfillInfo> {
+    pub fn get_backfill(
+        &self,
+        transform_id: &str,
+    ) -> Option<super::infrastructure::backfill_tracker::BackfillInfo> {
         self.event_monitor.get_backfill(transform_id)
     }
 
@@ -408,20 +434,30 @@ impl FoldDB {
     }
     /// Search the native word index for a specific term
     pub fn native_word_search(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        self.db_ops.native_index_manager()
-            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?
+        self.db_ops
+            .native_index_manager()
+            .ok_or_else(|| {
+                SchemaError::InvalidData("Native index manager not available".to_string())
+            })?
             .search_word(term)
     }
 
     /// Search native index across all classification types and aggregate results
     /// This now includes field name matches via search_word
-    pub async fn native_search_all_classifications(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        debug!("FoldDB: native_search_all_classifications called for term: '{}'", term);
-        
+    pub async fn native_search_all_classifications(
+        &self,
+        term: &str,
+    ) -> Result<Vec<IndexResult>, SchemaError> {
+        debug!(
+            "FoldDB: native_search_all_classifications called for term: '{}'",
+            term
+        );
+
         // Delegate to NativeIndexManager which has the full implementation
-        let manager = self.db_ops.native_index_manager()
-            .ok_or_else(|| SchemaError::InvalidData("Native index manager not available".to_string()))?;
-        
+        let manager = self.db_ops.native_index_manager().ok_or_else(|| {
+            SchemaError::InvalidData("Native index manager not available".to_string())
+        })?;
+
         // Use async version if store is available (DynamoDB), otherwise use sync (Sled)
         if manager.is_async() {
             // DynamoDB backend - use async

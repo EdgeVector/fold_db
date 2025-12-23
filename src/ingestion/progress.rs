@@ -401,28 +401,15 @@ impl ProgressStore for DynamoDbProgressStore {
 /// Global progress tracker
 pub type ProgressTracker = Arc<dyn ProgressStore>;
 
-/// Create a new progress tracker (in-memory or DynamoDB based on env or config)
+/// Create a new progress tracker (in-memory or DynamoDB based on explicit config)
+///
+/// # Arguments
+/// * `dynamo_config` - Optional tuple of (table_name, region) for DynamoDB backend.
+///                     If None, uses in-memory storage.
 pub async fn create_progress_tracker(dynamo_config: Option<(String, String)>) -> ProgressTracker {
-    use std::env;
-
-    // Check for provided config first, then env vars
-    let config = if let Some((table, region)) = dynamo_config {
-        Some((table, region))
-    } else {
-        // Fallback to env vars
-        match env::var("DATAFOLD_INGESTION_PROGRESS_TABLE")
-            .or_else(|_| env::var("DATAFOLD_DYNAMODB_TABLE"))
-        {
-            Ok(table) => {
-                let region = env::var("DATAFOLD_DYNAMODB_REGION")
-                    .unwrap_or_else(|_| "us-west-2".to_string());
-                Some((table, region))
-            }
-            Err(_) => None,
-        }
-    };
-
-    if let Some((table_name, region)) = config {
+    // Only use explicitly provided config - no env var fallback
+    // This ensures consistent behavior in Lambda/serverless environments
+    if let Some((table_name, region)) = dynamo_config {
         #[cfg(feature = "aws-backend")]
         {
             log::info!(
@@ -451,6 +438,7 @@ pub async fn create_progress_tracker(dynamo_config: Option<(String, String)>) ->
         }
         #[cfg(not(feature = "aws-backend"))]
         {
+            let _ = (table_name, region); // Suppress unused variable warnings
             log::warn!("DynamoDB progress table configured but aws-backend feature is disabled. Falling back to in-memory.");
             Arc::new(InMemoryProgressStore::new())
         }

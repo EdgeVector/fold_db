@@ -94,9 +94,19 @@ impl DataFoldHttpServer {
     /// Returns a `FoldDbError` if:
     /// * There is an error starting the HTTP server
     pub async fn new(node: DataFoldNode, bind_address: &str) -> FoldDbResult<Self> {
-        // Initialize the enhanced logging system
-        // Initialize the enhanced logging system
-        match crate::logging::LoggingSystem::init_default().await {
+        // Extract DynamoDB logs config from node if using DynamoDB backend
+        let logs_config = {
+            match &node.config.database {
+                #[cfg(feature = "aws-backend")]
+                crate::datafold_node::config::DatabaseConfig::DynamoDb(d) => {
+                    Some((d.tables.logs.clone(), d.region.clone()))
+                }
+                _ => None,
+            }
+        };
+
+        // Initialize the enhanced logging system with DynamoDB config if available
+        match crate::logging::LoggingSystem::init_with_dynamodb(logs_config).await {
             Ok(_) => {}
             Err(crate::logging::LoggingError::AlreadyInitialized) => {
                 // Logging system already initialized, which is expected if running from binary
