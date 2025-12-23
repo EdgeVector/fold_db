@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use crate::datafold_node::{DataFoldNode, NodeConfig};
 use crate::ingestion::IngestionError;
 use crate::lambda::config::{LambdaConfig, LambdaStorage};
 use crate::storage::TableNameResolver;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// Manages DataFold nodes for different tenants
 pub struct NodeManager {
@@ -43,7 +43,10 @@ impl NodeManager {
     }
 
     /// Get a node for a specific user
-    pub async fn get_node(&self, user_id: &str) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
+    pub async fn get_node(
+        &self,
+        user_id: &str,
+    ) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
         // If we have a singleton node, return it regardless of user_id
         // This maintains backward compatibility for single-tenant users
         if let Some(node) = &self.single_node {
@@ -71,10 +74,13 @@ impl NodeManager {
     }
 
     /// Create a new node instance
-    async fn create_node(&self, user_id: &str) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
+    async fn create_node(
+        &self,
+        user_id: &str,
+    ) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
         use crate::db_operations::DbOperations;
         use crate::fold_db_core::FoldDB;
-        use crate::storage::{StorageConfig, DynamoDbConfig};
+        use crate::storage::{DynamoDbConfig, StorageConfig};
 
         let (db, storage_path) = match &self.config.storage {
             LambdaStorage::Config(storage_config) => {
@@ -82,65 +88,110 @@ impl NodeManager {
                     StorageConfig::Local { path } => {
                         std::fs::create_dir_all(path)
                             .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                        
-                        let path_str = path
-                            .to_str()
-                            .ok_or_else(|| IngestionError::StorageError("Invalid storage path".to_string()))?;
-                        
-                        let fold_db = FoldDB::new(path_str).await
+
+                        let path_str = path.to_str().ok_or_else(|| {
+                            IngestionError::StorageError("Invalid storage path".to_string())
+                        })?;
+
+                        let fold_db = FoldDB::new(path_str)
+                            .await
                             .map_err(|e| IngestionError::StorageError(e.to_string()))?;
                         (Arc::new(Mutex::new(fold_db)), path.clone())
                     }
                     StorageConfig::DynamoDb(dynamo_config) => {
                         // Multi-tenant DynamoDB creation
                         let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                            .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
+                            .region(aws_sdk_dynamodb::config::Region::new(
+                                dynamo_config.region.clone(),
+                            ))
                             .load()
                             .await;
-                        
+
                         let client = aws_sdk_dynamodb::Client::new(&config);
-                        
+
                         // Convert ExplicitTables to TableNameResolver
                         let mut map = HashMap::new();
                         map.insert("main".to_string(), dynamo_config.tables.main.clone());
-                        map.insert("metadata".to_string(), dynamo_config.tables.metadata.clone());
-                        map.insert("node_id_schema_permissions".to_string(), dynamo_config.tables.permissions.clone());
-                        map.insert("transforms".to_string(), dynamo_config.tables.transforms.clone());
-                        map.insert("orchestrator_state".to_string(), dynamo_config.tables.orchestrator.clone());
-                        map.insert("schema_states".to_string(), dynamo_config.tables.schema_states.clone());
+                        map.insert(
+                            "metadata".to_string(),
+                            dynamo_config.tables.metadata.clone(),
+                        );
+                        map.insert(
+                            "node_id_schema_permissions".to_string(),
+                            dynamo_config.tables.permissions.clone(),
+                        );
+                        map.insert(
+                            "transforms".to_string(),
+                            dynamo_config.tables.transforms.clone(),
+                        );
+                        map.insert(
+                            "orchestrator_state".to_string(),
+                            dynamo_config.tables.orchestrator.clone(),
+                        );
+                        map.insert(
+                            "schema_states".to_string(),
+                            dynamo_config.tables.schema_states.clone(),
+                        );
                         map.insert("schemas".to_string(), dynamo_config.tables.schemas.clone());
-                        map.insert("public_keys".to_string(), dynamo_config.tables.public_keys.clone());
-                        map.insert("transform_queue_tree".to_string(), dynamo_config.tables.transform_queue.clone());
-                        map.insert("native_index".to_string(), dynamo_config.tables.native_index.clone());
+                        map.insert(
+                            "public_keys".to_string(),
+                            dynamo_config.tables.public_keys.clone(),
+                        );
+                        map.insert(
+                            "transform_queue_tree".to_string(),
+                            dynamo_config.tables.transform_queue.clone(),
+                        );
+                        map.insert(
+                            "native_index".to_string(),
+                            dynamo_config.tables.native_index.clone(),
+                        );
                         let resolver = TableNameResolver::Explicit(map);
-                        
+
                         let db_ops = Arc::new(
                             DbOperations::from_dynamodb_flexible(
-                                client, 
-                                resolver, 
+                                client,
+                                resolver,
                                 dynamo_config.auto_create,
-                                Some(user_id.to_string())
-                            ).await
-                                .map_err(|e| IngestionError::StorageError(format!("Failed to initialize DynamoDB backend: {}", e)))?
+                                Some(user_id.to_string()),
+                            )
+                            .await
+                            .map_err(|e| {
+                                IngestionError::StorageError(format!(
+                                    "Failed to initialize DynamoDB backend: {}",
+                                    e
+                                ))
+                            })?,
                         );
-                        
-                        // Use a derived path for internal consistency (though DB ops handles actual storage)
-                        let process_table_name = Some(dynamo_config.tables.process.clone());
-                        
+
+                        // Pass both table name and region for DynamoDB progress store
+                        let process_table_config = Some((
+                            dynamo_config.tables.process.clone(),
+                            dynamo_config.region.clone(),
+                        ));
+
                         let db_path = format!("dynamodb_{}", user_id);
-                        let fold_db = FoldDB::new_with_db_ops(db_ops, &db_path, process_table_name).await
-                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                        
-                        (Arc::new(Mutex::new(fold_db)), std::path::PathBuf::from(db_path))
+                        let fold_db =
+                            FoldDB::new_with_db_ops(db_ops, &db_path, process_table_config)
+                                .await
+                                .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+
+                        (
+                            Arc::new(Mutex::new(fold_db)),
+                            std::path::PathBuf::from(db_path),
+                        )
                     }
                 }
             }
             LambdaStorage::DbOps(db_ops) => {
                 // Pre-created ops - usually single tenant
                 let db_path = "custom_backend".to_string();
-                let fold_db = FoldDB::new_with_db_ops(Arc::clone(db_ops), &db_path, None).await
+                let fold_db = FoldDB::new_with_db_ops(Arc::clone(db_ops), &db_path, None)
+                    .await
                     .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                (Arc::new(Mutex::new(fold_db)), std::path::PathBuf::from(db_path))
+                (
+                    Arc::new(Mutex::new(fold_db)),
+                    std::path::PathBuf::from(db_path),
+                )
             }
         };
 
@@ -153,7 +204,8 @@ impl NodeManager {
         }
 
         // Create DataFold node
-        let node = DataFoldNode::new_with_db(node_config, db).await
+        let node = DataFoldNode::new_with_db(node_config, db)
+            .await
             .map_err(|e| IngestionError::InvalidInput(e.to_string()))?;
 
         Ok(Arc::new(tokio::sync::Mutex::new(node)))
@@ -170,24 +222,33 @@ mod tests {
     async fn test_node_manager_single_mode() {
         let temp_dir = tempdir().unwrap();
         let db_path = temp_dir.path().join("db");
-        
+
         // Use LambdaConfig::new with StorageConfig
         let config = LambdaConfig::new(
-            crate::storage::StorageConfig::Local {
-                path: db_path,
-            },
-            crate::lambda::config::LambdaLogging::Stdout
+            crate::storage::StorageConfig::Local { path: db_path },
+            crate::lambda::config::LambdaLogging::Stdout,
         );
 
-        let manager = NodeManager::new(config).await.expect("Failed to create manager");
+        let manager = NodeManager::new(config)
+            .await
+            .expect("Failed to create manager");
 
         // Should return the same singleton node for any user_id
-        let node1 = manager.get_node("user1").await.expect("Failed to get node1");
-        let node2 = manager.get_node("user2").await.expect("Failed to get node2");
+        let node1 = manager
+            .get_node("user1")
+            .await
+            .expect("Failed to get node1");
+        let node2 = manager
+            .get_node("user2")
+            .await
+            .expect("Failed to get node2");
 
         let id1 = node1.lock().await.get_node_id().to_string();
         let id2 = node2.lock().await.get_node_id().to_string();
 
-        assert_eq!(id1, id2, "In single mode, all users should get the same node");
+        assert_eq!(
+            id1, id2,
+            "In single mode, all users should get the same node"
+        );
     }
 }

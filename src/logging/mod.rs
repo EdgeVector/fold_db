@@ -63,6 +63,34 @@ impl LoggingSystem {
         Self::init_with_config(config).await
     }
 
+    /// Initialize logging with explicit DynamoDB configuration
+    ///
+    /// This is the preferred method for Lambda/serverless environments where
+    /// configuration should be derived from the node's database config rather
+    /// than environment variables.
+    ///
+    /// # Arguments
+    /// * `dynamo_config` - Optional (table_name, region) tuple. If provided,
+    ///                     DynamoDB logging will be automatically enabled.
+    pub async fn init_with_dynamodb(
+        dynamo_config: Option<(String, String)>,
+    ) -> Result<(), LoggingError> {
+        let mut config = LogConfig::default();
+
+        // Enable DynamoDB logging if config is provided
+        #[cfg(feature = "aws-backend")]
+        if let Some((table_name, region)) = dynamo_config {
+            config.outputs.dynamodb.enabled = true;
+            config.outputs.dynamodb.table_name = table_name;
+            config.outputs.dynamodb.region = Some(region);
+        }
+
+        #[cfg(not(feature = "aws-backend"))]
+        let _ = dynamo_config; // Suppress unused variable warning
+
+        Self::init_with_config(config).await
+    }
+
     /// Initialize the logging system with a custom configuration
     pub async fn init_with_config(config: LogConfig) -> Result<(), LoggingError> {
         // Set up global log level based on configuration
