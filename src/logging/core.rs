@@ -347,7 +347,7 @@ impl log::Log for LogBridge {
                     .as_millis() as i64,
                 level,
                 event_type: record.target().to_string(),
-                message: format!("exemem: {}", record.args()),
+                message: record.args().to_string(),
                 user_id: get_current_user_id(),
                 metadata: None,
             };
