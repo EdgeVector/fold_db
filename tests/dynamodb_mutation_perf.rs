@@ -1,3 +1,4 @@
+#![cfg(feature = "aws-backend")]
 use datafold::datafold_node::config::DatabaseConfig;
 use datafold::datafold_node::{DataFoldNode, NodeConfig};
 use datafold::schema::types::{KeyValue, Mutation};

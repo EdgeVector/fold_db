@@ -1,3 +1,4 @@
+#![cfg(feature = "aws-backend")]
 use aws_smithy_runtime_api::client::http::HttpClient;
 use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
@@ -18,7 +19,7 @@ impl MockHttpClient {
             response_body: "{}".to_string(),
         }
     }
-    
+
     pub fn with_response(mut self, status: u16, body: &str) -> Self {
         self.response_status = status;
         self.response_body = body.to_string();
@@ -37,21 +38,27 @@ impl HttpClient for MockHttpClient {
 }
 
 impl aws_smithy_runtime_api::client::http::HttpConnector for MockHttpClient {
-    fn call(&self, request: HttpRequest) -> aws_smithy_runtime_api::client::http::HttpConnectorFuture {
+    fn call(
+        &self,
+        request: HttpRequest,
+    ) -> aws_smithy_runtime_api::client::http::HttpConnectorFuture {
         let requests = self.requests.clone();
         let status = self.response_status;
         let body = self.response_body.clone();
-        
+
         aws_smithy_runtime_api::client::http::HttpConnectorFuture::new(async move {
             requests.lock().unwrap().push(request);
-            
+
             let sdk_body = aws_smithy_types::body::SdkBody::from(body);
             let response = http::Response::builder()
                 .status(status)
                 .body(sdk_body)
                 .unwrap();
-                
-            Ok(aws_smithy_runtime_api::client::orchestrator::HttpResponse::try_from(response).unwrap())
+
+            Ok(
+                aws_smithy_runtime_api::client::orchestrator::HttpResponse::try_from(response)
+                    .unwrap(),
+            )
         })
     }
 }

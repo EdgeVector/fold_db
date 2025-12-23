@@ -1,10 +1,11 @@
+#![cfg(feature = "aws-backend")]
+use aws_sdk_dynamodb::config::Region;
 use aws_smithy_runtime_api::client::http::HttpClient;
 use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
-use std::sync::{Arc, Mutex};
 use datafold::storage::dynamodb_backend::DynamoDbKvStore;
 use datafold::storage::traits::KvStore;
-use aws_sdk_dynamodb::config::Region;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
 pub struct CapturedRequest {
@@ -27,13 +28,13 @@ impl MockHttpClient {
             response_body: "{}".to_string(),
         }
     }
-    
+
     pub fn with_response(mut self, status: u16, body: &str) -> Self {
         self.response_status = status;
         self.response_body = body.to_string();
         self
     }
-    
+
     pub fn get_last_request(&self) -> Option<CapturedRequest> {
         self.requests.lock().unwrap().last().cloned()
     }
@@ -50,11 +51,14 @@ impl HttpClient for MockHttpClient {
 }
 
 impl aws_smithy_runtime_api::client::http::HttpConnector for MockHttpClient {
-    fn call(&self, request: HttpRequest) -> aws_smithy_runtime_api::client::http::HttpConnectorFuture {
+    fn call(
+        &self,
+        request: HttpRequest,
+    ) -> aws_smithy_runtime_api::client::http::HttpConnectorFuture {
         let requests = self.requests.clone();
         let status = self.response_status;
         let body = self.response_body.clone();
-        
+
         aws_smithy_runtime_api::client::http::HttpConnectorFuture::new(async move {
             // Capture request details
             let uri = request.uri().to_string();
@@ -63,20 +67,23 @@ impl aws_smithy_runtime_api::client::http::HttpConnector for MockHttpClient {
             } else {
                 Vec::new() // Handle streaming body if needed, but for now assume in-memory
             };
-            
+
             requests.lock().unwrap().push(CapturedRequest {
                 uri,
                 body: body_bytes,
             });
-            
+
             let sdk_body = aws_smithy_types::body::SdkBody::from(body);
             let response = http::Response::builder()
                 .status(status)
                 .header("Content-Type", "application/x-amz-json-1.0")
                 .body(sdk_body)
                 .unwrap();
-                
-            Ok(aws_smithy_runtime_api::client::orchestrator::HttpResponse::try_from(response).unwrap())
+
+            Ok(
+                aws_smithy_runtime_api::client::orchestrator::HttpResponse::try_from(response)
+                    .unwrap(),
+            )
         })
     }
 }
@@ -87,7 +94,7 @@ fn create_mock_client(mock: MockHttpClient) -> aws_sdk_dynamodb::Client {
         .region(Region::new("us-east-1"))
         .endpoint_url("http://localhost")
         .credentials_provider(aws_sdk_dynamodb::config::Credentials::new(
-            "test", "test", None, None, "test"
+            "test", "test", None, None, "test",
         ))
         .http_client(mock)
         .build();
@@ -98,7 +105,11 @@ fn create_mock_client(mock: MockHttpClient) -> aws_sdk_dynamodb::Client {
 async fn test_dynamodb_put_mock() {
     let mock = MockHttpClient::new();
     let client = create_mock_client(mock.clone());
-    let store = DynamoDbKvStore::new(Arc::new(client), "TestTable".to_string(), Some("user1".to_string()));
+    let store = DynamoDbKvStore::new(
+        Arc::new(client),
+        "TestTable".to_string(),
+        Some("user1".to_string()),
+    );
 
     let key = b"test_key";
     let value = b"test_value";
@@ -112,7 +123,7 @@ async fn test_dynamodb_put_mock() {
     // DynamoDB uses JSON
     // We expect a PutItem request
     // {"TableName":"TestTable","Item":{"PK":{"S":"user1:test_key"},"SK":{"S":"test_key"},"Value":{"S":"test_value"}}}
-    
+
     println!("Request body: {}", body_str);
     // assert!(body_str.contains("PutItem")); // The action is in headers
     assert!(body_str.contains("TestTable"));
@@ -136,10 +147,14 @@ async fn test_dynamodb_get_mock() {
         }
     }
     "#;
-    
+
     let mock = MockHttpClient::new().with_response(200, response_body);
     let client = create_mock_client(mock.clone());
-    let store = DynamoDbKvStore::new(Arc::new(client), "TestTable".to_string(), Some("user1".to_string()));
+    let store = DynamoDbKvStore::new(
+        Arc::new(client),
+        "TestTable".to_string(),
+        Some("user1".to_string()),
+    );
 
     let key = b"test_key";
     let result = store.get(key).await.expect("get failed");
@@ -149,7 +164,7 @@ async fn test_dynamodb_get_mock() {
     // Verify request
     let request = mock.get_last_request().expect("no request sent");
     let body_str = std::str::from_utf8(&request.body).expect("invalid utf8");
-    
+
     println!("Request body: {}", body_str);
     // Note: GetItem body might be empty if using query params, or JSON if using POST
     // AWS SDK usually uses POST for DynamoDB
@@ -162,10 +177,18 @@ async fn test_dynamodb_get_mock() {
 async fn test_dynamodb_namespace_isolation_mock() {
     let mock = MockHttpClient::new();
     let client = create_mock_client(mock.clone());
-    
+
     // Create two stores with different table names (simulating namespaces)
-    let store1 = DynamoDbKvStore::new(Arc::new(client.clone()), "Namespace1".to_string(), Some("user1".to_string()));
-    let store2 = DynamoDbKvStore::new(Arc::new(client), "Namespace2".to_string(), Some("user1".to_string()));
+    let store1 = DynamoDbKvStore::new(
+        Arc::new(client.clone()),
+        "Namespace1".to_string(),
+        Some("user1".to_string()),
+    );
+    let store2 = DynamoDbKvStore::new(
+        Arc::new(client),
+        "Namespace2".to_string(),
+        Some("user1".to_string()),
+    );
 
     let key = b"key";
     let value = b"value";
@@ -189,7 +212,11 @@ async fn test_dynamodb_namespace_isolation_mock() {
 async fn test_dynamodb_special_chars_mock() {
     let mock = MockHttpClient::new();
     let client = create_mock_client(mock.clone());
-    let store = DynamoDbKvStore::new(Arc::new(client), "TestTable".to_string(), Some("user1".to_string()));
+    let store = DynamoDbKvStore::new(
+        Arc::new(client),
+        "TestTable".to_string(),
+        Some("user1".to_string()),
+    );
 
     // Test key with special chars: colon, slash, space, unicode
     let key = "key:with/special chars_and_🚀".as_bytes();
@@ -199,7 +226,7 @@ async fn test_dynamodb_special_chars_mock() {
 
     let request = mock.get_last_request().expect("request missing");
     let body_str = std::str::from_utf8(&request.body).expect("utf8");
-    
+
     // Verify SK contains the special chars (JSON escaped)
     // "key:with/special chars_and_🚀"
     assert!(body_str.contains("key:with/special chars_and_"));
