@@ -5,9 +5,17 @@ function LogSidebar() {
   const [logs, setLogs] = useState([])
   const endRef = useRef(null)
 
+  const formatLog = (entry) => {
+    if (typeof entry === 'string') return entry
+    const meta = entry.metadata ? JSON.stringify(entry.metadata) : ''
+    // Format: [LEVEL] [TYPE] - message (metadata)
+    // Matches StdoutLogger roughly
+    return `[${entry.level}] [${entry.event_type}] - ${entry.message} ${meta}`
+  }
+
   const handleCopy = () => {
     Promise.resolve(
-      navigator.clipboard.writeText(logs.join('\n'))
+      navigator.clipboard.writeText(logs.map(formatLog).join('\n'))
     ).catch(() => {})
   }
 
@@ -16,8 +24,9 @@ function LogSidebar() {
     systemClient.getLogs()
       .then(response => {
         if (response.success && response.data) {
-          const logs = response.data.logs || []
-          setLogs(Array.isArray(logs) ? logs : [])
+          const fetchedLogs = response.data.logs || []
+          // Ensure logs are in chronological order (backend logic dependent, but assuming we fixed it)
+          setLogs(Array.isArray(fetchedLogs) ? fetchedLogs : [])
         } else {
           setLogs([])
         }
@@ -25,14 +34,24 @@ function LogSidebar() {
       .catch(() => setLogs([]))
 
     // Set up log streaming using systemClient
+    // Note: SSE returns strings, we convert to pseudo-entries for consistency
     const eventSource = systemClient.createLogStream(
       (message) => {
         setLogs(prev => {
-          // Avoid duplicates if the message is identical to the last received log
-          if (prev.length > 0 && prev[prev.length - 1] === message) {
-            return prev
+          // Parse string "LEVEL - message" if possible, or wrap
+          // This is a rough heuristic matching legacy WebLogger format
+          const parts = message.split(' - ')
+          const level = parts.length > 1 ? parts[0] : 'INFO'
+          const msg = parts.length > 1 ? parts.slice(1).join(' - ') : message
+          
+          const entry = {
+            timestamp: Date.now(),
+            level: level,
+            event_type: 'stream',
+            message: msg
           }
-          return [...prev, message]
+          
+          return [...prev, entry]
         })
       },
       (error) => {
@@ -40,38 +59,47 @@ function LogSidebar() {
       }
     )
 
-    // Fallback polling for serverless/stateless environments where SSE might miss cross-instance logs
-    // or if the stream disconnects. Since we updated /api/logs to query DynamoDB, this ensures consistency.
+    // Poll for new logs
     const pollInterval = setInterval(() => {
-      systemClient.getLogs()
-        .then(response => {
-          if (response.success && response.data) {
-            const fetchedLogs = response.data.logs || []
-            setLogs(currentLogs => {
-              if (!Array.isArray(fetchedLogs)) return currentLogs
+      setLogs(currentLogs => {
+        const lastLog = currentLogs.length > 0 ? currentLogs[currentLogs.length - 1] : null
+        const since = lastLog ? lastLog.timestamp : undefined
 
-              // If fetched logs are shorter than current logs, checking if it's just a lag
-              if (currentLogs.length >= fetchedLogs.length) {
-                // Check if fetchedLogs is a prefix of currentLogs
-                const isPrefix = fetchedLogs.every((val, index) => val === currentLogs[index])
-                if (isPrefix) {
-                  // Current logs has more data (from stream), keep it
-                  return currentLogs
-                }
+        systemClient.getLogs(since)
+          .then(response => {
+            if (response.success && response.data) {
+              const fetchedLogs = response.data.logs || []
+              if (fetchedLogs.length > 0) {
+                 setLogs(cur => {
+                   // Filter duplicates based on timestamp and content
+                   // We assume backend returns logs >= since
+                   const lastTs = cur.length > 0 ? cur[cur.length - 1].timestamp : 0
+                   
+                   const newLogs = fetchedLogs.filter(log => {
+                     // Keep if newer, or if same time but different message (imperfect dedup)
+                     if (log.timestamp > lastTs) return true
+                     if (log.timestamp === lastTs) {
+                        // Check if this log is already in cur
+                        const isDuplicate = cur.some(existing => 
+                          existing.timestamp === log.timestamp && 
+                          existing.message === log.message &&
+                          existing.event_type === log.event_type
+                        )
+                        return !isDuplicate
+                     }
+                     return false
+                   })
+                   
+                   if (newLogs.length === 0) return cur
+                   return [...cur, ...newLogs]
+                 })
               }
-              
-              // If fetched logs has more data or is different (e.g. restart), update it
-              // Optimization: check if identical
-              if (fetchedLogs.length === currentLogs.length && 
-                  fetchedLogs[fetchedLogs.length-1] === currentLogs[currentLogs.length-1]) {
-                 return currentLogs
-              }
-
-              return fetchedLogs
-            })
-          }
-        })
-        .catch(err => console.warn('Log polling error:', err))
+            }
+          })
+          .catch(err => console.warn('Log polling error:', err))
+        
+        return currentLogs
+      })
     }, 2000)
 
     return () => {
@@ -96,8 +124,8 @@ function LogSidebar() {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-1 text-xs font-mono">
-        {logs.map((line, idx) => (
-          <div key={idx}>{line}</div>
+        {logs.map((entry, idx) => (
+          <div key={idx}>{formatLog(entry)}</div>
         ))}
         <div ref={endRef}></div>
       </div>

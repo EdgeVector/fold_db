@@ -95,6 +95,7 @@ yarn-error.log
 logs
 src/datafold_node/static-react/node_modules/
 src/datafold_node/static-react/node_modules_trash/
+src/datafold_node/static-react/dist/
 
 # Debug files
 *.pdb
