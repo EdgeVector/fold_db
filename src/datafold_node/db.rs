@@ -1,12 +1,11 @@
-
 use std::collections::HashMap;
 
+use super::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
+use crate::schema::types::field::FieldValue;
+use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use crate::schema::types::{Mutation, Query, Transform};
-use crate::schema::types::key_value::KeyValue;
-use crate::schema::types::field::FieldValue;
-use super::DataFoldNode;
 
 impl DataFoldNode {
     /// Helper function to execute database operations with proper error handling
@@ -43,13 +42,12 @@ impl DataFoldNode {
         // Check if we are in a tokio runtime
         let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // We are in a runtime, use block_in_place to allow blocking
-            tokio::task::block_in_place(|| {
-                handle.block_on(f())
-            })
+            tokio::task::block_in_place(|| handle.block_on(f()))
         } else {
             // Not in a runtime, create a temporary one
-            let rt = tokio::runtime::Runtime::new()
-                .map_err(|e| FoldDbError::Config(format!("Failed to create tokio runtime: {}", e)))?;
+            let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                FoldDbError::Config(format!("Failed to create tokio runtime: {}", e))
+            })?;
             rt.block_on(f())
         };
 
@@ -67,35 +65,49 @@ impl DataFoldNode {
         tokio::task::spawn_blocking(move || {
             let handle = tokio::runtime::Handle::try_current()
                 .map_err(|_| FoldDbError::Config("No tokio runtime available".to_string()))?;
-            
-            handle.block_on(f())
+
+            handle
+                .block_on(f())
                 .map_err(|e| FoldDbError::Config(format!("Operation failed: {}", e)))
         })
         .await
-        .map_err(|e| FoldDbError::Config(format!("Failed to execute operation in blocking context: {}", e)))?
+        .map_err(|e| {
+            FoldDbError::Config(format!(
+                "Failed to execute operation in blocking context: {}",
+                e
+            ))
+        })?
     }
 
     /// Executes a query against the database.
-    pub async fn query(&self, query: Query) -> FoldDbResult<HashMap<String, HashMap<KeyValue, FieldValue>>> {
+    pub async fn query(
+        &self,
+        query: Query,
+    ) -> FoldDbResult<HashMap<String, HashMap<KeyValue, FieldValue>>> {
         let db = self.db.clone();
         self.run_future_in_blocking_task(move || async move {
-            let db_guard = db.lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire database lock for query".to_string()))?;
+            let db_guard = db.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire database lock for query".to_string())
+            })?;
             db_guard.query_executor.query(query).await
-        }).await
+        })
+        .await
     }
 
     /// Executes a mutation on the database.
-    /// 
+    ///
     /// # Deprecated
     /// Use `mutate_batch()` instead for better performance, even for single mutations.
-    #[deprecated(since = "0.1.0", note = "Use mutate_batch() instead for better performance")]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use mutate_batch() instead for better performance"
+    )]
     pub fn mutate(&self, mutation: Mutation) -> FoldDbResult<String> {
         self.with_db_mut(
             #[allow(deprecated)]
             |db| db.mutation_manager.write_mutation(mutation),
             "Failed to acquire database lock for mutation",
-            "Mutation operation failed"
+            "Mutation operation failed",
         )
     }
 
@@ -103,20 +115,33 @@ impl DataFoldNode {
     pub fn mutate_batch(&self, mutations: Vec<Mutation>) -> FoldDbResult<Vec<String>> {
         let db = self.db.clone();
         self.run_future_blocking(move || async move {
-            let mut db_guard = db.lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire database lock for batch mutation".to_string()))?;
-            db_guard.mutation_manager.write_mutations_batch_async(mutations).await
+            let mut db_guard = db.lock().map_err(|_| {
+                SchemaError::InvalidData(
+                    "Failed to acquire database lock for batch mutation".to_string(),
+                )
+            })?;
+            db_guard
+                .mutation_manager
+                .write_mutations_batch_async(mutations)
+                .await
         })
     }
-    
+
     /// Executes multiple mutations in a batch (async version - preferred for DynamoDB)
     pub async fn mutate_batch_async(&self, mutations: Vec<Mutation>) -> FoldDbResult<Vec<String>> {
         let db = self.db.clone();
         self.run_future_in_blocking_task(move || async move {
-            let mut db_guard = db.lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire database lock for batch mutation".to_string()))?;
-            db_guard.mutation_manager.write_mutations_batch_async(mutations).await
-        }).await
+            let mut db_guard = db.lock().map_err(|_| {
+                SchemaError::InvalidData(
+                    "Failed to acquire database lock for batch mutation".to_string(),
+                )
+            })?;
+            db_guard
+                .mutation_manager
+                .write_mutations_batch_async(mutations)
+                .await
+        })
+        .await
     }
 
     /// List all registered transforms.
@@ -124,7 +149,7 @@ impl DataFoldNode {
         self.with_db(
             |db| db.transform_manager.list_transforms(),
             "Failed to acquire database lock for listing transforms",
-            "Failed to list transforms"
+            "Failed to list transforms",
         )
     }
 }

@@ -15,6 +15,8 @@ Coding standards.  Follow these to avoid creating spagetti code.
 
 current UI test:
 ./run_http_server_dynamo_db.sh
+navigate to http://localhost:9001
+press reset database button -- confirm on the modal, wait for reset to complete
 ingestion tab
 click twitter
 click Process Data
