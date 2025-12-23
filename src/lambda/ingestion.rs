@@ -54,7 +54,7 @@ impl LambdaContext {
     pub async fn get_ingestion_status() -> Result<Value, IngestionError> {
         let config = IngestionConfig::from_env_allow_empty();
         let is_configured = config.is_ready();
-        
+
         Ok(serde_json::json!({
             "enabled": config.enabled,
             "configured": is_configured,
@@ -85,7 +85,9 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn get_progress(progress_id: &str) -> Result<Option<IngestionProgress>, IngestionError> {
+    pub async fn get_progress(
+        progress_id: &str,
+    ) -> Result<Option<IngestionProgress>, IngestionError> {
         let ctx = Self::get()?;
         let tracker = ctx.progress_tracker.clone();
         Ok(tracker.load(progress_id).await.unwrap_or(None))
@@ -163,8 +165,6 @@ impl LambdaContext {
         // Load ingestion config
         let config = IngestionConfig::from_env()?;
 
-
-
         // Clone for background task
         let progress_id_clone = progress_id.clone();
         let json_data_clone = json_data.clone();
@@ -174,16 +174,17 @@ impl LambdaContext {
         // Spawn background ingestion task
         tokio::spawn(async move {
             use crate::lambda::logging::run_with_user;
-            
+
             run_with_user(&user_id_clone, async move {
                 // Create ingestion service
                 let service = match SimpleIngestionService::new(config) {
                     Ok(service) => service,
                     Err(e) => {
-                        progress_service.fail_progress(
-                            &progress_id_clone,
-                            format!("Failed to create ingestion service: {}", e),
-                        ).await;
+                        let error_msg = format!("Failed to create ingestion service: {}", e);
+                        log::error!("{}", error_msg);
+                        progress_service
+                            .fail_progress(&progress_id_clone, error_msg)
+                            .await;
                         return;
                     }
                 };
@@ -207,15 +208,22 @@ impl LambdaContext {
                     )
                     .await
                 {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        log::info!(
+                            "Ingestion completed successfully for id: {}",
+                            progress_id_clone
+                        );
+                    }
                     Err(e) => {
-                        progress_service.fail_progress(
-                            &progress_id_clone,
-                            format!("Ingestion failed: {}", e),
-                        ).await;
+                        let error_msg = format!("Ingestion failed: {}", e);
+                        log::error!("{}", error_msg);
+                        progress_service
+                            .fail_progress(&progress_id_clone, error_msg)
+                            .await;
                     }
                 }
-            }).await;
+            })
+            .await;
         });
 
         Ok(progress_id)
@@ -290,6 +298,7 @@ impl LambdaContext {
             service
                 .process_json_with_node_and_progress(request, node, &progress_service, progress_id)
                 .await
-        }).await
+        })
+        .await
     }
 }
