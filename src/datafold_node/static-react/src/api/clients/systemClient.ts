@@ -10,8 +10,17 @@ import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS, API_CONFIG } from
 import type { EnhancedApiResponse } from '../core/types';
 
 // System-specific response types
+export interface LogEntry {
+  timestamp: number;
+  level: 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+  event_type: string;
+  message: string;
+  user_id?: string;
+  metadata?: Record<string, string>;
+}
+
 export interface LogsResponse {
-  logs: string[];
+  logs: LogEntry[];
   count?: number;
   timestamp?: number;
 }
@@ -98,12 +107,16 @@ export class UnifiedSystemClient {
    * 
    * @returns Promise resolving to logs array
    */
-  async getLogs(): Promise<EnhancedApiResponse<LogsResponse>> {
-    return this.client.get<LogsResponse>(API_ENDPOINTS.LIST_LOGS, {
+  async getLogs(since?: number): Promise<EnhancedApiResponse<LogsResponse>> {
+    const url = since 
+      ? `${API_ENDPOINTS.LIST_LOGS}?since=${since}`
+      : API_ENDPOINTS.LIST_LOGS;
+      
+    return this.client.get<LogsResponse>(url, {
       requiresAuth: false, // Logs are public for monitoring
       timeout: API_TIMEOUTS.STANDARD,
       retries: API_RETRIES.STANDARD,
-      cacheable: false // Always get fresh logs
+      cacheable: false, // Always get fresh logs
     });
   }
 

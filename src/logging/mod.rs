@@ -225,26 +225,67 @@ impl LoggingSystem {
         }
     }
 
-    /// Query recent logs from the active backend (or fallback to web logger)
-    pub async fn query_recent_logs(limit: usize) -> Vec<String> {
-        // Try to query from the global logger (e.g. DynamoDB)
+    /// Query logs with pagination support
+    pub async fn query_logs(
+        limit: Option<usize>,
+        from_timestamp: Option<i64>,
+    ) -> Vec<crate::logging::core::LogEntry> {
         if let Some(logger) = GLOBAL_LOGGER.get() {
-            // In standalone/dev mode, we use "anonymous" user ID since we don't have authentication context
-            // stored in the request for this endpoint yet.
-            // Ingestions triggered via HTTP also default to anonymous/no-user context.
-            if let Ok(entries) = logger.query("anonymous", Some(limit), None).await {
-                if !entries.is_empty() {
-                    return entries
-                        .into_iter()
-                        .rev()
-                        .map(|entry| format!("{} - {}", entry.level.as_str(), entry.message))
-                        .collect();
-                }
+            if let Ok(entries) = logger.query("anonymous", limit, from_timestamp).await {
+                // DynamoDB logger returns most recent first, so we reverse to get chronological
+                return entries.into_iter().rev().collect();
             }
         }
 
         // Fallback to in-memory web logger
-        crate::web_logger::get_logs()
+        // Note: WebLogger doesn't support complex querying yet, so we just return everything
+        // and let the client filter if needed, or we could implement filtering here.
+        // For now, consistent with previous behavior but mapped to LogEntry.
+        let raw_logs = crate::web_logger::get_logs();
+        raw_logs
+            .into_iter()
+            .map(|line| {
+                // Parse rudimentary log line "LEVEL - message" back to entry
+                // This is a rough fallback
+                let parts: Vec<&str> = line.splitn(2, " - ").collect();
+                let (level, message) = if parts.len() == 2 {
+                    (
+                        match parts[0] {
+                            "TRACE" => crate::logging::core::LogLevel::Trace,
+                            "DEBUG" => crate::logging::core::LogLevel::Debug,
+                            "INFO" => crate::logging::core::LogLevel::Info,
+                            "WARN" => crate::logging::core::LogLevel::Warn,
+                            "ERROR" => crate::logging::core::LogLevel::Error,
+                            _ => crate::logging::core::LogLevel::Info,
+                        },
+                        parts[1].to_string(),
+                    )
+                } else {
+                    (crate::logging::core::LogLevel::Info, line)
+                };
+
+                crate::logging::core::LogEntry {
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64,
+                    level,
+                    event_type: "web_logger".to_string(),
+                    message,
+                    user_id: None,
+                    metadata: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Query recent logs from the active backend (legacy support)
+    pub async fn query_recent_logs(limit: usize) -> Vec<String> {
+        let entries = Self::query_logs(Some(limit), None).await;
+        entries
+            .into_iter()
+            .map(|entry| format!("{} - {}", entry.level.as_str(), entry.message))
+            .collect()
     }
 }
 

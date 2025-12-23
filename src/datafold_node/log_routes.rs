@@ -17,15 +17,23 @@ pub struct LogConfigResponse {
     pub current_level: String,
 }
 
-/// List current logs (backward compatibility)
+#[derive(Deserialize)]
+pub struct ListLogsQuery {
+    pub since: Option<i64>,
+}
+
+/// List logs with optional pagination
 #[utoipa::path(
     get,
     path = "/api/logs",
     tag = "logs",
+    params(
+        ("since" = Option<i64>, Query, description = "Timestamp to list logs from")
+    ),
     responses((status = 200, description = "List logs", body = serde_json::Value))
 )]
-pub async fn list_logs() -> impl Responder {
-    let logs = crate::logging::LoggingSystem::query_recent_logs(1000).await;
+pub async fn list_logs(query: web::Query<ListLogsQuery>) -> impl Responder {
+    let logs = crate::logging::LoggingSystem::query_logs(Some(1000), query.since).await;
     HttpResponse::Ok().json(serde_json::json!({
         "logs": logs,
         "count": logs.len(),
