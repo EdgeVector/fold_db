@@ -236,6 +236,7 @@ impl LoggingSystem {
                 if !entries.is_empty() {
                     return entries
                         .into_iter()
+                        .rev()
                         .map(|entry| format!("{} - {}", entry.level.as_str(), entry.message))
                         .collect();
                 }

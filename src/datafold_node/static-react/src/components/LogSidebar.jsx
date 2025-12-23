@@ -27,7 +27,13 @@ function LogSidebar() {
     // Set up log streaming using systemClient
     const eventSource = systemClient.createLogStream(
       (message) => {
-        setLogs(prev => [...prev, message])
+        setLogs(prev => {
+          // Avoid duplicates if the message is identical to the last received log
+          if (prev.length > 0 && prev[prev.length - 1] === message) {
+            return prev
+          }
+          return [...prev, message]
+        })
       },
       (error) => {
         console.warn('Log stream error:', error)
@@ -42,13 +48,26 @@ function LogSidebar() {
           if (response.success && response.data) {
             const fetchedLogs = response.data.logs || []
             setLogs(currentLogs => {
-              // Simple optimization: only update if length changed or last log is different
-              // to avoid unnecessary re-renders/scrolls
-              if (fetchedLogs.length !== currentLogs.length || 
-                  (fetchedLogs.length > 0 && fetchedLogs[fetchedLogs.length - 1] !== currentLogs[currentLogs.length - 1])) {
-                return Array.isArray(fetchedLogs) ? fetchedLogs : []
+              if (!Array.isArray(fetchedLogs)) return currentLogs
+
+              // If fetched logs are shorter than current logs, checking if it's just a lag
+              if (currentLogs.length >= fetchedLogs.length) {
+                // Check if fetchedLogs is a prefix of currentLogs
+                const isPrefix = fetchedLogs.every((val, index) => val === currentLogs[index])
+                if (isPrefix) {
+                  // Current logs has more data (from stream), keep it
+                  return currentLogs
+                }
               }
-              return currentLogs
+              
+              // If fetched logs has more data or is different (e.g. restart), update it
+              // Optimization: check if identical
+              if (fetchedLogs.length === currentLogs.length && 
+                  fetchedLogs[fetchedLogs.length-1] === currentLogs[currentLogs.length-1]) {
+                 return currentLogs
+              }
+
+              return fetchedLogs
             })
           }
         })
