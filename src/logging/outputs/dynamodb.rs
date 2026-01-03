@@ -1,12 +1,15 @@
+use crate::logging::core::{LogEntry, LogLevel, Logger};
 use async_trait::async_trait;
 use aws_sdk_dynamodb::{
-    Client, 
-    types::{AttributeDefinition, AttributeValue, KeySchemaElement, KeyType, ScalarAttributeType, ProvisionedThroughput}
+    types::{
+        AttributeDefinition, AttributeValue, KeySchemaElement, KeyType, ProvisionedThroughput,
+        ScalarAttributeType,
+    },
+    Client,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::logging::core::{Logger, LogEntry, LogLevel};
-use serde::{Deserialize, Serialize};
 
 /// Internal struct for DynamoDB serialization
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,8 +30,9 @@ impl DynamoDbLogItem {
         let ttl = (SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs() + (30 * 24 * 60 * 60)) as i64;
-    
+            .as_secs()
+            + (30 * 24 * 60 * 60)) as i64;
+
         Self {
             user_id: entry.user_id.unwrap_or_else(|| "anonymous".to_string()),
             timestamp: entry.timestamp,
@@ -39,7 +43,7 @@ impl DynamoDbLogItem {
             metadata: entry.metadata,
         }
     }
-    
+
     fn into_entry(self) -> LogEntry {
         LogEntry {
             timestamp: self.timestamp,
@@ -71,7 +75,7 @@ pub struct DynamoDbLogger {
 impl DynamoDbLogger {
     /// Create a new DynamoDB logger and ensure table exists
     pub async fn new(table_name: String) -> Self {
-        let config = aws_config::load_from_env().await;
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = Client::new(&config);
         let logger = Self { client, table_name };
         let _ = logger.ensure_table_exists().await;
@@ -85,61 +89,65 @@ impl DynamoDbLogger {
         let _ = logger.ensure_table_exists().await;
         logger
     }
-    
+
     /// Create a DynamoDB logger with an existing client
     pub fn with_client(table_name: String, client: Client) -> Self {
-        // Note: Can't easily ensure table exists here without async, 
+        // Note: Can't easily ensure table exists here without async,
         // so we assume caller handled it or it will happen lazily/fail.
         Self { client, table_name }
     }
 
     /// Ensure the log table exists, creating it if necessary
-    pub async fn ensure_table_exists(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let result = self.client.create_table()
+    pub async fn ensure_table_exists(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let result = self
+            .client
+            .create_table()
             .table_name(&self.table_name)
             .attribute_definitions(
                 AttributeDefinition::builder()
                     .attribute_name("user_id")
                     .attribute_type(ScalarAttributeType::S)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .attribute_definitions(
                 AttributeDefinition::builder()
                     .attribute_name("timestamp")
                     .attribute_type(ScalarAttributeType::N)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .key_schema(
                 KeySchemaElement::builder()
                     .attribute_name("user_id")
                     .key_type(KeyType::Hash)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .key_schema(
                 KeySchemaElement::builder()
                     .attribute_name("timestamp")
                     .key_type(KeyType::Range)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .provisioned_throughput(
                 ProvisionedThroughput::builder()
                     .read_capacity_units(5)
                     .write_capacity_units(5)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             )
             .send()
             .await;
-            
+
         match result {
             Ok(_) => {
                 // Wait a bit for table to be active?
                 Ok(())
-            },
+            }
             Err(err) => {
                 if let Some(service_err) = err.as_service_error() {
                     if service_err.is_resource_in_use_exception() {
@@ -178,7 +186,8 @@ impl Logger for DynamoDbLogger {
         limit: Option<usize>,
         from_timestamp: Option<i64>,
     ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
-        let mut query = self.client
+        let mut query = self
+            .client
             .query()
             .table_name(&self.table_name)
             .scan_index_forward(false); // Most recent first
@@ -201,10 +210,13 @@ impl Logger for DynamoDbLogger {
         }
 
         let response = query.send().await?;
-        
+
         if let Some(items) = response.items {
             let log_items: Vec<DynamoDbLogItem> = serde_dynamo::from_items(items)?;
-            Ok(log_items.into_iter().map(|item| item.into_entry()).collect())
+            Ok(log_items
+                .into_iter()
+                .map(|item| item.into_entry())
+                .collect())
         } else {
             Ok(vec![])
         }

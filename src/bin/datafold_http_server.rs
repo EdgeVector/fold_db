@@ -47,6 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = load_node_config(None, None)?;
 
     // Initialize logging system with environment configuration
+    #[allow(unused_mut)]
     let mut log_config = datafold::logging::config::LogConfig::from_env().unwrap_or_default();
 
     // If using DynamoDB backend, automatically enable DynamoDB logging

@@ -820,6 +820,7 @@ impl NativeIndexManager {
 
     /// Write entries to index (async version for DynamoDB)
     /// Uses simplified key structure: feature as PK, term as SK
+    #[allow(dead_code)]
     async fn write_entries_async(
         &self,
         key: &str,
@@ -892,6 +893,7 @@ impl NativeIndexManager {
     }
 
     /// Remove record entries (async version for DynamoDB)
+    #[allow(dead_code)]
     async fn remove_record_entries_async(
         &self,
         record_key: &str,
@@ -1050,12 +1052,12 @@ impl NativeIndexManager {
         )
         .await;
 
-        for (i, fetch_result) in record_fetches.into_iter().enumerate() {
+        for (_i, fetch_result) in record_fetches.into_iter().enumerate() {
             if let Ok(Some(bytes)) = fetch_result {
                 // Record exists! Deserialize to get old words/keys
                 if let Ok(old_keys) = serde_json::from_slice::<Vec<String>>(&bytes) {
                     for key in old_keys {
-                        let index_key = format!("{}{}", structural_prefixes::WORD, key);
+                        let _index_key = format!("{}{}", structural_prefixes::WORD, key);
                         // Note: The stored keys in record_key value are raw words, not full index keys?
                         // self.remove_record_entries_async deserializes to "words".
                         // BUT `batch_index...` writes "all_index_keys" which are FULL keys.

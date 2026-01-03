@@ -2,6 +2,7 @@
 //!
 //! Now supports pluggable backends (InMemory, DynamoDB) via ProgressStore trait.
 
+#[cfg(feature = "aws-backend")]
 use crate::logging::core::get_current_user_id;
 use async_trait::async_trait;
 #[cfg(feature = "aws-backend")]
@@ -13,6 +14,7 @@ use aws_sdk_dynamodb::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "aws-backend")]
 use std::time::{SystemTime, UNIX_EPOCH};
 use utoipa::ToSchema;
 
@@ -150,6 +152,7 @@ impl IngestionProgress {
 }
 
 /// Helper to get current user ID
+#[cfg(feature = "aws-backend")]
 fn current_user() -> String {
     get_current_user_id().unwrap_or_else(|| "default".to_string())
 }
@@ -211,7 +214,7 @@ pub struct DynamoDbProgressStore {
 #[cfg(feature = "aws-backend")]
 impl DynamoDbProgressStore {
     pub async fn new(table_name: String) -> Result<Self, String> {
-        let config = aws_config::load_from_env().await;
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = Client::new(&config);
         let store = Self { client, table_name };
         store.ensure_table_exists().await?;
