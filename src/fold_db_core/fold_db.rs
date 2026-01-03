@@ -114,43 +114,26 @@ impl FoldDB {
             }
         };
 
-        Self::initialize_from_db(db, path, None).await
+        Self::initialize_from_db(db, path).await
     }
 
-    /// Creates a new FoldDB instance with a pre-created DbOperations.
+    /// Creates a new FoldDB instance with fully initialized components.
     ///
-    /// This allows you to use any storage backend implementation (DynamoDB, custom, etc.)
-    /// by creating DbOperations yourself and passing it in.
-    ///
-    /// # Arguments
-    ///
-    /// * `db_ops` - Pre-created DbOperations instance with your chosen storage backend
-    /// * `db_path` - Path identifier for logging/debugging (can be any string)
-    /// # Arguments
-    /// * `process_table_config` - Optional (table_name, region) tuple for DynamoDB progress store
-    pub async fn new_with_db_ops(
+    /// This is the most flexible constructor, allowing the injection of
+    /// specific implementations for storage, progress tracking, etc.
+    pub async fn new_with_components(
         db_ops: Arc<DbOperations>,
         db_path: &str,
-        process_table_config: Option<(String, String)>,
+        progress_store: Arc<dyn super::orchestration::ProgressStore>,
     ) -> Result<Self, StorageError> {
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "🔄 Using DbOperations with custom storage backend"
-        );
-
-        Self::initialize_from_db_ops(db_ops, db_path, process_table_config).await
+        Self::initialize_from_db_ops(db_ops, db_path, progress_store).await
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
     /// This method initializes all FoldDB components from an already-opened sled database
     ///
     /// Fully async - uses DbOperations with storage abstraction layer!
-    async fn initialize_from_db(
-        db: sled::Db,
-        db_path: &str,
-        progress_table_config: Option<(String, String)>,
-    ) -> Result<Self, StorageError> {
+    async fn initialize_from_db(db: sled::Db, db_path: &str) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
@@ -167,7 +150,8 @@ impl FoldDB {
             "Sled"
         );
 
-        Self::initialize_from_db_ops(db_ops, db_path, progress_table_config).await
+        let progress_store = Arc::new(super::orchestration::InMemoryProgressStore::new());
+        Self::initialize_from_db_ops(db_ops, db_path, progress_store).await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperations
@@ -176,7 +160,7 @@ impl FoldDB {
     async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
         db_path: &str,
-        process_table_config: Option<(String, String)>,
+        progress_store: Arc<dyn super::orchestration::ProgressStore>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
@@ -262,43 +246,6 @@ impl FoldDB {
 
         // Create shared IndexStatusTracker for tracking indexing progress
         // This is shared between MutationManager (direct indexing) and IndexEventHandler (background indexing)
-        // Use DynamoDB progress store if configured, otherwise in-memory
-        // process_table_config is a tuple of (table_name, region) for explicit config
-        let progress_store: Arc<dyn super::orchestration::ProgressStore> = if let Some((
-            table_name,
-            region,
-        )) =
-            process_table_config
-        {
-            #[cfg(feature = "aws-backend")]
-            {
-                let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(aws_sdk_dynamodb::config::Region::new(region))
-                    .load()
-                    .await;
-                let client = aws_sdk_dynamodb::Client::new(&config);
-                // Use "default" as the partition key prefix
-                // Multi-tenancy is handled at higher levels (user_id in requests)
-                let pk = "default".to_string();
-
-                info!("Using DynamoDB progress store (table: {})", table_name);
-                Arc::new(super::orchestration::DynamoDbProgressStore::new(
-                    client, table_name, pk,
-                ))
-            }
-            #[cfg(not(feature = "aws-backend"))]
-            {
-                use log::warn;
-                let _ = (table_name, region); // Suppress unused variable warning
-                warn!("DynamoDB configured for progress store but aws-backend feature is disabled. Falling back to in-memory store.");
-                info!("Using in-memory progress store");
-                Arc::new(super::orchestration::InMemoryProgressStore::new())
-            }
-        } else {
-            info!("Using in-memory progress store");
-            Arc::new(super::orchestration::InMemoryProgressStore::new())
-        };
-
         let index_status_tracker = IndexStatusTracker::new(Some(progress_store));
 
         // Create MutationManager for handling all mutation operations

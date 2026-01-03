@@ -78,130 +78,62 @@ impl NodeManager {
         &self,
         user_id: &str,
     ) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
-        use crate::db_operations::DbOperations;
+        use crate::datafold_node::backend;
+        use crate::datafold_node::config::{DatabaseConfig, NodeConfig};
         use crate::fold_db_core::FoldDB;
-        use crate::storage::{DynamoDbConfig, StorageConfig};
+        use crate::storage::StorageConfig;
 
-        let (db, storage_path) = match &self.config.storage {
+        // Convert LambdaStorage to NodeConfig or handle DbOps case
+        let (db, node_config) = match &self.config.storage {
             LambdaStorage::Config(storage_config) => {
-                match storage_config {
-                    StorageConfig::Local { path } => {
-                        std::fs::create_dir_all(path)
-                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-
-                        let path_str = path.to_str().ok_or_else(|| {
-                            IngestionError::StorageError("Invalid storage path".to_string())
-                        })?;
-
-                        let fold_db = FoldDB::new(path_str)
-                            .await
-                            .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                        (Arc::new(Mutex::new(fold_db)), path.clone())
-                    }
+                let mut node_config = match storage_config {
+                    StorageConfig::Local { path } => NodeConfig::new(path.clone()),
+                    #[cfg(feature = "aws-backend")]
                     StorageConfig::DynamoDb(dynamo_config) => {
-                        // Multi-tenant DynamoDB creation
-                        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                            .region(aws_sdk_dynamodb::config::Region::new(
-                                dynamo_config.region.clone(),
-                            ))
-                            .load()
-                            .await;
-
-                        let client = aws_sdk_dynamodb::Client::new(&config);
-
-                        // Convert ExplicitTables to TableNameResolver
-                        let mut map = HashMap::new();
-                        map.insert("main".to_string(), dynamo_config.tables.main.clone());
-                        map.insert(
-                            "metadata".to_string(),
-                            dynamo_config.tables.metadata.clone(),
-                        );
-                        map.insert(
-                            "node_id_schema_permissions".to_string(),
-                            dynamo_config.tables.permissions.clone(),
-                        );
-                        map.insert(
-                            "transforms".to_string(),
-                            dynamo_config.tables.transforms.clone(),
-                        );
-                        map.insert(
-                            "orchestrator_state".to_string(),
-                            dynamo_config.tables.orchestrator.clone(),
-                        );
-                        map.insert(
-                            "schema_states".to_string(),
-                            dynamo_config.tables.schema_states.clone(),
-                        );
-                        map.insert("schemas".to_string(), dynamo_config.tables.schemas.clone());
-                        map.insert(
-                            "public_keys".to_string(),
-                            dynamo_config.tables.public_keys.clone(),
-                        );
-                        map.insert(
-                            "transform_queue_tree".to_string(),
-                            dynamo_config.tables.transform_queue.clone(),
-                        );
-                        map.insert(
-                            "native_index".to_string(),
-                            dynamo_config.tables.native_index.clone(),
-                        );
-                        let resolver = TableNameResolver::Explicit(map);
-
-                        let db_ops = Arc::new(
-                            DbOperations::from_dynamodb_flexible(
-                                client,
-                                resolver,
-                                dynamo_config.auto_create,
-                                Some(user_id.to_string()),
-                            )
-                            .await
-                            .map_err(|e| {
-                                IngestionError::StorageError(format!(
-                                    "Failed to initialize DynamoDB backend: {}",
-                                    e
-                                ))
-                            })?,
-                        );
-
-                        // Pass both table name and region for DynamoDB progress store
-                        let process_table_config = Some((
-                            dynamo_config.tables.process.clone(),
-                            dynamo_config.region.clone(),
-                        ));
-
-                        let db_path = format!("dynamodb_{}", user_id);
-                        let fold_db =
-                            FoldDB::new_with_db_ops(db_ops, &db_path, process_table_config)
-                                .await
-                                .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-
-                        (
-                            Arc::new(Mutex::new(fold_db)),
-                            std::path::PathBuf::from(db_path),
-                        )
+                        let mut cfg = NodeConfig::default();
+                        let mut d_cfg = dynamo_config.clone();
+                        d_cfg.user_id = Some(user_id.to_string());
+                        cfg.database = DatabaseConfig::DynamoDb(d_cfg);
+                        cfg
                     }
+                };
+
+                // If schema service URL is provided in LambdaConfig, apply it to NodeConfig
+                if let Some(schema_url) = &self.config.schema_service_url {
+                    node_config = node_config.with_schema_service_url(schema_url);
                 }
+
+                let db = backend::create_fold_db(&node_config)
+                    .await
+                    .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+
+                (db, node_config)
             }
             LambdaStorage::DbOps(db_ops) => {
                 // Pre-created ops - usually single tenant
                 let db_path = "custom_backend".to_string();
-                let fold_db = FoldDB::new_with_db_ops(Arc::clone(db_ops), &db_path, None)
-                    .await
-                    .map_err(|e| IngestionError::StorageError(e.to_string()))?;
-                (
-                    Arc::new(Mutex::new(fold_db)),
-                    std::path::PathBuf::from(db_path),
-                )
+
+                // Manually create components, effectively replicating what create_fold_db does for custom ops
+                let progress_store =
+                    Arc::new(crate::fold_db_core::orchestration::InMemoryProgressStore::new());
+
+                let fold_db =
+                    FoldDB::new_with_components(Arc::clone(db_ops), &db_path, progress_store)
+                        .await
+                        .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+
+                let node_config = NodeConfig::new(std::path::PathBuf::from(db_path));
+
+                // If schema service URL is provided in LambdaConfig, apply it to NodeConfig
+                let node_config = if let Some(schema_url) = &self.config.schema_service_url {
+                    node_config.with_schema_service_url(schema_url)
+                } else {
+                    node_config
+                };
+
+                (Arc::new(Mutex::new(fold_db)), node_config)
             }
         };
-
-        // Initialize node config
-        let mut node_config = NodeConfig::new(storage_path);
-
-        // Set schema service URL if provided
-        if let Some(schema_url) = &self.config.schema_service_url {
-            node_config = node_config.with_schema_service_url(schema_url);
-        }
 
         // Create DataFold node
         let node = DataFoldNode::new_with_db(node_config, db)
