@@ -8,7 +8,7 @@ jobs:
   rust-tests:
     name: Rust Tests
     runs-on: ubuntu-latest
-    
+
     # Environment variables for AI query test (optional)
     # If not set, AI query test will fail but other tests will pass
     env:
@@ -59,12 +59,16 @@ jobs:
         continue-on-error: true
         run: cargo test --workspace
 
+      - name: Check AWS Backend
+        id: check-aws
+        run: cargo check --workspace --features aws-backend
+
       - name: Rust test summary
         if: always()
         run: |
           clippy_status="${{ steps.clippy.outcome }}"
           test_status="${{ steps.cargo-test.outcome }}"
-          
+
           if [ "$clippy_status" = "success" ]; then
             echo "✅ **Rust Clippy**" >> $GITHUB_STEP_SUMMARY
             echo "Clippy checks passed successfully." >> $GITHUB_STEP_SUMMARY
@@ -72,7 +76,7 @@ jobs:
             echo "❌ **Rust Clippy**" >> $GITHUB_STEP_SUMMARY
             echo "Clippy checks failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           if [ "$test_status" = "success" ]; then
             echo "✅ **Rust Tests**" >> $GITHUB_STEP_SUMMARY
             echo "All cargo tests passed successfully." >> $GITHUB_STEP_SUMMARY
@@ -103,8 +107,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
           cache-dependency-path: src/datafold_node/static-react/package-lock.json
 
       - name: Install dependencies
@@ -133,4 +137,3 @@ jobs:
       - name: Fail if npm tests failed
         if: steps.npm-test.outcome == 'failure'
         run: exit 1
-

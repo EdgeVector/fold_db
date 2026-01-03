@@ -89,9 +89,7 @@ pub enum SchemaStorage {
     },
     /// DynamoDB storage (serverless, no locking needed!)
     #[cfg(feature = "aws-backend")]
-    DynamoDB {
-        store: Arc<DynamoDbSchemaStore>,
-    },
+    DynamoDB { store: Arc<DynamoDbSchemaStore> },
 }
 
 /// Shared state for the schema service
@@ -105,12 +103,15 @@ impl SchemaServiceState {
     /// Create a new schema service state with local sled storage
     pub fn new(db_path: String) -> FoldDbResult<Self> {
         let db = sled::open(&db_path).map_err(|e| {
-            FoldDbError::Config(format!("Failed to open schema service database at '{}': {}", db_path, e))
+            FoldDbError::Config(format!(
+                "Failed to open schema service database at '{}': {}",
+                db_path, e
+            ))
         })?;
 
-        let schemas_tree = db.open_tree("schemas").map_err(|e| {
-            FoldDbError::Config(format!("Failed to open schemas tree: {}", e))
-        })?;
+        let schemas_tree = db
+            .open_tree("schemas")
+            .map_err(|e| FoldDbError::Config(format!("Failed to open schemas tree: {}", e)))?;
 
         let state = Self {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -162,8 +163,11 @@ impl SchemaServiceState {
                     count
                 );
             }
+            #[cfg(feature = "aws-backend")]
             _ => {
-                return Err(FoldDbError::Config("load_schemas_sync called on non-Sled storage".to_string()));
+                return Err(FoldDbError::Config(
+                    "load_schemas_sync called on non-Sled storage".to_string(),
+                ));
             }
         }
 
@@ -207,10 +211,9 @@ impl SchemaServiceState {
     pub async fn load_schemas(&self) -> FoldDbResult<()> {
         match &self.storage {
             SchemaStorage::Sled { schemas_tree, .. } => {
-                let mut schemas = self
-                    .schemas
-                    .write()
-                    .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
+                let mut schemas = self.schemas.write().map_err(|_| {
+                    FoldDbError::Config("Failed to acquire schemas write lock".to_string())
+                })?;
 
                 schemas.clear();
                 let mut count = 0;
@@ -253,13 +256,12 @@ impl SchemaServiceState {
                 let all_schemas = store.get_all_schemas().await?;
                 let count = all_schemas.len();
 
-                let mut schemas = self
-                    .schemas
-                    .write()
-                    .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
+                let mut schemas = self.schemas.write().map_err(|_| {
+                    FoldDbError::Config("Failed to acquire schemas write lock".to_string())
+                })?;
 
                 schemas.clear();
-                
+
                 for schema in all_schemas {
                     log_feature!(
                         LogFeature::Schema,
@@ -282,7 +284,11 @@ impl SchemaServiceState {
         Ok(())
     }
 
-    pub async fn add_schema(&self, mut schema: Schema, mutation_mappers: HashMap<String, String>) -> FoldDbResult<SchemaAddOutcome> {
+    pub async fn add_schema(
+        &self,
+        mut schema: Schema,
+        mutation_mappers: HashMap<String, String>,
+    ) -> FoldDbResult<SchemaAddOutcome> {
         // Validate that all fields have topologies defined
         if let Some(ref fields) = schema.fields {
             for field_name in fields {
@@ -304,10 +310,11 @@ impl SchemaServiceState {
         let original_schema_name = schema.name.clone();
 
         // Use topology_hash as the schema identifier
-        let topology_hash = schema.get_topology_hash()
-            .ok_or_else(|| FoldDbError::Config(
-                "Schema must have topology_hash computed".to_string()
-            ))?
+        let topology_hash = schema
+            .get_topology_hash()
+            .ok_or_else(|| {
+                FoldDbError::Config("Schema must have topology_hash computed".to_string())
+            })?
             .clone();
 
         log_feature!(
@@ -323,10 +330,9 @@ impl SchemaServiceState {
 
         // Check if this exact combination already exists
         {
-            let schemas = self
-                .schemas
-                .read()
-                .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
+            let schemas = self.schemas.read().map_err(|_| {
+                FoldDbError::Config("Failed to acquire schemas read lock".to_string())
+            })?;
 
             if schemas.contains_key(&schema_name) {
                 let existing_schema = schemas.get(&schema_name).unwrap();
@@ -336,7 +342,7 @@ impl SchemaServiceState {
                     "Schema '{}' already exists - using existing schema",
                     schema_name
                 );
-                
+
                 return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
                     similarity: 1.0,
                     closest_schema: existing_schema.clone(),
@@ -392,10 +398,9 @@ impl SchemaServiceState {
 
         // Insert into in-memory cache
         {
-            let mut schemas = self
-                .schemas
-                .write()
-                .map_err(|_| FoldDbError::Config("Failed to acquire schemas write lock".to_string()))?;
+            let mut schemas = self.schemas.write().map_err(|_| {
+                FoldDbError::Config("Failed to acquire schemas write lock".to_string())
+            })?;
             schemas.insert(schema_name.clone(), schema.clone());
         }
 
@@ -408,12 +413,10 @@ impl SchemaServiceState {
 
         Ok(SchemaAddOutcome::Added(schema, mutation_mappers))
     }
-
 }
 
 /// List all available schemas
 async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
-
     let schemas = match state.schemas.read() {
         Ok(s) => s,
         Err(e) => {
@@ -423,10 +426,9 @@ async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
                 "Failed to acquire schemas read lock: {}",
                 e
             );
-            return HttpResponse::InternalServerError()
-                .json(ErrorResponse {
-                    error: "Failed to acquire schemas read lock".to_string(),
-                });
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: "Failed to acquire schemas read lock".to_string(),
+            });
         }
     };
 
@@ -439,7 +441,6 @@ async fn list_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
 
 /// Get all available schemas with their full definitions
 async fn get_available_schemas(state: web::Data<SchemaServiceState>) -> impl Responder {
-
     let schemas = match state.schemas.read() {
         Ok(s) => s,
         Err(e) => {
@@ -449,10 +450,9 @@ async fn get_available_schemas(state: web::Data<SchemaServiceState>) -> impl Res
                 "Failed to acquire schemas read lock: {}",
                 e
             );
-            return HttpResponse::InternalServerError()
-                .json(ErrorResponse {
-                    error: "Failed to acquire schemas read lock".to_string(),
-                });
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: "Failed to acquire schemas read lock".to_string(),
+            });
         }
     };
 
@@ -485,10 +485,9 @@ async fn get_schema(
                 "Failed to acquire schemas read lock: {}",
                 e
             );
-            return HttpResponse::InternalServerError()
-                .json(ErrorResponse {
-                    error: "Failed to acquire schemas read lock".to_string(),
-                });
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: "Failed to acquire schemas read lock".to_string(),
+            });
         }
     };
 
@@ -527,10 +526,9 @@ async fn reload_schemas(state: web::Data<SchemaServiceState>) -> impl Responder 
                         "Failed to acquire schemas read lock: {}",
                         e
                     );
-                    return HttpResponse::InternalServerError()
-                        .json(ErrorResponse {
-                            error: "Failed to acquire schemas read lock".to_string(),
-                        });
+                    return HttpResponse::InternalServerError().json(ErrorResponse {
+                        error: "Failed to acquire schemas read lock".to_string(),
+                    });
                 }
             };
 
@@ -541,10 +539,9 @@ async fn reload_schemas(state: web::Data<SchemaServiceState>) -> impl Responder 
         }
         Err(e) => {
             log_feature!(LogFeature::Schema, error, "Failed to reload schemas: {}", e);
-            HttpResponse::InternalServerError()
-                .json(ErrorResponse {
-                    error: format!("Failed to reload schemas: {}", e),
-                })
+            HttpResponse::InternalServerError().json(ErrorResponse {
+                error: format!("Failed to reload schemas: {}", e),
+            })
         }
     }
 }
@@ -564,7 +561,10 @@ async fn add_schema(
         request.mutation_mappers.len()
     );
 
-    match state.add_schema(request.schema, request.mutation_mappers).await {
+    match state
+        .add_schema(request.schema, request.mutation_mappers)
+        .await
+    {
         Ok(SchemaAddOutcome::Added(schema, mutation_mappers)) => {
             HttpResponse::Created().json(AddSchemaResponse {
                 schema,
@@ -688,10 +688,11 @@ async fn reset_database(
         info,
         "Schema service database reset successfully"
     );
-    
+
     HttpResponse::Ok().json(ResetResponse {
         success: true,
-        message: "Schema service database reset successfully. All schemas have been cleared.".to_string(),
+        message: "Schema service database reset successfully. All schemas have been cleared."
+            .to_string(),
     })
 }
 
@@ -715,7 +716,10 @@ impl SchemaServiceServer {
     /// Create a new schema service server with DynamoDB storage
     /// No locking needed - topology hashes ensure idempotent concurrent writes!
     #[cfg(feature = "aws-backend")]
-    pub async fn new_with_dynamodb(config: DynamoDbConfig, bind_address: &str) -> FoldDbResult<Self> {
+    pub async fn new_with_dynamodb(
+        config: DynamoDbConfig,
+        bind_address: &str,
+    ) -> FoldDbResult<Self> {
         let state = SchemaServiceState::new_with_dynamodb(config).await?;
 
         Ok(Self {
@@ -773,11 +777,14 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-
     #[tokio::test]
     async fn add_schema_adds_new_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+        let db_path = temp_dir
+            .path()
+            .join("test_schema_db")
+            .to_string_lossy()
+            .to_string();
 
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
@@ -798,7 +805,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         new_schema.set_field_topology(
@@ -807,7 +814,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
 
@@ -824,7 +831,7 @@ mod tests {
         // Schema name should be the topology_hash (64 char hex string)
         assert_eq!(added_schema.name.len(), 64); // 64 char hash
         assert_eq!(&added_schema.name, new_schema.get_topology_hash().unwrap());
-        
+
         // Topology should match
         assert_eq!(added_schema.field_topologies, new_schema.field_topologies);
 
@@ -837,25 +844,32 @@ mod tests {
         assert!(stored_schemas.contains_key(&added_schema.name));
 
         // Check the underlying storage
-        if let SchemaStorage::Sled { schemas_tree, .. } = &state.storage {
-            let db_value = schemas_tree
-                .get(added_schema.name.as_bytes())
-                .expect("failed to query database")
-                .expect("schema should exist in database");
-            
-            let stored_schema: Schema = serde_json::from_slice(&db_value)
-                .expect("failed to deserialize stored schema");
-            
-            assert_eq!(stored_schema.name, added_schema.name);
-        } else {
-            panic!("Expected Sled storage");
+        // Check the underlying storage
+        match &state.storage {
+            SchemaStorage::Sled { schemas_tree, .. } => {
+                let db_value = schemas_tree
+                    .get(added_schema.name.as_bytes())
+                    .expect("failed to query database")
+                    .expect("schema should exist in database");
+
+                let stored_schema: Schema =
+                    serde_json::from_slice(&db_value).expect("failed to deserialize stored schema");
+
+                assert_eq!(stored_schema.name, added_schema.name);
+            }
+            #[cfg(feature = "aws-backend")]
+            _ => panic!("Expected Sled storage"),
         }
     }
 
     #[tokio::test]
     async fn add_schema_detects_similar_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+        let db_path = temp_dir
+            .path()
+            .join("test_schema_db")
+            .to_string_lossy()
+            .to_string();
 
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
@@ -876,7 +890,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         existing_schema.set_field_topology(
@@ -885,10 +899,9 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
-
 
         let mut similar_schema = Schema::new(
             "PotentialDuplicate".to_string(),
@@ -906,7 +919,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         similar_schema.set_field_topology(
@@ -915,7 +928,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
 
@@ -924,13 +937,13 @@ mod tests {
             .add_schema(existing_schema.clone(), HashMap::new())
             .await
             .expect("failed to add existing schema");
-        
+
         let existing_name = match outcome1 {
             SchemaAddOutcome::Added(schema, _) => {
                 // Should be topology_hash (64 char hex string)
                 assert_eq!(schema.name.len(), 64);
                 schema.name
-            },
+            }
             SchemaAddOutcome::TooSimilar(_) => panic!("first schema should be added"),
         };
 
@@ -944,16 +957,25 @@ mod tests {
             SchemaAddOutcome::TooSimilar(conflict) => {
                 assert_eq!(conflict.similarity, 1.0); // Exact duplicate
                 assert_eq!(conflict.closest_schema.name, existing_name);
-                assert_eq!(conflict.closest_schema.field_topologies, existing_schema.field_topologies);
+                assert_eq!(
+                    conflict.closest_schema.field_topologies,
+                    existing_schema.field_topologies
+                );
             }
-            SchemaAddOutcome::Added(_, _) => panic!("schema with same name and topology should be rejected as duplicate"),
+            SchemaAddOutcome::Added(_, _) => {
+                panic!("schema with same name and topology should be rejected as duplicate")
+            }
         }
     }
 
     #[tokio::test]
     async fn add_schema_with_different_topology_creates_separate_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+        let db_path = temp_dir
+            .path()
+            .join("test_schema_db")
+            .to_string_lossy()
+            .to_string();
 
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
@@ -974,7 +996,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema1.set_field_topology(
@@ -983,7 +1005,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
 
@@ -1002,7 +1024,11 @@ mod tests {
             "UserExtended".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
-            Some(vec!["id".to_string(), "name".to_string(), "email".to_string()]),
+            Some(vec![
+                "id".to_string(),
+                "name".to_string(),
+                "email".to_string(),
+            ]),
             None,
             None,
         );
@@ -1013,7 +1039,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema2.set_field_topology(
@@ -1022,7 +1048,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema2.set_field_topology(
@@ -1031,7 +1057,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
 
@@ -1056,7 +1082,11 @@ mod tests {
     #[tokio::test]
     async fn add_schema_rejects_missing_topology() {
         let temp_dir = tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+        let db_path = temp_dir
+            .path()
+            .join("test_schema_db")
+            .to_string_lossy()
+            .to_string();
 
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
@@ -1087,7 +1117,11 @@ mod tests {
     #[tokio::test]
     async fn get_available_schemas_returns_all_schemas() {
         let temp_dir = tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
+        let db_path = temp_dir
+            .path()
+            .join("test_schema_db")
+            .to_string_lossy()
+            .to_string();
 
         let state = SchemaServiceState::new(db_path.clone())
             .expect("failed to initialize schema service state");
@@ -1096,7 +1130,11 @@ mod tests {
             "UserSchema".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
-            Some(vec!["user_id".to_string(), "username".to_string(), "email".to_string()]),
+            Some(vec![
+                "user_id".to_string(),
+                "username".to_string(),
+                "email".to_string(),
+            ]),
             None,
             None,
         );
@@ -1108,7 +1146,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema1.set_field_topology(
@@ -1117,7 +1155,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema1.set_field_topology(
@@ -1126,7 +1164,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
 
@@ -1134,7 +1172,12 @@ mod tests {
             "ProductSchema".to_string(),
             crate::schema::types::SchemaType::Single,
             None,
-            Some(vec!["product_id".to_string(), "title".to_string(), "price".to_string(), "description".to_string()]),
+            Some(vec![
+                "product_id".to_string(),
+                "title".to_string(),
+                "price".to_string(),
+                "description".to_string(),
+            ]),
             None,
             None,
         );
@@ -1146,7 +1189,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema2.set_field_topology(
@@ -1155,7 +1198,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema2.set_field_topology(
@@ -1164,7 +1207,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::Number,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
         schema2.set_field_topology(
@@ -1173,29 +1216,38 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
 
-        let outcome1 = state.add_schema(schema1.clone(), HashMap::new()).await.expect("failed to add schema1");
+        let outcome1 = state
+            .add_schema(schema1.clone(), HashMap::new())
+            .await
+            .expect("failed to add schema1");
         let schema1_name = match outcome1 {
             SchemaAddOutcome::Added(s, _) => s.name,
             _ => panic!("schema1 should be added"),
         };
-        
-        let outcome2 = state.add_schema(schema2.clone(), HashMap::new()).await.expect("failed to add schema2");
+
+        let outcome2 = state
+            .add_schema(schema2.clone(), HashMap::new())
+            .await
+            .expect("failed to add schema2");
         let schema2_name = match outcome2 {
             SchemaAddOutcome::Added(s, _) => s.name,
             _ => panic!("schema2 should be added"),
         };
 
-        let schemas = state.schemas.read().expect("failed to acquire read lock on schemas");
+        let schemas = state
+            .schemas
+            .read()
+            .expect("failed to acquire read lock on schemas");
         assert_eq!(schemas.len(), 2);
-        
+
         // Schemas are now stored by topology_hash
         assert!(schemas.contains_key(&schema1_name));
         assert!(schemas.contains_key(&schema2_name));
-        
+
         // Different topologies should produce different names
         assert_ne!(schema1_name, schema2_name);
     }
