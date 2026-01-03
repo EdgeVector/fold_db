@@ -66,6 +66,7 @@ impl UploadStorage {
     }
 
     /// Get the full S3 key prefix including user_id if present
+    #[cfg(feature = "aws-backend")]
     fn get_s3_key_prefix(prefix: &str, user_id: Option<&str>) -> String {
         match user_id {
             Some(uid) => format!("{}{}/", prefix, uid),
@@ -311,7 +312,7 @@ impl UploadStorage {
 
     /// Download a file from an external S3 path (bucket/key)
     /// This is used for S3 event-triggered ingestion where files come from external buckets
-    pub async fn download_from_s3_path(&self, bucket: &str, key: &str) -> StorageResult<Vec<u8>> {
+    pub async fn download_from_s3_path(&self, _bucket: &str, _key: &str) -> StorageResult<Vec<u8>> {
         match self {
             Self::Local { .. } => {
                 Err(StorageError::DownloadFailed(
@@ -321,11 +322,11 @@ impl UploadStorage {
             #[cfg(feature = "aws-backend")]
             Self::S3 { client, .. } => {
                 let response = client.get_object()
-                    .bucket(bucket)
-                    .key(key)
+                    .bucket(_bucket)
+                    .key(_key)
                     .send()
                     .await
-                    .map_err(|e| StorageError::DownloadFailed(format!("S3 download from s3://{}/{} failed: {}", bucket, key, e)))?;
+                    .map_err(|e| StorageError::DownloadFailed(format!("S3 download from s3://{}/{} failed: {}", _bucket, _key, e)))?;
                 
                 let bytes = response.body
                     .collect()
