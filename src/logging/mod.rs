@@ -10,6 +10,7 @@ pub mod features;
 pub mod outputs;
 pub mod util;
 
+#[cfg(feature = "aws-backend")]
 use crate::logging::core::LogBridge;
 #[cfg(feature = "aws-backend")]
 use crate::logging::outputs::dynamodb::DynamoDbLogger;
@@ -75,6 +76,7 @@ impl LoggingSystem {
     pub async fn init_with_dynamodb(
         dynamo_config: Option<(String, String)>,
     ) -> Result<(), LoggingError> {
+        #[allow(unused_mut)]
         let mut config = LogConfig::default();
 
         // Enable DynamoDB logging if config is provided
@@ -128,7 +130,10 @@ impl LoggingSystem {
             // Create DynamoDB logger
             let dynamodb_logger = if let Some(region) = &config.outputs.dynamodb.region {
                 let region_provider = aws_config::Region::new(region.clone());
-                let sdk_config = aws_config::from_env().region(region_provider).load().await;
+                let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(region_provider)
+                    .load()
+                    .await;
                 DynamoDbLogger::with_config(table_name, &sdk_config).await
             } else {
                 DynamoDbLogger::new(table_name).await

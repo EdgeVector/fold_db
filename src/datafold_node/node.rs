@@ -98,7 +98,10 @@ impl DataFoldNode {
 
         let node = Self {
             db,
-            config: config.clone(),
+            config: NodeConfig {
+                security_config: security_config.clone(), // Use the updated security config with the key
+                ..config.clone()
+            },
             node_id,
             security_manager,
             private_key,
@@ -195,7 +198,10 @@ impl DataFoldNode {
 
         let node = Self {
             db,
-            config: config.clone(),
+            config: NodeConfig {
+                security_config: security_config.clone(), // Use the updated security config with the key
+                ..config.clone()
+            },
             node_id,
             security_manager,
             private_key,

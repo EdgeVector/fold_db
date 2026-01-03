@@ -1,15 +1,15 @@
 //! Multipart form data parsing for file uploads
 
+use crate::log_feature;
+use crate::logging::features::LogFeature;
+use crate::storage::UploadStorage;
 use actix_multipart::Multipart;
 use actix_web::HttpResponse;
 use futures_util::StreamExt;
 use serde_json::json;
 use std::path::PathBuf;
+#[cfg(feature = "aws-backend")]
 use tokio::fs;
-
-use crate::log_feature;
-use crate::logging::features::LogFeature;
-use crate::storage::UploadStorage;
 
 /// Data extracted from multipart upload form
 #[derive(Debug)]
@@ -56,7 +56,10 @@ pub async fn parse_multipart(
             }
         };
 
-        let field_name = field.content_disposition().get_name().map(|s| s.to_string());
+        let field_name = field
+            .content_disposition()
+            .get_name()
+            .map(|s| s.to_string());
 
         match field_name.as_deref() {
             Some("file") => {
@@ -76,7 +79,9 @@ pub async fn parse_multipart(
                 trust_distance = parse_field_as_u32(&mut field).await.unwrap_or(0);
             }
             Some("pubKey") => {
-                pub_key = parse_field_as_string(&mut field).await.unwrap_or_else(|| "default".to_string());
+                pub_key = parse_field_as_string(&mut field)
+                    .await
+                    .unwrap_or_else(|| "default".to_string());
             }
             _ => {}
         }
@@ -141,7 +146,7 @@ async fn save_uploaded_file(
     mut field: actix_multipart::Field,
     upload_storage: &UploadStorage,
 ) -> Result<(PathBuf, String, bool), HttpResponse> {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let filename = field
         .content_disposition()
@@ -169,7 +174,7 @@ async fn save_uploaded_file(
                 })));
             }
         };
-        
+
         hasher.update(&data);
         file_data.extend_from_slice(&data);
     }
@@ -183,15 +188,13 @@ async fn save_uploaded_file(
     // Atomically save file only if it doesn't exist (prevents race condition)
     // Note: user_id is None here - HTTP endpoints don't have user context
     // For multi-tenant Lambda, user_id should be extracted from request/auth
-    let (storage_path, already_exists) = match upload_storage.save_file_if_not_exists(&unique_filename, &file_data, None).await {
+    let (storage_path, already_exists) = match upload_storage
+        .save_file_if_not_exists(&unique_filename, &file_data, None)
+        .await
+    {
         Ok((path, exists)) => (path, exists),
         Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to save file: {}",
-                e
-            );
+            log_feature!(LogFeature::Ingestion, error, "Failed to save file: {}", e);
             return Err(HttpResponse::InternalServerError().json(json!({
                 "success": false,
                 "error": format!("Failed to save file: {}", e)
@@ -203,7 +206,7 @@ async fn save_uploaded_file(
     if already_exists {
         // File already exists (duplicate upload detected atomically)
         let filepath = storage_path; // storage_path is already the permanent path
-        
+
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -321,7 +324,7 @@ async fn handle_s3_file_path(
 
     let path_without_prefix = &s3_path[5..]; // Remove "s3://"
     let parts: Vec<&str> = path_without_prefix.splitn(2, '/').collect();
-    
+
     if parts.len() != 2 {
         log_feature!(
             LogFeature::Ingestion,
@@ -337,7 +340,7 @@ async fn handle_s3_file_path(
 
     let bucket = parts[0];
     let key = parts[1];
-    
+
     // Extract filename from key (last part of the path)
     let filename = key.rsplit('/').next().unwrap_or(key).to_string();
 
@@ -394,7 +397,7 @@ async fn handle_s3_file_path(
 
 #[cfg(test)]
 mod tests {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     #[test]
     fn test_unique_filename_format() {
@@ -405,14 +408,14 @@ mod tests {
         let hash_result = hasher.finalize();
         let hash_hex = format!("{:x}", hash_result);
         let short_hash = &hash_hex[..16];
-        
+
         let original = "tweets.js";
         let unique = format!("{}_{}", short_hash, original);
-        
+
         // Verify format
         assert!(unique.contains('_'));
         assert!(unique.ends_with("tweets.js"));
-        
+
         // Verify we can extract the original name if needed
         let parts: Vec<&str> = unique.splitn(2, '_').collect();
         assert_eq!(parts.len(), 2);
@@ -424,15 +427,15 @@ mod tests {
     fn test_hash_consistency() {
         // Same content should produce same hash
         let content = b"identical content";
-        
+
         let mut hasher1 = Sha256::new();
         hasher1.update(content);
         let hash1 = format!("{:x}", hasher1.finalize());
-        
+
         let mut hasher2 = Sha256::new();
         hasher2.update(content);
         let hash2 = format!("{:x}", hasher2.finalize());
-        
+
         assert_eq!(hash1, hash2);
     }
 
@@ -441,15 +444,15 @@ mod tests {
         // Different content should produce different hashes
         let content1 = b"content one";
         let content2 = b"content two";
-        
+
         let mut hasher1 = Sha256::new();
         hasher1.update(content1);
         let hash1 = format!("{:x}", hasher1.finalize());
-        
+
         let mut hasher2 = Sha256::new();
         hasher2.update(content2);
         let hash2 = format!("{:x}", hasher2.finalize());
-        
+
         assert_ne!(hash1, hash2);
     }
 }
