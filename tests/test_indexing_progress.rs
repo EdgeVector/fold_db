@@ -6,7 +6,6 @@ use datafold::testing_utils::TestDatabaseFactory;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[tokio::test]
 async fn test_indexing_progress_tracking() {
@@ -59,7 +58,7 @@ async fn test_indexing_progress_tracking() {
         map
     };
 
-    let node_arc = Arc::new(Mutex::new(node));
+    let node_arc = Arc::new(tokio::sync::RwLock::new(node)); // Changed from Mutex::new to tokio::sync::RwLock::new
     let processor = OperationProcessor::new(node_arc.clone());
 
     let key_value = KeyValue::new(Some("1".to_string()), None);
@@ -80,7 +79,7 @@ async fn test_indexing_progress_tracking() {
 
     let mut processed = 0;
     while start.elapsed() < timeout {
-        let node_guard = node_arc.lock().await;
+        let node_guard = node_arc.read().await;
         // Check if DB is ready/monitoring
         let status = node_guard.get_indexing_status().await;
         if status.total_operations_processed > 0 {

@@ -2,15 +2,15 @@
 
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::IngestionConfig;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
-use crate::ingestion::ProgressTracker;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::IngestionError;
+use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 
@@ -28,14 +28,14 @@ pub struct IngestionSpawnConfig {
 pub async fn spawn_background_ingestion(
     config: IngestionSpawnConfig,
     progress_tracker: &ProgressTracker,
-    node: Arc<Mutex<DataFoldNode>>,
+    node: Arc<RwLock<DataFoldNode>>,
 ) -> String {
     let progress_id = uuid::Uuid::new_v4().to_string();
-    
+
     // Start progress tracking
     let progress_service = ProgressService::new(progress_tracker.clone());
     progress_service.start_progress(progress_id.clone()).await;
-    
+
     // Create ingestion request
     let ingestion_request = IngestionRequest {
         data: config.json_data,
@@ -44,11 +44,11 @@ pub async fn spawn_background_ingestion(
         pub_key: Some(config.pub_key),
         source_file_name: config.source_file_name,
     };
-    
+
     // Clone for the spawned task
     let progress_id_clone = progress_id.clone();
     let ingestion_config = config.ingestion_config;
-    
+
     // Spawn the background task
     tokio::spawn(async move {
         if let Err(e) = run_background_ingestion(
@@ -57,7 +57,9 @@ pub async fn spawn_background_ingestion(
             progress_service,
             progress_id_clone,
             ingestion_config,
-        ).await {
+        )
+        .await
+        {
             log_feature!(
                 LogFeature::Ingestion,
                 error,
@@ -66,14 +68,14 @@ pub async fn spawn_background_ingestion(
             );
         }
     });
-    
+
     progress_id
 }
 
 /// Run the actual ingestion process in background
 async fn run_background_ingestion(
     ingestion_request: IngestionRequest,
-    node: Arc<Mutex<DataFoldNode>>,
+    node: Arc<RwLock<DataFoldNode>>,
     progress_service: ProgressService,
     progress_id: String,
     ingestion_config: IngestionConfig,
@@ -84,7 +86,7 @@ async fn run_background_ingestion(
         "Starting background ingestion for uploaded file with progress_id: {}",
         progress_id
     );
-    
+
     // Create ingestion service
     let service = match create_simple_ingestion_service(ingestion_config).await {
         Ok(s) => s,
@@ -96,11 +98,13 @@ async fn run_background_ingestion(
                 "Failed to initialize ingestion service: {}",
                 e
             );
-            progress_service.fail_progress(&progress_id, error_msg.clone()).await;
+            progress_service
+                .fail_progress(&progress_id, error_msg.clone())
+                .await;
             return Err(error_msg);
         }
     };
-    
+
     // Process the ingestion
     match service
         .process_json_with_node_and_progress(
@@ -137,14 +141,17 @@ async fn run_background_ingestion(
                 "File ingestion processing failed: {}",
                 e
             );
-            progress_service.fail_progress(&progress_id, error_msg.clone()).await;
+            progress_service
+                .fail_progress(&progress_id, error_msg.clone())
+                .await;
             Err(error_msg)
         }
     }
 }
 
 /// Create a simple ingestion service with potentially updated config
-async fn create_simple_ingestion_service(config: IngestionConfig) -> Result<SimpleIngestionService, IngestionError> {
+async fn create_simple_ingestion_service(
+    config: IngestionConfig,
+) -> Result<SimpleIngestionService, IngestionError> {
     SimpleIngestionService::new(config)
 }
-

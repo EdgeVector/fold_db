@@ -11,11 +11,12 @@
 //! - **transform_manager/**: Transform system (already well-organized)
 
 // Organized module declarations
+pub mod factory;
+pub mod fold_db;
 pub mod infrastructure;
 pub mod orchestration;
 pub mod query;
 pub mod shared;
-pub mod fold_db;
 
 // Core components
 pub mod mutation_completion_handler;

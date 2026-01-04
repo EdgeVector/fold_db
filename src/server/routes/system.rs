@@ -43,7 +43,7 @@ pub async fn get_system_status(_state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.lock().await;
+    let node = state.node.read().await;
 
     let private_key = node.get_node_private_key();
 
@@ -72,7 +72,7 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
     )
 )]
 pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.lock().await;
+    let node = state.node.read().await;
 
     let public_key = node.get_node_public_key();
 
@@ -152,7 +152,7 @@ pub async fn reset_database(
     }
 
     // Lock the node and perform the reset
-    let mut node = state.node.lock().await;
+    let mut node = state.node.write().await;
 
     // First, reset the schema service database
     let schema_client = node.get_schema_client();
@@ -311,7 +311,7 @@ pub async fn reset_schema_service(
     }
 
     // Get the schema service client from the node
-    let node = state.node.lock().await;
+    let node = state.node.read().await;
     let schema_client = node.get_schema_client();
 
     // Call the schema service reset endpoint
@@ -406,7 +406,7 @@ pub struct DatabaseConfigResponse {
     )
 )]
 pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.lock().await;
+    let node = state.node.read().await;
     let config = &node.config;
 
     let db_config = match &config.database {
@@ -458,7 +458,7 @@ pub async fn update_database_config(
     state: web::Data<AppState>,
     req: web::Json<DatabaseConfigRequest>,
 ) -> impl Responder {
-    let node = state.node.lock().await;
+    let node = state.node.read().await;
     let mut config = node.config.clone();
 
     // Convert DTO to internal config
@@ -599,7 +599,7 @@ pub async fn update_database_config(
     match DataFoldNode::new(config.clone()).await {
         Ok(new_node) => {
             // Replace the node in the state
-            let mut node = state.node.lock().await;
+            let mut node = state.node.write().await;
             *node = new_node;
 
             log_feature!(
@@ -628,7 +628,7 @@ pub async fn update_database_config(
                 crate::datafold_node::config::load_node_config(Some(&config_path), None)
             {
                 if let Ok(old_node) = DataFoldNode::new(old_config).await {
-                    let mut node = state.node.lock().await;
+                    let mut node = state.node.write().await;
                     *node = old_node;
                 }
             }
@@ -656,7 +656,7 @@ mod tests {
         let node = DataFoldNode::new(config).await.unwrap();
 
         web::Data::new(AppState {
-            node: Arc::new(tokio::sync::Mutex::new(node)),
+            node: Arc::new(tokio::sync::RwLock::new(node)),
         })
     }
 

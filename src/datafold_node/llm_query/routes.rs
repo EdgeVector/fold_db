@@ -126,8 +126,8 @@ pub async fn analyze_query(
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
     // Get available schemas
-    let schemas = {
-        let node = app_state.node.lock().await;
+    let schemas: Vec<crate::schema::SchemaWithState> = {
+        let node = app_state.node.read().await;
         let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
@@ -219,7 +219,7 @@ pub async fn execute_query_plan(
         // Load the schema
         let schema_name = index_schema.name.clone();
         {
-            let node = app_state.node.lock().await;
+            let node = app_state.node.read().await;
             let db_guard = match node.get_fold_db().await {
                 Ok(guard) => guard,
                 Err(e) => {
@@ -284,7 +284,7 @@ pub async fn execute_query_plan(
         // If we have a backfill, check its status
         if let Some(ref hash) = backfill_hash {
             let backfill_info = {
-                let node = app_state.node.lock().await;
+                let node = app_state.node.read().await;
                 let db_guard = match node.get_fold_db().await {
                     Ok(guard) => guard,
                     Err(e) => {
@@ -424,8 +424,8 @@ pub async fn analyze_followup(
         }
     };
 
-    let schemas = {
-        let node = app_state.node.lock().await;
+    let schemas: Vec<crate::schema::SchemaWithState> = {
+        let node = app_state.node.read().await;
         let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
@@ -506,8 +506,8 @@ pub async fn chat(
         }
     };
 
-    let schemas = {
-        let node = app_state.node.lock().await;
+    let schemas: Vec<crate::schema::SchemaWithState> = {
+        let node = app_state.node.read().await;
         let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
@@ -689,7 +689,7 @@ pub async fn get_backfill_status(
     let backfill_hash = path.into_inner();
 
     let backfill_info = {
-        let node = app_state.node.lock().await;
+        let node = app_state.node.read().await;
         let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
@@ -750,8 +750,8 @@ pub async fn run_query(
         }
     };
 
-    let schemas = {
-        let node = app_state.node.lock().await;
+    let schemas: Vec<crate::schema::SchemaWithState> = {
+        let node = app_state.node.read().await;
         let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
@@ -800,7 +800,7 @@ pub async fn run_query(
     if let Some(ref index_schema) = query_plan.index_schema {
         let schema_name = index_schema.name.clone();
         {
-            let node = app_state.node.lock().await;
+            let node = app_state.node.read().await;
             let db_guard = match node.get_fold_db().await {
                 Ok(guard) => guard,
                 Err(e) => {
@@ -874,7 +874,7 @@ pub async fn run_query(
         if let Some(ref hash) = backfill_hash {
             loop {
                 let backfill_info = {
-                    let node = app_state.node.lock().await;
+                    let node = app_state.node.read().await;
                     let db_guard = match node.get_fold_db().await {
                         Ok(guard) => guard,
                         Err(e) => {
@@ -1063,7 +1063,7 @@ pub async fn ai_native_index_query(
 
     // Get available schemas
     let schemas = {
-        let node = app_state.node.lock().await;
+        let node = app_state.node.read().await;
         let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
@@ -1082,7 +1082,7 @@ pub async fn ai_native_index_query(
 
     // Execute AI-native index query workflow
     let result = async {
-        let node = app_state.node.lock().await;
+        let node = app_state.node.read().await;
         let db_ops = match node.get_fold_db().await {
             Ok(guard) => guard.get_db_ops(),
             Err(e) => {
