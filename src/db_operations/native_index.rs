@@ -1444,6 +1444,59 @@ mod tests {
     use super::*;
     use crate::schema::types::key_value::KeyValue;
 
+    use crate::storage::{NamespacedStore, SledNamespacedStore};
+
+    #[tokio::test]
+    async fn test_async_indexing_flow() {
+        // Setup async store using Sled backend wrapped in NamespacedStore
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+        let kv_store = store.open_namespace("native_index").await.unwrap();
+
+        let manager = NativeIndexManager::new_with_store(kv_store);
+        assert!(manager.is_async());
+
+        let operations = vec![(
+            "AsyncSchema".to_string(),
+            "content".to_string(),
+            KeyValue::new(Some("k1".to_string()), None),
+            serde_json::Value::String("Jennifer wrote async code".to_string()),
+            None, // Default to word classification
+        )];
+
+        // Index
+        manager
+            .batch_index_field_values_with_classifications_async(&operations)
+            .await
+            .expect("indexing failed");
+
+        // Search
+        let results = manager
+            .search_word_async("Jennifer")
+            .await
+            .expect("search failed");
+
+        assert_eq!(results.len(), 1, "Should find 1 result for Jennifer");
+        assert_eq!(
+            results[0].key_value,
+            KeyValue::new(Some("k1".to_string()), None)
+        );
+
+        // Search parts
+        let results = manager
+            .search_word_async("async")
+            .await
+            .expect("search failed");
+        assert_eq!(results.len(), 1);
+
+        // Verify we can find by field name
+        let results = manager
+            .search_word_async("content")
+            .await
+            .expect("field search");
+        assert_eq!(results.len(), 1);
+    }
+
     #[test]
     fn test_indexing_with_empty_classifications() {
         let tree = sled::Config::new()

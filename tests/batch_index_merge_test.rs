@@ -27,7 +27,7 @@ async fn test_batch_index_merges_existing_entries() {
 
     // Create a simple schema with a text field
     {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
 
         let test_schema = json!({
             "name": "TestPost",
@@ -69,7 +69,7 @@ async fn test_batch_index_merges_existing_entries() {
         MutationType::Create,
     );
 
-    let results = node.mutate_batch(vec![mutation_a]).unwrap();
+    let results = node.mutate_batch(vec![mutation_a]).await.unwrap();
     assert_eq!(results.len(), 1, "First batch should process 1 mutation");
     
     // Wait for background indexing to complete
@@ -78,7 +78,7 @@ async fn test_batch_index_merges_existing_entries() {
     // Search for "foo" - should find record A
     eprintln!("\n=== Searching for 'foo' after BATCH 1 ===");
     let search_results = {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
         fold_db.native_word_search("foo").expect("search should succeed")
     };
     eprintln!("Found {} results for 'foo'", search_results.len());
@@ -104,7 +104,7 @@ async fn test_batch_index_merges_existing_entries() {
         MutationType::Create,
     );
 
-    let results = node.mutate_batch(vec![mutation_b]).unwrap();
+    let results = node.mutate_batch(vec![mutation_b]).await.unwrap();
     assert_eq!(results.len(), 1, "Second batch should process 1 mutation");
     
     // Wait for background indexing to complete
@@ -113,7 +113,7 @@ async fn test_batch_index_merges_existing_entries() {
     // THE CRITICAL TEST: Search for "foo" - should find BOTH records A and B
     eprintln!("\n=== Searching for 'foo' after BATCH 2 ===");
     let search_results = {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
         fold_db.native_word_search("foo").expect("search should succeed")
     };
     eprintln!("Found {} results for 'foo'", search_results.len());

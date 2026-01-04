@@ -15,10 +15,14 @@ async fn test_search_by_field_name() {
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config)
+        .await
+        .expect("failed to create DataFoldNode");
 
     {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
+        // ... (skipping unchanged lines in replacement block is risky with replace_file_content if trying to match large block, better to match specific lines)
+        // I will use replace_file_content with specific targets for each change
 
         let schema_json = json!({
             "name": "UserProfile",
@@ -53,7 +57,7 @@ async fn test_search_by_field_name() {
     }
 
     println!("Creating user profiles...");
-    
+
     // Create 3 user profiles with email fields
     for i in 1..=3 {
         let mut fields = HashMap::new();
@@ -71,53 +75,70 @@ async fn test_search_by_field_name() {
             MutationType::Create,
         );
 
-        node.mutate_batch(vec![mutation]).expect("mutation should succeed");
+        node.mutate_batch(vec![mutation])
+            .await
+            .expect("mutation should succeed");
     }
-    
+
     // Wait for background indexing
     std::thread::sleep(std::time::Duration::from_secs(2));
-    
+
     println!("\n========== Searching for 'email' ==========");
-    
+
     // Search for "email" - should return all records with email field
     let email_results = {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
-        fold_db.native_word_search("email").expect("search should succeed")
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
+        fold_db
+            .native_word_search("email")
+            .expect("search should succeed")
     };
-    
+
     println!("Found {} results for 'email'", email_results.len());
-    
+
     // Print results for inspection
     for (i, result) in email_results.iter().enumerate() {
-        println!("  Result {}: field={}, schema={}, metadata={:?}, key={:?}", 
-            i, result.field, result.schema_name, result.metadata, result.key_value);
+        println!(
+            "  Result {}: field={}, schema={}, metadata={:?}, key={:?}",
+            i, result.field, result.schema_name, result.metadata, result.key_value
+        );
     }
-    
+
     // We should find:
     // 1. Results where "email" appears in the actual content (email classification results)
     // 2. Results for records that have an "email" field (field name results)
-    
+
     // Filter field name results (these are from the email field itself)
-    let field_name_results: Vec<_> = email_results.iter()
+    let field_name_results: Vec<_> = email_results
+        .iter()
         .filter(|r| {
-            r.field == "email" && 
-            r.metadata.as_ref()
-                .and_then(|m| m.get("classification"))
-                .and_then(|c| c.as_str())
-                == Some("field")
+            r.field == "email"
+                && r.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("classification"))
+                    .and_then(|c| c.as_str())
+                    == Some("field")
         })
         .collect();
-    
-    println!("\nField name results (records with 'email' field): {}", field_name_results.len());
-    assert!(field_name_results.len() >= 3, 
-        "Should find at least 3 records with email field (found {})", field_name_results.len());
-    
+
+    println!(
+        "\nField name results (records with 'email' field): {}",
+        field_name_results.len()
+    );
+    assert!(
+        field_name_results.len() >= 3,
+        "Should find at least 3 records with email field (found {})",
+        field_name_results.len()
+    );
+
     // Verify all field name results have key_value (they represent actual records)
     for result in &field_name_results {
         // key_value is always present now (no longer optional)
-        assert_eq!(result.field, "email", "Field name results should be from email field");
+        assert_eq!(
+            result.field, "email",
+            "Field name results should be from email field"
+        );
     }
-    
+
     println!("\n✅ Field name search test passed!");
     println!("   Searching for 'email' successfully returned all records with an email field");
 }
@@ -129,10 +150,14 @@ async fn test_search_nonexistent_field_name() {
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config)
+        .await
+        .expect("failed to create DataFoldNode");
 
     {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
+        // ... (skipping unchanged lines in replacement block is risky with replace_file_content if trying to match large block, better to match specific lines)
+        // I will use replace_file_content with specific targets for each change
 
         let schema_json = json!({
             "name": "BlogPost",
@@ -175,18 +200,26 @@ async fn test_search_nonexistent_field_name() {
         MutationType::Create,
     );
 
-    node.mutate_batch(vec![mutation]).expect("mutation should succeed");
-    
+    node.mutate_batch(vec![mutation])
+        .await
+        .expect("mutation should succeed");
+
     // Wait for indexing
     std::thread::sleep(std::time::Duration::from_secs(2));
-    
+
     // Search for field name that doesn't exist
     let results = {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
-        fold_db.native_word_search("email").expect("search should succeed")
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
+        fold_db
+            .native_word_search("email")
+            .expect("search should succeed")
     };
-    
-    assert_eq!(results.len(), 0, "Should return no results for non-existent field name");
+
+    assert_eq!(
+        results.len(),
+        0,
+        "Should return no results for non-existent field name"
+    );
     println!("✅ Non-existent field name test passed!");
 }
 
@@ -197,10 +230,14 @@ async fn test_combined_field_name_and_word_search() {
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config)
+        .await
+        .expect("failed to create DataFoldNode");
 
     {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
+        // ... (skipping unchanged lines in replacement block is risky with replace_file_content if trying to match large block, better to match specific lines)
+        // I will use replace_file_content with specific targets for each change
 
         let schema_json = json!({
             "name": "Article",
@@ -233,7 +270,10 @@ async fn test_combined_field_name_and_word_search() {
     let mut fields = HashMap::new();
     fields.insert("id".to_string(), json!("article1"));
     fields.insert("title".to_string(), json!("My Article"));
-    fields.insert("content".to_string(), json!("The title of this article is important"));
+    fields.insert(
+        "content".to_string(),
+        json!("The title of this article is important"),
+    );
 
     let mutation = Mutation::new(
         "Article".to_string(),
@@ -244,43 +284,54 @@ async fn test_combined_field_name_and_word_search() {
         MutationType::Create,
     );
 
-    node.mutate_batch(vec![mutation]).expect("mutation should succeed");
-    
+    node.mutate_batch(vec![mutation])
+        .await
+        .expect("mutation should succeed");
+
     // Wait for indexing
     std::thread::sleep(std::time::Duration::from_secs(2));
-    
+
     // Search for "title" - should find both:
     // 1. The word "title" in the content field
     // 2. The record with a "title" field
     let results = {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
-        fold_db.native_word_search("title").expect("search should succeed")
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
+        fold_db
+            .native_word_search("title")
+            .expect("search should succeed")
     };
-    
+
     println!("Found {} results for 'title'", results.len());
-    
+
     // Should have results from both word match and field name match
-    assert!(results.len() >= 2, 
-        "Should find at least 2 results: word match in content + field name match (found {})", results.len());
-    
-    let word_matches = results.iter()
-        .filter(|r| r.field == "content")
+    assert!(
+        results.len() >= 2,
+        "Should find at least 2 results: word match in content + field name match (found {})",
+        results.len()
+    );
+
+    let word_matches = results.iter().filter(|r| r.field == "content").count();
+
+    let field_name_matches = results
+        .iter()
+        .filter(|r| {
+            r.field == "title"
+                && r.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("classification"))
+                    .and_then(|c| c.as_str())
+                    == Some("field")
+        })
         .count();
-    
-    let field_name_matches = results.iter()
-        .filter(|r| r.field == "title" && 
-            r.metadata.as_ref()
-                .and_then(|m| m.get("classification"))
-                .and_then(|c| c.as_str())
-                == Some("field"))
-        .count();
-    
+
     println!("  Word matches in content: {}", word_matches);
     println!("  Field name matches: {}", field_name_matches);
-    
+
     assert!(word_matches >= 1, "Should find 'title' word in content");
-    assert!(field_name_matches >= 1, "Should find record with 'title' field");
-    
+    assert!(
+        field_name_matches >= 1,
+        "Should find record with 'title' field"
+    );
+
     println!("✅ Combined search test passed!");
 }
-

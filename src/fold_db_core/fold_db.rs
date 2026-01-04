@@ -17,8 +17,8 @@ use crate::storage::StorageError;
 use crate::transform::manager::TransformManager;
 
 // Infrastructure components that are used internally
-use super::infrastructure::init::init_transform_manager;
-use super::infrastructure::message_bus::request_events::SystemInitializationRequest;
+// init_transform_manager removed
+// SystemInitializationRequest removed
 use super::infrastructure::{EventMonitor, MessageBus};
 use super::mutation_manager::MutationManager;
 use super::orchestration::index_status::IndexStatusTracker;
@@ -56,16 +56,22 @@ impl FoldDB {
     }
 
     /// Retrieves the list of permitted schemas for the given node.
-    pub fn get_schema_permissions(&self, node_id: &str) -> Vec<String> {
-        tokio::runtime::Handle::current()
-            .block_on(self.db_ops.get_schema_permissions(node_id))
+    pub async fn get_schema_permissions(&self, node_id: &str) -> Vec<String> {
+        self.db_ops
+            .get_schema_permissions(node_id)
+            .await
             .unwrap_or_default()
     }
 
     /// Sets the permitted schemas for the given node.
-    pub fn set_schema_permissions(&self, node_id: &str, schemas: &[String]) -> sled::Result<()> {
-        tokio::runtime::Handle::current()
-            .block_on(self.db_ops.set_schema_permissions(node_id, schemas))
+    pub async fn set_schema_permissions(
+        &self,
+        node_id: &str,
+        schemas: &[String],
+    ) -> sled::Result<()> {
+        self.db_ops
+            .set_schema_permissions(node_id, schemas)
+            .await
             .map_err(|e| sled::Error::Unsupported(e.to_string()))
     }
 
@@ -159,30 +165,21 @@ impl FoldDB {
     /// This is used by both initialize_from_db (Sled) and new_with_db_ops (custom backends)
     async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
-        db_path: &str,
+        _db_path: &str,
         progress_store: Arc<dyn super::orchestration::ProgressStore>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(MessageBus::new());
 
         // Initialize components via event-driven system initialization
-        let correlation_id = uuid::Uuid::new_v4().to_string();
-        let init_request = SystemInitializationRequest {
-            correlation_id: correlation_id.clone(),
-            db_path: db_path.to_string(),
-            orchestrator_config: None,
-        };
+        // SystemInitializationRequest removed - dead code
 
-        // Send system initialization request via message bus
-        message_bus
-            .publish(init_request)
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-
-        // Create managers using event-driven initialization only
-        let transform_manager =
-            init_transform_manager(Arc::clone(&db_ops), Arc::clone(&message_bus))
+        // Create managers using direct initialization
+        let transform_manager = Arc::new(
+            TransformManager::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
                 .await
-                .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
+                .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?,
+        );
 
         let schema_manager = Arc::new(
             SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))

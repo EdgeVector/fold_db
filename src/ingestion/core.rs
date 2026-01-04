@@ -3,14 +3,17 @@
 use crate::datafold_node::SchemaServiceClient;
 use crate::fold_db_core::FoldDB;
 use crate::ingestion::{
-    config::AIProvider, mutation_generator::MutationGenerator, ollama_service::OllamaService,
-    openrouter_service::OpenRouterService, AISchemaResponse,
-    IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
+    config::AIProvider,
+    mutation_generator::MutationGenerator,
+    ollama_service::OllamaService,
+    openrouter_service::OpenRouterService,
+    progress::{IngestionResults, IngestionStep, ProgressService},
+    AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
     IngestionStatus, SimplifiedSchema, SimplifiedSchemaMap,
-    progress::{ProgressService, IngestionStep, IngestionResults},
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::schema::types::topology::{PrimitiveValueType, TopologyNode};
 use crate::schema::types::Mutation;
 use crate::schema::SchemaCore;
 use serde::Deserialize;
@@ -18,7 +21,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
-use crate::schema::types::topology::{TopologyNode, PrimitiveValueType};
 
 /// Core ingestion service that orchestrates the entire ingestion process
 pub struct IngestionCore {
@@ -94,70 +96,89 @@ impl IngestionCore {
         progress_service: &ProgressService,
         progress_id: String,
     ) -> IngestionResult<IngestionResponse> {
-
         // Step 1: Validate configuration
-        progress_service.update_progress(
-            &progress_id,
-            IngestionStep::ValidatingConfig,
-            "Validating ingestion configuration...".to_string(),
-        ).await;
+        progress_service
+            .update_progress(
+                &progress_id,
+                IngestionStep::ValidatingConfig,
+                "Validating ingestion configuration...".to_string(),
+            )
+            .await;
         self.validate_configuration()?;
 
         // Step 2: Prepare schemas
-        progress_service.update_progress(
-            &progress_id,
-            IngestionStep::PreparingSchemas,
-            "Preparing available schemas...".to_string(),
-        ).await;
+        progress_service
+            .update_progress(
+                &progress_id,
+                IngestionStep::PreparingSchemas,
+                "Preparing available schemas...".to_string(),
+            )
+            .await;
         let available_schemas = self.prepare_schemas().await?;
 
         // Step 2.5: Flatten Twitter data structure for AI analysis
-        progress_service.update_progress(
-            &progress_id,
-            IngestionStep::FlatteningData,
-            "Processing and flattening data structure...".to_string(),
-        ).await;
+        progress_service
+            .update_progress(
+                &progress_id,
+                IngestionStep::FlatteningData,
+                "Processing and flattening data structure...".to_string(),
+            )
+            .await;
         let flattened_data = self.flatten_twitter_data(&request.data);
 
         // Step 3: Get AI recommendation
-        progress_service.update_progress(
-            &progress_id,
-            IngestionStep::GettingAIRecommendation,
-            "Analyzing data with AI to determine schema...".to_string(),
-        ).await;
+        progress_service
+            .update_progress(
+                &progress_id,
+                IngestionStep::GettingAIRecommendation,
+                "Analyzing data with AI to determine schema...".to_string(),
+            )
+            .await;
         let ai_response = self
             .get_ai_recommendation(&flattened_data, &available_schemas)
             .await?;
 
         // Step 4: Determine and setup schema
-        progress_service.update_progress(
-            &progress_id,
-            IngestionStep::SettingUpSchema,
-            "Setting up schema and preparing for data storage...".to_string(),
-        ).await;
-        let (schema_name, new_schema_created, mutation_mappers) = self.setup_schema(&ai_response, &flattened_data).await?;
+        progress_service
+            .update_progress(
+                &progress_id,
+                IngestionStep::SettingUpSchema,
+                "Setting up schema and preparing for data storage...".to_string(),
+            )
+            .await;
+        let (schema_name, new_schema_created, mutation_mappers) =
+            self.setup_schema(&ai_response, &flattened_data).await?;
 
         // Step 5: Generate mutations using the returned mutation_mappers (which may have been updated by schema service)
-        progress_service.update_progress(
-            &progress_id,
-            IngestionStep::GeneratingMutations,
-            "Generating database mutations...".to_string(),
-        ).await;
+        progress_service
+            .update_progress(
+                &progress_id,
+                IngestionStep::GeneratingMutations,
+                "Generating database mutations...".to_string(),
+            )
+            .await;
         let mutations = self.generate_mutations_for_data(
             &schema_name,
             &flattened_data,
             &mutation_mappers,
-            request.trust_distance.unwrap_or(self.config.default_trust_distance),
-            request.pub_key.clone().unwrap_or_else(|| "default".to_string()),
+            request
+                .trust_distance
+                .unwrap_or(self.config.default_trust_distance),
+            request
+                .pub_key
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
             request.source_file_name.clone(),
         )?;
 
         // Step 6: Execute mutations if requested
-        progress_service.update_progress(
-            &progress_id,
-            IngestionStep::ExecutingMutations,
-            "Executing mutations to store data...".to_string(),
-        ).await;
+        progress_service
+            .update_progress(
+                &progress_id,
+                IngestionStep::ExecutingMutations,
+                "Executing mutations to store data...".to_string(),
+            )
+            .await;
         let mutations_executed = self
             .execute_mutations_if_requested(&request, &mutations)
             .await?;
@@ -169,7 +190,9 @@ impl IngestionCore {
             mutations_generated: mutations.len(),
             mutations_executed,
         };
-        progress_service.complete_progress(&progress_id, results).await;
+        progress_service
+            .complete_progress(&progress_id, results)
+            .await;
 
         self.log_completion(&schema_name, mutations.len(), mutations_executed);
 
@@ -192,31 +215,34 @@ impl IngestionCore {
     }
 
     /// Flatten Twitter data structure for AI analysis
-    /// Converts nested structures like [{"like": {"tweetId": "...", "fullText": "..."}}] 
+    /// Converts nested structures like [{"like": {"tweetId": "...", "fullText": "..."}}]
     /// to flattened structures like [{"tweetId": "...", "fullText": "..."}]
     fn flatten_twitter_data(&self, data: &Value) -> Value {
         if let Some(array) = data.as_array() {
-            let flattened_items: Vec<Value> = array.iter().map(|item| {
-                if let Some(obj) = item.as_object() {
-                    // Handle nested Twitter data structure (e.g., {"like": {...}} or {"following": {...}})
-                    if obj.len() == 1 {
-                        // If there's only one key, assume it's a wrapper and extract the inner object
-                        let (_wrapper_key, inner_value) = obj.iter().next().unwrap();
-                        if let Some(inner_obj) = inner_value.as_object() {
-                            Value::Object(inner_obj.clone())
+            let flattened_items: Vec<Value> = array
+                .iter()
+                .map(|item| {
+                    if let Some(obj) = item.as_object() {
+                        // Handle nested Twitter data structure (e.g., {"like": {...}} or {"following": {...}})
+                        if obj.len() == 1 {
+                            // If there's only one key, assume it's a wrapper and extract the inner object
+                            let (_wrapper_key, inner_value) = obj.iter().next().unwrap();
+                            if let Some(inner_obj) = inner_value.as_object() {
+                                Value::Object(inner_obj.clone())
+                            } else {
+                                // Fallback to original structure if inner value is not an object
+                                Value::Object(obj.clone())
+                            }
                         } else {
-                            // Fallback to original structure if inner value is not an object
+                            // Multiple keys, use as-is
                             Value::Object(obj.clone())
                         }
                     } else {
-                        // Multiple keys, use as-is
-                        Value::Object(obj.clone())
+                        item.clone()
                     }
-                } else {
-                    item.clone()
-                }
-            }).collect();
-            
+                })
+                .collect();
+
             Value::Array(flattened_items)
         } else if let Some(obj) = data.as_object() {
             // Handle single object case
@@ -266,7 +292,9 @@ impl IngestionCore {
         ai_response: &AISchemaResponse,
         sample_data: &Value,
     ) -> IngestionResult<(String, bool, HashMap<String, String>)> {
-        let (schema_name, mutation_mappers) = self.determine_schema_to_use(ai_response, sample_data).await?;
+        let (schema_name, mutation_mappers) = self
+            .determine_schema_to_use(ai_response, sample_data)
+            .await?;
         let new_schema_created = ai_response.new_schemas.is_some();
         Ok((schema_name, new_schema_created, mutation_mappers))
     }
@@ -288,28 +316,34 @@ impl IngestionCore {
     }
 
     /// Logs the completion of the ingestion process.
-    fn log_completion(&self, _schema_name: &str, _mutations_count: usize, _mutations_executed: usize) {
+    fn log_completion(
+        &self,
+        _schema_name: &str,
+        _mutations_count: usize,
+        _mutations_executed: usize,
+    ) {
         // Completion logging removed to reduce verbosity
     }
 
     /// Get available schemas from the schema service
     async fn get_stripped_available_schemas(&self) -> IngestionResult<SimplifiedSchemaMap> {
         // Fetch available schemas from the schema service
-        let schemas = self
-            .schema_service_client
-            .get_available_schemas()
-            .await
-            .map_err(|e| {
-                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                    format!("Failed to fetch schemas from schema service: {}", e),
-                ))
-            })?;
+        let schemas =
+            self.schema_service_client
+                .get_available_schemas()
+                .await
+                .map_err(|e| {
+                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                        format!("Failed to fetch schemas from schema service: {}", e),
+                    ))
+                })?;
 
         // Create a simplified schema representation for AI analysis
         let mut schema_map = SimplifiedSchemaMap::new();
 
         for schema in schemas {
-            let fields = if let Ok(Value::Object(fields_obj)) = serde_json::to_value(&schema.fields) {
+            let fields = if let Ok(Value::Object(fields_obj)) = serde_json::to_value(&schema.fields)
+            {
                 fields_obj.into_iter().collect()
             } else {
                 HashMap::new()
@@ -369,16 +403,27 @@ impl IngestionCore {
                 "Using existing schema: {}",
                 schema_name
             );
-            
+
             // Ensure existing schema has topologies - add them if missing
-            self.ensure_schema_has_topologies(schema_name, sample_data, &ai_response.mutation_mappers).await?;
-            
+            self.ensure_schema_has_topologies(
+                schema_name,
+                sample_data,
+                &ai_response.mutation_mappers,
+            )
+            .await?;
+
             return Ok((schema_name.clone(), ai_response.mutation_mappers.clone()));
         }
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
-            let (schema_name, mutation_mappers) = self.create_new_schema(new_schema_def, sample_data, ai_response.mutation_mappers.clone()).await?;
+            let (schema_name, mutation_mappers) = self
+                .create_new_schema(
+                    new_schema_def,
+                    sample_data,
+                    ai_response.mutation_mappers.clone(),
+                )
+                .await?;
             return Ok((schema_name, mutation_mappers));
         }
 
@@ -388,17 +433,20 @@ impl IngestionCore {
     }
 
     /// Create a new schema from AI response with mutation mappers
-    async fn create_new_schema(&self, schema_def: &Value, sample_data: &Value, mutation_mappers: HashMap<String, String>) -> IngestionResult<(String, HashMap<String, String>)> {
-
+    async fn create_new_schema(
+        &self,
+        schema_def: &Value,
+        sample_data: &Value,
+        mutation_mappers: HashMap<String, String>,
+    ) -> IngestionResult<(String, HashMap<String, String>)> {
         // Deserialize Value to Schema
         let mut schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
             .map_err(|error| {
-                IngestionError::SchemaCreationError(format!(
-                    "Failed to deserialize schema from AI response: {}",
-                    error
-                ))
-            })?;
-
+            IngestionError::SchemaCreationError(format!(
+                "Failed to deserialize schema from AI response: {}",
+                error
+            ))
+        })?;
 
         // Ensure default classifications for all fields (e.g. "word" for strings)
         // This ensures that even if AI didn't provide classifications, we still index text
@@ -411,7 +459,7 @@ impl IngestionCore {
 
         // DON'T infer topologies - AI already provided them with classifications
         // Inferring would overwrite AI-generated classifications
-        
+
         // Only infer if the schema is completely missing topologies
         if schema.field_topologies.is_empty() {
             log_feature!(
@@ -419,7 +467,7 @@ impl IngestionCore {
                 warn,
                 "AI did not provide field_topologies, inferring from sample data"
             );
-            
+
             let sample_for_topology = if let Some(array) = sample_data.as_array() {
                 array.first().unwrap_or(sample_data)
             } else {
@@ -427,20 +475,24 @@ impl IngestionCore {
             };
 
             if let Some(sample_obj) = sample_for_topology.as_object() {
-                let sample_map: std::collections::HashMap<String, serde_json::Value> = 
-                    sample_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let sample_map: std::collections::HashMap<String, serde_json::Value> = sample_obj
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
                 schema.infer_topologies_from_data(&sample_map);
             }
         }
 
         // Use topology_hash as schema name for structure-based deduplication
-        let topology_hash = schema.get_topology_hash()
-            .ok_or_else(|| IngestionError::SchemaCreationError(
-                "Schema must have topology_hash computed".to_string()
-            ))?
+        let topology_hash = schema
+            .get_topology_hash()
+            .ok_or_else(|| {
+                IngestionError::SchemaCreationError(
+                    "Schema must have topology_hash computed".to_string(),
+                )
+            })?
             .clone();
-        
-        
+
         schema.name = topology_hash.clone();
 
         log_feature!(
@@ -481,10 +533,10 @@ impl IngestionCore {
             ))
         })?;
 
-            match self.schema_core.load_schema_from_json(&json_str).await {
-                Ok(_) => {},
-                Err(e) => return Err(IngestionError::SchemaSystemError(e)),
-            };
+        match self.schema_core.load_schema_from_json(&json_str).await {
+            Ok(_) => {}
+            Err(e) => return Err(IngestionError::SchemaSystemError(e)),
+        };
 
         let schema_name = add_schema_response.schema.name.clone();
         let returned_mutation_mappers = add_schema_response.mutation_mappers;
@@ -511,9 +563,10 @@ impl IngestionCore {
             .get_schema(schema_name)
             .await
             .map_err(|e| {
-                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                    format!("Failed to fetch schema '{}' from schema service: {}", schema_name, e),
-                ))
+                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(format!(
+                    "Failed to fetch schema '{}' from schema service: {}",
+                    schema_name, e
+                )))
             })?;
 
         // Check if schema already has all required topologies
@@ -559,11 +612,13 @@ impl IngestionCore {
         };
 
         if let Some(sample_obj) = sample_for_topology.as_object() {
-            let sample_map: std::collections::HashMap<String, serde_json::Value> = 
-                sample_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            
+            let sample_map: std::collections::HashMap<String, serde_json::Value> = sample_obj
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+
             schema.infer_topologies_from_data(&sample_map);
-            
+
             log_feature!(
                 LogFeature::Ingestion,
                 info,
@@ -579,7 +634,10 @@ impl IngestionCore {
                 .await
                 .map_err(|e| {
                     IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                        format!("Failed to update schema '{}' with topologies: {}", schema_name, e),
+                        format!(
+                            "Failed to update schema '{}' with topologies: {}",
+                            schema_name, e
+                        ),
                     ))
                 })?;
 
@@ -592,7 +650,7 @@ impl IngestionCore {
             })?;
 
             match self.schema_core.load_schema_from_json(&json_str).await {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => return Err(IngestionError::SchemaSystemError(e)),
             };
 
@@ -614,7 +672,7 @@ impl IngestionCore {
         schema_name: &str,
     ) -> IngestionResult<HashMap<String, String>> {
         let mut keys_and_values = HashMap::new();
-        
+
         // Get the schema to understand its key structure
         if let Ok(Some(schema)) = self.schema_core.get_schema(schema_name) {
             if let Some(key_def) = &schema.key {
@@ -628,20 +686,24 @@ impl IngestionCore {
                         }
                     }
                 }
-                
+
                 // Extract range field value if present
                 if let Some(range_field) = &key_def.range_field {
-                    if let Some(range_value) = self.extract_nested_field_value(fields_and_values, range_field) {
+                    if let Some(range_value) =
+                        self.extract_nested_field_value(fields_and_values, range_field)
+                    {
                         if let Some(range_str) = range_value.as_str() {
-                            keys_and_values.insert("range_field".to_string(), range_str.to_string());
+                            keys_and_values
+                                .insert("range_field".to_string(), range_str.to_string());
                         } else if let Some(range_num) = range_value.as_f64() {
-                            keys_and_values.insert("range_field".to_string(), range_num.to_string());
+                            keys_and_values
+                                .insert("range_field".to_string(), range_num.to_string());
                         }
                     }
                 }
             }
         }
-        
+
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -649,7 +711,7 @@ impl IngestionCore {
             schema_name,
             keys_and_values
         );
-        
+
         Ok(keys_and_values)
     }
 
@@ -666,7 +728,7 @@ impl IngestionCore {
             field_path,
             fields_and_values.keys().collect::<Vec<_>>()
         );
-        
+
         // First try direct field access
         if let Some(value) = fields_and_values.get(field_path) {
             log_feature!(
@@ -677,7 +739,7 @@ impl IngestionCore {
             );
             return Some(value);
         }
-        
+
         // Then try nested field access (e.g., "like.tweetId")
         if field_path.contains('.') {
             let parts: Vec<&str> = field_path.split('.').collect();
@@ -697,7 +759,7 @@ impl IngestionCore {
                 }
             }
         }
-        
+
         // Try to find the field in nested objects
         for (parent_key, value) in fields_and_values {
             if let Some(obj) = value.as_object() {
@@ -713,14 +775,14 @@ impl IngestionCore {
                 }
             }
         }
-        
+
         log_feature!(
             LogFeature::Ingestion,
             warn,
             "❌ Field '{}' not found in data",
             field_path
         );
-        
+
         None
     }
 
@@ -759,10 +821,8 @@ impl IngestionCore {
                 };
 
                 // Extract key values from the JSON data based on schema key fields
-                let keys_and_values = self.extract_key_values_from_data(
-                    &fields_and_values,
-                    schema_name,
-                )?;
+                let keys_and_values =
+                    self.extract_key_values_from_data(&fields_and_values, schema_name)?;
 
                 let mutations = self.mutation_generator.generate_mutations(
                     schema_name,
@@ -787,10 +847,8 @@ impl IngestionCore {
             };
 
             // Extract key values from the JSON data based on schema key fields
-            let keys_and_values = self.extract_key_values_from_data(
-                &fields_and_values,
-                schema_name,
-            )?;
+            let keys_and_values =
+                self.extract_key_values_from_data(&fields_and_values, schema_name)?;
 
             self.mutation_generator.generate_mutations(
                 schema_name,
@@ -814,12 +872,27 @@ impl IngestionCore {
 
     fn ensure_default_classifications_recursive(node: &mut TopologyNode) {
         match node {
-            TopologyNode::Primitive { value, classifications } => {
+            TopologyNode::Primitive {
+                value,
+                classifications,
+            } => {
                 if let PrimitiveValueType::String = value {
                     if classifications.is_none() {
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            error,
+                            "Missing classifications for string field. Adding default 'word' classification."
+                        );
                         *classifications = Some(vec!["word".to_string()]);
                     } else if let Some(classes) = classifications {
-                        if classes.is_empty() {
+                        // Always ensure "word" classification exists for string fields
+                        // This guarantees they are indexed in the general word index
+                        if !classes.contains(&"word".to_string()) {
+                            log_feature!(
+                                LogFeature::Ingestion,
+                                error,
+                                "AI schema response missing 'word' classification for string field. Fallback: Adding 'word' classification."
+                            );
                             classes.push("word".to_string());
                         }
                     }
@@ -858,9 +931,7 @@ impl IngestionCore {
     /// Execute a single mutation (now uses batch internally for efficiency) and return its ID
     async fn execute_single_mutation(&self, mutation: &Mutation) -> IngestionResult<String> {
         // Use block_in_place to acquire std::sync::Mutex without blocking the async runtime
-        let mut db = tokio::task::block_in_place(|| {
-            self.fold_db.lock()
-        }).map_err(|_| {
+        let mut db = tokio::task::block_in_place(|| self.fold_db.lock()).map_err(|_| {
             IngestionError::DatabaseError("Failed to acquire database lock".to_string())
         })?;
 
@@ -879,7 +950,10 @@ impl IngestionCore {
     /// Get ingestion status
     pub fn get_status(&self) -> IngestionResult<IngestionStatus> {
         let (provider_name, model) = match self.config.provider {
-            AIProvider::OpenRouter => ("OpenRouter".to_string(), self.config.openrouter.model.clone()),
+            AIProvider::OpenRouter => (
+                "OpenRouter".to_string(),
+                self.config.openrouter.model.clone(),
+            ),
             AIProvider::Ollama => ("Ollama".to_string(), self.config.ollama.model.clone()),
         };
 
@@ -919,7 +993,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
-
     // REMOVED: create_test_ingestion_core - dead code marked with #[allow(dead_code)]
     // This duplicated test setup logic available in testing_utils module
 
@@ -934,7 +1007,9 @@ mod tests {
         let db_path = temp_dir.path();
 
         let schema_core = Arc::new(SchemaCore::new_for_testing().await.unwrap());
-        let fold_db = Arc::new(Mutex::new(FoldDB::new(db_path.to_str().unwrap()).await.unwrap()));
+        let fold_db = Arc::new(Mutex::new(
+            FoldDB::new(db_path.to_str().unwrap()).await.unwrap(),
+        ));
 
         let schema_client = SchemaServiceClient::new("http://localhost:0");
         let ingestion_core =
@@ -948,12 +1023,12 @@ mod tests {
     async fn test_ingestion_with_missing_schema_dir() {
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().to_str().unwrap().to_string();
-        
+
         // Should succeed even if schema directory doesn't exist (FolderDB will create necessary files)
         let _ = FoldDB::new(&test_path).await.unwrap();
         // Just assert that we got a valid instance, there is no is_closed method directly exposed
         // If new() succeeded, the DB is open.
-        assert!(true); 
+        assert!(true);
     }
 
     #[tokio::test]

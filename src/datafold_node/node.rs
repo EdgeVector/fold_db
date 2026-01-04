@@ -1,7 +1,8 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use serde::Serialize;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
+use tokio::sync::{Mutex, MutexGuard};
 
 use crate::datafold_node::config::NodeConfig;
 use crate::error::{FoldDbError, FoldDbResult};
@@ -55,9 +56,7 @@ impl DataFoldNode {
 
         // Retrieve or generate the persistent node_id from fold_db
         let node_id = {
-            let guard = db
-                .lock()
-                .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+            let guard = db.lock().await;
             guard
                 .get_node_id()
                 .await
@@ -80,9 +79,7 @@ impl DataFoldNode {
         }
 
         let security_manager = {
-            let guard = db
-                .lock()
-                .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+            let guard = db.lock().await;
 
             let db_ops = guard.db_ops.clone();
 
@@ -155,9 +152,7 @@ impl DataFoldNode {
     pub async fn new_with_db(config: NodeConfig, db: Arc<Mutex<FoldDB>>) -> FoldDbResult<Self> {
         // Retrieve or generate the persistent node_id from fold_db
         let node_id = {
-            let guard = db
-                .lock()
-                .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+            let guard = db.lock().await;
             guard
                 .get_node_id()
                 .await
@@ -180,9 +175,7 @@ impl DataFoldNode {
         }
 
         let security_manager = {
-            let guard = db
-                .lock()
-                .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))?;
+            let guard = db.lock().await;
 
             let db_ops = guard.db_ops.clone();
 
@@ -242,10 +235,8 @@ impl DataFoldNode {
     }
 
     /// Get a reference to the underlying FoldDB instance
-    pub fn get_fold_db(&self) -> FoldDbResult<MutexGuard<'_, FoldDB>> {
-        self.db
-            .lock()
-            .map_err(|_| FoldDbError::Config("Cannot lock database mutex".into()))
+    pub async fn get_fold_db(&self) -> FoldDbResult<MutexGuard<'_, FoldDB>> {
+        Ok(self.db.lock().await)
     }
 
     /// Gets the unique identifier for this node.
@@ -308,7 +299,7 @@ impl Drop for DataFoldNode {
         );
 
         // Try to close the database gracefully
-        if let Ok(db) = self.db.lock() {
+        if let Ok(db) = self.db.try_lock() {
             if let Err(e) = db.close() {
                 log_feature!(
                     LogFeature::Database,
@@ -361,20 +352,14 @@ impl DataFoldNode {
 
     /// Get the current indexing status
     pub async fn get_indexing_status(&self) -> crate::fold_db_core::orchestration::IndexingStatus {
-        if let Ok(db) = self.db.lock() {
-            db.get_indexing_status().await
-        } else {
-            crate::fold_db_core::orchestration::IndexingStatus::default()
-        }
+        let db = self.db.lock().await;
+        db.get_indexing_status().await
     }
 
     /// Check if indexing is currently in progress
     pub async fn is_indexing(&self) -> bool {
-        if let Ok(db) = self.db.lock() {
-            db.is_indexing().await
-        } else {
-            false
-        }
+        let db = self.db.lock().await;
+        db.is_indexing().await
     }
 }
 
