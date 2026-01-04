@@ -1,3 +1,5 @@
+#[cfg(feature = "aws-backend")]
+use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 #[cfg(feature = "aws-backend")]
 use crate::fold_db_core::orchestration::{DynamoDbProgressStore, ProgressStore};
@@ -6,7 +8,6 @@ use crate::fold_db_core::FoldDB;
 use crate::logging::features::LogFeature;
 use crate::storage::config::DatabaseConfig;
 #[cfg(feature = "aws-backend")]
-use crate::storage::ExplicitTables;
 #[cfg(feature = "aws-backend")]
 use crate::storage::TableNameResolver;
 use std::sync::Arc;
