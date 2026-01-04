@@ -15,10 +15,10 @@ async fn test_mutation_performance_investigation() {
     println!("{}", "=".repeat(80));
 
     // 1. Mutation Generation Performance
-    test_mutation_generation_performance().await;
+    _test_mutation_generation_performance().await;
 
     // 2. Local Backend Mutation Execution Performance
-    test_local_mutation_execution().await;
+    _test_local_mutation_execution().await;
 
     // 3. DynamoDB Backend Mutation Execution Performance (Mock/Simulated)
     // We will conditionally run this if we can set up a mock or if configured
@@ -26,7 +26,7 @@ async fn test_mutation_performance_investigation() {
     test_dynamodb_mutation_execution().await;
 }
 
-async fn test_mutation_generation_performance() {
+async fn _test_mutation_generation_performance() {
     println!("\n--- Phase 1: Mutation Generation Performance ---");
 
     let generator = MutationGenerator::new();
@@ -106,7 +106,7 @@ async fn test_mutation_generation_performance() {
     }
 }
 
-async fn test_local_mutation_execution() {
+async fn _test_local_mutation_execution() {
     println!("\n--- Phase 2: Local Mutation Execution Performance ---");
 
     // Setup temp local DB
@@ -135,7 +135,7 @@ async fn test_local_mutation_execution() {
     }"#;
 
     {
-        let mut db = node.get_fold_db().expect("Failed to get DB");
+        let mut db = node.get_fold_db().await.expect("Failed to get DB");
         db.load_schema_from_json(schema_json)
             .await
             .expect("Failed to load schema");
@@ -167,7 +167,10 @@ async fn test_local_mutation_execution() {
     println!("Executing {} mutations (Local)...", count);
     let start = Instant::now();
 
-    let _ids = node.mutate_batch(mutations).expect("Failed to mutate");
+    let _ids = node
+        .mutate_batch(mutations)
+        .await
+        .expect("Failed to mutate");
 
     let duration = start.elapsed();
     println!("Executed {} mutations in {:.2?}", count, duration);

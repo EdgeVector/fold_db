@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use crate::schema::types::Mutation;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::Mutation;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::EventType;
 
@@ -429,31 +429,7 @@ impl EventType for MoleculeGetResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SystemInitializationRequest {
-    pub correlation_id: String,
-    pub db_path: String,
-    pub orchestrator_config: Option<Value>,
-}
-
-impl EventType for SystemInitializationRequest {
-    fn type_id() -> &'static str {
-        "SystemInitializationRequest"
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SystemInitializationResponse {
-    pub correlation_id: String,
-    pub success: bool,
-    pub error: Option<String>,
-}
-
-impl EventType for SystemInitializationResponse {
-    fn type_id() -> &'static str {
-        "SystemInitializationResponse"
-    }
-}
+// SystemInitializationResponse removed
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MutationRequest {

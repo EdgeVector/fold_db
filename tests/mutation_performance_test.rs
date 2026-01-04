@@ -13,8 +13,8 @@ use std::time::Instant;
 use serde_json::json;
 
 use datafold::datafold_node::{DataFoldNode, NodeConfig};
-use datafold::schema::types::Mutation;
 use datafold::schema::types::key_value::KeyValue;
+use datafold::schema::types::Mutation;
 use datafold::MutationType;
 
 /// Performance Test: Single vs Batch Mutations (Direct Database)
@@ -42,30 +42,32 @@ async fn test_mutation_performance_direct() {
     if temp_db_path.exists() {
         std::fs::remove_dir_all(temp_db_path).expect("Failed to cleanup test db");
     }
-    
+
     // Create node configuration
-    let config = NodeConfig::new(temp_db_path.to_path_buf())
-        .with_schema_service_url("test://mock");
-    
+    let config = NodeConfig::new(temp_db_path.to_path_buf()).with_schema_service_url("test://mock");
+
     let node = DataFoldNode::new(config)
         .await
         .expect("Failed to create test node");
-    
+
     // Load BlogPost schema
     let schema_path = Path::new("./tests/schemas_for_testing/BlogPost.json");
     let schema_json = std::fs::read_to_string(schema_path).expect("Failed to read schema file");
-    
+
     {
-        let mut db_guard = node.get_fold_db().expect("Failed to get database");
-        db_guard.load_schema_from_json(&schema_json)
+        let mut db_guard = node.get_fold_db().await.expect("Failed to get database");
+        db_guard
+            .load_schema_from_json(&schema_json)
             .await
             .expect("Failed to load BlogPost schema");
     }
-    
+
     // Approve the schema
     {
-        let db_guard = node.get_fold_db().expect("Failed to get database");
-        db_guard.schema_manager().approve("BlogPost")
+        let db_guard = node.get_fold_db().await.expect("Failed to get database");
+        db_guard
+            .schema_manager()
+            .approve("BlogPost")
             .await
             .expect("Failed to approve BlogPost schema");
     }
@@ -82,17 +84,25 @@ async fn test_mutation_performance_direct() {
     println!("{}", "=".repeat(80));
     println!("Phase 1: Single Mutations");
     println!("{}", "=".repeat(80));
-    
+
     let single_start = Instant::now();
     let single_times = execute_single_mutations_direct(&node, NUM_MUTATIONS).await;
     let single_duration = single_start.elapsed();
-    
+
     println!("\nSingle Mutation Results:");
     println!("  Total time: {:.2}ms", single_duration.as_millis());
-    println!("  Average time per mutation: {:.2}ms", 
-        single_duration.as_millis() as f64 / NUM_MUTATIONS as f64);
-    println!("  Min time: {:.2}ms", single_times.iter().min().unwrap_or(&0));
-    println!("  Max time: {:.2}ms", single_times.iter().max().unwrap_or(&0));
+    println!(
+        "  Average time per mutation: {:.2}ms",
+        single_duration.as_millis() as f64 / NUM_MUTATIONS as f64
+    );
+    println!(
+        "  Min time: {:.2}ms",
+        single_times.iter().min().unwrap_or(&0)
+    );
+    println!(
+        "  Max time: {:.2}ms",
+        single_times.iter().max().unwrap_or(&0)
+    );
 
     // Short delay between tests
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -101,44 +111,59 @@ async fn test_mutation_performance_direct() {
     println!("\n{}", "=".repeat(80));
     println!("Phase 2: Batch Mutations");
     println!("{}", "=".repeat(80));
-    
+
     let batch_start = Instant::now();
     execute_batch_mutations_direct(&node, NUM_MUTATIONS).await;
     let batch_duration = batch_start.elapsed();
-    
+
     println!("\nBatch Mutation Results:");
     println!("  Total time: {:.2}ms", batch_duration.as_millis());
-    println!("  Average time per mutation: {:.2}ms", 
-        batch_duration.as_millis() as f64 / NUM_MUTATIONS as f64);
+    println!(
+        "  Average time per mutation: {:.2}ms",
+        batch_duration.as_millis() as f64 / NUM_MUTATIONS as f64
+    );
 
     // Step 3: Performance Comparison
     println!("\n{}", "=".repeat(80));
     println!("Performance Comparison");
     println!("{}", "=".repeat(80));
-    
+
     let improvement_ms = single_duration.as_millis() as f64 - batch_duration.as_millis() as f64;
     let improvement_pct = (improvement_ms / single_duration.as_millis() as f64) * 100.0;
-    
-    println!("Single mutations:   {:.2}ms ({:.2}ms per mutation)", 
-        single_duration.as_millis(), 
-        single_duration.as_millis() as f64 / NUM_MUTATIONS as f64);
-    println!("Batch mutations:    {:.2}ms ({:.2}ms per mutation)", 
-        batch_duration.as_millis(), 
-        batch_duration.as_millis() as f64 / NUM_MUTATIONS as f64);
-    println!("Performance gain:   {:.2}ms ({:.1}% faster)", improvement_ms, improvement_pct);
+
+    println!(
+        "Single mutations:   {:.2}ms ({:.2}ms per mutation)",
+        single_duration.as_millis(),
+        single_duration.as_millis() as f64 / NUM_MUTATIONS as f64
+    );
+    println!(
+        "Batch mutations:    {:.2}ms ({:.2}ms per mutation)",
+        batch_duration.as_millis(),
+        batch_duration.as_millis() as f64 / NUM_MUTATIONS as f64
+    );
+    println!(
+        "Performance gain:   {:.2}ms ({:.1}% faster)",
+        improvement_ms, improvement_pct
+    );
     println!();
-    
+
     if improvement_pct > 5.0 {
         println!("✅ Batch mutations are {:.1}% faster", improvement_pct);
     } else if improvement_pct > 0.0 {
-        println!("⚠️  Batch mutations are only {:.1}% faster", improvement_pct);
+        println!(
+            "⚠️  Batch mutations are only {:.1}% faster",
+            improvement_pct
+        );
     } else {
-        println!("⚠️  Single mutations were faster by {:.1}% (unexpected)", -improvement_pct);
+        println!(
+            "⚠️  Single mutations were faster by {:.1}% (unexpected)",
+            -improvement_pct
+        );
     }
-    
+
     // Cleanup
     std::fs::remove_dir_all(temp_db_path).ok();
-    
+
     // Log the results - we've already printed the comparison above
     println!("\n✅ Performance test completed");
 }
@@ -146,15 +171,15 @@ async fn test_mutation_performance_direct() {
 /// Execute mutations one at a time (single mode) - directly on the database
 async fn execute_single_mutations_direct(node: &DataFoldNode, count: usize) -> Vec<u64> {
     let mut times = Vec::new();
-    
+
     for i in 0..count {
         let mutation = create_blogpost_mutation(i);
-        
+
         let start = Instant::now();
-        let result = node.mutate_batch(vec![mutation]);
+        let result = node.mutate_batch(vec![mutation]).await;
         let duration = start.elapsed();
         times.push(duration.as_millis() as u64);
-        
+
         match result {
             Ok(_) => {
                 if i % 10 == 0 {
@@ -166,7 +191,7 @@ async fn execute_single_mutations_direct(node: &DataFoldNode, count: usize) -> V
             }
         }
     }
-    
+
     println!();
     times
 }
@@ -174,17 +199,20 @@ async fn execute_single_mutations_direct(node: &DataFoldNode, count: usize) -> V
 /// Execute mutations in a single batch - directly on the database
 async fn execute_batch_mutations_direct(node: &DataFoldNode, count: usize) {
     let mut mutations = Vec::new();
-    
+
     for i in 0..count {
         let mutation = create_blogpost_mutation(i);
         mutations.push(mutation);
     }
-    
+
     println!("  Executing batch of {} mutations", count);
-    
-    match node.mutate_batch(mutations) {
+
+    match node.mutate_batch(mutations).await {
         Ok(ids) => {
-            println!("✅ Batch mutation completed successfully - {} mutation IDs returned", ids.len());
+            println!(
+                "✅ Batch mutation completed successfully - {} mutation IDs returned",
+                ids.len()
+            );
         }
         Err(e) => {
             println!("❌ Batch mutation failed: {:?}", e);
@@ -196,15 +224,24 @@ async fn execute_batch_mutations_direct(node: &DataFoldNode, count: usize) {
 fn create_blogpost_mutation(index: usize) -> Mutation {
     let publish_date = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let title = format!("Performance Test Blog Post {}", index);
-    let content = format!("This is test content for performance testing. Post number {} created.", index);
-    
+    let content = format!(
+        "This is test content for performance testing. Post number {} created.",
+        index
+    );
+
     let mut fields_and_values = HashMap::new();
     fields_and_values.insert("title".to_string(), json!(title));
     fields_and_values.insert("content".to_string(), json!(content));
     fields_and_values.insert("author".to_string(), json!("Performance Tester"));
-    fields_and_values.insert("publish_date".to_string(), json!(format!("{}-{:03}", publish_date, index)));
-    fields_and_values.insert("tags".to_string(), json!(["performance", "test", "benchmark"]));
-    
+    fields_and_values.insert(
+        "publish_date".to_string(),
+        json!(format!("{}-{:03}", publish_date, index)),
+    );
+    fields_and_values.insert(
+        "tags".to_string(),
+        json!(["performance", "test", "benchmark"]),
+    );
+
     Mutation::new(
         "BlogPost".to_string(),
         fields_and_values,

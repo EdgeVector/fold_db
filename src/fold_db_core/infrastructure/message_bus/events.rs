@@ -42,7 +42,7 @@ pub enum Event {
     FieldValueSetRequest(FieldValueSetRequest),
     FieldValueSetResponse(FieldValueSetResponse),
     FieldValueQueryRequest(FieldValueQueryRequest),
-    SystemInitializationRequest(SystemInitializationRequest),
+    // SystemInitializationRequest removed
     // Index events
     IndexRequest(IndexRequest),
     BatchIndexRequest(BatchIndexRequest),
@@ -71,7 +71,7 @@ impl Event {
             Event::FieldValueSetRequest(_) => "FieldValueSetRequest",
             Event::FieldValueSetResponse(_) => "FieldValueSetResponse",
             Event::FieldValueQueryRequest(_) => "FieldValueQueryRequest",
-            Event::SystemInitializationRequest(_) => "SystemInitializationRequest",
+            // SystemInitializationRequest variant removed
             // Index events
             Event::IndexRequest(_) => "IndexRequest",
             Event::BatchIndexRequest(_) => "BatchIndexRequest",

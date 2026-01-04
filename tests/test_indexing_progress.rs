@@ -1,19 +1,19 @@
 use datafold::datafold_node::node::DataFoldNode;
+use datafold::datafold_node::OperationProcessor;
+use datafold::schema::types::operations::MutationType;
+use datafold::schema::types::KeyValue;
 use datafold::testing_utils::TestDatabaseFactory;
 use serde_json::json;
 use std::collections::HashMap;
-use datafold::datafold_node::OperationProcessor;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use datafold::schema::types::operations::MutationType;
-use datafold::schema::types::KeyValue;
 
 #[tokio::test]
 async fn test_indexing_progress_tracking() {
     // Setup
     let config = TestDatabaseFactory::create_test_node_config();
     let node = DataFoldNode::new(config).await.unwrap();
-    
+
     // Create a schema
     let schema_json = r#"{
         "name": "test_schema",
@@ -39,13 +39,18 @@ async fn test_indexing_progress_tracking() {
             }
         }
     }"#;
-    
-    node.get_fold_db().unwrap().load_schema_from_json(schema_json).await.unwrap();
-    
+
+    node.get_fold_db()
+        .await
+        .unwrap()
+        .load_schema_from_json(schema_json)
+        .await
+        .unwrap();
+
     // Check initial status
     let status = node.get_indexing_status().await;
     assert_eq!(status.total_operations_processed, 0);
-    
+
     // Perform mutation
     let fields_and_values = {
         let mut map = HashMap::new();
@@ -53,23 +58,26 @@ async fn test_indexing_progress_tracking() {
         map.insert("content".to_string(), json!("hello world"));
         map
     };
-    
+
     let node_arc = Arc::new(Mutex::new(node));
     let processor = OperationProcessor::new(node_arc.clone());
-    
+
     let key_value = KeyValue::new(Some("1".to_string()), None);
-    
-    processor.execute_mutation(
-        "test_schema".to_string(),
-        fields_and_values,
-        key_value,
-        MutationType::Create
-    ).await.unwrap();
-    
+
+    processor
+        .execute_mutation(
+            "test_schema".to_string(),
+            fields_and_values,
+            key_value,
+            MutationType::Create,
+        )
+        .await
+        .unwrap();
+
     // Poll for status update
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(5);
-    
+
     let mut processed = 0;
     while start.elapsed() < timeout {
         let node_guard = node_arc.lock().await;
@@ -84,5 +92,8 @@ async fn test_indexing_progress_tracking() {
     }
 
     println!("Total operations processed: {}", processed);
-    assert!(processed > 0, "Should have processed indexing operations within timeout");
+    assert!(
+        processed > 0,
+        "Should have processed indexing operations within timeout"
+    );
 }

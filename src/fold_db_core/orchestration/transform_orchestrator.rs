@@ -10,25 +10,32 @@ use std::sync::Arc;
 
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::transform::manager::{TransformManager, types::TransformResult};
 use crate::schema::SchemaError;
 use crate::storage::traits::KvStore;
+use crate::transform::manager::{types::TransformResult, TransformManager};
 
 // Import the new specialized components
-use super::transform_event_monitor::TransformEventMonitor;
 use super::execution_coordinator::ExecutionCoordinator;
 use super::persistence_manager::PersistenceManager;
 use super::queue_manager::QueueManager;
+use super::transform_event_monitor::TransformEventMonitor;
+
+use async_trait::async_trait;
 
 /// Trait for adding transforms to a queue
+#[async_trait]
 pub trait TransformQueue {
-    fn add_task(
+    async fn add_task(
         &self,
         schema_name: &str,
         field_name: &str,
         mutation_hash: &str,
     ) -> Result<(), SchemaError>;
-    fn add_transform(&self, transform_id: &str, mutation_hash: &str) -> Result<(), SchemaError>;
+    async fn add_transform(
+        &self,
+        transform_id: &str,
+        mutation_hash: &str,
+    ) -> Result<(), SchemaError>;
 }
 
 /// Orchestrates execution of transforms sequentially using specialized components.
@@ -97,7 +104,7 @@ impl TransformOrchestrator {
             _event_monitor: event_monitor,
         }
     }
-    
+
     /// Create a new TransformOrchestrator with KvStore (for DynamoDB and other backends)
     pub async fn new_with_store(
         manager: Arc<TransformManager>,
@@ -111,10 +118,13 @@ impl TransformOrchestrator {
         let persistence_manager = PersistenceManager::new_with_store(store.clone());
 
         // Load initial state or create empty state
-        let initial_state = persistence_manager.load_state_async().await.unwrap_or_else(|e| {
-            error!("❌ Failed to load initial state, using empty state: {}", e);
-            super::queue_manager::QueueState::default()
-        });
+        let initial_state = persistence_manager
+            .load_state_async()
+            .await
+            .unwrap_or_else(|e| {
+                error!("❌ Failed to load initial state, using empty state: {}", e);
+                super::queue_manager::QueueState::default()
+            });
 
         info!(
             "📋 Loaded initial state - queue length: {}, queued count: {}, processed count: {}",
@@ -151,7 +161,7 @@ impl TransformOrchestrator {
     }
 
     /// Add a task for the given schema and field using the execution coordinator
-    pub fn add_task(
+    pub async fn add_task(
         &self,
         schema_name: &str,
         field_name: &str,
@@ -185,7 +195,7 @@ impl TransformOrchestrator {
         }
 
         // Persist the updated state (non-blocking for async stores)
-        if let Err(e) = self.persist_current_state() {
+        if let Err(e) = self.persist_current_state_async().await {
             error!("⚠️ Failed to persist state: {}", e);
         }
 
@@ -194,7 +204,7 @@ impl TransformOrchestrator {
     }
 
     /// Add a transform directly to the queue by ID
-    pub fn add_transform(
+    pub async fn add_transform(
         &self,
         transform_id: &str,
         mutation_hash: &str,
@@ -211,7 +221,7 @@ impl TransformOrchestrator {
         }
 
         // Persist state (non-blocking for async stores)
-        if let Err(e) = self.persist_current_state() {
+        if let Err(e) = self.persist_current_state_async().await {
             error!("⚠️ Failed to persist state: {}", e);
         }
 
@@ -220,14 +230,14 @@ impl TransformOrchestrator {
             "🔄 Triggering automatic queue processing for: {}",
             transform_id
         );
-        self.process_queue();
+        self.process_queue().await;
 
         info!("🏁 ADD_TRANSFORM completed for: {}", transform_id);
         Ok(())
     }
 
     /// Process a single task from the queue
-    pub fn process_one(&self) -> Option<Result<TransformResult, SchemaError>> {
+    pub async fn process_one(&self) -> Option<Result<TransformResult, SchemaError>> {
         info!("🔄 PROCESS_ONE - Checking queue for items");
 
         // Pop item from queue
@@ -256,7 +266,7 @@ impl TransformOrchestrator {
         };
 
         // Persist state before execution
-        if let Err(e) = self.persist_current_state() {
+        if let Err(e) = self.persist_current_state_async().await {
             error!("❌ Failed to persist state before execution: {}", e);
             return Some(Err(e));
         }
@@ -264,7 +274,8 @@ impl TransformOrchestrator {
         // Execute transform using execution coordinator
         let result = self
             .execution_coordinator
-            .execute_transform(&item, already_processed);
+            .execute_transform(&item, already_processed)
+            .await;
 
         // Mark as processed if execution succeeded
         if result.is_ok() {
@@ -277,7 +288,7 @@ impl TransformOrchestrator {
             }
 
             // Persist state after successful processing
-            if let Err(e) = self.persist_current_state() {
+            if let Err(e) = self.persist_current_state_async().await {
                 error!("❌ Failed to persist state after processing: {}", e);
                 return Some(Err(e));
             }
@@ -288,7 +299,7 @@ impl TransformOrchestrator {
     }
 
     /// Process all queued tasks sequentially
-    pub fn process_queue(&self) {
+    pub async fn process_queue(&self) {
         info!("🔄 PROCESS_QUEUE - Starting to process all queued transforms");
 
         let initial_length = match self.len() {
@@ -314,7 +325,7 @@ impl TransformOrchestrator {
             iteration_count += 1;
             info!("🔄 Processing iteration #{}", iteration_count);
 
-            match self.process_one() {
+            match self.process_one().await {
                 Some(result) => {
                     processed_count += 1;
                     match result {
@@ -358,26 +369,13 @@ impl TransformOrchestrator {
         );
     }
 
-    /// Helper method to persist current queue state
-    /// Persist current state (sync version for Sled)
-    fn persist_current_state(&self) -> Result<(), SchemaError> {
-        let current_state = self.queue_manager.get_state()?;
-        if self.persistence_manager.is_async() {
-            // For async stores, we can't block from sync context without risking deadlock
-            // Log a warning and skip persistence - state will be persisted on next async call
-            // or when the orchestrator is explicitly flushed
-            info!("⚠️ Skipping sync persistence for async store - state will be persisted on next async operation");
-            Ok(())
-        } else {
-            self.persistence_manager.save_and_flush(&current_state)
-        }
-    }
-    
     /// Persist current state (async version for DynamoDB)
     pub async fn persist_current_state_async(&self) -> Result<(), SchemaError> {
         let current_state = self.queue_manager.get_state()?;
         if self.persistence_manager.is_async() {
-            self.persistence_manager.save_and_flush_async(&current_state).await
+            self.persistence_manager
+                .save_and_flush_async(&current_state)
+                .await
         } else {
             self.persistence_manager.save_and_flush(&current_state)
         }
@@ -412,17 +410,22 @@ impl TransformOrchestrator {
     }
 }
 
+#[async_trait]
 impl TransformQueue for TransformOrchestrator {
-    fn add_task(
+    async fn add_task(
         &self,
         schema_name: &str,
         field_name: &str,
         mutation_hash: &str,
     ) -> Result<(), SchemaError> {
-        self.add_task(schema_name, field_name, mutation_hash)
+        self.add_task(schema_name, field_name, mutation_hash).await
     }
 
-    fn add_transform(&self, transform_id: &str, mutation_hash: &str) -> Result<(), SchemaError> {
-        self.add_transform(transform_id, mutation_hash)
+    async fn add_transform(
+        &self,
+        transform_id: &str,
+        mutation_hash: &str,
+    ) -> Result<(), SchemaError> {
+        self.add_transform(transform_id, mutation_hash).await
     }
 }

@@ -1,9 +1,9 @@
-use crate::schema::SchemaError;
 use crate::fold_db_core::query::formatter::Record;
-use std::collections::HashSet;
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
+use crate::schema::SchemaError;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// Result of transform execution containing structured records
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,9 +31,12 @@ impl TransformResult {
     /// Convert to a single Record by merging all records (for backward compatibility)
     pub fn to_single_record(&self) -> Record {
         if self.records.is_empty() {
-            return Record { fields: HashMap::new(), metadata: HashMap::new() };
+            return Record {
+                fields: HashMap::new(),
+                metadata: HashMap::new(),
+            };
         }
-        
+
         if self.records.len() == 1 {
             return self.records[0].clone();
         }
@@ -50,22 +53,28 @@ impl TransformResult {
                     key.clone()
                 };
                 merged_fields.insert(indexed_key.clone(), value.clone());
-                
+
                 // Merge metadata with the same indexed key
                 if let Some(meta) = record.metadata.get(key) {
                     merged_metadata.insert(indexed_key, meta.clone());
                 }
             }
         }
-        
-        Record { fields: merged_fields, metadata: merged_metadata }
+
+        Record {
+            fields: merged_fields,
+            metadata: merged_metadata,
+        }
     }
 }
 
+use async_trait::async_trait;
+
 /// Trait abstraction over transform execution for easier testing.
 /// All execution is now event-driven through the message bus.
+#[async_trait]
 pub trait TransformRunner: Send + Sync {
-    fn execute_transform_with_context(
+    async fn execute_transform_with_context(
         &self,
         transform_id: &str,
         mutation_context: &Option<

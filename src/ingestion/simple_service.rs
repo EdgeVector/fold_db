@@ -596,6 +596,7 @@ impl SimpleIngestionService {
                 let node_guard = node.lock().await;
                 let db_guard = node_guard
                     .get_fold_db()
+                    .await
                     .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
                 db_guard.schema_manager.clone()
             };
@@ -735,6 +736,7 @@ impl SimpleIngestionService {
             let node_guard = node.lock().await;
             let db_guard = node_guard
                 .get_fold_db()
+                .await
                 .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
             let manager = db_guard.schema_manager.clone();
             drop(db_guard);
@@ -768,6 +770,7 @@ impl SimpleIngestionService {
             let node_guard = node.lock().await;
             let db_guard = node_guard
                 .get_fold_db()
+                .await
                 .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
             let schema = db_guard
                 .schema_manager
@@ -920,6 +923,7 @@ impl SimpleIngestionService {
                 let node_guard = node.lock().await;
                 let db_guard = node_guard
                     .get_fold_db()
+                    .await
                     .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
                 let manager = db_guard.schema_manager.clone();
                 drop(db_guard);

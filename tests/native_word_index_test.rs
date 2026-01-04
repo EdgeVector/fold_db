@@ -14,10 +14,12 @@ async fn test_native_word_index_search_updates_with_mutations() {
     let db_path = temp_dir.path().to_path_buf();
 
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
-    let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
+    let node = DataFoldNode::new(config)
+        .await
+        .expect("failed to create DataFoldNode");
 
     {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
 
         let blogpost_schema = json!({
             "name": "BlogPost",
@@ -64,10 +66,11 @@ async fn test_native_word_index_search_updates_with_mutations() {
         create_fields,
         KeyValue::new(None, Some("2024-02-01".to_string())),
         MutationType::Create,
-    );
+    )
+    .await;
 
     {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
 
         let jennifer_results = fold_db
             .native_word_search("Jennifer")
@@ -98,15 +101,16 @@ async fn test_native_word_index_search_updates_with_mutations() {
         update_fields,
         KeyValue::new(None, Some("2024-02-01".to_string())),
         MutationType::Update,
-    );
+    )
+    .await;
 
     {
-        let fold_db = node.get_fold_db().expect("failed to get FoldDB");
+        let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
 
         let jennifer_results = fold_db
             .native_word_search("jennifer")
             .expect("search after update should succeed");
-        
+
         // Verify that jennifer appears in author field (this tests recursive object processing)
         let jennifer_author_results: Vec<_> = jennifer_results
             .iter()
@@ -116,7 +120,7 @@ async fn test_native_word_index_search_updates_with_mutations() {
             !jennifer_author_results.is_empty(),
             "author entries containing 'jennifer' should be present (tests recursive object processing)"
         );
-        
+
         // After updating content, jennifer should no longer appear in content field
         // Note: This test may fail if mutation updates don't work properly in test environment
         let jennifer_content_results: Vec<_> = jennifer_results
@@ -142,7 +146,7 @@ async fn test_native_word_index_search_updates_with_mutations() {
     }
 }
 
-fn execute_mutation(
+async fn execute_mutation(
     node: &DataFoldNode,
     schema: &str,
     fields: HashMap<String, Value>,
@@ -159,5 +163,6 @@ fn execute_mutation(
     );
 
     node.mutate_batch(vec![mutation])
+        .await
         .expect("mutation execution should succeed");
 }

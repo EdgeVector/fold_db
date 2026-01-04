@@ -43,8 +43,9 @@ IMPORTANT - Field Topologies with Classifications:
 - EVERY Primitive leaf MUST include \"classifications\" array
 - Analyze field semantic meaning and assign appropriate classification types
 - Multiple classifications per field are encouraged (e.g., [\"name:person\", \"word\"])
+- ALWAYS include \"word\" classification for any string field that contains searchable text
 - Available classification types:
-  * \"word\" - general text, split into words for search
+  * \"word\" - general text, split into words for search (MANDATORY for searchable text)
   * \"name:person\" - person names (kept whole: \"Jennifer Liu\")
   * \"name:company\" - company/organization names
   * \"name:place\" - location names (cities, countries, places)
@@ -227,10 +228,10 @@ impl OpenRouterService {
     ) -> IngestionResult<AISchemaResponse> {
         // Create superset structure from all top-level elements
         let superset_structure = StructureAnalyzer::create_superset_structure(sample_json);
-        
+
         // Get analysis statistics for logging
         let stats = StructureAnalyzer::get_analysis_stats(sample_json);
-        
+
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -238,14 +239,14 @@ impl OpenRouterService {
             stats.total_elements,
             stats.unique_fields
         );
-        
+
         if let Some(array) = sample_json.as_array() {
             if array.is_empty() {
                 return Err(IngestionError::ai_response_validation_error(
-                    "Cannot determine schema from empty JSON array".to_string()
+                    "Cannot determine schema from empty JSON array".to_string(),
                 ));
             }
-            
+
             log_feature!(
                 LogFeature::Ingestion,
                 info,
@@ -253,11 +254,11 @@ impl OpenRouterService {
                 array.len(),
                 stats.unique_fields
             );
-            
+
             // Log field coverage information
             let common_fields = stats.get_common_fields();
             let partial_fields = stats.get_partial_fields();
-            
+
             if !common_fields.is_empty() {
                 log_feature!(
                     LogFeature::Ingestion,
@@ -266,7 +267,7 @@ impl OpenRouterService {
                     common_fields
                 );
             }
-            
+
             if !partial_fields.is_empty() {
                 log_feature!(
                     LogFeature::Ingestion,
@@ -276,7 +277,7 @@ impl OpenRouterService {
                 );
             }
         }
-        
+
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -341,13 +342,18 @@ impl OpenRouterService {
     }
 
     /// Create the prompt for the AI
-    fn create_prompt(&self, sample_json: &Value, available_schemas: &Value, is_array_input: bool) -> String {
+    fn create_prompt(
+        &self,
+        sample_json: &Value,
+        available_schemas: &Value,
+        is_array_input: bool,
+    ) -> String {
         let array_note = if is_array_input {
             "\n\nIMPORTANT: The user provided a JSON ARRAY of multiple objects. You MUST create or use a Range schema with a range_key to store multiple entities."
         } else {
             ""
         };
-        
+
         format!(
             "{header}\n\nSample JSON Data:\n{sample}\n\nAvailable Schemas:\n{schemas}{array_note}\n\n{actions}",
             header = PROMPT_HEADER,
@@ -465,7 +471,6 @@ impl OpenRouterService {
 
     /// Parse the AI response
     fn parse_ai_response(&self, response_text: &str) -> IngestionResult<AISchemaResponse> {
-
         // Try to extract JSON from the response
         let json_str = self.extract_json_from_response(response_text)?;
         log_feature!(
@@ -576,65 +581,71 @@ impl OpenRouterService {
         let schema_obj = schema_val.as_object().ok_or_else(|| {
             IngestionError::ai_response_validation_error("Schema must be a JSON object")
         })?;
-        
-        let schema_name = schema_obj.get("name")
+
+        let schema_name = schema_obj
+            .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        
-        let field_topologies = schema_obj.get("field_topologies")
+
+        let field_topologies = schema_obj
+            .get("field_topologies")
             .and_then(|v| v.as_object())
             .ok_or_else(|| {
-                IngestionError::ai_response_validation_error(
-                    format!("Schema '{}' missing field_topologies", schema_name)
-                )
+                IngestionError::ai_response_validation_error(format!(
+                    "Schema '{}' missing field_topologies",
+                    schema_name
+                ))
             })?;
-        
+
         // Check each field's topology for classifications
         for (field_name, topology_val) in field_topologies {
-            let topology_obj = topology_val.as_object()
+            let topology_obj = topology_val
+                .as_object()
                 .and_then(|obj| obj.get("root"))
                 .and_then(|v| v.as_object())
                 .ok_or_else(|| {
-                    IngestionError::ai_response_validation_error(
-                        format!("Schema '{}' field '{}' has invalid topology structure", schema_name, field_name)
-                    )
+                    IngestionError::ai_response_validation_error(format!(
+                        "Schema '{}' field '{}' has invalid topology structure",
+                        schema_name, field_name
+                    ))
                 })?;
-            
+
             Self::validate_topology_node_classifications(schema_name, field_name, topology_obj)?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Recursively validate that primitive nodes have classifications
     fn validate_topology_node_classifications(
-        schema_name: &str, 
-        field_name: &str, 
-        node: &serde_json::Map<String, Value>
+        schema_name: &str,
+        field_name: &str,
+        node: &serde_json::Map<String, Value>,
     ) -> IngestionResult<()> {
         let node_type = node.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        
+
         match node_type {
             "Primitive" => {
                 // Check if classifications exist and is a non-empty array
-                let classifications = node.get("classifications")
-                    .and_then(|v| v.as_array());
-                
+                let classifications = node.get("classifications").and_then(|v| v.as_array());
+
                 match classifications {
                     Some(arr) if !arr.is_empty() => Ok(()), // Valid
-                    _ => Err(IngestionError::ai_response_validation_error(
-                        format!(
-                            "Schema '{}' field '{}' has a Primitive without classifications. \
+                    _ => Err(IngestionError::ai_response_validation_error(format!(
+                        "Schema '{}' field '{}' has a Primitive without classifications. \
                             AI must provide at least one classification (e.g., [\"word\"])",
-                            schema_name, field_name
-                        )
-                    ))
+                        schema_name, field_name
+                    ))),
                 }
             }
             "Array" => {
                 // Recurse into array value
                 if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
-                    Self::validate_topology_node_classifications(schema_name, field_name, value_obj)?;
+                    Self::validate_topology_node_classifications(
+                        schema_name,
+                        field_name,
+                        value_obj,
+                    )?;
                 }
                 Ok(())
             }
@@ -643,16 +654,20 @@ impl OpenRouterService {
                 if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
                     for (_nested_field, nested_node) in value_obj {
                         if let Some(nested_obj) = nested_node.as_object() {
-                            Self::validate_topology_node_classifications(schema_name, field_name, nested_obj)?;
+                            Self::validate_topology_node_classifications(
+                                schema_name,
+                                field_name,
+                                nested_obj,
+                            )?;
                         }
                     }
                 }
                 Ok(())
             }
-            _ => Ok(()) // Unknown type, skip validation
+            _ => Ok(()), // Unknown type, skip validation
         }
     }
-    
+
     /// Validate and convert the parsed response
     fn validate_and_convert_response(&self, parsed: Value) -> IngestionResult<AISchemaResponse> {
         let obj = parsed.as_object().ok_or_else(|| {
@@ -677,7 +692,7 @@ impl OpenRouterService {
 
         // Parse new_schemas
         let new_schemas = obj.get("new_schemas").cloned();
-        
+
         // Validate that new schemas have classifications on all primitive fields
         if let Some(schema_val) = &new_schemas {
             match schema_val {

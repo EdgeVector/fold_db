@@ -1,19 +1,14 @@
+use crate::datafold_node::config::DatabaseConfig;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::datafold_node::config::DatabaseConfig;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs;
 use std::io::Write;
 
-
-
-
 use super::http_server::AppState;
 use super::DataFoldNode;
-
-
 
 /// Get system status information
 #[utoipa::path(
@@ -180,9 +175,9 @@ pub async fn reset_database(
     // Perform the database reset by deleting database files and creating a new node
     let config = node.config.clone();
     let db_path = config.get_storage_path();
-    
+
     // Close the current database
-    if let Ok(db) = node.get_fold_db() {
+    if let Ok(db) = node.get_fold_db().await {
         if let Err(e) = db.close() {
             log_feature!(
                 LogFeature::HttpServer,
@@ -198,13 +193,17 @@ pub async fn reset_database(
         #[cfg(feature = "aws-backend")]
         DatabaseConfig::DynamoDb(dynamo_config) => {
             let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(aws_sdk_dynamodb::config::Region::new(dynamo_config.region.clone()))
+                .region(aws_sdk_dynamodb::config::Region::new(
+                    dynamo_config.region.clone(),
+                ))
                 .load()
                 .await;
             let client = std::sync::Arc::new(aws_sdk_dynamodb::Client::new(&aws_config));
 
-
-            let uid = dynamo_config.user_id.clone().unwrap_or_else(|| "default".to_string());
+            let uid = dynamo_config
+                .user_id
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
 
             // Multi-tenancy: Use DynamoDbResetManager to safely reset only this user's data
             log_feature!(
@@ -256,7 +255,7 @@ pub async fn reset_database(
         Ok(new_node) => {
             // Replace the node in the state
             *node = new_node;
-            
+
             log_feature!(
                 LogFeature::HttpServer,
                 info,
@@ -264,7 +263,9 @@ pub async fn reset_database(
             );
             HttpResponse::Ok().json(ResetDatabaseResponse {
                 success: true,
-                message: "Database and schema service reset successfully. All data has been cleared.".to_string(),
+                message:
+                    "Database and schema service reset successfully. All data has been cleared."
+                        .to_string(),
             })
         }
         Err(e) => {
@@ -323,7 +324,9 @@ pub async fn reset_schema_service(
             );
             HttpResponse::Ok().json(ResetSchemaServiceResponse {
                 success: true,
-                message: "Schema service database reset successfully. All schemas have been cleared.".to_string(),
+                message:
+                    "Schema service database reset successfully. All schemas have been cleared."
+                        .to_string(),
             })
         }
         Err(e) => {
@@ -351,13 +354,10 @@ pub struct DatabaseConfigRequest {
 #[serde(tag = "type")]
 pub enum DatabaseConfigDto {
     #[serde(rename = "local")]
-    Local {
-        path: String,
-    },
+    Local { path: String },
     #[cfg(feature = "aws-backend")]
     #[serde(rename = "dynamodb")]
     DynamoDb(DynamoDbConfigDto),
-
 }
 
 /// DTO for ExplicitTables
@@ -408,7 +408,7 @@ pub struct DatabaseConfigResponse {
 pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
     let config = &node.config;
-    
+
     let db_config = match &config.database {
         DatabaseConfig::Local { path } => DatabaseConfigDto::Local {
             path: path.to_string_lossy().to_string(),
@@ -434,9 +434,8 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
                 logs: config.tables.logs.clone(),
             },
         }),
-
     };
-    
+
     HttpResponse::Ok().json(db_config)
 }
 
@@ -461,38 +460,39 @@ pub async fn update_database_config(
 ) -> impl Responder {
     let node = state.node.lock().await;
     let mut config = node.config.clone();
-    
+
     // Convert DTO to internal config
     let new_db_config = match &req.database {
         DatabaseConfigDto::Local { path } => DatabaseConfig::Local {
             path: std::path::PathBuf::from(path),
         },
         #[cfg(feature = "aws-backend")]
-        DatabaseConfigDto::DynamoDb(dto) => DatabaseConfig::DynamoDb(crate::storage::DynamoDbConfig {
-            region: dto.region.clone(),
-            auto_create: dto.auto_create,
-            user_id: dto.user_id.clone(),
-            file_storage_bucket: dto.file_storage_bucket.clone(),
-            tables: crate::storage::ExplicitTables {
-                main: dto.tables.main.clone(),
-                metadata: dto.tables.metadata.clone(),
-                permissions: dto.tables.permissions.clone(),
-                transforms: dto.tables.transforms.clone(),
-                orchestrator: dto.tables.orchestrator.clone(),
-                schema_states: dto.tables.schema_states.clone(),
-                schemas: dto.tables.schemas.clone(),
-                public_keys: dto.tables.public_keys.clone(),
-                transform_queue: dto.tables.transform_queue.clone(),
-                native_index: dto.tables.native_index.clone(),
-                process: dto.tables.process.clone(),
-                logs: dto.tables.logs.clone(),
-            },
-        }),
-
+        DatabaseConfigDto::DynamoDb(dto) => {
+            DatabaseConfig::DynamoDb(crate::storage::DynamoDbConfig {
+                region: dto.region.clone(),
+                auto_create: dto.auto_create,
+                user_id: dto.user_id.clone(),
+                file_storage_bucket: dto.file_storage_bucket.clone(),
+                tables: crate::storage::ExplicitTables {
+                    main: dto.tables.main.clone(),
+                    metadata: dto.tables.metadata.clone(),
+                    permissions: dto.tables.permissions.clone(),
+                    transforms: dto.tables.transforms.clone(),
+                    orchestrator: dto.tables.orchestrator.clone(),
+                    schema_states: dto.tables.schema_states.clone(),
+                    schemas: dto.tables.schemas.clone(),
+                    public_keys: dto.tables.public_keys.clone(),
+                    transform_queue: dto.tables.transform_queue.clone(),
+                    native_index: dto.tables.native_index.clone(),
+                    process: dto.tables.process.clone(),
+                    logs: dto.tables.logs.clone(),
+                },
+            })
+        }
     };
-    
+
     config.database = new_db_config;
-    
+
     // Update storage_path for backward compatibility
     match &config.database {
         DatabaseConfig::Local { path: _ } => {
@@ -502,13 +502,12 @@ pub async fn update_database_config(
         DatabaseConfig::DynamoDb(_) => {
             // Keep existing storage_path for DynamoDB (used for logging/debugging)
         }
-
     }
-    
+
     // Save to config file
-    let config_path = std::env::var("NODE_CONFIG")
-        .unwrap_or_else(|_| "config/node_config.json".to_string());
-    
+    let config_path =
+        std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
+
     // Ensure config directory exists
     if let Some(parent) = std::path::Path::new(&config_path).parent() {
         if let Err(e) = fs::create_dir_all(parent) {
@@ -525,41 +524,39 @@ pub async fn update_database_config(
             });
         }
     }
-    
+
     // Serialize and write config
     match serde_json::to_string_pretty(&config) {
-        Ok(config_json) => {
-            match fs::File::create(&config_path) {
-                Ok(mut file) => {
-                    if let Err(e) = file.write_all(config_json.as_bytes()) {
-                        log_feature!(
-                            LogFeature::HttpServer,
-                            error,
-                            "Failed to write config file: {}",
-                            e
-                        );
-                        return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
-                            success: false,
-                            message: format!("Failed to write config file: {}", e),
-                            requires_restart: false,
-                        });
-                    }
-                }
-                Err(e) => {
+        Ok(config_json) => match fs::File::create(&config_path) {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(config_json.as_bytes()) {
                     log_feature!(
                         LogFeature::HttpServer,
                         error,
-                        "Failed to create config file: {}",
+                        "Failed to write config file: {}",
                         e
                     );
                     return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
                         success: false,
-                        message: format!("Failed to create config file: {}", e),
+                        message: format!("Failed to write config file: {}", e),
                         requires_restart: false,
                     });
                 }
             }
-        }
+            Err(e) => {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    error,
+                    "Failed to create config file: {}",
+                    e
+                );
+                return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
+                    success: false,
+                    message: format!("Failed to create config file: {}", e),
+                    requires_restart: false,
+                });
+            }
+        },
         Err(e) => {
             log_feature!(
                 LogFeature::HttpServer,
@@ -574,7 +571,7 @@ pub async fn update_database_config(
             });
         }
     }
-    
+
     // Now recreate the node with the new database configuration
     // This preserves existing data but switches to the new database backend
     log_feature!(
@@ -582,9 +579,9 @@ pub async fn update_database_config(
         info,
         "Recreating node with new database configuration..."
     );
-    
+
     // Close the current database before recreating
-    if let Ok(db) = node.get_fold_db() {
+    if let Ok(db) = node.get_fold_db().await {
         if let Err(e) = db.close() {
             log_feature!(
                 LogFeature::HttpServer,
@@ -594,26 +591,27 @@ pub async fn update_database_config(
             );
         }
     }
-    
+
     // Drop the lock before creating a new node
     drop(node);
-    
+
     // Create a new node instance with the updated config
     match DataFoldNode::new(config.clone()).await {
         Ok(new_node) => {
             // Replace the node in the state
             let mut node = state.node.lock().await;
             *node = new_node;
-            
+
             log_feature!(
                 LogFeature::HttpServer,
                 info,
                 "Database configuration updated and node restarted successfully"
             );
-            
+
             HttpResponse::Ok().json(DatabaseConfigResponse {
                 success: true,
-                message: "Database configuration updated and node restarted successfully.".to_string(),
+                message: "Database configuration updated and node restarted successfully."
+                    .to_string(),
                 requires_restart: false,
             })
         }
@@ -624,15 +622,17 @@ pub async fn update_database_config(
                 "Failed to recreate node with new database configuration: {}",
                 e
             );
-            
+
             // Try to reload the old config
-            if let Ok(old_config) = crate::datafold_node::config::load_node_config(Some(&config_path), None) {
+            if let Ok(old_config) =
+                crate::datafold_node::config::load_node_config(Some(&config_path), None)
+            {
                 if let Ok(old_node) = DataFoldNode::new(old_config).await {
                     let mut node = state.node.lock().await;
                     *node = old_node;
                 }
             }
-            
+
             HttpResponse::InternalServerError().json(DatabaseConfigResponse {
                 success: false,
                 message: format!("Failed to restart node with new database configuration: {}. The previous configuration has been restored.", e),
@@ -651,8 +651,8 @@ mod tests {
     use tempfile::tempdir;
 
     async fn create_test_state(temp_dir: &tempfile::TempDir) -> web::Data<AppState> {
-        let config = NodeConfig::new(temp_dir.path().to_path_buf())
-            .with_schema_service_url("test://mock");
+        let config =
+            NodeConfig::new(temp_dir.path().to_path_buf()).with_schema_service_url("test://mock");
         let node = DataFoldNode::new(config).await.unwrap();
 
         web::Data::new(AppState {
