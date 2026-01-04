@@ -417,4 +417,14 @@ impl FoldDB {
     pub fn transform_orchestrator(&self) -> Option<Arc<TransformOrchestrator>> {
         self.transform_orchestrator.as_ref().map(Arc::clone)
     }
+
+    /// Get the mutation manager for testing mutation functionality
+    pub fn mutation_manager(&self) -> &MutationManager {
+        &self.mutation_manager
+    }
+
+    /// Get the mutable mutation manager for testing mutation functionality
+    pub fn mutation_manager_mut(&mut self) -> &mut MutationManager {
+        &mut self.mutation_manager
+    }
 }
