@@ -4,9 +4,9 @@
 //! be integrated into desktop applications (e.g., Tauri, Electron) without blocking
 //! the main thread.
 
-use super::DataFoldNode;
+use super::http_server::DataFoldHttpServer;
+use crate::datafold_node::DataFoldNode;
 use crate::error::FoldDbResult;
-use crate::server::http_server::DataFoldHttpServer;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
