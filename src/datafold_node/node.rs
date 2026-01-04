@@ -2,7 +2,7 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use serde::Serialize;
 use std::sync::Arc;
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::Mutex;
 
 use crate::datafold_node::config::NodeConfig;
 use crate::error::{FoldDbError, FoldDbResult};
@@ -52,7 +52,7 @@ impl DataFoldNode {
     ///
     /// Now fully async to support storage abstraction!
     pub async fn new(config: NodeConfig) -> FoldDbResult<Self> {
-        let db = crate::datafold_node::backend::create_fold_db(&config).await?;
+        let db = crate::fold_db_core::factory::create_fold_db(&config.database).await?;
 
         // Retrieve or generate the persistent node_id from fold_db
         let node_id = {
@@ -235,8 +235,8 @@ impl DataFoldNode {
     }
 
     /// Get a reference to the underlying FoldDB instance
-    pub async fn get_fold_db(&self) -> FoldDbResult<MutexGuard<'_, FoldDB>> {
-        Ok(self.db.lock().await)
+    pub async fn get_fold_db(&self) -> FoldDbResult<tokio::sync::OwnedMutexGuard<FoldDB>> {
+        Ok(self.db.clone().lock_owned().await)
     }
 
     /// Gets the unique identifier for this node.
@@ -287,6 +287,22 @@ impl DataFoldNode {
             .add_schema(schema, std::collections::HashMap::new())
             .await
             .map(|response| response.schema)
+    }
+
+    /// Execute a batch of mutations.
+    ///
+    /// This is a convenience method that delegates to the underlying FoldDB.
+    /// It is primarily used by tests and internal components that need direct
+    /// access without going through the OperationProcessor.
+    pub async fn mutate_batch(
+        &self,
+        mutations: Vec<crate::schema::types::operations::Mutation>,
+    ) -> FoldDbResult<Vec<String>> {
+        let mut db = self.db.lock().await;
+        db.mutation_manager
+            .write_mutations_batch_async(mutations)
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))
     }
 }
 

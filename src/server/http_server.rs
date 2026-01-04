@@ -17,7 +17,7 @@ use actix_cors::Cors;
 use super::static_assets::Asset;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 /// HTTP server for the DataFold node.
 ///
@@ -34,7 +34,7 @@ use tokio::sync::Mutex;
 /// * One-click loading of sample data
 pub struct DataFoldHttpServer {
     /// The DataFold node
-    node: Arc<tokio::sync::Mutex<DataFoldNode>>,
+    node: Arc<tokio::sync::RwLock<DataFoldNode>>,
     /// The HTTP server bind address
     bind_address: String,
 }
@@ -69,7 +69,7 @@ async fn serve_ui(req: HttpRequest) -> HttpResponse {
 /// Shared application state for the HTTP server.
 pub struct AppState {
     /// The DataFold node
-    pub(crate) node: Arc<tokio::sync::Mutex<DataFoldNode>>,
+    pub(crate) node: Arc<tokio::sync::RwLock<DataFoldNode>>,
 }
 
 impl DataFoldHttpServer {
@@ -122,7 +122,7 @@ impl DataFoldHttpServer {
         }
 
         Ok(Self {
-            node: Arc::new(Mutex::new(node)),
+            node: Arc::new(RwLock::new(node)),
             bind_address: bind_address.to_string(),
         })
     }
@@ -152,7 +152,7 @@ impl DataFoldHttpServer {
 
         // Load schemas from schema service if configured
         let schema_service_url = {
-            let node_guard = self.node.lock().await;
+            let node_guard = self.node.read().await;
             node_guard.config.schema_service_url.clone()
         };
 
@@ -174,7 +174,7 @@ impl DataFoldHttpServer {
                 );
 
                 let schema_manager = {
-                    let node_guard = self.node.lock().await;
+                    let node_guard = self.node.read().await;
                     let db_guard = node_guard.get_fold_db().await?;
                     let manager = db_guard.schema_manager.clone();
                     drop(db_guard);
@@ -231,7 +231,7 @@ impl DataFoldHttpServer {
 
         // Extract DynamoDB config for progress tracker if available
         let dynamo_config = {
-            let node_guard = self.node.lock().await;
+            let node_guard = self.node.read().await;
             match &node_guard.config.database {
                 #[cfg(feature = "aws-backend")]
                 crate::datafold_node::config::DatabaseConfig::DynamoDb(d) => {

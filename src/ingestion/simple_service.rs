@@ -18,7 +18,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 /// Schema cache entry
 #[derive(Debug, Clone)]
@@ -74,7 +74,7 @@ impl SimpleIngestionService {
     pub async fn process_json_with_node_and_progress(
         &self,
         request: IngestionRequest,
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<tokio::sync::RwLock<DataFoldNode>>,
         progress_service: &ProgressService,
         progress_id: String,
     ) -> IngestionResult<IngestionResponse> {
@@ -294,7 +294,7 @@ impl SimpleIngestionService {
     pub async fn process_json_with_node(
         &self,
         request: IngestionRequest,
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<RwLock<DataFoldNode>>,
     ) -> IngestionResult<IngestionResponse> {
         log_feature!(
             LogFeature::Ingestion,
@@ -488,7 +488,7 @@ impl SimpleIngestionService {
     /// Get available schemas from the schema service via node (with caching)
     async fn get_stripped_available_schemas_from_node(
         &self,
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<RwLock<DataFoldNode>>,
     ) -> IngestionResult<SimplifiedSchemaMap> {
         const CACHE_TTL: Duration = Duration::from_secs(30); // 30 second cache
 
@@ -517,7 +517,7 @@ impl SimpleIngestionService {
 
         // Fetch available schemas from the schema service via the node
         let schemas = {
-            let node_guard = node.lock().await;
+            let node_guard = node.read().await;
             node_guard.fetch_available_schemas().await.map_err(|e| {
                 IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(format!(
                     "Failed to fetch schemas from schema service: {}",
@@ -570,7 +570,7 @@ impl SimpleIngestionService {
         &self,
         ai_response: &AISchemaResponse,
         sample_data: &Value,
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<RwLock<DataFoldNode>>,
     ) -> IngestionResult<String> {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
@@ -593,7 +593,7 @@ impl SimpleIngestionService {
 
             // Auto-approve existing schema (idempotent - only approves if not already approved)
             let schema_manager = {
-                let node_guard = node.lock().await;
+                let node_guard = node.read().await;
                 let db_guard = node_guard
                     .get_fold_db()
                     .await
@@ -627,7 +627,7 @@ impl SimpleIngestionService {
         &self,
         schema_def: &Value,
         sample_data: &Value,
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<RwLock<DataFoldNode>>,
     ) -> IngestionResult<String> {
         // Deserialize Value to Schema
         let mut schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
@@ -713,7 +713,7 @@ impl SimpleIngestionService {
 
         // Add schema to the schema service via the node
         let schema_response = {
-            let node_guard = node.lock().await;
+            let node_guard = node.read().await;
             node_guard
                 .add_schema_to_service(&schema)
                 .await
@@ -733,7 +733,7 @@ impl SimpleIngestionService {
         })?;
 
         let schema_manager = {
-            let node_guard = node.lock().await;
+            let node_guard = node.read().await;
             let db_guard = node_guard
                 .get_fold_db()
                 .await
@@ -763,11 +763,11 @@ impl SimpleIngestionService {
         schema_name: &str,
         sample_data: &Value,
         mutation_mappers: &HashMap<String, String>,
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<RwLock<DataFoldNode>>,
     ) -> IngestionResult<()> {
         // Get the schema from the schema manager
         let mut schema = {
-            let node_guard = node.lock().await;
+            let node_guard = node.read().await;
             let db_guard = node_guard
                 .get_fold_db()
                 .await
@@ -897,7 +897,7 @@ impl SimpleIngestionService {
 
             // Update the schema in the schema service via node
             {
-                let node_guard = node.lock().await;
+                let node_guard = node.read().await;
                 node_guard
                     .add_schema_to_service(&schema)
                     .await
@@ -920,7 +920,7 @@ impl SimpleIngestionService {
             })?;
 
             let schema_manager = {
-                let node_guard = node.lock().await;
+                let node_guard = node.read().await;
                 let db_guard = node_guard
                     .get_fold_db()
                     .await
@@ -951,7 +951,7 @@ impl SimpleIngestionService {
     async fn execute_mutations_with_node_and_progress(
         &self,
         mutations: &[Mutation],
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<RwLock<DataFoldNode>>,
         progress_service: &ProgressService,
         progress_id: &str,
     ) -> IngestionResult<usize> {
@@ -1011,7 +1011,7 @@ impl SimpleIngestionService {
     async fn execute_mutations_with_node(
         &self,
         mutations: &[Mutation],
-        node: Arc<Mutex<DataFoldNode>>,
+        node: Arc<RwLock<DataFoldNode>>,
     ) -> IngestionResult<usize> {
         if mutations.is_empty() {
             return Ok(0);

@@ -17,13 +17,13 @@ pub mod upload_storage;
 mod tests;
 
 // Re-exports for convenience and backward compatibility
-pub use config::{StorageConfig};
+pub use config::DatabaseConfig;
+#[cfg(feature = "aws-backend")]
+pub use config::{DynamoDbConfig, ExplicitTables};
 #[cfg(feature = "aws-backend")]
 pub use dynamodb_backend::{DynamoDbNamespacedStore, TableNameResolver};
 #[cfg(feature = "aws-backend")]
 pub use dynamodb_store::DynamoDbSchemaStore;
-#[cfg(feature = "aws-backend")]
-pub use config::{DynamoDbConfig, ExplicitTables};
 pub use error::StorageError;
 pub use inmemory_backend::InMemoryNamespacedStore;
 

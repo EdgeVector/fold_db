@@ -1,32 +1,30 @@
 //! File upload and conversion module for ingestion
 
-use crate::datafold_node::DataFoldNode;
-use crate::ingestion::multipart_parser::parse_multipart;
+use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
 use crate::ingestion::json_processor::{
     convert_file_to_json_http, flatten_root_layers, save_json_to_temp_file,
 };
-use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
+use crate::ingestion::multipart_parser::parse_multipart;
 use crate::ingestion::{IngestionConfig, ProgressTracker};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::server::http_server::AppState;
 use crate::storage::UploadStorage;
 use actix_multipart::Multipart;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Process file upload and ingestion
-/// 
+///
 /// Accepts multipart/form-data with either:
 /// - file: Binary file to upload (traditional upload)
 /// - s3FilePath: S3 path (e.g., "s3://bucket/path/to/file.json") for files already in S3
-/// 
+///
 /// Additional optional fields:
 /// - autoExecute: Boolean (default: true)
 /// - trustDistance: Number (default: 0)
 /// - pubKey: String (default: "default")
-/// 
+///
 /// Note: Provide either 'file' OR 's3FilePath', not both.
 /// If s3FilePath is used, the file is downloaded from S3 for processing but not re-uploaded.
 #[utoipa::path(
@@ -43,13 +41,9 @@ pub async fn upload_file(
     payload: Multipart,
     upload_storage: web::Data<UploadStorage>,
     progress_tracker: web::Data<ProgressTracker>,
-    node: web::Data<Arc<Mutex<DataFoldNode>>>,
+    state: web::Data<AppState>,
 ) -> impl Responder {
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Received file upload request"
-    );
+    log_feature!(LogFeature::Ingestion, info, "Received file upload request");
 
     // Extract file and form data from multipart request
     let form_data = match parse_multipart(payload, &upload_storage).await {
@@ -65,7 +59,7 @@ pub async fn upload_file(
             "File already exists, skipping ingestion (no JSON conversion needed): {}",
             form_data.original_filename
         );
-        
+
         return build_duplicate_response(&form_data.file_path, &form_data.original_filename);
     }
 
@@ -110,7 +104,7 @@ pub async fn upload_file(
         "Creating mutations with source_file_name: {}",
         form_data.original_filename
     );
-    
+
     let spawn_config = IngestionSpawnConfig {
         json_data: flattened_json,
         auto_execute: form_data.auto_execute,
@@ -120,11 +114,9 @@ pub async fn upload_file(
         ingestion_config,
     };
 
-    let progress_id = spawn_background_ingestion(
-        spawn_config, 
-        progress_tracker.get_ref(),
-        Arc::clone(node.get_ref())
-    ).await;
+    let progress_id =
+        spawn_background_ingestion(spawn_config, progress_tracker.get_ref(), state.node.clone())
+            .await;
 
     // Return immediately with the progress_id
     log_feature!(
@@ -134,11 +126,7 @@ pub async fn upload_file(
         progress_id
     );
 
-    build_upload_response(
-        progress_id,
-        &form_data.file_path,
-        temp_json_path,
-    )
+    build_upload_response(progress_id, &form_data.file_path, temp_json_path)
 }
 
 /// Save JSON to debug file and return path
@@ -187,10 +175,7 @@ fn build_upload_response(
 }
 
 /// Build the HTTP response for duplicate file upload
-fn build_duplicate_response(
-    file_path: &std::path::Path,
-    filename: &str,
-) -> HttpResponse {
+fn build_duplicate_response(file_path: &std::path::Path, filename: &str) -> HttpResponse {
     HttpResponse::Ok().json(json!({
         "success": true,
         "message": "File already exists - no ingestion needed (content-based deduplication)",

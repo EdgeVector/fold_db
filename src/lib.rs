@@ -43,6 +43,7 @@ pub mod storage;
 pub mod testing_utils;
 pub mod transform;
 pub mod utils;
+
 pub mod web_logger;
 
 // Re-export main types for convenience
@@ -71,7 +72,7 @@ pub use security::{
 pub use ingestion::{IngestionConfig, IngestionCore, IngestionError, IngestionResponse};
 
 // Re-export storage types
-pub use storage::{StorageConfig, StorageError};
+pub use storage::{DatabaseConfig, StorageError};
 
 // Re-export commonly used constants
 pub use constants::{DEFAULT_HTTP_PORT, DEFAULT_P2P_PORT};

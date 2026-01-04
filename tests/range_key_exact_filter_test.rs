@@ -39,7 +39,7 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     }
 
     // Wrap node in Arc<Mutex<>> for OperationProcessor
-    let node_arc = Arc::new(tokio::sync::Mutex::new(node));
+    let node_arc = Arc::new(tokio::sync::RwLock::new(node));
     let processor = OperationProcessor::new(node_arc);
 
     // Create multiple test blog posts with different publish_date values (range keys)
@@ -285,7 +285,7 @@ async fn test_range_key_set_in_query_object() {
     }
 
     // Wrap node in Arc<Mutex<>> for OperationProcessor
-    let node_arc = Arc::new(tokio::sync::Mutex::new(node));
+    let node_arc = Arc::new(tokio::sync::RwLock::new(node));
     let processor = OperationProcessor::new(node_arc);
 
     // Create test blog post

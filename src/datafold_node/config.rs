@@ -6,30 +6,7 @@ use crate::storage::DynamoDbConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Database storage backend configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum DatabaseConfig {
-    /// Local Sled storage (default)
-    #[serde(rename = "local")]
-    Local {
-        /// Path where the node will store its data
-        path: PathBuf,
-    },
-    /// DynamoDB-backed storage
-    /// DynamoDB-backed storage
-    #[cfg(feature = "aws-backend")]
-    #[serde(rename = "dynamodb")]
-    DynamoDb(DynamoDbConfig),
-}
-
-impl Default for DatabaseConfig {
-    fn default() -> Self {
-        DatabaseConfig::Local {
-            path: PathBuf::from("data"),
-        }
-    }
-}
+pub use crate::storage::config::DatabaseConfig;
 
 /// Configuration for a DataFoldNode instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +16,6 @@ pub struct NodeConfig {
     pub database: DatabaseConfig,
 
     // storage_path and its attributes have been removed
-
     /// Default trust distance for queries when not explicitly specified
     /// Must be greater than 0
     pub default_trust_distance: u32,
@@ -53,7 +29,6 @@ pub struct NodeConfig {
     #[serde(default)]
     pub schema_service_url: Option<String>,
 }
-
 
 fn default_network_listen_address() -> String {
     "/ip4/0.0.0.0/tcp/0".to_string()
@@ -82,14 +57,13 @@ impl NodeConfig {
             schema_service_url: None,
         }
     }
-    
+
     /// Get the effective storage path (from database config)
     pub fn get_storage_path(&self) -> PathBuf {
         match &self.database {
             DatabaseConfig::Local { path } => path.clone(),
             #[cfg(feature = "aws-backend")]
             DatabaseConfig::DynamoDb(_) => PathBuf::from("data"), // Default callback for DynamoDB if local path needed
-
         }
     }
 
@@ -98,7 +72,7 @@ impl NodeConfig {
         self.network_listen_address = address.to_string();
         self
     }
-    
+
     /// Set the schema service URL
     pub fn with_schema_service_url(mut self, url: &str) -> Self {
         self.schema_service_url = Some(url.to_string());
@@ -125,9 +99,7 @@ pub fn load_node_config(
 
     if let Ok(config_str) = fs::read_to_string(&config_path) {
         match serde_json::from_str::<NodeConfig>(&config_str) {
-            Ok(cfg) => {
-                Ok(cfg)
-            }
+            Ok(cfg) => Ok(cfg),
             Err(e) => {
                 log_feature!(
                     LogFeature::HttpServer,

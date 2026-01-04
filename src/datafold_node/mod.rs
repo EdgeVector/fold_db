@@ -9,9 +9,7 @@
 //! Nodes can operate independently or as part of a network, with trust
 //! relationships defining how they share and access data.
 
-pub mod backend;
 pub mod config;
-mod db;
 pub mod error;
 pub mod llm_query;
 pub mod node;
