@@ -1,10 +1,13 @@
 #![cfg(feature = "aws-backend")]
 use datafold::datafold_node::config::DatabaseConfig;
 use datafold::datafold_node::{DataFoldNode, NodeConfig};
-use datafold::schema::types::{KeyValue, Mutation};
+use datafold::schema::types::Mutation;
 use datafold::storage::{DynamoDbConfig, ExplicitTables};
 use serde_json::json;
 use std::collections::HashMap;
+
+mod common;
+use common::create_test_mutation;
 
 // Mock schema definition
 fn get_test_schema() -> (String, String) {
@@ -24,7 +27,9 @@ fn get_test_schema() -> (String, String) {
 
 fn generate_mutations(count: usize) -> Vec<Mutation> {
     let mut mutations = Vec::with_capacity(count);
-    let (schema_name, _) = get_test_schema();
+    let (schema_name, schema_json_str) = get_test_schema();
+    let schema_value: serde_json::Value =
+        serde_json::from_str(&schema_json_str).expect("Failed to parse schema");
 
     for i in 0..count {
         let mut fields = HashMap::new();
@@ -34,16 +39,14 @@ fn generate_mutations(count: usize) -> Vec<Mutation> {
             json!(format!("This is content for item {}", i)),
         );
 
-        let key_value = KeyValue::new(Some(format!("item_{}", i)), None);
+        let mutation_json = json!({
+            "schema_name": schema_name,
+            "fields_and_values": fields,
+            "mutation_type": "Create",
+            "pub_key": "test_pub_key"
+        });
 
-        let mutation = Mutation::new(
-            schema_name.clone(),
-            fields,
-            key_value,
-            "test_pub_key".to_string(),
-            0,
-            datafold::MutationType::Create,
-        );
+        let mutation = create_test_mutation(&schema_value, mutation_json);
         mutations.push(mutation);
     }
     mutations
@@ -108,7 +111,7 @@ async fn test_dynamodb_mutation_performance() {
     println!("Loading schema: {}", schema_name);
 
     {
-        let mut db_guard = node.get_fold_db().expect("Failed to get DB lock");
+        let mut db_guard = node.get_fold_db().await.expect("Failed to get DB lock");
         db_guard
             .load_schema_from_json(&schema_json)
             .await
@@ -131,7 +134,7 @@ async fn test_dynamodb_mutation_performance() {
         // Ensure mutations have unique IDs per run if we want to avoid overwrites (though overwrites measure performance too)
 
         let start = std::time::Instant::now();
-        match node.mutate_batch(mutations) {
+        match node.mutate_batch(mutations).await {
             Ok(_) => {
                 let duration = start.elapsed();
                 println!(

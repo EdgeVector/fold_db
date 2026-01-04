@@ -13,9 +13,12 @@ use std::time::Instant;
 use serde_json::json;
 
 use datafold::datafold_node::{DataFoldNode, NodeConfig};
-use datafold::schema::types::key_value::KeyValue;
 use datafold::schema::types::Mutation;
-use datafold::MutationType;
+// use datafold::MutationType; - Removed as it's implied or handled by helper if we pass "Create" string
+// use datafold::schema::types::key_value::KeyValue; - Removed as helper abstracts this
+
+mod common;
+use common::create_test_mutation;
 
 /// Performance Test: Single vs Batch Mutations (Direct Database)
 ///
@@ -80,13 +83,16 @@ async fn test_mutation_performance_direct() {
     println!("Schema: BlogPost");
     println!();
 
+    let schema_value: serde_json::Value =
+        serde_json::from_str(&schema_json).expect("Failed to parse schema JSON");
+
     // Step 1: Performance test - Single Mutations
     println!("{}", "=".repeat(80));
     println!("Phase 1: Single Mutations");
     println!("{}", "=".repeat(80));
 
     let single_start = Instant::now();
-    let single_times = execute_single_mutations_direct(&node, NUM_MUTATIONS).await;
+    let single_times = execute_single_mutations_direct(&node, NUM_MUTATIONS, &schema_value).await;
     let single_duration = single_start.elapsed();
 
     println!("\nSingle Mutation Results:");
@@ -113,7 +119,7 @@ async fn test_mutation_performance_direct() {
     println!("{}", "=".repeat(80));
 
     let batch_start = Instant::now();
-    execute_batch_mutations_direct(&node, NUM_MUTATIONS).await;
+    execute_batch_mutations_direct(&node, NUM_MUTATIONS, &schema_value).await;
     let batch_duration = batch_start.elapsed();
 
     println!("\nBatch Mutation Results:");
@@ -169,11 +175,15 @@ async fn test_mutation_performance_direct() {
 }
 
 /// Execute mutations one at a time (single mode) - directly on the database
-async fn execute_single_mutations_direct(node: &DataFoldNode, count: usize) -> Vec<u64> {
+async fn execute_single_mutations_direct(
+    node: &DataFoldNode,
+    count: usize,
+    schema: &serde_json::Value,
+) -> Vec<u64> {
     let mut times = Vec::new();
 
     for i in 0..count {
-        let mutation = create_blogpost_mutation(i);
+        let mutation = create_blogpost_mutation(i, schema);
 
         let start = Instant::now();
         let result = node.mutate_batch(vec![mutation]).await;
@@ -197,11 +207,15 @@ async fn execute_single_mutations_direct(node: &DataFoldNode, count: usize) -> V
 }
 
 /// Execute mutations in a single batch - directly on the database
-async fn execute_batch_mutations_direct(node: &DataFoldNode, count: usize) {
+async fn execute_batch_mutations_direct(
+    node: &DataFoldNode,
+    count: usize,
+    schema: &serde_json::Value,
+) {
     let mut mutations = Vec::new();
 
     for i in 0..count {
-        let mutation = create_blogpost_mutation(i);
+        let mutation = create_blogpost_mutation(i, schema);
         mutations.push(mutation);
     }
 
@@ -221,7 +235,7 @@ async fn execute_batch_mutations_direct(node: &DataFoldNode, count: usize) {
 }
 
 /// Create a test blog post mutation
-fn create_blogpost_mutation(index: usize) -> Mutation {
+fn create_blogpost_mutation(index: usize, schema: &serde_json::Value) -> Mutation {
     let publish_date = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let title = format!("Performance Test Blog Post {}", index);
     let content = format!(
@@ -242,12 +256,11 @@ fn create_blogpost_mutation(index: usize) -> Mutation {
         json!(["performance", "test", "benchmark"]),
     );
 
-    Mutation::new(
-        "BlogPost".to_string(),
-        fields_and_values,
-        KeyValue::new(None, Some(format!("{}-{:03}", publish_date, index))),
-        String::new(),
-        0,
-        MutationType::Create,
-    )
+    let mutation_json = json!({
+        "schema_name": "BlogPost",
+        "fields_and_values": fields_and_values,
+        "mutation_type": "Create"
+    });
+
+    create_test_mutation(schema, mutation_json)
 }
