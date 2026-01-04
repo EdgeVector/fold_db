@@ -56,41 +56,42 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
             let client = aws_sdk_dynamodb::Client::new(&aws_config);
 
             // Convert ExplicitTables to TableNameResolver
-            let mut map = std::collections::HashMap::new();
-            map.insert("main".to_string(), dynamo_config.tables.main.clone());
-            map.insert(
-                "metadata".to_string(),
-                dynamo_config.tables.metadata.clone(),
-            );
-            map.insert(
-                "node_id_schema_permissions".to_string(),
-                dynamo_config.tables.permissions.clone(),
-            );
-            map.insert(
-                "transforms".to_string(),
-                dynamo_config.tables.transforms.clone(),
-            );
-            map.insert(
-                "orchestrator_state".to_string(),
-                dynamo_config.tables.orchestrator.clone(),
-            );
-            map.insert(
-                "schema_states".to_string(),
-                dynamo_config.tables.schema_states.clone(),
-            );
-            map.insert("schemas".to_string(), dynamo_config.tables.schemas.clone());
-            map.insert(
-                "public_keys".to_string(),
-                dynamo_config.tables.public_keys.clone(),
-            );
-            map.insert(
-                "transform_queue_tree".to_string(),
-                dynamo_config.tables.transform_queue.clone(),
-            );
-            map.insert(
-                "native_index".to_string(),
-                dynamo_config.tables.native_index.clone(),
-            );
+            let map = std::collections::HashMap::from([
+                ("main".to_string(), dynamo_config.tables.main.clone()),
+                (
+                    "metadata".to_string(),
+                    dynamo_config.tables.metadata.clone(),
+                ),
+                (
+                    "node_id_schema_permissions".to_string(),
+                    dynamo_config.tables.permissions.clone(),
+                ),
+                (
+                    "transforms".to_string(),
+                    dynamo_config.tables.transforms.clone(),
+                ),
+                (
+                    "orchestrator_state".to_string(),
+                    dynamo_config.tables.orchestrator.clone(),
+                ),
+                (
+                    "schema_states".to_string(),
+                    dynamo_config.tables.schema_states.clone(),
+                ),
+                ("schemas".to_string(), dynamo_config.tables.schemas.clone()),
+                (
+                    "public_keys".to_string(),
+                    dynamo_config.tables.public_keys.clone(),
+                ),
+                (
+                    "transform_queue_tree".to_string(),
+                    dynamo_config.tables.transform_queue.clone(),
+                ),
+                (
+                    "native_index".to_string(),
+                    dynamo_config.tables.native_index.clone(),
+                ),
+            ]);
 
             let resolver = TableNameResolver::Explicit(map);
 

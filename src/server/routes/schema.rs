@@ -11,9 +11,6 @@ pub struct SimpleSuccessResponse {
     pub success: bool,
 }
 
-/// Helper closure to execute schema operations with lock management
-
-/// List all schemas.
 #[utoipa::path(
     get,
     path = "/api/schemas",
