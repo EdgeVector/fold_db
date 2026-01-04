@@ -96,7 +96,8 @@ impl SchemaCore {
         schema_name: &str,
         schema_state: SchemaState,
     ) -> Result<(), SchemaError> {
-        self.set_schema_state_with_backfill(schema_name, schema_state, None).await
+        self.set_schema_state_with_backfill(schema_name, schema_state, None)
+            .await
     }
 
     /// Approve a schema if it's not already approved (idempotent operation)
@@ -120,7 +121,8 @@ impl SchemaCore {
 
         // Only approve if not already approved
         if current_state != SchemaState::Approved {
-            self.set_schema_state_with_backfill(schema_name, SchemaState::Approved, backfill_hash).await?;
+            self.set_schema_state_with_backfill(schema_name, SchemaState::Approved, backfill_hash)
+                .await?;
         }
 
         Ok(())
@@ -137,7 +139,9 @@ impl SchemaCore {
         }
 
         // Persist to database first - this is the source of truth
-        self.db_ops.store_schema_state(schema_name, &schema_state).await?;
+        self.db_ops
+            .store_schema_state(schema_name, &schema_state)
+            .await?;
 
         // Update in-memory cache only after successful persistence
         self.schema_states
@@ -184,7 +188,8 @@ impl SchemaCore {
             } else {
                 let fetched = self
                     .db_ops
-                    .get_schema(&source_schema_name).await?
+                    .get_schema(&source_schema_name)
+                    .await?
                     .ok_or_else(|| {
                         SchemaError::InvalidData(format!(
                             "Source schema '{}' for field mapper not found",
@@ -257,7 +262,8 @@ impl SchemaCore {
     }
 
     pub async fn block_schema(&self, schema_name: &str) -> Result<(), SchemaError> {
-        self.set_schema_state(schema_name, SchemaState::Blocked).await
+        self.set_schema_state(schema_name, SchemaState::Blocked)
+            .await
     }
 
     pub fn get_message_bus(&self) -> Arc<MessageBus> {
@@ -271,6 +277,34 @@ impl SchemaCore {
             .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?
             .get(schema_name)
             .cloned())
+    }
+
+    /// Fetches a schema by name, checking both in-memory cache and database.
+    /// This handles scenarios where the schema was added by another node (stale cache).
+    /// Note: This is STRICTLY case-sensitive.
+    pub async fn fetch_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
+        // 1. Try exact match in memory
+        if let Some(schema) = self.get_schema(schema_name)? {
+            return Ok(Some(schema));
+        }
+
+        // 2. Try exact match in database (refresh cache if found)
+        if let Some(schema) = self
+            .db_ops
+            .get_schema(schema_name)
+            .await
+            .map_err(|e| SchemaError::InvalidData(e.to_string()))?
+        {
+            // Update memory
+            self.load_schema_internal(schema.clone()).await?;
+            log::info!(
+                "Refreshed schema '{}' from database (stale cache)",
+                schema.name
+            );
+            return Ok(Some(schema));
+        }
+
+        Ok(None)
     }
 
     pub fn add_schema_available(&self, schema: Schema) -> Result<(), SchemaError> {
@@ -312,7 +346,9 @@ impl SchemaCore {
         } else {
             // New schema - persist to database and update in-memory caches
             self.db_ops.store_schema(&name, &schema).await?;
-            self.db_ops.store_schema_state(&name, &SchemaState::Available).await?;
+            self.db_ops
+                .store_schema_state(&name, &SchemaState::Available)
+                .await?;
 
             {
                 let mut schemas = self.schemas.lock().map_err(|_| {
@@ -410,10 +446,15 @@ impl SchemaCore {
 
     /// Creates a new SchemaCore for testing purposes with a temporary database
     pub async fn new_for_testing() -> Result<Self, SchemaError> {
-        let db = sled::Config::new().temporary(true).open()
+        let db = sled::Config::new()
+            .temporary(true)
+            .open()
             .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
-        let db_ops = std::sync::Arc::new(crate::db_operations::DbOperations::from_sled(db).await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?);
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .map_err(|e| SchemaError::InvalidData(e.to_string()))?,
+        );
         let message_bus = Arc::new(MessageBus::new());
         Self::new(db_ops, message_bus).await
     }
@@ -520,7 +561,9 @@ mod tests {
         let path = dir.path().join("BlogPost.json");
         std::fs::write(&path, blogpost_schema_json()).expect("write schema json");
 
-        core.load_schema_from_file(&path).await.expect("load from file");
+        core.load_schema_from_file(&path)
+            .await
+            .expect("load from file");
         let schemas = core.get_schemas().expect("get_schemas");
         assert!(schemas.contains_key("BlogPost"));
     }
@@ -553,7 +596,9 @@ mod tests {
         let path = dir.path().join("BlogPostWordIndex.json");
         std::fs::write(&path, wordindex_schema_json()).expect("write schema json");
 
-        core.load_schema_from_file(&path).await.expect("load from file");
+        core.load_schema_from_file(&path)
+            .await
+            .expect("load from file");
         let schemas = core.get_schemas().expect("get_schemas");
         assert!(schemas.contains_key("BlogPostWordIndex"));
     }

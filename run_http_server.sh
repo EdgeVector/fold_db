@@ -89,7 +89,7 @@ fi
 
 # Build the React frontend (prebuild will read OPENAPI_URL file)
 echo "Building the React frontend..."
-cd src/datafold_node/static-react
+cd src/server/static-react
 
 # Clean up node_modules if it exists to avoid ENOTEMPTY errors
 if [ -d "node_modules" ]; then
