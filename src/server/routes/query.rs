@@ -1,7 +1,7 @@
-use super::http_server::AppState;
 use crate::datafold_node::OperationProcessor;
 use crate::fold_db_core::query::records_from_field_map;
 use crate::schema::types::operations::{Operation, Query};
+use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};

@@ -1,7 +1,7 @@
 //! Security-related HTTP routes for key management and authentication
 
-use super::http_server::AppState;
 use crate::security::SecurityManager;
+use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Result as ActixResult};
 use serde_json::json;
 use std::sync::Arc;

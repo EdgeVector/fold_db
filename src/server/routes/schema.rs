@@ -1,7 +1,7 @@
-use super::http_server::AppState;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::{SchemaState, SchemaWithState};
+use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
