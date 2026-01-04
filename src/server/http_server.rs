@@ -1,17 +1,20 @@
-use super::llm_query;
-use super::log_routes;
-use super::{query_routes, schema_routes, security_routes, system_routes};
+use super::routes::log as log_routes;
+use super::routes::{
+    query as query_routes, schema as schema_routes, security as security_routes,
+    system as system_routes,
+};
+use crate::datafold_node::llm_query;
 use crate::datafold_node::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
-use crate::error_handling::http_errors;
 use crate::ingestion::create_progress_tracker;
 use crate::ingestion::routes as ingestion_routes;
+use crate::utils::http_errors;
 
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use actix_cors::Cors;
 
-use crate::datafold_node::static_assets::Asset;
+use super::static_assets::Asset;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -276,7 +279,7 @@ impl DataFoldHttpServer {
                         .route(
                             "/openapi.json",
                             web::get().to(|| async move {
-                                let doc = crate::datafold_node::openapi::build_openapi();
+                                let doc = crate::server::openapi::build_openapi();
                                 HttpResponse::Ok()
                                     .content_type("application/json")
                                     .body(doc)

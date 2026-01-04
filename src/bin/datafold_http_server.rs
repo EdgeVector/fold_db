@@ -1,7 +1,8 @@
 use clap::Parser;
 use datafold::{
     constants::DEFAULT_HTTP_PORT,
-    datafold_node::{load_node_config, DataFoldHttpServer, DataFoldNode},
+    datafold_node::{load_node_config, DataFoldNode},
+    server::http_server::DataFoldHttpServer,
 };
 
 /// Command line options for the HTTP server binary.

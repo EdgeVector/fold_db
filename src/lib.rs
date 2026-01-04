@@ -30,7 +30,6 @@ pub mod constants;
 pub mod datafold_node;
 pub mod db_operations;
 pub mod error;
-pub mod error_handling;
 pub mod fold_db_core;
 pub mod ingestion;
 #[cfg(feature = "lambda")]
@@ -39,9 +38,11 @@ pub mod logging;
 pub mod schema;
 pub mod schema_service;
 pub mod security;
+pub mod server;
 pub mod storage;
 pub mod testing_utils;
 pub mod transform;
+pub mod utils;
 pub mod web_logger;
 
 // Re-export main types for convenience
@@ -52,8 +53,8 @@ pub use error::{FoldDbError, FoldDbResult};
 pub use fold_db_core::FoldDB;
 
 // Re-export schema types needed for CLI
-pub use schema::types::operations::Operation;
 pub use schema::types::operations::MutationType;
+pub use schema::types::operations::Operation;
 pub use schema::Schema;
 pub use schema::SchemaState;
 
@@ -67,9 +68,7 @@ pub use security::{
 };
 
 // Re-export ingestion types
-pub use ingestion::{
-    IngestionConfig, IngestionCore, IngestionError, IngestionResponse,
-};
+pub use ingestion::{IngestionConfig, IngestionCore, IngestionError, IngestionResponse};
 
 // Re-export storage types
 pub use storage::{StorageConfig, StorageError};

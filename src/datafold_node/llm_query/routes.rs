@@ -3,11 +3,11 @@
 use super::service::LlmQueryService;
 use super::session::SessionManager;
 use super::types::*;
-use crate::datafold_node::http_server::AppState;
 use crate::datafold_node::OperationProcessor;
 use crate::fold_db_core::query::records_from_field_map;
 use crate::ingestion::IngestionConfig;
 use crate::schema::SchemaState;
+use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::{json, Value};
 use std::sync::Arc;

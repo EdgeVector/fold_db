@@ -14,26 +14,17 @@ pub mod config;
 mod db;
 pub mod embedded_server;
 pub mod error;
-pub mod http_server;
 pub mod llm_query;
-pub mod log_routes;
 pub mod node;
-pub mod openapi;
 mod operation_processor;
-pub mod query_routes;
 pub mod response_types;
 pub mod schema_client;
-pub mod schema_routes;
-pub mod security_routes;
-pub mod static_assets;
-pub mod system_routes;
 mod transform_queue;
 
 // Re-export the DataFoldNode struct for easier imports
 pub use config::load_node_config;
 pub use config::NodeConfig;
 pub use embedded_server::{start_embedded_server, EmbeddedServerHandle};
-pub use http_server::DataFoldHttpServer;
 pub use node::DataFoldNode;
 pub use operation_processor::OperationProcessor;
 pub use schema_client::SchemaServiceClient;
