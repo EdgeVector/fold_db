@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crate::datafold_node::config::NodeConfig;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
-use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityManager};
+use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityConfig, SecurityManager};
 
 /// A node in the DataFold distributed database system.
 ///
@@ -54,49 +54,13 @@ impl DataFoldNode {
     pub async fn new(config: NodeConfig) -> FoldDbResult<Self> {
         let db = crate::fold_db_core::factory::create_fold_db(&config.database).await?;
 
-        // Retrieve or generate the persistent node_id from fold_db
-        let node_id = {
-            let guard = db.lock().await;
-            guard
-                .get_node_id()
-                .await
-                .map_err(|e| FoldDbError::Config(format!("Failed to get node_id: {}", e)))?
-        };
-
-        // Generate a new keypair for this node
-        let keypair = Ed25519KeyPair::generate().map_err(|e| {
-            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
-        })?;
-        let private_key = keypair.secret_key_base64();
-        let public_key = keypair.public_key_base64();
-
-        // Initialize security manager with node configuration
-        let mut security_config = config.security_config.clone();
-
-        // Generate master key if encryption is enabled but no key is set
-        if security_config.encrypt_at_rest && security_config.master_key.is_none() {
-            security_config.master_key = Some(EncryptionManager::generate_master_key());
-        }
-
-        let security_manager = {
-            let guard = db.lock().await;
-
-            let db_ops = guard.db_ops.clone();
-
-            Arc::new(
-                SecurityManager::new_with_persistence(
-                    config.security_config.clone(),
-                    Arc::clone(&db_ops),
-                )
-                .await
-                .map_err(|e| FoldDbError::SecurityError(e.to_string()))?,
-            )
-        };
+        let (node_id, private_key, public_key, security_manager, security_config) =
+            Self::init_internals(&config, &db).await?;
 
         let node = Self {
             db,
             config: NodeConfig {
-                security_config: security_config.clone(), // Use the updated security config with the key
+                security_config,
                 ..config.clone()
             },
             node_id,
@@ -150,49 +114,13 @@ impl DataFoldNode {
     /// * `config` - Node configuration
     /// * `db` - Pre-created FoldDB instance
     pub async fn new_with_db(config: NodeConfig, db: Arc<Mutex<FoldDB>>) -> FoldDbResult<Self> {
-        // Retrieve or generate the persistent node_id from fold_db
-        let node_id = {
-            let guard = db.lock().await;
-            guard
-                .get_node_id()
-                .await
-                .map_err(|e| FoldDbError::Config(format!("Failed to get node_id: {}", e)))?
-        };
-
-        // Generate a new keypair for this node
-        let keypair = Ed25519KeyPair::generate().map_err(|e| {
-            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
-        })?;
-        let private_key = keypair.secret_key_base64();
-        let public_key = keypair.public_key_base64();
-
-        // Initialize security manager with node configuration
-        let mut security_config = config.security_config.clone();
-
-        // Generate master key if encryption is enabled but no key is set
-        if security_config.encrypt_at_rest && security_config.master_key.is_none() {
-            security_config.master_key = Some(EncryptionManager::generate_master_key());
-        }
-
-        let security_manager = {
-            let guard = db.lock().await;
-
-            let db_ops = guard.db_ops.clone();
-
-            Arc::new(
-                SecurityManager::new_with_persistence(
-                    config.security_config.clone(),
-                    Arc::clone(&db_ops),
-                )
-                .await
-                .map_err(|e| FoldDbError::SecurityError(e.to_string()))?,
-            )
-        };
+        let (node_id, private_key, public_key, security_manager, security_config) =
+            Self::init_internals(&config, &db).await?;
 
         let node = Self {
             db,
             config: NodeConfig {
-                security_config: security_config.clone(), // Use the updated security config with the key
+                security_config,
                 ..config.clone()
             },
             node_id,
@@ -303,6 +231,57 @@ impl DataFoldNode {
             .write_mutations_batch_async(mutations)
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))
+    }
+    async fn init_internals(
+        config: &NodeConfig,
+        db: &Arc<Mutex<FoldDB>>,
+    ) -> FoldDbResult<(String, String, String, Arc<SecurityManager>, SecurityConfig)> {
+        // Retrieve or generate the persistent node_id from fold_db
+        let node_id = {
+            let guard = db.lock().await;
+            guard
+                .get_node_id()
+                .await
+                .map_err(|e| FoldDbError::Config(format!("Failed to get node_id: {}", e)))?
+        };
+
+        // Generate a new keypair for this node
+        let keypair = Ed25519KeyPair::generate().map_err(|e| {
+            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
+        })?;
+        let private_key = keypair.secret_key_base64();
+        let public_key = keypair.public_key_base64();
+
+        // Initialize security manager with node configuration
+        let mut security_config = config.security_config.clone();
+
+        // Generate master key if encryption is enabled but no key is set
+        if security_config.encrypt_at_rest && security_config.master_key.is_none() {
+            security_config.master_key = Some(EncryptionManager::generate_master_key());
+        }
+
+        let security_manager = {
+            let guard = db.lock().await;
+
+            let db_ops = guard.db_ops.clone();
+
+            Arc::new(
+                SecurityManager::new_with_persistence(
+                    config.security_config.clone(),
+                    Arc::clone(&db_ops),
+                )
+                .await
+                .map_err(|e| FoldDbError::SecurityError(e.to_string()))?,
+            )
+        };
+
+        Ok((
+            node_id,
+            private_key,
+            public_key,
+            security_manager,
+            security_config,
+        ))
     }
 }
 

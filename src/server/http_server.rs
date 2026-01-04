@@ -150,60 +150,7 @@ impl DataFoldHttpServer {
             self.bind_address
         );
 
-        // Load schemas from schema service if configured
-        let schema_service_url = {
-            let node_guard = self.node.read().await;
-            node_guard.config.schema_service_url.clone()
-        };
-
-        if let Some(url) = schema_service_url {
-            // Skip loading for mock/test schema services
-            if url.starts_with("test://") || url.starts_with("mock://") {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Mock schema service detected ({}). Skipping automatic schema loading. Schemas must be loaded manually in tests.",
-                    url
-                );
-            } else {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Loading schemas from schema service at {}...",
-                    url
-                );
-
-                let schema_manager = {
-                    let node_guard = self.node.read().await;
-                    let db_guard = node_guard.get_fold_db().await?;
-                    let manager = db_guard.schema_manager.clone();
-                    drop(db_guard);
-                    drop(node_guard);
-                    manager
-                };
-
-                let client = crate::datafold_node::SchemaServiceClient::new(&url);
-
-                match client.load_all_schemas(&schema_manager).await {
-                    Ok(loaded_count) => {
-                        log_feature!(
-                            LogFeature::Database,
-                            info,
-                            "Loaded {} schemas from schema service",
-                            loaded_count
-                        );
-                    }
-                    Err(e) => {
-                        log_feature!(
-                            LogFeature::Database,
-                            error,
-                            "Failed to load schemas from schema service: {}. Server will start but no schemas will be available.",
-                            e
-                        );
-                    }
-                }
-            }
-        }
+        self.load_schemas_if_configured().await?;
 
         // Initialize upload storage from environment config
         let upload_storage_config =
@@ -273,193 +220,7 @@ impl DataFoldHttpServer {
                 .app_data(progress_tracker_data.clone())
                 .app_data(upload_storage_data.clone())
                 .app_data(json_config)
-                .service(
-                    web::scope("/api")
-                        // OpenAPI spec endpoint
-                        .route(
-                            "/openapi.json",
-                            web::get().to(|| async move {
-                                let doc = crate::server::openapi::build_openapi();
-                                HttpResponse::Ok()
-                                    .content_type("application/json")
-                                    .body(doc)
-                            }),
-                        )
-                        // Schema endpoints
-                        .route("/schemas", web::get().to(schema_routes::list_schemas))
-                        .route("/schemas/load", web::post().to(schema_routes::load_schemas))
-                        .route("/schema/{name}", web::get().to(schema_routes::get_schema))
-                        .route(
-                            "/schema/{name}/approve",
-                            web::post().to(schema_routes::approve_schema),
-                        )
-                        .route(
-                            "/schema/{name}/block",
-                            web::post().to(schema_routes::block_schema),
-                        )
-                        // Backfill endpoints
-                        .route(
-                            "/backfill/{hash}",
-                            web::get().to(schema_routes::get_backfill_status),
-                        )
-                        .route("/query", web::post().to(query_routes::execute_query))
-                        .route("/mutation", web::post().to(query_routes::execute_mutation))
-                        .route(
-                            "/mutations/batch",
-                            web::post().to(query_routes::execute_mutations_batch),
-                        )
-                        // Ingestion endpoints
-                        .route(
-                            "/ingestion/process",
-                            web::post().to(ingestion_routes::process_json),
-                        )
-                        .route(
-                            "/ingestion/upload",
-                            web::post().to(crate::ingestion::file_upload::upload_file),
-                        )
-                        .route(
-                            "/ingestion/status",
-                            web::get().to(ingestion_routes::get_status),
-                        )
-                        .route(
-                            "/ingestion/health",
-                            web::get().to(ingestion_routes::health_check),
-                        )
-                        .route(
-                            "/ingestion/config",
-                            web::get().to(ingestion_routes::get_ingestion_config),
-                        )
-                        .route(
-                            "/ingestion/config",
-                            web::post().to(ingestion_routes::save_ingestion_config),
-                        )
-                        .route(
-                            "/ingestion/validate",
-                            web::post().to(ingestion_routes::validate_json),
-                        )
-                        // Progress tracking endpoints
-                        .route(
-                            "/ingestion/progress",
-                            web::get().to(ingestion_routes::get_all_progress),
-                        )
-                        .route(
-                            "/ingestion/progress/{id}",
-                            web::get().to(ingestion_routes::get_progress),
-                        )
-                        // Transform endpoints
-                        .route("/transforms", web::get().to(query_routes::list_transforms))
-                        .route(
-                            "/transforms/queue",
-                            web::get().to(query_routes::get_transform_queue),
-                        )
-                        .route(
-                            "/transforms/queue/{id}",
-                            web::post().to(query_routes::add_to_transform_queue),
-                        )
-                        // Backfill monitoring endpoints
-                        .route(
-                            "/transforms/backfills",
-                            web::get().to(query_routes::get_all_backfills),
-                        )
-                        .route(
-                            "/transforms/backfills/active",
-                            web::get().to(query_routes::get_active_backfills),
-                        )
-                        .route(
-                            "/transforms/backfills/statistics",
-                            web::get().to(query_routes::get_backfill_statistics),
-                        )
-                        .route(
-                            "/transforms/backfills/{id}",
-                            web::get().to(query_routes::get_backfill),
-                        )
-                        .route(
-                            "/transforms/statistics",
-                            web::get().to(query_routes::get_transform_statistics),
-                        )
-                        // Native index search endpoint
-                        .route(
-                            "/native-index/search",
-                            web::get().to(query_routes::native_index_search),
-                        )
-                        // Indexing status endpoint
-                        .route(
-                            "/indexing/status",
-                            web::get().to(query_routes::get_indexing_status),
-                        )
-                        // Log endpoints
-                        .route("/logs", web::get().to(log_routes::list_logs))
-                        .route("/logs/stream", web::get().to(log_routes::stream_logs))
-                        .route("/logs/config", web::get().to(log_routes::get_config))
-                        .route(
-                            "/logs/config/reload",
-                            web::post().to(log_routes::reload_config),
-                        )
-                        .route("/logs/features", web::get().to(log_routes::get_features))
-                        .route(
-                            "/logs/level",
-                            web::put().to(log_routes::update_feature_level),
-                        )
-                        // System endpoints
-                        .route(
-                            "/system/status",
-                            web::get().to(system_routes::get_system_status),
-                        )
-                        .route(
-                            "/system/private-key",
-                            web::get().to(system_routes::get_node_private_key),
-                        )
-                        .route(
-                            "/system/public-key",
-                            web::get().to(system_routes::get_node_public_key),
-                        )
-                        .route(
-                            "/system/reset-database",
-                            web::post().to(system_routes::reset_database),
-                        )
-                        .route(
-                            "/system/reset-schema-service",
-                            web::post().to(system_routes::reset_schema_service),
-                        )
-                        .route(
-                            "/system/database-config",
-                            web::get().to(system_routes::get_database_config),
-                        )
-                        .route(
-                            "/system/database-config",
-                            web::post().to(system_routes::update_database_config),
-                        )
-                        // LLM Query endpoints
-                        .route("/llm-query/run", web::post().to(llm_query::run_query))
-                        .route(
-                            "/llm-query/analyze",
-                            web::post().to(llm_query::analyze_query),
-                        )
-                        .route(
-                            "/llm-query/execute",
-                            web::post().to(llm_query::execute_query_plan),
-                        )
-                        .route("/llm-query/chat", web::post().to(llm_query::chat))
-                        .route(
-                            "/llm-query/analyze-followup",
-                            web::post().to(llm_query::analyze_followup),
-                        )
-                        .route(
-                            "/llm-query/native-index",
-                            web::post().to(llm_query::ai_native_index_query),
-                        )
-                        .route(
-                            "/llm-query/backfill/{hash}",
-                            web::get().to(llm_query::get_backfill_status),
-                        )
-                        // Security endpoints
-                        .service(
-                            web::scope("/security").service(
-                                web::resource("/system-key")
-                                    .route(web::get().to(security_routes::get_system_public_key)),
-                            ),
-                        ),
-                )
+                .configure(Self::configure_api)
                 // Serve the built React UI from embedded assets
                 .route("/", web::get().to(serve_ui))
                 .route("/{filename:.*}", web::get().to(serve_ui))
@@ -474,6 +235,254 @@ impl DataFoldHttpServer {
             .map_err(|e| FoldDbError::Config(format!("HTTP server error: {}", e)))?;
 
         Ok(())
+    }
+
+    async fn load_schemas_if_configured(&self) -> FoldDbResult<()> {
+        // Load schemas from schema service if configured
+        let schema_service_url = {
+            let node_guard = self.node.read().await;
+            node_guard.config.schema_service_url.clone()
+        };
+
+        if let Some(url) = schema_service_url {
+            // Skip loading for mock/test schema services
+            if url.starts_with("test://") || url.starts_with("mock://") {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Mock schema service detected ({}). Skipping automatic schema loading. Schemas must be loaded manually in tests.",
+                    url
+                );
+            } else {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Loading schemas from schema service at {}...",
+                    url
+                );
+
+                let schema_manager = {
+                    let node_guard = self.node.read().await;
+                    let db_guard = node_guard.get_fold_db().await?;
+                    let manager = db_guard.schema_manager.clone();
+                    drop(db_guard);
+                    drop(node_guard);
+                    manager
+                };
+
+                let client = crate::datafold_node::SchemaServiceClient::new(&url);
+
+                match client.load_all_schemas(&schema_manager).await {
+                    Ok(loaded_count) => {
+                        log_feature!(
+                            LogFeature::Database,
+                            info,
+                            "Loaded {} schemas from schema service",
+                            loaded_count
+                        );
+                    }
+                    Err(e) => {
+                        log_feature!(
+                            LogFeature::Database,
+                            error,
+                            "Failed to load schemas from schema service: {}. Server will start but no schemas will be available.",
+                            e
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn configure_api(cfg: &mut web::ServiceConfig) {
+        cfg.service(
+            web::scope("/api")
+                // OpenAPI spec endpoint
+                .route(
+                    "/openapi.json",
+                    web::get().to(|| async move {
+                        let doc = crate::server::openapi::build_openapi();
+                        HttpResponse::Ok()
+                            .content_type("application/json")
+                            .body(doc)
+                    }),
+                )
+                // Schema endpoints
+                .route("/schemas", web::get().to(schema_routes::list_schemas))
+                .route("/schemas/load", web::post().to(schema_routes::load_schemas))
+                .route("/schema/{name}", web::get().to(schema_routes::get_schema))
+                .route(
+                    "/schema/{name}/approve",
+                    web::post().to(schema_routes::approve_schema),
+                )
+                .route(
+                    "/schema/{name}/block",
+                    web::post().to(schema_routes::block_schema),
+                )
+                // Backfill endpoints
+                .route(
+                    "/backfill/{hash}",
+                    web::get().to(schema_routes::get_backfill_status),
+                )
+                .route("/query", web::post().to(query_routes::execute_query))
+                .route("/mutation", web::post().to(query_routes::execute_mutation))
+                .route(
+                    "/mutations/batch",
+                    web::post().to(query_routes::execute_mutations_batch),
+                )
+                // Ingestion endpoints
+                .route(
+                    "/ingestion/process",
+                    web::post().to(ingestion_routes::process_json),
+                )
+                .route(
+                    "/ingestion/upload",
+                    web::post().to(crate::ingestion::file_upload::upload_file),
+                )
+                .route(
+                    "/ingestion/status",
+                    web::get().to(ingestion_routes::get_status),
+                )
+                .route(
+                    "/ingestion/health",
+                    web::get().to(ingestion_routes::health_check),
+                )
+                .route(
+                    "/ingestion/config",
+                    web::get().to(ingestion_routes::get_ingestion_config),
+                )
+                .route(
+                    "/ingestion/config",
+                    web::post().to(ingestion_routes::save_ingestion_config),
+                )
+                .route(
+                    "/ingestion/validate",
+                    web::post().to(ingestion_routes::validate_json),
+                )
+                // Progress tracking endpoints
+                .route(
+                    "/ingestion/progress",
+                    web::get().to(ingestion_routes::get_all_progress),
+                )
+                .route(
+                    "/ingestion/progress/{id}",
+                    web::get().to(ingestion_routes::get_progress),
+                )
+                // Transform endpoints
+                .route("/transforms", web::get().to(query_routes::list_transforms))
+                .route(
+                    "/transforms/queue",
+                    web::get().to(query_routes::get_transform_queue),
+                )
+                .route(
+                    "/transforms/queue/{id}",
+                    web::post().to(query_routes::add_to_transform_queue),
+                )
+                // Backfill monitoring endpoints
+                .route(
+                    "/transforms/backfills",
+                    web::get().to(query_routes::get_all_backfills),
+                )
+                .route(
+                    "/transforms/backfills/active",
+                    web::get().to(query_routes::get_active_backfills),
+                )
+                .route(
+                    "/transforms/backfills/statistics",
+                    web::get().to(query_routes::get_backfill_statistics),
+                )
+                .route(
+                    "/transforms/backfills/{id}",
+                    web::get().to(query_routes::get_backfill),
+                )
+                .route(
+                    "/transforms/statistics",
+                    web::get().to(query_routes::get_transform_statistics),
+                )
+                // Native index search endpoint
+                .route(
+                    "/native-index/search",
+                    web::get().to(query_routes::native_index_search),
+                )
+                // Indexing status endpoint
+                .route(
+                    "/indexing/status",
+                    web::get().to(query_routes::get_indexing_status),
+                )
+                // Log endpoints
+                .route("/logs", web::get().to(log_routes::list_logs))
+                .route("/logs/stream", web::get().to(log_routes::stream_logs))
+                .route("/logs/config", web::get().to(log_routes::get_config))
+                .route(
+                    "/logs/config/reload",
+                    web::post().to(log_routes::reload_config),
+                )
+                .route("/logs/features", web::get().to(log_routes::get_features))
+                .route(
+                    "/logs/level",
+                    web::put().to(log_routes::update_feature_level),
+                )
+                // System endpoints
+                .route(
+                    "/system/status",
+                    web::get().to(system_routes::get_system_status),
+                )
+                .route(
+                    "/system/private-key",
+                    web::get().to(system_routes::get_node_private_key),
+                )
+                .route(
+                    "/system/public-key",
+                    web::get().to(system_routes::get_node_public_key),
+                )
+                .route(
+                    "/system/reset-database",
+                    web::post().to(system_routes::reset_database),
+                )
+                .route(
+                    "/system/reset-schema-service",
+                    web::post().to(system_routes::reset_schema_service),
+                )
+                .route(
+                    "/system/database-config",
+                    web::get().to(system_routes::get_database_config),
+                )
+                .route(
+                    "/system/database-config",
+                    web::post().to(system_routes::update_database_config),
+                )
+                // LLM Query endpoints
+                .route("/llm-query/run", web::post().to(llm_query::run_query))
+                .route(
+                    "/llm-query/analyze",
+                    web::post().to(llm_query::analyze_query),
+                )
+                .route(
+                    "/llm-query/execute",
+                    web::post().to(llm_query::execute_query_plan),
+                )
+                .route("/llm-query/chat", web::post().to(llm_query::chat))
+                .route(
+                    "/llm-query/analyze-followup",
+                    web::post().to(llm_query::analyze_followup),
+                )
+                .route(
+                    "/llm-query/native-index",
+                    web::post().to(llm_query::ai_native_index_query),
+                )
+                .route(
+                    "/llm-query/backfill/{hash}",
+                    web::get().to(llm_query::get_backfill_status),
+                )
+                // Security endpoints
+                .service(
+                    web::scope("/security").service(
+                        web::resource("/system-key")
+                            .route(web::get().to(security_routes::get_system_public_key)),
+                    ),
+                ),
+        );
     }
 }
 
