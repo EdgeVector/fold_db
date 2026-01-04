@@ -113,21 +113,6 @@ pub fn load_node_config(
     } else {
         let mut config = NodeConfig::default();
 
-        // Only use temporary directory for the specific CLI test case that was failing
-        // due to database corruption when using the shared "data" directory
-        if config_path.contains("nonexistent") {
-            // When config file doesn't exist and it's the CLI test case, use a temporary directory
-            // to avoid conflicts with existing data and corrupted database files
-            if let Ok(temp_dir) = tempfile::tempdir() {
-                #[allow(deprecated)]
-                {
-                    config.database = DatabaseConfig::Local {
-                        path: temp_dir.into_path(),
-                    };
-                }
-            }
-        }
-
         if let Some(p) = port {
             config.network_listen_address = format!("/ip4/0.0.0.0/tcp/{}", p);
         }
