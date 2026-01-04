@@ -44,27 +44,22 @@ async fn serve_ui(req: HttpRequest) -> HttpResponse {
         .unwrap_or_default();
     let path = if path.is_empty() { "index.html" } else { &path };
 
-    match Asset::get(path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            HttpResponse::Ok()
-                .content_type(mime.as_ref())
-                .body(content.data.into_owned())
+    if let Some(content) = Asset::get(path) {
+        let mime = mime_guess::from_path(path).first_or_octet_stream();
+        HttpResponse::Ok()
+            .content_type(mime.as_ref())
+            .body(content.data.into_owned())
+    } else if !path.contains('.') {
+        // SPA Fallback: only if path has no extension (no dot)
+        match Asset::get("index.html") {
+            Some(content) => HttpResponse::Ok()
+                .content_type("text/html")
+                .body(content.data.into_owned()),
+            None => HttpResponse::NotFound().body("404 Not Found"),
         }
-        None => {
-            // SPA Fallback: if path matches a known file extension, 404.
-            // Otherwise serve index.html
-            // Simple heuristic since we don't know all extensions.
-            // But usually SPA routers don't have dots in paths unless parameters.
-            // Let's just always fallback to index.html for simplicity,
-            // except maybe specific API paths which are handled by other routes anyway.
-            match Asset::get("index.html") {
-                Some(content) => HttpResponse::Ok()
-                    .content_type("text/html")
-                    .body(content.data.into_owned()),
-                None => HttpResponse::NotFound().body("404 Not Found"),
-            }
-        }
+    } else {
+        // If path has an extension but was not found in assets -> 404
+        HttpResponse::NotFound().body("404 Not Found")
     }
 }
 
