@@ -5,7 +5,8 @@ use crate::error::{FoldDbError, FoldDbResult};
 #[cfg(feature = "aws-backend")]
 use crate::fold_db_core::orchestration::{DynamoDbProgressStore, ProgressStore};
 use crate::fold_db_core::FoldDB;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[cfg(feature = "aws-backend")]
 use crate::log_feature;

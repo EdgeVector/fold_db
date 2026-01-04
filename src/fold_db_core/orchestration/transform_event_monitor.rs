@@ -4,13 +4,15 @@
 //! extracted from the main TransformOrchestrator for better separation of concerns.
 
 use super::persistence_manager::PersistenceManager;
+use crate::fold_db_core::infrastructure::message_bus::events::schema_events::TransformRegistrationResponse;
 use crate::fold_db_core::infrastructure::message_bus::{
-    schema_events::{TransformExecuted, TransformRegistrationRequest, TransformTriggered, TransformRegistered},
+    schema_events::{
+        TransformExecuted, TransformRegistered, TransformRegistrationRequest, TransformTriggered,
+    },
     MessageBus,
 };
-use crate::transform::manager::{TransformManager, types::TransformRunner};
-use crate::fold_db_core::infrastructure::message_bus::events::schema_events::TransformRegistrationResponse;
 use crate::schema::SchemaError;
+use crate::transform::manager::{types::TransformRunner, TransformManager};
 use log::{error, info};
 use std::sync::Arc;
 use std::thread;
@@ -30,10 +32,8 @@ impl TransformEventMonitor {
         manager: Arc<TransformManager>,
         _persistence: PersistenceManager,
     ) -> Self {
-        let monitoring_thread = Self::start_unified_monitoring(
-            Arc::clone(&message_bus),
-            Arc::clone(&manager),
-        );
+        let monitoring_thread =
+            Self::start_unified_monitoring(Arc::clone(&message_bus), Arc::clone(&manager));
 
         Self {
             _monitoring_thread: Some(monitoring_thread),
@@ -49,54 +49,81 @@ impl TransformEventMonitor {
         let mut triggered_consumer = message_bus.subscribe::<TransformTriggered>();
         let mut registration_consumer = message_bus.subscribe::<TransformRegistrationRequest>();
         let manager_clone = Arc::clone(&manager);
+
+        // Spawn a new OS thread for monitoring loop
         thread::spawn(move || {
+            // Create a runtime for the monitoring thread to execute async operations
+            let rt = tokio::runtime::Runtime::new()
+                .expect("Failed to create runtime for monitor thread");
+
             info!("TransformEventMonitor: Starting unified monitoring of MutationExecuted and TransformTriggered events");
 
-            loop {
-                // Check MutationExecuted events - trigger transforms after mutation completion
-                if let Ok(event) = mutation_executed_consumer.try_recv() {
-                    if let Err(e) =
-                        Self::handle_mutation_executed_event(&event, &manager_clone, &message_bus)
-                    {
-                        error!("Error handling mutation executed event: {}", e);
+            rt.block_on(async move {
+                loop {
+                    // Check MutationExecuted events - trigger transforms after mutation completion
+                    if let Ok(event) = mutation_executed_consumer.try_recv() {
+                        if let Err(e) = Self::handle_mutation_executed_event(
+                            &event,
+                            &manager_clone,
+                            &message_bus,
+                        )
+                        .await
+                        {
+                            error!("Error handling mutation executed event: {}", e);
+                        }
                     }
-                }
 
-                // Check TransformTriggered events
-                if let Ok(event) = triggered_consumer.try_recv() {
-                    if let Err(e) =
-                        Self::handle_transform_triggered_event(&event, &manager_clone, &message_bus)
-                    {
-                        error!("Error handling TransformTriggered event: {}", e);
+                    // Check TransformTriggered events
+                    if let Ok(event) = triggered_consumer.try_recv() {
+                        if let Err(e) = Self::handle_transform_triggered_event(
+                            &event,
+                            &manager_clone,
+                            &message_bus,
+                        )
+                        .await
+                        {
+                            error!("Error handling TransformTriggered event: {}", e);
+                        }
                     }
-                }
 
-                // Check TransformRegistrationRequest events
-                if let Ok(event) = registration_consumer.try_recv() {
-                    if let Err(e) =
-                        Self::handle_transform_registration_request_event(&event, &manager_clone, &message_bus)
-                    {
-                        error!("Error handling TransformRegistrationRequest event: {}", e);
+                    // Check TransformRegistrationRequest events
+                    if let Ok(event) = registration_consumer.try_recv() {
+                        if let Err(e) = Self::handle_transform_registration_request_event(
+                            &event,
+                            &manager_clone,
+                            &message_bus,
+                        )
+                        .await
+                        {
+                            error!("Error handling TransformRegistrationRequest event: {}", e);
+                        }
                     }
-                }
 
-                // Small sleep to prevent busy waiting
-                thread::sleep(Duration::from_millis(10));
-            }
+                    // Small sleep to prevent busy waiting
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            });
         })
     }
 
     /// Handle a TransformTriggered event by executing the transform
-    fn handle_transform_triggered_event(
+    async fn handle_transform_triggered_event(
         event: &TransformTriggered,
         manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
-        let result = manager.execute_transform_with_context(&event.transform_id, &event.mutation_context);
+        // execute_transform_with_context is also async now
+        let result = manager
+            .execute_transform_with_context(&event.transform_id, &event.mutation_context)
+            .await;
 
         match result {
             Ok(transform_result) => {
-                info!("Transform {} executed successfully: {} records", event.transform_id, transform_result.records.len());
+                info!(
+                    "Transform {} executed successfully: {} records",
+                    event.transform_id,
+                    transform_result.records.len()
+                );
 
                 // Publish TransformExecuted event
                 Self::publish_transform_executed(
@@ -134,7 +161,10 @@ impl TransformEventMonitor {
         };
 
         message_bus.publish(executed_event).map_err(|e| {
-            error!("Failed to publish TransformExecuted event for {}: {}", transform_id, e);
+            error!(
+                "Failed to publish TransformExecuted event for {}: {}",
+                transform_id, e
+            );
             SchemaError::InvalidData(format!("Failed to publish TransformExecuted event: {}", e))
         })?;
 
@@ -143,19 +173,23 @@ impl TransformEventMonitor {
 
     /// Handle a MutationExecuted event by triggering transforms for the schema
     /// @tomtang: this is the entry point for the transform orchestration
-    fn handle_mutation_executed_event(
+    async fn handle_mutation_executed_event(
         event: &crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted,
         manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
         let mut unique_transform_ids = std::collections::HashSet::new();
         for field_name in event.fields_affected.clone() {
+            // get_transforms_for_field is purely in-memory (lock-based), so it's synchronous
             match manager.get_transforms_for_field(&event.schema, &field_name) {
                 Ok(transform_ids) => {
                     unique_transform_ids.extend(transform_ids);
                 }
                 Err(e) => {
-                    error!("Failed to get transforms for field {}.{}: {}", event.schema, field_name, e);
+                    error!(
+                        "Failed to get transforms for field {}.{}: {}",
+                        event.schema, field_name, e
+                    );
                     return Err(e);
                 }
             }
@@ -165,16 +199,16 @@ impl TransformEventMonitor {
             manager,
             message_bus,
             &event.mutation_context,
-        )?;
+        )
+        .await?;
         Ok(())
     }
 
-
     /// REMOVED: add_transforms_to_queue - TransformEventMonitor should not manage persistence directly
     /// This responsibility belongs to PersistenceManager through TransformOrchestrator
-    /// 
+    ///
     /// Filter out unapproved transforms before publishing TransformTriggered events
-    fn add_transforms_to_queue(
+    async fn add_transforms_to_queue(
         transform_ids: &std::collections::HashSet<String>,
         manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
@@ -183,19 +217,24 @@ impl TransformEventMonitor {
         >,
     ) -> Result<(), SchemaError> {
         use crate::schema::SchemaState;
-        
+
         // Publish TransformTriggered events only for approved transforms
         for transform_id in transform_ids {
             // Check if the transform's schema is approved before publishing event
-            let schema_state = manager.get_schema_state(transform_id)?
+            let schema_state = manager
+                .get_schema_state(transform_id)
+                .await?
                 .unwrap_or(SchemaState::Available);
-            
+
             if schema_state != SchemaState::Approved {
                 // Skip unapproved transforms - don't emit TransformTriggered event
-                info!("Transform {} skipped: Schema state is {:?}", transform_id, schema_state);
+                info!(
+                    "Transform {} skipped: Schema state is {:?}",
+                    transform_id, schema_state
+                );
                 continue;
             }
-            
+
             let triggered_event = if let Some(ref context) = mutation_context {
                 if context.incremental {
                     TransformTriggered::with_context(transform_id.clone(), context.clone())
@@ -211,7 +250,10 @@ impl TransformEventMonitor {
                     // TransformTriggered event published successfully
                 }
                 Err(e) => {
-                    error!("Failed to publish TransformTriggered event for {}: {}", transform_id, e);
+                    error!(
+                        "Failed to publish TransformTriggered event for {}: {}",
+                        transform_id, e
+                    );
                     return Err(SchemaError::InvalidData(format!(
                         "Failed to publish TransformTriggered event for {}: {}",
                         transform_id, e
@@ -223,85 +265,112 @@ impl TransformEventMonitor {
         Ok(())
     }
 
-
     /// Handle a TransformRegistrationRequest event by registering the transform
-    fn handle_transform_registration_request_event(
+    async fn handle_transform_registration_request_event(
         event: &TransformRegistrationRequest,
         manager: &Arc<TransformManager>,
         message_bus: &Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
-        info!("🔧 TransformEventMonitor: Handling TransformRegistrationRequest for '{}'", event.registration.transform_id);
-        
+        info!(
+            "🔧 TransformEventMonitor: Handling TransformRegistrationRequest for '{}'",
+            event.registration.transform_id
+        );
+
         // Check if transform already exists
         let transform_exists = manager.transform_exists(&event.registration.transform_id)?;
         if transform_exists {
             info!("ℹ️  TransformEventMonitor: Transform '{}' already registered, skipping re-registration", event.registration.transform_id);
             return Ok(());
         }
-        
+
         // Handle the transform registration using the TransformManager instance
-        match manager.handle_transform_registration(&event.registration) {
+        match manager
+            .handle_transform_registration(&event.registration)
+            .await
+        {
             Ok(()) => {
-                info!("✅ TransformEventMonitor: Successfully registered transform '{}'", event.registration.transform_id);
-                
+                info!(
+                    "✅ TransformEventMonitor: Successfully registered transform '{}'",
+                    event.registration.transform_id
+                );
+
                 // Publish success response
                 let response = TransformRegistrationResponse {
                     correlation_id: event.correlation_id.clone(),
                     success: true,
                     error: None,
                 };
-                
+
                 if let Err(e) = message_bus.publish(response) {
                     error!("Failed to publish TransformRegistrationResponse: {}", e);
                     return Err(SchemaError::InvalidData(format!(
-                        "Failed to publish TransformRegistrationResponse: {}", e
+                        "Failed to publish TransformRegistrationResponse: {}",
+                        e
                     )));
                 }
 
                 // Publish TransformRegistered event to trigger backfill
                 // Extract source schema name from the transform's input fields
                 // Look up the transform's schema from the database
-                let transform_schema = tokio::runtime::Handle::current().block_on(manager.db_ops.get_schema(event.registration.transform.get_schema_name()))?.ok_or_else(|| {
-                    SchemaError::InvalidData(format!("Transform schema '{}' not found", event.registration.transform.get_schema_name()))
-                })?;
+                let transform_schema = manager
+                    .db_ops
+                    .get_schema(event.registration.transform.get_schema_name())
+                    .await?
+                    .ok_or_else(|| {
+                        SchemaError::InvalidData(format!(
+                            "Transform schema '{}' not found",
+                            event.registration.transform.get_schema_name()
+                        ))
+                    })?;
                 let source_schema_name = transform_schema
                     .get_inputs()
                     .first()
-                    .ok_or_else(|| SchemaError::InvalidData("Transform has no input schema fields".to_string()))?
+                    .ok_or_else(|| {
+                        SchemaError::InvalidData("Transform has no input schema fields".to_string())
+                    })?
                     .split('.')
                     .next()
-                    .ok_or_else(|| SchemaError::InvalidData("Invalid input schema field format".to_string()))?
+                    .ok_or_else(|| {
+                        SchemaError::InvalidData("Invalid input schema field format".to_string())
+                    })?
                     .to_string();
-                
+
                 let transform_registered = TransformRegistered {
                     transform_id: event.registration.transform_id.clone(),
                     source_schema_name,
                     correlation_id: event.correlation_id.clone(),
                 };
-                
+
                 if let Err(e) = message_bus.publish(transform_registered) {
                     error!("Failed to publish TransformRegistered event: {}", e);
                     return Err(SchemaError::InvalidData(format!(
-                        "Failed to publish TransformRegistered event: {}", e
+                        "Failed to publish TransformRegistered event: {}",
+                        e
                     )));
                 }
-                
+
                 Ok(())
             }
             Err(e) => {
-                error!("❌ TransformEventMonitor: Failed to register transform '{}': {}", event.registration.transform_id, e);
-                
+                error!(
+                    "❌ TransformEventMonitor: Failed to register transform '{}': {}",
+                    event.registration.transform_id, e
+                );
+
                 // Publish error response
                 let response = TransformRegistrationResponse {
                     correlation_id: event.correlation_id.clone(),
                     success: false,
                     error: Some(e.to_string()),
                 };
-                
+
                 if let Err(publish_err) = message_bus.publish(response) {
-                    error!("Failed to publish TransformRegistrationResponse: {}", publish_err);
+                    error!(
+                        "Failed to publish TransformRegistrationResponse: {}",
+                        publish_err
+                    );
                 }
-                
+
                 Err(e)
             }
         }

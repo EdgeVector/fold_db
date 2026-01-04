@@ -5,8 +5,11 @@
 
 use super::queue_manager::QueueItem;
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
-use crate::transform::manager::{TransformManager, types::{TransformRunner, TransformResult}};
 use crate::schema::SchemaError;
+use crate::transform::manager::{
+    types::{TransformResult, TransformRunner},
+    TransformManager,
+};
 use log::{error, info};
 use std::sync::Arc;
 use std::time::Instant;
@@ -33,7 +36,7 @@ impl ExecutionCoordinator {
     }
 
     /// Execute a transform with full coordination (validation, execution, publishing)
-    pub fn execute_transform(
+    pub async fn execute_transform(
         &self,
         item: &QueueItem,
         already_processed: bool,
@@ -58,10 +61,17 @@ impl ExecutionCoordinator {
 
         // Execute the transform
         self.execute_transform_with_context(transform_id, &None)
+            .await
     }
 
     /// Execute a transform with consolidated execution logic (no helper dependency)
-    fn execute_transform_with_context(&self, transform_id: &str, _mutation_context: &Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>) -> Result<TransformResult, SchemaError> {
+    async fn execute_transform_with_context(
+        &self,
+        transform_id: &str,
+        _mutation_context: &Option<
+            crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
+        >,
+    ) -> Result<TransformResult, SchemaError> {
         info!(
             "🔧 ExecutionCoordinator: Executing transform directly: {}",
             transform_id
@@ -70,16 +80,25 @@ impl ExecutionCoordinator {
         let execution_start_time = Instant::now();
 
         // Execute transform using the TransformRunner interface
-        match self.manager.execute_transform_with_context(transform_id, _mutation_context) {
+        match self
+            .manager
+            .execute_transform_with_context(transform_id, _mutation_context)
+            .await
+        {
             Ok(transform_result) => {
                 let duration = execution_start_time.elapsed();
                 info!(
                     "✅ Transform {} executed successfully in {:?}: {} records",
-                    transform_id, duration, transform_result.records.len()
+                    transform_id,
+                    duration,
+                    transform_result.records.len()
                 );
 
                 // Publish success event
-                self.publish_success_event(transform_id, &format!("{} records produced", transform_result.records.len()))?;
+                self.publish_success_event(
+                    transform_id,
+                    &format!("{} records produced", transform_result.records.len()),
+                )?;
 
                 Ok(transform_result)
             }
@@ -162,7 +181,7 @@ impl ExecutionCoordinator {
     }
 
     /// Execute multiple transforms in sequence
-    pub fn execute_transforms_batch(
+    pub async fn execute_transforms_batch(
         &self,
         items: Vec<(QueueItem, bool)>,
     ) -> Vec<Result<TransformResult, SchemaError>> {
@@ -182,7 +201,7 @@ impl ExecutionCoordinator {
                 results.capacity()
             );
 
-            let result = self.execute_transform(&item, already_processed);
+            let result = self.execute_transform(&item, already_processed).await;
 
             match &result {
                 Ok(value) => {
@@ -208,7 +227,7 @@ impl ExecutionCoordinator {
     }
 
     /// Execute transforms with retry logic
-    pub fn execute_transform_with_retry(
+    pub async fn execute_transform_with_retry(
         &self,
         item: &QueueItem,
         already_processed: bool,
@@ -222,7 +241,7 @@ impl ExecutionCoordinator {
                 info!("🔄 Retry attempt {} for transform: {}", attempts, item.id);
             }
 
-            match self.execute_transform(item, already_processed) {
+            match self.execute_transform(item, already_processed).await {
                 Ok(result) => {
                     if attempts > 0 {
                         info!(
@@ -242,7 +261,7 @@ impl ExecutionCoordinator {
                             "❌ Transform {} failed on attempt {}, retrying in {:?}",
                             item.id, attempts, delay
                         );
-                        std::thread::sleep(delay);
+                        tokio::time::sleep(delay).await;
                     }
                 }
             }

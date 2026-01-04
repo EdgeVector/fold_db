@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 /// Generate a backfill hash for a transform schema
-fn generate_backfill_hash_for_transform(
+async fn generate_backfill_hash_for_transform(
     transform_manager: &crate::transform::manager::TransformManager,
     schema_name: &str,
 ) -> Option<String> {
@@ -24,7 +24,7 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
+
     let transform = match transforms.get(schema_name) {
         Some(t) => t,
         None => {
@@ -32,9 +32,13 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
+
     // Look up the transform's schema from the database
-    let declarative_schema = match tokio::runtime::Handle::current().block_on(transform_manager.db_ops.get_schema(transform.get_schema_name())) {
+    let declarative_schema = match transform_manager
+        .db_ops
+        .get_schema(transform.get_schema_name())
+        .await
+    {
         Ok(Some(s)) => s,
         Ok(None) => {
             log::warn!("Transform {} schema not found in database", schema_name);
@@ -45,16 +49,19 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
+
     let inputs = declarative_schema.get_inputs();
     let first_input = match inputs.first() {
         Some(i) => i,
         None => {
-            log::warn!("Transform {} has no inputs in declarative schema", schema_name);
+            log::warn!(
+                "Transform {} has no inputs in declarative schema",
+                schema_name
+            );
             return None;
         }
     };
-    
+
     let source_schema_name = match first_input.split('.').next() {
         Some(s) => s,
         None => {
@@ -62,11 +69,13 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
-    Some(crate::fold_db_core::infrastructure::backfill_tracker::BackfillTracker::generate_hash(
-        schema_name,
-        source_schema_name,
-    ))
+
+    Some(
+        crate::fold_db_core::infrastructure::backfill_tracker::BackfillTracker::generate_hash(
+            schema_name,
+            source_schema_name,
+        ),
+    )
 }
 
 /// Shared state for LLM query routes
@@ -79,9 +88,7 @@ impl LlmQueryState {
     pub fn new() -> Self {
         let config = IngestionConfig::from_env_allow_empty();
         let service = match LlmQueryService::new(config) {
-            Ok(svc) => {
-                Some(Arc::new(svc))
-            }
+            Ok(svc) => Some(Arc::new(svc)),
             Err(e) => {
                 log::warn!("LLM Query service not available: {}. LLM query endpoints will return errors until configured.", e);
                 None
@@ -121,7 +128,7 @@ pub async fn analyze_query(
     // Get available schemas
     let schemas = {
         let node = app_state.node.lock().await;
-        let db_guard = match node.get_fold_db() {
+        let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
                 return HttpResponse::InternalServerError()
@@ -138,10 +145,10 @@ pub async fn analyze_query(
     };
 
     // Create or get session
-    let session_id = match llm_state.session_manager.create_or_get_session(
-        request.session_id.clone(),
-        request.query.clone(),
-    ) {
+    let session_id = match llm_state
+        .session_manager
+        .create_or_get_session(request.session_id.clone(), request.query.clone())
+    {
         Ok(id) => id,
         Err(e) => {
             return HttpResponse::InternalServerError()
@@ -213,7 +220,7 @@ pub async fn execute_query_plan(
         let schema_name = index_schema.name.clone();
         {
             let node = app_state.node.lock().await;
-            let db_guard = match node.get_fold_db() {
+            let db_guard = match node.get_fold_db().await {
                 Ok(guard) => guard,
                 Err(e) => {
                     return HttpResponse::InternalServerError()
@@ -249,14 +256,17 @@ pub async fn execute_query_plan(
 
             if is_transform {
                 // Generate backfill hash for transform
-                backfill_hash = generate_backfill_hash_for_transform(&db_guard.transform_manager, &schema_name);
+                backfill_hash =
+                    generate_backfill_hash_for_transform(&db_guard.transform_manager, &schema_name)
+                        .await;
             }
 
             // Auto-approve the schema (idempotent - only approves if not already approved)
-            if let Err(e) = db_guard.schema_manager.approve_with_backfill(
-                &schema_name,
-                backfill_hash.clone(),
-            ).await {
+            if let Err(e) = db_guard
+                .schema_manager
+                .approve_with_backfill(&schema_name, backfill_hash.clone())
+                .await
+            {
                 return HttpResponse::InternalServerError()
                     .json(json!({"error": format!("Failed to approve schema: {}", e)}));
             }
@@ -275,12 +285,11 @@ pub async fn execute_query_plan(
         if let Some(ref hash) = backfill_hash {
             let backfill_info = {
                 let node = app_state.node.lock().await;
-                let db_guard = match node.get_fold_db() {
+                let db_guard = match node.get_fold_db().await {
                     Ok(guard) => guard,
                     Err(e) => {
-                        return HttpResponse::InternalServerError().json(
-                            json!({"error": format!("Failed to access database: {}", e)}),
-                        );
+                        return HttpResponse::InternalServerError()
+                            .json(json!({"error": format!("Failed to access database: {}", e)}));
                     }
                 };
                 db_guard.get_backfill_tracker().get_backfill_by_hash(hash)
@@ -324,7 +333,10 @@ pub async fn execute_query_plan(
     };
 
     // Store results in session
-    if let Err(e) = llm_state.session_manager.add_results(session_id, results.clone()) {
+    if let Err(e) = llm_state
+        .session_manager
+        .add_results(session_id, results.clone())
+    {
         return HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to store results: {}", e)}));
     }
@@ -333,8 +345,7 @@ pub async fn execute_query_plan(
     let original_query = match llm_state.session_manager.get_session(session_id) {
         Ok(Some(ctx)) => ctx.original_query,
         Ok(None) => {
-            return HttpResponse::NotFound()
-                .json(json!({"error": "Session not found"}));
+            return HttpResponse::NotFound().json(json!({"error": "Session not found"}));
         }
         Err(e) => {
             return HttpResponse::InternalServerError()
@@ -415,7 +426,7 @@ pub async fn analyze_followup(
 
     let schemas = {
         let node = app_state.node.lock().await;
-        let db_guard = match node.get_fold_db() {
+        let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
                 return HttpResponse::InternalServerError()
@@ -432,12 +443,7 @@ pub async fn analyze_followup(
     };
 
     let analysis = match service
-        .analyze_followup_question(
-            &context.original_query,
-            results,
-            question,
-            &schemas,
-        )
+        .analyze_followup_question(&context.original_query, results, question, &schemas)
         .await
     {
         Ok(a) => a,
@@ -502,7 +508,7 @@ pub async fn chat(
 
     let schemas = {
         let node = app_state.node.lock().await;
-        let db_guard = match node.get_fold_db() {
+        let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
                 return HttpResponse::InternalServerError()
@@ -519,12 +525,7 @@ pub async fn chat(
     };
 
     let analysis = match service
-        .analyze_followup_question(
-            &context.original_query,
-            results,
-            question,
-            &schemas,
-        )
+        .analyze_followup_question(&context.original_query, results, question, &schemas)
         .await
     {
         Ok(a) => a,
@@ -541,13 +542,12 @@ pub async fn chat(
     if analysis.needs_query {
         if let Some(ref initial_query) = analysis.query {
             executed_query = true;
-            
+
             let mut current_query = initial_query.clone();
             let mut attempts: Vec<String> = Vec::new();
             const MAX_FOLLOWUP_ATTEMPTS: usize = 3;
 
             for attempt in 0..MAX_FOLLOWUP_ATTEMPTS {
-
                 let node_arc = Arc::clone(&app_state.node);
                 let processor = OperationProcessor::new(node_arc);
                 match processor.execute_query_map(current_query.clone()).await {
@@ -569,20 +569,21 @@ pub async fn chat(
                             break;
                         }
 
-                        
                         attempts.push(format!(
                             "Schema: {}, Filter: {:?}",
-                            current_query.schema_name,
-                            current_query.filter
+                            current_query.schema_name, current_query.filter
                         ));
 
                         if attempt < MAX_FOLLOWUP_ATTEMPTS - 1 {
-                            match service.suggest_alternative_query(
-                                question,
-                                &current_query,
-                                &schemas,
-                                &attempts,
-                            ).await {
+                            match service
+                                .suggest_alternative_query(
+                                    question,
+                                    &current_query,
+                                    &schemas,
+                                    &attempts,
+                                )
+                                .await
+                            {
                                 Ok(Some(alternative_plan)) => {
                                     current_query = alternative_plan.query;
                                 }
@@ -594,7 +595,10 @@ pub async fn chat(
                                     break;
                                 }
                                 Err(e) => {
-                                    log::warn!("Failed to generate alternative for follow-up: {}", e);
+                                    log::warn!(
+                                        "Failed to generate alternative for follow-up: {}",
+                                        e
+                                    );
                                     break;
                                 }
                             }
@@ -630,9 +634,10 @@ pub async fn chat(
         }
     };
 
-    if let Err(e) = llm_state
-        .session_manager
-        .add_message(session_id, "user".to_string(), question.clone())
+    if let Err(e) =
+        llm_state
+            .session_manager
+            .add_message(session_id, "user".to_string(), question.clone())
     {
         return HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to update session: {}", e)}));
@@ -648,10 +653,11 @@ pub async fn chat(
         assistant_message.push_str(&format!("\n\n[Note: {}]", info));
     }
 
-    if let Err(e) = llm_state
-        .session_manager
-        .add_message(session_id, "assistant".to_string(), assistant_message.clone())
-    {
+    if let Err(e) = llm_state.session_manager.add_message(
+        session_id,
+        "assistant".to_string(),
+        assistant_message.clone(),
+    ) {
         return HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to update session: {}", e)}));
     }
@@ -684,7 +690,7 @@ pub async fn get_backfill_status(
 
     let backfill_info = {
         let node = app_state.node.lock().await;
-        let db_guard = match node.get_fold_db() {
+        let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
                 return HttpResponse::InternalServerError()
@@ -746,7 +752,7 @@ pub async fn run_query(
 
     let schemas = {
         let node = app_state.node.lock().await;
-        let db_guard = match node.get_fold_db() {
+        let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
                 return HttpResponse::InternalServerError()
@@ -762,10 +768,10 @@ pub async fn run_query(
         }
     };
 
-    let session_id = match llm_state.session_manager.create_or_get_session(
-        request.session_id.clone(),
-        request.query.clone(),
-    ) {
+    let session_id = match llm_state
+        .session_manager
+        .create_or_get_session(request.session_id.clone(), request.query.clone())
+    {
         Ok(id) => id,
         Err(e) => {
             return HttpResponse::InternalServerError()
@@ -795,7 +801,7 @@ pub async fn run_query(
         let schema_name = index_schema.name.clone();
         {
             let node = app_state.node.lock().await;
-            let db_guard = match node.get_fold_db() {
+            let db_guard = match node.get_fold_db().await {
                 Ok(guard) => guard,
                 Err(e) => {
                     return HttpResponse::InternalServerError()
@@ -828,7 +834,9 @@ pub async fn run_query(
             };
 
             if is_transform {
-                backfill_hash = generate_backfill_hash_for_transform(&db_guard.transform_manager, &schema_name);
+                backfill_hash =
+                    generate_backfill_hash_for_transform(&db_guard.transform_manager, &schema_name)
+                        .await;
             }
 
             let current_state = match db_guard.schema_manager.get_schema_states() {
@@ -840,11 +848,15 @@ pub async fn run_query(
             };
 
             if current_state != SchemaState::Approved {
-                if let Err(e) = db_guard.schema_manager.set_schema_state_with_backfill(
-                    &schema_name,
-                    SchemaState::Approved,
-                    backfill_hash.clone(),
-                ).await {
+                if let Err(e) = db_guard
+                    .schema_manager
+                    .set_schema_state_with_backfill(
+                        &schema_name,
+                        SchemaState::Approved,
+                        backfill_hash.clone(),
+                    )
+                    .await
+                {
                     return HttpResponse::InternalServerError()
                         .json(json!({"error": format!("Failed to approve schema: {}", e)}));
                 }
@@ -863,7 +875,7 @@ pub async fn run_query(
             loop {
                 let backfill_info = {
                     let node = app_state.node.lock().await;
-                    let db_guard = match node.get_fold_db() {
+                    let db_guard = match node.get_fold_db().await {
                         Ok(guard) => guard,
                         Err(e) => {
                             return HttpResponse::InternalServerError().json(
@@ -885,7 +897,7 @@ pub async fn run_query(
                 } else {
                     break;
                 }
-                
+
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             }
         }
@@ -897,10 +909,12 @@ pub async fn run_query(
     const MAX_ATTEMPTS: usize = 5;
 
     for attempt in 0..MAX_ATTEMPTS {
-
         let node_arc = Arc::clone(&app_state.node);
         let processor = OperationProcessor::new(node_arc);
-        match processor.execute_query_map(current_query_plan.query.clone()).await {
+        match processor
+            .execute_query_map(current_query_plan.query.clone())
+            .await
+        {
             Ok(result_map) => {
                 let records_map = records_from_field_map(&result_map);
                 results = records_map
@@ -912,7 +926,6 @@ pub async fn run_query(
                     break;
                 }
 
-                
                 attempts.push(format!(
                     "Schema: {}, Filter: {:?} - {}",
                     current_query_plan.query.schema_name,
@@ -921,12 +934,15 @@ pub async fn run_query(
                 ));
 
                 if attempt < MAX_ATTEMPTS - 1 {
-                    match service.suggest_alternative_query(
-                        &request.query,
-                        &current_query_plan.query,
-                        &schemas,
-                        &attempts,
-                    ).await {
+                    match service
+                        .suggest_alternative_query(
+                            &request.query,
+                            &current_query_plan.query,
+                            &schemas,
+                            &attempts,
+                        )
+                        .await
+                    {
                         Ok(Some(alternative_plan)) => {
                             current_query_plan = alternative_plan;
                         }
@@ -937,9 +953,9 @@ pub async fn run_query(
                             log::warn!("Failed to generate alternative query: {}", e);
                             break;
                         }
-                        }
                     }
                 }
+            }
             Err(e) => {
                 return HttpResponse::InternalServerError()
                     .json(json!({"error": format!("Failed to execute query: {}", e)}));
@@ -947,7 +963,10 @@ pub async fn run_query(
         }
     }
 
-    if let Err(e) = llm_state.session_manager.add_results(&session_id, results.clone()) {
+    if let Err(e) = llm_state
+        .session_manager
+        .add_results(&session_id, results.clone())
+    {
         return HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to store results: {}", e)}));
     }
@@ -955,8 +974,7 @@ pub async fn run_query(
     let original_query = match llm_state.session_manager.get_session(&session_id) {
         Ok(Some(ctx)) => ctx.original_query,
         Ok(None) => {
-            return HttpResponse::NotFound()
-                .json(json!({"error": "Session not found"}));
+            return HttpResponse::NotFound().json(json!({"error": "Session not found"}));
         }
         Err(e) => {
             return HttpResponse::InternalServerError()
@@ -1032,10 +1050,10 @@ pub async fn ai_native_index_query(
     };
 
     // Create or get session to maintain conversation context
-    let session_id = match llm_state.session_manager.create_or_get_session(
-        request.session_id.clone(),
-        request.query.clone(),
-    ) {
+    let session_id = match llm_state
+        .session_manager
+        .create_or_get_session(request.session_id.clone(), request.query.clone())
+    {
         Ok(id) => id,
         Err(e) => {
             return HttpResponse::InternalServerError()
@@ -1046,7 +1064,7 @@ pub async fn ai_native_index_query(
     // Get available schemas
     let schemas = {
         let node = app_state.node.lock().await;
-        let db_guard = match node.get_fold_db() {
+        let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
             Err(e) => {
                 return HttpResponse::InternalServerError()
@@ -1065,17 +1083,20 @@ pub async fn ai_native_index_query(
     // Execute AI-native index query workflow
     let result = async {
         let node = app_state.node.lock().await;
-        let db_ops = match node.get_fold_db() {
+        let db_ops = match node.get_fold_db().await {
             Ok(guard) => guard.get_db_ops(),
             Err(e) => {
                 return Err(format!("Failed to access database: {}", e));
             }
         };
         drop(node); // Drop the mutex guard before await
-        
+
         // Get both AI interpretation and raw results
-        service.execute_ai_native_index_query_with_results(&request.query, &schemas, &db_ops).await
-    }.await;
+        service
+            .execute_ai_native_index_query_with_results(&request.query, &schemas, &db_ops)
+            .await
+    }
+    .await;
 
     match result {
         Ok((ai_interpretation, raw_results)) => {
@@ -1085,7 +1106,10 @@ pub async fn ai_native_index_query(
                 .map(|result| serde_json::to_value(result).unwrap_or(json!({})))
                 .collect();
 
-            if let Err(e) = llm_state.session_manager.add_results(&session_id, results_as_json.clone()) {
+            if let Err(e) = llm_state
+                .session_manager
+                .add_results(&session_id, results_as_json.clone())
+            {
                 log::warn!("Failed to store results in session: {}", e);
             }
 
@@ -1113,9 +1137,8 @@ pub async fn ai_native_index_query(
                 "query": request.query,
                 "session_id": session_id
             }))
-        },
+        }
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("AI-native index query failed: {}", e)})),
     }
 }
-

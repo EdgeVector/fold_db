@@ -12,13 +12,16 @@ pub struct SimpleSuccessResponse {
 }
 
 /// Helper closure to execute schema operations with lock management
-async fn with_schema_manager<F, Fut, R>(state: &web::Data<AppState>, operation: F) -> Result<R, crate::error::FoldDbError>
+async fn with_schema_manager<F, Fut, R>(
+    state: &web::Data<AppState>,
+    operation: F,
+) -> Result<R, crate::error::FoldDbError>
 where
-    F: FnOnce(std::sync::MutexGuard<'_, crate::fold_db_core::FoldDB>) -> Fut,
+    F: FnOnce(tokio::sync::MutexGuard<'_, crate::fold_db_core::FoldDB>) -> Fut,
     Fut: std::future::Future<Output = R>,
 {
     let node_guard = state.node.lock().await;
-    let db_guard = node_guard.get_fold_db()?;
+    let db_guard = node_guard.get_fold_db().await?;
     let result = operation(db_guard).await;
     drop(node_guard);
     Ok(result)
@@ -37,10 +40,9 @@ where
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
     let result = with_schema_manager(&state, |db| {
         let mgr = db.schema_manager.clone();
-        async move {
-            mgr.get_schemas_with_states()
-        }
-    }).await;
+        async move { mgr.get_schemas_with_states() }
+    })
+    .await;
     match result {
         Ok(Ok(schemas)) => HttpResponse::Ok().json(schemas),
         Ok(Err(e)) => HttpResponse::InternalServerError()
@@ -78,7 +80,8 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
                 Ok(None)
             }
         }
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(Ok(Some(schema))) => HttpResponse::Ok().json(schema),
@@ -90,7 +93,7 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 
 /// Generate a backfill hash for a transform schema by looking up its source schema
 /// Returns None if the schema is not a transform or if any required data is missing
-fn generate_backfill_hash_for_transform(
+async fn generate_backfill_hash_for_transform(
     transform_manager: &crate::transform::manager::TransformManager,
     schema_name: &str,
 ) -> Option<String> {
@@ -101,7 +104,7 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
+
     let transform = match transforms.get(schema_name) {
         Some(t) => t,
         None => {
@@ -109,9 +112,13 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
+
     // Look up the transform's schema from the database
-    let declarative_schema = match tokio::runtime::Handle::current().block_on(transform_manager.db_ops.get_schema(transform.get_schema_name())) {
+    let declarative_schema = match transform_manager
+        .db_ops
+        .get_schema(transform.get_schema_name())
+        .await
+    {
         Ok(Some(s)) => s,
         Ok(None) => {
             log::warn!("Transform {} schema not found in database", schema_name);
@@ -122,16 +129,19 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
+
     let inputs = declarative_schema.get_inputs();
     let first_input = match inputs.first() {
         Some(i) => i,
         None => {
-            log::warn!("Transform {} has no inputs in declarative schema", schema_name);
+            log::warn!(
+                "Transform {} has no inputs in declarative schema",
+                schema_name
+            );
             return None;
         }
     };
-    
+
     let source_schema_name = match first_input.split('.').next() {
         Some(s) => s,
         None => {
@@ -139,11 +149,13 @@ fn generate_backfill_hash_for_transform(
             return None;
         }
     };
-    
-    Some(crate::fold_db_core::infrastructure::backfill_tracker::BackfillTracker::generate_hash(
-        schema_name,
-        source_schema_name,
-    ))
+
+    Some(
+        crate::fold_db_core::infrastructure::backfill_tracker::BackfillTracker::generate_hash(
+            schema_name,
+            source_schema_name,
+        ),
+    )
 }
 
 /// Approve a schema for queries and mutations
@@ -166,39 +178,54 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
         let transform_mgr = db.transform_manager.clone();
         async move {
             // Check if the schema is already approved
-            let current_state = schema_mgr.get_schema_states()?
+            let current_state = schema_mgr
+                .get_schema_states()?
                 .get(&schema_name)
                 .copied()
                 .unwrap_or_default();
-            
+
             if current_state == SchemaState::Approved {
                 // If already approved, no backfill needed - return None
-                log::info!("Schema '{}' is already approved, no backfill needed", schema_name);
+                log::info!(
+                    "Schema '{}' is already approved, no backfill needed",
+                    schema_name
+                );
                 return Ok::<Option<String>, crate::error::FoldDbError>(None);
             }
-            
+
             // Check if this is a transform schema and generate backfill hash if needed
             let is_transform = match transform_mgr.transform_exists(&schema_name) {
                 Ok(exists) => exists,
                 Err(e) => {
-                    log::warn!("Failed to check if {} is a transform, assuming false: {}", schema_name, e);
+                    log::warn!(
+                        "Failed to check if {} is a transform, assuming false: {}",
+                        schema_name,
+                        e
+                    );
                     false
                 }
             };
-            
+
             let backfill_hash = if is_transform {
-                generate_backfill_hash_for_transform(&transform_mgr, &schema_name)
+                generate_backfill_hash_for_transform(&transform_mgr, &schema_name).await
             } else {
                 None
             };
-            
+
             // Approve the schema with the backfill hash
-            schema_mgr.set_schema_state_with_backfill(&schema_name, SchemaState::Approved, backfill_hash.clone()).await?;
-            
+            schema_mgr
+                .set_schema_state_with_backfill(
+                    &schema_name,
+                    SchemaState::Approved,
+                    backfill_hash.clone(),
+                )
+                .await?;
+
             Ok(backfill_hash)
         }
-    }).await;
-    
+    })
+    .await;
+
     match result {
         Ok(Ok(backfill_hash)) => HttpResponse::Ok().json(backfill_hash),
         Ok(Err(e)) => HttpResponse::InternalServerError()
@@ -226,10 +253,9 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
     let schema_name_clone = schema_name.clone();
     let result = with_schema_manager(&state, |db| {
         let mgr = db.schema_manager.clone();
-        async move {
-            mgr.block_schema(&schema_name_clone).await
-        }
-    }).await;
+        async move { mgr.block_schema(&schema_name_clone).await }
+    })
+    .await;
     match result {
         Ok(_) => HttpResponse::Ok().json(SimpleSuccessResponse { success: true }),
         Err(e) => HttpResponse::InternalServerError()
@@ -251,16 +277,21 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
         (status = 500, description = "Server error")
     )
 )]
-pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
+pub async fn get_backfill_status(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> impl Responder {
     let backfill_hash = path.into_inner();
-    
+
     // Access the backfill tracker through the FoldDB
     let backfill_info = {
         let node_guard = state.node.lock().await;
-        let db_guard = node_guard.get_fold_db().unwrap();
-        db_guard.get_backfill_tracker().get_backfill_by_hash(&backfill_hash)
+        let db_guard = node_guard.get_fold_db().await.unwrap();
+        db_guard
+            .get_backfill_tracker()
+            .get_backfill_by_hash(&backfill_hash)
     };
-    
+
     match backfill_info {
         Some(info) => HttpResponse::Ok().json(info),
         None => HttpResponse::NotFound().json(json!({"error": "Backfill not found"})),
@@ -280,43 +311,60 @@ pub async fn get_backfill_status(path: web::Path<String>, state: web::Data<AppSt
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
     // Fetch schemas from the schema service
     let node_guard = state.node.lock().await;
-    
+
     match node_guard.fetch_available_schemas().await {
         Ok(schemas) => {
             let schema_count = schemas.len();
             drop(node_guard);
-            
+
             // Load each schema into the local database
             let mut loaded_count = 0;
             let mut failed_schemas = Vec::new();
-            
+
             for schema in schemas {
                 let schema_name = schema.name.clone();
                 let result = with_schema_manager(&state, |db| {
                     let mgr = db.schema_manager.clone();
-                    async move {
-                        mgr.load_schema_internal(schema.clone()).await
-                    }
-                }).await;
-                
+                    async move { mgr.load_schema_internal(schema.clone()).await }
+                })
+                .await;
+
                 match result {
                     Ok(Ok(_)) => {
                         loaded_count += 1;
                         log_feature!(LogFeature::Schema, debug, "Loaded schema: {}", schema_name);
                     }
                     Ok(Err(e)) => {
-                        log_feature!(LogFeature::Schema, error, "Failed to load schema {}: {}", schema_name, e);
+                        log_feature!(
+                            LogFeature::Schema,
+                            error,
+                            "Failed to load schema {}: {}",
+                            schema_name,
+                            e
+                        );
                         failed_schemas.push(schema_name);
                     }
                     Err(e) => {
-                        log_feature!(LogFeature::Schema, error, "Failed to load schema {}: {}", schema_name, e);
+                        log_feature!(
+                            LogFeature::Schema,
+                            error,
+                            "Failed to load schema {}: {}",
+                            schema_name,
+                            e
+                        );
                         failed_schemas.push(schema_name);
                     }
                 }
             }
-            
-            log_feature!(LogFeature::Schema, info, "Loaded {} of {} schemas from schema service", loaded_count, schema_count);
-            
+
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Loaded {} of {} schemas from schema service",
+                loaded_count,
+                schema_count
+            );
+
             HttpResponse::Ok().json(json!({
                 "available_schemas_loaded": schema_count,
                 "schemas_loaded_to_db": loaded_count,
@@ -324,7 +372,12 @@ pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
             }))
         }
         Err(e) => {
-            log_feature!(LogFeature::Schema, error, "Failed to fetch schemas from schema service: {}", e);
+            log_feature!(
+                LogFeature::Schema,
+                error,
+                "Failed to fetch schemas from schema service: {}",
+                e
+            );
             HttpResponse::InternalServerError().json(json!({
                 "error": format!("Failed to fetch schemas from schema service: {}", e)
             }))

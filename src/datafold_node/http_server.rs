@@ -172,7 +172,7 @@ impl DataFoldHttpServer {
 
                 let schema_manager = {
                     let node_guard = self.node.lock().await;
-                    let db_guard = node_guard.get_fold_db()?;
+                    let db_guard = node_guard.get_fold_db().await?;
                     let manager = db_guard.schema_manager.clone();
                     drop(db_guard);
                     drop(node_guard);

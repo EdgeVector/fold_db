@@ -1,7 +1,7 @@
 use super::http_server::AppState;
-use crate::schema::types::operations::{Query, Operation};
-use crate::fold_db_core::query::records_from_field_map;
 use crate::datafold_node::OperationProcessor;
+use crate::fold_db_core::query::records_from_field_map;
+use crate::schema::types::operations::{Operation, Query};
 use actix_web::{web, HttpResponse, Responder};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,6 @@ pub struct MutationResponse {
     pub mutation_id: String,
 }
 
-
 /// Execute a query.
 #[utoipa::path(
     post,
@@ -34,9 +33,13 @@ pub struct MutationResponse {
 )]
 pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) -> impl Responder {
     let query_inner = query.into_inner();
-    log::info!("🔍 execute_query: schema={}, fields={:?}, filter={:?}", 
-        query_inner.schema_name, query_inner.fields, query_inner.filter);
-    
+    log::info!(
+        "🔍 execute_query: schema={}, fields={:?}, filter={:?}",
+        query_inner.schema_name,
+        query_inner.fields,
+        query_inner.filter
+    );
+
     let node_arc = Arc::clone(&state.node);
     let processor = OperationProcessor::new(node_arc);
 
@@ -50,12 +53,12 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
                 .collect();
             log::info!("✅ Query completed: {} records returned", data.len());
             HttpResponse::Ok().json(data)
-        },
+        }
         Err(e) => {
             log::error!("❌ Query failed: {}", e);
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Failed to execute query: {}", e)}))
-        },
+        }
     }
 }
 
@@ -77,18 +80,29 @@ pub async fn execute_mutation(
 ) -> impl Responder {
     log::info!("📥 Received mutation request");
 
-    let (schema, fields_and_values, key_value, mutation_type) = match serde_json::from_value::<Operation>(mutation_data.into_inner()) {
-        Ok(Operation::Mutation { schema, fields_and_values, key_value, mutation_type, source_file_name: _ }) => {
-            log::info!("✅ Parsed mutation: schema={}, type={:?}, fields={}", 
-                      schema, mutation_type, fields_and_values.len());
-            (schema, fields_and_values, key_value, mutation_type)
-        }
-        Err(e) => {
-            log::error!("❌ Failed to parse mutation: {}", e);
-            return HttpResponse::BadRequest()
-                .json(json!({"error": format!("Failed to parse mutation: {}", e)}))
-        }
-    };
+    let (schema, fields_and_values, key_value, mutation_type) =
+        match serde_json::from_value::<Operation>(mutation_data.into_inner()) {
+            Ok(Operation::Mutation {
+                schema,
+                fields_and_values,
+                key_value,
+                mutation_type,
+                source_file_name: _,
+            }) => {
+                log::info!(
+                    "✅ Parsed mutation: schema={}, type={:?}, fields={}",
+                    schema,
+                    mutation_type,
+                    fields_and_values.len()
+                );
+                (schema, fields_and_values, key_value, mutation_type)
+            }
+            Err(e) => {
+                log::error!("❌ Failed to parse mutation: {}", e);
+                return HttpResponse::BadRequest()
+                    .json(json!({"error": format!("Failed to parse mutation: {}", e)}));
+            }
+        };
 
     let node_arc = Arc::clone(&state.node);
     let processor = OperationProcessor::new(node_arc);
@@ -104,8 +118,9 @@ pub async fn execute_mutation(
         }
         Err(e) => {
             log::error!("❌ Mutation execution failed: {}", e);
-            HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to execute mutation: {}", e), "success": false}))
+            HttpResponse::InternalServerError().json(
+                json!({"error": format!("Failed to execute mutation: {}", e), "success": false}),
+            )
         }
     }
 }
@@ -129,7 +144,10 @@ pub async fn execute_mutations_batch(
     let node_arc = Arc::clone(&state.node);
     let processor = OperationProcessor::new(node_arc);
 
-    match processor.execute_mutations_batch(mutations_data.into_inner()).await {
+    match processor
+        .execute_mutations_batch(mutations_data.into_inner())
+        .await
+    {
         Ok(mutation_ids) => HttpResponse::Ok().json(mutation_ids),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to execute batch mutations: {}", e)})),
@@ -147,7 +165,7 @@ pub async fn execute_mutations_batch(
 )]
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    match node.list_transforms() {
+    match node.list_transforms().await {
         Ok(map) => HttpResponse::Ok().json(map),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to list transforms: {}", e)})),
@@ -173,12 +191,13 @@ pub async fn add_to_transform_queue(
     let transform_id = path.into_inner();
     let node = state.node.lock().await;
 
-    match node.add_transform_to_queue(&transform_id) {
+    match node.add_transform_to_queue(&transform_id).await {
         Ok(_) => HttpResponse::Ok().json(SuccessResponse {
             success: true,
             message: format!("Transform '{}' added to queue", transform_id),
         }),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": format!("Failed to add transform to queue: {}", e)})),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to add transform to queue: {}", e)})),
     }
 }
 
@@ -193,7 +212,7 @@ pub async fn add_to_transform_queue(
 )]
 pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    match node.get_transform_queue_info() {
+    match node.get_transform_queue_info().await {
         Ok(info) => HttpResponse::Ok().json(info),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to get transform queue info: {}", e)})),
@@ -211,7 +230,7 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    match node.get_all_backfills() {
+    match node.get_all_backfills().await {
         Ok(backfills) => HttpResponse::Ok().json(backfills),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to get backfills: {}", e)})),
@@ -229,7 +248,7 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    match node.get_active_backfills() {
+    match node.get_active_backfills().await {
         Ok(backfills) => HttpResponse::Ok().json(backfills),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to get active backfills: {}", e)})),
@@ -249,14 +268,11 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
         (status = 500, description = "Server error")
     )
 )]
-pub async fn get_backfill(
-    path: web::Path<String>,
-    state: web::Data<AppState>,
-) -> impl Responder {
+pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let transform_id = path.into_inner();
     let node = state.node.lock().await;
-    
-    match node.get_backfill(&transform_id) {
+
+    match node.get_backfill(&transform_id).await {
         Ok(Some(backfill)) => HttpResponse::Ok().json(backfill),
         Ok(None) => HttpResponse::NotFound()
             .json(json!({"error": format!("Backfill not found for transform: {}", transform_id)})),
@@ -276,7 +292,7 @@ pub async fn get_backfill(
 )]
 pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    match node.get_event_statistics() {
+    match node.get_event_statistics().await {
         Ok(stats) => HttpResponse::Ok().json(stats),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to get statistics: {}", e)})),
@@ -302,7 +318,7 @@ pub async fn native_index_search(
     state: web::Data<AppState>,
 ) -> impl Responder {
     info!("API: native_index_search endpoint called");
-    
+
     let term = match query.get("term") {
         Some(t) if !t.trim().is_empty() => t.trim().to_string(),
         _ => {
@@ -311,13 +327,13 @@ pub async fn native_index_search(
                 .json(json!({"error": "Missing required 'term' query parameter"}));
         }
     };
-    
+
     info!("API: Searching for term: '{}'", term);
 
     // Acquire FoldDB and perform search
     let node_arc = Arc::clone(&state.node);
     let node_guard = node_arc.lock().await;
-    let fold_db = match node_guard.get_fold_db() {
+    let fold_db = match node_guard.get_fold_db().await {
         Ok(guard) => guard,
         Err(e) => {
             error!("API: Failed to acquire database: {}", e);
@@ -331,12 +347,12 @@ pub async fn native_index_search(
         Ok(results) => {
             info!("API: Search completed, found {} results", results.len());
             HttpResponse::Ok().json(results)
-        },
+        }
         Err(e) => {
             error!("API: Search failed: {}", e);
             HttpResponse::InternalServerError()
                 .json(json!({"error": format!("Native index search failed: {}", e)}))
-        },
+        }
     }
 }
 #[utoipa::path(
@@ -350,15 +366,26 @@ pub async fn native_index_search(
 )]
 pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Responder {
     let node = state.node.lock().await;
-    
-    match node.get_all_backfills() {
+
+    match node.get_all_backfills().await {
         Ok(backfills) => {
-            use crate::fold_db_core::infrastructure::backfill_tracker::{BackfillStatistics, BackfillStatus};
-            
-            let active_count = backfills.iter().filter(|b| b.status == BackfillStatus::InProgress).count();
-            let completed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Completed).count();
-            let failed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Failed).count();
-            
+            use crate::fold_db_core::infrastructure::backfill_tracker::{
+                BackfillStatistics, BackfillStatus,
+            };
+
+            let active_count = backfills
+                .iter()
+                .filter(|b| b.status == BackfillStatus::InProgress)
+                .count();
+            let completed_count = backfills
+                .iter()
+                .filter(|b| b.status == BackfillStatus::Completed)
+                .count();
+            let failed_count = backfills
+                .iter()
+                .filter(|b| b.status == BackfillStatus::Failed)
+                .count();
+
             let stats = BackfillStatistics {
                 total_backfills: backfills.len(),
                 active_backfills: active_count,
@@ -369,9 +396,9 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
                 total_mutations_failed: backfills.iter().map(|b| b.mutations_failed).sum(),
                 total_records_produced: backfills.iter().map(|b| b.records_produced).sum(),
             };
-            
+
             HttpResponse::Ok().json(stats)
-        },
+        }
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to get backfill statistics: {}", e)})),
     }

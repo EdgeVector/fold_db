@@ -224,10 +224,7 @@ impl MutationExecuted {
 
 impl DataPersisted {
     /// Create a new DataPersisted event
-    pub fn new(
-        schema_name: impl Into<String>,
-        correlation_id: impl Into<String>,
-    ) -> Self {
+    pub fn new(schema_name: impl Into<String>, correlation_id: impl Into<String>) -> Self {
         Self {
             schema_name: schema_name.into(),
             correlation_id: correlation_id.into(),
@@ -268,7 +265,6 @@ impl DataPersisted {
 // ========== Request/Response Event Constructors ==========
 
 impl FieldValueSetRequest {
-
     /// Create a new FieldValueSetRequest
     pub fn new(
         correlation_id: String,
@@ -611,28 +607,4 @@ impl MoleculeGetResponse {
     }
 }
 
-impl SystemInitializationRequest {
-    /// Create a new SystemInitializationRequest
-    pub fn new(
-        correlation_id: String,
-        db_path: String,
-        orchestrator_config: Option<Value>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            db_path,
-            orchestrator_config,
-        }
-    }
-}
-
-impl SystemInitializationResponse {
-    /// Create a new SystemInitializationResponse
-    pub fn new(correlation_id: String, success: bool, error: Option<String>) -> Self {
-        Self {
-            correlation_id,
-            success,
-            error,
-        }
-    }
-}
+// SystemInitializationResponse constructor removed
