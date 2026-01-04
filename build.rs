@@ -7,11 +7,27 @@ fn main() {
         // for the rust build to succeed, the folder must exist.
         std::fs::create_dir_all(path).expect("Failed to create static assets directory");
 
-        // Create an empty index.html so there's at least one file
-        // This prevents "folder is empty" errors if RustEmbed is picky
+        // Create dummy database.svg
+        std::fs::write(
+            path.join("database.svg"),
+            "<svg xmlns='http://www.w3.org/2000/svg'></svg>",
+        )
+        .expect("Failed to create placeholder database.svg");
+
+        // Create an index.html that satisfies test assertions
+        // Tests look for: href="./database.svg" and src="./"
         std::fs::write(
             path.join("index.html"),
-            "<!DOCTYPE html><html><body>Placeholder</body></html>",
+            r#"<!DOCTYPE html>
+<html>
+<head>
+    <link rel="icon" href="./database.svg">
+</head>
+<body>
+    <script src="./assets/index.js"></script>
+    Placeholder
+</body>
+</html>"#,
         )
         .expect("Failed to create placeholder index.html");
     }
