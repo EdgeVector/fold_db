@@ -7,8 +7,8 @@ use serde_json::json;
 use std::fs;
 use std::io::Write;
 
-use super::http_server::AppState;
-use super::DataFoldNode;
+use crate::datafold_node::DataFoldNode;
+use crate::server::http_server::AppState;
 
 /// Get system status information
 #[utoipa::path(

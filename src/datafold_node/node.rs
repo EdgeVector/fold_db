@@ -28,7 +28,7 @@ pub struct DataFoldNode {
     /// The underlying database instance for data storage and operations
     pub(super) db: Arc<Mutex<FoldDB>>,
     /// Configuration settings for this node
-    pub(super) config: NodeConfig,
+    pub config: NodeConfig,
     /// Unique identifier for this node
     pub(super) node_id: String,
     /// Security manager for authentication and encryption

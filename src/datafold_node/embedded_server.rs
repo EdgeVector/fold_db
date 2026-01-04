@@ -4,8 +4,9 @@
 //! be integrated into desktop applications (e.g., Tauri, Electron) without blocking
 //! the main thread.
 
-use super::{DataFoldHttpServer, DataFoldNode};
+use super::DataFoldNode;
 use crate::error::FoldDbResult;
+use crate::server::http_server::DataFoldHttpServer;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
@@ -32,9 +33,9 @@ impl EmbeddedServerHandle {
 
     /// Wait for the server to finish (blocks until server stops).
     pub async fn wait(self) -> FoldDbResult<()> {
-        self.task_handle.await.map_err(|e| {
-            crate::error::FoldDbError::Other(format!("Server task panicked: {}", e))
-        })?
+        self.task_handle
+            .await
+            .map_err(|e| crate::error::FoldDbError::Other(format!("Server task panicked: {}", e)))?
     }
 
     /// Abort the server task.
@@ -87,11 +88,9 @@ pub async fn start_embedded_server(
 ) -> FoldDbResult<EmbeddedServerHandle> {
     let bind_address = format!("127.0.0.1:{}", port);
     let server = DataFoldHttpServer::new(node, &bind_address).await?;
-    
+
     let address = bind_address.clone();
-    let task_handle = tokio::spawn(async move {
-        server.run().await
-    });
+    let task_handle = tokio::spawn(async move { server.run().await });
 
     Ok(EmbeddedServerHandle {
         task_handle,
@@ -121,7 +120,7 @@ pub async fn start_embedded_server_shared(
         // Clone the node since DataFoldNode implements Clone
         guard.clone()
     };
-    
+
     start_embedded_server(node_instance, port).await
 }
 
@@ -134,28 +133,28 @@ mod tests {
     async fn test_embedded_server_starts() {
         // Create a temporary directory for the test database
         let temp_dir = tempdir().unwrap();
-        
+
         // Create a config with a mock schema service URL
-        let mut config = crate::datafold_node::config::NodeConfig::new(temp_dir.path().to_path_buf());
+        let mut config =
+            crate::datafold_node::config::NodeConfig::new(temp_dir.path().to_path_buf());
         config.schema_service_url = Some("mock://test".to_string());
-        
+
         // Create the node
         let node = DataFoldNode::new(config).await.unwrap();
-        
+
         // Use a random high port to avoid conflicts
         use rand::Rng;
         let port = rand::thread_rng().gen_range(50000..60000);
-        
+
         let handle = start_embedded_server(node, port).await.unwrap();
-        
+
         // Verify the server is running
         assert!(handle.is_running());
-        
+
         // Verify the bind address
         assert_eq!(handle.bind_address(), format!("127.0.0.1:{}", port));
-        
+
         // Clean up
         handle.abort();
     }
 }
-
