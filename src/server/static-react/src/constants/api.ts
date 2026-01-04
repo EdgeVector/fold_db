@@ -132,7 +132,7 @@ export const RETRY_CONFIG = {
 // API Base Configuration
 export const API_CONFIG = {
   // Use relative path for CloudFront compatibility
-  BASE_URL: 'api',
+  BASE_URL: '/api',
   VERSION: 'v1',
   DEFAULT_TIMEOUT: API_TIMEOUTS.STANDARD,
   DEFAULT_RETRIES: API_RETRIES.STANDARD

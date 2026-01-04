@@ -22,7 +22,7 @@ use crate::transform::manager::TransformManager;
 use super::infrastructure::{EventMonitor, MessageBus};
 use super::mutation_manager::MutationManager;
 use super::orchestration::index_status::IndexStatusTracker;
-use super::orchestration::{IndexEventHandler, TransformOrchestrator};
+use super::orchestration::TransformOrchestrator;
 use super::query::QueryExecutor;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
@@ -42,8 +42,6 @@ pub struct FoldDB {
     pub(crate) transform_orchestrator: Option<Arc<TransformOrchestrator>>,
     /// Mutation manager for handling all mutation operations
     pub(crate) mutation_manager: MutationManager,
-    /// Index event handler for background indexing
-    pub(crate) index_event_handler: IndexEventHandler,
 }
 
 impl FoldDB {
@@ -261,14 +259,6 @@ impl FoldDB {
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
         info!("Started MutationManager event listener");
 
-        // Create and start IndexEventHandler for background indexing
-        let index_event_handler = IndexEventHandler::new(
-            Arc::clone(&message_bus),
-            Arc::clone(&db_ops),
-            Some(index_status_tracker),
-        );
-        info!("Started IndexEventHandler for background indexing");
-
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
@@ -284,7 +274,6 @@ impl FoldDB {
             event_monitor,
             transform_orchestrator,
             mutation_manager,
-            index_event_handler,
         })
     }
 
@@ -300,12 +289,12 @@ impl FoldDB {
 
     /// Get the current indexing status
     pub async fn get_indexing_status(&self) -> super::orchestration::IndexingStatus {
-        self.index_event_handler.get_status().await
+        self.mutation_manager.get_indexing_status().await
     }
 
     /// Check if indexing is currently in progress
     pub async fn is_indexing(&self) -> bool {
-        self.index_event_handler.is_indexing().await
+        self.mutation_manager.is_indexing().await
     }
 
     // ========== CONSOLIDATED SCHEMA API - DELEGATES TO SCHEMA_CORE ==========

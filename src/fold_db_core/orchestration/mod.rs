@@ -9,23 +9,19 @@
 pub mod transform_orchestrator;
 
 // New decomposed orchestration components
-pub mod transform_event_monitor;
 pub mod execution_coordinator;
-pub mod persistence_manager;
-pub mod queue_manager;
-pub mod mutation_event_manager;
-pub mod index_event_handler;
 pub mod index_status;
+pub mod persistence_manager;
 pub mod progress_store;
+pub mod queue_manager;
+pub mod transform_event_monitor;
 
-pub use transform_event_monitor::TransformEventMonitor;
 pub use execution_coordinator::{ExecutionCoordinator, ExecutionStats};
+pub use index_status::{IndexStatusTracker, IndexingState, IndexingStatus};
 pub use persistence_manager::PersistenceManager;
-pub use queue_manager::{QueueItem, QueueManager, QueueState};
-pub use transform_orchestrator::{TransformOrchestrator, TransformQueue};
-pub use mutation_event_manager::MutationEventManager;
-pub use index_event_handler::IndexEventHandler;
-pub use index_status::{IndexStatusTracker, IndexingStatus, IndexingState};
-pub use progress_store::{ProgressStore, InMemoryProgressStore};
 #[cfg(feature = "aws-backend")]
 pub use progress_store::DynamoDbProgressStore;
+pub use progress_store::{InMemoryProgressStore, ProgressStore};
+pub use queue_manager::{QueueItem, QueueManager, QueueState};
+pub use transform_event_monitor::TransformEventMonitor;
+pub use transform_orchestrator::{TransformOrchestrator, TransformQueue};

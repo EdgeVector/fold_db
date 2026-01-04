@@ -131,6 +131,22 @@ impl MutationManager {
         }
     }
 
+    pub async fn get_indexing_status(&self) -> super::orchestration::IndexingStatus {
+        if let Some(tracker) = &self.index_status_tracker {
+            tracker.get_status().await
+        } else {
+            super::orchestration::IndexingStatus::default()
+        }
+    }
+
+    pub async fn is_indexing(&self) -> bool {
+        if let Some(tracker) = &self.index_status_tracker {
+            tracker.is_indexing().await
+        } else {
+            false
+        }
+    }
+
     /// Write schema operation - main orchestration method for mutations
     ///
     /// # Deprecated
@@ -839,7 +855,7 @@ impl MutationManager {
                             &mutation_request,
                             &db_ops,
                             &schema_manager,
-                            &message_bus,
+                            Arc::clone(&message_bus),
                         ) {
                             error!("MutationManager failed to handle mutation request: {}", e);
 
@@ -887,140 +903,47 @@ impl MutationManager {
         mutation_request: &MutationRequest,
         db_ops: &Arc<DbOperations>,
         schema_manager: &Arc<SchemaCore>,
-        message_bus: &MessageBus,
+        message_bus: Arc<MessageBus>,
     ) -> Result<(), SchemaError> {
-        let start_time = std::time::Instant::now();
+        // Create a temporary MutationManager to handle the mutation
+        // We reuse the existing extensive logic in write_mutations_batch_async
+        // This avoids code duplication and ensures all optimizations (like 3-phase write) are applied
 
-        // Get the schema definition
-        let mut schema = schema_manager
-            .get_schema(&mutation_request.mutation.schema_name)?
-            .ok_or_else(|| {
-                SchemaError::InvalidData(format!(
-                    "Schema '{}' not found",
-                    mutation_request.mutation.schema_name
-                ))
-            })?;
+        // Note: The event listener runs in a background thread, likely outside of a tokio runtime
+        // or inside one depending on how it was spawned. We need to handle this carefully.
 
-        let key_config = schema.key.clone();
-        let key_value = KeyValue::from_mutation(
-            &mutation_request.mutation.fields_and_values,
-            key_config.as_ref().unwrap(),
+        let mutation = mutation_request.mutation.clone();
+
+        // We need an IndexStatusTracker, but we don't have access to the one in self
+        // because this is a static method.
+        // However, for single event mutations, we can create a new tracker or skip tracking
+        // Since this is the legacy path, skipping tracking is acceptable, or we could pass it in.
+        // But for now, let's just create a temporary manager without a tracker.
+
+        let mut temp_manager = Self::new(
+            Arc::clone(db_ops),
+            Arc::clone(schema_manager),
+            Arc::clone(&message_bus),
+            None, // No index tracking for this path currently
         );
-        let mutation_id = mutation_request.mutation.uuid.clone();
 
-        // Validate all field values against their topologies before processing
-        for (field_name, value) in &mutation_request.mutation.fields_and_values {
-            schema.validate_field_value(field_name, value)?;
-        }
-
-        // Process each field in the mutation
-        let fields_affected: Vec<String> = mutation_request
-            .mutation
-            .fields_and_values
-            .keys()
-            .cloned()
-            .collect();
-        for (field_name, value) in mutation_request.mutation.fields_and_values.clone() {
-            // Get field classifications BEFORE mutable borrow
-            let field_classifications = schema.get_field_classifications(&field_name);
-
-            if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
-                // NOTE: process_mutation_field_with_schema is deprecated v1 method
-                // Handle mutation inline with v2 async methods
-
-                // Create and store atom
-                let new_atom =
-                    Self::run_async(db_ops.create_and_store_atom_for_mutation_deferred(
-                        &mutation_request.mutation.schema_name,
-                        &mutation_request.mutation.pub_key,
-                        value.clone(),
-                        None,
-                    ))?;
-
-                // Write mutation to field
-                schema_field.write_mutation(
-                    &key_value,
-                    new_atom.clone(),
-                    mutation_request.mutation.pub_key.clone(),
-                );
-
-                // Persist molecule if present
-                if let Some(molecule_uuid) = schema_field.common().molecule_uuid() {
-                    Self::run_async(
-                        db_ops.persist_field_molecule_deferred(schema_field, molecule_uuid),
-                    )?;
-                }
-
-                // Index the field value
-                if let Some(native_index_mgr) = db_ops.native_index_manager() {
-                    // Use batch indexing with a single item
-                    let single_operation = vec![(
-                        mutation_request.mutation.schema_name.clone(),
-                        field_name.clone(),
-                        key_value.clone(),
-                        value.clone(),
-                        field_classifications,
-                    )];
-
-                    // Note: This static method doesn't have access to self.index_status_tracker
-                    // We would need to pass it in or change the method signature
-                    // For now, we'll skip tracking for this legacy path or we could pass it if we change signature
-                    native_index_mgr
-                        .batch_index_field_values_with_classifications(&single_operation)?;
-                }
-            } else {
-                return Err(SchemaError::InvalidData(format!(
-                    "Field '{}' not found in runtime_fields for schema '{}'. Available fields: {:?}",
-                    field_name,
-                    mutation_request.mutation.schema_name,
-                    schema.runtime_fields.keys().collect::<Vec<_>>()
-                )));
+        // Execute the mutation using the batch (async) API
+        // We wrap it in a block_on call to ensure it runs to completion
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(temp_manager.write_mutations_batch_async(vec![mutation]))
+                })?;
             }
-        }
-
-        // Flush native index after all field operations (legacy event handler path)
-        if let Some(native_index_mgr) = db_ops.native_index_manager() {
-            native_index_mgr.flush()?;
-        }
-
-        // Sync molecule UUIDs to the persisted field before storing
-        schema.sync_molecule_uuids();
-
-        // Persist the updated schema back to the database and schema_manager
-        let schema_name = schema.name.clone();
-        Self::run_async(async move {
-            db_ops.store_schema(&schema_name, &schema).await?;
-            schema_manager.load_schema_internal(schema).await
-        })?;
-
-        // Calculate execution time
-        let execution_time_ms = start_time.elapsed().as_millis() as u64;
-
-        // Create mutation context for transform execution
-        let mutation_context = Some(
-            crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
-                key_value: Some(key_value.clone()),
-                mutation_hash: Some(mutation_id.clone()),
-                incremental: true,
-                backfill_hash: mutation_request.mutation.backfill_hash.clone(), // Pass through backfill_hash
-            },
-        );
-
-        // Publish MutationExecuted event to trigger transforms
-        let event = MutationExecuted::with_context(
-            "mutation_request_handler",
-            mutation_request.mutation.schema_name.clone(),
-            execution_time_ms,
-            fields_affected,
-            mutation_context,
-        );
-
-        message_bus.publish(event)?;
-
-        // Flush database to ensure mutation is persisted to disk
-        // Note: This is in a sync event handler - consider making it async
-        // For now, use deprecated flush_sync for backward compatibility
-        db_ops.flush_sync()?;
+            Err(_) => {
+                // No runtime, create one temporary
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| {
+                        SchemaError::InvalidData(format!("Failed to create runtime: {}", e))
+                    })?
+                    .block_on(temp_manager.write_mutations_batch_async(vec![mutation]))?;
+            }
+        };
 
         Ok(())
     }
