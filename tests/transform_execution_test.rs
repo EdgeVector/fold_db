@@ -17,7 +17,7 @@ async fn test_transform_execution_states() {
         .expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path)
+    let mut fold_db = FoldDB::new(test_db_path)
         .await
         .expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
@@ -90,7 +90,7 @@ async fn test_transform_execution_states() {
         .expect("Failed to set BlogPostWordIndex state");
 
     // Perform mutation on BlogPost
-    let _mutation_json = json!({
+    let mutation_json = json!({
         "schema_name": "BlogPost",
         "uuid": "mutation_1",
         "pub_key": "test_key",
@@ -103,16 +103,15 @@ async fn test_transform_execution_states() {
         }
     });
 
-    // We need to construct a Mutation object manually or use a helper if available.
-    // Since we don't have easy access to Mutation struct construction from JSON in this test context without more boilerplate,
-    // we'll skip the actual mutation execution test for now and focus on the state check logic which we modified.
-    // However, to properly verify, we should ideally trigger the event.
+    let mutation = create_test_mutation(&blogpost_schema_json, mutation_json);
 
-    // Instead of full mutation, let's verify the state check logic indirectly or assume the unit test covers it.
-    // But wait, we want to verify the fix.
-    // Let's use the fact that we modified the code to allow Blocked state.
+    fold_db
+        .mutation_manager_mut()
+        .write_mutations_batch_async(vec![mutation])
+        .await
+        .expect("Failed to execute mutation");
 
-    // Let's set it to Blocked and verify we can still get the state as Blocked
+    // Case 2: Set BlogPostWordIndex to Blocked
     db_ops
         .store_schema_state("BlogPostWordIndex", &SchemaState::Blocked)
         .await
@@ -124,21 +123,53 @@ async fn test_transform_execution_states() {
         .expect("Failed to get state");
     assert_eq!(state, Some(SchemaState::Blocked));
 
-    // Case 3: Set BlogPostWordIndex to Available (should execute)
-    // Note: SchemaState::Available is the default, but we can explicitly set it to be sure or just assume it works if Blocked works.
-    // However, let's be explicit.
-    // Wait, there is no set_schema_state for Available in the public API usually, but let's check if we can.
-    // Actually, we can just assume if Blocked works, the logic change covers Available too.
-    // But let's add a check for the state at least.
-
-    // For now, let's just verify we can set it back to Available if possible, or just skip if not easily possible via db_ops.
+    // Case 3: Set BlogPostWordIndex to Available
     // db_ops.store_schema_state("BlogPostWordIndex", &SchemaState::Available).await.expect("Failed to set BlogPostWordIndex state");
     // let state = transform_manager.get_schema_state("BlogPostWordIndex").expect("Failed to get state");
     // assert_eq!(state, Some(SchemaState::Available));
 
-    // Since we modified the code to allow all 3, and we tested Blocked, we are reasonably confident.
-    // Let's just keep the Blocked test as it proves we relaxed the check.
-
     // Close the database
     fold_db.close().expect("Failed to close FoldDB");
+}
+
+fn create_test_mutation(
+    schema_json: &serde_json::Value,
+    mutation_json: serde_json::Value,
+) -> datafold::schema::types::Mutation {
+    use datafold::schema::types::{KeyConfig, KeyValue, Mutation, MutationType};
+    use std::collections::HashMap;
+
+    let key_config: KeyConfig = serde_json::from_value(schema_json["key"].clone())
+        .expect("Failed to parse KeyConfig from schema");
+
+    let schema_name = mutation_json["schema_name"]
+        .as_str()
+        .expect("Missing schema_name")
+        .to_string();
+
+    let pub_key = mutation_json["pub_key"]
+        .as_str()
+        .unwrap_or("default_key")
+        .to_string();
+
+    let fields_and_values: HashMap<String, serde_json::Value> =
+        serde_json::from_value(mutation_json["fields_and_values"].clone())
+            .expect("Failed to parse fields_and_values");
+
+    let key_value = KeyValue::from_mutation(&fields_and_values, &key_config);
+
+    let mut mutation = Mutation::new(
+        schema_name,
+        fields_and_values,
+        key_value,
+        pub_key,
+        0, // trust_distance
+        MutationType::Update,
+    );
+
+    if let Some(uuid) = mutation_json["uuid"].as_str() {
+        mutation.uuid = uuid.to_string();
+    }
+
+    mutation
 }

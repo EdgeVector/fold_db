@@ -10,12 +10,12 @@ pub mod topology;
 pub mod transform;
 
 pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition, FieldMapper};
-pub use key_config::KeyConfig;
-pub use key_value::KeyValue;
 pub use errors::SchemaError;
 pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};
-pub use mutation::{Mutation};
-pub use operations::{Operation, Query};
-pub use schema::{Schema, DeclarativeSchemaType as SchemaType};
-pub use topology::{JsonTopology, TopologyNode, PrimitiveType};
+pub use key_config::KeyConfig;
+pub use key_value::KeyValue;
+pub use mutation::Mutation;
+pub use operations::{MutationType, Operation, Query};
+pub use schema::{DeclarativeSchemaType as SchemaType, Schema};
+pub use topology::{JsonTopology, PrimitiveType, TopologyNode};
 pub use transform::{Transform, TransformRegistration};
