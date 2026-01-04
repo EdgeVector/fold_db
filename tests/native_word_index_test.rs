@@ -1,12 +1,10 @@
 use datafold::datafold_node::DataFoldNode;
-use datafold::schema::types::key_value::KeyValue;
-use datafold::schema::types::Mutation;
 use datafold::schema::SchemaState;
-use datafold::MutationType;
 use datafold::NodeConfig;
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::json;
 use tempfile::TempDir;
+
+mod common;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_native_word_index_search_updates_with_mutations() {
@@ -18,22 +16,22 @@ async fn test_native_word_index_search_updates_with_mutations() {
         .await
         .expect("failed to create DataFoldNode");
 
+    let blogpost_schema = json!({
+        "name": "BlogPost",
+        "key": {
+            "range_field": "publish_date"
+        },
+        "fields": {
+            "title": {},
+            "content": {},
+            "author": {},
+            "publish_date": {},
+            "tags": {}
+        }
+    });
+
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
-
-        let blogpost_schema = json!({
-            "name": "BlogPost",
-            "key": {
-                "range_field": "publish_date"
-            },
-            "fields": {
-                "title": {},
-                "content": {},
-                "author": {},
-                "publish_date": {},
-                "tags": {}
-            }
-        });
 
         let schema_str =
             serde_json::to_string(&blogpost_schema).expect("schema serialization failed");
@@ -50,24 +48,23 @@ async fn test_native_word_index_search_updates_with_mutations() {
             .expect("failed to approve schema");
     }
 
-    let mut create_fields = HashMap::new();
-    create_fields.insert("title".to_string(), json!("Native Word Index Overview"));
-    create_fields.insert(
-        "content".to_string(),
-        json!("Jennifer Liu wrote about efficient Rust indexing in New York"),
-    );
-    create_fields.insert("author".to_string(), json!("Jennifer Liu"));
-    create_fields.insert("publish_date".to_string(), json!("2024-02-01"));
-    create_fields.insert("tags".to_string(), json!(["rust", "database"]));
-
-    execute_mutation(
-        &node,
-        "BlogPost",
-        create_fields,
-        KeyValue::new(None, Some("2024-02-01".to_string())),
-        MutationType::Create,
-    )
-    .await;
+    node.mutate_batch(vec![common::create_test_mutation(
+        &blogpost_schema,
+        json!({
+            "schema_name": "BlogPost",
+            "pub_key": "default_key",
+            "fields_and_values": {
+                "title": "Native Word Index Overview",
+                "content": "Jennifer Liu wrote about efficient Rust indexing in New York",
+                "author": "Jennifer Liu",
+                "publish_date": "2024-02-01",
+                "tags": ["rust", "database"]
+            },
+            "mutation_type": "Create"
+        }),
+    )])
+    .await
+    .expect("mutation execution should succeed");
 
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
@@ -88,21 +85,20 @@ async fn test_native_word_index_search_updates_with_mutations() {
         assert!(stopword_results.is_empty(), "stopwords should be excluded");
     }
 
-    let mut update_fields = HashMap::new();
-    update_fields.insert(
-        "content".to_string(),
-        json!("Alice Smith explored indexing strategies while visiting Berlin"),
-    );
-    update_fields.insert("publish_date".to_string(), json!("2024-02-01"));
-
-    execute_mutation(
-        &node,
-        "BlogPost",
-        update_fields,
-        KeyValue::new(None, Some("2024-02-01".to_string())),
-        MutationType::Update,
-    )
-    .await;
+    node.mutate_batch(vec![common::create_test_mutation(
+        &blogpost_schema,
+        json!({
+            "schema_name": "BlogPost",
+            "pub_key": "default_key",
+            "fields_and_values": {
+                "content": "Alice Smith explored indexing strategies while visiting Berlin",
+                "publish_date": "2024-02-01"
+            },
+            "mutation_type": "Update"
+        }),
+    )])
+    .await
+    .expect("mutation execution should succeed");
 
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
@@ -144,25 +140,4 @@ async fn test_native_word_index_search_updates_with_mutations() {
             "expected alice to appear in content results"
         );
     }
-}
-
-async fn execute_mutation(
-    node: &DataFoldNode,
-    schema: &str,
-    fields: HashMap<String, Value>,
-    key_value: KeyValue,
-    mutation_type: MutationType,
-) {
-    let mutation = Mutation::new(
-        schema.to_string(),
-        fields,
-        key_value,
-        String::new(),
-        0,
-        mutation_type,
-    );
-
-    node.mutate_batch(vec![mutation])
-        .await
-        .expect("mutation execution should succeed");
 }

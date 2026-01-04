@@ -4,6 +4,8 @@ use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
+mod common;
+
 /// Test to verify that transforms execute for Approved and Blocked schemas
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_transform_execution_states() {
@@ -103,7 +105,7 @@ async fn test_transform_execution_states() {
         }
     });
 
-    let mutation = create_test_mutation(&blogpost_schema_json, mutation_json);
+    let mutation = common::create_test_mutation(&blogpost_schema_json, mutation_json);
 
     fold_db
         .mutation_manager_mut()
@@ -130,46 +132,4 @@ async fn test_transform_execution_states() {
 
     // Close the database
     fold_db.close().expect("Failed to close FoldDB");
-}
-
-fn create_test_mutation(
-    schema_json: &serde_json::Value,
-    mutation_json: serde_json::Value,
-) -> datafold::schema::types::Mutation {
-    use datafold::schema::types::{KeyConfig, KeyValue, Mutation, MutationType};
-    use std::collections::HashMap;
-
-    let key_config: KeyConfig = serde_json::from_value(schema_json["key"].clone())
-        .expect("Failed to parse KeyConfig from schema");
-
-    let schema_name = mutation_json["schema_name"]
-        .as_str()
-        .expect("Missing schema_name")
-        .to_string();
-
-    let pub_key = mutation_json["pub_key"]
-        .as_str()
-        .unwrap_or("default_key")
-        .to_string();
-
-    let fields_and_values: HashMap<String, serde_json::Value> =
-        serde_json::from_value(mutation_json["fields_and_values"].clone())
-            .expect("Failed to parse fields_and_values");
-
-    let key_value = KeyValue::from_mutation(&fields_and_values, &key_config);
-
-    let mut mutation = Mutation::new(
-        schema_name,
-        fields_and_values,
-        key_value,
-        pub_key,
-        0, // trust_distance
-        MutationType::Update,
-    );
-
-    if let Some(uuid) = mutation_json["uuid"].as_str() {
-        mutation.uuid = uuid.to_string();
-    }
-
-    mutation
 }
