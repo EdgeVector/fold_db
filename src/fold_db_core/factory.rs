@@ -1,26 +1,28 @@
-use crate::datafold_node::config::{DatabaseConfig, NodeConfig};
-#[cfg(feature = "aws-backend")]
-use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 #[cfg(feature = "aws-backend")]
 use crate::fold_db_core::orchestration::{DynamoDbProgressStore, ProgressStore};
 use crate::fold_db_core::FoldDB;
+#[cfg(feature = "aws-backend")]
+use crate::logging::features::LogFeature;
+use crate::storage::config::DatabaseConfig;
+#[cfg(feature = "aws-backend")]
+use crate::storage::ExplicitTables;
+#[cfg(feature = "aws-backend")]
+use crate::storage::TableNameResolver;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[cfg(feature = "aws-backend")]
 use crate::log_feature;
-#[cfg(feature = "aws-backend")]
-use crate::logging::features::LogFeature;
 
-/// Creates a fully initialized FoldDB instance based on the node configuration.
+/// Creates a fully initialized FoldDB instance based on the database configuration.
 ///
 /// This factory handles the creation of backend-specific components like:
 /// - Storage operations (DbOperations)
 /// - Progress tracking (ProgressStore)
 /// - Connection pooling and configuration
-pub async fn create_fold_db(config: &NodeConfig) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
-    match &config.database {
+pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
+    match config {
         DatabaseConfig::Local { path } => {
             let path_str = path
                 .to_str()
@@ -89,7 +91,7 @@ pub async fn create_fold_db(config: &NodeConfig) -> FoldDbResult<Arc<Mutex<FoldD
                 dynamo_config.tables.native_index.clone(),
             );
 
-            let resolver = crate::storage::TableNameResolver::Explicit(map);
+            let resolver = TableNameResolver::Explicit(map);
 
             let db_ops = Arc::new(
                 DbOperations::from_dynamodb_flexible(
@@ -104,10 +106,8 @@ pub async fn create_fold_db(config: &NodeConfig) -> FoldDbResult<Arc<Mutex<FoldD
                 })?,
             );
 
-            let storage_path = config.get_storage_path();
-            let path_str = storage_path
-                .to_str()
-                .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
+            // Generate path string for compatibility
+            let path_str = "data";
 
             // Initialize ProgressStore
             let progress_store: Arc<dyn ProgressStore> = {

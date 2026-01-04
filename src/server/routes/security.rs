@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 /// Get the security manager from the node
 async fn get_security_manager(data: &web::Data<AppState>) -> Arc<SecurityManager> {
-    let node_guard = data.node.lock().await;
+    let node_guard = data.node.read().await;
     node_guard.get_security_manager().clone()
 }
 

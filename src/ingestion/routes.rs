@@ -1,21 +1,19 @@
 //! HTTP route handlers for the ingestion API
 
-use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
-use crate::ingestion::ProgressTracker;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::IngestionResponse;
+use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::{json, Value};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Process JSON ingestion request
 #[utoipa::path(
@@ -28,7 +26,7 @@ use tokio::sync::Mutex;
 pub async fn process_json(
     request: web::Json<IngestionRequest>,
     progress_tracker: web::Data<ProgressTracker>,
-    node: web::Data<Arc<Mutex<DataFoldNode>>>,
+    state: web::Data<AppState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -38,7 +36,7 @@ pub async fn process_json(
 
     // Generate a unique progress ID
     let progress_id = uuid::Uuid::new_v4().to_string();
-    
+
     // Start progress tracking
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
     progress_service.start_progress(progress_id.clone()).await;
@@ -53,7 +51,12 @@ pub async fn process_json(
                 "Failed to initialize ingestion service: {}",
                 e
             );
-            progress_service.fail_progress(&progress_id, format!("Ingestion service not available: {}", e)).await;
+            progress_service
+                .fail_progress(
+                    &progress_id,
+                    format!("Ingestion service not available: {}", e),
+                )
+                .await;
             return HttpResponse::ServiceUnavailable().json(IngestionResponse::failure(vec![
                 format!("Ingestion service not available: {}", e),
             ]));
@@ -61,10 +64,10 @@ pub async fn process_json(
     };
 
     // Spawn ingestion as a background task and return immediately with progress_id
-    let node_clone = Arc::clone(node.get_ref());
+    let node_clone = state.node.clone();
     let request_data = request.into_inner();
     let progress_id_clone = progress_id.clone();
-    
+
     tokio::spawn(async move {
         log_feature!(
             LogFeature::Ingestion,
@@ -72,9 +75,14 @@ pub async fn process_json(
             "Starting background ingestion with progress_id: {}",
             progress_id_clone
         );
-        
+
         match service
-            .process_json_with_node_and_progress(request_data, node_clone, &progress_service, progress_id_clone.clone())
+            .process_json_with_node_and_progress(
+                request_data,
+                node_clone,
+                &progress_service,
+                progress_id_clone.clone(),
+            )
             .await
         {
             Ok(response) => {
@@ -101,11 +109,13 @@ pub async fn process_json(
                     "Background ingestion processing failed: {}",
                     e
                 );
-                progress_service.fail_progress(&progress_id_clone, format!("Processing failed: {}", e)).await;
+                progress_service
+                    .fail_progress(&progress_id_clone, format!("Processing failed: {}", e))
+                    .await;
             }
         }
     });
-    
+
     // Return immediately with the progress_id so frontend can start polling
     log_feature!(
         LogFeature::Ingestion,
@@ -113,7 +123,7 @@ pub async fn process_json(
         "Returning progress_id to client: {}",
         progress_id
     );
-    
+
     HttpResponse::Accepted().json(serde_json::json!({
         "success": true,
         "progress_id": progress_id,
@@ -137,9 +147,7 @@ pub async fn get_status() -> impl Responder {
 
     match create_simple_ingestion_service().await {
         Ok(service) => match service.get_status() {
-            Ok(status) => {
-                HttpResponse::Ok().json(status)
-            }
+            Ok(status) => HttpResponse::Ok().json(status),
             Err(e) => {
                 log_feature!(
                     LogFeature::Ingestion,
@@ -221,9 +229,7 @@ pub async fn health_check() -> impl Responder {
     request_body = Value,
     responses((status = 200, description = "Validation result", body = Value), (status = 400, description = "Invalid"))
 )]
-pub async fn validate_json(
-    request: web::Json<Value>,
-) -> impl Responder {
+pub async fn validate_json(request: web::Json<Value>) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -232,18 +238,14 @@ pub async fn validate_json(
 
     match create_simple_ingestion_service().await {
         Ok(service) => match service.validate_input(&request.into_inner()) {
-            Ok(()) => {
-                HttpResponse::Ok().json(json!({
-                    "valid": true,
-                    "message": "JSON data is valid for ingestion"
-                }))
-            }
-            Err(e) => {
-                HttpResponse::BadRequest().json(json!({
-                    "valid": false,
-                    "error": format!("Validation failed: {}", e)
-                }))
-            }
+            Ok(()) => HttpResponse::Ok().json(json!({
+                "valid": true,
+                "message": "JSON data is valid for ingestion"
+            })),
+            Err(e) => HttpResponse::BadRequest().json(json!({
+                "valid": false,
+                "error": format!("Validation failed: {}", e)
+            })),
         },
         Err(e) => HttpResponse::ServiceUnavailable().json(json!({
             "valid": false,
@@ -284,9 +286,7 @@ pub async fn get_ingestion_config() -> impl Responder {
     request_body = SavedConfig,
     responses((status = 200, description = "Saved"), (status = 500, description = "Failed"))
 )]
-pub async fn save_ingestion_config(
-    request: web::Json<SavedConfig>,
-) -> impl Responder {
+pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -370,7 +370,7 @@ pub async fn get_progress(
     progress_tracker: web::Data<ProgressTracker>,
 ) -> impl Responder {
     let id = path.into_inner();
-    
+
     log_feature!(
         LogFeature::Ingestion,
         debug,
@@ -380,13 +380,16 @@ pub async fn get_progress(
 
     // Get progress tracker from data
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    
+
     match progress_service.get_progress(&id).await {
-        Some(progress) => {
-            HttpResponse::Ok().json(progress)
-        }
+        Some(progress) => HttpResponse::Ok().json(progress),
         None => {
-            log_feature!(LogFeature::Ingestion, warn, "Progress not found for ID: {}", id);
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "Progress not found for ID: {}",
+                id
+            );
             HttpResponse::NotFound().json(json!({
                 "error": "Progress not found",
                 "id": id
@@ -402,9 +405,7 @@ pub async fn get_progress(
     tag = "ingestion",
     responses((status = 200, description = "All active progress", body = Vec<IngestionProgress>))
 )]
-pub async fn get_all_progress(
-    progress_tracker: web::Data<ProgressTracker>,
-) -> impl Responder {
+pub async fn get_all_progress(progress_tracker: web::Data<ProgressTracker>) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -413,7 +414,7 @@ pub async fn get_all_progress(
 
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
     let all_progress = progress_service.get_all_progress().await;
-    
+
     HttpResponse::Ok().json(all_progress)
 }
 
@@ -424,11 +425,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_get_status() {
-        let app = test::init_service(
-            App::new()
-                .route("/status", web::get().to(get_status)),
-        )
-        .await;
+        let app = test::init_service(App::new().route("/status", web::get().to(get_status))).await;
 
         let req = test::TestRequest::get().uri("/status").to_request();
         let resp = test::call_service(&app, req).await;
@@ -438,11 +435,8 @@ mod tests {
 
     #[actix_web::test]
     async fn test_health_check() {
-        let app = test::init_service(
-            App::new()
-                .route("/health", web::get().to(health_check)),
-        )
-        .await;
+        let app =
+            test::init_service(App::new().route("/health", web::get().to(health_check))).await;
 
         let req = test::TestRequest::get().uri("/health").to_request();
         let resp = test::call_service(&app, req).await;
@@ -451,11 +445,9 @@ mod tests {
 
     #[actix_web::test]
     async fn test_get_ingestion_config() {
-        let app = test::init_service(
-            App::new()
-                .route("/config", web::get().to(get_ingestion_config)),
-        )
-        .await;
+        let app =
+            test::init_service(App::new().route("/config", web::get().to(get_ingestion_config)))
+                .await;
 
         let req = test::TestRequest::get().uri("/config").to_request();
         let resp = test::call_service(&app, req).await;
