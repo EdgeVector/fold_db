@@ -1,13 +1,13 @@
 //! LLM service for query analysis and summarization.
 
-use super::types::{QueryPlan, Message, FollowupAnalysis};
+use super::types::{FollowupAnalysis, Message, QueryPlan};
 use crate::ingestion::{
     config::{AIProvider, IngestionConfig},
     ollama_service::OllamaService,
     openrouter_service::OpenRouterService,
 };
 use crate::schema::types::{DeclarativeSchemaDefinition, Query};
-use crate::schema::{SchemaWithState};
+use crate::schema::SchemaWithState;
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -61,21 +61,40 @@ impl LlmQueryService {
         schemas: &[SchemaWithState],
     ) -> Result<QueryPlan, String> {
         let prompt = self.build_analysis_prompt(user_query, schemas);
-        
+
         // Log prompt for debugging (truncated to avoid too much output)
         let prompt_preview = if prompt.len() > 500 {
-            format!("{}... [truncated, total {} chars]", &prompt[..500], prompt.len())
+            format!(
+                "{}... [truncated, total {} chars]",
+                &prompt[..500],
+                prompt.len()
+            )
         } else {
             prompt.clone()
         };
         log::debug!("AI Query Prompt Preview: {}", prompt_preview);
-        
+
         let response = self.call_llm(&prompt).await?;
-        
-        
-        let query_plan = self.parse_query_plan(&response)?;
-        
-        
+
+        let mut query_plan = self.parse_query_plan(&response)?;
+
+        // Canonicalize schema name to ensure strict case match (backend is strict)
+        // This handles AI hallucinations where it might output "Myschema" instead of "MySchema"
+        let target_schema_lower = query_plan.query.schema_name.to_lowercase();
+        for schema_state in schemas {
+            if schema_state.schema.name.to_lowercase() == target_schema_lower {
+                if query_plan.query.schema_name != schema_state.schema.name {
+                    log::info!(
+                        "🤖 AI Autocorrect: Normalizing schema name '{}' -> '{}'",
+                        query_plan.query.schema_name,
+                        schema_state.schema.name
+                    );
+                    query_plan.query.schema_name = schema_state.schema.name.clone();
+                }
+                break;
+            }
+        }
+
         Ok(query_plan)
     }
 
@@ -97,7 +116,8 @@ impl LlmQueryService {
         conversation_history: &[Message],
         question: &str,
     ) -> Result<String, String> {
-        let prompt = self.build_chat_prompt(original_query, results, conversation_history, question);
+        let prompt =
+            self.build_chat_prompt(original_query, results, conversation_history, question);
         self.call_llm(&prompt).await
     }
 
@@ -109,7 +129,8 @@ impl LlmQueryService {
         question: &str,
         schemas: &[crate::schema::SchemaWithState],
     ) -> Result<FollowupAnalysis, String> {
-        let prompt = self.build_followup_analysis_prompt(original_query, results, question, schemas);
+        let prompt =
+            self.build_followup_analysis_prompt(original_query, results, question, schemas);
         let response = self.call_llm(&prompt).await?;
         self.parse_followup_analysis(&response)
     }
@@ -133,8 +154,10 @@ impl LlmQueryService {
         db_ops: &crate::db_operations::DbOperations,
     ) -> Result<String, String> {
         // Step 1: Generate native index search terms using AI
-        let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;
-        
+        let search_terms = self
+            .generate_native_index_search_terms(user_query, schemas)
+            .await?;
+
         // Step 2: Execute native index searches for each term
         // Use search_all_classifications which searches:
         // - Word matches + field name matches
@@ -144,11 +167,18 @@ impl LlmQueryService {
             for term in &search_terms {
                 // Check if we need to use async or sync search
                 if native_index_mgr.is_async() {
-                    match native_index_mgr.search_all_classifications_async(term).await {
+                    match native_index_mgr
+                        .search_all_classifications_async(term)
+                        .await
+                    {
                         Ok(mut results) => {
-                            log::debug!("LLM Query: Term '{}' returned {} results (async)", term, results.len());
+                            log::debug!(
+                                "LLM Query: Term '{}' returned {} results (async)",
+                                term,
+                                results.len()
+                            );
                             all_results.append(&mut results);
-                        },
+                        }
                         Err(e) => {
                             log::warn!("Native index search failed for term '{}': {}", term, e);
                         }
@@ -156,9 +186,13 @@ impl LlmQueryService {
                 } else {
                     match native_index_mgr.search_all_classifications(term) {
                         Ok(mut results) => {
-                            log::debug!("LLM Query: Term '{}' returned {} results (sync)", term, results.len());
+                            log::debug!(
+                                "LLM Query: Term '{}' returned {} results (sync)",
+                                term,
+                                results.len()
+                            );
                             all_results.append(&mut results);
-                        },
+                        }
                         Err(e) => {
                             log::warn!("Native index search failed for term '{}': {}", term, e);
                         }
@@ -166,11 +200,15 @@ impl LlmQueryService {
                 }
             }
         }
-        
-        log::info!("LLM Query: Collected {} total results for AI interpretation", all_results.len());
-        
+
+        log::info!(
+            "LLM Query: Collected {} total results for AI interpretation",
+            all_results.len()
+        );
+
         // Step 3: Send results to AI for interpretation
-        self.interpret_native_index_results(user_query, &all_results).await
+        self.interpret_native_index_results(user_query, &all_results)
+            .await
     }
 
     /// Execute a complete AI-native index query workflow and return both AI interpretation and raw results
@@ -181,8 +219,10 @@ impl LlmQueryService {
         db_ops: &crate::db_operations::DbOperations,
     ) -> Result<(String, Vec<crate::db_operations::IndexResult>), String> {
         // Step 1: Generate native index search terms using AI
-        let search_terms = self.generate_native_index_search_terms(user_query, schemas).await?;
-        
+        let search_terms = self
+            .generate_native_index_search_terms(user_query, schemas)
+            .await?;
+
         // Step 2: Execute native index searches for each term
         // Use search_all_classifications which searches:
         // - Word matches + field name matches
@@ -192,11 +232,18 @@ impl LlmQueryService {
             for term in &search_terms {
                 // Check if we need to use async or sync search
                 if native_index_mgr.is_async() {
-                    match native_index_mgr.search_all_classifications_async(term).await {
+                    match native_index_mgr
+                        .search_all_classifications_async(term)
+                        .await
+                    {
                         Ok(mut results) => {
-                            log::debug!("LLM Query: Term '{}' returned {} results (async)", term, results.len());
+                            log::debug!(
+                                "LLM Query: Term '{}' returned {} results (async)",
+                                term,
+                                results.len()
+                            );
                             all_results.append(&mut results);
-                        },
+                        }
                         Err(e) => {
                             log::warn!("Native index search failed for term '{}': {}", term, e);
                         }
@@ -204,9 +251,13 @@ impl LlmQueryService {
                 } else {
                     match native_index_mgr.search_all_classifications(term) {
                         Ok(mut results) => {
-                            log::debug!("LLM Query: Term '{}' returned {} results (sync)", term, results.len());
+                            log::debug!(
+                                "LLM Query: Term '{}' returned {} results (sync)",
+                                term,
+                                results.len()
+                            );
                             all_results.append(&mut results);
-                        },
+                        }
                         Err(e) => {
                             log::warn!("Native index search failed for term '{}': {}", term, e);
                         }
@@ -214,17 +265,25 @@ impl LlmQueryService {
                 }
             }
         }
-        
-        log::debug!("LLM Query: Total results before deduplication: {}", all_results.len());
-        
+
+        log::debug!(
+            "LLM Query: Total results before deduplication: {}",
+            all_results.len()
+        );
+
         // Step 2.5: Deduplicate results based on schema_name + key_value + field
         let deduplicated_results = self.deduplicate_results(all_results);
-        
-        log::info!("LLM Query: Sending {} deduplicated results to AI for interpretation", deduplicated_results.len());
-        
+
+        log::info!(
+            "LLM Query: Sending {} deduplicated results to AI for interpretation",
+            deduplicated_results.len()
+        );
+
         // Step 3: Send results to AI for interpretation
-        let ai_interpretation = self.interpret_native_index_results(user_query, &deduplicated_results).await?;
-        
+        let ai_interpretation = self
+            .interpret_native_index_results(user_query, &deduplicated_results)
+            .await?;
+
         Ok((ai_interpretation, deduplicated_results))
     }
 
@@ -250,7 +309,11 @@ impl LlmQueryService {
         );
 
         prompt.push_str(&format!("Original Query: {}\n", original_query));
-        prompt.push_str(&format!("Existing Results ({} total): {}\n\n", results.len(), results_str));
+        prompt.push_str(&format!(
+            "Existing Results ({} total): {}\n\n",
+            results.len(),
+            results_str
+        ));
         prompt.push_str(&format!("Follow-up Question: {}\n\n", question));
 
         prompt.push_str("Available Schemas:\n");
@@ -259,7 +322,7 @@ impl LlmQueryService {
                 "- {} (Type: {:?})\n",
                 schema.schema.name, schema.schema.schema_type
             ));
-            
+
             // Include key configuration for Range and HashRange schemas
             if let Some(ref key) = schema.schema.key {
                 if let Some(ref hash_field) = key.hash_field {
@@ -269,7 +332,7 @@ impl LlmQueryService {
                     prompt.push_str(&format!("  Range Key: {} (filters: RangePrefix, RangePattern, RangeRange, HashRangeKey, HashRangePrefix operate on this field)\n", range_field));
                 }
             }
-            
+
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -278,7 +341,9 @@ impl LlmQueryService {
 
         prompt.push_str("\nDetermine if:\n");
         prompt.push_str("1. The question can be FULLY answered from the existing results (needs_query: false)\n");
-        prompt.push_str("2. The question needs NEW data that requires a query (needs_query: true)\n\n");
+        prompt.push_str(
+            "2. The question needs NEW data that requires a query (needs_query: true)\n\n",
+        );
 
         prompt.push_str("If a new query is needed, provide:\n");
         prompt.push_str("- query: The Query object to execute (same format as before)\n");
@@ -314,7 +379,7 @@ impl LlmQueryService {
               \"query\": null or {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ...},\n\
               \"reasoning\": \"explanation\"\n\
             }\n\n\
-            IMPORTANT: Return ONLY the JSON object, no additional text."
+            IMPORTANT: Return ONLY the JSON object, no additional text.",
         );
 
         prompt
@@ -337,17 +402,23 @@ impl LlmQueryService {
                 "- {} (Type: {:?}, State: {:?})\n",
                 schema.schema.name, schema.schema.schema_type, schema.state
             ));
-            
+
             // Include key configuration for Range and HashRange schemas
             if let Some(ref key) = schema.schema.key {
                 if let Some(ref hash_field) = key.hash_field {
-                    prompt.push_str(&format!("  Hash Key: {} (indexed for fast lookup)\n", hash_field));
+                    prompt.push_str(&format!(
+                        "  Hash Key: {} (indexed for fast lookup)\n",
+                        hash_field
+                    ));
                 }
                 if let Some(ref range_field) = key.range_field {
-                    prompt.push_str(&format!("  Range Key: {} (indexed for fast lookup)\n", range_field));
+                    prompt.push_str(&format!(
+                        "  Range Key: {} (indexed for fast lookup)\n",
+                        range_field
+                    ));
                 }
             }
-            
+
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -416,10 +487,13 @@ impl LlmQueryService {
     }
 
     /// Deduplicate results based on schema_name + key_value + field combination
-    fn deduplicate_results(&self, mut results: Vec<crate::db_operations::IndexResult>) -> Vec<crate::db_operations::IndexResult> {
+    fn deduplicate_results(
+        &self,
+        mut results: Vec<crate::db_operations::IndexResult>,
+    ) -> Vec<crate::db_operations::IndexResult> {
         let _original_count = results.len();
         let mut seen = HashSet::new();
-        
+
         results.retain(|result| {
             // Create a unique key based on schema_name + key_value + field
             let key = format!(
@@ -428,10 +502,10 @@ impl LlmQueryService {
                 serde_json::to_string(&result.key_value).unwrap_or_default(),
                 result.field
             );
-            
+
             seen.insert(key)
         });
-        
+
         results
     }
 
@@ -441,12 +515,16 @@ impl LlmQueryService {
         original_query: &str,
         results: &[crate::db_operations::IndexResult],
     ) -> Result<String, String> {
-        log::info!("LLM Query: Sending {} results to AI for interpretation", results.len());
+        log::info!(
+            "LLM Query: Sending {} results to AI for interpretation",
+            results.len()
+        );
         if results.is_empty() {
             log::warn!("LLM Query: No results to send to AI");
         } else {
-            log::debug!("LLM Query: Sample result - schema={}, field={}, key_value={:?}", 
-                results[0].schema_name, 
+            log::debug!(
+                "LLM Query: Sample result - schema={}, field={}, key_value={:?}",
+                results[0].schema_name,
                 results[0].field,
                 results[0].key_value
             );
@@ -472,16 +550,22 @@ impl LlmQueryService {
                 "- {} (Type: {:?}, State: {:?})\n",
                 schema.schema.name, schema.schema.schema_type, schema.state
             ));
-            
+
             if let Some(ref key) = schema.schema.key {
                 if let Some(ref hash_field) = key.hash_field {
-                    prompt.push_str(&format!("  Hash Key: {} (indexed for fast lookup)\n", hash_field));
+                    prompt.push_str(&format!(
+                        "  Hash Key: {} (indexed for fast lookup)\n",
+                        hash_field
+                    ));
                 }
                 if let Some(ref range_field) = key.range_field {
-                    prompt.push_str(&format!("  Range Key: {} (indexed for fast lookup)\n", range_field));
+                    prompt.push_str(&format!(
+                        "  Range Key: {} (indexed for fast lookup)\n",
+                        range_field
+                    ));
                 }
             }
-            
+
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -565,8 +649,12 @@ impl LlmQueryService {
             reasoning: String,
         }
 
-        let parsed: LlmFollowupResponse = serde_json::from_str(json_str)
-            .map_err(|e| format!("Failed to parse followup analysis: {}. Response: {}", e, json_str))?;
+        let parsed: LlmFollowupResponse = serde_json::from_str(json_str).map_err(|e| {
+            format!(
+                "Failed to parse followup analysis: {}. Response: {}",
+                e, json_str
+            )
+        })?;
 
         Ok(FollowupAnalysis {
             needs_query: parsed.needs_query,
@@ -605,8 +693,11 @@ impl LlmQueryService {
             "A query returned no results. Suggest an alternative approach to find the data the user wants.\n\n"
         );
 
-        prompt.push_str(&format!("User's Original Question: {}\n\n", original_user_query));
-        
+        prompt.push_str(&format!(
+            "User's Original Question: {}\n\n",
+            original_user_query
+        ));
+
         prompt.push_str("Failed Query:\n");
         prompt.push_str(&format!("  Schema: {}\n", failed_query.schema_name));
         prompt.push_str(&format!("  Fields: {:?}\n", failed_query.fields));
@@ -626,7 +717,7 @@ impl LlmQueryService {
                 "- {} (Type: {:?}, State: {:?})\n",
                 schema.schema.name, schema.schema.schema_type, schema.state
             ));
-            
+
             // Include key configuration for Range and HashRange schemas
             if let Some(ref key) = schema.schema.key {
                 if let Some(ref hash_field) = key.hash_field {
@@ -636,7 +727,7 @@ impl LlmQueryService {
                     prompt.push_str(&format!("  Range Key: {} (filters: RangePrefix, RangePattern, RangeRange, HashRangeKey, HashRangePrefix operate on this field)\n", range_field));
                 }
             }
-            
+
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -645,17 +736,24 @@ impl LlmQueryService {
 
         prompt.push_str("\nSuggest ONE alternative approach:\n");
         prompt.push_str("1. Try a different schema that might have the data\n");
-        prompt.push_str("2. Broaden the filter (e.g., remove date constraints, use pattern matching)\n");
+        prompt.push_str(
+            "2. Broaden the filter (e.g., remove date constraints, use pattern matching)\n",
+        );
         prompt.push_str("3. Try a different filter type (e.g., null filter for all records)\n");
         prompt.push_str("4. Search in related/index schemas\n\n");
 
-        prompt.push_str("If you believe there are NO reasonable alternatives left, respond with:\n");
-        prompt.push_str("{\"has_alternative\": false, \"query\": null, \"reasoning\": \"explanation\"}\n\n");
+        prompt
+            .push_str("If you believe there are NO reasonable alternatives left, respond with:\n");
+        prompt.push_str(
+            "{\"has_alternative\": false, \"query\": null, \"reasoning\": \"explanation\"}\n\n",
+        );
 
         prompt.push_str("Otherwise, respond with:\n");
         prompt.push_str("{\n");
         prompt.push_str("  \"has_alternative\": true,\n");
-        prompt.push_str("  \"query\": {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ...},\n");
+        prompt.push_str(
+            "  \"query\": {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ...},\n",
+        );
         prompt.push_str("  \"reasoning\": \"why this approach might work\"\n");
         prompt.push_str("}\n\n");
 
@@ -699,8 +797,12 @@ impl LlmQueryService {
             reasoning: String,
         }
 
-        let parsed: LlmAlternativeResponse = serde_json::from_str(json_str)
-            .map_err(|e| format!("Failed to parse alternative query: {}. Response: {}", e, json_str))?;
+        let parsed: LlmAlternativeResponse = serde_json::from_str(json_str).map_err(|e| {
+            format!(
+                "Failed to parse alternative query: {}. Response: {}",
+                e, json_str
+            )
+        })?;
 
         if parsed.has_alternative {
             if let Some(query) = parsed.query {
@@ -721,7 +823,7 @@ impl LlmQueryService {
     fn build_analysis_prompt(&self, user_query: &str, schemas: &[SchemaWithState]) -> String {
         let mut prompt = String::from(
             "You are a database query optimizer. Analyze the following natural language query \
-            and available schemas to create an execution plan.\n\n"
+            and available schemas to create an execution plan.\n\n",
         );
 
         prompt.push_str("Available Schemas:\n");
@@ -730,7 +832,7 @@ impl LlmQueryService {
                 "- {} (Type: {:?}, State: {:?})\n",
                 schema.schema.name, schema.schema.schema_type, schema.state
             ));
-            
+
             // Include key configuration for Range and HashRange schemas
             if let Some(ref key) = schema.schema.key {
                 if let Some(ref hash_field) = key.hash_field {
@@ -740,7 +842,7 @@ impl LlmQueryService {
                     prompt.push_str(&format!("  Range Key: {} (filters: RangePrefix, RangePattern, RangeRange, HashRangeKey, HashRangePrefix operate on this field)\n", range_field));
                 }
             }
-            
+
             prompt.push_str("  Fields: ");
             let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
             prompt.push_str(&field_names.join(", "));
@@ -953,11 +1055,15 @@ impl LlmQueryService {
 
         let mut prompt = String::from(
             "You are helping a user explore query results. Answer their question based on \
-            the context provided.\n\n"
+            the context provided.\n\n",
         );
 
         prompt.push_str(&format!("Original Query: {}\n", original_query));
-        prompt.push_str(&format!("Results ({} total): {}\n\n", results.len(), results_str));
+        prompt.push_str(&format!(
+            "Results ({} total): {}\n\n",
+            results.len(),
+            results_str
+        ));
 
         if !conversation_history.is_empty() {
             prompt.push_str("Conversation History:\n");
@@ -1019,8 +1125,12 @@ impl LlmQueryService {
             reasoning: String,
         }
 
-        let parsed: LlmResponse = serde_json::from_str(json_str)
-            .map_err(|e| format!("Failed to parse LLM response: {}. Response: {}", e, json_str))?;
+        let parsed: LlmResponse = serde_json::from_str(json_str).map_err(|e| {
+            format!(
+                "Failed to parse LLM response: {}. Response: {}",
+                e, json_str
+            )
+        })?;
 
         Ok(QueryPlan {
             query: parsed.query,
@@ -1033,8 +1143,10 @@ impl LlmQueryService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::types::{
+        DeclarativeSchemaDefinition, JsonTopology, KeyConfig, PrimitiveType, TopologyNode,
+    };
     use crate::schema::{SchemaState, SchemaWithState};
-    use crate::schema::types::{DeclarativeSchemaDefinition, KeyConfig, JsonTopology, TopologyNode, PrimitiveType};
     use std::collections::HashMap;
 
     fn create_test_hash_range_schema() -> SchemaWithState {
@@ -1065,11 +1177,11 @@ mod tests {
                 hash_field: Some("author".to_string()),
                 range_field: Some("publish_date".to_string()),
             }),
-            None,  // fields
-            None,  // transform_fields
-            None,  // field_mappers
+            None, // fields
+            None, // transform_fields
+            None, // field_mappers
         );
-        
+
         schema.descriptive_name = Some("Blog Post Author Index".to_string());
         schema.field_topologies = field_topologies;
 
@@ -1086,17 +1198,32 @@ mod tests {
 
         let service = LlmQueryService::new(config).expect("Failed to create service");
         let schemas = vec![create_test_hash_range_schema()];
-        
+
         let prompt = service.build_analysis_prompt("Find posts by Jennifer Liu", &schemas);
-        
+
         // Verify prompt includes hash key information
-        assert!(prompt.contains("Hash Key: author"), "Prompt should include Hash Key field");
-        assert!(prompt.contains("Range Key: publish_date"), "Prompt should include Range Key field");
-        
+        assert!(
+            prompt.contains("Hash Key: author"),
+            "Prompt should include Hash Key field"
+        );
+        assert!(
+            prompt.contains("Range Key: publish_date"),
+            "Prompt should include Range Key field"
+        );
+
         // Verify prompt includes filter guidance
-        assert!(prompt.contains("HashKey"), "Prompt should mention HashKey filter");
-        assert!(prompt.contains("CRITICAL"), "Prompt should include critical filter selection guidance");
-        assert!(prompt.contains("Jennifer Liu"), "Prompt should include the example with Jennifer Liu");
+        assert!(
+            prompt.contains("HashKey"),
+            "Prompt should mention HashKey filter"
+        );
+        assert!(
+            prompt.contains("CRITICAL"),
+            "Prompt should include critical filter selection guidance"
+        );
+        assert!(
+            prompt.contains("Jennifer Liu"),
+            "Prompt should include the example with Jennifer Liu"
+        );
     }
 
     #[test]
@@ -1106,11 +1233,13 @@ mod tests {
 
         let service = LlmQueryService::new(config).expect("Failed to create service");
         let schemas = vec![create_test_hash_range_schema()];
-        
+
         let prompt = service.build_analysis_prompt("Test query", &schemas);
-        
+
         // Verify prompt includes correct examples
-        assert!(prompt.contains("✓ CORRECT"), "Prompt should show correct examples");
+        assert!(
+            prompt.contains("✓ CORRECT"),
+            "Prompt should show correct examples"
+        );
     }
 }
-

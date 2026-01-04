@@ -1532,4 +1532,53 @@ mod tests {
         let metadata = results[0].metadata.as_ref().unwrap();
         assert_eq!(metadata["classification"], "word");
     }
+
+    #[tokio::test]
+    async fn test_async_indexing_complex_tweet() {
+        // Setup async store using Sled backend wrapped in NamespacedStore
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+        let kv_store = store.open_namespace("native_index").await.unwrap();
+
+        let manager = NativeIndexManager::new_with_store(kv_store);
+
+        let tweet_content = "RT @TwitterDev: Hello world! ... https://t.co/123456";
+        let operations = vec![(
+            "TwitterSchema".to_string(),
+            "content".to_string(),
+            KeyValue::new(Some("tweet_1".to_string()), None),
+            serde_json::Value::String(tweet_content.to_string()),
+            Some(vec!["word".to_string()]),
+        )];
+
+        // Index
+        manager
+            .batch_index_field_values_with_classifications_async(&operations)
+            .await
+            .expect("indexing failed");
+
+        // Search "Hello"
+        let results = manager
+            .search_word_async("Hello")
+            .await
+            .expect("search failed for Hello");
+
+        assert_eq!(results.len(), 1, "Should find 1 result for Hello");
+
+        // Search "world"
+        let results = manager
+            .search_word_async("world")
+            .await
+            .expect("search failed for world");
+
+        assert_eq!(results.len(), 1, "Should find 1 result for world");
+
+        // Search "https" (part of URL, should be extracted as word "https")
+        let results = manager
+            .search_word_async("https")
+            .await
+            .expect("search failed for https");
+
+        assert_eq!(results.len(), 1, "Should find 1 result for https");
+    }
 }
