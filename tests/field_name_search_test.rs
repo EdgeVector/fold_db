@@ -1,12 +1,12 @@
 use datafold::datafold_node::DataFoldNode;
-use datafold::schema::types::key_value::KeyValue;
-use datafold::schema::types::Mutation;
 use datafold::schema::SchemaState;
-use datafold::MutationType;
 use datafold::NodeConfig;
 use serde_json::json;
 use std::collections::HashMap;
 use tempfile::TempDir;
+
+mod common;
+use common::create_test_mutation;
 
 /// Test that searching for a field name (like "email") returns all records with that field
 #[tokio::test(flavor = "multi_thread")]
@@ -66,14 +66,21 @@ async fn test_search_by_field_name() {
         fields.insert("email".to_string(), json!(format!("user{}@example.com", i)));
         fields.insert("phone".to_string(), json!(format!("555-000{}", i)));
 
-        let mutation = Mutation::new(
-            "UserProfile".to_string(),
-            fields,
-            KeyValue::new(Some(format!("user{}", i)), None),
-            String::new(),
-            0,
-            MutationType::Create,
-        );
+        let mutation_json = json!({
+            "schema_name": "UserProfile",
+            "fields_and_values": fields,
+            "mutation_type": "Create"
+        });
+
+        // Actually, create_test_mutation uses "key" from schema_json.
+        // Let's redefine the minimal needed schema structure here or just copy the key config.
+        let schema_for_helper = json!({
+            "key": {
+                "hash_field": "id"
+            }
+        });
+
+        let mutation = create_test_mutation(&schema_for_helper, mutation_json);
 
         node.mutate_batch(vec![mutation])
             .await
@@ -191,14 +198,19 @@ async fn test_search_nonexistent_field_name() {
     fields.insert("title".to_string(), json!("Test Post"));
     fields.insert("content".to_string(), json!("Content here"));
 
-    let mutation = Mutation::new(
-        "BlogPost".to_string(),
-        fields,
-        KeyValue::new(Some("post1".to_string()), None),
-        String::new(),
-        0,
-        MutationType::Create,
-    );
+    let mutation_json = json!({
+        "schema_name": "BlogPost",
+        "fields_and_values": fields,
+        "mutation_type": "Create"
+    });
+
+    let schema_for_helper = json!({
+        "key": {
+            "hash_field": "id"
+        }
+    });
+
+    let mutation = create_test_mutation(&schema_for_helper, mutation_json);
 
     node.mutate_batch(vec![mutation])
         .await
@@ -275,14 +287,19 @@ async fn test_combined_field_name_and_word_search() {
         json!("The title of this article is important"),
     );
 
-    let mutation = Mutation::new(
-        "Article".to_string(),
-        fields,
-        KeyValue::new(Some("article1".to_string()), None),
-        String::new(),
-        0,
-        MutationType::Create,
-    );
+    let mutation_json = json!({
+        "schema_name": "Article",
+        "fields_and_values": fields,
+        "mutation_type": "Create"
+    });
+
+    let schema_for_helper = json!({
+        "key": {
+            "hash_field": "id"
+        }
+    });
+
+    let mutation = create_test_mutation(&schema_for_helper, mutation_json);
 
     node.mutate_batch(vec![mutation])
         .await

@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use datafold::datafold_node::{DataFoldNode, NodeConfig};
 use datafold::ingestion::mutation_generator::MutationGenerator;
-use datafold::schema::types::{key_value::KeyValue, Mutation};
+
+mod common;
+use common::create_test_mutation;
 
 // Mock DynamoDB client if needed, or use local if feature not enabled
 #[cfg(feature = "aws-backend")]
@@ -145,6 +147,9 @@ async fn _test_local_mutation_execution() {
             .expect("Failed to approve schema");
     }
 
+    let schema_value: serde_json::Value =
+        serde_json::from_str(schema_json).expect("Failed to parse schema");
+
     // Prepare mutations
     let count = 100;
     let mut mutations = Vec::new();
@@ -153,14 +158,18 @@ async fn _test_local_mutation_execution() {
         fields.insert("id".to_string(), json!(format!("local_{}", i)));
         fields.insert("content".to_string(), json!("some content"));
 
-        let mutation = Mutation::new(
-            "PerfSchema".to_string(),
-            fields,
-            KeyValue::new(Some(format!("local_{}", i)), None),
-            format!("sig_{}", i),
-            0,
-            datafold::MutationType::Create,
-        );
+        let mutation_json = json!({
+            "schema_name": "PerfSchema",
+            "fields_and_values": fields,
+            "mutation_type": "Create",
+            // The original used "sig_{i}" as pub_key/signature?
+            // create_test_mutation uses "pub_key" field in JSON.
+            // But wait, create_test_mutation sets pub_key from json["pub_key"] or defaults to "default_key".
+            // The original code passed `format!("sig_{}", i)` as 4th arg (pub_key).
+            "pub_key": format!("sig_{}", i)
+        });
+
+        let mutation = create_test_mutation(&schema_value, mutation_json);
         mutations.push(mutation);
     }
 
