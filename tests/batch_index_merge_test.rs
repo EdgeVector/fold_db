@@ -5,14 +5,12 @@
 //! when multiple batches indexed the same term.
 
 use datafold::datafold_node::DataFoldNode;
-use datafold::schema::types::key_value::KeyValue;
-use datafold::schema::types::Mutation;
 use datafold::schema::SchemaState;
-use datafold::MutationType;
 use datafold::NodeConfig;
 use serde_json::json;
-use std::collections::HashMap;
 use tempfile::TempDir;
+
+mod common;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_batch_index_merges_existing_entries() {
@@ -25,20 +23,21 @@ async fn test_batch_index_merges_existing_entries() {
     let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
     let node = DataFoldNode::new(config).await.expect("failed to create DataFoldNode");
 
+
     // Create a simple schema with a text field
+    let test_schema = json!({
+        "name": "TestPost",
+        "key": {
+            "hash_field": "id"
+        },
+        "fields": {
+            "id": {},
+            "content": {}
+        }
+    });
+
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
-
-        let test_schema = json!({
-            "name": "TestPost",
-            "key": {
-                "hash_field": "id"
-            },
-            "fields": {
-                "id": {},
-                "content": {}
-            }
-        });
 
         let schema_str = serde_json::to_string(&test_schema).expect("schema serialization failed");
         fold_db
@@ -56,18 +55,15 @@ async fn test_batch_index_merges_existing_entries() {
 
     // BATCH 1: Create first record with word "foo"
     eprintln!("=== BATCH 1: Creating record A with word 'foo' ===");
-    let mut fields_a = HashMap::new();
-    fields_a.insert("id".to_string(), json!("recordA"));
-    fields_a.insert("content".to_string(), json!("foo bar"));
-
-    let mutation_a = Mutation::new(
-        "TestPost".to_string(),
-        fields_a,
-        KeyValue::new(Some("recordA".to_string()), None),
-        "test".to_string(),
-        0,
-        MutationType::Create,
-    );
+    let mutation_a = common::create_test_mutation(&test_schema, json!({
+        "schema_name": "TestPost",
+        "pub_key": "test",
+        "fields_and_values": {
+            "id": "recordA",
+            "content": "foo bar"
+        },
+        "mutation_type": "Create"
+    }));
 
     let results = node.mutate_batch(vec![mutation_a]).await.unwrap();
     assert_eq!(results.len(), 1, "First batch should process 1 mutation");
@@ -91,18 +87,15 @@ async fn test_batch_index_merges_existing_entries() {
 
     // BATCH 2: Create second record ALSO with word "foo"
     eprintln!("\n=== BATCH 2: Creating record B with word 'foo' ===");
-    let mut fields_b = HashMap::new();
-    fields_b.insert("id".to_string(), json!("recordB"));
-    fields_b.insert("content".to_string(), json!("foo baz"));
-
-    let mutation_b = Mutation::new(
-        "TestPost".to_string(),
-        fields_b,
-        KeyValue::new(Some("recordB".to_string()), None),
-        "test".to_string(),
-        0,
-        MutationType::Create,
-    );
+    let mutation_b = common::create_test_mutation(&test_schema, json!({
+        "schema_name": "TestPost",
+        "pub_key": "test",
+        "fields_and_values": {
+            "id": "recordB",
+            "content": "foo baz"
+        },
+        "mutation_type": "Create"
+    }));
 
     let results = node.mutate_batch(vec![mutation_b]).await.unwrap();
     assert_eq!(results.len(), 1, "Second batch should process 1 mutation");
