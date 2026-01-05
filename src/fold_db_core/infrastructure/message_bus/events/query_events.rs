@@ -23,7 +23,10 @@ pub struct MutationExecuted {
     pub execution_time_ms: u64,
     pub fields_affected: Vec<String>,
     /// Context information about the mutation for transform execution
-    pub mutation_context: Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
+    pub mutation_context:
+        Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
+    /// Actual data payload for indexing (list of rows, each row is a map of field->value)
+    pub data: Option<Vec<std::collections::HashMap<String, serde_json::Value>>>,
 }
 
 impl EventType for MutationExecuted {

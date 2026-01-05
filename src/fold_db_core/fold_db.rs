@@ -42,6 +42,9 @@ pub struct FoldDB {
     pub(crate) transform_orchestrator: Option<Arc<TransformOrchestrator>>,
     /// Mutation manager for handling all mutation operations
     pub(crate) mutation_manager: MutationManager,
+    /// Orchestrator for native indexing (event-driven)
+    #[allow(dead_code)]
+    pub(crate) index_orchestrator: Arc<super::orchestration::index_orchestrator::IndexOrchestrator>,
 }
 
 impl FoldDB {
@@ -196,6 +199,13 @@ impl FoldDB {
         let query_executor = QueryExecutor::new(Arc::clone(&db_ops), Arc::clone(&schema_manager));
         info!("Created QueryExecutor for query operations");
 
+        // Create and start BackfillManager (Event-Driven Backfill Tracking)
+        use super::orchestration::backfill_manager::BackfillManager;
+        let backfill_tracker = event_monitor.get_backfill_tracker();
+        let backfill_manager = BackfillManager::new(backfill_tracker);
+        backfill_manager.start_event_listener(Arc::clone(&message_bus));
+        info!("Started BackfillManager for event-driven backfill tracking");
+
         // Create TransformOrchestrator for managing transform execution
         // Now supports both Sled and DynamoDB backends
         let transform_orchestrator = if let Some(orchestrator_tree) =
@@ -245,8 +255,17 @@ impl FoldDB {
         };
 
         // Create shared IndexStatusTracker for tracking indexing progress
-        // This is shared between MutationManager (direct indexing) and IndexEventHandler (background indexing)
+        // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
         let index_status_tracker = IndexStatusTracker::new(Some(progress_store));
+
+        // Create and start IndexOrchestrator for event-driven native indexing
+        use super::orchestration::index_orchestrator::IndexOrchestrator;
+        let index_orchestrator = Arc::new(IndexOrchestrator::new(
+            Arc::clone(&db_ops),
+            Some(index_status_tracker.clone()),
+        ));
+        index_orchestrator.start_event_listener(Arc::clone(&message_bus));
+        info!("Started IndexOrchestrator for event-driven native indexing");
 
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
@@ -279,6 +298,7 @@ impl FoldDB {
             event_monitor,
             transform_orchestrator,
             mutation_manager,
+            index_orchestrator,
         })
     }
 

@@ -15,7 +15,6 @@ use crate::transform::manager::TransformManager;
 use super::backfill_tracker::{BackfillInfo, BackfillTracker};
 // Re-export for public API
 pub use super::event_statistics::{EventStatistics, MutationStats, QueryStats, TransformStats};
-use super::message_bus::request_events::{BackfillExpectedMutations, BackfillMutationFailed};
 use super::message_bus::{
     atom_events::{AtomCreated, AtomUpdated, FieldValueSet, MoleculeCreated, MoleculeUpdated},
     query_events::{MutationExecuted, QueryExecuted},
@@ -45,9 +44,6 @@ pub struct EventMonitor {
     _schema_approved_thread: thread::JoinHandle<()>,
     _query_executed_thread: thread::JoinHandle<()>,
     _mutation_executed_thread: thread::JoinHandle<()>,
-    _backfill_expected_thread: thread::JoinHandle<()>,
-    _backfill_cleanup_thread: thread::JoinHandle<()>,
-    _backfill_failed_thread: thread::JoinHandle<()>,
 }
 
 impl EventMonitor {
@@ -204,10 +200,10 @@ impl EventMonitor {
             },
         );
 
-        // Handler for MutationExecuted events - STATS & BACKFILL ONLY
+        // Handler for MutationExecuted events - STATS ONLY
         let stats_clone = statistics.clone();
-        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
 
+        // Note: Backfill tracking logic moved to BackfillManager
         let mutation_executed_thread = spawn_event_monitor(
             message_bus.subscribe::<MutationExecuted>(),
             move |event: MutationExecuted| {
@@ -216,43 +212,6 @@ impl EventMonitor {
                     .lock()
                     .unwrap()
                     .increment_mutation_executions(&event);
-
-                // 2. Backfill (Observability of backfill progress is fine in EventMonitor)
-                if let Some(context) = &event.mutation_context {
-                    if let Some(backfill_hash) = &context.backfill_hash {
-                        let _is_complete =
-                            backfill_tracker_clone.increment_mutation_completed(backfill_hash);
-                    }
-                }
-
-                // 3. Trigger Logic MOVED to TransformOrchestrator
-            },
-        );
-
-        // Monitor BackfillExpectedMutations to set expected counts per backfill hash
-        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
-        let backfill_expected_thread = spawn_event_monitor(
-            message_bus.subscribe::<BackfillExpectedMutations>(),
-            move |event: BackfillExpectedMutations| {
-                backfill_tracker_clone.set_mutations_expected(&event.backfill_hash, event.count);
-            },
-        );
-
-        // Periodic cleanup of old completed backfills
-        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
-        let backfill_cleanup_thread = thread::spawn(move || {
-            loop {
-                thread::sleep(Duration::from_secs(3600)); // Run every hour
-                backfill_tracker_clone.cleanup_old_backfills(100); // Keep last 100 completed backfills
-            }
-        });
-
-        // Monitor BackfillMutationFailed to track failures
-        let backfill_tracker_clone = Arc::clone(&backfill_tracker);
-        let backfill_failed_thread = spawn_event_monitor(
-            message_bus.subscribe::<BackfillMutationFailed>(),
-            move |event: BackfillMutationFailed| {
-                backfill_tracker_clone.increment_mutation_failed(&event.backfill_hash, event.error);
             },
         );
 
@@ -273,9 +232,6 @@ impl EventMonitor {
             _schema_approved_thread: schema_approved_thread,
             _query_executed_thread: query_executed_thread,
             _mutation_executed_thread: mutation_executed_thread,
-            _backfill_expected_thread: backfill_expected_thread,
-            _backfill_cleanup_thread: backfill_cleanup_thread,
-            _backfill_failed_thread: backfill_failed_thread,
         }
     }
 
