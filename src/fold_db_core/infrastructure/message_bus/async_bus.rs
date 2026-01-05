@@ -9,10 +9,14 @@ use super::{
     atom_events::{AtomCreated, FieldValueSet},
     query_events::{MutationExecuted, QueryExecuted},
 };
+use log::warn;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc as async_mpsc;
 use tokio::time::{timeout, Duration as AsyncDuration};
+
+/// Default channel capacity for subscribers
+const DEFAULT_CHANNEL_CAPACITY: usize = 1000;
 
 /// Trait for async event handlers
 pub trait AsyncEventHandler<T: EventType>: Send + Sync {
@@ -21,12 +25,12 @@ pub trait AsyncEventHandler<T: EventType>: Send + Sync {
 
 /// Async consumer for event handling in async contexts
 pub struct AsyncConsumer<T> {
-    receiver: async_mpsc::UnboundedReceiver<T>,
+    receiver: async_mpsc::Receiver<T>,
 }
 
 impl AsyncConsumer<Event> {
     /// Create a new async consumer
-    pub(crate) fn new(receiver: async_mpsc::UnboundedReceiver<Event>) -> Self {
+    pub(crate) fn new(receiver: async_mpsc::Receiver<Event>) -> Self {
         Self { receiver }
     }
 
@@ -77,7 +81,7 @@ impl AsyncConsumer<Event> {
 /// Async subscriber registry for managing async event subscribers
 struct AsyncSubscriberRegistry {
     // Use unified Event type for simplicity and type safety
-    event_subscribers: HashMap<String, Vec<async_mpsc::UnboundedSender<Event>>>,
+    event_subscribers: HashMap<String, Vec<async_mpsc::Sender<Event>>>,
 }
 
 impl AsyncSubscriberRegistry {
@@ -87,14 +91,14 @@ impl AsyncSubscriberRegistry {
         }
     }
 
-    fn add_subscriber(&mut self, event_type: String, sender: async_mpsc::UnboundedSender<Event>) {
+    fn add_subscriber(&mut self, event_type: String, sender: async_mpsc::Sender<Event>) {
         self.event_subscribers
             .entry(event_type)
             .or_default()
             .push(sender);
     }
 
-    fn get_subscribers(&self, event_type: &str) -> Vec<&async_mpsc::UnboundedSender<Event>> {
+    fn get_subscribers(&self, event_type: &str) -> Vec<&async_mpsc::Sender<Event>> {
         self.event_subscribers
             .get(event_type)
             .map(|senders| senders.iter().collect())
@@ -117,7 +121,7 @@ impl AsyncMessageBus {
 
     /// Subscribe to events of a specific type through unified Event enum
     pub async fn subscribe(&self, event_type: &str) -> AsyncConsumer<Event> {
-        let (sender, receiver) = async_mpsc::unbounded_channel();
+        let (sender, receiver) = async_mpsc::channel(DEFAULT_CHANNEL_CAPACITY);
 
         let mut registry = self.registry.lock().await;
         registry.add_subscriber(event_type.to_string(), sender);
@@ -127,7 +131,7 @@ impl AsyncMessageBus {
 
     /// Subscribe to all events
     pub async fn subscribe_all(&self) -> AsyncConsumer<Event> {
-        let (sender, receiver) = async_mpsc::unbounded_channel();
+        let (sender, receiver) = async_mpsc::channel(DEFAULT_CHANNEL_CAPACITY);
 
         let mut registry = self.registry.lock().await;
         // Subscribe to all event types
@@ -185,18 +189,34 @@ impl AsyncMessageBus {
         let total_subscribers = subscribers.len();
 
         for subscriber in subscribers {
-            if subscriber.send(event.clone()).is_err() {
-                failed_sends += 1;
+            // Use try_send to avoid blocking and handle backpressure
+            match subscriber.try_send(event.clone()) {
+                Ok(_) => {}
+                Err(async_mpsc::error::TrySendError::Full(_)) => {
+                    warn!(
+                        "⚠️ MessageBus channel full for subscriber of {}, dropping event",
+                        event_type
+                    );
+                    failed_sends += 1;
+                }
+                Err(async_mpsc::error::TrySendError::Closed(_)) => {
+                    // Subscriber closed, count as failed send
+                    failed_sends += 1;
+                }
             }
         }
 
         if failed_sends > 0 {
-            return Err(MessageBusError::SendFailed {
-                reason: format!(
-                    "{} of {} async subscribers failed to receive event",
-                    failed_sends, total_subscribers
-                ),
-            });
+            // We log but don't error out entirely to avoid breaking the publisher flow
+            // But if all failed, we might want to know
+            if failed_sends == total_subscribers {
+                return Err(MessageBusError::SendFailed {
+                    reason: format!(
+                        "All {} async subscribers failed to receive event (Full/Closed)",
+                        total_subscribers
+                    ),
+                });
+            }
         }
 
         Ok(())
@@ -282,5 +302,43 @@ mod tests {
 
         let result = consumer.try_recv();
         assert!(matches!(result, Err(AsyncTryRecvError::Empty)));
+    }
+
+    #[tokio::test]
+    async fn test_backpressure_drop() {
+        // Create a bus, subscribe with default capacity (1000)
+        let bus = AsyncMessageBus::new();
+        let _consumer = bus.subscribe("FieldValueSet").await;
+
+        let event = FieldValueSet::new("test.field", serde_json::json!("value"), "source");
+
+        // Fill the buffer
+        for _ in 0..1000 {
+            bus.publish_field_value_set(event.clone()).await.unwrap();
+        }
+
+        // The next one should fill the capacity (wait, channel(cap) means buffer size)
+        // Actually, bounded channel of size N can hold N messages.
+        // We sent 1000. Next one might be queued or potentially drop depending on try_send impl.
+        // wait, try_send returns error if full.
+
+        // Push one more, should result in log warning (we can't assert log easily)
+        // but it should NOT error if we handle it gracefully (failed_sends > 0 but < total_subscribers if we have others, but here we have 1)
+        // Wait, if failed_sends == total_subscribers, we return Err(SendFailed).
+        // So with 1 subscriber, if it drops, it should error.
+
+        let result = bus.publish_field_value_set(event.clone()).await;
+
+        // It SHOULD error because we return Err if ALL subscribers failed.
+        // With 1 subscriber full, it fails.
+        // Wait, try_send returns full immediately.
+
+        assert!(result.is_err());
+        match result {
+            Err(MessageBusError::SendFailed { reason }) => {
+                assert!(reason.contains("All 1 async subscribers failed"));
+            }
+            _ => panic!("Expected SendFailed error due to backpressure"),
+        }
     }
 }
