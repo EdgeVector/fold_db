@@ -125,12 +125,15 @@ impl EventMonitor {
                 stats_clone.lock().unwrap().increment_schema_changes()
             });
 
+        // Handler for TransformTriggered events - STATS ONLY
         let stats_clone = statistics.clone();
         let transform_triggered_thread =
             spawn_event_monitor(message_bus.subscribe::<TransformTriggered>(), move |_| {
-                stats_clone.lock().unwrap().increment_transform_triggers()
+                // Only stats update, execution logic moved to TransformOrchestrator
+                stats_clone.lock().unwrap().increment_transform_triggers();
             });
 
+        // Handler for TransformExecuted events - STATS ONLY
         let stats_clone = statistics.clone();
         let transform_executed_thread = spawn_event_monitor(
             message_bus.subscribe::<TransformExecuted>(),
@@ -155,16 +158,19 @@ impl EventMonitor {
                     .increment_transform_registrations()
             });
 
-        let transform_manager_clone = Arc::clone(&transform_manager);
+        // Handler for TransformRegistrationRequest - STATS ONLY?
+        // Actually, Orchestrator now handles the response. We should probably NOT consume it here if Orchestrator consumes it,
+        // unless we use different consumer groups or it's broadcast.
+        // The current implementation of MessageBus uses broadcast channels (or multiple consumers per channel).
+        // If we want stats, we can just increment stats.
+        // The Orchestrator will handle the actual logic.
+
         let transform_registration_thread = spawn_event_monitor(
             message_bus.subscribe::<TransformRegistrationRequest>(),
-            move |event: TransformRegistrationRequest| {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                if let Err(e) = rt.block_on(
-                    transform_manager_clone.handle_transform_registration(&event.registration),
-                ) {
-                    log::error!("Failed to handle transform registration: {}", e);
-                }
+            move |_| {
+                // Logic moved to TransformOrchestrator
+                // Just logging here or stats (no specific stats metric for requests in EventStatistics currently other than registrations which is the result path)
+                // But we can keep the thread alive for observability future proofing
             },
         );
 
@@ -198,22 +204,28 @@ impl EventMonitor {
             },
         );
 
+        // Handler for MutationExecuted events - STATS & BACKFILL ONLY
         let stats_clone = statistics.clone();
         let backfill_tracker_clone = Arc::clone(&backfill_tracker);
+
         let mutation_executed_thread = spawn_event_monitor(
             message_bus.subscribe::<MutationExecuted>(),
             move |event: MutationExecuted| {
+                // 1. Stats
                 stats_clone
                     .lock()
                     .unwrap()
                     .increment_mutation_executions(&event);
 
+                // 2. Backfill (Observability of backfill progress is fine in EventMonitor)
                 if let Some(context) = &event.mutation_context {
                     if let Some(backfill_hash) = &context.backfill_hash {
                         let _is_complete =
                             backfill_tracker_clone.increment_mutation_completed(backfill_hash);
                     }
                 }
+
+                // 3. Trigger Logic MOVED to TransformOrchestrator
             },
         );
 

@@ -14,7 +14,6 @@ pub mod index_status;
 pub mod persistence_manager;
 pub mod progress_store;
 pub mod queue_manager;
-pub mod transform_event_monitor;
 
 pub use execution_coordinator::{ExecutionCoordinator, ExecutionStats};
 pub use index_status::{IndexStatusTracker, IndexingState, IndexingStatus};
@@ -23,5 +22,4 @@ pub use persistence_manager::PersistenceManager;
 pub use progress_store::DynamoDbProgressStore;
 pub use progress_store::{InMemoryProgressStore, ProgressStore};
 pub use queue_manager::{QueueItem, QueueManager, QueueState};
-pub use transform_event_monitor::TransformEventMonitor;
 pub use transform_orchestrator::{TransformOrchestrator, TransformQueue};

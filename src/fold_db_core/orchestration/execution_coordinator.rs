@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 /// Coordinates transform execution with proper validation and event publishing
+#[derive(Clone)]
 pub struct ExecutionCoordinator {
     manager: Arc<TransformManager>,
     message_bus: Arc<MessageBus>,

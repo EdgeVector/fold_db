@@ -208,7 +208,11 @@ impl FoldDB {
                 Arc::clone(&message_bus),
                 Arc::clone(&db_ops),
             ));
-            info!("Created TransformOrchestrator for transform execution (Sled backend)");
+
+            // Start the event listener to drive transforms
+            orchestrator.start_event_listener(Arc::clone(&message_bus));
+
+            info!("Created and started TransformOrchestrator (Sled backend)");
             Some(orchestrator)
         } else {
             // DynamoDB or other backends - use async version with orchestrator_store
@@ -222,9 +226,10 @@ impl FoldDB {
             .await
             {
                 Ok(orchestrator) => {
-                    info!(
-                        "Created TransformOrchestrator for transform execution (KvStore backend)"
-                    );
+                    // Start the event listener to drive transforms
+                    orchestrator.start_event_listener(Arc::clone(&message_bus));
+
+                    info!("Created and started TransformOrchestrator (KvStore backend)");
                     Some(Arc::new(orchestrator))
                 }
                 Err(e) => {
