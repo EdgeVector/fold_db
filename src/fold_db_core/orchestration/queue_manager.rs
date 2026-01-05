@@ -25,6 +25,7 @@ pub struct QueueState {
 }
 
 /// Thread-safe queue manager for transform orchestration
+#[derive(Clone)]
 pub struct QueueManager {
     state: Arc<Mutex<QueueState>>,
 }
