@@ -134,22 +134,8 @@ impl AsyncMessageBus {
         let (sender, receiver) = async_mpsc::channel(DEFAULT_CHANNEL_CAPACITY);
 
         let mut registry = self.registry.lock().await;
-        // Subscribe to all event types
-        let event_types = [
-            "FieldValueSet",
-            "AtomCreated",
-            "AtomUpdated",
-            "MoleculeCreated",
-            "MoleculeUpdated",
-            "SchemaLoaded",
-            "TransformExecuted",
-            "SchemaChanged",
-            "TransformTriggered",
-            "TransformRegistered",
-            "DataPersisted",
-            "QueryExecuted",
-            "MutationExecuted",
-        ];
+        // Subscribe to all event types using the unified list
+        let event_types = Event::all_event_types();
 
         for event_type in &event_types {
             registry.add_subscriber(event_type.to_string(), sender.clone());
@@ -238,6 +224,8 @@ impl Default for AsyncMessageBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fold_db_core::infrastructure::message_bus::request_events::MutationRequest;
+    use crate::schema::types::Mutation;
     use tokio;
 
     #[tokio::test]
@@ -284,6 +272,37 @@ mod tests {
         assert!(bus.subscriber_count("FieldValueSet").await > 0);
         assert!(bus.subscriber_count("AtomCreated").await > 0);
         assert!(bus.subscriber_count("QueryExecuted").await > 0);
+        // Verify new event types are engaged
+        assert!(bus.subscriber_count("MutationRequest").await > 0);
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_all_receives_mutation_request() {
+        let bus = AsyncMessageBus::new();
+        let mut consumer = bus.subscribe_all().await;
+
+        let mutation = Mutation::new(
+            "test_schema".to_string(),
+            std::collections::HashMap::new(),
+            crate::schema::types::KeyValue::new(None, None),
+            "pk_123".to_string(),
+            0,
+            crate::schema::types::operations::MutationType::Update,
+        );
+        let request = MutationRequest {
+            correlation_id: "test_correlation".to_string(),
+            mutation,
+        };
+
+        bus.publish_event(Event::MutationRequest(request))
+            .await
+            .unwrap();
+
+        let received = consumer.recv().await;
+        match received {
+            Some(Event::MutationRequest(_)) => assert!(true),
+            _ => panic!("Expected MutationRequest event"),
+        }
     }
 
     #[tokio::test]

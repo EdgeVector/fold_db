@@ -87,6 +87,36 @@ impl Event {
             Event::BatchIndexRequest(_) => "BatchIndexRequest",
         }
     }
+
+    /// Get a list of all possible event types
+    pub fn all_event_types() -> Vec<&'static str> {
+        vec![
+            "FieldValueSet",
+            "AtomCreated",
+            "AtomUpdated",
+            "MoleculeCreated",
+            "MoleculeUpdated",
+            "SchemaLoaded",
+            "TransformExecuted",
+            "SchemaChanged",
+            "TransformTriggered",
+            "TransformRegistered",
+            "DataPersisted",
+            "QueryExecuted",
+            "MutationExecuted",
+            "MutationRequest",
+            "FieldValueSetRequest",
+            "FieldValueSetResponse",
+            "FieldValueQueryRequest",
+            "BackfillExpectedMutations",
+            "BackfillMutationFailed",
+            "TransformRegistrationRequest",
+            "TransformRegistrationResponse",
+            "SchemaApproved",
+            "IndexRequest",
+            "BatchIndexRequest",
+        ]
+    }
 }
 
 impl EventType for Event {
