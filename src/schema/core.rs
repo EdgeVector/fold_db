@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use serde_json;
 
 use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
-use crate::fold_db_core::infrastructure::message_bus::MessageBus;
+use crate::fold_db_core::infrastructure::message_bus::{AsyncMessageBus, Event};
 use crate::schema::types::field::Field;
 use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use crate::schema::{SchemaState, SchemaWithState};
@@ -28,14 +28,14 @@ pub struct SchemaCore {
     /// Unified database operations with storage abstraction
     db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
     /// Message bus for event-driven communication
-    message_bus: Arc<MessageBus>,
+    message_bus: Arc<AsyncMessageBus>,
 }
 
 impl SchemaCore {
     /// Creates a new SchemaCore with DbOperations (storage abstraction)
     pub async fn new(
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
-        message_bus: Arc<MessageBus>,
+        message_bus: Arc<AsyncMessageBus>,
     ) -> Result<Self, SchemaError> {
         // load schemas from db (async)
         let schemas = db_ops.get_all_schemas().await?;
@@ -53,7 +53,9 @@ impl SchemaCore {
         // This ensures transforms are available when schemas are loaded from database
         for (_, schema) in schemas {
             if let Some(transform_fields) = &schema.transform_fields {
-                schema_core.register_declarative_transforms(&schema, transform_fields)?;
+                schema_core
+                    .register_declarative_transforms(&schema, transform_fields)
+                    .await?;
             }
         }
 
@@ -157,9 +159,15 @@ impl SchemaCore {
                 schema_name: schema_name.to_string(),
                 backfill_hash,
             };
-            self.message_bus.publish(event).map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to publish SchemaApproved event: {}", e))
-            })?;
+            self.message_bus
+                .publish_event(Event::SchemaApproved(event))
+                .await
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!(
+                        "Failed to publish SchemaApproved event: {}",
+                        e
+                    ))
+                })?;
         }
 
         Ok(())
@@ -266,7 +274,7 @@ impl SchemaCore {
             .await
     }
 
-    pub fn get_message_bus(&self) -> Arc<MessageBus> {
+    pub fn get_message_bus(&self) -> Arc<AsyncMessageBus> {
         Arc::clone(&self.message_bus)
     }
 
@@ -378,7 +386,9 @@ impl SchemaCore {
             })?;
 
         // Convert declarative schema to Schema
-        let schema = self.interpret_declarative_schema(declarative_schema)?;
+        let schema = self
+            .interpret_declarative_schema(declarative_schema)
+            .await?;
 
         // Load the schema using the existing method
         self.load_schema_internal(schema).await
@@ -391,7 +401,7 @@ impl SchemaCore {
         path: P,
     ) -> Result<(), SchemaError> {
         // Use the existing parse_schema_file method which handles declarative schemas
-        if let Some(schema) = self.parse_schema_file(path.as_ref())? {
+        if let Some(schema) = self.parse_schema_file(path.as_ref()).await? {
             self.load_schema_internal(schema).await
         } else {
             Err(SchemaError::InvalidData(
@@ -399,7 +409,6 @@ impl SchemaCore {
             ))
         }
     }
-
     /// Load all schema files from a directory (creates Available schemas)
     /// Only processes .json files; ignores non-existent directories
     pub async fn load_schemas_from_directory<P: AsRef<std::path::Path>>(
@@ -455,7 +464,7 @@ impl SchemaCore {
                 .await
                 .map_err(|e| SchemaError::InvalidData(e.to_string()))?,
         );
-        let message_bus = Arc::new(MessageBus::new());
+        let message_bus = Arc::new(AsyncMessageBus::new());
         Self::new(db_ops, message_bus).await
     }
 }

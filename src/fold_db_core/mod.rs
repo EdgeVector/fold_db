@@ -19,20 +19,17 @@ pub mod query;
 pub mod shared;
 
 // Core components
-pub mod mutation_completion_handler;
+
 pub mod mutation_manager;
 
 // Re-export key components for backwards compatibility
-pub use infrastructure::{EventMonitor, MessageBus};
+pub use infrastructure::EventMonitor;
 pub use orchestration::TransformOrchestrator;
 pub use query::QueryExecutor;
 pub use shared::*;
 
 // Re-export core components
-pub use mutation_completion_handler::{
-    MutationCompletionDiagnostics, MutationCompletionError, MutationCompletionHandler,
-    MutationCompletionResult, DEFAULT_COMPLETION_TIMEOUT,
-};
+
 pub use mutation_manager::MutationManager;
 
 // Re-export the main FoldDB struct

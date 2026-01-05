@@ -17,5 +17,5 @@ pub mod schema_approval_handler;
 pub use event_monitor::EventMonitor;
 pub use message_bus::{
     schema_events::{SchemaChanged, TransformExecuted, TransformTriggered},
-    MessageBus,
+    AsyncMessageBus, Event,
 };

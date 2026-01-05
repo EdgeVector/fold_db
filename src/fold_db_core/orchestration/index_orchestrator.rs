@@ -1,12 +1,10 @@
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use log::{debug, error, info, warn};
 
 use crate::db_operations::{native_index::BatchIndexOperation, DbOperations};
 use crate::fold_db_core::infrastructure::message_bus::{
-    query_events::MutationExecuted, MessageBus,
+    query_events::MutationExecuted, AsyncMessageBus, Event,
 };
 use crate::fold_db_core::orchestration::index_status::IndexStatusTracker;
 
@@ -29,19 +27,18 @@ impl IndexOrchestrator {
     }
 
     /// Start listening for mutation events to trigger indexing
-    pub fn start_event_listener(&self, message_bus: Arc<MessageBus>) {
-        info!("🔎 IndexOrchestrator: Starting event listener thread");
+    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>) {
+        info!("🔎 IndexOrchestrator: Starting event listener task");
 
         let db_ops = Arc::clone(&self.db_ops);
         let tracker = self.index_status_tracker.clone();
+        let mut consumer = message_bus.subscribe("MutationExecuted").await;
 
-        // Spawn a thread to listen for MutationExecuted events
-        thread::spawn(move || {
-            let mut consumer = message_bus.subscribe::<MutationExecuted>();
-
+        // Spawn a task to listen for MutationExecuted events
+        tokio::spawn(async move {
             loop {
-                match consumer.recv_timeout(Duration::from_millis(100)) {
-                    Ok(event) => {
+                match consumer.recv().await {
+                    Some(Event::MutationExecuted(event)) => {
                         // Handle the event asynchronously
                         if let Some(data) = &event.data {
                             if data.is_empty() {
@@ -53,28 +50,11 @@ impl IndexOrchestrator {
                                 data.len()
                             );
 
-                            // Check if NativeIndexManager is available
-                            if db_ops.native_index_manager().is_none() {
-                                continue;
-                            }
-
-                            // Create a runtime for async execution
-                            match tokio::runtime::Runtime::new() {
-                                Ok(rt) => {
-                                    rt.block_on(async {
-                                        Self::process_indexing(&db_ops, &tracker, &event).await;
-                                    });
-                                }
-                                Err(e) => {
-                                    error!("❌ IndexOrchestrator: Failed to create runtime: {}", e);
-                                }
-                            }
+                            Self::process_indexing(&db_ops, &tracker, &event).await;
                         }
                     }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        // Continue loop
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    Some(_) => {} // Ignore other events
+                    None => {
                         error!("❌ IndexOrchestrator: Message bus disconnected");
                         break;
                     }

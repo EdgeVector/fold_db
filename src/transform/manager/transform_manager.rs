@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use crate::fold_db_core::infrastructure::message_bus::MessageBus;
+use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
 use crate::schema::types::{SchemaError, Transform};
 
 /// TransformManager: Handles transform registration, execution, and field-to-transform mapping
@@ -27,14 +27,14 @@ pub struct TransformManager {
     pub db_ops: Arc<crate::db_operations::DbOperations>,
     pub(super) registered_transforms: RwLock<HashMap<String, Transform>>,
     pub(super) schema_field_to_transforms: RwLock<BTreeMap<String, HashSet<String>>>,
-    pub(super) message_bus: Arc<MessageBus>,
+    pub(super) message_bus: Arc<AsyncMessageBus>,
 }
 
 impl TransformManager {
     /// Creates a new TransformManager instance with unified database operations
     pub async fn new(
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
-        message_bus: Arc<MessageBus>,
+        message_bus: Arc<AsyncMessageBus>,
     ) -> Result<Self, SchemaError> {
         // Load persisted state from storage
         let (registered_transforms, schema_field_to_transforms) =
@@ -105,14 +105,23 @@ impl TransformManager {
         self.update_in_memory_registration(transform_id, transform, trigger_fields)?;
 
         // Sync to storage
-        let transforms = self
-            .registered_transforms
-            .read()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
-        let mappings = self
-            .schema_field_to_transforms
-            .read()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+        let (transforms, mappings) = {
+            let t = self
+                .registered_transforms
+                .read()
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e))
+                })?
+                .clone();
+            let m = self
+                .schema_field_to_transforms
+                .read()
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e))
+                })?
+                .clone();
+            (t, m)
+        };
 
         self.db_ops
             .sync_transform_state(&transforms, &mappings)

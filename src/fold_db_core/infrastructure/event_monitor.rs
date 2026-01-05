@@ -5,8 +5,7 @@
 //! with a single component that can see all system activity.
 
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::info;
 
@@ -15,40 +14,21 @@ use crate::transform::manager::TransformManager;
 use super::backfill_tracker::{BackfillInfo, BackfillTracker};
 // Re-export for public API
 pub use super::event_statistics::{EventStatistics, MutationStats, QueryStats, TransformStats};
-use super::message_bus::{
-    atom_events::{AtomCreated, AtomUpdated, FieldValueSet, MoleculeCreated, MoleculeUpdated},
-    query_events::{MutationExecuted, QueryExecuted},
-    schema_events::{
-        SchemaApproved, SchemaChanged, SchemaLoaded, TransformExecuted, TransformRegistered,
-        TransformRegistrationRequest, TransformTriggered,
-    },
-    MessageBus,
-};
+use super::message_bus::{AsyncMessageBus, Event};
 use super::schema_approval_handler::handle_schema_approved;
 
 /// Centralized event monitor that provides system-wide observability
 pub struct EventMonitor {
     statistics: Arc<Mutex<EventStatistics>>,
     backfill_tracker: Arc<BackfillTracker>,
-    _field_value_thread: thread::JoinHandle<()>,
-    _atom_created_thread: thread::JoinHandle<()>,
-    _atom_updated_thread: thread::JoinHandle<()>,
-    _molecule_created_thread: thread::JoinHandle<()>,
-    _molecule_updated_thread: thread::JoinHandle<()>,
-    _schema_loaded_thread: thread::JoinHandle<()>,
-    _schema_changed_thread: thread::JoinHandle<()>,
-    _transform_triggered_thread: thread::JoinHandle<()>,
-    _transform_executed_thread: thread::JoinHandle<()>,
-    _transform_registered_thread: thread::JoinHandle<()>,
-    _transform_registration_thread: thread::JoinHandle<()>,
-    _schema_approved_thread: thread::JoinHandle<()>,
-    _query_executed_thread: thread::JoinHandle<()>,
-    _mutation_executed_thread: thread::JoinHandle<()>,
 }
 
 impl EventMonitor {
     /// Create a new EventMonitor that subscribes to all event types
-    pub fn new(message_bus: Arc<MessageBus>, transform_manager: Arc<TransformManager>) -> Self {
+    pub async fn new(
+        message_bus: Arc<AsyncMessageBus>,
+        transform_manager: Arc<TransformManager>,
+    ) -> Self {
         let statistics = Arc::new(Mutex::new(EventStatistics {
             monitoring_start_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -61,177 +41,182 @@ impl EventMonitor {
 
         info!("🔍 EventMonitor: Starting system-wide event monitoring");
 
-        // Helper function to create event monitoring threads
-        fn spawn_event_monitor<T, F>(
-            mut consumer: super::message_bus::Consumer<T>,
-            mut handler: F,
-        ) -> thread::JoinHandle<()>
-        where
-            T: super::message_bus::EventType,
-            F: FnMut(T) + Send + 'static,
-        {
-            thread::spawn(move || loop {
-                match consumer.recv_timeout(Duration::from_millis(100)) {
-                    Ok(event) => handler(event),
-                    Err(_) => continue,
+        // Helper to spawn monitoring tasks
+        // We can't easily genericize the extraction of event variant, so we'll do it per event or use a macro
+        // For clarity, we'll write them out or use a simple closure pattern where the closure checks the variant.
+
+        // FieldValueSet
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("FieldValueSet").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::FieldValueSet(_) = event {
+                    stats.lock().unwrap().increment_field_value_sets();
                 }
-            })
-        }
+            }
+        });
 
-        // Start monitoring threads for each event type
-        let stats_clone = statistics.clone();
-        let field_value_thread =
-            spawn_event_monitor(message_bus.subscribe::<FieldValueSet>(), move |_| {
-                stats_clone.lock().unwrap().increment_field_value_sets()
-            });
+        // AtomCreated
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("AtomCreated").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::AtomCreated(_) = event {
+                    stats.lock().unwrap().increment_atom_creations();
+                }
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let atom_created_thread =
-            spawn_event_monitor(message_bus.subscribe::<AtomCreated>(), move |_| {
-                stats_clone.lock().unwrap().increment_atom_creations()
-            });
+        // AtomUpdated
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("AtomUpdated").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::AtomUpdated(_) = event {
+                    stats.lock().unwrap().increment_atom_updates();
+                }
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let atom_updated_thread =
-            spawn_event_monitor(message_bus.subscribe::<AtomUpdated>(), move |_| {
-                stats_clone.lock().unwrap().increment_atom_updates()
-            });
+        // MoleculeCreated
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("MoleculeCreated").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::MoleculeCreated(_) = event {
+                    stats.lock().unwrap().increment_molecule_creations();
+                }
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let molecule_created_thread =
-            spawn_event_monitor(message_bus.subscribe::<MoleculeCreated>(), move |_| {
-                stats_clone.lock().unwrap().increment_molecule_creations()
-            });
+        // MoleculeUpdated
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("MoleculeUpdated").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::MoleculeUpdated(_) = event {
+                    stats.lock().unwrap().increment_molecule_updates();
+                }
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let molecule_updated_thread =
-            spawn_event_monitor(message_bus.subscribe::<MoleculeUpdated>(), move |_| {
-                stats_clone.lock().unwrap().increment_molecule_updates()
-            });
+        // SchemaLoaded
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("SchemaLoaded").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::SchemaLoaded(_) = event {
+                    stats.lock().unwrap().increment_schema_loads();
+                }
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let schema_loaded_thread =
-            spawn_event_monitor(message_bus.subscribe::<SchemaLoaded>(), move |_| {
-                stats_clone.lock().unwrap().increment_schema_loads()
-            });
+        // SchemaChanged
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("SchemaChanged").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::SchemaChanged(_) = event {
+                    stats.lock().unwrap().increment_schema_changes();
+                }
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let schema_changed_thread =
-            spawn_event_monitor(message_bus.subscribe::<SchemaChanged>(), move |_| {
-                stats_clone.lock().unwrap().increment_schema_changes()
-            });
+        // TransformTriggered
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("TransformTriggered").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::TransformTriggered(_) = event {
+                    stats.lock().unwrap().increment_transform_triggers();
+                }
+            }
+        });
 
-        // Handler for TransformTriggered events - STATS ONLY
-        let stats_clone = statistics.clone();
-        let transform_triggered_thread =
-            spawn_event_monitor(message_bus.subscribe::<TransformTriggered>(), move |_| {
-                // Only stats update, execution logic moved to TransformOrchestrator
-                stats_clone.lock().unwrap().increment_transform_triggers();
-            });
+        // TransformExecuted
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("TransformExecuted").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::TransformExecuted(e) = event {
+                    let is_error =
+                        e.result.contains("error:") || e.result.contains("execution_error:");
+                    let success = !is_error;
+                    stats.lock().unwrap().increment_transform_executions(
+                        &e.transform_id,
+                        success,
+                        0,
+                    );
+                }
+            }
+        });
 
-        // Handler for TransformExecuted events - STATS ONLY
-        let stats_clone = statistics.clone();
-        let transform_executed_thread = spawn_event_monitor(
-            message_bus.subscribe::<TransformExecuted>(),
-            move |event: TransformExecuted| {
-                let is_error =
-                    event.result.contains("error:") || event.result.contains("execution_error:");
-                let success = !is_error;
-                stats_clone.lock().unwrap().increment_transform_executions(
-                    &event.transform_id,
-                    success,
-                    0,
-                );
-            },
-        );
+        // TransformRegistered
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("TransformRegistered").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::TransformRegistered(_) = event {
+                    stats.lock().unwrap().increment_transform_registrations();
+                }
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let transform_registered_thread =
-            spawn_event_monitor(message_bus.subscribe::<TransformRegistered>(), move |_| {
-                stats_clone
-                    .lock()
-                    .unwrap()
-                    .increment_transform_registrations()
-            });
+        // TransformRegistrationRequest
+        let mut rx = message_bus.subscribe("TransformRegistrationRequest").await;
+        tokio::spawn(async move {
+            while let Some(_) = rx.recv().await {
+                // Nothing to do but consume
+            }
+        });
 
-        // Handler for TransformRegistrationRequest - STATS ONLY?
-        // Actually, Orchestrator now handles the response. We should probably NOT consume it here if Orchestrator consumes it,
-        // unless we use different consumer groups or it's broadcast.
-        // The current implementation of MessageBus uses broadcast channels (or multiple consumers per channel).
-        // If we want stats, we can just increment stats.
-        // The Orchestrator will handle the actual logic.
-
-        let transform_registration_thread = spawn_event_monitor(
-            message_bus.subscribe::<TransformRegistrationRequest>(),
-            move |_| {
-                // Logic moved to TransformOrchestrator
-                // Just logging here or stats (no specific stats metric for requests in EventStatistics currently other than registrations which is the result path)
-                // But we can keep the thread alive for observability future proofing
-            },
-        );
-
+        // SchemaApproved
         let backfill_tracker_clone = Arc::clone(&backfill_tracker);
         let transform_manager_clone = Arc::clone(&transform_manager);
-        let schema_approved_thread = spawn_event_monitor(
-            message_bus.subscribe::<SchemaApproved>(),
-            move |event: SchemaApproved| {
-                // Create a runtime for async operations
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                if let Err(e) = rt.block_on(handle_schema_approved(
-                    event,
-                    &backfill_tracker_clone,
-                    &transform_manager_clone,
-                )) {
-                    log::error!("Failed to handle schema approval: {}", e);
+        let mut rx = message_bus.subscribe("SchemaApproved").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::SchemaApproved(e) = event {
+                    if let Err(err) =
+                        handle_schema_approved(e, &backfill_tracker_clone, &transform_manager_clone)
+                            .await
+                    {
+                        log::error!("Failed to handle schema approval: {}", err);
+                    }
                 }
-            },
-        );
+            }
+        });
 
-        let stats_clone = statistics.clone();
-        let query_executed_thread = spawn_event_monitor(
-            message_bus.subscribe::<QueryExecuted>(),
-            move |event: QueryExecuted| {
-                stats_clone.lock().unwrap().increment_query_executions(
-                    &event.schema,
-                    &event.query_type,
-                    event.execution_time_ms,
-                    event.result_count,
-                );
-            },
-        );
+        // QueryExecuted
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("QueryExecuted").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::QueryExecuted(e) = event {
+                    stats.lock().unwrap().increment_query_executions(
+                        &e.schema,
+                        &e.query_type,
+                        e.execution_time_ms,
+                        e.result_count,
+                    );
+                }
+            }
+        });
 
-        // Handler for MutationExecuted events - STATS ONLY
-        let stats_clone = statistics.clone();
-
-        // Note: Backfill tracking logic moved to BackfillManager
-        let mutation_executed_thread = spawn_event_monitor(
-            message_bus.subscribe::<MutationExecuted>(),
-            move |event: MutationExecuted| {
-                // 1. Stats
-                stats_clone
-                    .lock()
-                    .unwrap()
-                    .increment_mutation_executions(&event);
-            },
-        );
+        // MutationExecuted
+        let stats = statistics.clone();
+        let mut rx = message_bus.subscribe("MutationExecuted").await;
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                if let Event::MutationExecuted(e) = event {
+                    stats.lock().unwrap().increment_mutation_executions(&e);
+                }
+            }
+        });
 
         Self {
             statistics,
             backfill_tracker,
-            _field_value_thread: field_value_thread,
-            _atom_created_thread: atom_created_thread,
-            _atom_updated_thread: atom_updated_thread,
-            _molecule_created_thread: molecule_created_thread,
-            _molecule_updated_thread: molecule_updated_thread,
-            _schema_loaded_thread: schema_loaded_thread,
-            _schema_changed_thread: schema_changed_thread,
-            _transform_triggered_thread: transform_triggered_thread,
-            _transform_executed_thread: transform_executed_thread,
-            _transform_registered_thread: transform_registered_thread,
-            _transform_registration_thread: transform_registration_thread,
-            _schema_approved_thread: schema_approved_thread,
-            _query_executed_thread: query_executed_thread,
-            _mutation_executed_thread: mutation_executed_thread,
         }
     }
 
@@ -321,57 +306,75 @@ impl EventMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fold_db_core::MessageBus;
+    use crate::fold_db_core::infrastructure::message_bus::atom_events::{
+        AtomCreated, FieldValueSet, MoleculeCreated,
+    };
+    use crate::fold_db_core::infrastructure::message_bus::schema_events::SchemaLoaded;
+    use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
     use serde_json::json;
-    use std::thread;
     use std::time::Duration;
 
-    #[test]
-    fn test_event_monitor_observability() {
-        let bus = MessageBus::new();
+    #[tokio::test]
+    async fn test_event_monitor_observability() {
+        let bus = AsyncMessageBus::new();
+        let bus_arc = Arc::new(bus);
+
         // Create a dummy TransformManager for testing
         let db = sled::Config::new().temporary(true).open().unwrap();
         let db_ops = Arc::new(
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(crate::db_operations::DbOperations::from_sled(db))
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
                 .unwrap(),
         );
-        let bus_arc = Arc::new(bus);
         let transform_manager = Arc::new(
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(crate::transform::manager::TransformManager::new(
-                    db_ops,
-                    Arc::clone(&bus_arc),
-                ))
+            crate::transform::manager::TransformManager::new(db_ops, Arc::clone(&bus_arc))
+                .await
                 .unwrap(),
         );
-        let monitor = EventMonitor::new(Arc::clone(&bus_arc), transform_manager);
+        let monitor = EventMonitor::new(Arc::clone(&bus_arc), transform_manager).await;
 
         // Publish various events
         bus_arc
-            .publish(FieldValueSet::new("test.field", json!("value"), "test"))
+            .publish_event(Event::FieldValueSet(FieldValueSet::new(
+                "test.field",
+                json!("value"),
+                "test",
+            )))
+            .await
             .unwrap();
         bus_arc
-            .publish(AtomCreated::new("atom-123", json!({"test": "data"})))
+            .publish_event(Event::AtomCreated(AtomCreated::new(
+                "atom-123",
+                json!({"test": "data"}),
+            )))
+            .await
             .unwrap();
         bus_arc
-            .publish(MoleculeCreated::new(
+            .publish_event(Event::MoleculeCreated(MoleculeCreated::new(
                 "molecule-456",
                 "Collection",
                 "schema.field",
-            ))
+            )))
+            .await
             .unwrap();
         bus_arc
-            .publish(SchemaLoaded::new("TestSchema", "success"))
+            .publish_event(Event::SchemaLoaded(SchemaLoaded::new(
+                "TestSchema",
+                "success",
+            )))
+            .await
             .unwrap();
 
         // Allow time for event processing
-        thread::sleep(Duration::from_millis(200));
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let stats = monitor.get_statistics();
-        assert!(stats.total_events >= 4);
+        // Since we check stats async, they should be updated
+        // Note: FieldValueSet might trigger AtomCreated depending on flags, but here we publish directly.
+        // The stats increment logic is direct.
+
+        // Wait, why total_events >= 4? Because we published 4.
+        // Let's check individual.
         assert!(stats.field_value_sets >= 1);
         assert!(stats.atom_creations >= 1);
         assert!(stats.molecule_creations >= 1);

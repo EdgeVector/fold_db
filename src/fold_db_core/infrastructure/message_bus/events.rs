@@ -42,10 +42,15 @@ pub enum Event {
     FieldValueSetRequest(FieldValueSetRequest),
     FieldValueSetResponse(FieldValueSetResponse),
     FieldValueQueryRequest(FieldValueQueryRequest),
+    BackfillExpectedMutations(BackfillExpectedMutations),
+    BackfillMutationFailed(BackfillMutationFailed),
+    TransformRegistrationRequest(TransformRegistrationRequest),
+    TransformRegistrationResponse(TransformRegistrationResponse),
     // SystemInitializationRequest removed
     // Index events
     IndexRequest(IndexRequest),
     BatchIndexRequest(BatchIndexRequest),
+    SchemaApproved(SchemaApproved),
 }
 
 impl Event {
@@ -71,6 +76,11 @@ impl Event {
             Event::FieldValueSetRequest(_) => "FieldValueSetRequest",
             Event::FieldValueSetResponse(_) => "FieldValueSetResponse",
             Event::FieldValueQueryRequest(_) => "FieldValueQueryRequest",
+            Event::BackfillExpectedMutations(_) => "BackfillExpectedMutations",
+            Event::BackfillMutationFailed(_) => "BackfillMutationFailed",
+            Event::TransformRegistrationRequest(_) => "TransformRegistrationRequest",
+            Event::TransformRegistrationResponse(_) => "TransformRegistrationResponse",
+            Event::SchemaApproved(_) => "SchemaApproved",
             // SystemInitializationRequest variant removed
             // Index events
             Event::IndexRequest(_) => "IndexRequest",
