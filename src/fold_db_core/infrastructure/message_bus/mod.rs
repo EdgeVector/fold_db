@@ -10,31 +10,7 @@
 //! - Provide a foundation for eventual migration to full event-driven architecture
 //! - Maintain high performance with minimal overhead
 //!
-//! ## Usage Example
-//! ```rust
-//! use datafold::fold_db_core::infrastructure::message_bus::{MessageBus, atom_events::FieldValueSet};
-//! use serde_json::json;
-//!
-//! let mut bus = MessageBus::new();
-//!
-//! // Register a consumer for field value events
-//! let mut receiver = bus.subscribe::<FieldValueSet>();
-//!
-//! // Send an event
-//! bus.publish(FieldValueSet {
-//!     field: "user.name".to_string(),
-//!     value: json!("Alice"),
-//!     source: "mutation_engine".to_string(),
-//!     mutation_context: None,
-//!     key_snapshot: None,
-//! });
-//!
-//! // Receive the event
-//! if let Ok(event) = receiver.try_recv() {
-//!     println!("Received event: {:?}", event);
-//! }
-//! ```
-//!
+
 //! ## Module Structure
 //!
 //! The message bus has been decomposed into focused modules:
@@ -49,23 +25,7 @@
 //!
 //! ## Main Components
 //!
-//! ### Synchronous Message Bus
-//!
-//! The [`MessageBus`] provides synchronous pub/sub messaging:
-//!
-//! ```rust
-//! use datafold::fold_db_core::infrastructure::message_bus::{MessageBus, atom_events::FieldValueSet};
-//! use serde_json::json;
-//!
-//! let bus = MessageBus::new();
-//! let mut consumer = bus.subscribe::<FieldValueSet>();
-//!
-//! let event = FieldValueSet::new("user.email", json!("alice@example.com"), "user_service");
-//! bus.publish(event).unwrap();
-//!
-//! let received_event = consumer.try_recv().unwrap();
-//! ```
-//!
+
 //! ### Asynchronous Message Bus
 //!
 //! The [`AsyncMessageBus`] provides async pub/sub messaging:
@@ -115,7 +75,6 @@ pub use error_handling::{
     MessageBusResult, RetryableEvent,
 };
 pub use events::{atom_events, query_events, request_events, schema_events, Event, EventType};
-pub use sync_bus::{Consumer, MessageBus};
 
 // Import constructor implementations (these add methods to the event types)
 
@@ -124,4 +83,3 @@ mod async_bus;
 mod constructors;
 mod error_handling;
 pub mod events;
-mod sync_bus;

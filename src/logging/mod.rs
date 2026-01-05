@@ -243,40 +243,27 @@ impl LoggingSystem {
         }
 
         // Fallback to in-memory web logger
-        // Note: WebLogger doesn't support complex querying yet, so we just return everything
-        // and let the client filter if needed, or we could implement filtering here.
-        // For now, consistent with previous behavior but mapped to LogEntry.
-        let raw_logs = crate::web_logger::get_logs();
-        raw_logs
+        let raw_entries = crate::web_logger::get_entries();
+        let from_ts = from_timestamp.unwrap_or(0);
+
+        raw_entries
             .into_iter()
-            .map(|line| {
-                // Parse rudimentary log line "LEVEL - message" back to entry
-                // This is a rough fallback
-                let parts: Vec<&str> = line.splitn(2, " - ").collect();
-                let (level, message) = if parts.len() == 2 {
-                    (
-                        match parts[0] {
-                            "TRACE" => crate::logging::core::LogLevel::Trace,
-                            "DEBUG" => crate::logging::core::LogLevel::Debug,
-                            "INFO" => crate::logging::core::LogLevel::Info,
-                            "WARN" => crate::logging::core::LogLevel::Warn,
-                            "ERROR" => crate::logging::core::LogLevel::Error,
-                            _ => crate::logging::core::LogLevel::Info,
-                        },
-                        parts[1].to_string(),
-                    )
-                } else {
-                    (crate::logging::core::LogLevel::Info, line)
+            .filter(|e| e.timestamp > from_ts)
+            .map(|e| {
+                let level = match e.level.as_str() {
+                    "TRACE" => crate::logging::core::LogLevel::Trace,
+                    "DEBUG" => crate::logging::core::LogLevel::Debug,
+                    "INFO" => crate::logging::core::LogLevel::Info,
+                    "WARN" => crate::logging::core::LogLevel::Warn,
+                    "ERROR" => crate::logging::core::LogLevel::Error,
+                    _ => crate::logging::core::LogLevel::Info,
                 };
 
                 crate::logging::core::LogEntry {
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as i64,
+                    timestamp: e.timestamp,
                     level,
                     event_type: "web_logger".to_string(),
-                    message,
+                    message: e.message,
                     user_id: None,
                     metadata: None,
                 }

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::fold_db_core::infrastructure::message_bus::events::request_events::BackfillExpectedMutations;
+use crate::fold_db_core::infrastructure::message_bus::Event;
 use crate::fold_db_core::query::formatter::Record;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
@@ -103,7 +104,10 @@ impl TransformRunner for super::TransformManager {
                 count: expected,
             };
             // Best-effort publish; upstream handles zero-subscriber case
-            let _ = self.message_bus.publish(evt);
+            let _ = self
+                .message_bus
+                .publish_event(Event::BackfillExpectedMutations(evt))
+                .await;
         }
 
         for record in &records {
@@ -128,7 +132,8 @@ impl TransformRunner for super::TransformManager {
                 row_key,
                 Some(&self.message_bus),
                 backfill_hash.clone(),
-            )?;
+            )
+            .await?;
         }
 
         Ok(TransformResult::new(records))
