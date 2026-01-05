@@ -198,11 +198,11 @@ impl MutationManager {
 
         // Process each field in the mutation
         let fields_affected: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
-        for (field_name, value) in mutation.fields_and_values {
-            // Get field classifications BEFORE mutable borrow
-            let field_classifications = schema.get_field_classifications(&field_name);
+        for (field_name, value) in &mutation.fields_and_values {
+            // Get field classifications - removed as unused
+            // let field_classifications = schema.get_field_classifications(&field_name);
 
-            if let Some(schema_field) = schema.runtime_fields.get_mut(&field_name) {
+            if let Some(schema_field) = schema.runtime_fields.get_mut(field_name) {
                 // NOTE: process_mutation_field_with_schema is deprecated v1 method
                 // For now, we'll handle the mutation inline with v2 async methods
 
@@ -251,41 +251,8 @@ impl MutationManager {
                     );
                 }
 
-                // Index the field value with classifications
-                if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
-                    // Use batch indexing with a single item
-                    let single_operation = vec![(
-                        mutation.schema_name.clone(),
-                        field_name.clone(),
-                        key_value.clone(),
-                        value.clone(),
-                        field_classifications,
-                    )];
-
-                    // Update index status
-                    if let Some(tracker) = &self.index_status_tracker {
-                        let _ = Self::run_async(async {
-                            tracker.start_batch(1).await;
-                            Ok(())
-                        });
-                    }
-
-                    let index_start = std::time::Instant::now();
-                    let result = native_index_mgr
-                        .batch_index_field_values_with_classifications(&single_operation);
-
-                    // Update index status completion
-                    if let Some(tracker) = &self.index_status_tracker {
-                        let _ = Self::run_async(async {
-                            tracker
-                                .complete_batch(1, index_start.elapsed().as_millis())
-                                .await;
-                            Ok(())
-                        });
-                    }
-
-                    result?;
-                }
+                // Indexing removed - handled event-driven by IndexOrchestrator
+                /* if let Some(native_index_mgr) = self.db_ops.native_index_manager() { ... } */
             } else {
                 return Err(SchemaError::InvalidData(format!(
                     "Field '{}' not found in runtime_fields for schema '{}'. Available fields: {:?}",
@@ -297,9 +264,7 @@ impl MutationManager {
         }
 
         // Flush native index after all field operations (single mutation path only)
-        if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
-            native_index_mgr.flush()?;
-        }
+        // Flush removed - handled async by IndexOrchestrator
 
         // Sync molecule UUIDs to the persisted field before storing
         schema.sync_molecule_uuids();
@@ -339,13 +304,14 @@ impl MutationManager {
         );
 
         // Publish MutationExecuted event to trigger transforms
-        let event = MutationExecuted::with_context(
-            "write_mutation",
-            mutation.schema_name.clone(),
+        let event = MutationExecuted {
+            operation: "write_mutation".to_string(),
+            schema: mutation.schema_name.clone(),
             execution_time_ms,
             fields_affected,
             mutation_context,
-        );
+            data: Some(vec![mutation.fields_and_values]), // Include data for indexing
+        };
 
         log::debug!("📢 Publishing MutationExecuted event");
         self.message_bus.publish(event).map_err(|e| {
@@ -423,10 +389,9 @@ impl MutationManager {
             // let mut refresh_time = std::time::Duration::ZERO; // No longer needed
             // let mut atom_time = std::time::Duration::ZERO; // No longer needed
             // let mut molecule_time = std::time::Duration::ZERO; // No longer needed
-            let mut index_time = std::time::Duration::ZERO;
-
-            // Collect all index operations for batch processing
-            let mut index_operations = Vec::new();
+            // let mut index_time = std::time::Duration::ZERO;
+            // Collect all index operations for batch processing - DEPRECATED/REMOVED
+            // Indexing is now handled asynchronously via IndexOrchestrator subscribing to MutationExecuted events
 
             // Process all mutations for this schema with 3-phase optimization
             // Phase 1: Concurrent Atom Creation
@@ -496,14 +461,10 @@ impl MutationManager {
 
             for (idx, field_name, atom) in atom_results {
                 let mutation = &schema_mutations[idx];
-                let key_value = &mutation_key_values[idx];
-                let value = mutation
-                    .fields_and_values
-                    .get(&field_name)
-                    .ok_or_else(|| SchemaError::InvalidData("Field value missing".to_string()))?;
-
-                // Get field classifications before mutable borrow
-                let field_classifications = schema.get_field_classifications(&field_name);
+                let key_value = &mutation_key_values[idx]; // Unused reference kept for clarity or future use
+                                                           // value and classifications unused after indexing removal
+                                                           // let value = ...
+                                                           // let field_classifications = ...
 
                 let schema_field = schema.runtime_fields.get_mut(&field_name).ok_or_else(|| {
                     SchemaError::InvalidData(format!(
@@ -521,13 +482,8 @@ impl MutationManager {
                 }
 
                 // Collect index op
-                index_operations.push((
-                    mutation.schema_name.clone(),
-                    field_name,
-                    key_value.clone(),
-                    value.clone(),
-                    field_classifications,
-                ));
+                // Indexing removed - handled event-driven by IndexOrchestrator
+                // index_operations.push(...);
             }
             *timing_breakdown
                 .entry("  - update_memory_serial")
@@ -611,68 +567,21 @@ impl MutationManager {
                 let mutation_id = mutation.uuid.clone();
                 let backfill_hash = mutation.backfill_hash.clone();
                 let key_value = mutation_key_values[idx].clone();
-                mutation_contexts.push((mutation_id, backfill_hash, key_value));
+                let data = mutation.fields_and_values.clone();
+                mutation_contexts.push((mutation_id, backfill_hash, key_value, data));
             }
 
             *timing_breakdown
                 .entry("validation")
                 .or_insert(std::time::Duration::ZERO) += validation_time;
 
-            // Process batch index operations synchronously
-            if !index_operations.is_empty() {
-                let index_start = std::time::Instant::now();
-                debug!(
-                    "MutationManager: Processing batch index with {} operations for schema '{}'",
-                    index_operations.len(),
-                    schema_name
-                );
-
-                // Call batch indexing directly for synchronous processing
-                if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
-                    // Update index status
-                    if let Some(tracker) = &self.index_status_tracker {
-                        tracker.start_batch(index_operations.len()).await;
-                    }
-
-                    let batch_index_start = std::time::Instant::now();
-
-                    let result = if native_index_mgr.is_async() {
-                        native_index_mgr
-                            .batch_index_field_values_with_classifications_async(&index_operations)
-                            .await
-                    } else {
-                        native_index_mgr
-                            .batch_index_field_values_with_classifications(&index_operations)
-                    };
-
-                    // Update index status completion
-                    if let Some(tracker) = &self.index_status_tracker {
-                        tracker
-                            .complete_batch(
-                                index_operations.len(),
-                                batch_index_start.elapsed().as_millis(),
-                            )
-                            .await;
-                    }
-
-                    result?;
-                }
-
-                debug!(
-                    "MutationManager: Successfully processed batch index for schema '{}'",
-                    schema_name
-                );
-                index_time += index_start.elapsed();
-            } else {
-                debug!(
-                    "MutationManager: No index operations to process for schema '{}'",
-                    schema_name
-                );
+            // Process batch index operations synchronously - REMOVED
+            // Indexing now handled by IndexOrchestrator via event bus
+            if false {
+                // Kept empty block structure to minimize diff churn if needed, or just allow compiler to optimize out
             }
 
-            *timing_breakdown
-                .entry("  - index_fields")
-                .or_insert(std::time::Duration::ZERO) += index_time;
+            // Indexing timing removed
 
             // Sync molecule UUIDs to the persisted field before storing
             let sync_start = std::time::Instant::now();
@@ -695,7 +604,7 @@ impl MutationManager {
                 .or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
 
             // Create events for batch publishing
-            for (mutation_id, backfill_hash, key_value) in mutation_contexts {
+            for (mutation_id, backfill_hash, key_value, data) in mutation_contexts {
                 let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
                     key_value: Some(key_value),
                     mutation_hash: Some(mutation_id.clone()),
@@ -703,24 +612,23 @@ impl MutationManager {
                     backfill_hash,
                 });
 
-                let event = MutationExecuted::with_context(
-                    "write_mutations_batch",
-                    schema_name.clone(),
-                    0,      // Execution time will be calculated for the batch
-                    vec![], // Fields affected - could be populated if needed
+                let event = MutationExecuted {
+                    operation: "write_mutations_batch".to_string(),
+                    schema: schema_name.clone(),
+                    execution_time_ms: 0,
+                    fields_affected: vec![],
                     mutation_context,
-                );
+                    data: Some(vec![data]), // Single data row for this mutation
+                };
 
                 batch_events.push((event, mutation_id.clone()));
                 mutation_ids.push(mutation_id.clone());
             }
         }
 
-        // Flush native index after all mutations in the batch
+        // Flush native index after all mutations in the batch - REMOVED
+        // Handled by IndexOrchestrator
         let native_index_flush_start = std::time::Instant::now();
-        if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
-            native_index_mgr.flush()?;
-        }
         timing_breakdown.insert("native_index_flush", native_index_flush_start.elapsed());
 
         // Single flush for entire batch (async)
