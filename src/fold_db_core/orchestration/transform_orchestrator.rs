@@ -7,8 +7,6 @@
 use log::{error, info};
 use sled::Tree;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
@@ -16,7 +14,7 @@ use crate::fold_db_core::infrastructure::message_bus::schema_events::{
     TransformExecuted, TransformRegistered, TransformRegistrationRequest,
     TransformRegistrationResponse, TransformTriggered,
 };
-use crate::fold_db_core::infrastructure::message_bus::MessageBus;
+use crate::fold_db_core::infrastructure::message_bus::{AsyncMessageBus, Event};
 use crate::schema::SchemaError;
 use crate::schema::SchemaState;
 use crate::storage::traits::KvStore;
@@ -64,7 +62,7 @@ impl TransformOrchestrator {
     pub fn new(
         manager: Arc<TransformManager>,
         tree: Tree,
-        message_bus: Arc<MessageBus>,
+        message_bus: Arc<AsyncMessageBus>,
         db_ops: Arc<DbOperations>,
     ) -> Self {
         info!("🏗️ Creating TransformOrchestrator with component delegation (Sled)");
@@ -108,7 +106,7 @@ impl TransformOrchestrator {
     pub async fn new_with_store(
         manager: Arc<TransformManager>,
         store: Arc<dyn KvStore>,
-        message_bus: Arc<MessageBus>,
+        message_bus: Arc<AsyncMessageBus>,
         db_ops: Arc<DbOperations>,
     ) -> Result<Self, SchemaError> {
         info!("🏗️ Creating TransformOrchestrator with component delegation (KvStore)");
@@ -152,95 +150,84 @@ impl TransformOrchestrator {
     }
 
     /// Start listening for events to drive transform execution
-    pub fn start_event_listener(&self, message_bus: Arc<MessageBus>) {
-        info!("👂 TransformOrchestrator: Starting event listener threads");
-
-        // Helper to spawn event monitor threads
-        fn spawn_event_handler<T, F>(
-            mut consumer: crate::fold_db_core::infrastructure::message_bus::Consumer<T>,
-            mut handler: F,
-        ) -> thread::JoinHandle<()>
-        where
-            T: crate::fold_db_core::infrastructure::message_bus::EventType,
-            F: FnMut(T) + Send + 'static,
-        {
-            thread::spawn(move || loop {
-                match consumer.recv_timeout(Duration::from_millis(100)) {
-                    Ok(event) => handler(event),
-                    Err(_) => continue,
-                }
-            })
-        }
+    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>) {
+        info!("👂 TransformOrchestrator: Starting event listener tasks");
 
         // 1. Handle MutationExecuted: Check for affected transforms and trigger them
-        let orchestrator_clone = self.clone();
-        let mb_for_mutation = Arc::clone(&message_bus);
-        let _mutation_thread = spawn_event_handler(
-            message_bus.subscribe::<MutationExecuted>(),
-            move |event: MutationExecuted| {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let orchestrator = orchestrator_clone.clone();
-                let bus = Arc::clone(&mb_for_mutation);
-                rt.block_on(async move {
-                    if let Err(e) = orchestrator
-                        .handle_mutation_executed_event(&event, &bus)
-                        .await
-                    {
-                        error!("Error handling MutationExecuted in Orchestrator: {}", e);
+        let orchestrator = self.clone();
+        let mb = Arc::clone(&message_bus);
+        let mut consumer = message_bus.subscribe("MutationExecuted").await;
+
+        tokio::spawn(async move {
+            loop {
+                match consumer.recv().await {
+                    Some(Event::MutationExecuted(event)) => {
+                        if let Err(e) = orchestrator
+                            .handle_mutation_executed_event(&event, &mb)
+                            .await
+                        {
+                            error!("Error handling MutationExecuted in Orchestrator: {}", e);
+                        }
                     }
-                });
-            },
-        );
+                    Some(_) => {}  // Ignore other types if mismatched
+                    None => break, // Channel closed
+                }
+            }
+        });
 
         // 2. Handle TransformTriggered: Execute the transform (Active active logic)
-        let orchestrator_clone = self.clone();
-        let mb_for_triggered = Arc::clone(&message_bus);
-        let _triggered_thread = spawn_event_handler(
-            message_bus.subscribe::<TransformTriggered>(),
-            move |event: TransformTriggered| {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let orchestrator = orchestrator_clone.clone();
-                let bus = Arc::clone(&mb_for_triggered);
-                rt.block_on(async move {
-                    if let Err(e) = orchestrator
-                        .handle_transform_triggered_event(&event, &bus)
-                        .await
-                    {
-                        error!("Error handling TransformTriggered in Orchestrator: {}", e);
+        let orchestrator = self.clone();
+        let mb = Arc::clone(&message_bus);
+        let mut consumer = message_bus.subscribe("TransformTriggered").await;
+
+        tokio::spawn(async move {
+            loop {
+                match consumer.recv().await {
+                    Some(Event::TransformTriggered(event)) => {
+                        if let Err(e) = orchestrator
+                            .handle_transform_triggered_event(&event, &mb)
+                            .await
+                        {
+                            error!("Error handling TransformTriggered in Orchestrator: {}", e);
+                        }
                     }
-                });
-            },
-        );
+                    Some(_) => {}
+                    None => break,
+                }
+            }
+        });
 
         // 3. Handle TransformRegistrationRequest: Robust registration logic
-        let orchestrator_clone = self.clone();
-        let mb_for_registration = Arc::clone(&message_bus);
-        let _registration_thread = spawn_event_handler(
-            message_bus.subscribe::<TransformRegistrationRequest>(),
-            move |event: TransformRegistrationRequest| {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                let orchestrator = orchestrator_clone.clone();
-                let bus = Arc::clone(&mb_for_registration);
-                rt.block_on(async move {
-                    if let Err(e) = orchestrator
-                        .handle_transform_registration_request(&event, &bus)
-                        .await
-                    {
-                        error!(
-                            "Error handling TransformRegistrationRequest in Orchestrator: {}",
-                            e
-                        );
+        let orchestrator = self.clone();
+        let mb = Arc::clone(&message_bus);
+        let mut consumer = message_bus.subscribe("TransformRegistrationRequest").await;
+
+        tokio::spawn(async move {
+            loop {
+                match consumer.recv().await {
+                    Some(Event::TransformRegistrationRequest(event)) => {
+                        if let Err(e) = orchestrator
+                            .handle_transform_registration_request(&event, &mb)
+                            .await
+                        {
+                            error!(
+                                "Error handling TransformRegistrationRequest in Orchestrator: {}",
+                                e
+                            );
+                        }
                     }
-                });
-            },
-        );
+                    Some(_) => {}
+                    None => break,
+                }
+            }
+        });
     }
 
     /// Handle MutationExecuted event: Identify affected transforms and trigger them
     async fn handle_mutation_executed_event(
         &self,
         event: &MutationExecuted,
-        message_bus: &Arc<MessageBus>,
+        message_bus: &Arc<AsyncMessageBus>,
     ) -> Result<(), SchemaError> {
         let manager = self.execution_coordinator.get_manager();
         let mut unique_transform_ids = std::collections::HashSet::new();
@@ -285,7 +272,10 @@ impl TransformOrchestrator {
                 TransformTriggered::new(transform_id.clone())
             };
 
-            if let Err(e) = message_bus.publish(triggered_event) {
+            if let Err(e) = message_bus
+                .publish_event(Event::TransformTriggered(triggered_event))
+                .await
+            {
                 error!(
                     "Failed to publish TransformTriggered event for {}: {}",
                     transform_id, e
@@ -300,7 +290,7 @@ impl TransformOrchestrator {
     async fn handle_transform_triggered_event(
         &self,
         event: &TransformTriggered,
-        message_bus: &Arc<MessageBus>,
+        message_bus: &Arc<AsyncMessageBus>,
     ) -> Result<(), SchemaError> {
         // We use the Execution Coordinator to run it
         // Note: For now, we are executing directly. In a queue-based system, we might just add to queue here.
@@ -324,7 +314,8 @@ impl TransformOrchestrator {
                     message_bus,
                     &event.transform_id,
                     &format!("{} records produced", transform_result.records.len()),
-                )?;
+                )
+                .await?;
                 Ok(())
             }
             Err(e) => {
@@ -333,15 +324,16 @@ impl TransformOrchestrator {
                     message_bus,
                     &event.transform_id,
                     &format!("error: {}", e),
-                )?;
+                )
+                .await?;
                 Err(e)
             }
         }
     }
 
-    fn publish_transform_executed(
+    async fn publish_transform_executed(
         &self,
-        message_bus: &Arc<MessageBus>,
+        message_bus: &Arc<AsyncMessageBus>,
         transform_id: &str,
         result: &str,
     ) -> Result<(), SchemaError> {
@@ -349,9 +341,15 @@ impl TransformOrchestrator {
             transform_id: transform_id.to_string(),
             result: result.to_string(),
         };
-        message_bus.publish(executed_event).map_err(|e| {
-            SchemaError::InvalidData(format!("Failed to publish TransformExecuted event: {}", e))
-        })?;
+        message_bus
+            .publish_event(Event::TransformExecuted(executed_event))
+            .await
+            .map_err(|e| {
+                SchemaError::InvalidData(format!(
+                    "Failed to publish TransformExecuted event: {}",
+                    e
+                ))
+            })?;
         Ok(())
     }
 
@@ -359,7 +357,7 @@ impl TransformOrchestrator {
     async fn handle_transform_registration_request(
         &self,
         event: &TransformRegistrationRequest,
-        message_bus: &Arc<MessageBus>,
+        message_bus: &Arc<AsyncMessageBus>,
     ) -> Result<(), SchemaError> {
         let manager = self.execution_coordinator.get_manager();
         info!(
@@ -390,7 +388,9 @@ impl TransformOrchestrator {
                     success: true,
                     error: None,
                 };
-                let _ = message_bus.publish(response);
+                let _ = message_bus
+                    .publish_event(Event::TransformRegistrationResponse(response))
+                    .await;
 
                 // Publish TransformRegistered for backfill triggers
                 // (Logic simplified here: we need source schema name)
@@ -414,7 +414,9 @@ impl TransformOrchestrator {
                     source_schema_name,
                     correlation_id: event.correlation_id.clone(),
                 };
-                let _ = message_bus.publish(transform_registered);
+                let _ = message_bus
+                    .publish_event(Event::TransformRegistered(transform_registered))
+                    .await;
 
                 Ok(())
             }
@@ -425,7 +427,9 @@ impl TransformOrchestrator {
                     success: false,
                     error: Some(e.to_string()),
                 };
-                let _ = message_bus.publish(response);
+                let _ = message_bus
+                    .publish_event(Event::TransformRegistrationResponse(response))
+                    .await;
                 Err(e)
             }
         }

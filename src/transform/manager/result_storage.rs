@@ -1,32 +1,39 @@
-use crate::schema::constants::TRANSFORM_SYSTEM_ID;
-use crate::schema::types::{Mutation, SchemaError, Transform};
 use crate::fold_db_core::infrastructure::message_bus::events::MutationRequest;
+use crate::fold_db_core::infrastructure::message_bus::{AsyncMessageBus, Event};
+use crate::schema::constants::TRANSFORM_SYSTEM_ID;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::operations::MutationType;
+use crate::schema::types::{Mutation, SchemaError, Transform};
+use log::warn;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::schema::types::operations::MutationType;
-use crate::schema::types::key_value::KeyValue;
 use uuid::Uuid;
-use log::warn;
 
 /// Handles storing transform results
 pub struct ResultStorage;
 
 impl ResultStorage {
     /// Generic result storage for any transform using mutations
-    pub fn store_transform_result_generic(
+    pub async fn store_transform_result_generic(
         transform: &Transform,
         db_ops: &Arc<crate::db_operations::DbOperations>,
         code_hash_to_result: HashMap<String, JsonValue>,
         key_value: KeyValue,
-        message_bus: Option<&Arc<crate::fold_db_core::infrastructure::MessageBus>>,
+        message_bus: Option<&Arc<AsyncMessageBus>>,
         backfill_hash: Option<String>,
     ) -> Result<(), SchemaError> {
         // Look up the transform's schema from the database
-        let transform_schema = tokio::runtime::Handle::current().block_on(db_ops.get_schema(transform.get_schema_name()))?.ok_or_else(|| {
-            SchemaError::InvalidData(format!("Transform schema '{}' not found", transform.get_schema_name()))
-        })?;
-        
+        let transform_schema = db_ops
+            .get_schema(transform.get_schema_name())
+            .await?
+            .ok_or_else(|| {
+                SchemaError::InvalidData(format!(
+                    "Transform schema '{}' not found",
+                    transform.get_schema_name()
+                ))
+            })?;
+
         // Create reverse mapping from hash code to field name
         let field_to_hash_code = transform_schema.get_field_to_hash_code();
         let hash_code_to_field: HashMap<String, String> = field_to_hash_code
@@ -62,9 +69,16 @@ impl ResultStorage {
                 correlation_id: Uuid::new_v4().to_string(),
                 mutation,
             };
-            
-            message_bus.publish(mutation_request)
-                .map_err(|e| crate::schema::types::SchemaError::InvalidData(format!("Failed to publish mutation request to message bus: {}", e)))?;
+
+            message_bus
+                .publish_event(Event::MutationRequest(mutation_request))
+                .await
+                .map_err(|e| {
+                    crate::schema::types::SchemaError::InvalidData(format!(
+                        "Failed to publish mutation request to message bus: {}",
+                        e
+                    ))
+                })?;
         }
 
         Ok(())

@@ -7,12 +7,10 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 use super::infrastructure::message_bus::request_events::MutationRequest;
-use super::infrastructure::MessageBus;
+use super::infrastructure::message_bus::{AsyncMessageBus, Event};
 use super::orchestration::index_status::IndexStatusTracker;
 use crate::atom::Atom;
 use crate::db_operations::DbOperations;
@@ -33,7 +31,7 @@ pub struct MutationManager {
     /// Schema manager for schema operations
     schema_manager: Arc<SchemaCore>,
     /// Message bus for event publishing and listening
-    message_bus: Arc<MessageBus>,
+    message_bus: Arc<AsyncMessageBus>,
     /// Index status tracker for reporting indexing progress
     index_status_tracker: Option<IndexStatusTracker>,
     /// Flag to track if the event listener is running
@@ -119,7 +117,7 @@ impl MutationManager {
     pub fn new(
         db_ops: Arc<DbOperations>,
         schema_manager: Arc<SchemaCore>,
-        message_bus: Arc<MessageBus>,
+        message_bus: Arc<AsyncMessageBus>,
         index_status_tracker: Option<IndexStatusTracker>,
     ) -> Self {
         Self {
@@ -314,9 +312,21 @@ impl MutationManager {
         };
 
         log::debug!("📢 Publishing MutationExecuted event");
-        self.message_bus.publish(event).map_err(|e| {
+        let event = Event::MutationExecuted(event);
+        let mb = Arc::clone(&self.message_bus);
+
+        // Use manual runtime handling to bridge sync -> async for legacy write_mutation
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| {
+                handle.block_on(async move { mb.publish_event(event).await })
+            }),
+            Err(_) => tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async move { mb.publish_event(event).await }),
+        }
+        .map_err(|e| {
             log::error!("❌ Failed to publish mutation event: {}", e);
-            e
+            crate::schema::SchemaError::InvalidData(e.to_string())
         })?;
 
         // Flush database to ensure mutation is persisted to disk
@@ -643,7 +653,7 @@ impl MutationManager {
 
         // Batch publish events
         let publish_start = std::time::Instant::now();
-        self.publish_batch_events(batch_events)?;
+        self.publish_batch_events_async(batch_events).await?;
         timing_breakdown.insert("event_publish", publish_start.elapsed());
 
         let total_time = start_time.elapsed();
@@ -725,19 +735,22 @@ impl MutationManager {
         grouped
     }
 
-    /// Publishes all batch events at once
-    fn publish_batch_events(
+    /// Publishes all batch events at once (Async)
+    async fn publish_batch_events_async(
         &self,
         events: Vec<(MutationExecuted, String)>,
     ) -> Result<(), SchemaError> {
         for (event, _mutation_id) in events {
-            self.message_bus.publish(event)?;
+            self.message_bus
+                .publish_mutation_executed(event)
+                .await
+                .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
         }
         Ok(())
     }
 
     /// Start listening for MutationRequest events in a background thread
-    pub fn start_event_listener(&self) -> Result<(), SchemaError> {
+    pub async fn start_event_listener(&self) -> Result<(), SchemaError> {
         if self.is_listening.load(std::sync::atomic::Ordering::Acquire) {
             warn!("MutationManager event listener is already running");
             return Ok(());
@@ -750,41 +763,53 @@ impl MutationManager {
 
         is_listening.store(true, std::sync::atomic::Ordering::Release);
 
-        thread::spawn(move || {
+        // Use tokio::spawn for async background task
+        tokio::spawn(async move {
             // Subscribe to MutationRequest events
-            let mut consumer = message_bus.subscribe::<MutationRequest>();
+            let mut consumer = message_bus.subscribe("MutationRequest").await;
 
             // Main event processing loop
             while is_listening.load(std::sync::atomic::Ordering::Acquire) {
-                match consumer.try_recv() {
-                    Ok(mutation_request) => {
-                        let backfill_hash = mutation_request.mutation.backfill_hash.clone();
-                        if let Err(e) = Self::handle_mutation_request_event(
-                            &mutation_request,
-                            &db_ops,
-                            &schema_manager,
-                            Arc::clone(&message_bus),
-                        ) {
-                            error!("MutationManager failed to handle mutation request: {}", e);
+                // Async receive
+                if let Some(event) = consumer.recv().await {
+                    match event {
+                        Event::MutationRequest(mutation_request) => {
+                            let backfill_hash = mutation_request.mutation.backfill_hash.clone();
+                            if let Err(e) = Self::handle_mutation_request_event(
+                                &mutation_request,
+                                &db_ops,
+                                &schema_manager,
+                                Arc::clone(&message_bus),
+                            ) {
+                                error!("MutationManager failed to handle mutation request: {}", e);
 
-                            // If this was part of a backfill, publish a failure event
-                            if let Some(hash) = backfill_hash {
-                                let fail_event = crate::fold_db_core::infrastructure::message_bus::request_events::BackfillMutationFailed {
-                                    backfill_hash: hash,
-                                    error: e.to_string(),
-                                };
-                                let _ = message_bus.publish(fail_event);
+                                // If this was part of a backfill, publish a failure event
+                                if let Some(hash) = backfill_hash {
+                                    let fail_event = crate::fold_db_core::infrastructure::message_bus::request_events::BackfillMutationFailed {
+                                        backfill_hash: hash,
+                                        error: e.to_string(),
+                                    };
+                                    // Use publish_event (async) but we are in async block so OK
+                                    let _ = message_bus
+                                        .publish_event(Event::BackfillMutationFailed(fail_event))
+                                        .await;
+                                }
                             }
                         }
+                        _ => {
+                            // Ignore other events if any leaked (shouldn't happen with filtered subscribe??)
+                            // Wait, subscribe("MutationRequest") filters? No, the implementation of subscribe does add_subscriber.
+                            // But `AsyncConsumer` recv gets `Event` from channel.
+                            // If `message_bus` routes correctly, we only get events sent to that topic.
+                            // The `AsyncSubscriberRegistry` uses "MutationRequest" as key.
+                            // Events published with `publish_event` check `event.event_type()`.
+                            // So yes, strictly filtered.
+                        }
                     }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // No events available, sleep briefly to avoid busy waiting
-                        thread::sleep(Duration::from_millis(10));
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        error!("MutationManager message bus consumer disconnected");
-                        break;
-                    }
+                } else {
+                    // Disconnected
+                    error!("MutationManager message bus consumer disconnected");
+                    break;
                 }
             }
         });
@@ -811,7 +836,7 @@ impl MutationManager {
         mutation_request: &MutationRequest,
         db_ops: &Arc<DbOperations>,
         schema_manager: &Arc<SchemaCore>,
-        message_bus: Arc<MessageBus>,
+        message_bus: Arc<AsyncMessageBus>,
     ) -> Result<(), SchemaError> {
         // Create a temporary MutationManager to handle the mutation
         // We reuse the existing extensive logic in write_mutations_batch_async

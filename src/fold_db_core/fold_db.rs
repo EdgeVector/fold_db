@@ -3,6 +3,7 @@
 //! This module contains the main FoldDB struct that manages schemas, permissions, and data storage.
 
 // Standard library imports
+// Standard library imports
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ use crate::transform::manager::TransformManager;
 // Infrastructure components that are used internally
 // init_transform_manager removed
 // SystemInitializationRequest removed
-use super::infrastructure::{EventMonitor, MessageBus};
+use super::infrastructure::{AsyncMessageBus, EventMonitor};
 use super::mutation_manager::MutationManager;
 use super::orchestration::index_status::IndexStatusTracker;
 use super::orchestration::TransformOrchestrator;
@@ -34,7 +35,7 @@ pub struct FoldDB {
     /// Query executor for handling all query operations
     pub(crate) query_executor: QueryExecutor,
     /// Message bus for event-driven communication
-    pub(crate) message_bus: Arc<MessageBus>,
+    pub(crate) message_bus: Arc<AsyncMessageBus>,
     /// Event monitor for system-wide observability
     pub(crate) event_monitor: Arc<EventMonitor>,
     /// Transform orchestrator for managing transform execution
@@ -170,7 +171,7 @@ impl FoldDB {
         progress_store: Arc<dyn super::orchestration::ProgressStore>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
-        let message_bus = Arc::new(MessageBus::new());
+        let message_bus = Arc::new(AsyncMessageBus::new());
 
         // Initialize components via event-driven system initialization
         // SystemInitializationRequest removed - dead code
@@ -189,10 +190,9 @@ impl FoldDB {
         );
 
         // Create and start EventMonitor for system-wide observability
-        let event_monitor = Arc::new(EventMonitor::new(
-            Arc::clone(&message_bus),
-            Arc::clone(&transform_manager),
-        ));
+        let event_monitor = Arc::new(
+            EventMonitor::new(Arc::clone(&message_bus), Arc::clone(&transform_manager)).await,
+        );
         info!("Started EventMonitor for system-wide event tracking");
 
         // Create QueryExecutor for handling all query operations
@@ -203,7 +203,9 @@ impl FoldDB {
         use super::orchestration::backfill_manager::BackfillManager;
         let backfill_tracker = event_monitor.get_backfill_tracker();
         let backfill_manager = BackfillManager::new(backfill_tracker);
-        backfill_manager.start_event_listener(Arc::clone(&message_bus));
+        backfill_manager
+            .start_event_listener(Arc::clone(&message_bus))
+            .await;
         info!("Started BackfillManager for event-driven backfill tracking");
 
         // Create TransformOrchestrator for managing transform execution
@@ -220,7 +222,9 @@ impl FoldDB {
             ));
 
             // Start the event listener to drive transforms
-            orchestrator.start_event_listener(Arc::clone(&message_bus));
+            orchestrator
+                .start_event_listener(Arc::clone(&message_bus))
+                .await;
 
             info!("Created and started TransformOrchestrator (Sled backend)");
             Some(orchestrator)
@@ -237,7 +241,9 @@ impl FoldDB {
             {
                 Ok(orchestrator) => {
                     // Start the event listener to drive transforms
-                    orchestrator.start_event_listener(Arc::clone(&message_bus));
+                    orchestrator
+                        .start_event_listener(Arc::clone(&message_bus))
+                        .await;
 
                     info!("Created and started TransformOrchestrator (KvStore backend)");
                     Some(Arc::new(orchestrator))
@@ -264,7 +270,9 @@ impl FoldDB {
             Arc::clone(&db_ops),
             Some(index_status_tracker.clone()),
         ));
-        index_orchestrator.start_event_listener(Arc::clone(&message_bus));
+        index_orchestrator
+            .start_event_listener(Arc::clone(&message_bus))
+            .await;
         info!("Started IndexOrchestrator for event-driven native indexing");
 
         // Create MutationManager for handling all mutation operations
@@ -278,9 +286,8 @@ impl FoldDB {
         info!("Created MutationManager for mutation operations");
 
         // Start the MutationManager event listener
-        mutation_manager
-            .start_event_listener()
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
+        let _ = mutation_manager.start_event_listener().await;
+
         info!("Started MutationManager event listener");
 
         // AtomManager operates via direct method calls, not event consumption.
@@ -288,6 +295,7 @@ impl FoldDB {
         // - EventMonitor: System observability and statistics
         // - TransformOrchestrator: Automatic transform triggering based on field changes
         // - IndexEventHandler: Background indexing for improved mutation performance
+        // - MutationManager: handles MutationRequest events
 
         Ok(Self {
             schema_manager,
@@ -377,7 +385,7 @@ impl FoldDB {
     }
 
     /// Get the message bus for publishing events (for testing)
-    pub fn message_bus(&self) -> Arc<MessageBus> {
+    pub fn message_bus(&self) -> Arc<AsyncMessageBus> {
         Arc::clone(&self.message_bus)
     }
 

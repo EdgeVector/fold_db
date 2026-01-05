@@ -232,6 +232,7 @@ pub async fn execute_query_plan(
             let schema = match db_guard
                 .schema_manager
                 .interpret_declarative_schema(index_schema.clone())
+                .await
             {
                 Ok(s) => s,
                 Err(e) => {
@@ -812,6 +813,7 @@ pub async fn run_query(
             let schema = match db_guard
                 .schema_manager
                 .interpret_declarative_schema(index_schema.clone())
+                .await
             {
                 Ok(s) => s,
                 Err(e) => {

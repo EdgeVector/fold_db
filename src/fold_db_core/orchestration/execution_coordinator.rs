@@ -4,7 +4,7 @@
 //! extracted from the main TransformOrchestrator for better separation of concerns.
 
 use super::queue_manager::QueueItem;
-use crate::fold_db_core::infrastructure::message_bus::MessageBus;
+use crate::fold_db_core::infrastructure::message_bus::{AsyncMessageBus, Event};
 use crate::schema::SchemaError;
 use crate::transform::manager::{
     types::{TransformResult, TransformRunner},
@@ -18,7 +18,7 @@ use std::time::Instant;
 #[derive(Clone)]
 pub struct ExecutionCoordinator {
     manager: Arc<TransformManager>,
-    message_bus: Arc<MessageBus>,
+    message_bus: Arc<AsyncMessageBus>,
     _db_ops: Arc<crate::db_operations::DbOperations>,
 }
 
@@ -26,7 +26,7 @@ impl ExecutionCoordinator {
     /// Create a new ExecutionCoordinator
     pub fn new(
         manager: Arc<TransformManager>,
-        message_bus: Arc<MessageBus>,
+        message_bus: Arc<AsyncMessageBus>,
         db_ops: Arc<crate::db_operations::DbOperations>,
     ) -> Self {
         Self {
@@ -99,7 +99,8 @@ impl ExecutionCoordinator {
                 self.publish_success_event(
                     transform_id,
                     &format!("{} records produced", transform_result.records.len()),
-                )?;
+                )
+                .await?;
 
                 Ok(transform_result)
             }
@@ -112,7 +113,8 @@ impl ExecutionCoordinator {
                 error!("❌ Execution error details: {:?}", e);
 
                 // Publish failure event
-                self.publish_failure_event(transform_id, &e.to_string())?;
+                self.publish_failure_event(transform_id, &e.to_string())
+                    .await?;
 
                 Err(SchemaError::InvalidData(format!(
                     "Transform execution failed: {}",
@@ -123,7 +125,11 @@ impl ExecutionCoordinator {
     }
 
     /// Publish success event with consistent error handling
-    fn publish_success_event(&self, transform_id: &str, result: &str) -> Result<(), SchemaError> {
+    async fn publish_success_event(
+        &self,
+        transform_id: &str,
+        result: &str,
+    ) -> Result<(), SchemaError> {
         use crate::fold_db_core::infrastructure::message_bus::schema_events::TransformExecuted;
 
         info!("📢 Publishing TransformExecuted success event...");
@@ -133,13 +139,16 @@ impl ExecutionCoordinator {
             result: format!("computed_result: {}", result),
         };
 
-        self.message_bus.publish(executed_event).map_err(|e| {
-            error!(
-                "❌ Failed to publish TransformExecuted success event for {}: {}",
-                transform_id, e
-            );
-            SchemaError::InvalidData(format!("Failed to publish success event: {}", e))
-        })?;
+        self.message_bus
+            .publish_event(Event::TransformExecuted(executed_event))
+            .await
+            .map_err(|e| {
+                error!(
+                    "❌ Failed to publish TransformExecuted success event for {}: {}",
+                    transform_id, e
+                );
+                SchemaError::InvalidData(format!("Failed to publish success event: {}", e))
+            })?;
 
         info!(
             "✅ Published TransformExecuted success event for: {}",
@@ -149,7 +158,7 @@ impl ExecutionCoordinator {
     }
 
     /// Publish failure event with consistent error handling
-    fn publish_failure_event(
+    async fn publish_failure_event(
         &self,
         transform_id: &str,
         error_msg: &str,
@@ -166,13 +175,16 @@ impl ExecutionCoordinator {
             result: format!("execution_error: {}", error_msg),
         };
 
-        self.message_bus.publish(executed_event).map_err(|e| {
-            error!(
-                "❌ Failed to publish TransformExecuted failure event for {}: {}",
-                transform_id, e
-            );
-            SchemaError::InvalidData(format!("Failed to publish failure event: {}", e))
-        })?;
+        self.message_bus
+            .publish_event(Event::TransformExecuted(executed_event))
+            .await
+            .map_err(|e| {
+                error!(
+                    "❌ Failed to publish TransformExecuted failure event for {}: {}",
+                    transform_id, e
+                );
+                SchemaError::InvalidData(format!("Failed to publish failure event: {}", e))
+            })?;
 
         info!(
             "✅ Published TransformExecuted failure event for transform: {}",
@@ -296,7 +308,7 @@ impl ExecutionCoordinator {
     }
 
     /// Get access to the message bus
-    pub fn get_message_bus(&self) -> &Arc<MessageBus> {
+    pub fn get_message_bus(&self) -> &Arc<AsyncMessageBus> {
         &self.message_bus
     }
 }
