@@ -201,6 +201,7 @@ impl MutationExecuted {
             execution_time_ms,
             fields_affected,
             mutation_context: None,
+            data: None, // Use with_context to populate if needed
         }
     }
 
@@ -218,6 +219,7 @@ impl MutationExecuted {
             execution_time_ms,
             fields_affected,
             mutation_context,
+            data: None, // Use manual initialization if data payload is required
         }
     }
 }

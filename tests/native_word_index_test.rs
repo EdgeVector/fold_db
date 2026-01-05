@@ -69,14 +69,32 @@ async fn test_native_word_index_search_updates_with_mutations() {
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
 
-        let jennifer_results = fold_db
-            .native_word_search("Jennifer")
-            .expect("search should succeed");
-        assert!(
-            jennifer_results
+        // With async indexing, we must wait for the index to update
+        let mut attempts = 0;
+        let mut jennifer_found = false;
+        loop {
+            let jennifer_results = fold_db
+                .native_word_search("Jennifer")
+                .expect("search should succeed");
+
+            if jennifer_results
                 .iter()
-                .any(|entry| entry.key_value.range.as_deref() == Some("2024-02-01")),
-            "expected Jennifer to be indexed with the publish date"
+                .any(|entry| entry.key_value.range.as_deref() == Some("2024-02-01"))
+            {
+                jennifer_found = true;
+                break;
+            }
+
+            attempts += 1;
+            if attempts >= 20 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        assert!(
+            jennifer_found,
+            "expected Jennifer to be indexed with the publish date (after waiting)"
         );
 
         let stopword_results = fold_db
@@ -132,12 +150,29 @@ async fn test_native_word_index_search_updates_with_mutations() {
             println!("  This is expected behavior for the native index fix (recursive object processing is working)");
         }
 
-        let alice_results = fold_db
-            .native_word_search("alice")
-            .expect("search for alice should succeed");
+        // With async indexing, wait for Alice results
+        let mut attempts = 0;
+        let mut alice_found = false;
+        loop {
+            let alice_results = fold_db
+                .native_word_search("alice")
+                .expect("search for alice should succeed");
+
+            if alice_results.iter().any(|entry| entry.field == "content") {
+                alice_found = true;
+                break;
+            }
+
+            attempts += 1;
+            if attempts >= 20 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
         assert!(
-            alice_results.iter().any(|entry| entry.field == "content"),
-            "expected alice to appear in content results"
+            alice_found,
+            "expected alice to appear in content results (after waiting)"
         );
     }
 }
