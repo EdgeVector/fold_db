@@ -7,18 +7,26 @@
 use log::{error, info};
 use sled::Tree;
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use crate::db_operations::DbOperations;
+use crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
+use crate::fold_db_core::infrastructure::message_bus::schema_events::{
+    TransformExecuted, TransformRegistered, TransformRegistrationRequest,
+    TransformRegistrationResponse, TransformTriggered,
+};
 use crate::fold_db_core::infrastructure::message_bus::MessageBus;
 use crate::schema::SchemaError;
+use crate::schema::SchemaState;
 use crate::storage::traits::KvStore;
+use crate::transform::manager::types::TransformRunner;
 use crate::transform::manager::{types::TransformResult, TransformManager};
 
 // Import the new specialized components
 use super::execution_coordinator::ExecutionCoordinator;
 use super::persistence_manager::PersistenceManager;
 use super::queue_manager::QueueManager;
-use super::transform_event_monitor::TransformEventMonitor;
 
 use async_trait::async_trait;
 
@@ -43,13 +51,12 @@ pub trait TransformQueue {
 /// This refactored version delegates operations to focused components:
 /// - QueueManager: Thread-safe queue operations
 /// - PersistenceManager: State persistence
-/// - TransformEventMonitor: Field value event monitoring
 /// - ExecutionCoordinator: Transform execution and result publishing
+#[derive(Clone)]
 pub struct TransformOrchestrator {
     queue_manager: QueueManager,
     persistence_manager: PersistenceManager,
     execution_coordinator: ExecutionCoordinator,
-    _event_monitor: TransformEventMonitor, // Kept alive for background monitoring
 }
 
 impl TransformOrchestrator {
@@ -88,20 +95,12 @@ impl TransformOrchestrator {
             Arc::clone(&db_ops),
         );
 
-        // Initialize event monitor (starts background monitoring)
-        let event_monitor = TransformEventMonitor::new(
-            Arc::clone(&message_bus),
-            Arc::clone(&manager),
-            PersistenceManager::new(tree.clone()),
-        );
-
         info!("✅ TransformOrchestrator initialized with all components");
 
         Self {
             queue_manager,
             persistence_manager,
             execution_coordinator,
-            _event_monitor: event_monitor,
         }
     }
 
@@ -143,21 +142,293 @@ impl TransformOrchestrator {
             Arc::clone(&db_ops),
         );
 
-        // Initialize event monitor (starts background monitoring)
-        let event_monitor = TransformEventMonitor::new(
-            Arc::clone(&message_bus),
-            Arc::clone(&manager),
-            PersistenceManager::new_with_store(store.clone()),
-        );
-
         info!("✅ TransformOrchestrator initialized with all components");
 
         Ok(Self {
             queue_manager,
             persistence_manager,
             execution_coordinator,
-            _event_monitor: event_monitor,
         })
+    }
+
+    /// Start listening for events to drive transform execution
+    pub fn start_event_listener(&self, message_bus: Arc<MessageBus>) {
+        info!("👂 TransformOrchestrator: Starting event listener threads");
+
+        // Helper to spawn event monitor threads
+        fn spawn_event_handler<T, F>(
+            mut consumer: crate::fold_db_core::infrastructure::message_bus::Consumer<T>,
+            mut handler: F,
+        ) -> thread::JoinHandle<()>
+        where
+            T: crate::fold_db_core::infrastructure::message_bus::EventType,
+            F: FnMut(T) + Send + 'static,
+        {
+            thread::spawn(move || loop {
+                match consumer.recv_timeout(Duration::from_millis(100)) {
+                    Ok(event) => handler(event),
+                    Err(_) => continue,
+                }
+            })
+        }
+
+        // 1. Handle MutationExecuted: Check for affected transforms and trigger them
+        let orchestrator_clone = self.clone();
+        let mb_for_mutation = Arc::clone(&message_bus);
+        let _mutation_thread = spawn_event_handler(
+            message_bus.subscribe::<MutationExecuted>(),
+            move |event: MutationExecuted| {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let orchestrator = orchestrator_clone.clone();
+                let bus = Arc::clone(&mb_for_mutation);
+                rt.block_on(async move {
+                    if let Err(e) = orchestrator
+                        .handle_mutation_executed_event(&event, &bus)
+                        .await
+                    {
+                        error!("Error handling MutationExecuted in Orchestrator: {}", e);
+                    }
+                });
+            },
+        );
+
+        // 2. Handle TransformTriggered: Execute the transform (Active active logic)
+        let orchestrator_clone = self.clone();
+        let mb_for_triggered = Arc::clone(&message_bus);
+        let _triggered_thread = spawn_event_handler(
+            message_bus.subscribe::<TransformTriggered>(),
+            move |event: TransformTriggered| {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let orchestrator = orchestrator_clone.clone();
+                let bus = Arc::clone(&mb_for_triggered);
+                rt.block_on(async move {
+                    if let Err(e) = orchestrator
+                        .handle_transform_triggered_event(&event, &bus)
+                        .await
+                    {
+                        error!("Error handling TransformTriggered in Orchestrator: {}", e);
+                    }
+                });
+            },
+        );
+
+        // 3. Handle TransformRegistrationRequest: Robust registration logic
+        let orchestrator_clone = self.clone();
+        let mb_for_registration = Arc::clone(&message_bus);
+        let _registration_thread = spawn_event_handler(
+            message_bus.subscribe::<TransformRegistrationRequest>(),
+            move |event: TransformRegistrationRequest| {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let orchestrator = orchestrator_clone.clone();
+                let bus = Arc::clone(&mb_for_registration);
+                rt.block_on(async move {
+                    if let Err(e) = orchestrator
+                        .handle_transform_registration_request(&event, &bus)
+                        .await
+                    {
+                        error!(
+                            "Error handling TransformRegistrationRequest in Orchestrator: {}",
+                            e
+                        );
+                    }
+                });
+            },
+        );
+    }
+
+    /// Handle MutationExecuted event: Identify affected transforms and trigger them
+    async fn handle_mutation_executed_event(
+        &self,
+        event: &MutationExecuted,
+        message_bus: &Arc<MessageBus>,
+    ) -> Result<(), SchemaError> {
+        let manager = self.execution_coordinator.get_manager();
+        let mut unique_transform_ids = std::collections::HashSet::new();
+
+        for field_name in &event.fields_affected {
+            match manager.get_transforms_for_field(&event.schema, field_name) {
+                Ok(transform_ids) => {
+                    unique_transform_ids.extend(transform_ids);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to get transforms for field {}.{}: {}",
+                        event.schema, field_name, e
+                    );
+                    return Err(e);
+                }
+            }
+        }
+
+        // Publish TransformTriggered events for approved transforms
+        for transform_id in unique_transform_ids {
+            let schema_state = manager
+                .get_schema_state(&transform_id)
+                .await?
+                .unwrap_or(SchemaState::Available);
+
+            if schema_state != SchemaState::Approved {
+                info!(
+                    "Transform {} skipped: Schema state is {:?}",
+                    transform_id, schema_state
+                );
+                continue;
+            }
+
+            let triggered_event = if let Some(ref context) = event.mutation_context {
+                if context.incremental {
+                    TransformTriggered::with_context(transform_id.clone(), context.clone())
+                } else {
+                    TransformTriggered::new(transform_id.clone())
+                }
+            } else {
+                TransformTriggered::new(transform_id.clone())
+            };
+
+            if let Err(e) = message_bus.publish(triggered_event) {
+                error!(
+                    "Failed to publish TransformTriggered event for {}: {}",
+                    transform_id, e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle TransformTriggered event: Execute the transform
+    async fn handle_transform_triggered_event(
+        &self,
+        event: &TransformTriggered,
+        message_bus: &Arc<MessageBus>,
+    ) -> Result<(), SchemaError> {
+        // We use the Execution Coordinator to run it
+        // Note: For now, we are executing directly. In a queue-based system, we might just add to queue here.
+        // But to maintain current behavior (Event -> Exec), we run it.
+        // HOWEVER, we also have queue logic.
+        // Let's stick to the behavior we verified: Trigger -> Execute immediately (or via manager).
+
+        let manager = self.execution_coordinator.get_manager();
+        let result = manager
+            .execute_transform_with_context(&event.transform_id, &event.mutation_context)
+            .await;
+
+        match result {
+            Ok(transform_result) => {
+                info!(
+                    "Transform {} executed successfully: {} records",
+                    event.transform_id,
+                    transform_result.records.len()
+                );
+                self.publish_transform_executed(
+                    message_bus,
+                    &event.transform_id,
+                    &format!("{} records produced", transform_result.records.len()),
+                )?;
+                Ok(())
+            }
+            Err(e) => {
+                error!("Transform {} execution failed: {}", event.transform_id, e);
+                self.publish_transform_executed(
+                    message_bus,
+                    &event.transform_id,
+                    &format!("error: {}", e),
+                )?;
+                Err(e)
+            }
+        }
+    }
+
+    fn publish_transform_executed(
+        &self,
+        message_bus: &Arc<MessageBus>,
+        transform_id: &str,
+        result: &str,
+    ) -> Result<(), SchemaError> {
+        let executed_event = TransformExecuted {
+            transform_id: transform_id.to_string(),
+            result: result.to_string(),
+        };
+        message_bus.publish(executed_event).map_err(|e| {
+            SchemaError::InvalidData(format!("Failed to publish TransformExecuted event: {}", e))
+        })?;
+        Ok(())
+    }
+
+    /// Handle TransformRegistrationRequest
+    async fn handle_transform_registration_request(
+        &self,
+        event: &TransformRegistrationRequest,
+        message_bus: &Arc<MessageBus>,
+    ) -> Result<(), SchemaError> {
+        let manager = self.execution_coordinator.get_manager();
+        info!(
+            "🔧 Orchestrator: Handling TransformRegistrationRequest for '{}'",
+            event.registration.transform_id
+        );
+
+        if manager.transform_exists(&event.registration.transform_id)? {
+            info!(
+                "ℹ️  Transform '{}' already registered",
+                event.registration.transform_id
+            );
+            return Ok(());
+        }
+
+        match manager
+            .handle_transform_registration(&event.registration)
+            .await
+        {
+            Ok(()) => {
+                info!(
+                    "✅ Successfully registered transform '{}'",
+                    event.registration.transform_id
+                );
+
+                let response = TransformRegistrationResponse {
+                    correlation_id: event.correlation_id.clone(),
+                    success: true,
+                    error: None,
+                };
+                let _ = message_bus.publish(response);
+
+                // Publish TransformRegistered for backfill triggers
+                // (Logic simplified here: we need source schema name)
+                let transform_schema = manager
+                    .db_ops
+                    .get_schema(event.registration.transform.get_schema_name())
+                    .await?
+                    .ok_or_else(|| {
+                        SchemaError::InvalidData("Transform schema not found".to_string())
+                    })?;
+
+                // Extract source schema from input fields (heuristic)
+                let source_schema_name = transform_schema
+                    .get_inputs()
+                    .first()
+                    .map(|s| s.split('.').next().unwrap_or("").to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                let transform_registered = TransformRegistered {
+                    transform_id: event.registration.transform_id.clone(),
+                    source_schema_name,
+                    correlation_id: event.correlation_id.clone(),
+                };
+                let _ = message_bus.publish(transform_registered);
+
+                Ok(())
+            }
+            Err(e) => {
+                error!("❌ Failed to register transform: {}", e);
+                let response = TransformRegistrationResponse {
+                    correlation_id: event.correlation_id.clone(),
+                    success: false,
+                    error: Some(e.to_string()),
+                };
+                let _ = message_bus.publish(response);
+                Err(e)
+            }
+        }
     }
 
     /// Add a task for the given schema and field using the execution coordinator
