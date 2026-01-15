@@ -3,14 +3,14 @@
 //! This module provides common filter logic that can be reused by RangeField,
 //! HashRangeField, and other field types to eliminate code duplication.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use crate::atom::{MoleculeHashRange, MoleculeRange};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::SchemaError;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
-use crate::atom::{MoleculeRange, MoleculeHashRange};
+use crate::schema::types::SchemaError;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Common filter application utilities
 pub struct FilterUtils;
@@ -34,7 +34,6 @@ impl FilterUtils {
         }
         prefix_end
     }
-
 }
 
 /// Resolve atom UUID matches into concrete FieldValue map by fetching atoms (async version)
@@ -45,66 +44,15 @@ pub async fn fetch_atoms_for_matches_async(
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
 
     for (key, atom_uuid) in matches.into_iter() {
-        match db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid)).await {
+        match db_ops
+            .get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))
+            .await
+        {
             Ok(Some(atom)) => {
                 resolved_values.insert(
                     key,
-                    FieldValue { 
-                        value: atom.content().clone(), 
-                        atom_uuid: atom_uuid.clone(),
-                        source_file_name: atom.source_file_name().cloned(),
-                    },
-                );
-            }
-            Ok(None) => {
-                let key_str = key.to_string();
-                if key_str.is_empty() {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Atom '{}' not found",
-                        atom_uuid
-                    )));
-                } else {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Atom '{}' not found for key '{}'",
-                        atom_uuid, key
-                    )));
-                }
-            }
-            Err(e) => {
-                let key_str = key.to_string();
-                if key_str.is_empty() {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Failed to fetch atom '{}': {}",
-                        atom_uuid, e
-                    )));
-                } else {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Failed to fetch atom '{}' for key '{}': {}",
-                        atom_uuid, key, e
-                    )));
-                }
-            }
-        }
-    }
-
-    Ok(resolved_values)
-}
-
-/// Resolve atom UUID matches into concrete FieldValue map by fetching atoms (sync version - deprecated)
-#[deprecated(note = "Use fetch_atoms_for_matches_async instead")]
-pub fn fetch_atoms_for_matches(
-    db_ops: &Arc<DbOperations>,
-    matches: impl IntoIterator<Item = (KeyValue, String)>,
-)-> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-    let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
-
-    for (key, atom_uuid) in matches.into_iter() {
-        match super::run_async(db_ops.get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))) {
-            Ok(Some(atom)) => {
-                resolved_values.insert(
-                    key,
-                    FieldValue { 
-                        value: atom.content().clone(), 
+                    FieldValue {
+                        value: atom.content().clone(),
                         atom_uuid: atom_uuid.clone(),
                         source_file_name: atom.source_file_name().cloned(),
                     },
@@ -157,16 +105,15 @@ pub trait FilterApplicator {
 pub trait RangeOperations {
     /// Get a single atom UUID by key
     fn get_atom_uuid(&self, key: &str) -> Option<String>;
-    
+
     /// Get all atom UUIDs as key-value pairs
     fn get_all_atoms(&self) -> Vec<(String, String)>;
-    
+
     /// Get atoms in a range (start..end)
     fn get_atoms_in_range(&self, start: &str, end: &str) -> Vec<(String, String)>;
-    
+
     /// Get atoms matching a prefix
     fn get_atoms_with_prefix(&self, prefix: &str) -> Vec<(String, String)>;
-    
 }
 
 /// Helper trait for hash-range operations
@@ -174,31 +121,39 @@ pub trait RangeOperations {
 pub trait HashRangeOperations {
     /// Get a single atom UUID by hash and range
     fn get_atom_uuid(&self, hash: &str, range: &str) -> Option<String>;
-    
+
     /// Get all atoms as (hash, range, uuid) tuples
     fn get_all_atoms(&self) -> Vec<(String, String, String)>;
-    
+
     /// Get atoms for a specific hash
     fn get_atoms_for_hash(&self, hash: &str) -> Option<Vec<(String, String)>>;
-    
+
     /// Get atoms in a range for a specific hash
-    fn get_atoms_in_range_for_hash(&self, hash: &str, start: &str, end: &str) -> Vec<(String, String)>;
-    
+    fn get_atoms_in_range_for_hash(
+        &self,
+        hash: &str,
+        start: &str,
+        end: &str,
+    ) -> Vec<(String, String)>;
+
     /// Get atoms with prefix for a specific hash
     fn get_atoms_with_prefix_for_hash(&self, hash: &str, prefix: &str) -> Vec<(String, String)>;
-    
+
     /// Get a deterministic sample of n KeyValues from the update order
     fn sample(&self, n: usize) -> Vec<KeyValue>;
-    
+
     /// Get all hash values
     fn get_hash_values(&self) -> Vec<String>;
-    
+
     /// Get atoms in hash range
     fn get_atoms_in_hash_range(&self, start: &str, end: &str) -> Vec<(String, String, String)>;
 }
 
 /// Generic filter application for RangeField
-pub fn apply_range_filter<T: RangeOperations>(operations: &T, optional_filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
+pub fn apply_range_filter<T: RangeOperations>(
+    operations: &T,
+    optional_filter: Option<HashRangeFilter>,
+) -> HashRangeFilterResult {
     let filter = optional_filter.unwrap_or(HashRangeFilter::SampleN(100));
     let mut matches = HashMap::new();
 
@@ -257,7 +212,9 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, optional_filter: O
                 matches.insert(composite_key, atom_uuid);
             }
         }
-        HashRangeFilter::HashRangePattern { pattern: _pattern, .. } => {
+        HashRangeFilter::HashRangePattern {
+            pattern: _pattern, ..
+        } => {
             // Pattern matching not supported - return empty results
         }
         // Hash-only filters - RangeField doesn't handle hash keys, return empty
@@ -273,7 +230,10 @@ pub fn apply_range_filter<T: RangeOperations>(operations: &T, optional_filter: O
 }
 
 /// Generic filter application for HashRangeField
-pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, optional_filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
+pub fn apply_hash_range_filter<T: HashRangeOperations>(
+    operations: &T,
+    optional_filter: Option<HashRangeFilter>,
+) -> HashRangeFilterResult {
     let filter = optional_filter.unwrap_or(HashRangeFilter::SampleN(100));
     let mut matches = HashMap::new();
 
@@ -302,29 +262,38 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, optional_
             }
         }
         HashRangeFilter::HashRangePrefix { hash, prefix } => {
-            for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(&hash, &prefix) {
+            for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(&hash, &prefix)
+            {
                 let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangePrefix(prefix) => {
             for hash_value in operations.get_hash_values() {
-                for (range_key, atom_uuid) in operations.get_atoms_with_prefix_for_hash(&hash_value, &prefix) {
-                    let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
+                for (range_key, atom_uuid) in
+                    operations.get_atoms_with_prefix_for_hash(&hash_value, &prefix)
+                {
+                    let composite_key =
+                        KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
         }
         HashRangeFilter::HashRangeRange { hash, start, end } => {
-            for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(&hash, &start, &end) {
+            for (range_key, atom_uuid) in
+                operations.get_atoms_in_range_for_hash(&hash, &start, &end)
+            {
                 let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
         HashRangeFilter::RangeRange { start, end } => {
             for hash_value in operations.get_hash_values() {
-                for (range_key, atom_uuid) in operations.get_atoms_in_range_for_hash(&hash_value, &start, &end) {
-                    let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
+                for (range_key, atom_uuid) in
+                    operations.get_atoms_in_range_for_hash(&hash_value, &start, &end)
+                {
+                    let composite_key =
+                        KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }
@@ -337,7 +306,10 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, optional_
                 }
             }
         }
-        HashRangeFilter::HashRangePattern { hash: _, pattern: _pattern } => {
+        HashRangeFilter::HashRangePattern {
+            hash: _,
+            pattern: _pattern,
+        } => {
             // Pattern matching not supported - return empty results
         }
         HashRangeFilter::RangePattern(_pattern) => {
@@ -347,8 +319,11 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(operations: &T, optional_
             // Pattern matching not supported - return empty results
         }
         HashRangeFilter::HashRange { start, end } => {
-            for (hash_value, range_key, atom_uuid) in operations.get_atoms_in_hash_range(&start, &end) {
-                let composite_key = KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
+            for (hash_value, range_key, atom_uuid) in
+                operations.get_atoms_in_hash_range(&start, &end)
+            {
+                let composite_key =
+                    KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()));
                 matches.insert(composite_key, atom_uuid);
             }
         }
@@ -362,26 +337,28 @@ impl RangeOperations for MoleculeRange {
     fn get_atom_uuid(&self, key: &str) -> Option<String> {
         self.get_atom_uuid(key).cloned()
     }
-    
+
     fn get_all_atoms(&self) -> Vec<(String, String)> {
-        self.atom_uuids.iter()
+        self.atom_uuids
+            .iter()
             .map(|(key, uuid)| (key.clone(), uuid.clone()))
             .collect()
     }
-    
+
     fn get_atoms_in_range(&self, start: &str, end: &str) -> Vec<(String, String)> {
-        self.atom_uuids.range(start.to_string()..end.to_string())
+        self.atom_uuids
+            .range(start.to_string()..end.to_string())
             .map(|(key, uuid)| (key.clone(), uuid.clone()))
             .collect()
     }
-    
+
     fn get_atoms_with_prefix(&self, prefix: &str) -> Vec<(String, String)> {
         let prefix_end = FilterUtils::create_prefix_end(prefix);
-        self.atom_uuids.range(prefix.to_string()..prefix_end)
+        self.atom_uuids
+            .range(prefix.to_string()..prefix_end)
             .map(|(key, uuid)| (key.clone(), uuid.clone()))
             .collect()
     }
-    
 }
 
 /// Implementation of HashRangeOperations for MoleculeHashRange
@@ -389,58 +366,65 @@ impl HashRangeOperations for MoleculeHashRange {
     fn get_atom_uuid(&self, hash: &str, range: &str) -> Option<String> {
         self.get_atom_uuid(hash, range).cloned()
     }
-    
+
     fn get_all_atoms(&self) -> Vec<(String, String, String)> {
         self.iter_all_atoms()
             .map(|(hash, range, uuid)| (hash.clone(), range.clone(), uuid.clone()))
             .collect()
     }
-    
+
     fn get_atoms_for_hash(&self, hash: &str) -> Option<Vec<(String, String)>> {
-        self.get_atoms_for_hash(hash)
-            .map(|range_map| {
-                range_map.iter()
-                    .map(|(range, uuid)| (range.clone(), uuid.clone()))
-                    .collect()
-            })
+        self.get_atoms_for_hash(hash).map(|range_map| {
+            range_map
+                .iter()
+                .map(|(range, uuid)| (range.clone(), uuid.clone()))
+                .collect()
+        })
     }
-    
-    fn get_atoms_in_range_for_hash(&self, hash: &str, start: &str, end: &str) -> Vec<(String, String)> {
+
+    fn get_atoms_in_range_for_hash(
+        &self,
+        hash: &str,
+        start: &str,
+        end: &str,
+    ) -> Vec<(String, String)> {
         self.get_atoms_for_hash(hash)
             .map(|range_map| {
-                range_map.range(start.to_string()..end.to_string())
+                range_map
+                    .range(start.to_string()..end.to_string())
                     .map(|(range, uuid)| (range.clone(), uuid.clone()))
                     .collect()
             })
             .unwrap_or_default()
     }
-    
+
     fn get_atoms_with_prefix_for_hash(&self, hash: &str, prefix: &str) -> Vec<(String, String)> {
         let prefix_end = FilterUtils::create_prefix_end(prefix);
         self.get_atoms_for_hash(hash)
             .map(|range_map| {
-                range_map.range(prefix.to_string()..prefix_end)
+                range_map
+                    .range(prefix.to_string()..prefix_end)
                     .map(|(range, uuid)| (range.clone(), uuid.clone()))
                     .collect()
             })
             .unwrap_or_default()
     }
-    
+
     fn sample(&self, n: usize) -> Vec<KeyValue> {
         self.sample(n)
     }
-    
-    
+
     fn get_hash_values(&self) -> Vec<String> {
         self.hash_values().cloned().collect()
     }
-    
+
     fn get_atoms_in_hash_range(&self, start: &str, end: &str) -> Vec<(String, String, String)> {
         self.hash_values()
             .flat_map(|hash| {
                 self.get_atoms_for_hash(hash)
                     .map(|range_map| {
-                        range_map.range(start.to_string()..end.to_string())
+                        range_map
+                            .range(start.to_string()..end.to_string())
                             .map(|(range, uuid)| (hash.clone(), range.clone(), uuid.clone()))
                             .collect::<Vec<_>>()
                     })
