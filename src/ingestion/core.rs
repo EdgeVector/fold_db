@@ -993,9 +993,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
-    // REMOVED: create_test_ingestion_core - dead code marked with #[allow(dead_code)]
-    // This duplicated test setup logic available in testing_utils module
-
     #[tokio::test]
     async fn test_ingestion_core_new_with_ollama_provider() {
         let config = IngestionConfig {

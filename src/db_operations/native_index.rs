@@ -818,38 +818,6 @@ impl NativeIndexManager {
         }
     }
 
-    /// Write entries to index (async version for DynamoDB)
-    /// Uses simplified key structure: feature as PK, term as SK
-    #[allow(dead_code)]
-    async fn write_entries_async(
-        &self,
-        key: &str,
-        entries: &[IndexResult],
-    ) -> Result<(), SchemaError> {
-        if let Some(ref _store) = self.store {
-            if entries.is_empty() {
-                log::debug!("Native Index: Removing empty index key: {}", key);
-                self.delete(key.as_bytes()).await?;
-                return Ok(());
-            }
-
-            log::debug!(
-                "Native Index: Writing {} entries to index key: {}",
-                entries.len(),
-                key
-            );
-            let bytes = serde_json::to_vec(entries).map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to serialize index entries: {}", e))
-            })?;
-            self.put(key.as_bytes(), bytes).await?;
-            Ok(())
-        } else {
-            Err(SchemaError::InvalidData(
-                "Async write_entries only available with KvStore backend".to_string(),
-            ))
-        }
-    }
-
     /// Remove record entries (sync version for Sled)
     fn remove_record_entries(
         &self,
@@ -889,53 +857,6 @@ impl NativeIndexManager {
             Ok(())
         } else {
             Err(SchemaError::InvalidData("Synchronous remove_record_entries only available with Sled backend. Use remove_record_entries_async instead.".to_string()))
-        }
-    }
-
-    /// Remove record entries (async version for DynamoDB)
-    #[allow(dead_code)]
-    async fn remove_record_entries_async(
-        &self,
-        record_key: &str,
-        schema_name: &str,
-        field_name: &str,
-        key_value: &KeyValue,
-    ) -> Result<(), SchemaError> {
-        if let Some(ref _store) = self.store {
-            let bytes = self.get(record_key.as_bytes()).await?;
-
-            let Some(bytes) = bytes else {
-                return Ok(());
-            };
-
-            let words: Vec<String> = serde_json::from_slice(&bytes).map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to deserialize record index words: {}", e))
-            })?;
-
-            for word in words {
-                let index_key = format!("{}{}", structural_prefixes::WORD, word);
-                let mut entries = self.read_entries_async(&index_key).await?;
-                let initial_len = entries.len();
-
-                entries.retain(|entry| {
-                    !(entry.schema_name == schema_name
-                        && entry.field == field_name
-                        && entry.key_value == *key_value)
-                });
-
-                if entries.is_empty() {
-                    self.delete(index_key.as_bytes()).await?;
-                } else if entries.len() != initial_len {
-                    self.write_entries_async(&index_key, &entries).await?;
-                }
-            }
-
-            self.delete(record_key.as_bytes()).await?;
-            Ok(())
-        } else {
-            Err(SchemaError::InvalidData(
-                "Async remove_record_entries only available with KvStore backend".to_string(),
-            ))
         }
     }
 
