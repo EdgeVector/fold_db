@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::infrastructure::message_bus::events::query_events::MutationExecuted;
-use super::infrastructure::message_bus::request_events::MutationRequest;
+
 use super::infrastructure::message_bus::{AsyncMessageBus, Event};
 use super::orchestration::index_status::IndexStatusTracker;
 use crate::atom::Atom;
@@ -471,12 +471,21 @@ impl MutationManager {
                     match event {
                         Event::MutationRequest(mutation_request) => {
                             let backfill_hash = mutation_request.mutation.backfill_hash.clone();
-                            if let Err(e) = Self::handle_mutation_request_event(
-                                &mutation_request,
-                                &db_ops,
-                                &schema_manager,
+
+                            // Inline async handling instead of blocking call
+                            let mut temp_manager = Self::new(
+                                Arc::clone(&db_ops),
+                                Arc::clone(&schema_manager),
                                 Arc::clone(&message_bus),
-                            ) {
+                                None,
+                            );
+
+                            if let Err(e) = temp_manager
+                                .write_mutations_batch_async(vec![mutation_request
+                                    .mutation
+                                    .clone()])
+                                .await
+                            {
                                 error!("MutationManager failed to handle mutation request: {}", e);
 
                                 // If this was part of a backfill, publish a failure event
@@ -485,7 +494,6 @@ impl MutationManager {
                                         backfill_hash: hash,
                                         error: e.to_string(),
                                     };
-                                    // Use publish_event (async) but we are in async block so OK
                                     let _ = message_bus
                                         .publish_event(Event::BackfillMutationFailed(fail_event))
                                         .await;
@@ -521,59 +529,5 @@ impl MutationManager {
     /// Check if the event listener is currently running
     pub fn is_listening(&self) -> bool {
         self.is_listening.load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    /// Handle a mutation request event by executing the mutation
-    ///
-    /// Note: This is a legacy async event handler that processes single mutations.
-    /// For better performance, use the batch mutation APIs directly.
-    #[allow(deprecated)]
-    fn handle_mutation_request_event(
-        mutation_request: &MutationRequest,
-        db_ops: &Arc<DbOperations>,
-        schema_manager: &Arc<SchemaCore>,
-        message_bus: Arc<AsyncMessageBus>,
-    ) -> Result<(), SchemaError> {
-        // Create a temporary MutationManager to handle the mutation
-        // We reuse the existing extensive logic in write_mutations_batch_async
-        // This avoids code duplication and ensures all optimizations (like 3-phase write) are applied
-
-        // Note: The event listener runs in a background thread, likely outside of a tokio runtime
-        // or inside one depending on how it was spawned. We need to handle this carefully.
-
-        let mutation = mutation_request.mutation.clone();
-
-        // We need an IndexStatusTracker, but we don't have access to the one in self
-        // because this is a static method.
-        // However, for single event mutations, we can create a new tracker or skip tracking
-        // Since this is the legacy path, skipping tracking is acceptable, or we could pass it in.
-        // But for now, let's just create a temporary manager without a tracker.
-
-        let mut temp_manager = Self::new(
-            Arc::clone(db_ops),
-            Arc::clone(schema_manager),
-            Arc::clone(&message_bus),
-            None, // No index tracking for this path currently
-        );
-
-        // Execute the mutation using the batch (async) API
-        // We wrap it in a block_on call to ensure it runs to completion
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                tokio::task::block_in_place(|| {
-                    handle.block_on(temp_manager.write_mutations_batch_async(vec![mutation]))
-                })?;
-            }
-            Err(_) => {
-                // No runtime, create one temporary
-                tokio::runtime::Runtime::new()
-                    .map_err(|e| {
-                        SchemaError::InvalidData(format!("Failed to create runtime: {}", e))
-                    })?
-                    .block_on(temp_manager.write_mutations_batch_async(vec![mutation]))?;
-            }
-        };
-
-        Ok(())
     }
 }

@@ -43,9 +43,6 @@ pub struct FoldDB {
     pub(crate) transform_orchestrator: Option<Arc<TransformOrchestrator>>,
     /// Mutation manager for handling all mutation operations
     pub(crate) mutation_manager: MutationManager,
-    /// Orchestrator for native indexing (event-driven)
-    #[allow(dead_code)]
-    pub(crate) index_orchestrator: Arc<super::orchestration::index_orchestrator::IndexOrchestrator>,
 }
 
 impl FoldDB {
@@ -306,7 +303,6 @@ impl FoldDB {
             event_monitor,
             transform_orchestrator,
             mutation_manager,
-            index_orchestrator,
         })
     }
 

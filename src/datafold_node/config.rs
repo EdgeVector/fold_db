@@ -1,8 +1,7 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::security::SecurityConfig;
-#[cfg(feature = "aws-backend")]
-use crate::storage::DynamoDbConfig;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
