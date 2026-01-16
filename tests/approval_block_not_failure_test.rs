@@ -56,12 +56,12 @@ async fn test_approval_block_not_counted_as_failure() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
 

@@ -3,15 +3,12 @@
 //! Contains validation algorithms and compatibility analysis for
 //! chain expressions and multiple chain coordination.
 
-use crate::transform::chain_parser::parser::ChainParser;
-use crate::transform::chain_parser::types::{
-    ChainOperation, CompatibilityAnalysis, ParsedChain,
-};
 use crate::transform::chain_parser::errors::{IteratorStackError, IteratorStackResult};
+use crate::transform::chain_parser::parser::ChainParser;
+use crate::transform::chain_parser::types::{ChainOperation, CompatibilityAnalysis, ParsedChain};
 use std::collections::HashMap;
 
 impl ChainParser {
-
     /// Extracts the branch identifier up to a specific depth for fan-out detection
     pub fn extract_branch_up_to_depth(
         &self,
@@ -21,21 +18,21 @@ impl ChainParser {
         let mut branch_parts = Vec::new();
         let mut current_depth = 0;
 
+        let reg = crate::transform::functions::registry();
         for operation in operations {
             match operation {
                 ChainOperation::FieldAccess(field) => {
                     branch_parts.push(field.clone());
                 }
-                ChainOperation::Map => {
-                    current_depth += 1;
-                    if current_depth >= target_depth {
-                        // Stop when we reach the target depth
-                        break;
+                ChainOperation::Function { name, .. } => {
+                    if reg.is_iterator(name) {
+                        current_depth += 1;
+                        if current_depth >= target_depth {
+                            // Stop when we reach the target depth
+                            break;
+                        }
                     }
-                }
-                ChainOperation::Function { .. } => {
-                    // Functions are part of the branch definition but don't increase depth
-                    continue;
+                    // Functions are part of the branch definition
                 }
                 _ => {}
             }

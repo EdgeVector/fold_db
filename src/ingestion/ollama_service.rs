@@ -117,6 +117,19 @@ Example with Arrays and Objects:
     "media": {"root": {"type": "Array", "value": {"type": "Object", "value": {"url": {"type": "Primitive", "value": "String", "classifications": ["url", "word"]}, "type": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}}
   }
 }
+
+IMPORTANT - Transform Fields (DSL):
+- You can add a "transform_fields" map to the schema to derive new fields from existing ones.
+- SYNTAX: "SourceField.function().function()"
+- IMPLICIT CARDINALITY:
+  * The system automatically iterates over every record in the schema (1:N). You do NOT need a .map() token.
+  * Iterator Functions (like split_by_word, split_array) INCREASE depth/cardinality (one row -> many rows).
+  * Reducer Functions (like count, join, sum) DECREASE depth/cardinality (many rows -> one row).
+- DEPRECATION: The ".map()" token is DEPRECATED. Do not use it.
+- Examples:
+  * Word Count: "content.split_by_word().count()" (Iterates content -> splits into words -> counts words per row)
+  * Character Count: "content.slugify().len()"
+  * Array Join: "hashtags.join(', ')" (Joins array elements into a string)
 "#;
 
 /// Instructions appended to every prompt

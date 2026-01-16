@@ -52,12 +52,12 @@ async fn test_blogpost_mutation_triggers_transforms() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
 
@@ -222,12 +222,12 @@ async fn test_partial_mutation_triggers_subset_of_transforms() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
 
@@ -344,12 +344,12 @@ async fn test_content_mutation_triggers_word_transform() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
 

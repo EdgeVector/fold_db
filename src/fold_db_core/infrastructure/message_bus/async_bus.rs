@@ -9,7 +9,7 @@ use super::{
     atom_events::{AtomCreated, FieldValueSet},
     query_events::{MutationExecuted, QueryExecuted},
 };
-use log::warn;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc as async_mpsc;
@@ -162,10 +162,21 @@ impl AsyncMessageBus {
     }
 
     /// Convenience method to publish a unified Event
+    ///
+    /// This method uses backpressure: if a subscriber is slow, this method will yield/wait
+    /// until the subscriber has capacity. This ensures no events are dropped silently.
+    /// It also ensures the registry lock is released before waiting to prevent deadlocks.
     pub async fn publish_event(&self, event: Event) -> MessageBusResult<()> {
-        let registry = self.registry.lock().await;
-        let event_type = event.event_type();
-        let subscribers = registry.get_subscribers(event_type);
+        // block scope to hold lock only as long as needed
+        let subscribers: Vec<async_mpsc::Sender<Event>> = {
+            let registry = self.registry.lock().await;
+            let event_type = event.event_type();
+            registry
+                .get_subscribers(event_type)
+                .into_iter()
+                .cloned()
+                .collect()
+        };
 
         if subscribers.is_empty() {
             return Ok(());
@@ -175,20 +186,11 @@ impl AsyncMessageBus {
         let total_subscribers = subscribers.len();
 
         for subscriber in subscribers {
-            // Use try_send to avoid blocking and handle backpressure
-            match subscriber.try_send(event.clone()) {
-                Ok(_) => {}
-                Err(async_mpsc::error::TrySendError::Full(_)) => {
-                    warn!(
-                        "⚠️ MessageBus channel full for subscriber of {}, dropping event",
-                        event_type
-                    );
-                    failed_sends += 1;
-                }
-                Err(async_mpsc::error::TrySendError::Closed(_)) => {
-                    // Subscriber closed, count as failed send
-                    failed_sends += 1;
-                }
+            // Use send().await to handle backpressure (wait for capacity)
+            // This prevents dropping events when subscribers are slow (e.g. indexing)
+            if let Err(_) = subscriber.send(event.clone()).await {
+                // Channel closed
+                failed_sends += 1;
             }
         }
 
@@ -198,7 +200,7 @@ impl AsyncMessageBus {
             if failed_sends == total_subscribers {
                 return Err(MessageBusError::SendFailed {
                     reason: format!(
-                        "All {} async subscribers failed to receive event (Full/Closed)",
+                        "All {} async subscribers failed to receive event (Closed)",
                         total_subscribers
                     ),
                 });
@@ -324,40 +326,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_backpressure_drop() {
-        // Create a bus, subscribe with default capacity (1000)
+    async fn test_backpressure_wait() {
+        // Create a bus, subscribe with small capacity (1 for testing wait)
+        // Note: The channel capacity is hardcoded to 1000 in subscribe method in implementation.
+        // We can't easily change it without changing the method signature or adding a config.
+        // So we have to fill 1000 items.
+
+        // Actually, let's verify it waits by using timeout
         let bus = AsyncMessageBus::new();
-        let _consumer = bus.subscribe("FieldValueSet").await;
+        let mut consumer = bus.subscribe("FieldValueSet").await;
 
         let event = FieldValueSet::new("test.field", serde_json::json!("value"), "source");
 
-        // Fill the buffer
+        // Fill the buffer (1000 items)
         for _ in 0..1000 {
             bus.publish_field_value_set(event.clone()).await.unwrap();
         }
 
-        // The next one should fill the capacity (wait, channel(cap) means buffer size)
-        // Actually, bounded channel of size N can hold N messages.
-        // We sent 1000. Next one might be queued or potentially drop depending on try_send impl.
-        // wait, try_send returns error if full.
+        // The next one should block because channel is full.
+        // We wrap it in a timeout to verify it blocks (times out).
+        let publish_future = bus.publish_field_value_set(event.clone());
 
-        // Push one more, should result in log warning (we can't assert log easily)
-        // but it should NOT error if we handle it gracefully (failed_sends > 0 but < total_subscribers if we have others, but here we have 1)
-        // Wait, if failed_sends == total_subscribers, we return Err(SendFailed).
-        // So with 1 subscriber, if it drops, it should error.
+        // Assert that it times out (meaning it was waiting)
+        let result =
+            tokio::time::timeout(tokio::time::Duration::from_millis(50), publish_future).await;
+        assert!(
+            result.is_err(),
+            "Publish should timeout (block) when channel is full"
+        );
 
-        let result = bus.publish_field_value_set(event.clone()).await;
+        // Now consume one item to make space
+        let _ = consumer.recv().await;
 
-        // It SHOULD error because we return Err if ALL subscribers failed.
-        // With 1 subscriber full, it fails.
-        // Wait, try_send returns full immediately.
-
-        assert!(result.is_err());
-        match result {
-            Err(MessageBusError::SendFailed { reason }) => {
-                assert!(reason.contains("All 1 async subscribers failed"));
-            }
-            _ => panic!("Expected SendFailed error due to backpressure"),
-        }
+        // Try publishing again, it should succeed now
+        let result = tokio::time::timeout(
+            tokio::time::Duration::from_millis(50),
+            bus.publish_field_value_set(event.clone()),
+        )
+        .await;
+        assert!(result.is_ok(), "Publish should succeed after making space");
+        assert!(result.unwrap().is_ok());
     }
 }

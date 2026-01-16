@@ -96,6 +96,8 @@ logs
 src/datafold_node/static-react/node_modules/
 src/datafold_node/static-react/node_modules_trash/
 src/datafold_node/static-react/dist/
+src/server/static-react/node_modules/
+src/server/static-react/dist/
 
 # Debug files
 *.pdb

@@ -11,8 +11,6 @@ use std::collections::HashMap;
 pub enum ChainOperation {
     /// Access a field (e.g., `content`, `tags`)
     FieldAccess(String),
-    /// Map operation that creates an iterator scope
-    Map,
     /// Apply a registered function (iterator or reducer)
     Function { name: String, params: Vec<String> },
     /// Access special field like `$atom_uuid`
@@ -26,7 +24,7 @@ pub struct ParsedChain {
     pub expression: String,
     /// Sequence of operations in the chain
     pub operations: Vec<ChainOperation>,
-    /// Iterator depth (number of .map() calls)
+    /// Iterator depth (implicit from function types)
     pub depth: usize,
     /// Branch identifier for fan-out detection
     pub branch: String,
