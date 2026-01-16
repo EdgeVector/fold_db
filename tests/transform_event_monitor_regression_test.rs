@@ -9,13 +9,18 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_duplicate_transform_registration_prevention() {
     use serde_json::json;
-    
+
     // Create temporary directory for test database
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
+    let test_db_path = temp_dir
+        .path()
+        .to_str()
+        .expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path)
+        .await
+        .expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
 
     // Load the BlogPost schema first (source schema)
@@ -32,11 +37,13 @@ async fn test_duplicate_transform_registration_prevention() {
             "tags": {}
         }
     });
-    
-    let blogpost_schema_str = serde_json::to_string(&blogpost_schema_json)
-        .expect("Failed to serialize BlogPost schema");
-    
-    fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+
+    let blogpost_schema_str =
+        serde_json::to_string(&blogpost_schema_json).expect("Failed to serialize BlogPost schema");
+
+    fold_db
+        .schema_manager()
+        .load_schema_from_json(&blogpost_schema_str)
         .await
         .expect("Failed to load BlogPost schema");
 
@@ -48,28 +55,31 @@ async fn test_duplicate_transform_registration_prevention() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
-    
+
     let wordindex_schema_str = serde_json::to_string(&wordindex_schema_json)
         .expect("Failed to serialize BlogPostWordIndex schema");
-    
+
     // First load of BlogPostWordIndex schema
-    fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+    fold_db
+        .schema_manager()
+        .load_schema_from_json(&wordindex_schema_str)
         .await
         .expect("Failed to load BlogPostWordIndex schema");
-    
+
     // Wait for async event processing
     thread::sleep(Duration::from_millis(100));
-    
+
     // Verify first registration was successful
-    let registered_transforms = transform_manager.list_transforms()
+    let registered_transforms = transform_manager
+        .list_transforms()
         .expect("Failed to list transforms");
     assert!(
         registered_transforms.contains_key("BlogPostWordIndex"),
@@ -82,15 +92,18 @@ async fn test_duplicate_transform_registration_prevention() {
     );
 
     // Now load the same schema again (should be prevented from duplicate registration)
-    fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+    fold_db
+        .schema_manager()
+        .load_schema_from_json(&wordindex_schema_str)
         .await
         .expect("Failed to load BlogPostWordIndex schema again");
-    
+
     // Wait for async event processing
     thread::sleep(Duration::from_millis(100));
 
     // Verify no duplicate transform was created
-    let final_transforms = transform_manager.list_transforms()
+    let final_transforms = transform_manager
+        .list_transforms()
         .expect("Failed to list final transforms");
     assert_eq!(
         final_transforms.len(),
@@ -103,9 +116,10 @@ async fn test_duplicate_transform_registration_prevention() {
     );
 
     // Verify field-to-transform mappings are still correct
-    let transforms_for_content = transform_manager.get_transforms_for_field("BlogPost", "content")
+    let transforms_for_content = transform_manager
+        .get_transforms_for_field("BlogPost", "content")
         .expect("Failed to get transforms for content field");
-    
+
     assert!(
         transforms_for_content.contains("BlogPostWordIndex"),
         "BlogPost.content should still map to BlogPostWordIndex transform"
@@ -120,13 +134,18 @@ async fn test_duplicate_transform_registration_prevention() {
 #[tokio::test]
 async fn test_transform_registration_through_schema_loading() {
     use serde_json::json;
-    
+
     // Create temporary directory for test database
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let test_db_path = temp_dir.path().to_str().expect("Failed to convert path to string");
+    let test_db_path = temp_dir
+        .path()
+        .to_str()
+        .expect("Failed to convert path to string");
 
     // Create FoldDB instance
-    let fold_db = FoldDB::new(test_db_path).await.expect("Failed to create FoldDB instance");
+    let fold_db = FoldDB::new(test_db_path)
+        .await
+        .expect("Failed to create FoldDB instance");
     let transform_manager = fold_db.transform_manager();
 
     // Load the BlogPost schema first (source schema)
@@ -143,11 +162,13 @@ async fn test_transform_registration_through_schema_loading() {
             "tags": {}
         }
     });
-    
-    let blogpost_schema_str = serde_json::to_string(&blogpost_schema_json)
-        .expect("Failed to serialize BlogPost schema");
-    
-    fold_db.schema_manager().load_schema_from_json(&blogpost_schema_str)
+
+    let blogpost_schema_str =
+        serde_json::to_string(&blogpost_schema_json).expect("Failed to serialize BlogPost schema");
+
+    fold_db
+        .schema_manager()
+        .load_schema_from_json(&blogpost_schema_str)
         .await
         .expect("Failed to load BlogPost schema");
 
@@ -159,28 +180,31 @@ async fn test_transform_registration_through_schema_loading() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
-    
+
     let wordindex_schema_str = serde_json::to_string(&wordindex_schema_json)
         .expect("Failed to serialize BlogPostWordIndex schema");
-    
+
     // Load BlogPostWordIndex schema - this should trigger transform registration
-    fold_db.schema_manager().load_schema_from_json(&wordindex_schema_str)
+    fold_db
+        .schema_manager()
+        .load_schema_from_json(&wordindex_schema_str)
         .await
         .expect("Failed to load BlogPostWordIndex schema");
-    
+
     // Wait for async event processing
     thread::sleep(Duration::from_millis(100));
-    
+
     // Verify transform was registered
-    let registered_transforms = transform_manager.list_transforms()
+    let registered_transforms = transform_manager
+        .list_transforms()
         .expect("Failed to list transforms");
     assert!(
         registered_transforms.contains_key("BlogPostWordIndex"),
@@ -194,11 +218,12 @@ async fn test_transform_registration_through_schema_loading() {
 
     // Verify field-to-transform mappings were created correctly
     let expected_trigger_fields = vec!["content", "publish_date", "author", "title", "tags"];
-    
+
     for field in &expected_trigger_fields {
-        let transforms_for_field = transform_manager.get_transforms_for_field("BlogPost", field)
+        let transforms_for_field = transform_manager
+            .get_transforms_for_field("BlogPost", field)
             .expect("Failed to get transforms for field");
-        
+
         assert!(
             transforms_for_field.contains("BlogPostWordIndex"),
             "Field '{}' should trigger BlogPostWordIndex transform",

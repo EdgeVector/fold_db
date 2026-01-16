@@ -62,12 +62,12 @@ async fn test_transform_requires_approval_to_execute() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
 
@@ -234,12 +234,12 @@ async fn test_transform_executes_when_approved() {
             "range_field": "publish_date"
         },
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "content": "BlogPost.map().content",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title",
-            "tags": "BlogPost.map().tags"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "content": "BlogPost.content",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title",
+            "tags": "BlogPost.tags"
         }
     });
 

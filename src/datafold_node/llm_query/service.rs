@@ -920,7 +920,7 @@ impl LlmQueryService {
                 \"range_field\": \"timestamp_or_id_field\"\n\
               },\n\
               \"transform_fields\": {\n\
-                \"indexed_field\": \"SourceSchema.map().field.transform().map()\",\n\
+                \"indexed_field\": \"SourceSchema.field.transform()\",\n\
                 \"other_field\": \"SourceSchema.map().other_field\"\n\
               },\n\
               \"field_topologies\": {\n\

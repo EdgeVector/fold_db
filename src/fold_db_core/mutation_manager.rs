@@ -350,7 +350,7 @@ impl MutationManager {
                     operation: "write_mutations_batch".to_string(),
                     schema: schema_name.clone(),
                     execution_time_ms: 0,
-                    fields_affected: vec![],
+                    fields_affected: data.keys().cloned().collect(),
                     mutation_context,
                     data: Some(vec![data]), // Single data row for this mutation
                 };

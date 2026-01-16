@@ -197,12 +197,12 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         // Preserve descriptive_name and field_molecule_uuids from deserialization
         schema.descriptive_name = helper.descriptive_name;
         schema.field_molecule_uuids = helper.field_molecule_uuids;
-        
+
         // Merge topologies from helper with schema's default topologies
         for (field_name, topology) in helper.field_topologies {
             schema.field_topologies.insert(field_name, topology);
         }
-        
+
         // Preserve topology hashes
         schema.field_topology_hashes = helper.field_topology_hashes;
         schema.topology_hash = helper.topology_hash;
@@ -217,7 +217,10 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
 )]
 pub struct DeclarativeSchemaDefinition {
     /// Schema name
@@ -454,12 +457,10 @@ impl DeclarativeSchemaDefinition {
     /// Extract classifications from a topology node (recursively)
     fn extract_classifications_from_topology(node: &TopologyNode) -> Option<Vec<String>> {
         match node {
-            TopologyNode::Primitive { classifications, .. } => {
-                classifications.clone()
-            }
-            TopologyNode::Array { value, .. } => {
-                Self::extract_classifications_from_topology(value)
-            }
+            TopologyNode::Primitive {
+                classifications, ..
+            } => classifications.clone(),
+            TopologyNode::Array { value, .. } => Self::extract_classifications_from_topology(value),
             _ => None,
         }
     }
@@ -478,16 +479,16 @@ impl DeclarativeSchemaDefinition {
     pub fn set_field_topology(&mut self, field_name: String, topology: JsonTopology) {
         // Compute and store individual field topology hash
         let topology_hash = topology.compute_hash();
-        
+
         if self.field_topology_hashes.is_none() {
             self.field_topology_hashes = Some(HashMap::new());
         }
         if let Some(hashes) = self.field_topology_hashes.as_mut() {
             hashes.insert(field_name.clone(), topology_hash);
         }
-        
+
         self.field_topologies.insert(field_name, topology);
-        
+
         // Recompute schema-level topology hash
         self.compute_schema_topology_hash();
     }
@@ -503,7 +504,7 @@ impl DeclarativeSchemaDefinition {
             Ok(())
         } else {
             Err(crate::schema::types::errors::SchemaError::InvalidData(
-                format!("No topology defined for field '{}'", field_name)
+                format!("No topology defined for field '{}'", field_name),
             ))
         }
     }
@@ -665,7 +666,7 @@ impl DeclarativeSchemaDefinition {
     }
 
     /// Extract input fields from a single transform expression.
-    /// Example: "BlogPost.map().content.split_by_word().map()" -> ["BlogPost.content"]
+    /// Example: "BlogPost.content.split_by_word()" -> ["BlogPost.content"]
     pub fn extract_inputs_from_expression(expression: &str) -> Vec<String> {
         let mut inputs = Vec::new();
 
