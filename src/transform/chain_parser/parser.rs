@@ -3,12 +3,8 @@
 //! Contains the main parsing algorithms and logic for converting
 //! chain expressions into structured representations.
 
-use crate::transform::chain_parser::types::{
-    ChainOperation, IteratorScope, ParsedChain,
-};
-use crate::transform::chain_parser::errors::{
-    constants, IteratorStackError, IteratorStackResult,
-};
+use crate::transform::chain_parser::errors::{constants, IteratorStackError, IteratorStackResult};
+use crate::transform::chain_parser::types::{ChainOperation, IteratorScope, ParsedChain};
 use crate::transform::functions::registry;
 
 /// Parser for chain syntax expressions
@@ -79,21 +75,34 @@ impl ChainParser {
 
         for part in parts {
             let operation = match part {
-                "map()" => ChainOperation::Map,
+                "map()" => {
+                    // Deprecated map() token is no longer supported as a special operation
+                    // Treating it as a function call check
+                    if !reg.is_registered("map") {
+                        return Err(IteratorStackError::InvalidChainSyntax {
+                            expression: expression.to_string(),
+                            reason: "The .map() token is deprecated. Please remove it and use iterator functions directly.".to_string(),
+                        });
+                    }
+                    ChainOperation::Function {
+                        name: "map".to_string(),
+                        params: Vec::new(),
+                    }
+                }
                 part if part.starts_with('$') => ChainOperation::SpecialField(part.to_string()),
                 part if part.ends_with("()") => {
                     // Extract function name and check registry
                     let func_name = &part[..part.len() - 2];
-                    
+
                     if !reg.is_registered(func_name) {
                         return Err(IteratorStackError::InvalidChainSyntax {
                             expression: expression.to_string(),
                             reason: format!("Unknown function: {}", part),
                         });
                     }
-                    
+
                     // For now, no parameters supported - params field exists for future use
-                    ChainOperation::Function { 
+                    ChainOperation::Function {
                         name: func_name.to_string(),
                         params: Vec::new(),
                     }
@@ -112,36 +121,46 @@ impl ChainParser {
         Ok(operations)
     }
 
-    /// Calculates the iterator depth (number of .map() operations)
+    /// Calculates the iterator depth based on iterator functions
     fn calculate_depth(&self, operations: &[ChainOperation]) -> usize {
+        let reg = registry();
         operations
             .iter()
-            .filter(|op| matches!(op, ChainOperation::Map))
+            .filter(|op| {
+                if let ChainOperation::Function { name, .. } = op {
+                    reg.is_iterator(name)
+                } else {
+                    false
+                }
+            })
             .count()
     }
 
     /// Extracts the branch identifier for fan-out detection
     fn extract_branch(&self, operations: &[ChainOperation]) -> IteratorStackResult<String> {
         let mut branch_parts = Vec::new();
+        let reg = registry();
 
         for operation in operations {
             match operation {
                 ChainOperation::FieldAccess(field) => {
                     branch_parts.push(field.clone());
                 }
-                ChainOperation::Map => {
-                    // Stop at the first map - everything before defines the branch
-                    break;
-                }
-                ChainOperation::Function { .. } => {
-                    // Functions are part of the branch definition
-                    continue;
+                ChainOperation::Function { name, .. } => {
+                    // Stop at the first iterator function - everything before defines the branch
+                    if reg.is_iterator(name) {
+                        break;
+                    }
+                    // Reducer functions are part of the branch definition/derivation logic
+                    // but usually appear at the end. If they appear before iterator, it's valid.
                 }
                 _ => {}
             }
         }
 
         if branch_parts.is_empty() {
+            // It's possible to have just a function call or special field, but usually we expect a field access first.
+            // However, for consistency with previous behavior:
             return Err(IteratorStackError::InvalidIteratorChain {
                 chain: operations
                     .iter()
@@ -164,6 +183,7 @@ impl ChainParser {
         let mut current_ops = Vec::new();
         let mut depth = 0;
         let mut branch_path = String::new();
+        let reg = registry();
 
         for operation in operations {
             current_ops.push(operation.clone());
@@ -176,14 +196,16 @@ impl ChainParser {
                         branch_path = format!("{}.{}", branch_path, field);
                     }
                 }
-                ChainOperation::Map => {
-                    scopes.push(IteratorScope {
-                        depth,
-                        operations: current_ops.clone(),
-                        branch_path: branch_path.clone(),
-                    });
-                    depth += 1;
-                    current_ops.clear();
+                ChainOperation::Function { name, .. } => {
+                    if reg.is_iterator(name) {
+                        scopes.push(IteratorScope {
+                            depth,
+                            operations: current_ops.clone(),
+                            branch_path: branch_path.clone(),
+                        });
+                        depth += 1;
+                        current_ops.clear();
+                    }
                 }
                 _ => {}
             }
@@ -205,7 +227,8 @@ impl ChainParser {
             });
         }
 
-        // First operation must be a field access
+        // First operation must be a field access used to be the rule, but technically
+        // one could start with a function if context allows. sticking to previous rule for now.
         if !matches!(operations[0], ChainOperation::FieldAccess(_)) {
             return Err(IteratorStackError::InvalidChainSyntax {
                 expression: expression.to_string(),
@@ -218,62 +241,34 @@ impl ChainParser {
             let prev = &window[0];
             let current = &window[1];
 
-            let reg = registry();
-            
             match (prev, current) {
                 // Valid transitions
-                (ChainOperation::FieldAccess(_), ChainOperation::Map) => {}
                 (ChainOperation::FieldAccess(_), ChainOperation::FieldAccess(_)) => {}
-                (ChainOperation::FieldAccess(_), ChainOperation::Function { name, .. }) => {
-                    // Iterator functions can follow field access
-                    if !reg.is_iterator(name) && !reg.is_reducer(name) {
-                        return Err(IteratorStackError::InvalidChainSyntax {
-                            expression: expression.to_string(),
-                            reason: format!("Function after field access must be registered: {}", name),
-                        });
-                    }
-                }
+                (ChainOperation::FieldAccess(_), ChainOperation::Function { .. }) => {}
                 (ChainOperation::FieldAccess(_), ChainOperation::SpecialField(_)) => {}
-                (ChainOperation::Map, ChainOperation::FieldAccess(_)) => {}
-                (ChainOperation::Function { name, .. }, ChainOperation::Map) => {
-                    // Iterator functions can be followed by map
-                    if !reg.is_iterator(name) {
+
+                (
+                    ChainOperation::Function {
+                        name: prev_name, ..
+                    },
+                    _,
+                ) => {
+                    let reg = registry();
+                    if reg.is_reducer(prev_name) {
                         return Err(IteratorStackError::InvalidChainSyntax {
                             expression: expression.to_string(),
-                            reason: format!("Only iterator functions can be followed by map(): {}", name),
+                            reason: format!(
+                                "Reducer function '{}' must be the last operation",
+                                prev_name
+                            ),
                         });
                     }
-                }
-                (ChainOperation::Map, ChainOperation::Function { name, .. }) => {
-                    // Both iterator and reducer functions can follow map
-                    if !reg.is_iterator(name) && !reg.is_reducer(name) {
-                        return Err(IteratorStackError::InvalidChainSyntax {
-                            expression: expression.to_string(),
-                            reason: format!("Function after map must be registered: {}", name),
-                        });
-                    }
-                }
-                // Allow Map -> SpecialField for accessing special fields after map operations
-                (ChainOperation::Map, ChainOperation::SpecialField(_)) => {}
-                
-                (ChainOperation::Function { name: prev_name, .. }, ChainOperation::Function { name: curr_name, .. }) => {
-                    // Iterator functions can be followed by reducer functions
-                    if reg.is_iterator(prev_name) && reg.is_reducer(curr_name) {
-                        // Valid: iterator -> reducer
-                    } else {
-                        return Err(IteratorStackError::InvalidChainSyntax {
-                            expression: expression.to_string(),
-                            reason: format!("Invalid function sequence: {} -> {}. Only iterator functions can be followed by reducer functions.", prev_name, curr_name),
-                        });
-                    }
+                    // If not a reducer, we assume the function returns a structure/value
+                    // that supports the next operation (checked at runtime/engine level).
                 }
 
-                // Invalid transitions
-                _ => {
-                    return Err(IteratorStackError::InvalidChainSyntax {
-                        expression: expression.to_string(),
-                        reason: format!("Invalid operation sequence: {:?} -> {:?}", prev, current),
-                    });
+                (ChainOperation::SpecialField(_), _) => {
+                    // Special fields usually at end?
                 }
             }
         }

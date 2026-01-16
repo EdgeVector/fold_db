@@ -2,19 +2,26 @@ use serde_json::json;
 use std::collections::HashMap;
 
 // Helper function to convert ExecutionResult to records (copied from transform_runner.rs)
-fn convert_execution_result_to_records(execution_result: &datafold::transform::result_types::ExecutionResult) -> Result<Vec<datafold::fold_db_core::query::formatter::Record>, datafold::schema::types::SchemaError> {
+fn convert_execution_result_to_records(
+    execution_result: &datafold::transform::result_types::ExecutionResult,
+) -> Result<
+    Vec<datafold::fold_db_core::query::formatter::Record>,
+    datafold::schema::types::SchemaError,
+> {
     let mut records = Vec::new();
-    
+
     // Group entries by row_id
     let mut rows: HashMap<String, HashMap<String, Vec<serde_json::Value>>> = HashMap::new();
-    
+
     for (field_name, entries) in &execution_result.index_entries {
         for entry in entries {
             let row = rows.entry(entry.row_id.clone()).or_default();
-            row.entry(field_name.clone()).or_default().push(entry.value.clone());
+            row.entry(field_name.clone())
+                .or_default()
+                .push(entry.value.clone());
         }
     }
-    
+
     // Convert each row to a Record
     for (_, fields_map) in rows {
         let mut record_fields = HashMap::new();
@@ -27,9 +34,12 @@ fn convert_execution_result_to_records(execution_result: &datafold::transform::r
             };
             record_fields.insert(field_name, value);
         }
-        records.push(datafold::fold_db_core::query::formatter::Record { fields: record_fields, metadata: HashMap::new() });
+        records.push(datafold::fold_db_core::query::formatter::Record {
+            fields: record_fields,
+            metadata: HashMap::new(),
+        });
     }
-    
+
     Ok(records)
 }
 
@@ -41,13 +51,14 @@ fn execute_engine_and_convert_to_records() {
         "schema_type": "HashRange",
         "key": {"hash_field": "word", "range_field": "publish_date"},
         "transform_fields": {
-            "word": "BlogPost.map().content.split_by_word().map()",
-            "publish_date": "BlogPost.map().publish_date",
-            "author": "BlogPost.map().author",
-            "title": "BlogPost.map().title"
+            "word": "BlogPost.content.split_by_word()",
+            "publish_date": "BlogPost.publish_date",
+            "author": "BlogPost.author",
+            "title": "BlogPost.title"
         }
     });
-    let transform_schema: datafold::schema::types::DeclarativeSchemaDefinition = serde_json::from_value(transform_schema_json).unwrap();
+    let transform_schema: datafold::schema::types::DeclarativeSchemaDefinition =
+        serde_json::from_value(transform_schema_json).unwrap();
 
     // Build expressions and parse chains
     let field_to_hash = transform_schema.get_field_to_hash_code();
@@ -56,7 +67,8 @@ fn execute_engine_and_convert_to_records() {
         .iter()
         .map(|(field, hash)| (field.clone(), hash_to_code.get(hash).unwrap().clone()))
         .collect();
-    let parsed = datafold::transform::shared_utilities::parse_expressions_batch(&expressions).unwrap();
+    let parsed =
+        datafold::transform::shared_utilities::parse_expressions_batch(&expressions).unwrap();
     let chains_map: HashMap<String, datafold::transform::chain_parser::ParsedChain> = parsed
         .iter()
         .map(|(field, chain)| (field.clone(), chain.clone()))
@@ -79,7 +91,7 @@ fn execute_engine_and_convert_to_records() {
                 "author": "Dylan",
                 "publish_date": "2025-01-05"
             }
-        ])
+        ]),
     );
 
     // Build typed input per target field used by the chains
@@ -94,8 +106,22 @@ fn execute_engine_and_convert_to_records() {
     // Helper to insert a field map
     let mut insert_field = |name: &str, v1: serde_json::Value, v2: serde_json::Value| {
         let mut m: HashMap<KV, FV> = HashMap::new();
-        m.insert(k1.clone(), FV { value: v1, atom_uuid: "a1".to_string(), source_file_name: None });
-        m.insert(k2.clone(), FV { value: v2, atom_uuid: "a2".to_string(), source_file_name: None });
+        m.insert(
+            k1.clone(),
+            FV {
+                value: v1,
+                atom_uuid: "a1".to_string(),
+                source_file_name: None,
+            },
+        );
+        m.insert(
+            k2.clone(),
+            FV {
+                value: v2,
+                atom_uuid: "a2".to_string(),
+                source_file_name: None,
+            },
+        );
         typed_input.insert(name.to_string(), m);
     };
 
@@ -104,7 +130,11 @@ fn execute_engine_and_convert_to_records() {
         json!("Rust empowers fearless concurrency"),
         json!("Tests validate iterator stacks"),
     );
-    insert_field("BlogPost.publish_date", json!("2024-12-31"), json!("2025-01-05"));
+    insert_field(
+        "BlogPost.publish_date",
+        json!("2024-12-31"),
+        json!("2025-01-05"),
+    );
     insert_field("BlogPost.author", json!("Carol"), json!("Dylan"));
     insert_field("BlogPost.title", json!("First"), json!("Second"));
 
@@ -118,11 +148,11 @@ fn execute_engine_and_convert_to_records() {
 
     // Validate records shape - records now have simpler structure
     assert!(!records.is_empty());
-    
+
     // Count records by field type
     let mut word_records = 0;
     let mut other_records = 0;
-    
+
     for record in &records {
         let fields = &record.fields;
         if fields.contains_key("word") {
@@ -134,15 +164,29 @@ fn execute_engine_and_convert_to_records() {
         } else {
             other_records += 1;
             // These should be the parent-level fields (title, author, publish_date)
-            assert!(fields.contains_key("title") || fields.contains_key("author") || fields.contains_key("publish_date"), 
-                   "Record should contain expected fields: {:?}", fields.keys().collect::<Vec<_>>());
+            assert!(
+                fields.contains_key("title")
+                    || fields.contains_key("author")
+                    || fields.contains_key("publish_date"),
+                "Record should contain expected fields: {:?}",
+                fields.keys().collect::<Vec<_>>()
+            );
         }
     }
-    
+
     // We should have word records (from word splitting) and some parent records
-    assert!(word_records > 0, "Should have word records from word splitting");
-    assert!(other_records > 0, "Should have parent records with other fields");
-    
+    assert!(
+        word_records > 0,
+        "Should have word records from word splitting"
+    );
+    assert!(
+        other_records > 0,
+        "Should have parent records with other fields"
+    );
+
     // Total should be reasonable (words from both blog posts plus parent records)
-    assert!(records.len() >= 8, "Should have at least 8 records (words from 2 blog posts)");
+    assert!(
+        records.len() >= 8,
+        "Should have at least 8 records (words from 2 blog posts)"
+    );
 }

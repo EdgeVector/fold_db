@@ -27,20 +27,18 @@ pub struct EmittedEntry {
 
 #[derive(Clone, Debug)]
 pub enum IteratorSpec {
-    /// Iterate over items of a source field (schema.map())
+    /// Iterate over items of a source field
     Schema { field_name: String },
     /// Apply a registered iterator function
-    IteratorFunction { 
-        name: String, 
+    IteratorFunction {
+        name: String,
         params: Vec<String>,
         field_name: String,
     },
     /// Apply a registered reducer function
-    ReducerFunction { 
-        name: String, 
+    ReducerFunction {
+        name: String,
         params: Vec<String>,
         field_name: String,
     },
 }
-
-
