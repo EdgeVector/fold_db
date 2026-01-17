@@ -111,7 +111,7 @@ impl Default for IngestionConfig {
             ollama: OllamaConfig::default(),
             enabled: false,
             max_retries: 3,
-            timeout_seconds: 60,
+            timeout_seconds: 300,
             auto_execute_mutations: true,
             default_trust_distance: 0,
         }
@@ -191,9 +191,9 @@ impl IngestionConfig {
             .unwrap_or(3);
 
         config.timeout_seconds = env::var("INGESTION_TIMEOUT_SECONDS")
-            .unwrap_or_else(|_| "60".to_string())
+            .unwrap_or_else(|_| "300".to_string())
             .parse()
-            .unwrap_or(60);
+            .unwrap_or(300);
 
         config.auto_execute_mutations = env::var("INGESTION_AUTO_EXECUTE")
             .unwrap_or_else(|_| "true".to_string())
@@ -261,33 +261,45 @@ mod tests {
         assert_eq!(config.ollama.model, "llama3");
         assert_eq!(config.ollama.base_url, "http://localhost:11434");
         assert_eq!(config.max_retries, 3);
-        assert_eq!(config.timeout_seconds, 60);
+        assert_eq!(config.timeout_seconds, 300);
         assert!(config.auto_execute_mutations);
         assert_eq!(config.default_trust_distance, 0);
     }
 
     #[test]
     fn test_validation_openrouter_fails_without_api_key() {
-        let config = IngestionConfig { provider: AIProvider::OpenRouter, ..Default::default() };
+        let config = IngestionConfig {
+            provider: AIProvider::OpenRouter,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validation_openrouter_succeeds_with_api_key() {
-        let mut config = IngestionConfig { provider: AIProvider::OpenRouter, ..Default::default() };
+        let mut config = IngestionConfig {
+            provider: AIProvider::OpenRouter,
+            ..Default::default()
+        };
         config.openrouter.api_key = "test-key".to_string();
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validation_ollama_succeeds_by_default() {
-        let config = IngestionConfig { provider: AIProvider::Ollama, ..Default::default() };
+        let config = IngestionConfig {
+            provider: AIProvider::Ollama,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_is_ready() {
-        let mut config = IngestionConfig { provider: AIProvider::OpenRouter, ..Default::default() };
+        let mut config = IngestionConfig {
+            provider: AIProvider::OpenRouter,
+            ..Default::default()
+        };
         assert!(!config.is_ready());
 
         config.enabled = true;
