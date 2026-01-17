@@ -417,6 +417,11 @@ impl IngestionCore {
 
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Creating new schema from AI definition"
+            );
             let (schema_name, mutation_mappers) = self
                 .create_new_schema(
                     new_schema_def,
@@ -426,6 +431,12 @@ impl IngestionCore {
                 .await?;
             return Ok((schema_name, mutation_mappers));
         }
+
+        log_feature!(
+            LogFeature::Ingestion,
+            error,
+            "AI response did not provide any schema recommendation"
+        );
 
         Err(IngestionError::ai_response_validation_error(
             "AI response contains neither existing schemas nor new schema definition",

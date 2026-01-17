@@ -400,22 +400,27 @@ impl OpenRouterService {
                 self.max_retries
             );
 
+            let start_time = std::time::Instant::now();
             match self.make_api_request(&request).await {
                 Ok(response) => {
+                    let elapsed = start_time.elapsed();
                     log_feature!(
                         LogFeature::Ingestion,
                         info,
-                        "OpenRouter API call successful on attempt {}",
-                        attempt
+                        "OpenRouter API call successful on attempt {} (took {:.2?})",
+                        attempt,
+                        elapsed
                     );
                     return Ok(response);
                 }
                 Err(e) => {
+                    let elapsed = start_time.elapsed();
                     log_feature!(
                         LogFeature::Ingestion,
                         warn,
-                        "OpenRouter API attempt {} failed: {}",
+                        "OpenRouter API attempt {} failed (took {:.2?}): {}",
                         attempt,
+                        elapsed,
                         e
                     );
                     last_error = Some(e);
@@ -824,5 +829,48 @@ That should work."###;
             ..Default::default()
         };
         OpenRouterService::new(config, 10, 3).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_timeout_configuration() {
+        // Find a random available port
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let base_url = format!("http://127.0.0.1:{}", port);
+
+        // Spawn a thread that accepts a connection and sleeps longer than the timeout
+        tokio::spawn(async move {
+            // Use std::thread::sleep instead of tokio::time::sleep in a blocking manner or wrap in async
+            // To be safe with tokio::spawn, we should use async listener if possible, but std listener blocks.
+            // Since we just need to hold the connection open, accepting it is enough.
+            // But we need to accept it asynchronously or in a separate thread.
+            // Let's use std::thread for simplicity to simulate the server side independently of tokio runtime
+            std::thread::spawn(move || {
+                let _ = listener.accept(); // This blocks until connection comes
+                std::thread::sleep(std::time::Duration::from_secs(5)); // Sleep longer than timeout
+            });
+        });
+
+        // Config with 1 second timeout
+        let config = OpenRouterConfig {
+            api_key: "test-key".to_string(),
+            base_url,
+            ..Default::default()
+        };
+
+        // Create service with 1 second timeout, 0 retries to fail fast
+        let service = OpenRouterService::new(config, 1, 0).unwrap();
+
+        // Make a request - it should timeout
+        let result = service.call_openrouter_api("test").await;
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        // The exact error message depends on reqwest/OS, but usually contains "timed out" or "operation timed out"
+        assert!(
+            error_msg.to_lowercase().contains("time") || error_msg.to_lowercase().contains("out"),
+            "Error message '{}' did not contain 'time' or 'out' indicating a timeout",
+            error_msg
+        );
     }
 }
