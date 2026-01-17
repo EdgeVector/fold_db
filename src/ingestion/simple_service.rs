@@ -1,6 +1,8 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
+//! 
+//! Now refactored to take &DataFoldNode references, enabling usage with both Mutex and RwLock.
 
-use crate::datafold_node::{DataFoldNode, OperationProcessor};
+use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;
@@ -13,12 +15,12 @@ use crate::ingestion::{
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::{Mutation, Operation};
+use crate::schema::types::Mutation;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 /// Schema cache entry
 #[derive(Debug, Clone)]
@@ -71,10 +73,11 @@ impl SimpleIngestionService {
     }
 
     /// Process JSON ingestion using a DataFoldNode with progress tracking
+    /// Accepts a reference to DataFoldNode, making it compatible with both Mutex and RwLock guards
     pub async fn process_json_with_node_and_progress(
         &self,
         request: IngestionRequest,
-        node: Arc<tokio::sync::RwLock<DataFoldNode>>,
+        node: &DataFoldNode,
         progress_service: &ProgressService,
         progress_id: String,
     ) -> IngestionResult<IngestionResponse> {
@@ -115,8 +118,9 @@ impl SimpleIngestionService {
                 "Preparing available schemas...".to_string(),
             )
             .await;
+        // Check if we can use the node directly for schemas
         let available_schemas = self
-            .get_stripped_available_schemas_from_node(node.clone())
+            .get_stripped_available_schemas_from_node(node)
             .await?;
 
         // Step 2.5: Flatten data structure for AI analysis
@@ -152,7 +156,7 @@ impl SimpleIngestionService {
         // Check if we'll use an existing schema before calling determine_schema_to_use
         let will_use_existing = !ai_response.existing_schemas.is_empty();
         let schema_name = self
-            .determine_schema_to_use(&ai_response, &request.data, node.clone())
+            .determine_schema_to_use(&ai_response, &request.data, node)
             .await?;
         // Only mark as new if AI suggested a new schema AND we didn't use an existing one
         let new_schema_created = ai_response.new_schemas.is_some() && !will_use_existing;
@@ -255,13 +259,16 @@ impl SimpleIngestionService {
                 "Executing mutations to store data...".to_string(),
             )
             .await;
+        
+        let mutations_len = mutations.len();
+        
         let mutations_executed = if request
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
         {
             self.execute_mutations_with_node_and_progress(
-                &mutations,
-                node.clone(),
+                mutations,
+                node,
                 progress_service,
                 &progress_id,
             )
@@ -274,7 +281,7 @@ impl SimpleIngestionService {
         let results = IngestionResults {
             schema_name: schema_name.clone(),
             new_schema_created,
-            mutations_generated: mutations.len(),
+            mutations_generated: mutations_len,
             mutations_executed,
         };
         progress_service
@@ -285,7 +292,7 @@ impl SimpleIngestionService {
             progress_id,
             schema_name,
             new_schema_created,
-            mutations.len(),
+            mutations_len,
             mutations_executed,
         ))
     }
@@ -294,7 +301,7 @@ impl SimpleIngestionService {
     pub async fn process_json_with_node(
         &self,
         request: IngestionRequest,
-        node: Arc<RwLock<DataFoldNode>>,
+        node: &DataFoldNode,
     ) -> IngestionResult<IngestionResponse> {
         log_feature!(
             LogFeature::Ingestion,
@@ -316,7 +323,7 @@ impl SimpleIngestionService {
 
         // Step 3: Get available schemas and strip them
         let available_schemas = self
-            .get_stripped_available_schemas_from_node(node.clone())
+            .get_stripped_available_schemas_from_node(node)
             .await?;
 
         // Step 4: Get AI recommendation
@@ -328,7 +335,7 @@ impl SimpleIngestionService {
         // Check if we'll use an existing schema before calling determine_schema_to_use
         let will_use_existing = !ai_response.existing_schemas.is_empty();
         let schema_name = self
-            .determine_schema_to_use(&ai_response, &request.data, node.clone())
+            .determine_schema_to_use(&ai_response, &request.data, node)
             .await?;
         // Only mark as new if AI suggested a new schema AND we didn't use an existing one
         let new_schema_created = ai_response.new_schemas.is_some() && !will_use_existing;
@@ -402,12 +409,14 @@ impl SimpleIngestionService {
             mutations.len()
         );
 
+        let mutations_len = mutations.len();
+
         // Step 7: Execute mutations if requested
         let mutations_executed = if request
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
         {
-            self.execute_mutations_with_node(&mutations, node.clone())
+            self.execute_mutations_with_node(mutations, node)
                 .await?
         } else {
             0
@@ -416,7 +425,7 @@ impl SimpleIngestionService {
         Ok(IngestionResponse::success(
             schema_name,
             new_schema_created,
-            mutations.len(),
+            mutations_len,
             mutations_executed,
         ))
     }
@@ -488,7 +497,7 @@ impl SimpleIngestionService {
     /// Get available schemas from the schema service via node (with caching)
     async fn get_stripped_available_schemas_from_node(
         &self,
-        node: Arc<RwLock<DataFoldNode>>,
+        node: &DataFoldNode,
     ) -> IngestionResult<SimplifiedSchemaMap> {
         const CACHE_TTL: Duration = Duration::from_secs(30); // 30 second cache
 
@@ -517,8 +526,7 @@ impl SimpleIngestionService {
 
         // Fetch available schemas from the schema service via the node
         let schemas = {
-            let node_guard = node.read().await;
-            node_guard.fetch_available_schemas().await.map_err(|e| {
+            node.fetch_available_schemas().await.map_err(|e| {
                 IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(format!(
                     "Failed to fetch schemas from schema service: {}",
                     e
@@ -570,7 +578,7 @@ impl SimpleIngestionService {
         &self,
         ai_response: &AISchemaResponse,
         sample_data: &Value,
-        node: Arc<RwLock<DataFoldNode>>,
+        node: &DataFoldNode,
     ) -> IngestionResult<String> {
         // If existing schemas were recommended, use the first one
         if !ai_response.existing_schemas.is_empty() {
@@ -587,14 +595,13 @@ impl SimpleIngestionService {
                 schema_name,
                 sample_data,
                 &ai_response.mutation_mappers,
-                node.clone(),
+                node,
             )
             .await?;
 
             // Auto-approve existing schema (idempotent - only approves if not already approved)
             let schema_manager = {
-                let node_guard = node.read().await;
-                let db_guard = node_guard
+                let db_guard = node
                     .get_fold_db()
                     .await
                     .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
@@ -612,7 +619,7 @@ impl SimpleIngestionService {
         // If a new schema was provided, create it
         if let Some(new_schema_def) = &ai_response.new_schemas {
             let schema_name = self
-                .create_new_schema_with_node(new_schema_def, sample_data, node.clone())
+                .create_new_schema_with_node(new_schema_def, sample_data, node)
                 .await?;
             return Ok(schema_name);
         }
@@ -627,7 +634,7 @@ impl SimpleIngestionService {
         &self,
         schema_def: &Value,
         sample_data: &Value,
-        node: Arc<RwLock<DataFoldNode>>,
+        node: &DataFoldNode,
     ) -> IngestionResult<String> {
         // Deserialize Value to Schema
         let mut schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
@@ -713,8 +720,7 @@ impl SimpleIngestionService {
 
         // Add schema to the schema service via the node
         let schema_response = {
-            let node_guard = node.read().await;
-            node_guard
+            node
                 .add_schema_to_service(&schema)
                 .await
                 .map_err(|error| {
@@ -733,8 +739,7 @@ impl SimpleIngestionService {
         })?;
 
         let schema_manager = {
-            let node_guard = node.read().await;
-            let db_guard = node_guard
+            let db_guard = node
                 .get_fold_db()
                 .await
                 .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
@@ -763,12 +768,11 @@ impl SimpleIngestionService {
         schema_name: &str,
         sample_data: &Value,
         mutation_mappers: &HashMap<String, String>,
-        node: Arc<RwLock<DataFoldNode>>,
+        node: &DataFoldNode,
     ) -> IngestionResult<()> {
         // Get the schema from the schema manager
         let mut schema = {
-            let node_guard = node.read().await;
-            let db_guard = node_guard
+            let db_guard = node
                 .get_fold_db()
                 .await
                 .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
@@ -823,17 +827,17 @@ impl SimpleIngestionService {
                             .as_ref()
                             .map(|c| c.is_empty())
                             .unwrap_or(false)
-                    {
-                        needs_update = true;
-                        log_feature!(
-                            LogFeature::Ingestion,
-                            info,
-                            "Schema '{}' field '{}' is missing 'word' classification",
-                            schema_name,
-                            field_name
-                        );
-                        break;
-                    }
+                {
+                    needs_update = true;
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Schema '{}' field '{}' is missing 'word' classification",
+                        schema_name,
+                        field_name
+                    );
+                    break;
+                }
                 }
             }
         }
@@ -897,8 +901,7 @@ impl SimpleIngestionService {
 
             // Update the schema in the schema service via node
             {
-                let node_guard = node.read().await;
-                node_guard
+                node
                     .add_schema_to_service(&schema)
                     .await
                     .map_err(|e| {
@@ -920,8 +923,7 @@ impl SimpleIngestionService {
             })?;
 
             let schema_manager = {
-                let node_guard = node.read().await;
-                let db_guard = node_guard
+                let db_guard = node
                     .get_fold_db()
                     .await
                     .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
@@ -946,12 +948,11 @@ impl SimpleIngestionService {
         Ok(())
     }
 
-    /// Execute mutations using the OperationProcessor with batch mutations
     /// Execute mutations with progress tracking
     async fn execute_mutations_with_node_and_progress(
         &self,
-        mutations: &[Mutation],
-        node: Arc<RwLock<DataFoldNode>>,
+        mutations: Vec<Mutation>,
+        node: &DataFoldNode,
         progress_service: &ProgressService,
         progress_id: &str,
     ) -> IngestionResult<usize> {
@@ -959,15 +960,11 @@ impl SimpleIngestionService {
             return Ok(0);
         }
 
-        let processor = OperationProcessor::new(node);
         let total_mutations = mutations.len();
 
         // Convert mutations to operation format for batch processing
         // Update progress for every 5 items to ensure visibility
-        // Convert mutations to operation format for batch processing
-        // Update progress for every 5 items to ensure visibility
-        let mut mutations_data = Vec::with_capacity(mutations.len());
-        for (idx, mutation) in mutations.iter().enumerate() {
+        for (idx, _) in mutations.iter().enumerate() {
             // Update progress more frequently (every 5 items) to ensure frontend catches updates
             if (idx + 1) % 5 == 0 || idx + 1 == total_mutations {
                 // Calculate progress: 90% base + up to 5% for this step (max 95%, not 100%)
@@ -983,22 +980,11 @@ impl SimpleIngestionService {
                     )
                     .await;
             }
-
-            let operation = Operation::Mutation {
-                schema: mutation.schema_name.clone(),
-                fields_and_values: mutation.fields_and_values.clone(),
-                key_value: mutation.key_value.clone(),
-                mutation_type: mutation.mutation_type.clone(),
-                source_file_name: mutation.source_file_name.clone(),
-            };
-            mutations_data
-                .push(serde_json::to_value(operation).expect("Failed to serialize operation"));
         }
 
-        // Execute all mutations in a batch
-        processor
-            .execute_mutations_batch(mutations_data)
-            .await
+        // Execute all mutations in a batch using DataFoldNode directly
+        // This avoids OperationProcessor recursive type conversion (Mutation -> Value -> Mutation)
+        node.mutate_batch(mutations).await
             .map(|mutation_ids| mutation_ids.len())
             .map_err(|e| {
                 IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
@@ -1010,34 +996,15 @@ impl SimpleIngestionService {
     /// Execute mutations without progress tracking (for backward compatibility)
     async fn execute_mutations_with_node(
         &self,
-        mutations: &[Mutation],
-        node: Arc<RwLock<DataFoldNode>>,
+        mutations: Vec<Mutation>,
+        node: &DataFoldNode,
     ) -> IngestionResult<usize> {
         if mutations.is_empty() {
             return Ok(0);
         }
 
-        let processor = OperationProcessor::new(node);
-
-        // Convert mutations to operation format for batch processing
-        let mutations_data: Vec<Value> = mutations
-            .iter()
-            .map(|mutation| {
-                let operation = Operation::Mutation {
-                    schema: mutation.schema_name.clone(),
-                    fields_and_values: mutation.fields_and_values.clone(),
-                    key_value: mutation.key_value.clone(),
-                    mutation_type: mutation.mutation_type.clone(),
-                    source_file_name: mutation.source_file_name.clone(),
-                };
-                serde_json::to_value(operation).expect("Failed to serialize operation")
-            })
-            .collect();
-
-        // Execute all mutations in a batch
-        processor
-            .execute_mutations_batch(mutations_data)
-            .await
+        // Execute all mutations in a batch using DataFoldNode directly
+        node.mutate_batch(mutations).await
             .map(|mutation_ids| mutation_ids.len())
             .map_err(|e| {
                 IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(

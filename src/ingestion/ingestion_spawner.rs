@@ -106,45 +106,50 @@ async fn run_background_ingestion(
     };
 
     // Process the ingestion
-    match service
-        .process_json_with_node_and_progress(
-            ingestion_request,
-            node,
-            &progress_service,
-            progress_id.clone(),
-        )
-        .await
+    // Process the ingestion
+    // Lock the node
     {
-        Ok(response) => {
-            if response.success {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "File ingestion completed successfully: {}",
-                    progress_id
-                );
-            } else {
+        let node_guard = node.read().await;
+        match service
+            .process_json_with_node_and_progress(
+                ingestion_request,
+                &*node_guard,
+                &progress_service,
+                progress_id.clone(),
+            )
+            .await
+        {
+            Ok(response) => {
+                if response.success {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "File ingestion completed successfully: {}",
+                        progress_id
+                    );
+                } else {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
+                        "File ingestion failed: {:?}",
+                        response.errors
+                    );
+                }
+                Ok(())
+            }
+            Err(e) => {
+                let error_msg = format!("Processing failed: {}", e);
                 log_feature!(
                     LogFeature::Ingestion,
                     error,
-                    "File ingestion failed: {:?}",
-                    response.errors
+                    "File ingestion processing failed: {}",
+                    e
                 );
+                progress_service
+                    .fail_progress(&progress_id, error_msg.clone())
+                    .await;
+                Err(error_msg)
             }
-            Ok(())
-        }
-        Err(e) => {
-            let error_msg = format!("Processing failed: {}", e);
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "File ingestion processing failed: {}",
-                e
-            );
-            progress_service
-                .fail_progress(&progress_id, error_msg.clone())
-                .await;
-            Err(error_msg)
         }
     }
 }

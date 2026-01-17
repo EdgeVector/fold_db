@@ -5,6 +5,7 @@ use crate::lambda::logging::{LogEntry, LogLevel, UserLogger};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::datafold_node::config::DatabaseConfig;
 
 use super::context::LambdaContext;
 
@@ -199,7 +200,7 @@ impl LambdaContext {
             .map_err(|e| IngestionError::InvalidInput(format!("Schema service reset failed: {}", e)))?;
         
         // Close and clear the local database
-        let db_guard = node.get_fold_db()
+        let db_guard = node.get_fold_db().await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         db_guard.close()
@@ -369,5 +370,51 @@ impl LambdaContext {
             "message": "All logger tests passed successfully",
             "note": "Check your configured logger backend (CloudWatch, DynamoDB, etc.) for log entries"
         }))
+    }
+
+    /// Get database configuration
+    pub async fn get_database_config() -> Result<DatabaseConfig, IngestionError> {
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
+        Ok(node.config.database.clone())
+    }
+
+    /// Update database configuration
+    pub async fn update_database_config(config: DatabaseConfig) -> Result<(), IngestionError> {
+        let node_mutex = Self::node().await?;
+        let mut node = node_mutex.lock().await;
+        
+        let mut new_node_config = node.config.clone();
+        new_node_config.database = config;
+
+        // Save to config file
+        let config_path = std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
+        
+         if let Some(parent) = std::path::Path::new(&config_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| IngestionError::InvalidInput(format!("Failed to create config directory: {}", e)))?;
+        }
+
+        let config_json = serde_json::to_string_pretty(&new_node_config)
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to serialize config: {}", e)))?;
+        
+        std::fs::write(&config_path, config_json)
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to write config file: {}", e)))?;
+
+        // Close current db
+        if let Ok(db) = node.get_fold_db().await {
+            let _ = db.close();
+        }
+        
+        // Create new node
+        match crate::datafold_node::DataFoldNode::new(new_node_config).await {
+            Ok(new_node) => {
+                *node = new_node;
+                Ok(())
+            },
+            Err(e) => {
+                 Err(IngestionError::InvalidInput(format!("Failed to recreate node: {}", e)))
+            }
+        }
     }
 }
