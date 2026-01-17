@@ -139,12 +139,25 @@ impl NativeIndexManager {
             return Ok(Vec::new());
         };
 
-        let mut all_results = Vec::new();
-
         // Search for word matches
         let word_key = format!("{}{}", structural_prefixes::WORD, normalized);
-        log::debug!("Native Index: Looking up word key: '{}'", word_key);
-        if let Some(bytes) = self.get(word_key.as_bytes()).await? {
+        // Also search for field name matches
+        let field_key = format!("{}{}", structural_prefixes::FIELD, normalized);
+
+        log::debug!(
+            "Native Index: Looking up keys: '{}', '{}'",
+            word_key,
+            field_key
+        );
+
+        let (word_res, field_res) = tokio::join!(
+            self.get(word_key.as_bytes()),
+            self.get(field_key.as_bytes())
+        );
+
+        let mut all_results = Vec::new();
+
+        if let Some(bytes) = word_res? {
             let word_results: Vec<IndexResult> = serde_json::from_slice(&bytes).map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to deserialize word index results: {}", e))
             })?;
@@ -156,10 +169,7 @@ impl NativeIndexManager {
             all_results.extend(word_results);
         }
 
-        // Also search for field name matches (e.g., searching "email" returns all records with an email field)
-        let field_key = format!("{}{}", structural_prefixes::FIELD, normalized);
-        log::debug!("Native Index: Looking up field key: '{}'", field_key);
-        if let Some(bytes) = self.get(field_key.as_bytes()).await? {
+        if let Some(bytes) = field_res? {
             let field_results: Vec<IndexResult> = serde_json::from_slice(&bytes).map_err(|e| {
                 SchemaError::InvalidData(format!(
                     "Failed to deserialize field index results: {}",
@@ -387,6 +397,7 @@ impl NativeIndexManager {
         &self,
         term: &str,
     ) -> Result<Vec<IndexResult>, SchemaError> {
+        use futures_util::future::join_all;
         use std::collections::HashSet;
 
         log::debug!(
@@ -394,11 +405,36 @@ impl NativeIndexManager {
             term
         );
 
+        // Search all other classification types for more specific matches
+        let classifications = vec![
+            ClassificationType::NamePerson,
+            ClassificationType::NameCompany,
+            ClassificationType::NamePlace,
+            ClassificationType::Email,
+            ClassificationType::Phone,
+            ClassificationType::Url,
+            ClassificationType::Date,
+            ClassificationType::Hashtag,
+            ClassificationType::Username,
+        ];
+
+        log::debug!(
+            "Native Index: Searching {} additional classification types",
+            classifications.len()
+        );
+
+        let word_fut = self.search_word_async(term);
+        let class_futs = classifications
+            .iter()
+            .map(|c| self.search_with_classification_async(term, Some(c.clone())));
+
+        let (word_res, class_results_list) = tokio::join!(word_fut, join_all(class_futs));
+
         let mut all_results = Vec::new();
         let mut seen_keys = HashSet::new();
 
-        // First, do a basic word search which includes both word matches AND field name matches
-        match self.search_word_async(term).await {
+        // Process basic word search results
+        match word_res {
             Ok(results) => {
                 log::debug!(
                     "Native Index: Word search (including field names) returned {} results",
@@ -425,29 +461,10 @@ impl NativeIndexManager {
             }
         }
 
-        // Search all other classification types for more specific matches
-        let classifications = vec![
-            ClassificationType::NamePerson,
-            ClassificationType::NameCompany,
-            ClassificationType::NamePlace,
-            ClassificationType::Email,
-            ClassificationType::Phone,
-            ClassificationType::Url,
-            ClassificationType::Date,
-            ClassificationType::Hashtag,
-            ClassificationType::Username,
-        ];
-
-        log::debug!(
-            "Native Index: Searching {} additional classification types",
-            classifications.len()
-        );
-
-        for classification in classifications {
-            match self
-                .search_with_classification_async(term, Some(classification.clone()))
-                .await
-            {
+        // Process classification results
+        for (i, results_res) in class_results_list.into_iter().enumerate() {
+            let classification = &classifications[i];
+            match results_res {
                 Ok(results) => {
                     log::debug!(
                         "Native Index: Classification {:?} returned {} results",
