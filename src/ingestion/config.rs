@@ -237,6 +237,33 @@ impl IngestionConfig {
     pub fn is_ready(&self) -> bool {
         self.enabled && self.validate().is_ok()
     }
+
+    /// Save configuration to file
+    pub fn save_to_file(config: &SavedConfig) -> Result<(), Box<dyn std::error::Error>> {
+        use std::fs;
+        use std::io::Write;
+
+        let config_path = Self::get_config_file_path();
+
+        // Create directory if it doesn't exist
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let content = serde_json::to_string_pretty(config)?;
+        let mut file = fs::File::create(&config_path)?;
+        file.write_all(content.as_bytes())?;
+
+        Ok(())
+    }
+
+    /// Get the path to the ingestion configuration file
+    pub fn get_config_file_path() -> std::path::PathBuf {
+        let config_dir =
+            std::env::var("DATAFOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
+
+        std::path::Path::new(&config_dir).join("ingestion_config.json")
+    }
 }
 
 /// Structure for saving AI provider configuration.

@@ -1,7 +1,6 @@
-use crate::datafold_node::{DataFoldNode, NodeConfig};
+use crate::datafold_node::DataFoldNode;
 use crate::ingestion::IngestionError;
 use crate::lambda::config::{LambdaConfig, LambdaStorage};
-use crate::storage::TableNameResolver;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -27,9 +26,8 @@ impl NodeManager {
         };
 
         // Pre-initialize single node if not in DynamoDB mode (single tenant optimization)
-        // Pre-initialize single node if not in DynamoDB mode (single tenant optimization)
         match &config.storage {
-            LambdaStorage::Config(crate::storage::StorageConfig::DynamoDb(_)) => {
+            LambdaStorage::Config(crate::storage::DatabaseConfig::DynamoDb(_)) => {
                 // Multi-tenant mode: Nodes created on demand
             }
             _ => {
@@ -78,10 +76,10 @@ impl NodeManager {
         &self,
         user_id: &str,
     ) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
-        use crate::datafold_node::backend;
         use crate::datafold_node::config::{DatabaseConfig, NodeConfig};
         use crate::fold_db_core::FoldDB;
-        use crate::storage::StorageConfig;
+        use crate::fold_db_core::factory;
+        use crate::storage::DatabaseConfig as StorageConfig; // Alias for compatibility with code below or just update
 
         // Convert LambdaStorage to NodeConfig or handle DbOps case
         let (db, node_config) = match &self.config.storage {
@@ -103,7 +101,7 @@ impl NodeManager {
                     node_config = node_config.with_schema_service_url(schema_url);
                 }
 
-                let db = backend::create_fold_db(&node_config)
+                let db = factory::create_fold_db(&node_config.database)
                     .await
                     .map_err(|e| IngestionError::StorageError(e.to_string()))?;
 
@@ -131,7 +129,7 @@ impl NodeManager {
                     node_config
                 };
 
-                (Arc::new(Mutex::new(fold_db)), node_config)
+                (Arc::new(tokio::sync::Mutex::new(fold_db)), node_config)
             }
         };
 
@@ -155,9 +153,9 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let db_path = temp_dir.path().join("db");
 
-        // Use LambdaConfig::new with StorageConfig
+        // Use LambdaConfig::new with DatabaseConfig
         let config = LambdaConfig::new(
-            crate::storage::StorageConfig::Local { path: db_path },
+            crate::storage::DatabaseConfig::Local { path: db_path },
             crate::lambda::config::LambdaLogging::Stdout,
         );
 
