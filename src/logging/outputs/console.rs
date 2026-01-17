@@ -1,58 +1,72 @@
-//! Console output handler with color support
-
+//! Console output handler
 use crate::logging::config::ConsoleConfig;
-use crate::logging::util::parse_log_level;
 use crate::logging::LoggingError;
-use tracing_subscriber::fmt;
+use log::{LevelFilter, Metadata, Record};
+use colored::*;
 
-use tracing_subscriber::Layer;
-use tracing_subscriber::Registry;
-use std::io;
-
-/// Console output handler that provides colored terminal output
 pub struct ConsoleOutput {
     config: ConsoleConfig,
 }
 
 impl ConsoleOutput {
-    /// Create a new console output handler
     pub fn new(config: &ConsoleConfig) -> Result<Self, LoggingError> {
-        Ok(Self {
-            config: config.clone(),
-        })
+        Ok(Self { config: config.clone() })
     }
 
-    /// Create a tracing layer for console output
-    pub fn create_layer(&self) -> Result<Box<dyn Layer<Registry> + Send + Sync>, LoggingError> {
-        let mut layer = fmt::Layer::default()
-            .with_writer(io::stdout);
-
-        // Configure formatting based on config
-        if self.config.colors {
-            layer = layer.with_ansi(true);
-        } else {
-            layer = layer.with_ansi(false);
+    fn should_log(&self, metadata: &Metadata) -> bool {
+        if !self.config.enabled {
+            return false;
         }
+        
+        // Parse config level to LevelFilter, default to Info if invalid
+        let filter = match self.config.level.as_str() {
+            "TRACE" => LevelFilter::Trace,
+            "DEBUG" => LevelFilter::Debug,
+            "INFO" => LevelFilter::Info,
+            "WARN" => LevelFilter::Warn,
+            "ERROR" => LevelFilter::Error,
+            _ => LevelFilter::Info,
+        };
 
-        if self.config.include_module {
-            layer = layer.with_target(true);
-        } else {
-            layer = layer.with_target(false);
-        }
+        metadata.level() <= filter
+    }
+}
 
-        if self.config.include_thread {
-            layer = layer.with_thread_ids(true).with_thread_names(true);
-        }
+impl log::Log for ConsoleOutput {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.should_log(metadata)
+    }
 
-        if !self.config.include_timestamp {
-            let layer = layer.without_time()
-                .with_filter(parse_log_level(&self.config.level)?);
-            Ok(Box::new(layer))
-        } else {
-            let layer = layer
-                .with_filter(parse_log_level(&self.config.level)?);
-            Ok(Box::new(layer))
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            let level_str = if self.config.colors {
+                match record.level() {
+                    log::Level::Error => "ERROR".red().to_string(),
+                    log::Level::Warn => "WARN".yellow().to_string(),
+                    log::Level::Info => "INFO".green().to_string(),
+                    log::Level::Debug => "DEBUG".blue().to_string(),
+                    log::Level::Trace => "TRACE".magenta().to_string(),
+                }
+            } else {
+                record.level().to_string()
+            };
+
+            let timestamp = if self.config.include_timestamp {
+                 // Placeholder for actual timestamp logic
+                 "".to_string() 
+            } else {
+                "".to_string()
+            };
+
+            let module = if self.config.include_module {
+                record.module_path().unwrap_or("unknown")
+            } else {
+                ""
+            };
+
+            println!("{} {} [{}] {}", timestamp, level_str, module, record.args());
         }
     }
 
+    fn flush(&self) {}
 }

@@ -88,7 +88,7 @@ impl MutationManager {
             "🔄 write_mutations_batch_async: Starting batch of {} mutations",
             mutations.len()
         );
-        println!(
+        log::debug!(
             "DEBUG: MutationManager::write_mutations_batch_async started for {} mutations",
             mutations.len()
         );
@@ -403,7 +403,7 @@ impl MutationManager {
                 duration.as_millis(),
                 percentage
             );
-            println!(
+            log::debug!(
                 "DEBUG: Step '{}': {:.2}ms ({:.1}%)",
                 operation,
                 duration.as_millis(),
