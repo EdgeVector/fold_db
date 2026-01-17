@@ -148,9 +148,29 @@ impl LoggingSystem {
             let _ = GLOBAL_LOGGER.set(logger_arc);
         }
 
-        // 3. File Logger (Placeholder logic, assuming FileOutput implements Log or similar?)
-        // Currently FileOutput is independent or not fully wired as log::Log.
-        // For this task, we focus on DynamoDB.
+        // 3. Console Logger
+        if config.outputs.console.enabled {
+             match outputs::ConsoleOutput::new(&config.outputs.console) {
+                 Ok(logger) => loggers.push(Box::new(logger)),
+                 Err(e) => eprintln!("Failed to initialize console logger: {}", e),
+             }
+        }
+
+        // 4. File Logger
+        if config.outputs.file.enabled {
+            match outputs::FileOutput::new(&config.outputs.file) {
+                Ok(logger) => loggers.push(Box::new(logger)),
+                Err(e) => eprintln!("Failed to initialize file logger: {}", e),
+            }
+        }
+
+        // 5. Structured Logger
+        if config.outputs.structured.enabled {
+            match outputs::StructuredOutput::new(&config.outputs.structured) {
+                Ok(logger) => loggers.push(Box::new(logger)),
+                Err(e) => eprintln!("Failed to initialize structured logger: {}", e),
+            }
+        }
 
         // Initialize MultiLogger
         let multi_logger = MultiLogger::new(loggers);

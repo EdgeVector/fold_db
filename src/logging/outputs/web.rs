@@ -1,99 +1,88 @@
-//! Web streaming output handler (maintains backward compatibility)
-
+//! Web streaming output handler
 use crate::logging::config::WebConfig;
-use crate::logging::util::parse_log_level;
 use crate::logging::LoggingError;
+use log::{LevelFilter, Metadata, Record};
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
-use tracing_subscriber::fmt::MakeWriter;
-use tracing_subscriber::{fmt, Layer, Registry};
-use std::io::{self, Write};
 
-/// Web output handler that provides streaming log output for web interfaces
+/// Web output handler that provides streaming logs via broadcast channel
 pub struct WebOutput {
     config: WebConfig,
-    buffer: std::sync::Arc<Mutex<VecDeque<String>>>,
+    buffer: Arc<Mutex<VecDeque<String>>>,
     sender: broadcast::Sender<String>,
+    level_filter: RwLock<LevelFilter>,
 }
 
 impl WebOutput {
-    /// Create a new web output handler
     pub fn new(config: &WebConfig) -> Result<Self, LoggingError> {
         let (sender, _) = broadcast::channel(config.buffer_size);
         
+        let filter = match config.level.as_str() {
+            "TRACE" => LevelFilter::Trace,
+            "DEBUG" => LevelFilter::Debug,
+            "INFO" => LevelFilter::Info,
+            "WARN" => LevelFilter::Warn,
+            "ERROR" => LevelFilter::Error,
+            _ => LevelFilter::Info,
+        };
+
         Ok(Self {
             config: config.clone(),
-            buffer: std::sync::Arc::new(Mutex::new(VecDeque::with_capacity(config.max_logs))),
+            buffer: Arc::new(Mutex::new(VecDeque::with_capacity(config.max_logs))),
             sender,
+            level_filter: RwLock::new(filter),
         })
     }
 
-    /// Create a tracing layer for web output
-    pub fn create_layer(&self) -> Result<impl Layer<Registry> + Send + Sync, LoggingError> {
-        let writer = WebWriter::new(
-            self.buffer.clone(),
-            self.sender.clone(),
-            self.config.max_logs,
-        );
-
-        let layer = fmt::Layer::default()
-            .with_writer(writer)
-            .with_ansi(false); // No ANSI colors for web
-            
-        let layer = layer.with_filter(parse_log_level(&self.config.level)?);
-
-        Ok(layer)
-    }
-
-    /// Get current logs in buffer
     pub fn get_logs(&self) -> Vec<String> {
-        self.buffer
-            .lock()
-            .unwrap()
+        self.buffer.lock().unwrap()
             .iter()
             .cloned()
             .collect()
     }
 
-    /// Subscribe to log stream
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
         self.sender.subscribe()
     }
 
-}
+    fn should_log(&self, metadata: &Metadata) -> bool {
+        if !self.config.enabled {
+            return false;
+        }
 
-/// Custom writer that sends logs to both buffer and broadcast channel
-#[derive(Clone)]
-struct WebWriter {
-    buffer: std::sync::Arc<Mutex<VecDeque<String>>>,
-    sender: broadcast::Sender<String>,
-    max_logs: usize,
-}
-
-impl WebWriter {
-    fn new(
-        buffer: std::sync::Arc<Mutex<VecDeque<String>>>,
-        sender: broadcast::Sender<String>,
-        max_logs: usize,
-    ) -> Self {
-        Self {
-            buffer,
-            sender,
-            max_logs,
+        if let Ok(filter) = self.level_filter.read() {
+             metadata.level() <= *filter
+        } else {
+            false
         }
     }
 }
 
-impl Write for WebWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let msg = String::from_utf8_lossy(buf).trim().to_string();
-        
-        if !msg.is_empty() {
+impl log::Log for WebOutput {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.should_log(metadata)
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+
+            let msg = format!(
+                "[{}][{}] - {}", 
+                timestamp,
+                record.level(), 
+                record.args()
+            );
+
             // Add to buffer
             if let Ok(mut buffer) = self.buffer.lock() {
                 buffer.push_back(msg.clone());
-                if buffer.len() > self.max_logs {
+                if buffer.len() > self.config.max_logs {
                     buffer.pop_front();
                 }
             }
@@ -101,19 +90,7 @@ impl Write for WebWriter {
             // Send to broadcast channel
             let _ = self.sender.send(msg);
         }
-
-        Ok(buf.len())
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> MakeWriter<'a> for WebWriter {
-    type Writer = Self;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
-    }
+    fn flush(&self) {}
 }

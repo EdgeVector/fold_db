@@ -1,71 +1,120 @@
 //! Structured JSON output handler
-
 use crate::logging::config::StructuredConfig;
-use crate::logging::util::parse_log_level;
 use crate::logging::LoggingError;
-use tracing_subscriber::fmt;
+use log::{LevelFilter, Metadata, Record};
+use serde::Serialize;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use tracing_subscriber::Layer;
-use tracing_subscriber::Registry;
-use tracing_appender::{non_blocking, rolling};
-use std::path::Path;
-use std::io;
-
-/// Structured output handler that provides JSON-formatted logging
 pub struct StructuredOutput {
     config: StructuredConfig,
-    _guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+    file: Mutex<Option<File>>,
+}
+
+#[derive(Serialize)]
+struct JsonLogEntry<'a> {
+    timestamp: u64,
+    level: String,
+    module: &'a str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<u32>,
 }
 
 impl StructuredOutput {
-    /// Create a new structured output handler
     pub fn new(config: &StructuredConfig) -> Result<Self, LoggingError> {
-        let guard = if let Some(ref path) = config.path {
-            // Set up file output for structured logs
-            let path = Path::new(path);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| LoggingError::Io(e))?;
+        let file = if config.enabled {
+            if let Some(path_str) = &config.path {
+                let path = std::path::Path::new(path_str);
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(LoggingError::Io)?;
+                }
+                Some(
+                    OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                        .map_err(LoggingError::Io)?
+                )
+            } else {
+                None
             }
-
-            let file_appender = rolling::RollingFileAppender::new(
-                rolling::Rotation::DAILY,
-                path.parent().unwrap_or(Path::new(".")),
-                path.file_name().and_then(|n| n.to_str()).unwrap_or("structured.json")
-            );
-
-            let (_, guard) = non_blocking(file_appender);
-            Some(guard)
         } else {
             None
         };
 
-        Ok(Self {
+        Ok(Self { 
             config: config.clone(),
-            _guard: guard,
+            file: Mutex::new(file),
         })
     }
 
-    /// Create a tracing layer for structured output
-    pub fn create_layer(&self) -> Result<impl Layer<Registry> + Send + Sync, LoggingError> {
-        let writer = if self.config.path.is_some() {
-            // Use file writer - this would need the actual non-blocking writer
-            // For now, using stdout as placeholder
-            std::sync::Mutex::new(Box::new(io::stdout()) as Box<dyn io::Write + Send>)
-        } else {
-            std::sync::Mutex::new(Box::new(io::stdout()) as Box<dyn io::Write + Send>)
+    fn should_log(&self, metadata: &Metadata) -> bool {
+        if !self.config.enabled {
+            return false;
+        }
+        
+        let filter = match self.config.level.as_str() {
+            "TRACE" => LevelFilter::Trace,
+            "DEBUG" => LevelFilter::Debug,
+            "INFO" => LevelFilter::Info,
+            "WARN" => LevelFilter::Warn,
+            "ERROR" => LevelFilter::Error,
+            _ => LevelFilter::Info,
         };
 
-        let layer = fmt::Layer::default()
-            .with_writer(writer)
-            .json() // Enable JSON formatting
-            .with_current_span(self.config.include_context)
-            .with_span_list(self.config.include_context);
+        metadata.level() <= filter
+    }
+}
 
-        let layer = layer.with_filter(parse_log_level(&self.config.level)?);
-
-
-        Ok(layer)
+impl log::Log for StructuredOutput {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.should_log(metadata)
     }
 
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+
+            let entry = JsonLogEntry {
+                timestamp,
+                level: record.level().to_string(),
+                module: record.module_path().unwrap_or(""),
+                message: record.args().to_string(),
+                file: record.file(),
+                line: record.line(),
+            };
+
+            if let Ok(json) = serde_json::to_string(&entry) {
+                if let Ok(mut file_guard) = self.file.lock() {
+                    if let Some(file) = file_guard.as_mut() {
+                        let _ = writeln!(file, "{}", json);
+                    } else if self.config.path.is_none() {
+                        // If enabled but no file path, perhaps write to stdout/stderr? 
+                        // But ConsoleOutput already handles stdout. 
+                        // We will just do nothing if no file is configured, 
+                        // unless requirements say otherwise.
+                        // Previous code had: println!("{}", json);
+                        // Let's keep it if no file path is specified but it is enabled.
+                        println!("{}", json);
+                    }
+                }
+            }
+        }
+    }
+
+    fn flush(&self) {
+         if let Ok(mut file_guard) = self.file.lock() {
+            if let Some(file) = file_guard.as_mut() {
+                let _ = file.flush();
+            }
+        }
+    }
 }
