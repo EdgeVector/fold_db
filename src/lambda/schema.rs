@@ -26,7 +26,7 @@ impl LambdaContext {
     pub async fn list_schemas() -> Result<Vec<crate::schema::SchemaWithState>, IngestionError> {
         let node_mutex = Self::node().await?;
         let node = node_mutex.lock().await;
-        let db_guard = node.get_fold_db()
+        let db_guard = node.get_fold_db().await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         db_guard.schema_manager.get_schemas_with_states()
@@ -56,7 +56,7 @@ impl LambdaContext {
     pub async fn get_schema(schema_name: &str) -> Result<Option<crate::schema::SchemaWithState>, IngestionError> {
         let node_mutex = Self::node().await?;
         let node = node_mutex.lock().await;
-        let db_guard = node.get_fold_db()
+        let db_guard = node.get_fold_db().await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         let schema = db_guard.schema_manager.get_schema(schema_name)
@@ -92,7 +92,7 @@ impl LambdaContext {
     pub async fn block_schema(schema_name: &str) -> Result<(), IngestionError> {
         let node_mutex = Self::node().await?;
         let node = node_mutex.lock().await;
-        let db_guard = node.get_fold_db()
+        let db_guard = node.get_fold_db().await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         db_guard.schema_manager.block_schema(schema_name)
@@ -139,7 +139,7 @@ impl LambdaContext {
             // Re-acquire node lock for each operation to avoid holding it too long
             let node_mutex = Self::node().await?;
             let node = node_mutex.lock().await;
-            let db_guard = node.get_fold_db()
+            let db_guard = node.get_fold_db().await
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
             
             match db_guard.schema_manager.load_schema_internal(schema).await {
@@ -182,7 +182,7 @@ impl LambdaContext {
     pub async fn approve_schema(schema_name: &str) -> Result<(), IngestionError> {
         let node_mutex = Self::node().await?;
         let node = node_mutex.lock().await;
-        let db_guard = node.get_fold_db()
+        let db_guard = node.get_fold_db().await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         db_guard.schema_manager.approve(schema_name)
@@ -215,12 +215,49 @@ impl LambdaContext {
     pub async fn get_schema_state(schema_name: &str) -> Result<Option<crate::schema::SchemaState>, IngestionError> {
         let node_mutex = Self::node().await?;
         let node = node_mutex.lock().await;
-        let db_guard = node.get_fold_db()
+        let db_guard = node.get_fold_db().await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
         
         let states = db_guard.schema_manager.get_schema_states()
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schema states: {}", e)))?;
         
         Ok(states.get(schema_name).copied())
+    }
+
+    /// Get backfill status by hash
+    ///
+    /// # Arguments
+    ///
+    /// * `backfill_hash` - The hash of the backfill to retrieve
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(BackfillInfo)` if found, or `None` if not found.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use datafold::lambda::LambdaContext;
+    ///
+    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
+    ///     if let Some(info) = LambdaContext::get_backfill_status("abc123hash").await? {
+    ///         println!("Backfill status: {:?}", info.status);
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn get_backfill_status(
+        backfill_hash: &str,
+    ) -> Result<Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>, IngestionError> {
+        let node_mutex = Self::node().await?;
+        let node = node_mutex.lock().await;
+        
+        if let Ok(db_guard) = node.get_fold_db().await {
+            Ok(db_guard
+                .get_backfill_tracker()
+                .get_backfill_by_hash(backfill_hash))
+        } else {
+            Ok(None)
+        }
     }
 }

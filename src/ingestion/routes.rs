@@ -11,9 +11,6 @@ use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::{json, Value};
-use std::error::Error;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 /// Process JSON ingestion request
 #[utoipa::path(
@@ -76,10 +73,13 @@ pub async fn process_json(
             progress_id_clone
         );
 
+        // Acquire read lock on the node
+        let node_guard = node_clone.read().await;
+
         match service
             .process_json_with_node_and_progress(
                 request_data,
-                node_clone,
+                &*node_guard,
                 &progress_service,
                 progress_id_clone.clone(),
             )
@@ -295,7 +295,7 @@ pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Resp
 
     let config = request.into_inner();
 
-    match save_config_to_file(&config) {
+    match IngestionConfig::save_to_file(&config) {
         Ok(()) => {
             log_feature!(
                 LogFeature::Ingestion,
@@ -320,35 +320,6 @@ pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Resp
             }))
         }
     }
-}
-
-/// Save Ingestion configuration to file
-fn save_config_to_file(config: &SavedConfig) -> Result<(), Box<dyn Error>> {
-    let config_path = get_config_file_path();
-
-    // Create directory if it doesn't exist
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let content = serde_json::to_string_pretty(config)?;
-    fs::write(&config_path, content)?;
-
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Ingestion config saved to: {:?}",
-        config_path
-    );
-    Ok(())
-}
-
-/// Get the path to the ingestion configuration file
-fn get_config_file_path() -> PathBuf {
-    let config_dir =
-        std::env::var("DATAFOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
-
-    Path::new(&config_dir).join("ingestion_config.json")
 }
 
 /// Create a simple ingestion service with potentially updated config

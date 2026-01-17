@@ -1,4 +1,4 @@
-use crate::datafold_node::static_assets::Asset;
+use crate::server::static_assets::Asset;
 use serde::Serialize;
 
 #[derive(Serialize)]
