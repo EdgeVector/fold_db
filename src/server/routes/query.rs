@@ -1,12 +1,12 @@
 use crate::datafold_node::OperationProcessor;
-use crate::fold_db_core::query::records_from_field_map;
+
 use crate::schema::types::operations::{Operation, Query};
 use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessResponse {
@@ -40,17 +40,10 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
         query_inner.filter
     );
 
-    let node_arc = Arc::clone(&state.node);
-    let processor = OperationProcessor::new(node_arc);
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    match processor.execute_query_map(query_inner).await {
-        Ok(result_map) => {
-            log::debug!("✅ Query returned {} fields", result_map.len());
-            let records_map = records_from_field_map(&result_map);
-            let data: Vec<Value> = records_map
-                .into_iter()
-                .map(|(key, record)| json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
-                .collect();
+    match processor.execute_query_json(query_inner).await {
+        Ok(data) => {
             log::info!("✅ Query completed: {} records returned", data.len());
             HttpResponse::Ok().json(data)
         }
@@ -104,8 +97,7 @@ pub async fn execute_mutation(
             }
         };
 
-    let node_arc = Arc::clone(&state.node);
-    let processor = OperationProcessor::new(node_arc);
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
     log::info!("🚀 Executing mutation via OperationProcessor");
     match processor
@@ -141,8 +133,7 @@ pub async fn execute_mutations_batch(
     mutations_data: web::Json<Vec<Value>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    let node_arc = Arc::clone(&state.node);
-    let processor = OperationProcessor::new(node_arc);
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
     match processor
         .execute_mutations_batch(mutations_data.into_inner())
@@ -164,16 +155,9 @@ pub async fn execute_mutations_batch(
     )
 )]
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    match db.transform_manager.list_transforms() {
+    match processor.list_transforms().await {
         Ok(map) => HttpResponse::Ok().json(map),
         Err(e) => HttpResponse::InternalServerError()
             .json(json!({"error": format!("Failed to list transforms: {}", e)})),
@@ -197,31 +181,18 @@ pub async fn add_to_transform_queue(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let transform_id = path.into_inner();
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    match db.transform_orchestrator() {
-        Some(orchestrator) => {
-            match orchestrator
-                .add_transform(&transform_id, "manual_api_trigger")
-                .await
-            {
-                Ok(_) => HttpResponse::Ok().json(SuccessResponse {
-                    success: true,
-                    message: format!("Transform '{}' added to queue", transform_id),
-                }),
-                Err(e) => HttpResponse::InternalServerError()
-                    .json(json!({"error": format!("Failed to add transform to queue: {}", e)})),
-            }
-        }
-        None => HttpResponse::ServiceUnavailable()
-            .json(json!({"error": "Transform orchestrator not available"})),
+    match processor
+        .add_to_transform_queue(&transform_id, "manual_api_trigger")
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().json(SuccessResponse {
+            success: true,
+            message: format!("Transform '{}' added to queue", transform_id),
+        }),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to add transform to queue: {}", e)})),
     }
 }
 
@@ -235,29 +206,15 @@ pub async fn add_to_transform_queue(
     )
 )]
 pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    match db.transform_orchestrator() {
-        Some(orchestrator) => match orchestrator.list_queued_transforms() {
-            Ok(queued) => {
-                let len = orchestrator.len().unwrap_or(0);
-                HttpResponse::Ok().json(json!({
-                    "length": len,
-                    "queued_transforms": queued
-                }))
-            }
-            Err(e) => HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to get transform queue info: {}", e)})),
-        },
-        None => HttpResponse::ServiceUnavailable()
-            .json(json!({"error": "Transform orchestrator not available"})),
+    match processor.get_transform_queue().await {
+        Ok((len, queued)) => HttpResponse::Ok().json(json!({
+            "length": len,
+            "queued_transforms": queued
+        })),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to get transform queue info: {}", e)})),
     }
 }
 
@@ -271,17 +228,13 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    let backfills = db.get_all_backfills();
-    HttpResponse::Ok().json(backfills)
+    match processor.get_all_backfills().await {
+        Ok(backfills) => HttpResponse::Ok().json(backfills),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to get backfills: {}", e)})),
+    }
 }
 
 #[utoipa::path(
@@ -294,17 +247,13 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    let backfills = db.get_active_backfills();
-    HttpResponse::Ok().json(backfills)
+    match processor.get_active_backfills().await {
+        Ok(backfills) => HttpResponse::Ok().json(backfills),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to get active backfills: {}", e)})),
+    }
 }
 
 #[utoipa::path(
@@ -322,19 +271,14 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
 )]
 pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let transform_id = path.into_inner();
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    match db.get_backfill(&transform_id) {
-        Some(backfill) => HttpResponse::Ok().json(backfill),
-        None => HttpResponse::NotFound()
+    match processor.get_backfill(&transform_id).await {
+        Ok(Some(backfill)) => HttpResponse::Ok().json(backfill),
+        Ok(None) => HttpResponse::NotFound()
             .json(json!({"error": format!("Backfill not found for transform: {}", transform_id)})),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to get backfill: {}", e)})),
     }
 }
 
@@ -348,17 +292,13 @@ pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -
     )
 )]
 pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    let stats = db.get_event_statistics();
-    HttpResponse::Ok().json(stats)
+    match processor.get_transform_statistics().await {
+        Ok(stats) => HttpResponse::Ok().json(stats),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to get transform statistics: {}", e)})),
+    }
 }
 
 /// Search the native word index for a term.
@@ -392,20 +332,10 @@ pub async fn native_index_search(
 
     info!("API: Searching for term: '{}'", term);
 
-    // Acquire FoldDB and perform search
-    let node_arc = Arc::clone(&state.node);
-    let node_guard = node_arc.read().await;
-    let fold_db = match node_guard.get_fold_db().await {
-        Ok(guard) => guard,
-        Err(e) => {
-            error!("API: Failed to acquire database: {}", e);
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}));
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
     debug!("API: Acquired database, calling native_search_all_classifications");
-    match fold_db.native_search_all_classifications(&term).await {
+    match processor.native_index_search(&term).await {
         Ok(results) => {
             info!("API: Search completed, found {} results", results.len());
             HttpResponse::Ok().json(results)
@@ -427,46 +357,13 @@ pub async fn native_index_search(
     )
 )]
 pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    let backfills = db.get_all_backfills();
-
-    use crate::fold_db_core::infrastructure::backfill_tracker::{
-        BackfillStatistics, BackfillStatus,
-    };
-
-    let active_count = backfills
-        .iter()
-        .filter(|b| b.status == BackfillStatus::InProgress)
-        .count();
-    let completed_count = backfills
-        .iter()
-        .filter(|b| b.status == BackfillStatus::Completed)
-        .count();
-    let failed_count = backfills
-        .iter()
-        .filter(|b| b.status == BackfillStatus::Failed)
-        .count();
-
-    let stats = BackfillStatistics {
-        total_backfills: backfills.len(),
-        active_backfills: active_count,
-        completed_backfills: completed_count,
-        failed_backfills: failed_count,
-        total_mutations_expected: backfills.iter().map(|b| b.mutations_expected).sum(),
-        total_mutations_completed: backfills.iter().map(|b| b.mutations_completed).sum(),
-        total_mutations_failed: backfills.iter().map(|b| b.mutations_failed).sum(),
-        total_records_produced: backfills.iter().map(|b| b.records_produced).sum(),
-    };
-
-    HttpResponse::Ok().json(stats)
+    match processor.get_backfill_statistics().await {
+        Ok(stats) => HttpResponse::Ok().json(stats),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to get backfill statistics: {}", e)})),
+    }
 }
 
 /// Get indexing status
@@ -480,17 +377,13 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
     )
 )]
 pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let db = match node.get_fold_db().await {
-        Ok(db) => db,
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to acquire database: {}", e)}))
-        }
-    };
+    let processor = OperationProcessor::new(state.node.read().await.clone());
 
-    let status = db.get_indexing_status().await;
-    HttpResponse::Ok().json(status)
+    match processor.get_indexing_status().await {
+        Ok(status) => HttpResponse::Ok().json(status),
+        Err(e) => HttpResponse::InternalServerError()
+            .json(json!({"error": format!("Failed to get indexing status: {}", e)})),
+    }
 }
 
 #[cfg(test)]

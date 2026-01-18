@@ -97,7 +97,8 @@ impl DataFoldHttpServer {
             match &node.config.database {
                 #[cfg(feature = "aws-backend")]
                 crate::datafold_node::config::DatabaseConfig::DynamoDb(d) => {
-                    Some((d.tables.logs.clone(), d.region.clone()))
+                    let user_id = d.user_id.clone().unwrap_or_else(|| node.get_node_public_key().to_string());
+                    Some((d.tables.logs.clone(), d.region.clone(), Some(user_id)))
                 }
                 _ => None,
             }
@@ -143,12 +144,7 @@ impl DataFoldHttpServer {
     /// * There is an error binding to the specified address
     /// * There is an error starting the server
     pub async fn run(&self) -> FoldDbResult<()> {
-        log_feature!(
-            LogFeature::HttpServer,
-            info,
-            "HTTP server running on {}",
-            self.bind_address
-        );
+
 
         self.load_schemas_if_configured().await?;
 

@@ -141,7 +141,7 @@ pub async fn process_json(
 pub async fn get_status() -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
-        info,
+        debug,
         "Received ingestion status request"
     );
 
@@ -264,7 +264,7 @@ pub async fn validate_json(request: web::Json<Value>) -> impl Responder {
 pub async fn get_ingestion_config() -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
-        info,
+        debug,
         "Received ingestion config request"
     );
 
@@ -379,7 +379,7 @@ pub async fn get_progress(
 pub async fn get_all_progress(progress_tracker: web::Data<ProgressTracker>) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
-        info,
+        debug,
         "Received request for all progress"
     );
 

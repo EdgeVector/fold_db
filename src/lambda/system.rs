@@ -137,32 +137,7 @@ impl LambdaContext {
         Ok(node.get_node_public_key().to_string())
     }
 
-    /// Get the security manager's system public key
-    ///
-    /// Returns the system-level public key for security operations.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use datafold::lambda::LambdaContext;
-    ///
-    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     if let Some(key_info) = LambdaContext::get_system_public_key().await? {
-    ///         println!("System public key: {:?}", key_info);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
-    pub async fn get_system_public_key() -> Result<Option<Value>, IngestionError> {
-        let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        
-        let security_manager = node.get_security_manager();
-        let key_info = security_manager.get_system_public_key()
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to get system public key: {}", e)))?;
-        
-        Ok(key_info.map(|k| serde_json::to_value(k).unwrap_or(serde_json::json!({}))))
-    }
+
 
     /// Reset the database
     ///
@@ -185,26 +160,26 @@ impl LambdaContext {
     /// }
     /// ```
     pub async fn reset_database(confirm: bool) -> Result<(), IngestionError> {
+        let user_id = LambdaContext::get_user_id();
+        let ctx = Self::get()?;
+
         if !confirm {
-            return Err(IngestionError::InvalidInput(
-                "Reset confirmation required. Set confirm=true".to_string()
-            ));
+             return Err(IngestionError::InvalidInput("Reset confirmation required".to_string()));
         }
 
-        let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        
-        // Reset the schema service database first
-        let schema_client = node.get_schema_client();
-        schema_client.reset_schema_service().await
-            .map_err(|e| IngestionError::InvalidInput(format!("Schema service reset failed: {}", e)))?;
-        
-        // Close and clear the local database
-        let db_guard = node.get_fold_db().await
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
-        
-        db_guard.close()
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to close database: {}", e)))?;
+        // 1. Get processor
+        let processor = {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_guard = node_mutex.lock().await;
+            OperationProcessor::new(node_guard.clone())
+        };
+
+        // 2. Perform reset operations
+        processor.perform_database_reset(Some(&user_id)).await
+            .map_err(|e| IngestionError::InvalidInput(format!("Database reset failed: {}", e)))?;
+
+        // 3. Invalidate node to force recreation on next request
+        ctx.node_manager.invalidate_node(&user_id);
         
         log::info!("Database and schema service reset completed successfully");
         Ok(())
@@ -380,41 +355,24 @@ impl LambdaContext {
     }
 
     /// Update database configuration
-    pub async fn update_database_config(config: DatabaseConfig) -> Result<(), IngestionError> {
-        let node_mutex = Self::node().await?;
-        let mut node = node_mutex.lock().await;
-        
-        let mut new_node_config = node.config.clone();
-        new_node_config.database = config;
+    pub async fn update_database_config(new_config: DatabaseConfig) -> Result<(), IngestionError> {
+        let user_id = LambdaContext::get_user_id();
+        let ctx = Self::get()?;
 
-        // Save to config file
-        let config_path = std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
-        
-         if let Some(parent) = std::path::Path::new(&config_path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to create config directory: {}", e)))?;
-        }
+        // 1. Get processor
+        let processor = {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_guard = node_mutex.lock().await;
+            crate::datafold_node::OperationProcessor::new(node_guard.clone())
+        };
 
-        let config_json = serde_json::to_string_pretty(&new_node_config)
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to serialize config: {}", e)))?;
-        
-        std::fs::write(&config_path, config_json)
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to write config file: {}", e)))?;
+        // 2. Update configuration
+        processor.update_database_configuration(new_config).await
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to update configuration: {}", e)))?;
 
-        // Close current db
-        if let Ok(db) = node.get_fold_db().await {
-            let _ = db.close();
-        }
+        // 3. Invalidate node to force recreation with new config
+        ctx.node_manager.invalidate_node(&user_id);
         
-        // Create new node
-        match crate::datafold_node::DataFoldNode::new(new_node_config).await {
-            Ok(new_node) => {
-                *node = new_node;
-                Ok(())
-            },
-            Err(e) => {
-                 Err(IngestionError::InvalidInput(format!("Failed to recreate node: {}", e)))
-            }
-        }
+        Ok(())
     }
 }

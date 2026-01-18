@@ -113,8 +113,8 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
 
             // Initialize ProgressStore
             let progress_store: Arc<dyn ProgressStore> = {
-                // Use "default" as the partition key prefix
-                let pk = "default".to_string();
+                // Use "default" as the partition key prefix unless user_id overrides it
+                let pk = dynamo_config.user_id.clone().unwrap_or_else(|| "default".to_string());
                 let table_name = dynamo_config.tables.process.clone();
 
                 log_feature!(

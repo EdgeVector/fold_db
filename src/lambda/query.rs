@@ -14,6 +14,8 @@ use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::context::LambdaContext;
+use crate::datafold_node::OperationProcessor;
+use crate::error::FoldDbError;
 
 impl LambdaContext {
     /// Execute an AI-native index query using semantic search
@@ -29,10 +31,9 @@ impl LambdaContext {
         // Get available schemas
         let schemas = {
             let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
-            let db_guard = node.get_fold_db().await
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
-            db_guard.schema_manager.get_schemas_with_states()
+            let node_guard = node_mutex.lock().await;
+            let processor = OperationProcessor::new(node_guard.clone());
+            processor.list_schemas().await
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schemas: {}", e)))?
         };
 
@@ -101,10 +102,9 @@ impl LambdaContext {
         // Get available schemas
         let schemas = {
             let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
-            let db_guard = node.get_fold_db().await
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
-            db_guard.schema_manager.get_schemas_with_states()
+            let node_guard = node_mutex.lock().await;
+            let processor = OperationProcessor::new(node_guard.clone());
+            processor.list_schemas().await
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schemas: {}", e)))?
         };
 
@@ -114,25 +114,19 @@ impl LambdaContext {
             let query_plan = service.analyze_query(query, &schemas).await
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to analyze query: {}", e)))?;
 
-            // Execute the query directly via DB
-            let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
-            let db = node.get_fold_db().await
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
-            
-            let results = match db.query_executor.query(query_plan.query.clone()).await {
-                Ok(result_map) => {
-                    let records_map = records_from_field_map(&result_map);
-                    records_map
-                        .into_iter()
-                        .map(|(key, record)| serde_json::json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
-                        .collect::<Vec<Value>>()
-                }
+            // Execute the query
+            let processor = {
+                 let node_mutex = Self::get_node(&user_id).await?;
+                 let node_guard = node_mutex.lock().await;
+                 OperationProcessor::new(node_guard.clone())
+            };
+
+            let results = match processor.execute_query_json(query_plan.query.clone()).await {
+                Ok(results) => results,
                 Err(e) => {
                     return Err(IngestionError::InvalidInput(format!("Failed to execute query: {}", e)));
                 }
             };
-            drop(node); // Release lock
 
             // Summarize results with LLM
             let summary = service.summarize_results(query, &results).await.ok();
@@ -201,10 +195,9 @@ impl LambdaContext {
         // Get available schemas
         let schemas = {
             let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
-            let db_guard = node.get_fold_db().await
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
-            db_guard.schema_manager.get_schemas_with_states()
+            let node_guard = node_mutex.lock().await;
+            let processor = OperationProcessor::new(node_guard.clone());
+            processor.list_schemas().await
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schemas: {}", e)))?
         };
 
@@ -240,18 +233,15 @@ impl LambdaContext {
                 if let Some(new_query) = analysis.query {
                     executed_new_query = true;
                     
-                    let node_mutex = Self::get_node(&user_id).await?;
-                    let node = node_mutex.lock().await;
-                    let db = node.get_fold_db().await
-                        .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
-                    
-                    match db.query_executor.query(new_query).await {
-                        Ok(result_map) => {
-                            let records_map = records_from_field_map(&result_map);
-                            combined_results = records_map
-                                .into_iter()
-                                .map(|(key, record)| serde_json::json!({"key": key, "fields": record.fields, "metadata": record.metadata}))
-                                .collect();
+                    let processor = {
+                         let node_mutex = Self::get_node(&user_id).await?;
+                         let node_guard = node_mutex.lock().await;
+                         OperationProcessor::new(node_guard.clone())
+                    };
+
+                    match processor.execute_query_json(new_query).await {
+                        Ok(results) => {
+                             combined_results = results;
                         }
                         Err(e) => {
                             log::warn!("Failed to execute followup query: {}", e);
@@ -309,24 +299,14 @@ impl LambdaContext {
     pub async fn query(query: crate::schema::types::Query, user_id: String) -> Result<Vec<Value>, IngestionError> {
         use crate::lambda::logging::run_with_user;
         run_with_user(&user_id, async {
-            let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
-            let db = node.get_fold_db().await
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+            let processor = {
+                 let node_mutex = Self::get_node(&user_id).await?;
+                 let node_guard = node_mutex.lock().await;
+                 OperationProcessor::new(node_guard.clone())
+            };
             
-            match db.query_executor.query(query).await {
-                Ok(result_map) => {
-                    let records_map = records_from_field_map(&result_map);
-                    let results: Vec<Value> = records_map
-                        .into_iter()
-                        .map(|(key, record)| serde_json::json!({
-                            "key": key,
-                            "fields": record.fields,
-                            "metadata": record.metadata
-                        }))
-                        .collect();
-                    Ok(results)
-                }
+            match processor.execute_query_json(query).await {
+                Ok(results) => Ok(results),
                 Err(e) => Err(IngestionError::InvalidInput(format!("Query failed: {}", e))),
             }
         }).await
@@ -336,12 +316,13 @@ impl LambdaContext {
     pub async fn native_index_search(term: &str, user_id: String) -> Result<Vec<Value>, IngestionError> {
         use crate::lambda::logging::run_with_user;
         run_with_user(&user_id, async {
-            let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
-            let db_guard = node.get_fold_db().await
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+            let processor = {
+                 let node_mutex = Self::get_node(&user_id).await?;
+                 let node_guard = node_mutex.lock().await;
+                 OperationProcessor::new(node_guard.clone())
+            };
             
-              let results = db_guard.native_search_all_classifications(term).await
+            let results = processor.native_index_search(term).await
                 .map_err(|e| IngestionError::InvalidInput(format!("Native index search failed: {}", e)))?;
             
             Ok(results.into_iter()
@@ -353,15 +334,51 @@ impl LambdaContext {
     /// Execute a mutation
     pub async fn execute_mutation(mutation: Mutation, user_id: String) -> Result<String, IngestionError> {
         use crate::lambda::logging::run_with_user;
+        // OperationProcessor expects key_value separate from fields.
+        // But the input Mutation struct already has key_value inside.
+        // We can reconstruct arguments or add a direct mutation method to OperationProcessor?
+        // OperationProcessor has execute_mutation which takes fields, key_value etc.
+        // It also has execute_mutations_batch which takes Vec<Value>!
+        // Or we can add `execute_mutation_object` to OperationProcessor?
+        // Actually, execute_mutations_batch logic inside OperationProcessor converts Value -> Mutation.
+        // But here we have Mutation object.
+        // DataFoldNode::mutate_batch takes Vec<Mutation>.
+        // OperationProcessor::execute_mutation creates a Mutation.
+        
+        // Let's use DataFoldNode wrapper in OperationProcessor if possible?
+        // No, best to use OperationProcessor::execute_mutations_batch but that takes Value.
+        
+        // Let's serialize the mutation to Value and pass it to execute_mutations_batch?
+        // That seems inefficient.
+        
+        // Or better: Let's use OperationProcessor::new(node).node.mutate_batch?
+        // But that defeats the purpose of encapsulation if we just bypass it.
+        
+        // Wait, OperationProcessor is supposed to UNIFY implementation.
+        // Function `execute_mutations_batch` in OperationProcessor takes `Vec<Value>`.
+        // This is primarily for the HTTP API which receives JSON.
+        // The Lambda might receive JSON too? Here input is `Mutation` struct.
+        
+        // I should probably add `execute_mutations_direct` to OperationProcessor that takes `Vec<Mutation>`?
+        // Or just use the node inside processor? Use processor.execute_mutation logic?
+        
+        // Let's look at OperationProcessor again.
+        // It has `execute_mutation` which builds a Mutation object.
+        // It SHOULD have a method to execute prepared mutations.
+        // Currently `DataFoldNode` has `mutate_batch`.
+        
+        // If I strictly want to use OperationProcessor, I should use `execute_mutations_batch` passing JSON values.
+        // `serde_json::to_value(mutation)` works.
+        
         run_with_user(&user_id, async {
-            let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
+            let processor = {
+                 let node_mutex = Self::get_node(&user_id).await?;
+                 let node_guard = node_mutex.lock().await;
+                 OperationProcessor::new(node_guard.clone())
+            };
             
-            node.mutate_batch(vec![mutation]).await
-                .map_err(|e| IngestionError::InvalidInput(format!("Mutation failed: {}", e)))?
-                .into_iter()
-                .next()
-                .ok_or_else(|| IngestionError::InvalidInput("No mutation ID returned".to_string()))
+            processor.execute_mutation_op(mutation).await
+                .map_err(|e| IngestionError::InvalidInput(format!("Mutation failed: {}", e)))
         }).await
     }
 
@@ -369,10 +386,14 @@ impl LambdaContext {
     pub async fn execute_mutations_batch(mutations: Vec<Mutation>, user_id: String) -> Result<Vec<String>, IngestionError> {
          use crate::lambda::logging::run_with_user;
         run_with_user(&user_id, async {
-            let node_mutex = Self::get_node(&user_id).await?;
-            let node = node_mutex.lock().await;
+            let processor = {
+                 let node_mutex = Self::get_node(&user_id).await?;
+                 let node_guard = node_mutex.lock().await;
+                 OperationProcessor::new(node_guard.clone())
+            };
             
-            node.mutate_batch(mutations).await
+            // Serialize mutations
+            processor.execute_mutations_batch_ops(mutations).await
                  .map_err(|e| IngestionError::InvalidInput(format!("Batch mutation failed: {}", e)))
         }).await
     }
@@ -380,128 +401,96 @@ impl LambdaContext {
     /// List all transforms
     pub async fn list_transforms() -> Result<std::collections::HashMap<String, crate::schema::types::Transform>, IngestionError> {
         let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db_guard = node.get_fold_db().await
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
         
-        db_guard.transform_manager.list_transforms()
+        processor.list_transforms().await
              .map_err(|e| IngestionError::InvalidInput(format!("detect: {}", e)))
     }
 
      /// Get transform queue info
     pub async fn get_transform_queue() -> Result<Value, IngestionError> {
         let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
 
-        match db.transform_orchestrator() {
-            Some(orchestrator) => {
-                 match orchestrator.list_queued_transforms() {
-                    Ok(queued) => {
-                         let len = orchestrator.len().unwrap_or(0);
-                        Ok(serde_json::json!({
-                            "length": len,
-                            "queued_transforms": queued
-                        }))
-                    }
-                    Err(e) => Err(IngestionError::InvalidInput(format!("Failed to get transform queue info: {}", e))),
-                 }
-            },
-            None => Err(IngestionError::InvalidInput("Transform orchestrator not available".to_string()))
-        }
+        let (len, queued) = processor.get_transform_queue().await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get transform queue info: {}", e)))?;
+        
+        Ok(serde_json::json!({
+            "length": len,
+            "queued_transforms": queued
+        }))
     }
 
     /// Add transform to queue
     pub async fn add_to_transform_queue(id: &str) -> Result<(), IngestionError> {
          let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
 
-         match db.transform_orchestrator() {
-            Some(orchestrator) => {
-                orchestrator.add_transform(id, "manual_lambda_trigger").await
-                     .map_err(|e| IngestionError::InvalidInput(format!("Failed to add transform to queue: {}", e)))
-            },
-             None => Err(IngestionError::InvalidInput("Transform orchestrator not available".to_string()))
-         }
+        processor.add_to_transform_queue(id, "manual_lambda_trigger").await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to add transform to queue: {}", e)))
     }
 
     /// Get all backfills
     pub async fn get_all_backfills() -> Result<Vec<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>, IngestionError> {
         let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
         
-        Ok(db.get_all_backfills())
+        processor.get_all_backfills().await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get backfills: {}", e)))
     }
 
     /// Get active backfills
     pub async fn get_active_backfills() -> Result<Vec<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>, IngestionError> {
-           let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_mutex = Self::node().await?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
         
-        Ok(db.get_active_backfills())
+        processor.get_active_backfills().await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get active backfills: {}", e)))
     }
 
     /// Get backfill by ID
     pub async fn get_backfill(id: &str) -> Result<Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>, IngestionError> {
         let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
         
-        Ok(db.get_backfill(id))
+        processor.get_backfill(id).await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get backfill: {}", e)))
     }
 
      /// Get backfill statistics
     pub async fn get_backfill_statistics() -> Result<crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatistics, IngestionError> {
-          let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_mutex = Self::node().await?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
 
-        let backfills = db.get_all_backfills();
-        use crate::fold_db_core::infrastructure::backfill_tracker::{BackfillStatistics, BackfillStatus};
-
-        let active_count = backfills.iter().filter(|b| b.status == BackfillStatus::InProgress).count();
-        let completed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Completed).count();
-        let failed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Failed).count();
-
-        Ok(BackfillStatistics {
-            total_backfills: backfills.len(),
-            active_backfills: active_count,
-            completed_backfills: completed_count,
-            failed_backfills: failed_count,
-            total_mutations_expected: backfills.iter().map(|b| b.mutations_expected).sum(),
-            total_mutations_completed: backfills.iter().map(|b| b.mutations_completed).sum(),
-            total_mutations_failed: backfills.iter().map(|b| b.mutations_failed).sum(),
-            total_records_produced: backfills.iter().map(|b| b.records_produced).sum(),
-        })
+        processor.get_backfill_statistics().await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get backfill statistics: {}", e)))
     }
 
     /// Get transform statistics
     pub async fn get_transform_statistics() -> Result<Value, IngestionError> {
          let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
         
-        let stats = db.get_event_statistics();
+        let stats = processor.get_transform_statistics().await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get transform statistics: {}", e)))?;
         Ok(serde_json::to_value(stats).unwrap_or(serde_json::json!({})))
     }
 
     /// Get indexing status
     pub async fn get_indexing_status() -> Result<IndexingStatus, IngestionError> {
          let node_mutex = Self::node().await?;
-        let node = node_mutex.lock().await;
-        let db = node.get_fold_db().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to access database: {}", e)))?;
+        let node_guard = node_mutex.lock().await;
+        let processor = OperationProcessor::new(node_guard.clone());
         
-        Ok(db.get_indexing_status().await)
+        processor.get_indexing_status().await
+             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get indexing status: {}", e)))
     }
 }

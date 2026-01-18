@@ -52,9 +52,25 @@ impl DataFoldNode {
     ///
     /// Now fully async to support storage abstraction!
     pub async fn new(config: NodeConfig) -> FoldDbResult<Self> {
+        // Generate a new keypair for this node immediately
+        let keypair = Ed25519KeyPair::generate().map_err(|e| {
+            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
+        })?;
+        let private_key = keypair.secret_key_base64();
+        let public_key = keypair.public_key_base64();
+
+        // Update config with public key as user_id if not set (for DynamoDB)
+        let mut config = config;
+        #[cfg(feature = "aws-backend")]
+        if let crate::datafold_node::config::DatabaseConfig::DynamoDb(ref mut d) = config.database {
+            if d.user_id.is_none() {
+                d.user_id = Some(public_key.clone());
+            }
+        }
+
         let db = crate::fold_db_core::factory::create_fold_db(&config.database).await?;
 
-        let (node_id, private_key, public_key, security_manager, security_config) =
+        let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
 
         let node = Self {
@@ -114,7 +130,14 @@ impl DataFoldNode {
     /// * `config` - Node configuration
     /// * `db` - Pre-created FoldDB instance
     pub async fn new_with_db(config: NodeConfig, db: Arc<Mutex<FoldDB>>) -> FoldDbResult<Self> {
-        let (node_id, private_key, public_key, security_manager, security_config) =
+        // Generate a new keypair (we can't update DB config as it's already created)
+        let keypair = Ed25519KeyPair::generate().map_err(|e| {
+            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
+        })?;
+        let private_key = keypair.secret_key_base64();
+        let public_key = keypair.public_key_base64();
+
+        let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
 
         let node = Self {
@@ -235,7 +258,7 @@ impl DataFoldNode {
     async fn init_internals(
         config: &NodeConfig,
         db: &Arc<Mutex<FoldDB>>,
-    ) -> FoldDbResult<(String, String, String, Arc<SecurityManager>, SecurityConfig)> {
+    ) -> FoldDbResult<(String, Arc<SecurityManager>, SecurityConfig)> {
         // Retrieve or generate the persistent node_id from fold_db
         let node_id = {
             let guard = db.lock().await;
@@ -244,13 +267,6 @@ impl DataFoldNode {
                 .await
                 .map_err(|e| FoldDbError::Config(format!("Failed to get node_id: {}", e)))?
         };
-
-        // Generate a new keypair for this node
-        let keypair = Ed25519KeyPair::generate().map_err(|e| {
-            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
-        })?;
-        let private_key = keypair.secret_key_base64();
-        let public_key = keypair.public_key_base64();
 
         // Initialize security manager with node configuration
         let mut security_config = config.security_config.clone();
@@ -277,47 +293,13 @@ impl DataFoldNode {
 
         Ok((
             node_id,
-            private_key,
-            public_key,
             security_manager,
             security_config,
         ))
     }
 }
 
-impl Drop for DataFoldNode {
-    fn drop(&mut self) {
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "DataFoldNode being dropped, closing database..."
-        );
 
-        // Try to close the database gracefully
-        if let Ok(db) = self.db.try_lock() {
-            if let Err(e) = db.close() {
-                log_feature!(
-                    LogFeature::Database,
-                    error,
-                    "Failed to close database during node drop: {}",
-                    e
-                );
-            } else {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Database closed successfully during node drop"
-                );
-            }
-        } else {
-            log_feature!(
-                LogFeature::Database,
-                warn,
-                "Could not acquire database lock during node drop"
-            );
-        }
-    }
-}
 
 impl DataFoldNode {
     /// Gets the node's private key.
