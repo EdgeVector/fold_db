@@ -38,7 +38,7 @@ impl StructuredOutput {
                         .create(true)
                         .append(true)
                         .open(path)
-                        .map_err(LoggingError::Io)?
+                        .map_err(LoggingError::Io)?,
                 )
             } else {
                 None
@@ -47,7 +47,7 @@ impl StructuredOutput {
             None
         };
 
-        Ok(Self { 
+        Ok(Self {
             config: config.clone(),
             file: Mutex::new(file),
         })
@@ -57,7 +57,7 @@ impl StructuredOutput {
         if !self.config.enabled {
             return false;
         }
-        
+
         let filter = match self.config.level.as_str() {
             "TRACE" => LevelFilter::Trace,
             "DEBUG" => LevelFilter::Debug,
@@ -97,9 +97,9 @@ impl log::Log for StructuredOutput {
                     if let Some(file) = file_guard.as_mut() {
                         let _ = writeln!(file, "{}", json);
                     } else if self.config.path.is_none() {
-                        // If enabled but no file path, perhaps write to stdout/stderr? 
-                        // But ConsoleOutput already handles stdout. 
-                        // We will just do nothing if no file is configured, 
+                        // If enabled but no file path, perhaps write to stdout/stderr?
+                        // But ConsoleOutput already handles stdout.
+                        // We will just do nothing if no file is configured,
                         // unless requirements say otherwise.
                         // Previous code had: println!("{}", json);
                         // Let's keep it if no file path is specified but it is enabled.
@@ -111,7 +111,7 @@ impl log::Log for StructuredOutput {
     }
 
     fn flush(&self) {
-         if let Ok(mut file_guard) = self.file.lock() {
+        if let Ok(mut file_guard) = self.file.lock() {
             if let Some(file) = file_guard.as_mut() {
                 let _ = file.flush();
             }

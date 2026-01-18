@@ -70,20 +70,18 @@ mod tests {
         let context = QueryContext {
             original_query: "test query".to_string(),
             query_results: vec![serde_json::json!({"key": "value"})],
-            conversation_history: vec![
-                ConversationMessage {
-                    role: "user".to_string(),
-                    content: "Hello".to_string(),
-                    timestamp: 1234567890,
-                }
-            ],
+            conversation_history: vec![ConversationMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+                timestamp: 1234567890,
+            }],
             query_plan: None,
         };
-        
+
         // Should serialize and deserialize without errors
         let json = serde_json::to_string(&context).unwrap();
         let deserialized: QueryContext = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.original_query, "test query");
         assert_eq!(deserialized.conversation_history.len(), 1);
         assert_eq!(deserialized.conversation_history[0].role, "user");
@@ -97,15 +95,15 @@ mod tests {
             conversation_history: vec![],
             query_plan: None,
         };
-        
+
         let request = FollowupRequest {
             context,
             question: "follow-up question".to_string(),
         };
-        
+
         let json = serde_json::to_string(&request).unwrap();
         let deserialized: FollowupRequest = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.question, "follow-up question");
         assert_eq!(deserialized.context.original_query, "original");
     }
@@ -118,13 +116,13 @@ mod tests {
             conversation_history: vec![],
             query_plan: None,
         };
-        
+
         let response = AIQueryResponse {
             ai_interpretation: "AI response".to_string(),
             raw_results: vec![serde_json::json!({"test": "data"})],
             context,
         };
-        
+
         assert_eq!(response.ai_interpretation, "AI response");
         assert_eq!(response.raw_results.len(), 1);
         assert_eq!(response.context.original_query, "test");
@@ -138,21 +136,21 @@ mod tests {
             filter_type: Some("HashKey".to_string()),
             reasoning: "Test reasoning".to_string(),
         };
-        
+
         let context = QueryContext {
             original_query: "test".to_string(),
             query_results: vec![],
             conversation_history: vec![],
             query_plan: Some(query_plan.clone()),
         };
-        
+
         let response = CompleteQueryResponse {
             query_plan,
             results: vec![],
             summary: Some("Test summary".to_string()),
             context,
         };
-        
+
         assert_eq!(response.query_plan.schema_name, "TestSchema");
         assert_eq!(response.summary, Some("Test summary".to_string()));
         assert!(response.context.query_plan.is_some());
@@ -165,7 +163,7 @@ mod tests {
             content: "response".to_string(),
             timestamp: 1700000000,
         };
-        
+
         assert_eq!(msg.timestamp, 1700000000);
         assert_eq!(msg.role, "assistant");
     }
@@ -178,10 +176,10 @@ mod tests {
             filter_type: Some("RangePrefix".to_string()),
             reasoning: "Using BlogPost schema for efficiency".to_string(),
         };
-        
+
         let json = serde_json::to_string(&plan).unwrap();
         let deserialized: QueryPlanInfo = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.schema_name, "BlogPost");
         assert_eq!(deserialized.fields.len(), 2);
         assert_eq!(deserialized.filter_type, Some("RangePrefix".to_string()));
@@ -206,13 +204,13 @@ mod tests {
             ],
             query_plan: None,
         };
-        
+
         let response = FollowupResponse {
             answer: "Here's the answer".to_string(),
             executed_new_query: true,
             context,
         };
-        
+
         assert_eq!(response.executed_new_query, true);
         assert_eq!(response.context.conversation_history.len(), 2);
         assert_eq!(response.context.query_results.len(), 1);

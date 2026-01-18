@@ -1,7 +1,7 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
@@ -131,7 +131,13 @@ macro_rules! impl_field {
                 &mut self,
                 db_ops: &std::sync::Arc<$crate::db_operations::DbOperations>,
                 filter: Option<$crate::schema::types::field::HashRangeFilter>,
-            ) -> Result<std::collections::HashMap<$crate::schema::types::key_value::KeyValue, $crate::schema::types::field::FieldValue>, $crate::schema::types::SchemaError> {
+            ) -> Result<
+                std::collections::HashMap<
+                    $crate::schema::types::key_value::KeyValue,
+                    $crate::schema::types::field::FieldValue,
+                >,
+                $crate::schema::types::SchemaError,
+            > {
                 log::error!("resolve_value not implemented for {}", stringify!($t));
                 Err($crate::schema::types::SchemaError::InvalidField(format!(
                     "resolve_value not implemented for {}",

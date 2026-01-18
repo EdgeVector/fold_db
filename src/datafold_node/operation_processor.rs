@@ -3,22 +3,20 @@ use crate::schema::types::{KeyValue, Mutation, Query};
 use serde_json::Value;
 use std::collections::HashMap;
 
-
 use super::response_types::QueryResultMap;
 use super::DataFoldNode;
-use crate::schema::types::operations::{MutationType, Operation};
-use crate::schema::{SchemaState, SchemaWithState};
-use crate::fold_db_core::infrastructure::backfill_tracker::{BackfillInfo, BackfillStatistics, BackfillStatus};
-use crate::fold_db_core::orchestration::IndexingStatus;
-use crate::db_operations::IndexResult;
-use crate::schema::types::Transform;
 use crate::datafold_node::config::DatabaseConfig;
+use crate::datafold_node::NodeConfig;
+use crate::db_operations::IndexResult;
+use crate::fold_db_core::infrastructure::backfill_tracker::{
+    BackfillInfo, BackfillStatistics, BackfillStatus,
+};
+use crate::fold_db_core::orchestration::IndexingStatus;
+use crate::schema::types::operations::{MutationType, Operation};
+use crate::schema::types::Transform;
+use crate::schema::{SchemaState, SchemaWithState};
 use std::fs;
 use std::io::Write;
-use crate::datafold_node::NodeConfig;
-
-
-
 
 /// Centralized operation processor that handles all operation types consistently.
 ///
@@ -36,7 +34,8 @@ impl OperationProcessor {
 
     /// Executes a query and returns raw structured results, not JSON.
     pub async fn execute_query_map(&self, query: Query) -> FoldDbResult<QueryResultMap> {
-        let db = self.node
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
@@ -49,24 +48,32 @@ impl OperationProcessor {
     pub async fn execute_query_json(&self, query: Query) -> FoldDbResult<Vec<Value>> {
         let result_map = self.execute_query_map(query).await?;
         let records_map = crate::fold_db_core::query::records_from_field_map(&result_map);
-        
+
         let results: Vec<Value> = records_map
             .into_iter()
-            .map(|(key, record)| serde_json::json!({
-                "key": key,
-                "fields": record.fields,
-                "metadata": record.metadata
-            }))
+            .map(|(key, record)| {
+                serde_json::json!({
+                    "key": key,
+                    "fields": record.fields,
+                    "metadata": record.metadata
+                })
+            })
             .collect();
-            
+
         Ok(results)
     }
 
     // --- Logging Operations ---
 
     /// List logs with optional filtering.
-    pub async fn list_logs(&self, since: Option<i64>, limit: Option<usize>) -> Vec<crate::logging::core::LogEntry> {
-        crate::logging::LoggingSystem::query_logs(limit, since).await.unwrap_or_default()
+    pub async fn list_logs(
+        &self,
+        since: Option<i64>,
+        limit: Option<usize>,
+    ) -> Vec<crate::logging::core::LogEntry> {
+        crate::logging::LoggingSystem::query_logs(limit, since)
+            .await
+            .unwrap_or_default()
     }
 
     /// Get current logging configuration.
@@ -98,11 +105,12 @@ impl OperationProcessor {
         let schema_name = mutation.schema_name.clone();
         log::info!("🔄 Starting mutation execution for schema: {}", schema_name);
 
-        let mut db = self.node
+        let mut db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-            
+
         let mut ids = db
             .mutation_manager
             .write_mutations_batch_async(vec![mutation])
@@ -157,7 +165,8 @@ impl OperationProcessor {
         &self,
         mutations: Vec<Mutation>,
     ) -> FoldDbResult<Vec<String>> {
-         let mut db = self.node
+        let mut db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
@@ -237,10 +246,11 @@ impl OperationProcessor {
     pub async fn native_index_search(&self, term: &str) -> FoldDbResult<Vec<IndexResult>> {
         let term = term.trim();
         if term.is_empty() {
-             return Err(FoldDbError::Config("Term cannot be empty".to_string()));
+            return Err(FoldDbError::Config("Term cannot be empty".to_string()));
         }
 
-        let db = self.node
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
@@ -252,11 +262,12 @@ impl OperationProcessor {
 
     /// List all schemas with their states.
     pub async fn list_schemas(&self) -> FoldDbResult<Vec<SchemaWithState>> {
-        let db = self.node
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-        
+
         db.schema_manager
             .get_schemas_with_states()
             .map_err(|e| FoldDbError::Database(e.to_string()))
@@ -264,53 +275,62 @@ impl OperationProcessor {
 
     /// Get a specific schema by name with its state.
     pub async fn get_schema(&self, name: &str) -> FoldDbResult<Option<SchemaWithState>> {
-        let db = self.node
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-        
+
         let mgr = &db.schema_manager;
-        match mgr.get_schema(name).map_err(|e| FoldDbError::Database(e.to_string()))? {
+        match mgr
+            .get_schema(name)
+            .map_err(|e| FoldDbError::Database(e.to_string()))?
+        {
             Some(schema) => {
-                 let states = mgr.get_schema_states().map_err(|e| FoldDbError::Database(e.to_string()))?;
-                 let state = states.get(name).copied().unwrap_or_default();
-                 Ok(Some(SchemaWithState::new(schema, state)))
+                let states = mgr
+                    .get_schema_states()
+                    .map_err(|e| FoldDbError::Database(e.to_string()))?;
+                let state = states.get(name).copied().unwrap_or_default();
+                Ok(Some(SchemaWithState::new(schema, state)))
             }
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
     /// Approve a schema.
     pub async fn approve_schema(&self, schema_name: &str) -> FoldDbResult<Option<String>> {
-        let db = self.node
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-        
+
         let schema_mgr = &db.schema_manager;
         let transform_mgr = &db.transform_manager;
 
-         // Check if schema is already approved
-         let states = schema_mgr.get_schema_states().map_err(|e| FoldDbError::Database(e.to_string()))?;
-         let current_state = states.get(schema_name).copied().unwrap_or_default();
-         
-         if current_state == SchemaState::Approved {
-             return Ok(None);
-         }
+        // Check if schema is already approved
+        let states = schema_mgr
+            .get_schema_states()
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+        let current_state = states.get(schema_name).copied().unwrap_or_default();
 
-         let is_transform = transform_mgr.transform_exists(schema_name).unwrap_or(false);
-         
-         // Logic to generate backfill hash needs to be moved here or reused. 
-         // For now, I will create a private helper or copy the logic since it was in the route handler.
-         // But `generate_backfill_hash_for_transform` was in `src/server/routes/schema.rs`. 
-         // Integrating it here.
-         let backfill_hash = if is_transform {
-             Self::generate_backfill_hash_for_transform(transform_mgr, schema_name).await
-         } else {
-             None
-         };
+        if current_state == SchemaState::Approved {
+            return Ok(None);
+        }
 
-         schema_mgr
+        let is_transform = transform_mgr.transform_exists(schema_name).unwrap_or(false);
+
+        // Logic to generate backfill hash needs to be moved here or reused.
+        // For now, I will create a private helper or copy the logic since it was in the route handler.
+        // But `generate_backfill_hash_for_transform` was in `src/server/routes/schema.rs`.
+        // Integrating it here.
+        let backfill_hash = if is_transform {
+            Self::generate_backfill_hash_for_transform(transform_mgr, schema_name).await
+        } else {
+            None
+        };
+
+        schema_mgr
             .set_schema_state_with_backfill(
                 schema_name,
                 SchemaState::Approved,
@@ -318,17 +338,18 @@ impl OperationProcessor {
             )
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-        
+
         Ok(backfill_hash)
     }
 
     /// Block a schema.
     pub async fn block_schema(&self, schema_name: &str) -> FoldDbResult<()> {
-        let db = self.node
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-        
+
         db.schema_manager
             .block_schema(schema_name)
             .await
@@ -341,7 +362,9 @@ impl OperationProcessor {
         // Need to drop lock between fetch and load to avoid holding it too long?
         // The original implementation dropped it.
         let schemas = {
-             self.node.fetch_available_schemas().await
+            self.node
+                .fetch_available_schemas()
+                .await
                 .map_err(|e| FoldDbError::Database(e.to_string()))?
         };
 
@@ -350,139 +373,172 @@ impl OperationProcessor {
         let mut failed_schemas = Vec::new();
 
         for schema in schemas {
-             let schema_name = schema.name.clone();
-             let result = {
-                 let db = self.node.get_fold_db()
+            let schema_name = schema.name.clone();
+            let result = {
+                let db = self
+                    .node
+                    .get_fold_db()
                     .await
                     .map_err(|e| FoldDbError::Database(e.to_string()))?;
-                 
-                 db.schema_manager.load_schema_internal(schema)
+
+                db.schema_manager
+                    .load_schema_internal(schema)
                     .await
                     .map_err(|e| FoldDbError::Database(e.to_string()))
-             };
+            };
 
-             match result {
-                 Ok(_) => loaded_count += 1,
-                 Err(e) => {
-                     log::error!("Failed to load schema {}: {}", schema_name, e);
-                     failed_schemas.push(schema_name);
-                 }
-             }
+            match result {
+                Ok(_) => loaded_count += 1,
+                Err(e) => {
+                    log::error!("Failed to load schema {}: {}", schema_name, e);
+                    failed_schemas.push(schema_name);
+                }
+            }
         }
-        
+
         Ok((schema_count, loaded_count, failed_schemas))
     }
 
     /// List transforms.
     pub async fn list_transforms(&self) -> FoldDbResult<HashMap<String, Transform>> {
-         let db = self.node
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-         
-         db.transform_manager.list_transforms()
+
+        db.transform_manager
+            .list_transforms()
             .map_err(|e| FoldDbError::Database(e.to_string()))
     }
 
     /// Add transform to queue.
-    pub async fn add_to_transform_queue(&self, transform_id: &str, trigger: &str) -> FoldDbResult<()> {
-         let db = self.node
+    pub async fn add_to_transform_queue(
+        &self,
+        transform_id: &str,
+        trigger: &str,
+    ) -> FoldDbResult<()> {
+        let db = self
+            .node
             .get_fold_db()
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?;
-        
-         if let Some(orchestrator) = db.transform_orchestrator() {
-             orchestrator.add_transform(transform_id, trigger)
+
+        if let Some(orchestrator) = db.transform_orchestrator() {
+            orchestrator
+                .add_transform(transform_id, trigger)
                 .await
                 .map_err(|e| FoldDbError::Config(e.to_string()))
-         } else {
-             Err(FoldDbError::Config("Transform orchestrator not available".to_string()))
-         }
+        } else {
+            Err(FoldDbError::Config(
+                "Transform orchestrator not available".to_string(),
+            ))
+        }
     }
 
     /// Get transform queue info.
     /// Returns (length, queued_transforms).
     pub async fn get_transform_queue(&self) -> FoldDbResult<(usize, Vec<String>)> {
-        let db = self.node
-           .get_fold_db()
-           .await
-           .map_err(|e| FoldDbError::Database(e.to_string()))?;
-       
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+
         if let Some(orchestrator) = db.transform_orchestrator() {
-            let queued = orchestrator.list_queued_transforms()
-               .map_err(|e| FoldDbError::Config(e.to_string()))?;
+            let queued = orchestrator
+                .list_queued_transforms()
+                .map_err(|e| FoldDbError::Config(e.to_string()))?;
             let len = orchestrator.len().unwrap_or(0);
             Ok((len, queued))
         } else {
-            Err(FoldDbError::Config("Transform orchestrator not available".to_string()))
+            Err(FoldDbError::Config(
+                "Transform orchestrator not available".to_string(),
+            ))
         }
-   }
+    }
 
-   /// Get all backfills.
-   pub async fn get_all_backfills(&self) -> FoldDbResult<Vec<BackfillInfo>> {
-        let db = self.node
-           .get_fold_db()
-           .await
-           .map_err(|e| FoldDbError::Database(e.to_string()))?;
+    /// Get all backfills.
+    pub async fn get_all_backfills(&self) -> FoldDbResult<Vec<BackfillInfo>> {
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
         Ok(db.get_all_backfills())
-   }
+    }
 
-   /// Get active backfills.
-   pub async fn get_active_backfills(&self) -> FoldDbResult<Vec<BackfillInfo>> {
-        let db = self.node
-           .get_fold_db()
-           .await
-           .map_err(|e| FoldDbError::Database(e.to_string()))?;
+    /// Get active backfills.
+    pub async fn get_active_backfills(&self) -> FoldDbResult<Vec<BackfillInfo>> {
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
         Ok(db.get_active_backfills())
-   }
+    }
 
-   /// Get backfill by ID/Hash.
-   pub async fn get_backfill(&self, id: &str) -> FoldDbResult<Option<BackfillInfo>> {
+    /// Get backfill by ID/Hash.
+    pub async fn get_backfill(&self, id: &str) -> FoldDbResult<Option<BackfillInfo>> {
         // Access via get_fold_db is standardized
-        let db = self.node
-           .get_fold_db()
-           .await
-           .map_err(|e| FoldDbError::Database(e.to_string()))?;
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
         Ok(db.get_backfill(id))
-   }
-   
-   /// Get backfill statistics.
-   pub async fn get_backfill_statistics(&self) -> FoldDbResult<BackfillStatistics> {
-         let backfills = self.get_all_backfills().await?;
-         
-         let active_count = backfills.iter().filter(|b| b.status == BackfillStatus::InProgress).count();
-         let completed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Completed).count();
-         let failed_count = backfills.iter().filter(|b| b.status == BackfillStatus::Failed).count();
+    }
 
-         Ok(BackfillStatistics {
-             total_backfills: backfills.len(),
-             active_backfills: active_count,
-             completed_backfills: completed_count,
-             failed_backfills: failed_count,
-             total_mutations_expected: backfills.iter().map(|b| b.mutations_expected).sum(),
-             total_mutations_completed: backfills.iter().map(|b| b.mutations_completed).sum(),
-             total_mutations_failed: backfills.iter().map(|b| b.mutations_failed).sum(),
-             total_records_produced: backfills.iter().map(|b| b.records_produced).sum(),
-         })
-   }
+    /// Get backfill statistics.
+    pub async fn get_backfill_statistics(&self) -> FoldDbResult<BackfillStatistics> {
+        let backfills = self.get_all_backfills().await?;
 
-   /// Get event/transform statistics.
-   pub async fn get_transform_statistics(&self) -> FoldDbResult<crate::fold_db_core::infrastructure::event_statistics::EventStatistics> {
-        let db = self.node
-           .get_fold_db()
-           .await
-           .map_err(|e| FoldDbError::Database(e.to_string()))?;
+        let active_count = backfills
+            .iter()
+            .filter(|b| b.status == BackfillStatus::InProgress)
+            .count();
+        let completed_count = backfills
+            .iter()
+            .filter(|b| b.status == BackfillStatus::Completed)
+            .count();
+        let failed_count = backfills
+            .iter()
+            .filter(|b| b.status == BackfillStatus::Failed)
+            .count();
+
+        Ok(BackfillStatistics {
+            total_backfills: backfills.len(),
+            active_backfills: active_count,
+            completed_backfills: completed_count,
+            failed_backfills: failed_count,
+            total_mutations_expected: backfills.iter().map(|b| b.mutations_expected).sum(),
+            total_mutations_completed: backfills.iter().map(|b| b.mutations_completed).sum(),
+            total_mutations_failed: backfills.iter().map(|b| b.mutations_failed).sum(),
+            total_records_produced: backfills.iter().map(|b| b.records_produced).sum(),
+        })
+    }
+
+    /// Get event/transform statistics.
+    pub async fn get_transform_statistics(
+        &self,
+    ) -> FoldDbResult<crate::fold_db_core::infrastructure::event_statistics::EventStatistics> {
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
         Ok(db.get_event_statistics())
-   }
+    }
 
-   /// Get indexing status.
-   pub async fn get_indexing_status(&self) -> FoldDbResult<IndexingStatus> {
-        let db = self.node
-           .get_fold_db()
-           .await
-           .map_err(|e| FoldDbError::Database(e.to_string()))?;
+    /// Get indexing status.
+    pub async fn get_indexing_status(&self) -> FoldDbResult<IndexingStatus> {
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
         Ok(db.get_indexing_status().await)
-   }
+    }
 
     /// Get the node's private key
     pub fn get_node_private_key(&self) -> String {
@@ -497,24 +553,27 @@ impl OperationProcessor {
     /// Get the system public key
     pub fn get_system_public_key(&self) -> FoldDbResult<Option<crate::security::PublicKeyInfo>> {
         let security_manager = self.node.get_security_manager();
-        security_manager.get_system_public_key()
+        security_manager
+            .get_system_public_key()
             .map_err(|e| FoldDbError::Other(e.to_string()))
     }
 
     /// Reset schema service
     pub async fn reset_schema_service(&self) -> FoldDbResult<()> {
         let schema_client = self.node.get_schema_client();
-        schema_client.reset_schema_service().await
-             .map_err(|e| FoldDbError::Other(format!("Schema service reset failed: {}", e)))
+        schema_client
+            .reset_schema_service()
+            .await
+            .map_err(|e| FoldDbError::Other(format!("Schema service reset failed: {}", e)))
     }
-    
+
     /// Get database configuration
     pub fn get_database_config(&self) -> DatabaseConfig {
         self.node.config.database.clone()
     }
 
-   // Helper for approve_schema
-   async fn generate_backfill_hash_for_transform(
+    // Helper for approve_schema
+    async fn generate_backfill_hash_for_transform(
         transform_manager: &crate::transform::manager::TransformManager,
         schema_name: &str,
     ) -> Option<String> {
@@ -581,13 +640,19 @@ impl OperationProcessor {
 
     /// Reset the database (destructive operation).
     /// Handles schema service reset, closing DB, and clearing storage (Local or DynamoDB).
-    pub async fn perform_database_reset(&self, user_id_override: Option<&str>) -> FoldDbResult<()> {
+    pub async fn perform_database_reset(
+        &self,
+        #[allow(unused_variables)] user_id_override: Option<&str>,
+    ) -> FoldDbResult<()> {
         // 1. Reset Schema Service
         if let Err(e) = self.reset_schema_service().await {
-             log::warn!("Failed to reset schema service during database reset: {}", e);
-             // Continue
+            log::warn!(
+                "Failed to reset schema service during database reset: {}",
+                e
+            );
+            // Continue
         } else {
-             log::info!("Schema service database reset successfully");
+            log::info!("Schema service database reset successfully");
         }
 
         // 2. Get config and path before closing
@@ -618,7 +683,10 @@ impl OperationProcessor {
                     .or_else(|| dynamo_config.user_id.clone())
                     .unwrap_or_else(|| self.node.get_node_public_key().to_string());
 
-                log::info!("Resetting database for user_id={} using scan-free DynamoDbResetManager", uid);
+                log::info!(
+                    "Resetting database for user_id={} using scan-free DynamoDbResetManager",
+                    uid
+                );
 
                 let manager = crate::storage::reset_manager::DynamoDbResetManager::new(
                     client.clone(),
@@ -626,8 +694,11 @@ impl OperationProcessor {
                 );
 
                 if let Err(e) = manager.reset_user(&uid).await {
-                     log::error!("Failed to reset user data: {}", e);
-                     return Err(FoldDbError::Other(format!("Failed to reset user data: {}", e)));
+                    log::error!("Failed to reset user data: {}", e);
+                    return Err(FoldDbError::Other(format!(
+                        "Failed to reset user data: {}",
+                        e
+                    )));
                 }
             }
             DatabaseConfig::Local { .. } => {
@@ -639,40 +710,46 @@ impl OperationProcessor {
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Update database configuration and write to disk.
     /// Returns the new NodeConfig so the caller can recreate the node.
-    pub async fn update_database_configuration(&self, new_db_config: DatabaseConfig) -> FoldDbResult<NodeConfig> {
+    pub async fn update_database_configuration(
+        &self,
+        new_db_config: DatabaseConfig,
+    ) -> FoldDbResult<NodeConfig> {
         let mut config = self.node.config.clone();
         config.database = new_db_config;
 
-        let config_path = std::env::var("NODE_CONFIG")
-            .unwrap_or_else(|_| "config/node_config.json".to_string());
+        let config_path =
+            std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
 
         // Ensure config directory exists
         if let Some(parent) = std::path::Path::new(&config_path).parent() {
             if let Err(e) = fs::create_dir_all(parent) {
-                return Err(FoldDbError::Other(format!("Failed to create config directory: {}", e)));
+                return Err(FoldDbError::Other(format!(
+                    "Failed to create config directory: {}",
+                    e
+                )));
             }
         }
 
         // Serialize and write config
         let config_json = serde_json::to_string_pretty(&config)
             .map_err(|e| FoldDbError::Config(format!("Failed to serialize config: {}", e)))?;
-            
+
         let mut file = fs::File::create(&config_path)
             .map_err(|e| FoldDbError::Other(format!("Failed to create config file: {}", e)))?;
-            
+
         file.write_all(config_json.as_bytes())
             .map_err(|e| FoldDbError::Other(format!("Failed to write config file: {}", e)))?;
 
         // Close current DB (best effort)
-         if let Ok(db) = self.node.get_fold_db().await {
+        if let Ok(db) = self.node.get_fold_db().await {
             if let Err(e) = db.close() {
-                 log::warn!("Failed to close database during config update: {}", e);
+                log::warn!("Failed to close database during config update: {}", e);
             }
         }
 
@@ -695,12 +772,12 @@ mod tests {
         // without needing to instantiate a full DataFoldNode (which is complex).
         // It relies on the fact that if this compiles, the methods exist.
         async fn check_methods(processor: &crate::datafold_node::OperationProcessor) {
-             let _ = processor.list_logs(None, None).await;
-             let _ = processor.get_log_config().await;
-             let _ = processor.get_log_features().await;
+            let _ = processor.list_logs(None, None).await;
+            let _ = processor.get_log_config().await;
+            let _ = processor.get_log_features().await;
         }
         // check_methods is defined but not called, which satisfies the compiler checking the body.
-        // To strictly avoid "unused" warnings we might want to use it in a phantom way? 
+        // To strictly avoid "unused" warnings we might want to use it in a phantom way?
         // But the original code was: let _ = |...| ...
         // We can just define it. The compiler checks the body of the function.
         let _ = check_methods;

@@ -127,7 +127,11 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
                     table_name
                 );
 
-                Arc::new(DynamoDbProgressStore::new(client, table_name, user_id.clone()))
+                Arc::new(DynamoDbProgressStore::new(
+                    client,
+                    table_name,
+                    user_id.clone(),
+                ))
             };
 
             // Use the new constructor that accepts components

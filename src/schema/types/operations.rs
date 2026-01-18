@@ -1,6 +1,6 @@
+use crate::schema::types::field::HashRangeFilter;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
-use crate::schema::types::field::HashRangeFilter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -12,10 +12,7 @@ pub struct Query {
 
 impl Query {
     #[must_use]
-    pub fn new(
-        schema_name: String,
-        fields: Vec<String>,
-    ) -> Self {
+    pub fn new(schema_name: String, fields: Vec<String>) -> Self {
         Self {
             schema_name,
             fields,
@@ -98,16 +95,18 @@ mod tests {
 
         // Serialize to JSON
         let json = serde_json::to_value(&operation).unwrap();
-        
+
         // Verify source_file_name is in the JSON
         assert_eq!(json["source_file_name"], json!("test_file.json"));
 
         // Deserialize back
         let deserialized: Operation = serde_json::from_value(json).unwrap();
-        
+
         // Verify source_file_name is preserved
         match deserialized {
-            Operation::Mutation { source_file_name, .. } => {
+            Operation::Mutation {
+                source_file_name, ..
+            } => {
                 assert_eq!(source_file_name, Some("test_file.json".to_string()));
             }
         }
@@ -125,20 +124,20 @@ mod tests {
 
         // Serialize to JSON
         let json = serde_json::to_value(&operation).unwrap();
-        
+
         // Verify source_file_name is NOT in the JSON (due to skip_serializing_if)
         assert!(json.get("source_file_name").is_none());
 
         // Deserialize back
         let deserialized: Operation = serde_json::from_value(json).unwrap();
-        
+
         // Verify source_file_name is None
         match deserialized {
-            Operation::Mutation { source_file_name, .. } => {
+            Operation::Mutation {
+                source_file_name, ..
+            } => {
                 assert_eq!(source_file_name, None);
             }
         }
     }
 }
-
-

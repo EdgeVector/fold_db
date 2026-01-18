@@ -36,7 +36,6 @@ pub mod persistence;
 pub mod schema_types;
 pub mod types;
 
-
 // Public re-exports
 pub use core::*;
 pub use duplicate_detection::SchemaDuplicateDetector;

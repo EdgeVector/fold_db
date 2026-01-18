@@ -188,7 +188,7 @@ impl AsyncMessageBus {
         for subscriber in subscribers {
             // Use send().await to handle backpressure (wait for capacity)
             // This prevents dropping events when subscribers are slow (e.g. indexing)
-            if let Err(_) = subscriber.send(event.clone()).await {
+            if (subscriber.send(event.clone()).await).is_err() {
                 // Channel closed
                 failed_sends += 1;
             }

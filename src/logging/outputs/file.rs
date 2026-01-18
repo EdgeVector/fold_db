@@ -23,13 +23,13 @@ impl FileOutput {
                     .create(true)
                     .append(true)
                     .open(path)
-                    .map_err(LoggingError::Io)?
+                    .map_err(LoggingError::Io)?,
             )
         } else {
             None
         };
 
-        Ok(Self { 
+        Ok(Self {
             config: config.clone(),
             file: Mutex::new(file),
         })

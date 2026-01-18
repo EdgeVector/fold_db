@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::transform::chain_parser::types::{ChainOperation, ParsedChain};
-use crate::transform::result_types::{ExecutionResult, IndexEntry};
 use crate::transform::iterator_stack_typed::engine::TypedEngine;
 use crate::transform::iterator_stack_typed::types::{IteratorSpec, TypedInput};
+use crate::transform::result_types::{ExecutionResult, IndexEntry};
 
 /// Execute multiple chains against typed input and produce a legacy ExecutionResult
 pub fn execute_fields_typed(
@@ -14,7 +14,8 @@ pub fn execute_fields_typed(
 ) -> ExecutionResult {
     let engine = TypedEngine::new();
     let mut index_entries: HashMap<String, Vec<IndexEntry>> = HashMap::new();
-    let mut warnings: HashMap<String, Vec<crate::transform::result_types::ExecutionWarning>> = HashMap::new();
+    let mut warnings: HashMap<String, Vec<crate::transform::result_types::ExecutionWarning>> =
+        HashMap::new();
 
     for (field_name, chain) in chains.iter() {
         let specs = map_chain_to_specs(chain);
@@ -37,7 +38,10 @@ pub fn execute_fields_typed(
             let value = if let Some(text) = e.value_text {
                 Value::String(text)
             } else {
-                value_lookup.get(&e.atom_uuid).cloned().unwrap_or(Value::Null)
+                value_lookup
+                    .get(&e.atom_uuid)
+                    .cloned()
+                    .unwrap_or(Value::Null)
             };
             entries.push(IndexEntry {
                 row_id: e.row_id,
@@ -51,26 +55,31 @@ pub fn execute_fields_typed(
         warnings.insert(field_name.clone(), Vec::new());
     }
 
-    ExecutionResult { index_entries, warnings }
+    ExecutionResult {
+        index_entries,
+        warnings,
+    }
 }
 
 pub fn map_chain_to_specs(chain: &ParsedChain) -> Vec<IteratorSpec> {
     let target_field = target_field_from_chain(chain);
     let mut specs = Vec::new();
-    specs.push(IteratorSpec::Schema { field_name: target_field.clone() });
+    specs.push(IteratorSpec::Schema {
+        field_name: target_field.clone(),
+    });
 
     // Append functions from the chain (both iterators and reducers)
     for op in &chain.operations {
         if let ChainOperation::Function { name, params } = op {
             let reg = crate::transform::functions::registry();
             if reg.is_iterator(name) {
-                specs.push(IteratorSpec::IteratorFunction { 
+                specs.push(IteratorSpec::IteratorFunction {
                     name: name.clone(),
                     params: params.clone(),
                     field_name: target_field.clone(),
                 });
             } else if reg.is_reducer(name) {
-                specs.push(IteratorSpec::ReducerFunction { 
+                specs.push(IteratorSpec::ReducerFunction {
                     name: name.clone(),
                     params: params.clone(),
                     field_name: target_field.clone(),
@@ -99,5 +108,3 @@ fn target_field_from_chain(chain: &ParsedChain) -> String {
         _ => chain.branch.clone(),
     }
 }
-
-

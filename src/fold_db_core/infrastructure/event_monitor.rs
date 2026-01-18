@@ -165,7 +165,7 @@ impl EventMonitor {
         // TransformRegistrationRequest
         let mut rx = message_bus.subscribe("TransformRegistrationRequest").await;
         tokio::spawn(async move {
-            while let Some(_) = rx.recv().await {
+            while (rx.recv().await).is_some() {
                 // Nothing to do but consume
             }
         });

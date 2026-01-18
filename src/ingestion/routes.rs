@@ -79,7 +79,7 @@ pub async fn process_json(
         match service
             .process_json_with_node_and_progress(
                 request_data,
-                &*node_guard,
+                &node_guard,
                 &progress_service,
                 progress_id_clone.clone(),
             )

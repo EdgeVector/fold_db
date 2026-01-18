@@ -102,7 +102,20 @@ pub async fn retry_batch_operation<F>(
     initial_requests: Vec<aws_sdk_dynamodb::types::WriteRequest>,
 ) -> Result<(), String>
 where
-    F: FnMut(&[aws_sdk_dynamodb::types::WriteRequest]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemOutput, aws_sdk_dynamodb::error::SdkError<aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemError>>> + Send>>,
+    F: FnMut(
+        &[aws_sdk_dynamodb::types::WriteRequest],
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemOutput,
+                        aws_sdk_dynamodb::error::SdkError<
+                            aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemError,
+                        >,
+                    >,
+                > + Send,
+        >,
+    >,
 {
     let mut remaining_requests = initial_requests;
     let mut retries = 0;
@@ -127,7 +140,8 @@ where
             }
             Err(e) => {
                 let error_str = e.to_string();
-                let error_msg = format_dynamodb_error("batch_write_item", table_name, None, &error_str);
+                let error_msg =
+                    format_dynamodb_error("batch_write_item", table_name, None, &error_str);
 
                 if retries < MAX_BATCH_RETRIES && is_retryable_error(&error_str) {
                     let delay = exponential_backoff(retries);
@@ -144,7 +158,9 @@ where
     if !remaining_requests.is_empty() {
         return Err(format!(
             "Failed to process {} items in table '{}' after {} retries",
-            remaining_requests.len(), table_name, MAX_BATCH_RETRIES
+            remaining_requests.len(),
+            table_name,
+            MAX_BATCH_RETRIES
         ));
     }
 

@@ -7,7 +7,6 @@ mod comprehensive_tests;
 mod integration_tests;
 
 pub use registry::{
-    registry, FunctionMetadata, FunctionRegistry, FunctionType,
-    IteratorFunction, IteratorExecutionResult, ReducerFunction,
+    registry, FunctionMetadata, FunctionRegistry, FunctionType, IteratorExecutionResult,
+    IteratorFunction, ReducerFunction,
 };
-

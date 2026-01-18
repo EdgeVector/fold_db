@@ -1,7 +1,7 @@
+use super::key_config::KeyConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use super::key_config::KeyConfig;
 
 #[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
@@ -9,7 +9,13 @@ use ts_rs::TS;
 /// Represents resolved key values for hash and range components.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(feature = "ts-bindings", ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
+)]
 pub struct KeyValue {
     pub hash: Option<String>,
     pub range: Option<String>,
@@ -22,10 +28,7 @@ impl KeyValue {
 
     /// Creates a KeyValue from a mutation by extracting hash and range values
     /// based on the key configuration
-    pub fn from_mutation(
-        mutation_fields: &HashMap<String, Value>,
-        key_config: &KeyConfig,
-    ) -> Self {
+    pub fn from_mutation(mutation_fields: &HashMap<String, Value>, key_config: &KeyConfig) -> Self {
         let mut key_value = Self::new(None, None);
 
         if let Some(hash_field) = &key_config.hash_field {
@@ -63,5 +66,3 @@ impl std::fmt::Display for KeyValue {
         }
     }
 }
-
-

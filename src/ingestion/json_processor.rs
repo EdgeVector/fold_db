@@ -42,21 +42,20 @@ async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, Ingesti
     };
 
     let file_path_str = file_path.to_string_lossy().to_string();
-    
+
     // Run conversion in blocking task
     tokio::task::spawn_blocking(move || {
         let converter = Converter::new(file_to_json_config)
             .map_err(|_| IngestionError::FileConversionFailed)?;
-        converter.convert_path(&file_path_str)
-            .map_err(|e| {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    error,
-                    "Failed to convert file to JSON: {}",
-                    e
-                );
-                IngestionError::FileConversionFailed
-            })
+        converter.convert_path(&file_path_str).map_err(|e| {
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Failed to convert file to JSON: {}",
+                e
+            );
+            IngestionError::FileConversionFailed
+        })
     })
     .await
     .map_err(|e| {
@@ -84,7 +83,12 @@ pub async fn convert_file_to_json_http(
     match convert_file_to_json_core(file_path).await {
         Ok(value) => Ok(value),
         Err(e) => {
-            log_feature!(LogFeature::Ingestion, error, "File conversion failed: {}", e);
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "File conversion failed: {}",
+                e
+            );
             Err(HttpResponse::InternalServerError().json(json!({
                 "success": false,
                 "error": format!("Failed to convert file to JSON: {}", e)
@@ -109,13 +113,13 @@ pub fn flatten_root_layers(json: Value) -> Value {
         );
         return flatten_array_elements(json);
     }
-    
+
     // Check for root -> array pattern
     if let Value::Object(ref map) = json {
         // If object has exactly one field
         if map.len() == 1 {
             let (key, value) = map.iter().next().unwrap();
-            
+
             // If that field is an array, flatten the array and its elements
             if value.is_array() {
                 log_feature!(
@@ -126,7 +130,7 @@ pub fn flatten_root_layers(json: Value) -> Value {
                 );
                 return flatten_array_elements(value.clone());
             }
-            
+
             // Check for root -> root -> array pattern
             if let Value::Object(ref inner_map) = value {
                 if inner_map.len() == 1 {
@@ -145,7 +149,7 @@ pub fn flatten_root_layers(json: Value) -> Value {
             }
         }
     }
-    
+
     // No flattening needed
     json
 }
@@ -160,7 +164,7 @@ fn flatten_array_elements(value: Value) -> Value {
                 if let Value::Object(ref map) = element {
                     if map.len() == 1 {
                         let (key, inner_value) = map.iter().next().unwrap();
-                        
+
                         // If that field contains an object (not an array or primitive),
                         // flatten by returning the inner object
                         if inner_value.is_object() {
@@ -177,7 +181,7 @@ fn flatten_array_elements(value: Value) -> Value {
                 element
             })
             .collect();
-        
+
         Value::Array(flattened_elements)
     } else {
         value
@@ -227,21 +231,21 @@ pub fn save_json_to_temp_file(json: &Value) -> std::io::Result<String> {
     // Create temp directory in system temp location (works in Lambda and locally)
     let temp_dir = std::env::temp_dir().join("folddb_debug");
     std::fs::create_dir_all(&temp_dir)?;
-    
+
     // Create a named temporary file with .json extension
     let temp_file = NamedTempFile::new_in(&temp_dir)?;
-    
+
     // Write the JSON with pretty formatting
     let json_string = serde_json::to_string_pretty(json)?;
-    
+
     // Get a mutable handle to write
     let mut file = temp_file.as_file();
     file.write_all(json_string.as_bytes())?;
     file.sync_all()?;
-    
+
     // Persist the temp file so it doesn't get deleted when dropped
     let (_file, path) = temp_file.keep()?;
-    
+
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -257,9 +261,9 @@ mod tests {
                 {"id": 2, "name": "Bob"}
             ]
         });
-        
+
         let result = flatten_root_layers(input);
-        
+
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
@@ -276,9 +280,9 @@ mod tests {
                 ]
             }
         });
-        
+
         let result = flatten_root_layers(input);
-        
+
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
@@ -291,9 +295,9 @@ mod tests {
             "data": [{"id": 1}],
             "metadata": {"count": 1}
         });
-        
+
         let result = flatten_root_layers(input.clone());
-        
+
         // Should remain unchanged
         assert_eq!(result, input);
     }
@@ -306,9 +310,9 @@ mod tests {
                 "name": "Alice"
             }
         });
-        
+
         let result = flatten_root_layers(input.clone());
-        
+
         // Should remain unchanged
         assert_eq!(result, input);
     }
@@ -319,9 +323,9 @@ mod tests {
             {"id": 1, "name": "Alice"},
             {"id": 2, "name": "Bob"}
         ]);
-        
+
         let result = flatten_root_layers(input.clone());
-        
+
         // Should remain unchanged
         assert_eq!(result, input);
     }
@@ -335,9 +339,9 @@ mod tests {
                 }
             }
         });
-        
+
         let result = flatten_root_layers(input.clone());
-        
+
         // Should remain unchanged (we only flatten up to 2 levels)
         assert_eq!(result, input);
     }
@@ -350,13 +354,16 @@ mod tests {
                 {"id": 2, "name": "Bob"}
             ]
         });
-        
+
         let result = flatten_root_layers(input);
-        
+
         // Verify it's an array, not wrapped in an object
         assert!(result.is_array(), "Result should be an array");
-        assert!(!result.is_object(), "Result should not be wrapped in an object");
-        
+        assert!(
+            !result.is_object(),
+            "Result should not be wrapped in an object"
+        );
+
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
     }
@@ -365,9 +372,9 @@ mod tests {
     fn test_add_file_location_to_object() {
         let input = json!({"id": 1, "name": "Alice"});
         let path = PathBuf::from("/test/file.csv");
-        
+
         let result = add_file_location(input, &path);
-        
+
         assert!(result.is_object());
         let obj = result.as_object().unwrap();
         assert_eq!(obj["file_location"], "/test/file.csv");
@@ -381,9 +388,9 @@ mod tests {
             {"id": 2, "name": "Bob"}
         ]);
         let path = PathBuf::from("/test/file.csv");
-        
+
         let result = add_file_location(input, &path);
-        
+
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
@@ -399,18 +406,18 @@ mod tests {
                 {"item": {"id": 2, "name": "Bob"}}
             ]
         });
-        
+
         let result = flatten_root_layers(input);
-        
+
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
-        
+
         // Each array element should be flattened (no "item" wrapper)
         assert_eq!(arr[0]["id"], 1);
         assert_eq!(arr[0]["name"], "Alice");
         assert!(arr[0].get("item").is_none());
-        
+
         assert_eq!(arr[1]["id"], 2);
         assert_eq!(arr[1]["name"], "Bob");
         assert!(arr[1].get("item").is_none());
@@ -430,9 +437,9 @@ mod tests {
                 }
             ]
         });
-        
+
         let result = flatten_root_layers(input.clone());
-        
+
         // Should flatten root but NOT array elements (they have multiple fields)
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
@@ -450,13 +457,13 @@ mod tests {
                 {"value": true}
             ]
         });
-        
+
         let result = flatten_root_layers(input);
-        
+
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 3);
-        
+
         // Should NOT flatten when the inner value is a primitive
         assert_eq!(arr[0]["value"], "Alice");
         assert_eq!(arr[1]["value"], 42);
@@ -473,18 +480,18 @@ mod tests {
                 ]
             }
         });
-        
+
         let result = flatten_root_layers(input);
-        
+
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
-        
+
         // Should flatten both root layers AND array element wrappers
         assert_eq!(arr[0]["id"], 1);
         assert_eq!(arr[0]["name"], "Alice");
         assert!(arr[0].get("record").is_none());
-        
+
         assert_eq!(arr[1]["id"], 2);
         assert_eq!(arr[1]["name"], "Bob");
         assert!(arr[1].get("record").is_none());
@@ -497,23 +504,22 @@ mod tests {
             {"tweet": {"id": 1, "text": "Hello", "user": "alice"}},
             {"tweet": {"id": 2, "text": "World", "user": "bob"}}
         ]);
-        
+
         let result = flatten_root_layers(input);
-        
+
         assert!(result.is_array());
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
-        
+
         // Should flatten the "tweet" wrapper from each element
         assert_eq!(arr[0]["id"], 1);
         assert_eq!(arr[0]["text"], "Hello");
         assert_eq!(arr[0]["user"], "alice");
         assert!(arr[0].get("tweet").is_none());
-        
+
         assert_eq!(arr[1]["id"], 2);
         assert_eq!(arr[1]["text"], "World");
         assert_eq!(arr[1]["user"], "bob");
         assert!(arr[1].get("tweet").is_none());
     }
 }
-

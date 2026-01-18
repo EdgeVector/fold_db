@@ -72,7 +72,7 @@ impl LoggingSystem {
     ///
     /// # Arguments
     /// * `dynamo_config` - Optional (table_name, region) tuple. If provided,
-    ///                     DynamoDB logging will be automatically enabled.
+    ///   DynamoDB logging will be automatically enabled.
     pub async fn init_with_dynamodb(
         dynamo_config: Option<(String, String, Option<String>)>,
     ) -> Result<(), LoggingError> {
@@ -85,7 +85,7 @@ impl LoggingSystem {
             config.outputs.dynamodb.enabled = true;
             config.outputs.dynamodb.table_name = table_name;
             config.outputs.dynamodb.region = Some(region);
-            
+
             // Set default user ID for the logger if provided
             if let Some(uid) = user_id {
                 config.general.app_id = Some(uid);
@@ -155,10 +155,10 @@ impl LoggingSystem {
 
         // 3. Console Logger
         if config.outputs.console.enabled {
-             match outputs::ConsoleOutput::new(&config.outputs.console) {
-                 Ok(logger) => loggers.push(Box::new(logger)),
-                 Err(e) => eprintln!("Failed to initialize console logger: {}", e),
-             }
+            match outputs::ConsoleOutput::new(&config.outputs.console) {
+                Ok(logger) => loggers.push(Box::new(logger)),
+                Err(e) => eprintln!("Failed to initialize console logger: {}", e),
+            }
         }
 
         // 4. File Logger
@@ -267,9 +267,15 @@ impl LoggingSystem {
                 .general
                 .app_id
                 .clone()
-                .ok_or_else(|| LoggingError::Config("No user_id (app_id) configured for logging query".to_string()))?
+                .ok_or_else(|| {
+                    LoggingError::Config(
+                        "No user_id (app_id) configured for logging query".to_string(),
+                    )
+                })?
         } else {
-            return Err(LoggingError::Config("Logging system not initialized".to_string()));
+            return Err(LoggingError::Config(
+                "Logging system not initialized".to_string(),
+            ));
         };
 
         if let Some(logger) = GLOBAL_LOGGER.get() {
@@ -310,7 +316,9 @@ impl LoggingSystem {
 
     /// Query recent logs from the active backend (legacy support)
     pub async fn query_recent_logs(limit: usize) -> Vec<String> {
-        let entries = Self::query_logs(Some(limit), None).await.unwrap_or_default();
+        let entries = Self::query_logs(Some(limit), None)
+            .await
+            .unwrap_or_default();
         entries
             .into_iter()
             .map(|entry| format!("{} - {}", entry.level.as_str(), entry.message))

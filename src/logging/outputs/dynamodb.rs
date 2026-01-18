@@ -33,7 +33,9 @@ impl DynamoDbLogItem {
             + (30 * 24 * 60 * 60)) as i64;
 
         Ok(Self {
-            user_id: entry.user_id.ok_or_else(|| "Missing user_id for DynamoDB log entry".to_string())?,
+            user_id: entry
+                .user_id
+                .ok_or_else(|| "Missing user_id for DynamoDB log entry".to_string())?,
             timestamp: entry.timestamp,
             level: entry.level,
             event_type: entry.event_type,
@@ -164,7 +166,7 @@ impl Logger for DynamoDbLogger {
     /// Log an event to DynamoDB
     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let item_struct = DynamoDbLogItem::try_from_entry(entry)
-             .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))?;
+            .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))?;
         let item = serde_dynamo::to_item(item_struct)?;
 
         self.client

@@ -33,7 +33,7 @@ impl PersistenceManager {
             store: None,
         }
     }
-    
+
     /// Create a new PersistenceManager with KvStore (for DynamoDB and other backends)
     pub fn new_with_store(store: Arc<dyn KvStore>) -> Self {
         Self {
@@ -41,7 +41,7 @@ impl PersistenceManager {
             store: Some(store),
         }
     }
-    
+
     /// Check if this manager uses async storage (DynamoDB) vs sync (Sled)
     pub fn is_async(&self) -> bool {
         self.store.is_some()
@@ -84,7 +84,7 @@ impl PersistenceManager {
             Err(SchemaError::InvalidData("Synchronous save_state only available with Sled backend. Use save_state_async instead.".to_string()))
         }
     }
-    
+
     /// Save the current queue state to persistent storage (async version for DynamoDB)
     pub async fn save_state_async(&self, state: &QueueState) -> Result<(), SchemaError> {
         if let Some(ref store) = self.store {
@@ -111,15 +111,20 @@ impl PersistenceManager {
                 "💾 Inserting state into store (size: {} bytes)",
                 state_bytes.len()
             );
-            store.put("state".as_bytes(), state_bytes).await.map_err(|e| {
-                error!("❌ Failed to insert orchestrator state into store: {}", e);
-                SchemaError::InvalidData(format!("Failed to persist orchestrator state: {}", e))
-            })?;
+            store
+                .put("state".as_bytes(), state_bytes)
+                .await
+                .map_err(|e| {
+                    error!("❌ Failed to insert orchestrator state into store: {}", e);
+                    SchemaError::InvalidData(format!("Failed to persist orchestrator state: {}", e))
+                })?;
 
             info!("✅ SAVE_STATE COMPLETE - state saved successfully");
             Ok(())
         } else {
-            Err(SchemaError::InvalidData("Async save_state only available with KvStore backend".to_string()))
+            Err(SchemaError::InvalidData(
+                "Async save_state only available with KvStore backend".to_string(),
+            ))
         }
     }
 
@@ -157,7 +162,7 @@ impl PersistenceManager {
             Err(SchemaError::InvalidData("Synchronous load_state only available with Sled backend. Use load_state_async instead.".to_string()))
         }
     }
-    
+
     /// Load queue state from persistent storage (async version for DynamoDB)
     pub async fn load_state_async(&self) -> Result<QueueState, SchemaError> {
         if let Some(ref store) = self.store {
@@ -189,7 +194,9 @@ impl PersistenceManager {
 
             Ok(state)
         } else {
-            Err(SchemaError::InvalidData("Async load_state only available with KvStore backend".to_string()))
+            Err(SchemaError::InvalidData(
+                "Async load_state only available with KvStore backend".to_string(),
+            ))
         }
     }
 
@@ -209,7 +216,7 @@ impl PersistenceManager {
             Ok(())
         }
     }
-    
+
     /// Flush changes to storage (async version for DynamoDB)
     pub async fn flush_async(&self) -> Result<(), SchemaError> {
         if let Some(ref store) = self.store {
@@ -236,7 +243,7 @@ impl PersistenceManager {
         self.flush()?;
         Ok(())
     }
-    
+
     /// Save state and immediately flush (async version)
     pub async fn save_and_flush_async(&self, state: &QueueState) -> Result<(), SchemaError> {
         self.save_state_async(state).await?;
@@ -261,7 +268,7 @@ impl PersistenceManager {
             Err(SchemaError::InvalidData("Synchronous state_exists only available with Sled backend. Use state_exists_async instead.".to_string()))
         }
     }
-    
+
     /// Check if state exists in persistent storage (async version)
     pub async fn state_exists_async(&self) -> Result<bool, SchemaError> {
         if let Some(ref store) = self.store {
@@ -294,7 +301,7 @@ impl PersistenceManager {
             Err(SchemaError::InvalidData("Synchronous clear_state only available with Sled backend. Use clear_state_async instead.".to_string()))
         }
     }
-    
+
     /// Clear all persistent state (async version)
     pub async fn clear_state_async(&self) -> Result<(), SchemaError> {
         if let Some(ref store) = self.store {

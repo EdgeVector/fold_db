@@ -1,10 +1,10 @@
 //! Ingestion operations for Lambda context
 
+use crate::ingestion::config::SavedConfig;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
 use crate::ingestion::simple_service::SimpleIngestionService;
 use crate::ingestion::{IngestionConfig, IngestionError, IngestionProgress, IngestionResponse};
-use crate::ingestion::config::SavedConfig;
 use serde_json::Value;
 
 use super::context::LambdaContext;
@@ -301,7 +301,12 @@ impl LambdaContext {
         run_with_user(&user_id, async {
             let node_guard = node.lock().await;
             service
-                .process_json_with_node_and_progress(request, &*node_guard, &progress_service, progress_id)
+                .process_json_with_node_and_progress(
+                    request,
+                    &*node_guard,
+                    &progress_service,
+                    progress_id,
+                )
                 .await
         })
         .await
@@ -311,9 +316,9 @@ impl LambdaContext {
     pub async fn health_check() -> Result<Value, IngestionError> {
         let config = IngestionConfig::from_env_allow_empty();
         let is_ready = config.is_ready();
-        
+
         if is_ready {
-             Ok(serde_json::json!({
+            Ok(serde_json::json!({
                 "status": "healthy",
                 "service": "ingestion",
                 "details": {
@@ -323,7 +328,7 @@ impl LambdaContext {
                 }
             }))
         } else {
-             Ok(serde_json::json!({
+            Ok(serde_json::json!({
                 "status": "unhealthy",
                 "service": "ingestion",
                 "details": {

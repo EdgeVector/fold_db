@@ -225,6 +225,7 @@ impl MutationManager {
 
             // Phase 3: Concurrent Molecule Persistence
             let phase3_start = std::time::Instant::now();
+            #[allow(clippy::type_complexity)]
             let mut persist_tasks: Vec<
                 Pin<Box<dyn Future<Output = Result<(), SchemaError>> + Send>>,
             > = Vec::new();

@@ -86,7 +86,9 @@ impl SecurityManager {
         }
 
         // Register with the verifier
-        self.verifier.register_system_public_key(key_info.clone()).await?;
+        self.verifier
+            .register_system_public_key(key_info.clone())
+            .await?;
 
         Ok(KeyRegistrationResponse {
             success: true,

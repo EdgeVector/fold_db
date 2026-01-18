@@ -383,8 +383,12 @@ mod persistence_tests {
 
     #[tokio::test]
     async fn test_message_verifier_persistence() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
-        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone()).await.unwrap();
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment()
+            .await
+            .unwrap();
+        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone())
+            .await
+            .unwrap();
         let keypair = Ed25519KeyPair::generate().unwrap();
         let public_key_base64 = keypair.public_key_base64();
 
@@ -400,7 +404,9 @@ mod persistence_tests {
             .unwrap();
 
         // Now create a new verifier with the same database
-        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops).await.unwrap();
+        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops)
+            .await
+            .unwrap();
         let retrieved = verifier2.get_system_public_key().unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id, SINGLE_PUBLIC_KEY_ID.to_string());
@@ -408,8 +414,12 @@ mod persistence_tests {
 
     #[tokio::test]
     async fn test_remove_public_key_persistence() {
-        let (db_ops, _) = TestDatabaseFactory::create_test_environment().await.unwrap();
-        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone()).await.unwrap();
+        let (db_ops, _) = TestDatabaseFactory::create_test_environment()
+            .await
+            .unwrap();
+        let verifier = MessageVerifier::new_with_persistence(60, db_ops.clone())
+            .await
+            .unwrap();
         let keypair = Ed25519KeyPair::generate().unwrap();
         let public_key_base64 = keypair.public_key_base64();
 
@@ -426,7 +436,9 @@ mod persistence_tests {
         assert!(verifier.get_system_public_key().unwrap().is_none());
 
         // Verify with a new verifier instance
-        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops).await.unwrap();
+        let verifier2 = MessageVerifier::new_with_persistence(60, db_ops)
+            .await
+            .unwrap();
         let retrieved = verifier2.get_system_public_key().unwrap();
         assert!(retrieved.is_none());
     }

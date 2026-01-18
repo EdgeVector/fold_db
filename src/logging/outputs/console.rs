@@ -1,8 +1,8 @@
 //! Console output handler
 use crate::logging::config::ConsoleConfig;
 use crate::logging::LoggingError;
-use log::{LevelFilter, Metadata, Record};
 use colored::*;
+use log::{LevelFilter, Metadata, Record};
 
 pub struct ConsoleOutput {
     config: ConsoleConfig,
@@ -10,14 +10,16 @@ pub struct ConsoleOutput {
 
 impl ConsoleOutput {
     pub fn new(config: &ConsoleConfig) -> Result<Self, LoggingError> {
-        Ok(Self { config: config.clone() })
+        Ok(Self {
+            config: config.clone(),
+        })
     }
 
     fn should_log(&self, metadata: &Metadata) -> bool {
         if !self.config.enabled {
             return false;
         }
-        
+
         // Parse config level to LevelFilter, default to Info if invalid
         let filter = match self.config.level.as_str() {
             "TRACE" => LevelFilter::Trace,
@@ -52,8 +54,8 @@ impl log::Log for ConsoleOutput {
             };
 
             let timestamp = if self.config.include_timestamp {
-                 // Placeholder for actual timestamp logic
-                 "".to_string() 
+                // Placeholder for actual timestamp logic
+                "".to_string()
             } else {
                 "".to_string()
             };
