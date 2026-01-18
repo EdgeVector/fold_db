@@ -318,7 +318,7 @@ pub async fn execute_query_plan(
 
     // Execute the query
     let node_arc = Arc::clone(&app_state.node);
-    let processor = OperationProcessor::new(node_arc);
+    let processor = OperationProcessor::new(node_arc.read().await.clone());
     let results = match processor.execute_query_map(query_plan.query.clone()).await {
         Ok(result_map) => {
             let records_map = records_from_field_map(&result_map);
@@ -550,7 +550,7 @@ pub async fn chat(
 
             for attempt in 0..MAX_FOLLOWUP_ATTEMPTS {
                 let node_arc = Arc::clone(&app_state.node);
-                let processor = OperationProcessor::new(node_arc);
+                let processor = OperationProcessor::new(node_arc.read().await.clone());
                 match processor.execute_query_map(current_query.clone()).await {
                     Ok(result_map) => {
                         let records_map = records_from_field_map(&result_map);
@@ -912,7 +912,7 @@ pub async fn run_query(
 
     for attempt in 0..MAX_ATTEMPTS {
         let node_arc = Arc::clone(&app_state.node);
-        let processor = OperationProcessor::new(node_arc);
+        let processor = OperationProcessor::new(node_arc.read().await.clone());
         match processor
             .execute_query_map(current_query_plan.query.clone())
             .await

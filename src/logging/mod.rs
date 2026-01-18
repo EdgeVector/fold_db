@@ -74,17 +74,22 @@ impl LoggingSystem {
     /// * `dynamo_config` - Optional (table_name, region) tuple. If provided,
     ///                     DynamoDB logging will be automatically enabled.
     pub async fn init_with_dynamodb(
-        dynamo_config: Option<(String, String)>,
+        dynamo_config: Option<(String, String, Option<String>)>,
     ) -> Result<(), LoggingError> {
         #[allow(unused_mut)]
         let mut config = LogConfig::default();
 
         // Enable DynamoDB logging if config is provided
         #[cfg(feature = "aws-backend")]
-        if let Some((table_name, region)) = dynamo_config {
+        if let Some((table_name, region, user_id)) = dynamo_config {
             config.outputs.dynamodb.enabled = true;
             config.outputs.dynamodb.table_name = table_name;
             config.outputs.dynamodb.region = Some(region);
+            
+            // Set default user ID for the logger if provided
+            if let Some(uid) = user_id {
+                config.general.app_id = Some(uid);
+            }
         }
 
         #[cfg(not(feature = "aws-backend"))]
@@ -141,7 +146,7 @@ impl LoggingSystem {
 
             // Bridge it to log::Log
             let logger_arc = Arc::new(dynamodb_logger);
-            let bridge = LogBridge::new(logger_arc.clone());
+            let bridge = LogBridge::new(logger_arc.clone(), config.general.app_id.clone());
             loggers.push(Box::new(bridge));
 
             // Set global logger for querying
@@ -255,8 +260,14 @@ impl LoggingSystem {
         limit: Option<usize>,
         from_timestamp: Option<i64>,
     ) -> Vec<crate::logging::core::LogEntry> {
+        let user_id = if let Some(config_arc) = LOGGING_CONFIG.get() {
+            config_arc.read().await.general.app_id.clone().unwrap_or_else(|| "anonymous".to_string())
+        } else {
+            "anonymous".to_string()
+        };
+
         if let Some(logger) = GLOBAL_LOGGER.get() {
-            if let Ok(entries) = logger.query("anonymous", limit, from_timestamp).await {
+            if let Ok(entries) = logger.query(&user_id, limit, from_timestamp).await {
                 // DynamoDB logger returns most recent first, so we reverse to get chronological
                 return entries.into_iter().rev().collect();
             }

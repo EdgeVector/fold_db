@@ -6,7 +6,6 @@ pub use crate::logging::core::*;
 
 use crate::ingestion::IngestionError;
 use super::context::LambdaContext;
-use crate::logging::LoggingSystem;
 use serde_json::Value;
 
 impl LambdaContext {
@@ -17,14 +16,29 @@ impl LambdaContext {
     /// * `since` - Optional timestamp to filter logs
     /// * `limit` - Optional limit on number of logs (default 1000)
     pub async fn list_logs(since: Option<i64>, limit: Option<usize>) -> Result<Vec<Value>, IngestionError> {
+        let user_id = LambdaContext::get_user_id();
+        let processor = {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_guard = node_mutex.lock().await;
+            crate::datafold_node::OperationProcessor::new(node_guard.clone())
+        };
+
         let limit = limit.unwrap_or(1000);
-        let logs = LoggingSystem::query_logs(Some(limit), since).await;
+        let logs = processor.list_logs(since, Some(limit)).await;
+        
         Ok(logs.into_iter().map(|log| serde_json::to_value(log).unwrap_or(serde_json::json!({"error": "Failed to serialize log"}))).collect())
     }
 
     /// Get log configuration
     pub async fn get_log_config() -> Result<Value, IngestionError> {
-        if let Some(config) = LoggingSystem::get_config().await {
+        let user_id = LambdaContext::get_user_id();
+        let processor = {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_guard = node_mutex.lock().await;
+            crate::datafold_node::OperationProcessor::new(node_guard.clone())
+        };
+
+        if let Some(config) = processor.get_log_config().await {
             Ok(serde_json::json!({
                 "config": config
             }))
@@ -39,13 +53,27 @@ impl LambdaContext {
 
     /// Reload log configuration
     pub async fn reload_log_config() -> Result<(), IngestionError> {
-        LoggingSystem::reload_config_from_file("config/logging.toml").await
+        let user_id = LambdaContext::get_user_id();
+        let processor = {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_guard = node_mutex.lock().await;
+            crate::datafold_node::OperationProcessor::new(node_guard.clone())
+        };
+
+        processor.reload_log_config("config/logging.toml").await
              .map_err(|e| IngestionError::InvalidInput(format!("Failed to reload configuration: {}", e)))
     }
 
     /// Get log features
     pub async fn get_log_features() -> Result<Value, IngestionError> {
-         if let Some(features) = LoggingSystem::get_features().await {
+        let user_id = LambdaContext::get_user_id();
+        let processor = {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_guard = node_mutex.lock().await;
+            crate::datafold_node::OperationProcessor::new(node_guard.clone())
+        };
+
+         if let Some(features) = processor.get_log_features().await {
             Ok(serde_json::json!({
                 "features": features,
                 "available_levels": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
@@ -77,7 +105,14 @@ impl LambdaContext {
             return Err(IngestionError::InvalidInput(format!("Invalid log level: {}", level)));
         }
 
-        LoggingSystem::update_feature_level(feature, level).await
+        let user_id = LambdaContext::get_user_id();
+        let processor = {
+            let node_mutex = Self::get_node(&user_id).await?;
+            let node_guard = node_mutex.lock().await;
+            crate::datafold_node::OperationProcessor::new(node_guard.clone())
+        };
+
+        processor.update_log_feature_level(feature, level).await
              .map_err(|e| IngestionError::InvalidInput(format!("Failed to update log level: {}", e)))
     }
 }

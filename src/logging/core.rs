@@ -312,15 +312,17 @@ impl UserLogger {
 pub struct LogBridge {
     logger: Arc<dyn Logger>,
     handle: tokio::runtime::Handle,
+    default_user_id: Option<String>,
 }
 
 impl LogBridge {
     /// Create a new log bridge
     /// Must be called from within a Tokio runtime
-    pub fn new(logger: Arc<dyn Logger>) -> Self {
+    pub fn new(logger: Arc<dyn Logger>, default_user_id: Option<String>) -> Self {
         Self {
             logger,
             handle: tokio::runtime::Handle::current(),
+            default_user_id,
         }
     }
 }
@@ -348,7 +350,7 @@ impl log::Log for LogBridge {
                 level,
                 event_type: record.target().to_string(),
                 message: record.args().to_string(),
-                user_id: get_current_user_id(),
+                user_id: get_current_user_id().or_else(|| self.default_user_id.clone()),
                 metadata: None,
             };
 

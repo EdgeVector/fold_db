@@ -4,8 +4,7 @@ use crate::logging::features::LogFeature;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::fs;
-use std::io::Write;
+
 
 use crate::datafold_node::DataFoldNode;
 use crate::server::http_server::AppState;
@@ -151,110 +150,33 @@ pub async fn reset_database(
         });
     }
 
-    // Lock the node and perform the reset
-    let mut node = state.node.write().await;
-
-    // First, reset the schema service database
-    let schema_client = node.get_schema_client();
-    if let Err(e) = schema_client.reset_schema_service().await {
+    // Use OperationProcessor for the reset logic
+    let temp_processor_node = state.node.read().await.clone();
+    let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
+    
+    // Perform the reset (Schema service, DB close, storage clear)
+    if let Err(e) = processor.perform_database_reset(None).await {
         log_feature!(
             LogFeature::HttpServer,
-            warn,
-            "Failed to reset schema service during database reset: {}",
+            error,
+            "Database reset operations failed: {}",
             e
         );
-        // Continue anyway - the main database reset is more important
-    } else {
-        log_feature!(
-            LogFeature::HttpServer,
-            info,
-            "Schema service database reset successfully"
-        );
+        return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
+            success: false,
+            message: format!("Database reset operations failed: {}", e),
+        });
     }
 
-    // Perform the database reset by deleting database files and creating a new node
-    let config = node.config.clone();
-    let db_path = config.get_storage_path();
-
-    // Close the current database
-    if let Ok(db) = node.get_fold_db().await {
-        if let Err(e) = db.close() {
-            log_feature!(
-                LogFeature::HttpServer,
-                warn,
-                "Failed to close database during reset: {}",
-                e
-            );
-        }
-    }
-
-    // Handle reset based on database backend type
-    match &config.database {
-        #[cfg(feature = "aws-backend")]
-        DatabaseConfig::DynamoDb(dynamo_config) => {
-            let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(aws_sdk_dynamodb::config::Region::new(
-                    dynamo_config.region.clone(),
-                ))
-                .load()
-                .await;
-            let client = std::sync::Arc::new(aws_sdk_dynamodb::Client::new(&aws_config));
-
-            let uid = dynamo_config
-                .user_id
-                .clone()
-                .unwrap_or_else(|| "default".to_string());
-
-            // Multi-tenancy: Use DynamoDbResetManager to safely reset only this user's data
-            log_feature!(
-                LogFeature::HttpServer,
-                info,
-                "Resetting database for user_id={} using scan-free DynamoDbResetManager",
-                uid
-            );
-
-            let manager = crate::storage::reset_manager::DynamoDbResetManager::new(
-                client.clone(),
-                dynamo_config.tables.clone(),
-            );
-
-            if let Err(e) = manager.reset_user(&uid).await {
-                log_feature!(
-                    LogFeature::HttpServer,
-                    error,
-                    "Failed to reset user data: {}",
-                    e
-                );
-                return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
-                    success: false,
-                    message: format!("Failed to reset user data: {}", e),
-                });
-            }
-        }
-        DatabaseConfig::Local { .. } => {
-            // For local storage, delete the database folder
-            if db_path.exists() {
-                if let Err(e) = std::fs::remove_dir_all(&db_path) {
-                    log_feature!(
-                        LogFeature::HttpServer,
-                        error,
-                        "Failed to delete database folder: {}",
-                        e
-                    );
-                    return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
-                        success: false,
-                        message: format!("Failed to delete database folder: {}", e),
-                    });
-                }
-            }
-        }
-    }
+    // Now re-initialize the node
+    let mut node_lock = state.node.write().await;
+    let config = node_lock.config.clone();
 
     // Create a new node instance (this will recreate the database)
     match DataFoldNode::new(config).await {
         Ok(new_node) => {
             // Replace the node in the state
-            *node = new_node;
+            *node_lock = new_node;
 
             log_feature!(
                 LogFeature::HttpServer,
@@ -504,99 +426,34 @@ pub async fn update_database_config(
         }
     }
 
-    // Save to config file
-    let config_path =
-        std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
+    // Updated config object is prepared above in `config` variable
+    
+    // Use OperationProcessor to write configuration and handle DB logic
+    let temp_processor_node = state.node.read().await.clone();
+    let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
+    
+    // Define config_path for recovery
+    let config_path = std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
 
-    // Ensure config directory exists
-    if let Some(parent) = std::path::Path::new(&config_path).parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            log_feature!(
+    let updated_config = match processor.update_database_configuration(config.database).await {
+         Ok(cfg) => cfg,
+         Err(e) => {
+             log_feature!(
                 LogFeature::HttpServer,
                 error,
-                "Failed to create config directory: {}",
+                "Failed to update database configuration: {}",
                 e
             );
             return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
                 success: false,
-                message: format!("Failed to create config directory: {}", e),
+                message: format!("Failed to update database configuration: {}", e),
                 requires_restart: false,
             });
-        }
-    }
-
-    // Serialize and write config
-    match serde_json::to_string_pretty(&config) {
-        Ok(config_json) => match fs::File::create(&config_path) {
-            Ok(mut file) => {
-                if let Err(e) = file.write_all(config_json.as_bytes()) {
-                    log_feature!(
-                        LogFeature::HttpServer,
-                        error,
-                        "Failed to write config file: {}",
-                        e
-                    );
-                    return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
-                        success: false,
-                        message: format!("Failed to write config file: {}", e),
-                        requires_restart: false,
-                    });
-                }
-            }
-            Err(e) => {
-                log_feature!(
-                    LogFeature::HttpServer,
-                    error,
-                    "Failed to create config file: {}",
-                    e
-                );
-                return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
-                    success: false,
-                    message: format!("Failed to create config file: {}", e),
-                    requires_restart: false,
-                });
-            }
-        },
-        Err(e) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                error,
-                "Failed to serialize config: {}",
-                e
-            );
-            return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
-                success: false,
-                message: format!("Failed to serialize config: {}", e),
-                requires_restart: false,
-            });
-        }
-    }
-
-    // Now recreate the node with the new database configuration
-    // This preserves existing data but switches to the new database backend
-    log_feature!(
-        LogFeature::HttpServer,
-        info,
-        "Recreating node with new database configuration..."
-    );
-
-    // Close the current database before recreating
-    if let Ok(db) = node.get_fold_db().await {
-        if let Err(e) = db.close() {
-            log_feature!(
-                LogFeature::HttpServer,
-                warn,
-                "Failed to close database during config update: {}",
-                e
-            );
-        }
-    }
-
-    // Drop the lock before creating a new node
-    drop(node);
+         }
+    };
 
     // Create a new node instance with the updated config
-    match DataFoldNode::new(config.clone()).await {
+    match DataFoldNode::new(updated_config.clone()).await {
         Ok(new_node) => {
             // Replace the node in the state
             let mut node = state.node.write().await;

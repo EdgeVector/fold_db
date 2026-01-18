@@ -29,6 +29,8 @@ pub struct GeneralConfig {
     pub enable_correlation_ids: bool,
     /// Maximum correlation ID length
     pub max_correlation_id_length: usize,
+    /// Default application/user ID
+    pub app_id: Option<String>,
 }
 
 /// Configuration for all output types
@@ -146,6 +148,7 @@ impl Default for GeneralConfig {
             enable_colors: true,
             enable_correlation_ids: true,
             max_correlation_id_length: 64,
+            app_id: None,
         }
     }
 }

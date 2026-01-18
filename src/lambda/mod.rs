@@ -32,6 +32,7 @@ pub mod node_manager;
 pub mod query;
 pub mod schema;
 pub mod system;
+pub mod security;
 pub mod types;
 pub mod ui;
 

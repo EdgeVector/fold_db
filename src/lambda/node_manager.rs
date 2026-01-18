@@ -140,6 +140,16 @@ impl NodeManager {
 
         Ok(Arc::new(tokio::sync::Mutex::new(node)))
     }
+    /// Invalidate (remove) a node from the cache
+    /// This forces a reload/recreation on the next access
+    pub fn invalidate_node(&self, user_id: &str) {
+        if let Ok(mut nodes) = self.nodes.lock() {
+            nodes.remove(user_id);
+        }
+        // Also clear active single node if it matches or if we want to force reset
+        // Note: active_node handling might be tricky if it's the same Arc. 
+        // But for cache invalidation, creating a new one next time is what matters.
+    }
 }
 
 #[cfg(test)]
