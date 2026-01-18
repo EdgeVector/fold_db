@@ -1,9 +1,11 @@
-use crate::logging::LoggingSystem;
+
 use crate::web_logger;
 use actix_web::{web, HttpResponse, Responder, Result};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream; // Keep for backward compatibility
+use crate::server::http_server::AppState;
+use crate::datafold_node::OperationProcessor;
 
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 pub struct LogLevelUpdate {
@@ -32,8 +34,15 @@ pub struct ListLogsQuery {
     ),
     responses((status = 200, description = "List logs", body = serde_json::Value))
 )]
-pub async fn list_logs(query: web::Query<ListLogsQuery>) -> impl Responder {
-    let logs = crate::logging::LoggingSystem::query_logs(Some(1000), query.since).await;
+pub async fn list_logs(
+    query: web::Query<ListLogsQuery>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let temp_processor_node = state.node.read().await.clone();
+    let processor = OperationProcessor::new(temp_processor_node);
+
+    let logs = processor.list_logs(query.since, Some(1000)).await;
+    
     HttpResponse::Ok().json(serde_json::json!({
         "logs": logs,
         "count": logs.len(),
@@ -52,6 +61,7 @@ pub async fn list_logs(query: web::Query<ListLogsQuery>) -> impl Responder {
     responses((status = 200, description = "Stream logs"))
 )]
 pub async fn stream_logs() -> impl Responder {
+    // SSE streaming is specific to HTTP server, keeping direct access for now
     let rx = match web_logger::subscribe() {
         Some(r) => r,
         None => return HttpResponse::InternalServerError().finish(),
@@ -76,8 +86,11 @@ pub async fn stream_logs() -> impl Responder {
     tag = "logs",
     responses((status = 200, description = "Logging configuration", body = LogConfigResponse))
 )]
-pub async fn get_config() -> Result<impl Responder> {
-    if let Some(config) = LoggingSystem::get_config().await {
+pub async fn get_config(state: web::Data<AppState>) -> Result<impl Responder> {
+    let temp_processor_node = state.node.read().await.clone();
+    let processor = OperationProcessor::new(temp_processor_node);
+
+    if let Some(config) = processor.get_log_config().await {
         Ok(HttpResponse::Ok().json(serde_json::json!({
             "config": config
         })))
@@ -104,6 +117,7 @@ pub async fn get_config() -> Result<impl Responder> {
 )]
 pub async fn update_feature_level(
     level_update: web::Json<LogLevelUpdate>,
+    state: web::Data<AppState>,
 ) -> Result<impl Responder> {
     let valid_levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
     if !valid_levels.contains(&level_update.level.as_str()) {
@@ -112,7 +126,10 @@ pub async fn update_feature_level(
         })));
     }
 
-    match LoggingSystem::update_feature_level(&level_update.feature, &level_update.level).await {
+    let temp_processor_node = state.node.read().await.clone();
+    let processor = OperationProcessor::new(temp_processor_node);
+
+    match processor.update_log_feature_level(&level_update.feature, &level_update.level).await {
         Ok(_) => {
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "success": true,
@@ -134,8 +151,11 @@ pub async fn update_feature_level(
     tag = "logs",
     responses((status = 200, description = "Reloaded"), (status = 400, description = "Bad request"))
 )]
-pub async fn reload_config() -> Result<impl Responder> {
-    match LoggingSystem::reload_config_from_file("config/logging.toml").await {
+pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder> {
+    let temp_processor_node = state.node.read().await.clone();
+    let processor = OperationProcessor::new(temp_processor_node);
+
+    match processor.reload_log_config("config/logging.toml").await {
         Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
             "success": true,
             "message": "Configuration reloaded successfully"
@@ -153,8 +173,11 @@ pub async fn reload_config() -> Result<impl Responder> {
     tag = "logs",
     responses((status = 200, description = "Features", body = serde_json::Value))
 )]
-pub async fn get_features() -> Result<impl Responder> {
-    if let Some(features) = LoggingSystem::get_features().await {
+pub async fn get_features(state: web::Data<AppState>) -> Result<impl Responder> {
+    let temp_processor_node = state.node.read().await.clone();
+    let processor = OperationProcessor::new(temp_processor_node);
+
+    if let Some(features) = processor.get_log_features().await {
         Ok(HttpResponse::Ok().json(serde_json::json!({
             "features": features,
             "available_levels": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]

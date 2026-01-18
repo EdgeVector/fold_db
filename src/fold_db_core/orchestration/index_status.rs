@@ -67,7 +67,7 @@ impl IndexStatusTracker {
 
     /// Mark the start of a batch indexing operation
     pub async fn start_batch(&self, batch_size: usize) {
-        log::info!("IndexStatusTracker: Starting batch of size {}", batch_size);
+        log::debug!("IndexStatusTracker: Starting batch of size {}", batch_size);
         let mut status = self.store.load_status().await.unwrap_or_default();
         
         status.state = IndexingState::Indexing;
@@ -78,20 +78,20 @@ impl IndexStatusTracker {
         if let Err(e) = self.store.save_status(&status).await {
             log::error!("IndexStatusTracker: Failed to save status in start_batch: {}", e);
         } else {
-            log::info!("IndexStatusTracker: Batch started, status saved");
+            log::debug!("IndexStatusTracker: Batch started, status saved");
         }
     }
 
     /// Mark the completion of a batch indexing operation
     pub async fn complete_batch(&self, batch_size: usize, duration_ms: u128) {
-        log::info!("IndexStatusTracker: Completing batch of size {}, duration {}ms", batch_size, duration_ms);
+        log::debug!("IndexStatusTracker: Completing batch of size {}, duration {}ms", batch_size, duration_ms);
         let mut status = self.store.load_status().await.unwrap_or_default();
         
         // Ensure the "Indexing" state is visible for at least 500ms
         if let Some(start_time) = status.current_batch_start_time {
             let elapsed = Self::current_timestamp() - start_time;
             if elapsed < 500 {
-                log::info!("IndexStatusTracker: Sleeping for {}ms to ensure visibility", 500 - elapsed);
+                log::debug!("IndexStatusTracker: Sleeping for {}ms to ensure visibility", 500 - elapsed);
                 tokio::time::sleep(tokio::time::Duration::from_millis(500 - elapsed)).await;
             }
         }
@@ -121,7 +121,7 @@ impl IndexStatusTracker {
         if let Err(e) = self.store.save_status(&status).await {
             log::error!("IndexStatusTracker: Failed to save status in complete_batch: {}", e);
         } else {
-            log::info!("IndexStatusTracker: Batch completed, status saved. Total ops: {}", status.total_operations_processed);
+            log::debug!("IndexStatusTracker: Batch completed, status saved. Total ops: {}", status.total_operations_processed);
         }
     }
 
