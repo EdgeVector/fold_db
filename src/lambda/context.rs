@@ -96,7 +96,7 @@ impl LambdaContext {
 
         // Bridge Rust's log crate to our custom logger
         // This captures all internal datafold logging (log::info!(), etc.)
-        let _log_bridge = LogBridge::new(logger.clone());
+        let _log_bridge = LogBridge::new(logger.clone(), None);
         // Note: set_boxed_logger requires "std" feature in "log" crate which seems missing in Lambda build?
         // Commenting out for now to catch compilation error.
         /* 
@@ -169,9 +169,13 @@ impl LambdaContext {
         })
     }
 
-    /// Get a reference to the DataFold node for the default user.
+
+
+    /// Get a reference to the DataFold node for the default user (single-tenant only).
     pub async fn node() -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
-        Self::get()?.node_manager.get_node("default").await
+        Self::get()?.node_manager.get_single_node().ok_or_else(|| {
+             IngestionError::configuration_error("No single-tenant node available. Use get_node(user_id) for multi-tenant setups.")
+        })
     }
 
     /// Get a reference to the DataFold node for a specific user.

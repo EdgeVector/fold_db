@@ -95,12 +95,17 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
 
             let resolver = TableNameResolver::Explicit(map);
 
+            // Require user_id for DynamoDB backend
+            let user_id = dynamo_config.user_id.clone().ok_or_else(|| {
+                FoldDbError::Config("Missing user_id for DynamoDB config".to_string())
+            })?;
+
             let db_ops = Arc::new(
                 DbOperations::from_dynamodb_flexible(
                     client.clone(),
                     resolver,
                     dynamo_config.auto_create,
-                    dynamo_config.user_id.clone(),
+                    user_id.clone(),
                 )
                 .await
                 .map_err(|e| {
@@ -113,8 +118,6 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
 
             // Initialize ProgressStore
             let progress_store: Arc<dyn ProgressStore> = {
-                // Use "default" as the partition key prefix unless user_id overrides it
-                let pk = dynamo_config.user_id.clone().unwrap_or_else(|| "default".to_string());
                 let table_name = dynamo_config.tables.process.clone();
 
                 log_feature!(
@@ -124,7 +127,7 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
                     table_name
                 );
 
-                Arc::new(DynamoDbProgressStore::new(client, table_name, pk))
+                Arc::new(DynamoDbProgressStore::new(client, table_name, user_id.clone()))
             };
 
             // Use the new constructor that accepts components

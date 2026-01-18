@@ -139,7 +139,7 @@ impl LambdaContext {
     ///         {"id": 2, "name": "Bob"}
     ///     ]);
     ///     
-    ///     let progress_id = LambdaContext::ingest_json(data, true, 0, "default".to_string()).await?;
+    ///     let progress_id = LambdaContext::ingest_json(data, true, 0, "user_123".to_string()).await?;
     ///     
     ///     println!("Started ingestion: {}", progress_id);
     ///     Ok(())
@@ -243,7 +243,7 @@ impl LambdaContext {
     /// * `json_data` - The JSON data to ingest (array of objects or single object)
     /// * `auto_execute` - Whether to execute mutations after generation
     /// * `trust_distance` - Trust distance for mutations (default: 0)
-    /// * `pub_key` - Public key for mutations (default: "default")
+    /// * `pub_key` - Public key for mutations
     ///
     /// # Example
     ///
@@ -257,7 +257,7 @@ impl LambdaContext {
     ///         {"id": 2, "name": "Bob"}
     ///     ]);
     ///     
-    ///     let response = LambdaContext::ingest_json_sync(data, true, 0, "default".to_string()).await?;
+    ///     let response = LambdaContext::ingest_json_sync(data, true, 0, "user_123".to_string()).await?;
     ///     
     ///     println!("Ingested {} mutations", response.mutations_executed);
     ///     Ok(())

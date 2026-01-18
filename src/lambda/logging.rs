@@ -15,8 +15,8 @@ impl LambdaContext {
     ///
     /// * `since` - Optional timestamp to filter logs
     /// * `limit` - Optional limit on number of logs (default 1000)
-    pub async fn list_logs(since: Option<i64>, limit: Option<usize>) -> Result<Vec<Value>, IngestionError> {
-        let user_id = LambdaContext::get_user_id();
+    /// * `user_id` - User ID for node context
+    pub async fn list_logs(since: Option<i64>, limit: Option<usize>, user_id: String) -> Result<Vec<Value>, IngestionError> {
         let processor = {
             let node_mutex = Self::get_node(&user_id).await?;
             let node_guard = node_mutex.lock().await;
@@ -30,8 +30,7 @@ impl LambdaContext {
     }
 
     /// Get log configuration
-    pub async fn get_log_config() -> Result<Value, IngestionError> {
-        let user_id = LambdaContext::get_user_id();
+    pub async fn get_log_config(user_id: String) -> Result<Value, IngestionError> {
         let processor = {
             let node_mutex = Self::get_node(&user_id).await?;
             let node_guard = node_mutex.lock().await;
@@ -52,8 +51,7 @@ impl LambdaContext {
     }
 
     /// Reload log configuration
-    pub async fn reload_log_config() -> Result<(), IngestionError> {
-        let user_id = LambdaContext::get_user_id();
+    pub async fn reload_log_config(user_id: String) -> Result<(), IngestionError> {
         let processor = {
             let node_mutex = Self::get_node(&user_id).await?;
             let node_guard = node_mutex.lock().await;
@@ -65,8 +63,7 @@ impl LambdaContext {
     }
 
     /// Get log features
-    pub async fn get_log_features() -> Result<Value, IngestionError> {
-        let user_id = LambdaContext::get_user_id();
+    pub async fn get_log_features(user_id: String) -> Result<Value, IngestionError> {
         let processor = {
             let node_mutex = Self::get_node(&user_id).await?;
             let node_guard = node_mutex.lock().await;
@@ -99,13 +96,12 @@ impl LambdaContext {
     }
 
     /// Update log feature level
-    pub async fn update_log_feature_level(feature: &str, level: &str) -> Result<(), IngestionError> {
+    pub async fn update_log_feature_level(feature: &str, level: &str, user_id: String) -> Result<(), IngestionError> {
          let valid_levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
         if !valid_levels.contains(&level) {
             return Err(IngestionError::InvalidInput(format!("Invalid log level: {}", level)));
         }
 
-        let user_id = LambdaContext::get_user_id();
         let processor = {
             let node_mutex = Self::get_node(&user_id).await?;
             let node_guard = node_mutex.lock().await;

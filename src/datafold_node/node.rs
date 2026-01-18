@@ -52,15 +52,22 @@ impl DataFoldNode {
     ///
     /// Now fully async to support storage abstraction!
     pub async fn new(config: NodeConfig) -> FoldDbResult<Self> {
-        // Generate a new keypair for this node immediately
-        let keypair = Ed25519KeyPair::generate().map_err(|e| {
-            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
-        })?;
-        let private_key = keypair.secret_key_base64();
-        let public_key = keypair.public_key_base64();
+        // Try to load identity from file first, otherwise generate new
+        let (private_key, public_key) = match load_persisted_identity() {
+            Ok(Some((priv_k, pub_k))) => (priv_k, pub_k),
+            _ => {
+                // Fallback to generating a new keypair (and optionally persisting it?)
+                // For now, we maintain the behavior of generating one if not found,
+                // but ideally the environment should be set up by ensure_identity.
+                let keypair = Ed25519KeyPair::generate().map_err(|e| {
+                    FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
+                })?;
+                (keypair.secret_key_base64(), keypair.public_key_base64())
+            }
+        };
 
         // Update config with public key as user_id if not set (for DynamoDB)
-        let mut config = config;
+        let config = config;
         #[cfg(feature = "aws-backend")]
         if let crate::datafold_node::config::DatabaseConfig::DynamoDb(ref mut d) = config.database {
             if d.user_id.is_none() {
@@ -364,5 +371,30 @@ mod tests {
         // Verify that the keys are valid base64
         assert!(general_purpose::STANDARD.decode(private_key).is_ok());
         assert!(general_purpose::STANDARD.decode(public_key).is_ok());
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct NodeIdentity {
+    private_key: String,
+    public_key: String,
+}
+
+fn load_persisted_identity() -> FoldDbResult<Option<(String, String)>> {
+    let config_path = std::path::Path::new("config/node_identity.json");
+    if config_path.exists() {
+        let content = std::fs::read_to_string(config_path).map_err(|e| {
+            FoldDbError::Config(format!("Failed to read node_identity.json: {}", e))
+        })?;
+        
+        match serde_json::from_str::<NodeIdentity>(&content) {
+            Ok(identity) => Ok(Some((identity.private_key, identity.public_key))),
+            Err(e) => {
+                log::warn!("Failed to parse node_identity.json: {}. Generating new identity.", e);
+                Ok(None)
+            }
+        }
+    } else {
+        Ok(None)
     }
 }

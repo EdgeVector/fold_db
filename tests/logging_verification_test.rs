@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel, LambdaLogging};
 use std::sync::{Arc, Mutex};
-use datafold::storage::StorageConfig;
+use datafold::storage::DatabaseConfig as StorageConfig;
 use std::time::Duration;
 
 /// In-memory mock logger to verify integration

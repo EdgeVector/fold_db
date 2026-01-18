@@ -259,17 +259,23 @@ impl LoggingSystem {
     pub async fn query_logs(
         limit: Option<usize>,
         from_timestamp: Option<i64>,
-    ) -> Vec<crate::logging::core::LogEntry> {
+    ) -> Result<Vec<crate::logging::core::LogEntry>, LoggingError> {
         let user_id = if let Some(config_arc) = LOGGING_CONFIG.get() {
-            config_arc.read().await.general.app_id.clone().unwrap_or_else(|| "anonymous".to_string())
+            config_arc
+                .read()
+                .await
+                .general
+                .app_id
+                .clone()
+                .ok_or_else(|| LoggingError::Config("No user_id (app_id) configured for logging query".to_string()))?
         } else {
-            "anonymous".to_string()
+            return Err(LoggingError::Config("Logging system not initialized".to_string()));
         };
 
         if let Some(logger) = GLOBAL_LOGGER.get() {
             if let Ok(entries) = logger.query(&user_id, limit, from_timestamp).await {
                 // DynamoDB logger returns most recent first, so we reverse to get chronological
-                return entries.into_iter().rev().collect();
+                return Ok(entries.into_iter().rev().collect());
             }
         }
 
@@ -277,7 +283,7 @@ impl LoggingSystem {
         let raw_entries = crate::web_logger::get_entries();
         let from_ts = from_timestamp.unwrap_or(0);
 
-        raw_entries
+        Ok(raw_entries
             .into_iter()
             .filter(|e| e.timestamp > from_ts)
             .map(|e| {
@@ -299,12 +305,12 @@ impl LoggingSystem {
                     metadata: None,
                 }
             })
-            .collect()
+            .collect())
     }
 
     /// Query recent logs from the active backend (legacy support)
     pub async fn query_recent_logs(limit: usize) -> Vec<String> {
-        let entries = Self::query_logs(Some(limit), None).await;
+        let entries = Self::query_logs(Some(limit), None).await.unwrap_or_default();
         entries
             .into_iter()
             .map(|entry| format!("{} - {}", entry.level.as_str(), entry.message))

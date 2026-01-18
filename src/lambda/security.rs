@@ -10,20 +10,24 @@ impl LambdaContext {
     ///
     /// Returns the system-level public key for security operations.
     ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User ID for node context
+    ///
     /// # Example
     ///
     /// ```ignore
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     if let Some(key_info) = LambdaContext::get_system_public_key().await? {
+    ///     if let Some(key_info) = LambdaContext::get_system_public_key("user_123".to_string()).await? {
     ///         println!("System public key: {:?}", key_info);
     ///     }
     ///     Ok(())
     /// }
     /// ```
-    pub async fn get_system_public_key() -> Result<Option<Value>, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn get_system_public_key(user_id: String) -> Result<Option<Value>, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node = node_mutex.lock().await;
         
         // Use OperationProcessor or direct access

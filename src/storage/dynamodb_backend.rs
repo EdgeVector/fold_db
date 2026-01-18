@@ -22,16 +22,16 @@ use std::sync::Arc;
 pub struct DynamoDbKvStore {
     client: Arc<Client>,
     table_name: String,
-    /// Optional user_id that will be used as the partition key
-    user_id: Option<String>,
+    /// user_id used as the partition key
+    user_id: String,
 }
 
 impl DynamoDbKvStore {
     /// Create a new DynamoDB KvStore for a specific table
     ///
     /// - `table_name`: The DynamoDB table name (typically namespace-specific)
-    /// - `user_id`: Optional user_id that will be used as the partition key (for multi-tenant isolation)
-    pub fn new(client: Arc<Client>, table_name: String, user_id: Option<String>) -> Self {
+    /// - `user_id`: user_id used as the partition key (for multi-tenant isolation)
+    pub fn new(client: Arc<Client>, table_name: String, user_id: String) -> Self {
         Self {
             client,
             table_name,
@@ -46,16 +46,14 @@ impl DynamoDbKvStore {
     }
 
     fn get_partition_key_impl(&self) -> String {
-        // For backward compatibility, return just user_id or "default"
-        // The actual key will be in the sort key
-        self.user_id.clone().unwrap_or_else(|| "default".to_string())
+        self.user_id.clone()
     }
     
-    /// Get partition key (user_id or default)
+    /// Get partition key (user_id)
     /// Note: This is a change from previous implementation where PK was user_id:key
     /// This change enables Query operations with SK prefix
     fn get_partition_key_with_key(&self, _key: &[u8]) -> String {
-        self.user_id.clone().unwrap_or_else(|| "default".to_string())
+        self.user_id.clone()
     }
 
     /// Convert a byte key to a string for the sort key (no user_id prefixing)
@@ -363,15 +361,7 @@ pub enum TableNameResolver {
 /// Each namespace maps to a separate DynamoDB table for optimal performance.
 /// Table names are resolved using the `TableNameResolver`.
 /// The user_id is used as the partition key for multi-tenant isolation.
-pub struct DynamoDbNamespacedStore {
-    client: Arc<Client>,
-    /// Strategy to resolve namespace to table name
-    resolver: TableNameResolver,
-    /// Whether to automatically create tables if they don't exist
-    auto_create: bool,
-    /// Optional user_id that will be used as the partition key (for multi-tenant isolation)
-    user_id: Option<String>,
-}
+
 
 /// Specialized DynamoDB store for native index with simplified key structure
 /// Uses user_id:feature (classification) as partition key and term as sort key
@@ -380,11 +370,11 @@ pub struct DynamoDbNamespacedStore {
 pub struct DynamoDbNativeIndexStore {
     client: Arc<Client>,
     table_name: String,
-    user_id: Option<String>,
+    user_id: String,
 }
 
 impl DynamoDbNativeIndexStore {
-    fn new(client: Arc<Client>, table_name: String, user_id: Option<String>) -> Self {
+    fn new(client: Arc<Client>, table_name: String, user_id: String) -> Self {
         Self {
             client,
             table_name,
@@ -406,36 +396,42 @@ impl DynamoDbNativeIndexStore {
     }
     
     /// Get partition key (feature) for native index
-    /// Format: user_id:feature (or default:feature if no user_id)
+    /// Format: user_id:feature
     fn get_partition_key(&self, feature: &str) -> String {
-        if let Some(ref user_id) = self.user_id {
-            format!("{}:{}", user_id, feature)
-        } else {
-            format!("default:{}", feature)
-        }
+        format!("{}:{}", self.user_id, feature)
     }
+}
+
+pub struct DynamoDbNamespacedStore {
+    client: Arc<Client>,
+    /// Strategy to resolve namespace to table name
+    resolver: TableNameResolver,
+    /// Whether to automatically create tables if they don't exist
+    auto_create: bool,
+    /// user_id that will be used as the partition key (for multi-tenant isolation)
+    user_id: String,
 }
 
 impl DynamoDbNamespacedStore {
     /// Create a new DynamoDB NamespacedStore with flexible configuration
-    pub fn new(client: Client, resolver: TableNameResolver, auto_create: bool) -> Self {
+    pub fn new(client: Client, resolver: TableNameResolver, auto_create: bool, user_id: String) -> Self {
         Self {
             client: Arc::new(client),
             resolver,
             auto_create,
-            user_id: None,
+            user_id,
         }
     }
     
     /// Create a new DynamoDB NamespacedStore with legacy prefix behavior (auto-create enabled)
-    pub fn new_with_prefix(client: Client, prefix: String) -> Self {
-        Self::new(client, TableNameResolver::Prefix(prefix), true)
+    pub fn new_with_prefix(client: Client, prefix: String, user_id: String) -> Self {
+        Self::new(client, TableNameResolver::Prefix(prefix), true, user_id)
     }
     
     /// Set user_id for multi-tenant isolation
     /// The user_id will be used as the partition key
     pub fn with_user_id(mut self, user_id: String) -> Self {
-        self.user_id = Some(user_id);
+        self.user_id = user_id;
         self
     }
     
@@ -921,7 +917,7 @@ mod unit_tests {
         let store = DynamoDbKvStore::new(
             client.clone(), 
             "TestTable".to_string(), 
-            Some("user123".to_string())
+            "user123".to_string()
         );
         
         let key = b"my_key";
@@ -937,7 +933,7 @@ mod unit_tests {
         let store_default = DynamoDbKvStore::new(
             client.clone(), 
             "TestTable".to_string(), 
-            None
+            "default".to_string()
         );
         
         let pk_default = store_default.get_partition_key_with_key(key);
@@ -950,7 +946,7 @@ mod unit_tests {
         let store = DynamoDbNativeIndexStore::new(
             client,
             "IndexTable".to_string(),
-            Some("user123".to_string())
+            "user123".to_string()
         );
 
         // Case 1: Standard feature:term key
@@ -981,7 +977,7 @@ mod unit_tests {
         let store = DynamoDbNativeIndexStore::new(
             client.clone(),
             "IndexTable".to_string(),
-            Some("user123".to_string())
+            "user123".to_string()
         );
         
         let pk = store.get_partition_key("word");
@@ -991,7 +987,7 @@ mod unit_tests {
         let store_default = DynamoDbNativeIndexStore::new(
             client,
             "IndexTable".to_string(),
-            None
+            "default".to_string()
         );
         
         let pk_default = store_default.get_partition_key("email");

@@ -1,6 +1,6 @@
 #![cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel, LambdaLogging};
-use datafold::StorageConfig;
+use datafold::storage::DatabaseConfig as StorageConfig;
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
@@ -206,7 +206,7 @@ async fn test_lambda_json_ingestion_with_logging() {
     }
     
     // Verify we can list schemas
-    let schemas_result = LambdaContext::list_schemas().await;
+    let schemas_result = LambdaContext::list_schemas("default".to_string()).await;
     assert!(
         schemas_result.is_ok(),
         "Failed to list schemas: {:?}",
