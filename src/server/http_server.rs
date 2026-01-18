@@ -14,8 +14,7 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use actix_cors::Cors;
 
-use super::static_assets::Asset;
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer as ActixHttpServer};
+use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -39,32 +38,7 @@ pub struct DataFoldHttpServer {
     bind_address: String,
 }
 
-async fn serve_ui(req: HttpRequest) -> HttpResponse {
-    let path: String = req
-        .match_info()
-        .query("filename")
-        .parse()
-        .unwrap_or_default();
-    let path = if path.is_empty() { "index.html" } else { &path };
 
-    if let Some(content) = Asset::get(path) {
-        let mime = mime_guess::from_path(path).first_or_octet_stream();
-        HttpResponse::Ok()
-            .content_type(mime.as_ref())
-            .body(content.data.into_owned())
-    } else if !path.contains('.') {
-        // SPA Fallback: only if path has no extension (no dot)
-        match Asset::get("index.html") {
-            Some(content) => HttpResponse::Ok()
-                .content_type("text/html")
-                .body(content.data.into_owned()),
-            None => HttpResponse::NotFound().body("404 Not Found"),
-        }
-    } else {
-        // If path has an extension but was not found in assets -> 404
-        HttpResponse::NotFound().body("404 Not Found")
-    }
-}
 
 /// Shared application state for the HTTP server.
 pub struct AppState {
@@ -218,9 +192,6 @@ impl DataFoldHttpServer {
                 .app_data(upload_storage_data.clone())
                 .app_data(json_config)
                 .configure(Self::configure_api)
-                // Serve the built React UI from embedded assets
-                .route("/", web::get().to(serve_ui))
-                .route("/{filename:.*}", web::get().to(serve_ui))
         })
         .bind(&self.bind_address)
         .map_err(|e| FoldDbError::Config(format!("Failed to bind HTTP server: {}", e)))?
@@ -502,74 +473,5 @@ impl DataFoldHttpServer {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use actix_web::{test, web, App};
 
-    #[actix_web::test]
-    async fn test_serve_ui_index() {
-        // Initialize simple app with just the UI route
-        let app = test::init_service(
-            App::new()
-                .route("/", web::get().to(serve_ui))
-                .route("/{filename:.*}", web::get().to(serve_ui)),
-        )
-        .await;
 
-        // Test root request
-        let req = test::TestRequest::get().uri("/").to_request();
-        let resp = test::call_service(&app, req).await;
-        assert!(resp.status().is_success());
-
-        let body = test::read_body(resp).await;
-        let body_str = std::str::from_utf8(&body).unwrap();
-
-        // Verify relative paths in index.html - critical for CloudFront compatibility
-        assert!(
-            body_str.contains("href=\"./database.svg\""),
-            "index.html missing relative href for database.svg"
-        );
-        // matched regex src="./"
-        assert!(
-            body_str.contains("src=\"./"),
-            "index.html missing relative src attribute"
-        );
-    }
-
-    #[actix_web::test]
-    async fn test_serve_ui_asset() {
-        let app = test::init_service(
-            App::new()
-                .route("/", web::get().to(serve_ui))
-                .route("/{filename:.*}", web::get().to(serve_ui)),
-        )
-        .await;
-
-        // Test asset request
-        let req = test::TestRequest::get().uri("/database.svg").to_request();
-        let resp = test::call_service(&app, req).await;
-        assert!(resp.status().is_success());
-        assert_eq!(resp.headers().get("content-type").unwrap(), "image/svg+xml");
-    }
-
-    #[actix_web::test]
-    async fn test_serve_ui_fallback() {
-        let app = test::init_service(
-            App::new()
-                .route("/", web::get().to(serve_ui))
-                .route("/{filename:.*}", web::get().to(serve_ui)),
-        )
-        .await;
-
-        // Test missing path -> fallback to index.html (SPA)
-        let req = test::TestRequest::get()
-            .uri("/some/random/page")
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert!(resp.status().is_success());
-        let body = test::read_body(resp).await;
-        let body_str = std::str::from_utf8(&body).unwrap();
-        assert!(body_str.contains("<!DOCTYPE html>"));
-    }
-}

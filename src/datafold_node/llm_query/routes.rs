@@ -4,6 +4,7 @@ use super::service::LlmQueryService;
 use super::session::SessionManager;
 use super::types::*;
 use crate::datafold_node::OperationProcessor;
+use crate::DataFoldNode;
 use crate::fold_db_core::query::records_from_field_map;
 use crate::ingestion::IngestionConfig;
 use crate::schema::SchemaState;
@@ -317,7 +318,7 @@ pub async fn execute_query_plan(
     }
 
     // Execute the query
-    let node_arc = Arc::clone(&app_state.node);
+    let node_arc: Arc<tokio::sync::RwLock<DataFoldNode>> = Arc::clone(&app_state.node);
     let processor = OperationProcessor::new(node_arc.read().await.clone());
     let results = match processor.execute_query_map(query_plan.query.clone()).await {
         Ok(result_map) => {
@@ -549,7 +550,7 @@ pub async fn chat(
             const MAX_FOLLOWUP_ATTEMPTS: usize = 3;
 
             for attempt in 0..MAX_FOLLOWUP_ATTEMPTS {
-                let node_arc = Arc::clone(&app_state.node);
+                let node_arc: Arc<tokio::sync::RwLock<DataFoldNode>> = Arc::clone(&app_state.node);
                 let processor = OperationProcessor::new(node_arc.read().await.clone());
                 match processor.execute_query_map(current_query.clone()).await {
                     Ok(result_map) => {
@@ -911,7 +912,7 @@ pub async fn run_query(
     const MAX_ATTEMPTS: usize = 5;
 
     for attempt in 0..MAX_ATTEMPTS {
-        let node_arc = Arc::clone(&app_state.node);
+        let node_arc: Arc<tokio::sync::RwLock<DataFoldNode>> = Arc::clone(&app_state.node);
         let processor = OperationProcessor::new(node_arc.read().await.clone());
         match processor
             .execute_query_map(current_query_plan.query.clone())
@@ -1064,7 +1065,7 @@ pub async fn ai_native_index_query(
     };
 
     // Get available schemas
-    let schemas = {
+    let schemas: Vec<crate::schema::SchemaWithState> = {
         let node = app_state.node.read().await;
         let db_guard = match node.get_fold_db().await {
             Ok(guard) => guard,
