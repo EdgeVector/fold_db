@@ -1,7 +1,7 @@
 #![cfg(feature = "lambda")]
 use datafold::ingestion::progress::IngestionStep;
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
-use datafold::StorageConfig;
+use datafold::storage::DatabaseConfig as StorageConfig;
 use serde_json::json;
 
 use tokio::time::{sleep, Duration, Instant};

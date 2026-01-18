@@ -39,8 +39,8 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     }
 
     // Wrap node in Arc<Mutex<>> for OperationProcessor
-    let node_arc = Arc::new(tokio::sync::RwLock::new(node));
-    let processor = OperationProcessor::new(node_arc);
+    // Wrap node in Arc<Mutex<>> for OperationProcessor
+    let processor = OperationProcessor::new(node);
 
     // Create multiple test blog posts with different publish_date values (range keys)
     let test_posts = vec![
@@ -285,8 +285,8 @@ async fn test_range_key_set_in_query_object() {
     }
 
     // Wrap node in Arc<Mutex<>> for OperationProcessor
-    let node_arc = Arc::new(tokio::sync::RwLock::new(node));
-    let processor = OperationProcessor::new(node_arc);
+    // Wrap node in Arc<Mutex<>> for OperationProcessor
+    let processor = OperationProcessor::new(node);
 
     // Create test blog post
     let mut fields_and_values = HashMap::new();

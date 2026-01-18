@@ -20,7 +20,7 @@ impl LambdaContext {
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-    ///     let user_id = event.payload["user_id"].as_str().unwrap_or("anonymous");
+    ///     let user_id = event.payload["user_id"].as_str().ok_or("Missing user_id")?;
     ///     let logger = LambdaContext::create_logger(user_id)?;
     ///     
     ///     logger.info("request_started", "Processing your request").await?;
@@ -97,19 +97,23 @@ impl LambdaContext {
     ///
     /// Returns the private key for the current node.
     ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User ID for node context
+    ///
     /// # Example
     ///
     /// ```ignore
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let private_key = LambdaContext::get_node_private_key().await?;
+    ///     let private_key = LambdaContext::get_node_private_key("user_123".to_string()).await?;
     ///     println!("Private key: {}", private_key);
     ///     Ok(())
     /// }
     /// ```
-    pub async fn get_node_private_key() -> Result<String, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn get_node_private_key(user_id: String) -> Result<String, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node = node_mutex.lock().await;
         
         Ok(node.get_node_private_key().to_string())
@@ -119,19 +123,23 @@ impl LambdaContext {
     ///
     /// Returns the public key for the current node.
     ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User ID for node context
+    ///
     /// # Example
     ///
     /// ```ignore
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let public_key = LambdaContext::get_node_public_key().await?;
+    ///     let public_key = LambdaContext::get_node_public_key("user_123".to_string()).await?;
     ///     println!("Public key: {}", public_key);
     ///     Ok(())
     /// }
     /// ```
-    pub async fn get_node_public_key() -> Result<String, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn get_node_public_key(user_id: String) -> Result<String, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node = node_mutex.lock().await;
         
         Ok(node.get_node_public_key().to_string())
@@ -147,6 +155,7 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `confirm` - Must be true to confirm the reset
+    /// * `user_id` - User ID for node context
     ///
     /// # Example
     ///
@@ -154,13 +163,12 @@ impl LambdaContext {
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     LambdaContext::reset_database(true).await?;
+    ///     LambdaContext::reset_database(true, "user_123".to_string()).await?;
     ///     println!("Database reset");
     ///     Ok(())
     /// }
     /// ```
-    pub async fn reset_database(confirm: bool) -> Result<(), IngestionError> {
-        let user_id = LambdaContext::get_user_id();
+    pub async fn reset_database(confirm: bool, user_id: String) -> Result<(), IngestionError> {
         let ctx = Self::get()?;
 
         if !confirm {
@@ -171,7 +179,7 @@ impl LambdaContext {
         let processor = {
             let node_mutex = Self::get_node(&user_id).await?;
             let node_guard = node_mutex.lock().await;
-            OperationProcessor::new(node_guard.clone())
+            crate::datafold_node::OperationProcessor::new(node_guard.clone())
         };
 
         // 2. Perform reset operations
@@ -192,6 +200,7 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `confirm` - Must be true to confirm the reset
+    /// * `user_id` - User ID for node context
     ///
     /// # Example
     ///
@@ -199,19 +208,19 @@ impl LambdaContext {
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     LambdaContext::reset_schema_service(true).await?;
+    ///     LambdaContext::reset_schema_service(true, "user_123".to_string()).await?;
     ///     println!("Schema service reset");
     ///     Ok(())
     /// }
     /// ```
-    pub async fn reset_schema_service(confirm: bool) -> Result<(), IngestionError> {
+    pub async fn reset_schema_service(confirm: bool, user_id: String) -> Result<(), IngestionError> {
         if !confirm {
             return Err(IngestionError::InvalidInput(
                 "Reset confirmation required. Set confirm=true".to_string()
             ));
         }
 
-        let node_mutex = Self::node().await?;
+        let node_mutex = Self::get_node(&user_id).await?;
         let node = node_mutex.lock().await;
         let schema_client = node.get_schema_client();
 
@@ -348,15 +357,14 @@ impl LambdaContext {
     }
 
     /// Get database configuration
-    pub async fn get_database_config() -> Result<DatabaseConfig, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn get_database_config(user_id: String) -> Result<DatabaseConfig, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node = node_mutex.lock().await;
         Ok(node.config.database.clone())
     }
 
     /// Update database configuration
-    pub async fn update_database_config(new_config: DatabaseConfig) -> Result<(), IngestionError> {
-        let user_id = LambdaContext::get_user_id();
+    pub async fn update_database_config(new_config: DatabaseConfig, user_id: String) -> Result<(), IngestionError> {
         let ctx = Self::get()?;
 
         // 1. Get processor

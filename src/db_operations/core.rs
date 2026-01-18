@@ -112,16 +112,14 @@ impl DbOperations {
     }
 
     /// Convenience constructor for DynamoDB backend with simplified config
+    /// Convenience constructor for DynamoDB backend with simplified config
     #[cfg(feature = "aws-backend")]
     pub async fn from_dynamodb(
         client: aws_sdk_dynamodb::Client,
         table_name: String,
-        user_id: Option<String>,
+        user_id: String,
     ) -> Result<Self, crate::storage::StorageError> {
-        let mut store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
-        if let Some(uid) = user_id {
-            store = store.with_user_id(uid);
-        }
+        let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name, user_id.clone());
         Self::from_namespaced_store(Arc::new(store)).await
     }
 
@@ -131,12 +129,9 @@ impl DbOperations {
         client: aws_sdk_dynamodb::Client,
         resolver: crate::storage::TableNameResolver,
         auto_create: bool,
-        user_id: Option<String>,
+        user_id: String,
     ) -> Result<Self, crate::storage::StorageError> {
-        let mut store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
-        if let Some(uid) = user_id {
-            store = store.with_user_id(uid);
-        }
+        let store = DynamoDbNamespacedStore::new(client, resolver, auto_create, user_id.clone());
         Self::from_namespaced_store(Arc::new(store)).await
     }
 

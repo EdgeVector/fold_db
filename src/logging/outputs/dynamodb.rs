@@ -25,23 +25,22 @@ struct DynamoDbLogItem {
 }
 
 impl DynamoDbLogItem {
-    fn from_entry(entry: LogEntry) -> Self {
-        // TTL: 30 days from now
+    fn try_from_entry(entry: LogEntry) -> Result<Self, String> {
         let ttl = (SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
             + (30 * 24 * 60 * 60)) as i64;
 
-        Self {
-            user_id: entry.user_id.unwrap_or_else(|| "anonymous".to_string()),
+        Ok(Self {
+            user_id: entry.user_id.ok_or_else(|| "Missing user_id for DynamoDB log entry".to_string())?,
             timestamp: entry.timestamp,
             level: entry.level,
             event_type: entry.event_type,
             message: entry.message,
             ttl,
             metadata: entry.metadata,
-        }
+        })
     }
 
     fn into_entry(self) -> LogEntry {
@@ -164,7 +163,8 @@ impl DynamoDbLogger {
 impl Logger for DynamoDbLogger {
     /// Log an event to DynamoDB
     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let item_struct = DynamoDbLogItem::from_entry(entry);
+        let item_struct = DynamoDbLogItem::try_from_entry(entry)
+             .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))?;
         let item = serde_dynamo::to_item(item_struct)?;
 
         self.client

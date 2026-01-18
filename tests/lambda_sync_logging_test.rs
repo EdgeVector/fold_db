@@ -1,7 +1,7 @@
 #![cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, Logger, LogEntry, LogLevel, LambdaLogging};
 use datafold::ingestion::IngestionError;
-use datafold::StorageConfig;
+use datafold::storage::DatabaseConfig as StorageConfig;
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;

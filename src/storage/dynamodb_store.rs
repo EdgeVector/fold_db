@@ -23,8 +23,8 @@ use crate::storage::DynamoDbConfig;
 pub struct DynamoDbSchemaStore {
     client: DynamoClient,
     table_name: String,
-    /// Optional user_id that will be used as part of the partition key
-    user_id: Option<String>,
+    /// user_id that will be used as part of the partition key
+    user_id: String,
 }
 
 
@@ -37,6 +37,11 @@ impl DynamoDbSchemaStore {
     pub async fn new(config: DynamoDbConfig) -> FoldDbResult<Self> {
         // Resolve table name from explicit tables config
         let table_name = config.tables.schemas.clone();
+
+        // Require user_id
+        let user_id = config.user_id.ok_or_else(|| {
+            FoldDbError::Config("Missing user_id for DynamoDbSchemaStore".to_string())
+        })?;
 
         let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(aws_sdk_dynamodb::config::Region::new(config.region.clone()))
@@ -140,15 +145,15 @@ impl DynamoDbSchemaStore {
         Ok(Self {
             client,
             table_name,
-            user_id: config.user_id,
+            user_id,
         })
     }
 
     /// Get the partition key (hash key) for schemas
-    /// Format: user_id (or "default" if no user_id)
+    /// Format: user_id
     /// The schema_name goes in the sort key (SK)
     fn get_partition_key(&self) -> String {
-        self.user_id.clone().unwrap_or_else(|| "default".to_string())
+        self.user_id.clone()
     }
 
     /// Get a schema by its topology hash
