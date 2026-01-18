@@ -113,7 +113,7 @@ async fn run_background_ingestion(
         match service
             .process_json_with_node_and_progress(
                 ingestion_request,
-                &*node_guard,
+                &node_guard,
                 &progress_service,
                 progress_id.clone(),
             )

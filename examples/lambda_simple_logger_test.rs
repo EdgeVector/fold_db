@@ -39,7 +39,8 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     tracing::info!("Logger test handler invoked");
 
     // Extract user_id from event payload
-    let user_id = event.payload
+    let user_id = event
+        .payload
         .get("user_id")
         .and_then(|v| v.as_str())
         .unwrap_or("anonymous");
@@ -82,8 +83,8 @@ async fn main() -> Result<(), Error> {
 
     // Create Lambda configuration with StdoutLogger
     // In production, replace StdoutLogger with your custom logger (e.g., DynamoDbLogger)
-    let storage_config = StorageConfig::Local { 
-        path: std::env::temp_dir() 
+    let storage_config = StorageConfig::Local {
+        path: std::env::temp_dir(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout);
 

@@ -16,7 +16,6 @@ pub struct NodeManager {
     single_node: Option<Arc<tokio::sync::Mutex<DataFoldNode>>>,
 }
 
-
 impl NodeManager {
     /// Get the single-tenant node if one exists
     pub fn get_single_node(&self) -> Option<Arc<tokio::sync::Mutex<DataFoldNode>>> {
@@ -39,7 +38,9 @@ impl NodeManager {
             _ => {
                 // Single-tenant mode: Create one node now
                 let user_id = std::env::var("FOLDB_USER_ID").map_err(|_| {
-                    IngestionError::configuration_error("FOLDB_USER_ID environment variable required for single-tenant mode")
+                    IngestionError::configuration_error(
+                        "FOLDB_USER_ID environment variable required for single-tenant mode",
+                    )
                 })?;
                 let node = manager.create_node(&user_id).await?;
                 manager.single_node = Some(node);
@@ -86,8 +87,8 @@ impl NodeManager {
         user_id: &str,
     ) -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
         use crate::datafold_node::config::{DatabaseConfig, NodeConfig};
-        use crate::fold_db_core::FoldDB;
         use crate::fold_db_core::factory;
+        use crate::fold_db_core::FoldDB;
         use crate::storage::DatabaseConfig as StorageConfig; // Alias for compatibility with code below or just update
 
         // Convert LambdaStorage to NodeConfig or handle DbOps case
@@ -156,7 +157,7 @@ impl NodeManager {
             nodes.remove(user_id);
         }
         // Also clear active single node if it matches or if we want to force reset
-        // Note: active_node handling might be tricky if it's the same Arc. 
+        // Note: active_node handling might be tricky if it's the same Arc.
         // But for cache invalidation, creating a new one next time is what matters.
     }
 }

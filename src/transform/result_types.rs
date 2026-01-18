@@ -64,5 +64,3 @@ pub enum ExecutionWarningType {
     /// Configuration warning
     Configuration,
 }
-
-

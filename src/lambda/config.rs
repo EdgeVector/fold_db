@@ -1,5 +1,5 @@
 //! Configuration types for Lambda context
-//! 
+//!
 //! storage types now use DatabaseConfig instead of outdated StorageConfig
 
 use crate::db_operations::DbOperations;
@@ -57,10 +57,13 @@ pub struct LambdaConfig {
 impl std::fmt::Debug for LambdaConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LambdaConfig")
-            .field("storage", &match &self.storage {
-                LambdaStorage::Config(cfg) => format!("Config({:?})", cfg),
-                LambdaStorage::DbOps(_) => "DbOps(<pre-created>)".to_string(),
-            })
+            .field(
+                "storage",
+                &match &self.storage {
+                    LambdaStorage::Config(cfg) => format!("Config({:?})", cfg),
+                    LambdaStorage::DbOps(_) => "DbOps(<pre-created>)".to_string(),
+                },
+            )
             .field("schema_service_url", &self.schema_service_url)
             .field("ai_config", &self.ai_config)
             .field("logging", &self.logging)
@@ -123,7 +126,7 @@ impl LambdaConfig {
     }
 
     /// Create a new Lambda configuration with a pre-created DbOperations and Logging.
-    /// 
+    ///
     /// This allows you to use any storage backend implementation (DynamoDB, custom, etc.)
     /// by creating DbOperations yourself.
     ///
@@ -137,7 +140,7 @@ impl LambdaConfig {
     /// // Create your DbOperations with any backend
     /// let db_ops = Arc::new(DbOperations::from_dynamodb(client, table, Some(user_id)).await?);
     /// let config = LambdaConfig::with_db_ops(
-    ///     db_ops, 
+    ///     db_ops,
     ///     LambdaLogging::DynamoDb { table_name: "logs".into() }
     /// );
     /// ```
@@ -183,10 +186,7 @@ impl LambdaConfig {
         self.ai_config = Some(AIConfig {
             provider: AIProvider::Ollama,
             openrouter: None,
-            ollama: Some(OllamaConfig {
-                base_url,
-                model,
-            }),
+            ollama: Some(OllamaConfig { base_url, model }),
             timeout_seconds: 120,
             max_retries: 3,
         });
@@ -208,18 +208,24 @@ mod tests {
 
     #[test]
     fn test_lambda_config_creation() {
-        let storage_config = DatabaseConfig::Local { path: PathBuf::from("/tmp/folddb") };
+        let storage_config = DatabaseConfig::Local {
+            path: PathBuf::from("/tmp/folddb"),
+        };
         let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout);
         assert!(config.schema_service_url.is_none());
     }
 
     #[test]
     fn test_lambda_config_with_storage_config() {
-        let storage_config1 = DatabaseConfig::Local { path: PathBuf::from("/tmp/test1") };
-        let storage_config2 = DatabaseConfig::Local { path: PathBuf::from("/tmp/test2") };
+        let storage_config1 = DatabaseConfig::Local {
+            path: PathBuf::from("/tmp/test1"),
+        };
+        let storage_config2 = DatabaseConfig::Local {
+            path: PathBuf::from("/tmp/test2"),
+        };
         let config = LambdaConfig::new(storage_config1.clone(), LambdaLogging::Stdout)
             .with_storage_config(storage_config2.clone());
-        
+
         match &config.storage {
             LambdaStorage::Config(DatabaseConfig::Local { path }) => {
                 assert_eq!(path, &PathBuf::from("/tmp/test2"));
@@ -230,9 +236,12 @@ mod tests {
 
     #[test]
     fn test_lambda_config_with_schema_service_url() {
-        let storage_config = DatabaseConfig::Local { path: PathBuf::from("/tmp/folddb") };
+        let storage_config = DatabaseConfig::Local {
+            path: PathBuf::from("/tmp/folddb"),
+        };
         let url = "https://schema.example.com".to_string();
-        let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout).with_schema_service_url(url.clone());
+        let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)
+            .with_schema_service_url(url.clone());
         assert_eq!(config.schema_service_url, Some(url));
     }
 }

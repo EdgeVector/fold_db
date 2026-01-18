@@ -1,10 +1,9 @@
 //! Schema Service
-//! 
+//!
 //! A standalone HTTP service that provides schema discovery and management.
-//! The schema service loads schemas from a sled database on startup and 
+//! The schema service loads schemas from a sled database on startup and
 //! provides them via HTTP API to the main DataFold node.
 
 pub mod server;
 
 pub use server::SchemaServiceServer;
-

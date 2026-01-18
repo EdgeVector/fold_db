@@ -1,13 +1,19 @@
+use crate::schema::types::key_value::KeyValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::schema::types::key_value::KeyValue;
 #[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
 
 /// HashRange filter operations for querying hash-range fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(feature = "ts-bindings", ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
+)]
 pub enum HashRangeFilter {
     /// Filter by exact hash and range key match
     HashRangeKey { hash: String, range: String },
@@ -18,16 +24,13 @@ pub enum HashRangeFilter {
     /// Filter by range key prefix across all hash groups
     RangePrefix(String),
     /// Filter by range key range within a specific hash group
-    HashRangeRange { 
-        hash: String, 
-        start: String, 
-        end: String 
+    HashRangeRange {
+        hash: String,
+        start: String,
+        end: String,
     },
     /// Filter by range key range across all hash groups
-    RangeRange { 
-        start: String, 
-        end: String 
-    },
+    RangeRange { start: String, end: String },
     /// Filter by sample size
     SampleN(usize),
     /// Filter by multiple hash-range key pairs
@@ -45,13 +48,18 @@ pub enum HashRangeFilter {
 impl HashRangeFilter {
     /// Create a unified filter from a KeyConfig
     /// This converts KeyConfig field names to appropriate HashRangeFilter variants
-    pub fn from_key_config(key_config: Option<crate::schema::types::key_config::KeyConfig>) -> Option<Self> {
+    pub fn from_key_config(
+        key_config: Option<crate::schema::types::key_config::KeyConfig>,
+    ) -> Option<Self> {
         match key_config {
             Some(config) => {
                 match (&config.hash_field, &config.range_field) {
                     (Some(hash), Some(range)) => {
                         // Both hash and range fields - create a combined filter
-                        Some(Self::HashRangeKey { hash: hash.clone(), range: range.clone() })
+                        Some(Self::HashRangeKey {
+                            hash: hash.clone(),
+                            range: range.clone(),
+                        })
                     }
                     (Some(hash), None) => {
                         // Only hash field
@@ -72,7 +80,10 @@ impl HashRangeFilter {
     }
 
     /// Create a unified filter from JSON values (for use with query filters)
-    pub fn from_json_values(hash_filter_value: Option<serde_json::Value>, range_filter_value: Option<serde_json::Value>) -> Option<Self> {
+    pub fn from_json_values(
+        hash_filter_value: Option<serde_json::Value>,
+        range_filter_value: Option<serde_json::Value>,
+    ) -> Option<Self> {
         let hash_filter = hash_filter_value.and_then(|v| serde_json::from_value::<Self>(v).ok());
         let range_filter = range_filter_value.and_then(|v| serde_json::from_value::<Self>(v).ok());
 
@@ -114,7 +125,13 @@ impl HashRangeFilter {
 /// Result of a hash-range filter operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(feature = "ts-bindings", ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
+)]
 pub struct HashRangeFilterResult {
     /// Matches with composite keys in format "KeyValue" -> atom_uuid
     pub matches: HashMap<KeyValue, String>,
@@ -136,8 +153,7 @@ impl HashRangeFilterResult {
 
     /// Creates a result with matches
     pub fn new(matches: HashMap<KeyValue, String>) -> Self {
-        let hash_groups_count = matches
-            .keys().len();
+        let hash_groups_count = matches.keys().len();
 
         Self {
             total_count: matches.len(),

@@ -990,7 +990,7 @@ impl NativeIndexManager {
         )
         .await;
 
-        for (_i, fetch_result) in record_fetches.into_iter().enumerate() {
+        for fetch_result in record_fetches.into_iter() {
             if let Ok(Some(bytes)) = fetch_result {
                 // Record exists! Deserialize to get old words/keys
                 if let Ok(old_keys) = serde_json::from_slice::<Vec<String>>(&bytes) {

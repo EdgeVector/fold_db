@@ -57,8 +57,6 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
     }
 }
 
-
-
 /// Approve a schema for queries and mutations
 #[utoipa::path(
     post,
@@ -166,12 +164,7 @@ pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
             }))
         }
         Err(e) => {
-            log_feature!(
-                LogFeature::Schema,
-                error,
-                "Failed to load schemas: {}",
-                e
-            );
+            log_feature!(LogFeature::Schema, error, "Failed to load schemas: {}", e);
             HttpResponse::InternalServerError().json(json!({
                 "error": format!("Failed to load schemas: {}", e)
             }))

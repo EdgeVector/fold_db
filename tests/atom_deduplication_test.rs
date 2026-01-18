@@ -6,16 +6,8 @@ use serde_json::json;
 fn test_atom_content_based_uuid() {
     // Create two atoms with identical content
     let content = json!({"title": "Test Post", "body": "Test content"});
-    let atom1 = Atom::new(
-        "BlogPost".to_string(),
-        "user1".to_string(),
-        content.clone(),
-    );
-    let atom2 = Atom::new(
-        "BlogPost".to_string(),
-        "user2".to_string(),
-        content.clone(),
-    );
+    let atom1 = Atom::new("BlogPost".to_string(), "user1".to_string(), content.clone());
+    let atom2 = Atom::new("BlogPost".to_string(), "user2".to_string(), content.clone());
 
     // Both atoms should have the same UUID because they have the same schema and content
     assert_eq!(
@@ -56,7 +48,9 @@ fn test_atom_content_based_uuid() {
 
 #[tokio::test]
 async fn test_atom_deduplication_in_db() {
-    let db_ops = TestDatabaseFactory::create_temp_db_ops().await.expect("Failed to create DB");
+    let db_ops = TestDatabaseFactory::create_temp_db_ops()
+        .await
+        .expect("Failed to create DB");
 
     // Create the first atom
     let content = json!({"title": "Duplicate Test", "body": "This is duplicate content"});
@@ -94,7 +88,12 @@ async fn test_atom_deduplication_in_db() {
     let stored_atom: Option<Atom> = (**db_ops.atoms_store())
         .get_item::<Atom>(&atom_key)
         .await
-        .map_err(|e| datafold::schema::SchemaError::InvalidData(format!("Failed to check existing atom: {}", e)))
+        .map_err(|e| {
+            datafold::schema::SchemaError::InvalidData(format!(
+                "Failed to check existing atom: {}",
+                e
+            ))
+        })
         .expect("Failed to get atom");
 
     assert!(stored_atom.is_some(), "Atom should be stored in database");
@@ -118,10 +117,13 @@ fn test_atom_uuid_deterministic() {
     assert_eq!(atom1.uuid(), atom3.uuid());
 
     // The UUID should be a valid SHA256 hash (64 hex characters)
-    assert_eq!(atom1.uuid().len(), 64, "UUID should be 64 characters (SHA256 hex)");
+    assert_eq!(
+        atom1.uuid().len(),
+        64,
+        "UUID should be 64 characters (SHA256 hex)"
+    );
     assert!(
         atom1.uuid().chars().all(|c| c.is_ascii_hexdigit()),
         "UUID should be a valid hex string"
     );
 }
-

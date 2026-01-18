@@ -5,12 +5,11 @@
 //! results exploration.
 
 pub mod routes;
-pub mod session;
 pub mod service;
+pub mod session;
 pub mod types;
 
 pub use routes::*;
-pub use session::SessionManager;
 pub use service::LlmQueryService;
+pub use session::SessionManager;
 pub use types::*;
-

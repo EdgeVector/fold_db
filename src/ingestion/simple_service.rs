@@ -1,5 +1,5 @@
 //! Simplified ingestion service that works with DataFoldNode's existing interface
-//! 
+//!
 //! Now refactored to take &DataFoldNode references, enabling usage with both Mutex and RwLock.
 
 use crate::datafold_node::DataFoldNode;
@@ -119,9 +119,7 @@ impl SimpleIngestionService {
             )
             .await;
         // Check if we can use the node directly for schemas
-        let available_schemas = self
-            .get_stripped_available_schemas_from_node(node)
-            .await?;
+        let available_schemas = self.get_stripped_available_schemas_from_node(node).await?;
 
         // Step 2.5: Flatten data structure for AI analysis
         progress_service
@@ -259,9 +257,9 @@ impl SimpleIngestionService {
                 "Executing mutations to store data...".to_string(),
             )
             .await;
-        
+
         let mutations_len = mutations.len();
-        
+
         let mutations_executed = if request
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
@@ -322,9 +320,7 @@ impl SimpleIngestionService {
         let flattened_data = self.flatten_twitter_data(&request.data);
 
         // Step 3: Get available schemas and strip them
-        let available_schemas = self
-            .get_stripped_available_schemas_from_node(node)
-            .await?;
+        let available_schemas = self.get_stripped_available_schemas_from_node(node).await?;
 
         // Step 4: Get AI recommendation
         let ai_response = self
@@ -416,8 +412,7 @@ impl SimpleIngestionService {
             .auto_execute
             .unwrap_or(self.config.auto_execute_mutations)
         {
-            self.execute_mutations_with_node(mutations, node)
-                .await?
+            self.execute_mutations_with_node(mutations, node).await?
         } else {
             0
         };
@@ -720,15 +715,12 @@ impl SimpleIngestionService {
 
         // Add schema to the schema service via the node
         let schema_response = {
-            node
-                .add_schema_to_service(&schema)
-                .await
-                .map_err(|error| {
-                    IngestionError::SchemaCreationError(format!(
-                        "Failed to create schema via schema service: {}",
-                        error
-                    ))
-                })?
+            node.add_schema_to_service(&schema).await.map_err(|error| {
+                IngestionError::SchemaCreationError(format!(
+                    "Failed to create schema via schema service: {}",
+                    error
+                ))
+            })?
         };
 
         let json_str = serde_json::to_string(&schema_response).map_err(|error| {
@@ -827,17 +819,17 @@ impl SimpleIngestionService {
                             .as_ref()
                             .map(|c| c.is_empty())
                             .unwrap_or(false)
-                {
-                    needs_update = true;
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Schema '{}' field '{}' is missing 'word' classification",
-                        schema_name,
-                        field_name
-                    );
-                    break;
-                }
+                    {
+                        needs_update = true;
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            info,
+                            "Schema '{}' field '{}' is missing 'word' classification",
+                            schema_name,
+                            field_name
+                        );
+                        break;
+                    }
                 }
             }
         }
@@ -901,17 +893,14 @@ impl SimpleIngestionService {
 
             // Update the schema in the schema service via node
             {
-                node
-                    .add_schema_to_service(&schema)
-                    .await
-                    .map_err(|e| {
-                        IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                            format!(
-                                "Failed to update schema '{}' with topologies: {}",
-                                schema_name, e
-                            ),
-                        ))
-                    })?;
+                node.add_schema_to_service(&schema).await.map_err(|e| {
+                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                        format!(
+                            "Failed to update schema '{}' with topologies: {}",
+                            schema_name, e
+                        ),
+                    ))
+                })?;
             }
 
             // Reload the schema
@@ -984,7 +973,8 @@ impl SimpleIngestionService {
 
         // Execute all mutations in a batch using DataFoldNode directly
         // This avoids OperationProcessor recursive type conversion (Mutation -> Value -> Mutation)
-        node.mutate_batch(mutations).await
+        node.mutate_batch(mutations)
+            .await
             .map(|mutation_ids| mutation_ids.len())
             .map_err(|e| {
                 IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
@@ -1004,7 +994,8 @@ impl SimpleIngestionService {
         }
 
         // Execute all mutations in a batch using DataFoldNode directly
-        node.mutate_batch(mutations).await
+        node.mutate_batch(mutations)
+            .await
             .map(|mutation_ids| mutation_ids.len())
             .map_err(|e| {
                 IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(

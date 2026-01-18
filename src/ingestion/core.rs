@@ -19,7 +19,8 @@ use crate::schema::SchemaCore;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use utoipa::ToSchema;
 
 /// Core ingestion service that orchestrates the entire ingestion process
@@ -884,31 +885,35 @@ impl IngestionCore {
     fn ensure_default_classifications_recursive(node: &mut TopologyNode) {
         match node {
             TopologyNode::Primitive {
-                value,
+                value: PrimitiveValueType::String,
                 classifications,
             } => {
-                if let PrimitiveValueType::String = value {
-                    if classifications.is_none() {
+                if classifications.is_none()
+                    || classifications
+                        .as_ref()
+                        .map(|c| c.is_empty())
+                        .unwrap_or(false)
+                {
+                    *classifications = Some(vec!["word".to_string()]);
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Added default 'word' classification to string field"
+                    );
+                } else if let Some(classes) = classifications {
+                    // Always ensure "word" classification exists for string fields
+                    // This guarantees they are indexed in the general word index
+                    if !classes.contains(&"word".to_string()) {
                         log_feature!(
                             LogFeature::Ingestion,
                             error,
-                            "Missing classifications for string field. Adding default 'word' classification."
+                            "AI schema response missing 'word' classification for string field. Fallback: Adding 'word' classification."
                         );
-                        *classifications = Some(vec!["word".to_string()]);
-                    } else if let Some(classes) = classifications {
-                        // Always ensure "word" classification exists for string fields
-                        // This guarantees they are indexed in the general word index
-                        if !classes.contains(&"word".to_string()) {
-                            log_feature!(
-                                LogFeature::Ingestion,
-                                error,
-                                "AI schema response missing 'word' classification for string field. Fallback: Adding 'word' classification."
-                            );
-                            classes.push("word".to_string());
-                        }
+                        classes.push("word".to_string());
                     }
                 }
             }
+
             TopologyNode::Object { value } => {
                 for node in value.values_mut() {
                     Self::ensure_default_classifications_recursive(node);
@@ -941,10 +946,8 @@ impl IngestionCore {
 
     /// Execute a single mutation (now uses batch internally for efficiency) and return its ID
     async fn execute_single_mutation(&self, mutation: &Mutation) -> IngestionResult<String> {
-        // Use block_in_place to acquire std::sync::Mutex without blocking the async runtime
-        let mut db = tokio::task::block_in_place(|| self.fold_db.lock()).map_err(|_| {
-            IngestionError::DatabaseError("Failed to acquire database lock".to_string())
-        })?;
+        // Use async-aware Mutex from tokio::sync::Mutex
+        let mut db = self.fold_db.lock().await;
 
         // Use async batch API to avoid deadlocks with DynamoDB
         let mut ids = db
@@ -1001,8 +1004,9 @@ mod tests {
     use crate::ingestion::config::AIProvider;
     use crate::schema::SchemaCore;
     use log::warn;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use tempfile::TempDir;
+    use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn test_ingestion_core_new_with_ollama_provider() {

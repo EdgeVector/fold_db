@@ -34,7 +34,7 @@ impl SchemaServiceClient {
             .connect_timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        
+
         Self {
             base_url: schema_service_url.to_string(),
             client,
@@ -42,9 +42,12 @@ impl SchemaServiceClient {
     }
 
     /// Add a schema definition to the schema service.
-    pub async fn add_schema(&self, schema: &Schema, mutation_mappers: HashMap<String, String>) -> FoldDbResult<AddSchemaResponse> {
+    pub async fn add_schema(
+        &self,
+        schema: &Schema,
+        mutation_mappers: HashMap<String, String>,
+    ) -> FoldDbResult<AddSchemaResponse> {
         let url = format!("{}/api/schemas", self.base_url);
-
 
         let request = AddSchemaRequest {
             schema: schema.clone(),
@@ -66,16 +69,16 @@ impl SchemaServiceClient {
             })?;
 
         if response.status() == StatusCode::CREATED {
-            let add_schema_response = response
-                .json::<AddSchemaResponse>()
-                .await
-                .map_err(|error| {
-                    FoldDbError::Config(format!(
-                        "Failed to parse schema creation response: {}",
-                        error
-                    ))
-                })?;
-
+            let add_schema_response =
+                response
+                    .json::<AddSchemaResponse>()
+                    .await
+                    .map_err(|error| {
+                        FoldDbError::Config(format!(
+                            "Failed to parse schema creation response: {}",
+                            error
+                        ))
+                    })?;
 
             return Ok(add_schema_response);
         }
@@ -85,17 +88,13 @@ impl SchemaServiceClient {
             struct ConflictBody {
                 closest_schema: Schema,
             }
-            
-            let conflict_body = response
-                .json::<ConflictBody>()
-                .await
-                .map_err(|error| {
-                    FoldDbError::Config(format!(
-                        "Failed to parse schema conflict response: {}",
-                        error
-                    ))
-                })?;
 
+            let conflict_body = response.json::<ConflictBody>().await.map_err(|error| {
+                FoldDbError::Config(format!(
+                    "Failed to parse schema conflict response: {}",
+                    error
+                ))
+            })?;
 
             // Return the existing schema as if it was successfully added
             return Ok(AddSchemaResponse {
@@ -119,7 +118,6 @@ impl SchemaServiceClient {
     pub async fn list_schemas(&self) -> FoldDbResult<Vec<String>> {
         let url = format!("{}/api/schemas", self.base_url);
 
-
         let response = self.client.get(&url).send().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to fetch schemas from service: {}", e))
         })?;
@@ -140,14 +138,12 @@ impl SchemaServiceClient {
             FoldDbError::Config(format!("Failed to parse schema list response: {}", e))
         })?;
 
-
         Ok(schemas_response.schemas)
     }
 
     /// Get all available schemas with their full definitions from the schema service
     pub async fn get_available_schemas(&self) -> FoldDbResult<Vec<Schema>> {
         let url = format!("{}/api/schemas/available", self.base_url);
-
 
         let response = self.client.get(&url).send().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to fetch available schemas: {}", e))
@@ -169,14 +165,12 @@ impl SchemaServiceClient {
             FoldDbError::Config(format!("Failed to parse available schemas response: {}", e))
         })?;
 
-
         Ok(schemas_response.schemas)
     }
 
     /// Get a specific schema definition from the schema service
     pub async fn get_schema(&self, name: &str) -> FoldDbResult<Schema> {
         let url = format!("{}/api/schema/{}", self.base_url, name);
-
 
         let response = self.client.get(&url).send().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to fetch schema '{}': {}", name, e))
@@ -193,7 +187,6 @@ impl SchemaServiceClient {
         let schema: Schema = response.json().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to parse schema '{}' response: {}", name, e))
         })?;
-
 
         Ok(schema)
     }
@@ -214,7 +207,8 @@ impl SchemaServiceClient {
             })?;
 
             schema_manager
-                .load_schema_from_json(&json_str).await
+                .load_schema_from_json(&json_str)
+                .await
                 .map_err(|e| {
                     FoldDbError::Config(format!("Failed to load schema '{}': {}", name, e))
                 })?;
@@ -229,7 +223,6 @@ impl SchemaServiceClient {
     pub async fn reset_schema_service(&self) -> FoldDbResult<()> {
         let url = format!("{}/api/system/reset", self.base_url);
 
-
         #[derive(Serialize)]
         struct ResetRequest {
             confirm: bool,
@@ -241,9 +234,7 @@ impl SchemaServiceClient {
             .json(&ResetRequest { confirm: true })
             .send()
             .await
-            .map_err(|e| {
-                FoldDbError::Config(format!("Failed to reset schema service: {}", e))
-            })?;
+            .map_err(|e| FoldDbError::Config(format!("Failed to reset schema service: {}", e)))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -257,7 +248,6 @@ impl SchemaServiceClient {
             )));
         }
 
-
         Ok(())
     }
 }
@@ -266,7 +256,9 @@ impl SchemaServiceClient {
 mod tests {
     use super::*;
     use crate::schema::types::SchemaType;
-    use crate::schema_service::server::{SchemaAddOutcome, SchemaServiceState, ErrorResponse, ConflictResponse};
+    use crate::schema_service::server::{
+        ConflictResponse, ErrorResponse, SchemaAddOutcome, SchemaServiceState,
+    };
     use actix_web::{rt::time::sleep, web, App, HttpResponse, HttpServer};
     use std::net::TcpListener;
     use std::time::Duration;
@@ -285,35 +277,39 @@ mod tests {
 
         let server = HttpServer::new(move || {
             let state = server_state.clone();
-            App::new()
-                .app_data(web::Data::new(state))
-                .service(web::scope("/api").route(
-                "/schemas",
-                web::post().to(
-                    |payload: web::Json<AddSchemaRequest>, state: web::Data<SchemaServiceState>| async move {
-                        let request = payload.into_inner();
-                        
-                        match state.add_schema(request.schema, request.mutation_mappers).await {
-                            Ok(SchemaAddOutcome::Added(schema, mutation_mappers)) => {
-                                HttpResponse::Created().json(AddSchemaResponse {
-                                    schema,
-                                    mutation_mappers,
-                                })
-                            }
-                            Ok(SchemaAddOutcome::TooSimilar(conflict)) => HttpResponse::Conflict()
-                                .json(ConflictResponse {
-                                    error: "Schema too similar to existing schema".to_string(),
-                                    similarity: conflict.similarity,
-                                    closest_schema: conflict.closest_schema,
-                                }),
-                            Err(error) => HttpResponse::BadRequest()
-                                .json(ErrorResponse {
+            App::new().app_data(web::Data::new(state)).service(
+                web::scope("/api").route(
+                    "/schemas",
+                    web::post().to(
+                        |payload: web::Json<AddSchemaRequest>,
+                         state: web::Data<SchemaServiceState>| async move {
+                            let request = payload.into_inner();
+
+                            match state
+                                .add_schema(request.schema, request.mutation_mappers)
+                                .await
+                            {
+                                Ok(SchemaAddOutcome::Added(schema, mutation_mappers)) => {
+                                    HttpResponse::Created().json(AddSchemaResponse {
+                                        schema,
+                                        mutation_mappers,
+                                    })
+                                }
+                                Ok(SchemaAddOutcome::TooSimilar(conflict)) => {
+                                    HttpResponse::Conflict().json(ConflictResponse {
+                                        error: "Schema too similar to existing schema".to_string(),
+                                        similarity: conflict.similarity,
+                                        closest_schema: conflict.closest_schema,
+                                    })
+                                }
+                                Err(error) => HttpResponse::BadRequest().json(ErrorResponse {
                                     error: format!("Failed to add schema: {}", error),
                                 }),
-                        }
-                    },
+                            }
+                        },
+                    ),
                 ),
-            ))
+            )
         })
         .listen(listener)
         .expect("failed to listen for test schema service")
@@ -330,9 +326,13 @@ mod tests {
     #[actix_web::test]
     async fn add_schema_succeeds() {
         let temp_dir = tempdir().expect("failed to create tempdir");
-        let db_path = temp_dir.path().join("test_schema_db").to_string_lossy().to_string();
-        let state = SchemaServiceState::new(db_path)
-            .expect("failed to create schema service state");
+        let db_path = temp_dir
+            .path()
+            .join("test_schema_db")
+            .to_string_lossy()
+            .to_string();
+        let state =
+            SchemaServiceState::new(db_path).expect("failed to create schema service state");
 
         let (base_url, handle) = spawn_schema_service(state).await;
 
@@ -353,7 +353,7 @@ mod tests {
                 crate::schema::types::TopologyNode::Primitive {
                     value: crate::schema::types::PrimitiveType::String,
                     classifications: Some(vec!["word".to_string()]),
-                }
+                },
             ),
         );
 

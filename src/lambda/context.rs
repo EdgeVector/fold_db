@@ -55,7 +55,7 @@ impl LambdaContext {
         // Initialize AI service if configured
         let llm_service = if let Some(ai_config) = config.ai_config.clone() {
             let ingestion_config = Self::ai_config_to_ingestion_config(ai_config)?; // Note: ai_config_to_ingestion_config is defined below but needs access, checking usage
-            // Self::ai_config_to_ingestion_config might need to be static or accessed via type. It is defined in impl LambdaContext.
+                                                                                    // Self::ai_config_to_ingestion_config might need to be static or accessed via type. It is defined in impl LambdaContext.
             match LlmQueryService::new(ingestion_config) {
                 Ok(service) => Some(Arc::new(service)),
                 Err(e) => {
@@ -99,7 +99,7 @@ impl LambdaContext {
         let _log_bridge = LogBridge::new(logger.clone(), None);
         // Note: set_boxed_logger requires "std" feature in "log" crate which seems missing in Lambda build?
         // Commenting out for now to catch compilation error.
-        /* 
+        /*
         if let Err(e) = log::set_boxed_logger(Box::new(log_bridge)) {
              eprintln!("Warning: Failed to set logger: {}", e);
         }
@@ -169,12 +169,12 @@ impl LambdaContext {
         })
     }
 
-
-
     /// Get a reference to the DataFold node for the default user (single-tenant only).
     pub async fn node() -> Result<Arc<tokio::sync::Mutex<DataFoldNode>>, IngestionError> {
         Self::get()?.node_manager.get_single_node().ok_or_else(|| {
-             IngestionError::configuration_error("No single-tenant node available. Use get_node(user_id) for multi-tenant setups.")
+            IngestionError::configuration_error(
+                "No single-tenant node available. Use get_node(user_id) for multi-tenant setups.",
+            )
         })
     }
 

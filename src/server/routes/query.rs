@@ -7,7 +7,6 @@ use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessResponse {
     pub success: bool,

@@ -1,4 +1,3 @@
-
 #[cfg(feature = "lambda")]
 #[cfg(test)]
 mod tests {
@@ -9,7 +8,7 @@ mod tests {
     async fn test_lambda_api_signatures_exist() {
         // Schema API
         let _ = LambdaContext::get_backfill_status;
-        
+
         // Query API
         let _ = LambdaContext::native_index_search;
         let _ = LambdaContext::execute_mutation;
@@ -28,11 +27,11 @@ mod tests {
         let _ = LambdaContext::health_check;
         let _ = LambdaContext::get_ingestion_config;
         let _ = LambdaContext::save_ingestion_config;
-        
+
         // System API
         let _ = LambdaContext::get_database_config;
         let _ = LambdaContext::update_database_config;
-        
+
         // Logging API
         let _ = LambdaContext::list_logs;
         let _ = LambdaContext::get_log_config;

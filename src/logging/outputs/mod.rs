@@ -7,15 +7,15 @@
 //! - Structured JSON output
 
 pub mod console;
-pub mod file;
-pub mod web;
-pub mod structured;
 #[cfg(feature = "aws-backend")]
 pub mod dynamodb;
+pub mod file;
+pub mod structured;
+pub mod web;
 
 pub use console::ConsoleOutput;
-pub use file::FileOutput;
-pub use web::WebOutput;
-pub use structured::StructuredOutput;
 #[cfg(feature = "aws-backend")]
 pub use dynamodb::DynamoDbLogger;
+pub use file::FileOutput;
+pub use structured::StructuredOutput;
+pub use web::WebOutput;

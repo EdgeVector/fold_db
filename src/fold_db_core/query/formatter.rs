@@ -1,14 +1,13 @@
-use std::collections::HashMap;
-use serde_json::Value;
-use serde::{Serialize, Deserialize};
-use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
+use crate::schema::types::key_value::KeyValue;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 
 /// Format query results into hash->range->fields JSON
-pub fn format_hash_range_fields(
-    results: &HashMap<String, HashMap<KeyValue, FieldValue>>,
-) -> Value {
-    let mut by_key: HashMap<(Option<String>, Option<String>), HashMap<String, Value>> = HashMap::new();
+pub fn format_hash_range_fields(results: &HashMap<String, HashMap<KeyValue, FieldValue>>) -> Value {
+    let mut by_key: HashMap<(Option<String>, Option<String>), HashMap<String, Value>> =
+        HashMap::new();
 
     for (field_name, key_map) in results.iter() {
         for (key_value, field_val) in key_map.iter() {
@@ -23,7 +22,9 @@ pub fn format_hash_range_fields(
         let hash_key = hash_opt.unwrap_or_default();
         let range_key = range_opt.unwrap_or_default();
 
-        let range_map = top.entry(hash_key).or_insert_with(|| Value::Object(serde_json::Map::new()));
+        let range_map = top
+            .entry(hash_key)
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
         if let Value::Object(ref mut map) = range_map {
             let mut fields_json: serde_json::Map<String, Value> = serde_json::Map::new();
             for (k, v) in fields_obj.into_iter() {
@@ -71,7 +72,7 @@ pub fn records_from_field_map(
         for (key_value, field_val) in key_map.iter() {
             let entry = by_key.entry(key_value.clone()).or_default();
             entry.insert(field_name.clone(), field_val.value.clone());
-            
+
             let metadata_entry = metadata_by_key.entry(key_value.clone()).or_default();
             metadata_entry.insert(
                 field_name.clone(),
@@ -104,11 +105,32 @@ mod tests {
         let key2 = KeyValue::new(Some("h2".to_string()), None);
 
         let mut f1_map = HashMap::new();
-        f1_map.insert(key1.clone(), FieldValue { value: Value::from(1), atom_uuid: "a1".to_string(), source_file_name: None });
-        f1_map.insert(key2.clone(), FieldValue { value: Value::from(2), atom_uuid: "a2".to_string(), source_file_name: None });
+        f1_map.insert(
+            key1.clone(),
+            FieldValue {
+                value: Value::from(1),
+                atom_uuid: "a1".to_string(),
+                source_file_name: None,
+            },
+        );
+        f1_map.insert(
+            key2.clone(),
+            FieldValue {
+                value: Value::from(2),
+                atom_uuid: "a2".to_string(),
+                source_file_name: None,
+            },
+        );
 
         let mut f2_map = HashMap::new();
-        f2_map.insert(key1.clone(), FieldValue { value: Value::from("x"), atom_uuid: "b1".to_string(), source_file_name: None });
+        f2_map.insert(
+            key1.clone(),
+            FieldValue {
+                value: Value::from("x"),
+                atom_uuid: "b1".to_string(),
+                source_file_name: None,
+            },
+        );
 
         results.insert("f1".to_string(), f1_map);
         results.insert("f2".to_string(), f2_map);
@@ -132,22 +154,22 @@ mod tests {
 
         let mut f1_map = HashMap::new();
         f1_map.insert(
-            key1.clone(), 
-            FieldValue { 
-                value: Value::from("Hello World"), 
-                atom_uuid: "atom-123".to_string(), 
+            key1.clone(),
+            FieldValue {
+                value: Value::from("Hello World"),
+                atom_uuid: "atom-123".to_string(),
                 source_file_name: Some("tweets.json".to_string()),
-            }
+            },
         );
 
         let mut f2_map = HashMap::new();
         f2_map.insert(
-            key1.clone(), 
-            FieldValue { 
-                value: Value::from(42), 
-                atom_uuid: "atom-456".to_string(), 
+            key1.clone(),
+            FieldValue {
+                value: Value::from(42),
+                atom_uuid: "atom-456".to_string(),
                 source_file_name: None,
-            }
+            },
         );
 
         results.insert("content".to_string(), f1_map);
@@ -156,16 +178,22 @@ mod tests {
         let records = records_from_field_map(&results);
 
         let rec1 = records.get(&key1).expect("record for key1");
-        
+
         // Check fields
-        assert_eq!(rec1.fields.get("content").cloned().unwrap(), Value::from("Hello World"));
+        assert_eq!(
+            rec1.fields.get("content").cloned().unwrap(),
+            Value::from("Hello World")
+        );
         assert_eq!(rec1.fields.get("likes").cloned().unwrap(), Value::from(42));
-        
+
         // Check metadata for content field
         let content_meta = rec1.metadata.get("content").expect("content metadata");
         assert_eq!(content_meta.atom_uuid, "atom-123");
-        assert_eq!(content_meta.source_file_name, Some("tweets.json".to_string()));
-        
+        assert_eq!(
+            content_meta.source_file_name,
+            Some("tweets.json".to_string())
+        );
+
         // Check metadata for likes field
         let likes_meta = rec1.metadata.get("likes").expect("likes metadata");
         assert_eq!(likes_meta.atom_uuid, "atom-456");
@@ -181,20 +209,20 @@ mod tests {
 
         let mut field_map = HashMap::new();
         field_map.insert(
-            key1.clone(), 
-            FieldValue { 
-                value: Value::from("First post"), 
-                atom_uuid: "atom-1".to_string(), 
+            key1.clone(),
+            FieldValue {
+                value: Value::from("First post"),
+                atom_uuid: "atom-1".to_string(),
                 source_file_name: Some("file1.json".to_string()),
-            }
+            },
         );
         field_map.insert(
-            key2.clone(), 
-            FieldValue { 
-                value: Value::from("Second post"), 
-                atom_uuid: "atom-2".to_string(), 
+            key2.clone(),
+            FieldValue {
+                value: Value::from("Second post"),
+                atom_uuid: "atom-2".to_string(),
                 source_file_name: Some("file2.json".to_string()),
-            }
+            },
         );
 
         results.insert("content".to_string(), field_map);
@@ -203,13 +231,19 @@ mod tests {
 
         // Verify key1 metadata
         let rec1 = records.get(&key1).expect("record for key1");
-        let meta1 = rec1.metadata.get("content").expect("content metadata for key1");
+        let meta1 = rec1
+            .metadata
+            .get("content")
+            .expect("content metadata for key1");
         assert_eq!(meta1.atom_uuid, "atom-1");
         assert_eq!(meta1.source_file_name, Some("file1.json".to_string()));
-        
+
         // Verify key2 metadata
         let rec2 = records.get(&key2).expect("record for key2");
-        let meta2 = rec2.metadata.get("content").expect("content metadata for key2");
+        let meta2 = rec2
+            .metadata
+            .get("content")
+            .expect("content metadata for key2");
         assert_eq!(meta2.atom_uuid, "atom-2");
         assert_eq!(meta2.source_file_name, Some("file2.json".to_string()));
     }
@@ -220,17 +254,15 @@ mod tests {
             atom_uuid: "test-atom".to_string(),
             source_file_name: Some("test.json".to_string()),
         };
-        
+
         // Test serialization
         let json = serde_json::to_string(&metadata).expect("should serialize");
         assert!(json.contains("test-atom"));
         assert!(json.contains("test.json"));
-        
+
         // Test deserialization
         let deserialized: FieldMetadata = serde_json::from_str(&json).expect("should deserialize");
         assert_eq!(deserialized.atom_uuid, "test-atom");
         assert_eq!(deserialized.source_file_name, Some("test.json".to_string()));
     }
 }
-
-

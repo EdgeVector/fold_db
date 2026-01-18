@@ -1,8 +1,5 @@
 use clap::Parser;
-use datafold::{
-    constants::DEFAULT_SCHEMA_SERVICE_PORT,
-    schema_service::SchemaServiceServer,
-};
+use datafold::{constants::DEFAULT_SCHEMA_SERVICE_PORT, schema_service::SchemaServiceServer};
 
 #[cfg(feature = "aws-backend")]
 use datafold::storage::DynamoDbConfig;
@@ -14,7 +11,7 @@ struct Cli {
     /// Port for the schema service
     #[arg(long, default_value_t = DEFAULT_SCHEMA_SERVICE_PORT)]
     port: u16,
-    
+
     /// Path to the sled database for storing schemas
     #[arg(long, default_value = "schema_registry")]
     db_path: String,
@@ -57,26 +54,28 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     datafold::web_logger::init().ok();
-    
+
     // Parse command-line arguments
     let Cli { port, db_path } = Cli::parse();
-    
+
     let bind_address = format!("127.0.0.1:{}", port);
-    
+
     // Check if DynamoDB configuration is available from environment
     #[cfg(feature = "aws-backend")]
     let server = if let Ok(dynamodb_config) = DynamoDbConfig::from_env() {
         println!("🚀 Schema service starting with DynamoDB storage");
-        println!("   Tables: {} (main), {} (schemas), etc.", 
-            dynamodb_config.tables.main, dynamodb_config.tables.schemas);
-        println!("   Region: {}",  dynamodb_config.region);
+        println!(
+            "   Tables: {} (main), {} (schemas), etc.",
+            dynamodb_config.tables.main, dynamodb_config.tables.schemas
+        );
+        println!("   Region: {}", dynamodb_config.region);
         println!("   ✨ No locking needed - topology hashes ensure idempotent writes!");
-        
+
         SchemaServiceServer::new_with_dynamodb(dynamodb_config, &bind_address).await?
     } else {
         println!("🚀 Schema service starting with local sled storage");
         println!("   Database path: {}", db_path);
-        
+
         SchemaServiceServer::new(db_path, &bind_address)?
     };
 
@@ -84,13 +83,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server = {
         println!("🚀 Schema service starting with local sled storage");
         println!("   Database path: {}", db_path);
-        
+
         SchemaServiceServer::new(db_path, &bind_address)?
     };
-    
+
     println!("✅ Schema service listening on {}", bind_address);
-    
-    server.run().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+
+    server
+        .run()
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
 #[cfg(test)]
@@ -98,14 +100,14 @@ mod tests {
     use super::Cli;
     use clap::Parser;
     use datafold::constants::DEFAULT_SCHEMA_SERVICE_PORT;
-    
+
     #[test]
     fn defaults() {
         let cli = Cli::parse_from(["test"]);
         assert_eq!(cli.port, DEFAULT_SCHEMA_SERVICE_PORT);
         assert_eq!(cli.db_path, "schema_registry");
     }
-    
+
     #[test]
     fn custom_args() {
         let cli = Cli::parse_from(["test", "--port", "8000", "--db-path", "my_schema_db"]);
@@ -113,4 +115,3 @@ mod tests {
         assert_eq!(cli.db_path, "my_schema_db");
     }
 }
-

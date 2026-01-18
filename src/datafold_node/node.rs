@@ -51,7 +51,7 @@ impl DataFoldNode {
     /// Creates a new DataFoldNode with the specified configuration.
     ///
     /// Now fully async to support storage abstraction!
-    pub async fn new(config: NodeConfig) -> FoldDbResult<Self> {
+    pub async fn new(#[allow(unused_mut)] mut config: NodeConfig) -> FoldDbResult<Self> {
         // Try to load identity from file first, otherwise generate new
         let (private_key, public_key) = match load_persisted_identity() {
             Ok(Some((priv_k, pub_k))) => (priv_k, pub_k),
@@ -67,7 +67,6 @@ impl DataFoldNode {
         };
 
         // Update config with public key as user_id if not set (for DynamoDB)
-        let config = config;
         #[cfg(feature = "aws-backend")]
         if let crate::datafold_node::config::DatabaseConfig::DynamoDb(ref mut d) = config.database {
             if d.user_id.is_none() {
@@ -298,15 +297,9 @@ impl DataFoldNode {
             )
         };
 
-        Ok((
-            node_id,
-            security_manager,
-            security_config,
-        ))
+        Ok((node_id, security_manager, security_config))
     }
 }
-
-
 
 impl DataFoldNode {
     /// Gets the node's private key.
@@ -386,11 +379,14 @@ fn load_persisted_identity() -> FoldDbResult<Option<(String, String)>> {
         let content = std::fs::read_to_string(config_path).map_err(|e| {
             FoldDbError::Config(format!("Failed to read node_identity.json: {}", e))
         })?;
-        
+
         match serde_json::from_str::<NodeIdentity>(&content) {
             Ok(identity) => Ok(Some((identity.private_key, identity.public_key))),
             Err(e) => {
-                log::warn!("Failed to parse node_identity.json: {}. Generating new identity.", e);
+                log::warn!(
+                    "Failed to parse node_identity.json: {}. Generating new identity.",
+                    e
+                );
                 Ok(None)
             }
         }

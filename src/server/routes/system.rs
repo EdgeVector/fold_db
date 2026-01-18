@@ -5,7 +5,6 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-
 use crate::datafold_node::DataFoldNode;
 use crate::server::http_server::AppState;
 
@@ -153,7 +152,7 @@ pub async fn reset_database(
     // Use OperationProcessor for the reset logic
     let temp_processor_node = state.node.read().await.clone();
     let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
-    
+
     // Perform the reset (Schema service, DB close, storage clear)
     if let Err(e) = processor.perform_database_reset(None).await {
         log_feature!(
@@ -427,18 +426,22 @@ pub async fn update_database_config(
     }
 
     // Updated config object is prepared above in `config` variable
-    
+
     // Use OperationProcessor to write configuration and handle DB logic
     let temp_processor_node = state.node.read().await.clone();
     let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
-    
-    // Define config_path for recovery
-    let config_path = std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
 
-    let updated_config = match processor.update_database_configuration(config.database).await {
-         Ok(cfg) => cfg,
-         Err(e) => {
-             log_feature!(
+    // Define config_path for recovery
+    let config_path =
+        std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
+
+    let updated_config = match processor
+        .update_database_configuration(config.database)
+        .await
+    {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            log_feature!(
                 LogFeature::HttpServer,
                 error,
                 "Failed to update database configuration: {}",
@@ -449,7 +452,7 @@ pub async fn update_database_config(
                 message: format!("Failed to update database configuration: {}", e),
                 requires_restart: false,
             });
-         }
+        }
     };
 
     // Create a new node instance with the updated config

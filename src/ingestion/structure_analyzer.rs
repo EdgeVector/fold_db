@@ -12,28 +12,28 @@ pub struct StructureAnalyzer;
 
 impl StructureAnalyzer {
     /// Analyze JSON data and create a superset structure
-    /// 
+    ///
     /// For arrays, this loops through all elements and creates a superset
     /// that includes all fields found across all objects.
     /// For single objects, it returns the object as-is.
-    /// 
+    ///
     /// # Arguments
     /// * `json_data` - The JSON data to analyze
-    /// 
+    ///
     /// # Returns
     /// * `Value` - A superset structure representing all possible fields
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// use serde_json::json;
     /// use datafold::ingestion::structure_analyzer::StructureAnalyzer;
-    /// 
+    ///
     /// let data = json!([
     ///     {"name": "Alice", "age": 30},
     ///     {"name": "Bob", "email": "bob@example.com"}
     /// ]);
-    /// 
+    ///
     /// let superset = StructureAnalyzer::create_superset_structure(&data);
     /// // Result: {"name": "string", "age": "number", "email": "string"}
     /// ```
@@ -43,50 +43,53 @@ impl StructureAnalyzer {
                 if array.is_empty() {
                     return Value::Object(serde_json::Map::new());
                 }
-                
+
                 // Create flattened path-based structure
                 let mut path_types: HashMap<String, Vec<String>> = HashMap::new();
-                
+
                 for item in array {
                     if let Some(obj) = item.as_object() {
                         Self::flatten_object(obj, &mut path_types, String::new());
                     }
                 }
-                
+
                 // Create superset with flattened paths
                 let mut superset = serde_json::Map::new();
                 for (path, types) in path_types {
                     let representative_type = Self::get_representative_type(&types);
                     superset.insert(path, Value::String(representative_type));
                 }
-                
+
                 Value::Object(superset)
             }
             Value::Object(obj) => {
                 // For single objects, use flattened path structure
                 let mut path_types: HashMap<String, Vec<String>> = HashMap::new();
                 Self::flatten_object(obj, &mut path_types, String::new());
-                
+
                 // Create superset with flattened paths
                 let mut superset = serde_json::Map::new();
                 for (path, types) in path_types {
                     let representative_type = Self::get_representative_type(&types);
                     superset.insert(path, Value::String(representative_type));
                 }
-                
+
                 Value::Object(superset)
             }
             _ => {
                 // For primitive values, return a simple type representation
                 Value::Object({
                     let mut map = serde_json::Map::new();
-                    map.insert("value".to_string(), Value::String(Self::get_value_type(json_data)));
+                    map.insert(
+                        "value".to_string(),
+                        Value::String(Self::get_value_type(json_data)),
+                    );
                     map
                 })
             }
         }
     }
-    
+
     /// Flatten an object into dot-separated paths
     fn flatten_object(
         obj: &serde_json::Map<String, Value>,
@@ -99,7 +102,7 @@ impl StructureAnalyzer {
             } else {
                 format!("{}.{}", current_path, key)
             };
-            
+
             match value {
                 Value::Object(nested_obj) => {
                     // Recursively flatten nested objects
@@ -136,10 +139,7 @@ impl StructureAnalyzer {
                 _ => {
                     // Primitive value
                     let type_name = Self::get_value_type(value);
-                    path_types
-                        .entry(field_path)
-                        .or_default()
-                        .push(type_name);
+                    path_types.entry(field_path).or_default().push(type_name);
                 }
             }
         }
@@ -156,33 +156,32 @@ impl StructureAnalyzer {
             Value::Object(_) => "object".to_string(),
         }
     }
-    
-    
+
     /// Get the most representative type from a list of types
-    /// 
+    ///
     /// This handles cases where a field has different types across objects.
     /// The priority is: object > array > string > number > boolean > null
     fn get_representative_type(types: &[String]) -> String {
         if types.is_empty() {
             return "null".to_string();
         }
-        
+
         // Count occurrences of each type
         let mut type_counts: HashMap<String, usize> = HashMap::new();
         for type_name in types {
             *type_counts.entry(type_name.clone()).or_insert(0) += 1;
         }
-        
+
         // Priority order for type selection
         let priority_order = vec!["object", "array", "string", "number", "boolean", "null"];
-        
+
         // Find the highest priority type that exists
         for priority_type in priority_order {
             if type_counts.contains_key(priority_type) {
                 return priority_type.to_string();
             }
         }
-        
+
         // Fallback to the most common type
         type_counts
             .into_iter()
@@ -190,9 +189,9 @@ impl StructureAnalyzer {
             .map(|(type_name, _)| type_name)
             .unwrap_or_else(|| "null".to_string())
     }
-    
+
     /// Get statistics about the structure analysis
-    /// 
+    ///
     /// Returns information about the number of elements analyzed,
     /// unique fields found, and type variations.
     pub fn get_analysis_stats(json_data: &Value) -> StructureStats {
@@ -200,15 +199,15 @@ impl StructureAnalyzer {
             Value::Array(array) => {
                 let mut field_counts: HashMap<String, usize> = HashMap::new();
                 let mut type_variations: HashMap<String, HashMap<String, usize>> = HashMap::new();
-                
+
                 for item in array {
                     if let Some(obj) = item.as_object() {
                         for (key, value) in obj {
                             let type_name = Self::get_value_type(value);
-                            
+
                             // Count field occurrences
                             *field_counts.entry(key.clone()).or_insert(0) += 1;
-                            
+
                             // Track type variations per field
                             type_variations
                                 .entry(key.clone())
@@ -219,7 +218,7 @@ impl StructureAnalyzer {
                         }
                     }
                 }
-                
+
                 StructureStats {
                     total_elements: array.len(),
                     unique_fields: field_counts.len(),
@@ -230,7 +229,7 @@ impl StructureAnalyzer {
             Value::Object(obj) => {
                 let mut field_counts: HashMap<String, usize> = HashMap::new();
                 let mut type_variations: HashMap<String, HashMap<String, usize>> = HashMap::new();
-                
+
                 for (key, value) in obj {
                     let type_name = Self::get_value_type(value);
                     field_counts.insert(key.clone(), 1);
@@ -240,7 +239,7 @@ impl StructureAnalyzer {
                         map
                     });
                 }
-                
+
                 StructureStats {
                     total_elements: 1,
                     unique_fields: obj.len(),
@@ -265,7 +264,7 @@ impl StructureAnalyzer {
                     });
                     map
                 },
-            }
+            },
         }
     }
 }
@@ -292,7 +291,7 @@ impl StructureStats {
             .map(|(field, _)| field.clone())
             .collect()
     }
-    
+
     /// Get fields that appear in some but not all elements (partial coverage)
     pub fn get_partial_fields(&self) -> Vec<String> {
         self.field_counts
@@ -301,7 +300,7 @@ impl StructureStats {
             .map(|(field, _)| field.clone())
             .collect()
     }
-    
+
     /// Get fields with type variations
     pub fn get_fields_with_type_variations(&self) -> Vec<String> {
         self.type_variations
@@ -324,9 +323,9 @@ mod tests {
             {"name": "Bob", "email": "bob@example.com"},
             {"name": "Charlie", "age": 25, "email": "charlie@example.com"}
         ]);
-        
+
         let superset = StructureAnalyzer::create_superset_structure(&data);
-        
+
         assert!(superset.is_object());
         let obj = superset.as_object().unwrap();
         assert!(obj.contains_key("name"));
@@ -340,9 +339,9 @@ mod tests {
     #[test]
     fn test_create_superset_structure_single_object() {
         let data = json!({"name": "Alice", "age": 30});
-        
+
         let superset = StructureAnalyzer::create_superset_structure(&data);
-        
+
         assert!(superset.is_object());
         let obj = superset.as_object().unwrap();
         assert_eq!(obj.len(), 2);
@@ -353,9 +352,9 @@ mod tests {
     #[test]
     fn test_create_superset_structure_empty_array() {
         let data = json!([]);
-        
+
         let superset = StructureAnalyzer::create_superset_structure(&data);
-        
+
         assert!(superset.is_object());
         assert!(superset.as_object().unwrap().is_empty());
     }
@@ -367,10 +366,10 @@ mod tests {
             {"id": "2", "name": "Bob"},
             {"id": 3, "name": "Charlie"}
         ]);
-        
+
         let superset = StructureAnalyzer::create_superset_structure(&data);
         let obj = superset.as_object().unwrap();
-        
+
         // Should choose "string" as representative type for "id" field (higher priority than number)
         assert_eq!(obj["id"], "string");
         assert_eq!(obj["name"], "string");
@@ -383,16 +382,19 @@ mod tests {
             {"name": "Bob", "profile": {"email": "bob@example.com", "role": "Manager"}, "tags": ["lead"]},
             {"name": "Charlie", "profile": {"age": 25, "email": "charlie@example.com", "department": "Marketing"}, "tags": ["junior", "frontend"]}
         ]);
-        
+
         let superset = StructureAnalyzer::create_superset_structure(&data);
         let obj = superset.as_object().unwrap();
-        
+
         // Debug: print the actual structure
-        println!("Actual superset structure: {}", serde_json::to_string_pretty(&superset).unwrap());
-        
+        println!(
+            "Actual superset structure: {}",
+            serde_json::to_string_pretty(&superset).unwrap()
+        );
+
         // Check top-level fields
         assert_eq!(obj["name"], "string");
-        
+
         // Check flattened path structure (new approach)
         assert!(obj.contains_key("profile.age"));
         assert!(obj.contains_key("profile.department"));
@@ -402,7 +404,7 @@ mod tests {
         assert_eq!(obj["profile.department"], "string");
         assert_eq!(obj["profile.email"], "string");
         assert_eq!(obj["profile.role"], "string");
-        
+
         // Check array structure
         assert_eq!(obj["tags"], "array[string]");
     }

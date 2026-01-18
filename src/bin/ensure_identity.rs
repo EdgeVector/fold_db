@@ -42,7 +42,7 @@ fn generate_new_identity(path: &Path) -> Result<NodeIdentity, Box<dyn std::error
         private_key: keypair.secret_key_base64(),
         public_key: keypair.public_key_base64(),
     };
-    
+
     let content = serde_json::to_string_pretty(&identity)?;
     fs::write(path, content)?;
     eprintln!("Generated new identity at {:?}", path);

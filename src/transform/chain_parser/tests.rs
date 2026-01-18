@@ -5,7 +5,7 @@ mod chain_parser_tests {
     #[test]
     fn test_reducer_expression_parsing() {
         let parser = ChainParser::new();
-        
+
         // Test parsing reducer expressions
         let expressions = vec![
             "content.count()",
@@ -13,7 +13,7 @@ mod chain_parser_tests {
             "content.join()",
             "content.split_by_word().join()",
         ];
-        
+
         for expr in expressions {
             match parser.parse(expr) {
                 Ok(parsed_chain) => {

@@ -175,8 +175,11 @@ mod storage_abstraction_tests {
                 .load()
                 .await;
             let client = Client::new(&config);
-            let dynamodb_store =
-                DynamoDbNamespacedStore::new_with_prefix(client, "test-table".to_string(), "user_123".to_string());
+            let dynamodb_store = DynamoDbNamespacedStore::new_with_prefix(
+                client,
+                "test-table".to_string(),
+                "user_123".to_string(),
+            );
 
             match dynamodb_store.open_namespace("test").await {
                 Ok(dynamodb_kv) => {
@@ -246,8 +249,11 @@ mod storage_abstraction_tests {
         assert_eq!(sort_key, "atom:abc123");
 
         // Test without user_id - partition key should be "default"
-        let store_without_user =
-            DynamoDbKvStore::new(client.clone(), "test-table".to_string(), "default".to_string());
+        let store_without_user = DynamoDbKvStore::new(
+            client.clone(),
+            "test-table".to_string(),
+            "default".to_string(),
+        );
 
         let pk_default = store_without_user.get_partition_key();
         assert_eq!(pk_default, "default");
@@ -269,7 +275,11 @@ mod storage_abstraction_tests {
         let client = Client::new(&config);
 
         // Test table name generation
-        let store = DynamoDbNamespacedStore::new_with_prefix(client, "DataFoldStorage".to_string(), "main_user".to_string());
+        let store = DynamoDbNamespacedStore::new_with_prefix(
+            client,
+            "DataFoldStorage".to_string(),
+            "main_user".to_string(),
+        );
         let table_name = store.get_table_name_for_namespace("main");
         assert_eq!(table_name, "DataFoldStorage-main");
 

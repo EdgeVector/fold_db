@@ -19,6 +19,12 @@ pub struct InMemoryProgressStore {
     status: Arc<RwLock<IndexingStatus>>,
 }
 
+impl Default for InMemoryProgressStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryProgressStore {
     pub fn new() -> Self {
         Self {

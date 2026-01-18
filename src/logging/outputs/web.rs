@@ -18,7 +18,7 @@ pub struct WebOutput {
 impl WebOutput {
     pub fn new(config: &WebConfig) -> Result<Self, LoggingError> {
         let (sender, _) = broadcast::channel(config.buffer_size);
-        
+
         let filter = match config.level.as_str() {
             "TRACE" => LevelFilter::Trace,
             "DEBUG" => LevelFilter::Debug,
@@ -37,10 +37,7 @@ impl WebOutput {
     }
 
     pub fn get_logs(&self) -> Vec<String> {
-        self.buffer.lock().unwrap()
-            .iter()
-            .cloned()
-            .collect()
+        self.buffer.lock().unwrap().iter().cloned().collect()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
@@ -53,7 +50,7 @@ impl WebOutput {
         }
 
         if let Ok(filter) = self.level_filter.read() {
-             metadata.level() <= *filter
+            metadata.level() <= *filter
         } else {
             false
         }
@@ -72,12 +69,7 @@ impl log::Log for WebOutput {
                 .unwrap_or_default()
                 .as_millis();
 
-            let msg = format!(
-                "[{}][{}] - {}", 
-                timestamp,
-                record.level(), 
-                record.args()
-            );
+            let msg = format!("[{}][{}] - {}", timestamp, record.level(), record.args());
 
             // Add to buffer
             if let Ok(mut buffer) = self.buffer.lock() {
@@ -86,7 +78,7 @@ impl log::Log for WebOutput {
                     buffer.pop_front();
                 }
             }
-            
+
             // Send to broadcast channel
             let _ = self.sender.send(msg);
         }
