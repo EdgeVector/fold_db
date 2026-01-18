@@ -1,11 +1,10 @@
-
+use crate::datafold_node::OperationProcessor;
+use crate::server::http_server::AppState;
 use crate::web_logger;
 use actix_web::{web, HttpResponse, Responder, Result};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream; // Keep for backward compatibility
-use crate::server::http_server::AppState;
-use crate::datafold_node::OperationProcessor;
 
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 pub struct LogLevelUpdate {
@@ -42,7 +41,7 @@ pub async fn list_logs(
     let processor = OperationProcessor::new(temp_processor_node);
 
     let logs = processor.list_logs(query.since, Some(1000)).await;
-    
+
     HttpResponse::Ok().json(serde_json::json!({
         "logs": logs,
         "count": logs.len(),

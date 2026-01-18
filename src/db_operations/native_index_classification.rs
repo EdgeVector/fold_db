@@ -10,10 +10,10 @@ use std::collections::HashMap;
 pub mod structural_prefixes {
     /// General word-based search entries: `word:term`
     pub const WORD: &str = "word:";
-    
+
     /// Reverse lookup entries for cleanup: `record:schema:field:key_value`
     pub const RECORD: &str = "record:";
-    
+
     /// Field name index entries: `field:fieldname`
     /// Used to find all records that have a particular field
     pub const FIELD: &str = "field:";
@@ -125,7 +125,7 @@ impl FieldClassification {
     pub fn word_only(field_name: String) -> Self {
         let mut strategies = HashMap::new();
         strategies.insert(ClassificationType::Word, SplitStrategy::SplitWords);
-        
+
         Self {
             field_name,
             classifications: vec![ClassificationType::Word],
@@ -211,4 +211,3 @@ mod tests {
         );
     }
 }
-

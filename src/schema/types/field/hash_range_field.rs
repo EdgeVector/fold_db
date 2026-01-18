@@ -4,19 +4,19 @@
 //! efficient indexing with complex fan-out operations.
 
 // Removed unused impl_field import
+use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
-use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{FilterApplicator, apply_hash_range_filter};
+use crate::schema::types::field::{apply_hash_range_filter, FilterApplicator};
+use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
-use crate::db_operations::DbOperations;
 use serde::{Deserialize, Serialize};
 // Removed unused JsonValue import
-use crate::atom::{MoleculeHashRange, MoleculeBehavior};
+use crate::atom::{MoleculeBehavior, MoleculeHashRange};
+use crate::schema::types::field::base::FieldBase;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::schema::types::field::base::FieldBase;
 // Removed unused log imports
 
 /// Field that combines hash and range functionality for indexing
@@ -62,7 +62,7 @@ impl crate::schema::types::field::Field for HashRangeField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
         &self.base.inner
     }
-    
+
     fn common_mut(&mut self) -> &mut crate::schema::types::field::FieldCommon {
         &mut self.base.inner
     }
@@ -71,49 +71,66 @@ impl crate::schema::types::field::Field for HashRangeField {
         self.base.refresh_from_db(db_ops).await;
     }
 
-    fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
+    fn write_mutation(
+        &mut self,
+        key_value: &crate::schema::types::key_value::KeyValue,
+        atom: crate::atom::Atom,
+        pub_key: String,
+    ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
             let new_molecule = crate::atom::MoleculeHashRange::new(pub_key.clone());
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
-            self.base.inner.set_molecule_uuid(new_molecule.uuid().to_string());
+            self.base
+                .inner
+                .set_molecule_uuid(new_molecule.uuid().to_string());
             self.base.molecule = Some(new_molecule);
         }
-        
+
         // For HashRangeField, we use both hash and range keys to store the atom
         if let (Some(hash_key), Some(range_key)) = (&key_value.hash, &key_value.range) {
             if let Some(molecule) = &mut self.base.molecule {
-                molecule.set_atom_uuid_from_values(hash_key.clone(), range_key.clone(), atom.uuid().to_string());
+                molecule.set_atom_uuid_from_values(
+                    hash_key.clone(),
+                    range_key.clone(),
+                    atom.uuid().to_string(),
+                );
             }
         }
     }
 
-    async fn resolve_value(&mut self, db_ops: &Arc<DbOperations>, filter: Option<HashRangeFilter>) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    async fn resolve_value(
+        &mut self,
+        db_ops: &Arc<DbOperations>,
+        filter: Option<HashRangeFilter>,
+    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
         // let filter_debug = filter.clone();
         let result = self.apply_filter(filter);
         // log::debug!("🔍 HashRangeField::resolve_value: filter={:?}, matches={}", filter_debug, result.matches.len());
         if result.matches.is_empty() {
-             // log::warn!("⚠️ HashRangeField::resolve_value: No matches found. molecule={:?}, molecule_uuid={:?}", 
-             //    self.base.molecule.is_some(), 
-             //    self.base.inner.molecule_uuid()
-             // );
+            // log::warn!("⚠️ HashRangeField::resolve_value: No matches found. molecule={:?}, molecule_uuid={:?}",
+            //    self.base.molecule.is_some(),
+            //    self.base.inner.molecule_uuid()
+            // );
         }
         super::fetch_atoms_for_matches_async(db_ops, result.matches).await
     }
 }
 
 impl HashRangeField {
-
     /// Gets all keys in the hash range (useful for pagination or listing)
     /// Returns composite keys in the format "hash_value:range_value"
     pub fn get_all_keys(&self) -> Vec<KeyValue> {
-        self.base.molecule
+        self.base
+            .molecule
             .as_ref()
             .map(|molecule| {
                 molecule
                     .iter_all_atoms()
-                    .map(|(hash_value, range_key, _)| KeyValue::new(Some(hash_value.clone()), Some(range_key.clone())))
+                    .map(|(hash_value, range_key, _)| {
+                        KeyValue::new(Some(hash_value.clone()), Some(range_key.clone()))
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -122,14 +139,17 @@ impl HashRangeField {
     /// Gets a subset of keys within a range for a specific hash group (useful for pagination)
     /// Returns composite keys in the format "hash_value:range_value"
     pub fn get_keys_in_range(&self, hash_value: &str, start: &str, end: &str) -> Vec<KeyValue> {
-        self.base.molecule
+        self.base
+            .molecule
             .as_ref()
             .and_then(|molecule| molecule.get_atoms_for_hash(hash_value))
             .map(|range_map| {
                 // Leverage BTree's efficient range operations
                 range_map
                     .range(start.to_string()..end.to_string())
-                    .map(|(range_key, _)| KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone())))
+                    .map(|(range_key, _)| {
+                        KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone()))
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -137,16 +157,23 @@ impl HashRangeField {
 
     /// Gets all range keys for a specific hash group
     pub fn get_range_keys_for_hash(&self, hash_value: &str) -> Vec<KeyValue> {
-        self.base.molecule
+        self.base
+            .molecule
             .as_ref()
             .and_then(|molecule| molecule.range_values_for_hash(hash_value))
-            .map(|iter| iter.map(|range_key| KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone()))).collect())
+            .map(|iter| {
+                iter.map(|range_key| {
+                    KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone()))
+                })
+                .collect()
+            })
             .unwrap_or_default()
     }
 
     /// Gets the total count of items in the hash range
     pub fn count(&self) -> usize {
-        self.base.molecule
+        self.base
+            .molecule
             .as_ref()
             .map(|molecule| molecule.atom_count())
             .unwrap_or(0)
@@ -154,7 +181,8 @@ impl HashRangeField {
 
     /// Gets the count of items for a specific hash group
     pub fn count_for_hash(&self, hash_value: &str) -> usize {
-        self.base.molecule
+        self.base
+            .molecule
             .as_ref()
             .and_then(|molecule| molecule.get_atoms_for_hash(hash_value))
             .map(|range_map| range_map.len())
@@ -163,7 +191,8 @@ impl HashRangeField {
 
     /// Gets all hash values in the molecule
     pub fn get_hash_values(&self) -> Vec<String> {
-        self.base.molecule
+        self.base
+            .molecule
             .as_ref()
             .map(|molecule| molecule.hash_values().cloned().collect())
             .unwrap_or_default()

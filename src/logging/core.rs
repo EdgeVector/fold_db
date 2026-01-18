@@ -112,6 +112,12 @@ pub trait Logger: Send + Sync {
 /// Use this when you don't need logging or want to disable it.
 pub struct NoOpLogger;
 
+impl Default for NoOpLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NoOpLogger {
     pub fn new() -> Self {
         Self
@@ -135,6 +141,12 @@ impl Logger for NoOpLogger {
 ///
 /// (Example removed as it was ignored)
 pub struct StdoutLogger;
+
+impl Default for StdoutLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl StdoutLogger {
     pub fn new() -> Self {

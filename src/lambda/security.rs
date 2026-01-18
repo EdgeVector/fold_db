@@ -29,14 +29,15 @@ impl LambdaContext {
     pub async fn get_system_public_key(user_id: String) -> Result<Option<Value>, IngestionError> {
         let node_mutex = Self::get_node(&user_id).await?;
         let node = node_mutex.lock().await;
-        
+
         // Use OperationProcessor or direct access
         // Since we are in LambdaContext, we can use the node directly or OperationProcessor helper
         // Using direct access for now as implemented in system.rs previously
         let security_manager = node.get_security_manager();
-        let key_info = security_manager.get_system_public_key()
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to get system public key: {}", e)))?;
-        
+        let key_info = security_manager.get_system_public_key().map_err(|e| {
+            IngestionError::InvalidInput(format!("Failed to get system public key: {}", e))
+        })?;
+
         Ok(key_info.map(|k| serde_json::to_value(k).unwrap_or(serde_json::json!({}))))
     }
 }

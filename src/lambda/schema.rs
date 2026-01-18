@@ -14,12 +14,16 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `user_id` - User ID for node context
-    pub async fn list_schemas(user_id: String) -> Result<Vec<crate::schema::SchemaWithState>, IngestionError> {
+    pub async fn list_schemas(
+        user_id: String,
+    ) -> Result<Vec<crate::schema::SchemaWithState>, IngestionError> {
         let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
-        
-        processor.list_schemas().await
+
+        processor
+            .list_schemas()
+            .await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to list schemas: {}", e)))
     }
 
@@ -31,12 +35,17 @@ impl LambdaContext {
     ///
     /// * `schema_name` - Name of the schema to retrieve
     /// * `user_id` - User ID for node context
-    pub async fn get_schema(schema_name: &str, user_id: String) -> Result<Option<crate::schema::SchemaWithState>, IngestionError> {
+    pub async fn get_schema(
+        schema_name: &str,
+        user_id: String,
+    ) -> Result<Option<crate::schema::SchemaWithState>, IngestionError> {
         let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
-        
-        processor.get_schema(schema_name).await
+
+        processor
+            .get_schema(schema_name)
+            .await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schema: {}", e)))
     }
 
@@ -50,8 +59,10 @@ impl LambdaContext {
         let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
-        
-        processor.block_schema(schema_name).await
+
+        processor
+            .block_schema(schema_name)
+            .await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to block schema: {}", e)))
     }
 
@@ -78,13 +89,17 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn load_schemas(user_id: String) -> Result<(usize, usize, Vec<String>), IngestionError> {
+    pub async fn load_schemas(
+        user_id: String,
+    ) -> Result<(usize, usize, Vec<String>), IngestionError> {
         let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
-        
-        processor.load_schemas().await
-             .map_err(|e| IngestionError::InvalidInput(format!("Failed to load schemas: {}", e)))
+
+        processor
+            .load_schemas()
+            .await
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to load schemas: {}", e)))
     }
 
     /// Approve a schema
@@ -107,12 +122,17 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn approve_schema(schema_name: &str, user_id: String) -> Result<Option<String>, IngestionError> {
+    pub async fn approve_schema(
+        schema_name: &str,
+        user_id: String,
+    ) -> Result<Option<String>, IngestionError> {
         let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
-        
-        processor.approve_schema(schema_name).await
+
+        processor
+            .approve_schema(schema_name)
+            .await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to approve schema: {}", e)))
     }
 
@@ -139,16 +159,20 @@ impl LambdaContext {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn get_schema_state(schema_name: &str, user_id: String) -> Result<Option<crate::schema::SchemaState>, IngestionError> {
+    pub async fn get_schema_state(
+        schema_name: &str,
+        user_id: String,
+    ) -> Result<Option<crate::schema::SchemaState>, IngestionError> {
         let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
-        
-        if let Some(schema_with_state) = processor.get_schema(schema_name).await
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to get schema state: {}", e)))? {
-             Ok(Some(schema_with_state.state))
+
+        if let Some(schema_with_state) = processor.get_schema(schema_name).await.map_err(|e| {
+            IngestionError::InvalidInput(format!("Failed to get schema state: {}", e))
+        })? {
+            Ok(Some(schema_with_state.state))
         } else {
-             Ok(None)
+            Ok(None)
         }
     }
 
@@ -178,12 +202,16 @@ impl LambdaContext {
     pub async fn get_backfill_status(
         backfill_hash: &str,
         user_id: String,
-    ) -> Result<Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>, IngestionError> {
+    ) -> Result<
+        Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>,
+        IngestionError,
+    > {
         let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
-        
-        processor.get_backfill(backfill_hash).await
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to get backfill status: {}", e)))
+
+        processor.get_backfill(backfill_hash).await.map_err(|e| {
+            IngestionError::InvalidInput(format!("Failed to get backfill status: {}", e))
+        })
     }
 }

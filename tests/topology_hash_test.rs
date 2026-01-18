@@ -1,5 +1,5 @@
 use datafold::schema::types::{
-    DeclarativeSchemaDefinition, JsonTopology, PrimitiveType, TopologyNode, SchemaType,
+    DeclarativeSchemaDefinition, JsonTopology, PrimitiveType, SchemaType, TopologyNode,
 };
 use std::collections::HashMap;
 
@@ -17,14 +17,17 @@ fn test_field_topology_hash_is_computed() {
     // Set a topology
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
 
     // Verify field topology hash was computed
     assert!(schema.field_topology_hashes.is_some());
     let hashes = schema.field_topology_hashes.as_ref().unwrap();
     assert!(hashes.contains_key("name"));
-    
+
     let hash = hashes.get("name").unwrap();
     assert!(!hash.is_empty());
     assert_eq!(hash.len(), 64); // SHA256 produces 64 hex chars
@@ -44,11 +47,17 @@ fn test_schema_topology_hash_is_computed() {
     // Set topologies
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
     schema.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     // Verify schema-level topology hash was computed
@@ -81,20 +90,32 @@ fn test_same_topologies_produce_same_hash() {
     // Set identical topologies
     schema1.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
     schema1.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     schema2.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
     schema2.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     // Same topologies should produce same hash
@@ -132,12 +153,18 @@ fn test_different_topologies_produce_different_hash() {
     // Set different topologies
     schema1.set_field_topology(
         "data".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
 
     schema2.set_field_topology(
         "data".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     // Different topologies should produce different hashes
@@ -171,20 +198,32 @@ fn test_field_order_independent_schema_hash() {
     // Set same topologies but in different order
     schema1.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
     schema1.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     schema2.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
     schema2.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
 
     // Schema hash should be the same regardless of field order (we sort internally)
@@ -203,8 +242,20 @@ fn test_nested_topology_hash() {
     );
 
     let mut user_fields = HashMap::new();
-    user_fields.insert("id".to_string(), TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None });
-    user_fields.insert("name".to_string(), TopologyNode::Primitive { value: PrimitiveType::String, classifications: None });
+    user_fields.insert(
+        "id".to_string(),
+        TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        },
+    );
+    user_fields.insert(
+        "name".to_string(),
+        TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        },
+    );
 
     schema.set_field_topology(
         "user".to_string(),
@@ -230,7 +281,10 @@ fn test_array_topology_hash() {
     schema.set_field_topology(
         "tags".to_string(),
         JsonTopology::new(TopologyNode::Array {
-            value: Box::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None })
+            value: Box::new(TopologyNode::Primitive {
+                value: PrimitiveType::String,
+                classifications: None,
+            }),
         }),
     );
 
@@ -252,11 +306,17 @@ fn test_topology_hash_persists_through_serialization() {
 
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
     schema.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     let original_hash = schema.topology_hash.clone();
@@ -264,8 +324,8 @@ fn test_topology_hash_persists_through_serialization() {
 
     // Serialize and deserialize
     let serialized = serde_json::to_string(&schema).expect("Failed to serialize");
-    let deserialized: DeclarativeSchemaDefinition = serde_json::from_str(&serialized)
-        .expect("Failed to deserialize");
+    let deserialized: DeclarativeSchemaDefinition =
+        serde_json::from_str(&serialized).expect("Failed to deserialize");
 
     // Hashes should be preserved
     assert_eq!(deserialized.topology_hash, original_hash);
@@ -286,7 +346,10 @@ fn test_topology_hash_changes_when_topology_changes() {
     // Set initial topology
     schema.set_field_topology(
         "data".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
 
     let initial_hash = schema.topology_hash.clone();
@@ -295,7 +358,10 @@ fn test_topology_hash_changes_when_topology_changes() {
     // Change topology
     schema.set_field_topology(
         "data".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     let new_hash = schema.topology_hash.clone();
@@ -305,4 +371,3 @@ fn test_topology_hash_changes_when_topology_changes() {
     assert_ne!(initial_hash, new_hash);
     assert_ne!(initial_field_hash, new_field_hash);
 }
-

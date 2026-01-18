@@ -7,6 +7,5 @@ pub mod shared_utilities;
 // Public re-exports
 pub use crate::schema::types::Transform;
 
-
 // New modular components
 pub mod manager;

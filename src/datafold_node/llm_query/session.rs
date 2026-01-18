@@ -192,4 +192,3 @@ mod tests {
         assert!(session.query_results.is_some());
     }
 }
-

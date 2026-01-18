@@ -171,6 +171,12 @@ pub struct InMemoryProgressStore {
     store: Mutex<HashMap<String, IngestionProgress>>,
 }
 
+impl Default for InMemoryProgressStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryProgressStore {
     pub fn new() -> Self {
         Self {
@@ -408,7 +414,7 @@ pub type ProgressTracker = Arc<dyn ProgressStore>;
 ///
 /// # Arguments
 /// * `dynamo_config` - Optional tuple of (table_name, region) for DynamoDB backend.
-///                     If None, uses in-memory storage.
+///   If None, uses in-memory storage.
 pub async fn create_progress_tracker(dynamo_config: Option<(String, String)>) -> ProgressTracker {
     // Only use explicitly provided config - no env var fallback
     // This ensures consistent behavior in Lambda/serverless environments

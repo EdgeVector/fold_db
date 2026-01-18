@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::Schema;
 
-use super::dynamodb_utils::{MAX_RETRIES, format_dynamodb_error};
+use super::dynamodb_utils::{format_dynamodb_error, MAX_RETRIES};
 use crate::retry_operation;
 use crate::storage::DynamoDbConfig;
 
@@ -26,8 +26,6 @@ pub struct DynamoDbSchemaStore {
     /// user_id that will be used as part of the partition key
     user_id: String,
 }
-
-
 
 impl DynamoDbSchemaStore {
     /// Create a new DynamoDB schema store
@@ -58,62 +56,73 @@ impl DynamoDbSchemaStore {
                         log::info!("Table {} exists, status: {:?}", table_name, status);
                     }
                 }
-            },
+            }
             Err(e) => {
-                log::warn!("Describe table failed: {}. Attempting to create table '{}'...", e, table_name);
-                
+                log::warn!(
+                    "Describe table failed: {}. Attempting to create table '{}'...",
+                    e,
+                    table_name
+                );
+
                 // Try to create table regardless of the specific error from describe
                 // If it already exists, create will fail with ResourceInUse, which we can handle
-                use aws_sdk_dynamodb::types::{AttributeDefinition, KeySchemaElement, KeyType, ScalarAttributeType, BillingMode};
-                
-                match client.create_table()
+                use aws_sdk_dynamodb::types::{
+                    AttributeDefinition, BillingMode, KeySchemaElement, KeyType,
+                    ScalarAttributeType,
+                };
+
+                match client
+                    .create_table()
                     .table_name(&table_name)
                     .attribute_definitions(
                         AttributeDefinition::builder()
                             .attribute_name("PK")
                             .attribute_type(ScalarAttributeType::S)
                             .build()
-                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?,
                     )
                     .attribute_definitions(
                         AttributeDefinition::builder()
                             .attribute_name("SK")
                             .attribute_type(ScalarAttributeType::S)
                             .build()
-                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?,
                     )
                     .key_schema(
                         KeySchemaElement::builder()
                             .attribute_name("PK")
                             .key_type(KeyType::Hash)
                             .build()
-                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?,
                     )
                     .key_schema(
                         KeySchemaElement::builder()
                             .attribute_name("SK")
                             .key_type(KeyType::Range)
                             .build()
-                            .map_err(|e| FoldDbError::Config(e.to_string()))?
+                            .map_err(|e| FoldDbError::Config(e.to_string()))?,
                     )
                     .billing_mode(BillingMode::PayPerRequest)
                     .send()
-                    .await 
+                    .await
                 {
                     Ok(_) => {
                         log::info!("Table creation initiated for {}", table_name);
-                    },
+                    }
                     Err(e) => {
                         let error_str = e.to_string();
                         if error_str.contains("ResourceInUseException") {
-                             log::info!("Table {} already exists (ResourceInUse), waiting for it to be active...", table_name);
+                            log::info!("Table {} already exists (ResourceInUse), waiting for it to be active...", table_name);
                         } else {
-                             // If create failed for another reason, we return that error
-                             return Err(FoldDbError::Config(format!("Failed to create table: {}", e)));
+                            // If create failed for another reason, we return that error
+                            return Err(FoldDbError::Config(format!(
+                                "Failed to create table: {}",
+                                e
+                            )));
                         }
                     }
                 }
-                    
+
                 // Wait for table to be active
                 let mut attempts = 0;
                 loop {
@@ -129,14 +138,14 @@ impl DynamoDbSchemaStore {
                                     }
                                 }
                             }
-                        },
+                        }
                         Err(_) => {
                             // Ignore errors while waiting (e.g. still creating)
                         }
                     }
                     attempts += 1;
                     if attempts >= 60 {
-                         return Err(FoldDbError::Config("Table creation timed out".to_string()));
+                        return Err(FoldDbError::Config("Table creation timed out".to_string()));
                     }
                 }
             }
@@ -178,16 +187,19 @@ impl DynamoDbSchemaStore {
             let schema_json = item
                 .get("SchemaJson")
                 .and_then(|v| v.as_s().ok())
-                .ok_or_else(|| FoldDbError::Database(format!(
-                    "Missing SchemaJson attribute in table '{}' for key '{}'",
-                    self.table_name, schema_name
-                )))?;
+                .ok_or_else(|| {
+                    FoldDbError::Database(format!(
+                        "Missing SchemaJson attribute in table '{}' for key '{}'",
+                        self.table_name, schema_name
+                    ))
+                })?;
 
-            let mut schema: Schema = serde_json::from_str(schema_json)
-                .map_err(|e| FoldDbError::Serialization(format!(
+            let mut schema: Schema = serde_json::from_str(schema_json).map_err(|e| {
+                FoldDbError::Serialization(format!(
                     "Failed to parse schema '{}' from table '{}': {}",
                     schema_name, self.table_name, e
-                )))?;
+                ))
+            })?;
 
             // Ensure schema name matches the requested schema_name (sort key) - this is the source of truth
             schema.name = schema_name.to_string();
@@ -205,17 +217,19 @@ impl DynamoDbSchemaStore {
         schema: &Schema,
         mutation_mappers: &HashMap<String, String>,
     ) -> FoldDbResult<()> {
-        let schema_json = serde_json::to_string(schema)
-            .map_err(|e| FoldDbError::Serialization(format!(
+        let schema_json = serde_json::to_string(schema).map_err(|e| {
+            FoldDbError::Serialization(format!(
                 "Failed to serialize schema '{}': {}",
                 schema.name, e
-            )))?;
+            ))
+        })?;
 
-        let mutation_mappers_json = serde_json::to_string(mutation_mappers)
-            .map_err(|e| FoldDbError::Serialization(format!(
+        let mutation_mappers_json = serde_json::to_string(mutation_mappers).map_err(|e| {
+            FoldDbError::Serialization(format!(
                 "Failed to serialize mutation_mappers for schema '{}': {}",
                 schema.name, e
-            )))?;
+            ))
+        })?;
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -224,7 +238,8 @@ impl DynamoDbSchemaStore {
 
         // Check if schema already exists to preserve CreatedAt
         let pk = self.get_partition_key();
-        let existing_item = self.client
+        let existing_item = self
+            .client
             .get_item()
             .table_name(&self.table_name)
             .key("PK", AttributeValue::S(pk.clone()))
@@ -233,7 +248,12 @@ impl DynamoDbSchemaStore {
             .await
             .map_err(|e| {
                 let error_str = e.to_string();
-                let error_msg = format_dynamodb_error("get_item", &self.table_name, Some(&schema.name), &error_str);
+                let error_msg = format_dynamodb_error(
+                    "get_item",
+                    &self.table_name,
+                    Some(&schema.name),
+                    &error_str,
+                );
                 FoldDbError::Database(error_msg)
             })?;
 
@@ -257,7 +277,10 @@ impl DynamoDbSchemaStore {
                 .item("PK", AttributeValue::S(pk.clone()))
                 .item("SK", AttributeValue::S(schema.name.clone()))
                 .item("SchemaJson", AttributeValue::S(schema_json.clone()))
-                .item("MutationMappers", AttributeValue::S(mutation_mappers_json.clone()))
+                .item(
+                    "MutationMappers",
+                    AttributeValue::S(mutation_mappers_json.clone())
+                )
                 .item("CreatedAt", AttributeValue::N(created_at.clone()))
                 .item("UpdatedAt", AttributeValue::N(timestamp.to_string()))
                 .send(),
@@ -299,9 +322,16 @@ impl DynamoDbSchemaStore {
                     Ok(r) => break Ok(r),
                     Err(e) => {
                         let error_str = e.to_string();
-                        use super::dynamodb_utils::{is_retryable_error, exponential_backoff, format_dynamodb_error};
+                        use super::dynamodb_utils::{
+                            exponential_backoff, format_dynamodb_error, is_retryable_error,
+                        };
                         if retries >= MAX_RETRIES {
-                            break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
+                            break Err(FoldDbError::Database(format_dynamodb_error(
+                                "query",
+                                &self.table_name,
+                                None,
+                                &error_str,
+                            )));
                         }
                         if is_retryable_error(&error_str) {
                             let delay = exponential_backoff(retries);
@@ -309,7 +339,12 @@ impl DynamoDbSchemaStore {
                             retries += 1;
                             continue;
                         }
-                        break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
+                        break Err(FoldDbError::Database(format_dynamodb_error(
+                            "query",
+                            &self.table_name,
+                            None,
+                            &error_str,
+                        )));
                     }
                 }
             }?;
@@ -359,9 +394,16 @@ impl DynamoDbSchemaStore {
                     Ok(r) => break Ok(r),
                     Err(e) => {
                         let error_str = e.to_string();
-                        use super::dynamodb_utils::{is_retryable_error, exponential_backoff, format_dynamodb_error};
+                        use super::dynamodb_utils::{
+                            exponential_backoff, format_dynamodb_error, is_retryable_error,
+                        };
                         if retries >= MAX_RETRIES {
-                            break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
+                            break Err(FoldDbError::Database(format_dynamodb_error(
+                                "query",
+                                &self.table_name,
+                                None,
+                                &error_str,
+                            )));
                         }
                         if is_retryable_error(&error_str) {
                             let delay = exponential_backoff(retries);
@@ -369,7 +411,12 @@ impl DynamoDbSchemaStore {
                             retries += 1;
                             continue;
                         }
-                        break Err(FoldDbError::Database(format_dynamodb_error("query", &self.table_name, None, &error_str)));
+                        break Err(FoldDbError::Database(format_dynamodb_error(
+                            "query",
+                            &self.table_name,
+                            None,
+                            &error_str,
+                        )));
                     }
                 }
             }?;
@@ -377,17 +424,20 @@ impl DynamoDbSchemaStore {
             if let Some(items) = result.items {
                 for item in items {
                     if let Some(schema_json) = item.get("SchemaJson").and_then(|v| v.as_s().ok()) {
-                        let schema_name = item.get("SK")
+                        let schema_name = item
+                            .get("SK")
                             .and_then(|v| v.as_s().ok())
                             .map(|s| s.clone())
                             .unwrap_or_else(|| "unknown".to_string());
-                        
-                        let mut schema: Schema = serde_json::from_str(schema_json)
-                            .map_err(|e| FoldDbError::Serialization(format!(
-                                "Failed to parse schema '{}' from table '{}': {}",
-                                schema_name, self.table_name, e
-                            )))?;
-                        
+
+                        let mut schema: Schema =
+                            serde_json::from_str(schema_json).map_err(|e| {
+                                FoldDbError::Serialization(format!(
+                                    "Failed to parse schema '{}' from table '{}': {}",
+                                    schema_name, self.table_name, e
+                                ))
+                            })?;
+
                         // Ensure schema name matches the sort key (SK) - this is the source of truth
                         schema.name = schema_name;
                         schemas.push(schema);
@@ -450,7 +500,7 @@ impl DynamoDbSchemaStore {
                         self.client
                             .batch_write_item()
                             .set_request_items(Some(req_map))
-                            .send()
+                            .send(),
                     )
                 },
                 &self.table_name,
@@ -472,12 +522,6 @@ impl DynamoDbSchemaStore {
 #[cfg(test)]
 mod tests {
 
-
     // Note: These tests require a real DynamoDB table or LocalStack
     // They are integration tests and should be run with proper AWS credentials
-
-
 }
-
-
-

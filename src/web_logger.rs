@@ -59,7 +59,6 @@ impl log::Log for WebLogger {
             let msg = format!("{}", record.args());
             let full_msg = format!("{} - {}", record.level(), record.args());
 
-
             if let Ok(mut buf) = self.buffer.lock() {
                 let timestamp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)

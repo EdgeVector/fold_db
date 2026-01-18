@@ -77,7 +77,6 @@ pub fn resolve_dotted_path(
     Ok(current_value)
 }
 
-
 /// Resolves field value from parsed chain with fallback mechanisms.
 ///
 /// This function consolidates the duplicate field resolution logic that was
@@ -102,9 +101,7 @@ pub fn resolve_field_value_from_chain(
 
     for operation in &parsed_chain.operations {
         match operation {
-            crate::transform::chain_parser::ChainOperation::FieldAccess(
-                field_name,
-            ) => {
+            crate::transform::chain_parser::ChainOperation::FieldAccess(field_name) => {
                 path_parts.push(field_name.clone());
             }
             _ => {

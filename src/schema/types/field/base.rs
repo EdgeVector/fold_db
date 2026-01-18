@@ -1,11 +1,11 @@
 use super::common::FieldCommon;
 use crate::db_operations::DbOperations;
+use crate::schema::types::declarative_schemas::FieldMapper;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::schema::types::declarative_schemas::FieldMapper;
 
 /// Base generic implementation for schema fields
-/// 
+///
 /// Encapsulates common state and logic:
 /// - `inner`: FieldCommon metadata
 /// - `molecule`: Optional type-specific molecule (state)
@@ -35,9 +35,9 @@ impl<M> FieldBase<M> {
     }
 }
 
-impl<M> FieldBase<M> 
-where 
-    M: DeserializeOwned + Send + Sync + Clone
+impl<M> FieldBase<M>
+where
+    M: DeserializeOwned + Send + Sync + Clone,
 {
     /// Refresh molecule state from database
     pub async fn refresh_from_db(&mut self, db_ops: &DbOperations) {

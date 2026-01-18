@@ -33,7 +33,10 @@ fn current_timestamp_nanos() -> u128 {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
 )]
 pub enum BackfillStatus {
     /// Backfill is currently in progress
@@ -49,7 +52,10 @@ pub enum BackfillStatus {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
 )]
 pub struct BackfillInfo {
     /// Unique hash identifying this specific backfill operation
@@ -87,7 +93,10 @@ pub struct BackfillInfo {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts")
+    ts(
+        export,
+        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+    )
 )]
 pub struct BackfillStatistics {
     /// Total number of backfills
@@ -118,11 +127,11 @@ impl BackfillInfo {
     /// Uses seahash for stable, high-quality hashing across Rust versions
     fn generate_backfill_hash(transform_id: &str, schema_name: &str) -> String {
         let timestamp = current_timestamp_nanos();
-        
+
         // Concatenate inputs for hashing
         let input = format!("{}:{}:{}", transform_id, schema_name, timestamp);
         let hash = seahash::hash(input.as_bytes());
-        
+
         format!("backfill_{:016x}", hash)
     }
 
@@ -182,14 +191,26 @@ impl BackfillTracker {
     }
 
     /// Start tracking a backfill with a pre-generated hash
-    pub fn start_backfill_with_hash(&self, backfill_hash: String, transform_id: String, schema_name: String) {
-        let info = BackfillInfo::new_with_hash(backfill_hash.clone(), transform_id.clone(), schema_name);
-        
+    pub fn start_backfill_with_hash(
+        &self,
+        backfill_hash: String,
+        transform_id: String,
+        schema_name: String,
+    ) {
+        let info =
+            BackfillInfo::new_with_hash(backfill_hash.clone(), transform_id.clone(), schema_name);
+
         // Store by hash
-        self.backfills.lock().unwrap().insert(backfill_hash.clone(), info);
-        
+        self.backfills
+            .lock()
+            .unwrap()
+            .insert(backfill_hash.clone(), info);
+
         // Update transform_id -> hash mapping
-        self.transform_to_hash.lock().unwrap().insert(transform_id, backfill_hash);
+        self.transform_to_hash
+            .lock()
+            .unwrap()
+            .insert(transform_id, backfill_hash);
     }
 
     /// Generate a backfill hash without starting a backfill (for pre-generation)
@@ -205,7 +226,7 @@ impl BackfillTracker {
             let was_in_progress = info.status == BackfillStatus::InProgress;
             info.mutations_expected = count;
             info.records_produced = count; // Also set records_produced to match
-            
+
             // If no mutations are expected, immediately mark as completed
             // This handles the case where there's no source data to process
             // Only mark as completed if it's still InProgress (don't overwrite Completed/Failed)
@@ -216,7 +237,10 @@ impl BackfillTracker {
         } else {
             // Backfill doesn't exist yet - this can happen in race conditions
             // Log a warning but don't fail
-            log::warn!("Attempted to set_mutations_expected for non-existent backfill: {}", backfill_hash);
+            log::warn!(
+                "Attempted to set_mutations_expected for non-existent backfill: {}",
+                backfill_hash
+            );
         }
     }
 
@@ -226,9 +250,12 @@ impl BackfillTracker {
         let mut backfills = self.backfills.lock().unwrap();
         if let Some(info) = backfills.get_mut(backfill_hash) {
             info.mutations_completed += 1;
-            
+
             // Check if all mutations are complete
-            if info.mutations_completed >= info.mutations_expected && info.mutations_expected > 0 && info.status == BackfillStatus::InProgress {
+            if info.mutations_completed >= info.mutations_expected
+                && info.mutations_expected > 0
+                && info.status == BackfillStatus::InProgress
+            {
                 info.status = BackfillStatus::Completed;
                 info.end_time = Some(current_timestamp_secs());
                 return true;
@@ -243,7 +270,7 @@ impl BackfillTracker {
         let mut backfills = self.backfills.lock().unwrap();
         if let Some(info) = backfills.get_mut(backfill_hash) {
             info.mutations_failed += 1;
-            
+
             // If more than 10% of mutations fail, mark the backfill as failed
             let total_processed = info.mutations_completed + info.mutations_failed;
             let failure_rate = if total_processed > 0 {
@@ -251,11 +278,15 @@ impl BackfillTracker {
             } else {
                 0.0
             };
-            
+
             if failure_rate > 0.1 && total_processed > 10 {
                 info.status = BackfillStatus::Failed;
-                info.error = Some(format!("Backfill failed: {} mutations failed ({:.1}% failure rate). Last error: {}", 
-                    info.mutations_failed, failure_rate * 100.0, error));
+                info.error = Some(format!(
+                    "Backfill failed: {} mutations failed ({:.1}% failure rate). Last error: {}",
+                    info.mutations_failed,
+                    failure_rate * 100.0,
+                    error
+                ));
                 info.end_time = Some(current_timestamp_secs());
             }
         }
@@ -272,7 +303,10 @@ impl BackfillTracker {
 
     /// Get info for a specific backfill by transform_id (returns latest backfill)
     pub fn get_backfill(&self, transform_id: &str) -> Option<BackfillInfo> {
-        self.transform_to_hash.lock().unwrap().get(transform_id)
+        self.transform_to_hash
+            .lock()
+            .unwrap()
+            .get(transform_id)
             .and_then(|hash| self.backfills.lock().unwrap().get(hash).cloned())
     }
 
@@ -293,12 +327,7 @@ impl BackfillTracker {
 
     /// Get all backfill info
     pub fn get_all_backfills(&self) -> Vec<BackfillInfo> {
-        self.backfills
-            .lock()
-            .unwrap()
-            .values()
-            .cloned()
-            .collect()
+        self.backfills.lock().unwrap().values().cloned().collect()
     }
 
     /// Get only active (in-progress) backfills
@@ -315,15 +344,15 @@ impl BackfillTracker {
     /// Clear old completed backfills (keep only recent ones)
     pub fn cleanup_old_backfills(&self, keep_count: usize) {
         let mut backfills = self.backfills.lock().unwrap();
-        
+
         let mut completed: Vec<_> = backfills
             .iter()
             .filter(|(_, info)| info.status == BackfillStatus::Completed)
             .map(|(id, info)| (id.clone(), info.start_time))
             .collect();
-        
+
         completed.sort_by_key(|(_, time)| *time);
-        
+
         if completed.len() > keep_count {
             let to_remove = &completed[..completed.len() - keep_count];
             for (id, _) in to_remove {
@@ -338,5 +367,3 @@ impl Default for BackfillTracker {
         Self::new()
     }
 }
-
-

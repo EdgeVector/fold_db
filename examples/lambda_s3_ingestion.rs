@@ -50,7 +50,7 @@ async fn function_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 
     // Access the DataFold node from the context
     let node = LambdaContext::node().await?;
-    
+
     // Example: Get node information
     let node_id = {
         let node_guard = node.lock().await;
@@ -85,8 +85,8 @@ async fn main() -> Result<(), Error> {
     tracing::info!("Initializing Lambda context...");
 
     // Create Lambda configuration
-    let storage_config = StorageConfig::Local { 
-        path: std::env::temp_dir() 
+    let storage_config = StorageConfig::Local {
+        path: std::env::temp_dir(),
     };
     let mut config = LambdaConfig::new(storage_config, LambdaLogging::Stdout);
 

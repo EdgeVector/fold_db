@@ -1,15 +1,15 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
 
-use crate::schema::types::field::{
-    Field, FieldCommon, HashRangeField, RangeField, SingleField,
-    HashRangeFilter, FilterApplicator, fetch_atoms_for_matches_async,
-};
 use crate::db_operations::DbOperations;
-use crate::schema::types::SchemaError;
+use crate::schema::types::field::{
+    fetch_atoms_for_matches_async, Field, FieldCommon, FilterApplicator, HashRangeField,
+    HashRangeFilter, RangeField, SingleField,
+};
 use crate::schema::types::key_value::KeyValue;
+use crate::schema::types::SchemaError;
 use serde_json::Value as JsonValue;
 
 /// Enumeration over all field variants.
@@ -53,7 +53,7 @@ impl Field for FieldVariant {
     fn common(&self) -> &FieldCommon {
         delegate_field_method!(self, common)
     }
-    
+
     fn common_mut(&mut self) -> &mut FieldCommon {
         delegate_field_method!(self, common_mut)
     }
@@ -66,7 +66,12 @@ impl Field for FieldVariant {
         }
     }
 
-    fn write_mutation(&mut self, key_value: &crate::schema::types::key_value::KeyValue, atom: crate::atom::Atom, pub_key: String) {
+    fn write_mutation(
+        &mut self,
+        key_value: &crate::schema::types::key_value::KeyValue,
+        atom: crate::atom::Atom,
+        pub_key: String,
+    ) {
         delegate_field_method!(self, write_mutation, key_value, atom, pub_key)
     }
 

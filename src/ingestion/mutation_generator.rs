@@ -3,7 +3,7 @@
 use crate::ingestion::IngestionResult;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::{Mutation, KeyValue};
+use crate::schema::types::{KeyValue, Mutation};
 use crate::MutationType;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -61,7 +61,7 @@ impl MutationGenerator {
                     } else {
                         schema_field.as_str()
                     };
-                    
+
                     result.insert(field_name.to_string(), value.clone());
                     log_feature!(
                         LogFeature::Ingestion,
@@ -79,7 +79,7 @@ impl MutationGenerator {
                     );
                 }
             }
-            
+
             log_feature!(
                 LogFeature::Ingestion,
                 info,
@@ -97,7 +97,7 @@ impl MutationGenerator {
                 keys_and_values.get("hash_field").cloned(),
                 keys_and_values.get("range_field").cloned(),
             );
-            
+
             let mut mutation = Mutation::new(
                 schema_name.to_string(),
                 mapped_fields,
@@ -106,11 +106,11 @@ impl MutationGenerator {
                 trust_distance,
                 MutationType::Create,
             );
-            
+
             if let Some(filename) = source_file_name {
                 mutation = mutation.with_source_file_name(filename);
             }
-            
+
             mutations.push(mutation);
             log_feature!(
                 LogFeature::Ingestion,
@@ -128,12 +128,7 @@ impl MutationGenerator {
 
         Ok(mutations)
     }
-
-
-
-
 }
-
 
 impl Default for MutationGenerator {
     fn default() -> Self {
@@ -146,7 +141,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-
     #[test]
     fn test_generate_mutations() {
         let generator = MutationGenerator::new();
@@ -154,7 +148,7 @@ mod tests {
         let mut keys_and_values = HashMap::new();
         keys_and_values.insert("hash_field".to_string(), "hash_key".to_string());
         keys_and_values.insert("range_field".to_string(), "range_key".to_string());
-        
+
         let mut fields_and_values = HashMap::new();
         fields_and_values.insert("name".to_string(), json!("John"));
         fields_and_values.insert("age".to_string(), json!(30));

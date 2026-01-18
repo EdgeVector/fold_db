@@ -31,18 +31,21 @@ pub mod logging;
 pub mod node_manager;
 pub mod query;
 pub mod schema;
-pub mod system;
 pub mod security;
+pub mod system;
 pub mod types;
 pub mod ui;
 
 // Re-export public API
-pub use config::{AIConfig, AIProvider, LambdaConfig, LambdaLogging, LambdaStorage, OllamaConfig, OpenRouterConfig};
+pub use config::{
+    AIConfig, AIProvider, LambdaConfig, LambdaLogging, LambdaStorage, OllamaConfig,
+    OpenRouterConfig,
+};
 pub use context::LambdaContext;
 pub use logging::{LogBridge, LogEntry, LogLevel, Logger, NoOpLogger, StdoutLogger, UserLogger};
 pub use types::{
-    AIQueryResponse, CompleteQueryResponse, ConversationMessage, FollowupRequest, 
-    FollowupResponse, QueryContext, QueryPlanInfo,
+    AIQueryResponse, CompleteQueryResponse, ConversationMessage, FollowupRequest, FollowupResponse,
+    QueryContext, QueryPlanInfo,
 };
 
 // Re-export schema types for Lambda users

@@ -4,12 +4,11 @@ use super::native_index_classification::{
 use crate::ingestion::config::IngestionConfig;
 use crate::schema::SchemaError;
 
-pub struct NativeIndexAIClassifier {
-}
+pub struct NativeIndexAIClassifier {}
 
 impl NativeIndexAIClassifier {
     pub fn new(_config: IngestionConfig) -> Self {
-        Self { }
+        Self {}
     }
 
     /// Classify a field using heuristics
@@ -42,17 +41,27 @@ impl NativeIndexAIClassifier {
             strategies.insert(ClassificationType::Phone, SplitStrategy::KeepWhole);
         }
 
-        if field_lower.contains("url") || field_lower.contains("link") || field_lower.contains("website") {
+        if field_lower.contains("url")
+            || field_lower.contains("link")
+            || field_lower.contains("website")
+        {
             classifications.push(ClassificationType::Url);
             strategies.insert(ClassificationType::Url, SplitStrategy::KeepWhole);
         }
 
-        if field_lower.contains("date") || field_lower.contains("time") || field_lower.contains("created") || field_lower.contains("updated") {
+        if field_lower.contains("date")
+            || field_lower.contains("time")
+            || field_lower.contains("created")
+            || field_lower.contains("updated")
+        {
             classifications.push(ClassificationType::Date);
             strategies.insert(ClassificationType::Date, SplitStrategy::KeepWhole);
         }
 
-        if field_lower.contains("name") || field_lower.contains("author") || field_lower.contains("user") {
+        if field_lower.contains("name")
+            || field_lower.contains("author")
+            || field_lower.contains("user")
+        {
             classifications.push(ClassificationType::NamePerson);
             strategies.insert(ClassificationType::NamePerson, SplitStrategy::KeepWhole);
         }
@@ -62,7 +71,11 @@ impl NativeIndexAIClassifier {
             strategies.insert(ClassificationType::NameCompany, SplitStrategy::KeepWhole);
         }
 
-        if field_lower.contains("location") || field_lower.contains("city") || field_lower.contains("country") || field_lower.contains("place") {
+        if field_lower.contains("location")
+            || field_lower.contains("city")
+            || field_lower.contains("country")
+            || field_lower.contains("place")
+        {
             classifications.push(ClassificationType::NamePlace);
             strategies.insert(ClassificationType::NamePlace, SplitStrategy::KeepWhole);
         }
@@ -126,4 +139,3 @@ mod tests {
         assert!(result.has_classification(&ClassificationType::Word));
     }
 }
-

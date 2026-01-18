@@ -6,18 +6,18 @@
 use crate::atom::molecule_behavior::MoleculeBehavior;
 use crate::atom::molecule_types::{apply_status_update, MoleculeStatus, MoleculeUpdate};
 use crate::schema::types::key_config::KeyConfig;
+use crate::schema::types::key_value::KeyValue;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use crate::schema::types::key_value::KeyValue;
 use uuid::Uuid;
 
 /// A hash-range-based collection of atom references stored in a nested HashMap<BTreeMap> structure.
-/// 
+///
 /// This molecule type supports complex indexing where atoms are organized by:
 /// - Hash field: Groups related atoms together
 /// - Range field: Provides ordered access within each hash group
-/// 
+///
 /// Structure: HashMap<hash_value, BTreeMap<range_value, atom_uuid>>
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct MoleculeHashRange {
@@ -70,7 +70,7 @@ impl MoleculeHashRange {
                 })
             })
             .collect();
-        
+
         Self {
             uuid: Uuid::new_v4().to_string(),
             atom_uuids,
@@ -86,7 +86,7 @@ impl MoleculeHashRange {
     }
 
     /// Adds an atom UUID using a KeyConfig for field mapping.
-    /// 
+    ///
     /// # Arguments
     /// * `atom_uuid` - The UUID of the atom to store
     /// * `key_config` - Configuration specifying which fields to use as hash and range
@@ -104,7 +104,12 @@ impl MoleculeHashRange {
     }
 
     /// Adds an atom UUID using explicit hash and range values.
-    pub fn set_atom_uuid_from_values(&mut self, hash_value: String, range_value: String, atom_uuid: String) {
+    pub fn set_atom_uuid_from_values(
+        &mut self,
+        hash_value: String,
+        range_value: String,
+        atom_uuid: String,
+    ) {
         let key_value = KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()));
         self.update_order.push(key_value);
         self.atom_uuids
@@ -186,24 +191,18 @@ impl MoleculeHashRange {
     /// Returns an iterator over all atoms across all hash groups
     /// Each item is (hash_value, range_value, atom_uuid)
     pub fn iter_all_atoms(&self) -> impl Iterator<Item = (&String, &String, &String)> {
-        self.atom_uuids
-            .iter()
-            .flat_map(|(hash_value, range_map)| {
-                range_map.iter().map(move |(range_value, atom_uuid)| {
-                    (hash_value, range_value, atom_uuid)
-                })
-            })
+        self.atom_uuids.iter().flat_map(|(hash_value, range_map)| {
+            range_map
+                .iter()
+                .map(move |(range_value, atom_uuid)| (hash_value, range_value, atom_uuid))
+        })
     }
 
     /// Returns a deterministic sample of n KeyValues from the update order.
     /// If n is greater than the number of KeyValues, returns all KeyValues.
     #[must_use]
     pub fn sample(&self, n: usize) -> Vec<KeyValue> {
-        self.update_order
-            .iter()
-            .take(n)
-            .cloned()
-            .collect()
+        self.update_order.iter().take(n).cloned().collect()
     }
 }
 

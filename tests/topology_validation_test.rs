@@ -1,5 +1,5 @@
 use datafold::schema::types::{
-    DeclarativeSchemaDefinition, JsonTopology, PrimitiveType, TopologyNode, KeyConfig, SchemaType,
+    DeclarativeSchemaDefinition, JsonTopology, KeyConfig, PrimitiveType, SchemaType, TopologyNode,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -22,13 +22,16 @@ fn test_topology_validation_rejects_invalid_type() {
     // Set topology: name should be a string
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
 
     // Try to validate wrong type (number instead of string)
     let result = schema.validate_field_value("name", &json!(42));
     assert!(result.is_err(), "Expected validation error");
-    
+
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("Topology validation failed") || err_msg.contains("expected"),
@@ -55,12 +58,19 @@ fn test_topology_validation_accepts_valid_type() {
     // Set topology: name should be a string
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
 
     // Validate correct type
     let result = schema.validate_field_value("name", &json!("Alice"));
-    assert!(result.is_ok(), "Expected successful validation: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Expected successful validation: {:?}",
+        result
+    );
 }
 
 #[test]
@@ -80,9 +90,21 @@ fn test_topology_nested_object_validation() {
 
     // Set topology: user is an object with id (number) and name (string)
     let mut user_fields = HashMap::new();
-    user_fields.insert("id".to_string(), TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None });
-    user_fields.insert("name".to_string(), TopologyNode::Primitive { value: PrimitiveType::String, classifications: None });
-    
+    user_fields.insert(
+        "id".to_string(),
+        TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        },
+    );
+    user_fields.insert(
+        "name".to_string(),
+        TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        },
+    );
+
     schema.set_field_topology(
         "user".to_string(),
         JsonTopology::new(TopologyNode::Object { value: user_fields }),
@@ -90,11 +112,17 @@ fn test_topology_nested_object_validation() {
 
     // Test 1: Valid nested object
     let result = schema.validate_field_value("user", &json!({"id": 1, "name": "Alice"}));
-    assert!(result.is_ok(), "Expected successful validation with valid nested object");
+    assert!(
+        result.is_ok(),
+        "Expected successful validation with valid nested object"
+    );
 
     // Test 2: Invalid nested object (wrong type for user.id)
     let result = schema.validate_field_value("user", &json!({"id": "not_a_number", "name": "Bob"}));
-    assert!(result.is_err(), "Expected validation error for invalid nested field");
+    assert!(
+        result.is_err(),
+        "Expected validation error for invalid nested field"
+    );
 }
 
 #[test]
@@ -116,17 +144,26 @@ fn test_topology_array_validation() {
     schema.set_field_topology(
         "tags".to_string(),
         JsonTopology::new(TopologyNode::Array {
-            value: Box::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None })
+            value: Box::new(TopologyNode::Primitive {
+                value: PrimitiveType::String,
+                classifications: None,
+            }),
         }),
     );
 
     // Test 1: Valid array
     let result = schema.validate_field_value("tags", &json!(["rust", "database"]));
-    assert!(result.is_ok(), "Expected successful validation with valid array");
+    assert!(
+        result.is_ok(),
+        "Expected successful validation with valid array"
+    );
 
     // Test 2: Invalid array (contains numbers)
     let result = schema.validate_field_value("tags", &json!(["rust", 42, "database"]));
-    assert!(result.is_err(), "Expected validation error for invalid array element");
+    assert!(
+        result.is_err(),
+        "Expected validation error for invalid array element"
+    );
 }
 
 #[test]
@@ -175,17 +212,23 @@ fn test_schema_serialization_includes_topology() {
 
     schema.set_field_topology(
         "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None,
+        }),
     );
     schema.set_field_topology(
         "age".to_string(),
-        JsonTopology::new(TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }),
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None,
+        }),
     );
 
     // Serialize and deserialize
     let serialized = serde_json::to_string(&schema).expect("Failed to serialize");
-    let deserialized: DeclarativeSchemaDefinition = serde_json::from_str(&serialized)
-        .expect("Failed to deserialize");
+    let deserialized: DeclarativeSchemaDefinition =
+        serde_json::from_str(&serialized).expect("Failed to deserialize");
 
     // Verify topology was preserved
     assert!(deserialized.field_topologies.contains_key("name"));
@@ -195,13 +238,19 @@ fn test_schema_serialization_includes_topology() {
     let name_topology = deserialized.field_topologies.get("name").unwrap();
     assert_eq!(
         name_topology.root,
-        TopologyNode::Primitive { value: PrimitiveType::String, classifications: None }
+        TopologyNode::Primitive {
+            value: PrimitiveType::String,
+            classifications: None
+        }
     );
 
     let age_topology = deserialized.field_topologies.get("age").unwrap();
     assert_eq!(
         age_topology.root,
-        TopologyNode::Primitive { value: PrimitiveType::Number, classifications: None }
+        TopologyNode::Primitive {
+            value: PrimitiveType::Number,
+            classifications: None
+        }
     );
 }
 
@@ -222,8 +271,11 @@ fn test_missing_topology_fails_validation() {
 
     // Should reject data when no topology is defined (topology is required)
     let result = schema.validate_field_value("data", &json!("any value"));
-    assert!(result.is_err(), "Expected validation to fail without topology");
-    
+    assert!(
+        result.is_err(),
+        "Expected validation to fail without topology"
+    );
+
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("No topology defined for field"),
@@ -248,10 +300,7 @@ fn test_any_topology_allows_any_value() {
     );
 
     // Set topology to Any
-    schema.set_field_topology(
-        "data".to_string(),
-        JsonTopology::new(TopologyNode::Any),
-    );
+    schema.set_field_topology("data".to_string(), JsonTopology::new(TopologyNode::Any));
 
     // Should accept any type of data with Any topology
     let test_cases = vec![
@@ -272,4 +321,3 @@ fn test_any_topology_allows_any_value() {
         );
     }
 }
-

@@ -28,7 +28,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
             .status(200)
             .header("content-type", asset.mime_type)
             // Optional: Add caching for static assets
-            .header("cache-control", "public, max-age=3600") 
+            .header("cache-control", "public, max-age=3600")
             .body(Body::from(asset.content))
             .map_err(Box::new)?;
         return Ok(resp);

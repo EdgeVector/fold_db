@@ -50,7 +50,10 @@ pub use ai_schema_response::AISchemaResponse;
 pub use config::IngestionConfig;
 pub use core::IngestionCore;
 pub use error::IngestionError;
-pub use progress::{IngestionProgress, IngestionStep, IngestionResults, ProgressService, ProgressTracker, create_progress_tracker};
+pub use progress::{
+    create_progress_tracker, IngestionProgress, IngestionResults, IngestionStep, ProgressService,
+    ProgressTracker,
+};
 pub use structure_analyzer::StructureAnalyzer;
 
 /// Result type for ingestion operations
@@ -191,7 +194,8 @@ impl SimplifiedSchemaMap {
 
     /// Convert to JSON Value for AI API calls
     pub fn to_json_value(&self) -> serde_json::Value {
-        serde_json::to_value(&self.schemas).unwrap_or(serde_json::Value::Object(serde_json::Map::new()))
+        serde_json::to_value(&self.schemas)
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()))
     }
 }
 

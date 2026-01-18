@@ -1,9 +1,9 @@
 //! Type definitions for LLM query workflow.
 
+use crate::schema::types::DeclarativeSchemaDefinition;
+use crate::schema::types::Query;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use crate::schema::types::Query;
-use crate::schema::types::DeclarativeSchemaDefinition;
 
 /// Request to analyze a natural language query
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -156,4 +156,3 @@ impl SessionContext {
         });
     }
 }
-

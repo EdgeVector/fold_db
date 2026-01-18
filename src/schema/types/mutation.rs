@@ -1,8 +1,8 @@
+use super::{key_value::KeyValue, operations::MutationType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
-use super::{key_value::KeyValue, operations::MutationType};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Mutation {
@@ -71,15 +71,15 @@ mod tests {
             0,
             MutationType::Update,
         );
-        
+
         mutation.backfill_hash = Some("test_hash_123".to_string());
-        
+
         let cloned = mutation.clone();
-        
+
         assert_eq!(cloned.backfill_hash, Some("test_hash_123".to_string()));
         println!("✅ Clone preserves backfill_hash");
     }
-    
+
     #[test]
     fn test_with_backfill_hash() {
         let mutation = Mutation::new(
@@ -89,8 +89,9 @@ mod tests {
             "test_key".to_string(),
             0,
             MutationType::Update,
-        ).with_backfill_hash("test_hash_456".to_string());
-        
+        )
+        .with_backfill_hash("test_hash_456".to_string());
+
         assert_eq!(mutation.backfill_hash, Some("test_hash_456".to_string()));
         println!("✅ with_backfill_hash sets the field correctly");
     }
