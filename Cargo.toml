@@ -111,6 +111,10 @@ path = "src/lib.rs"
 name = "datafold_http_server"
 path = "src/bin/datafold_http_server.rs"
 
+[[bin]]
+name = "ensure_identity"
+path = "src/bin/ensure_identity.rs"
+
 
 
 

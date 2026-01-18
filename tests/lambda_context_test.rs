@@ -1,6 +1,6 @@
 #![cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
-use datafold::storage::StorageConfig;
+use datafold::storage::DatabaseConfig as StorageConfig;
 use serde_json::json;
 
 #[tokio::test]

@@ -108,7 +108,7 @@ async fn test_dynamodb_put_mock() {
     let store = DynamoDbKvStore::new(
         Arc::new(client),
         "TestTable".to_string(),
-        Some("user1".to_string()),
+        "user1".to_string(),
     );
 
     let key = b"test_key";
@@ -153,7 +153,7 @@ async fn test_dynamodb_get_mock() {
     let store = DynamoDbKvStore::new(
         Arc::new(client),
         "TestTable".to_string(),
-        Some("user1".to_string()),
+        "user1".to_string(),
     );
 
     let key = b"test_key";
@@ -182,12 +182,12 @@ async fn test_dynamodb_namespace_isolation_mock() {
     let store1 = DynamoDbKvStore::new(
         Arc::new(client.clone()),
         "Namespace1".to_string(),
-        Some("user1".to_string()),
+        "user1".to_string(),
     );
     let store2 = DynamoDbKvStore::new(
         Arc::new(client),
         "Namespace2".to_string(),
-        Some("user1".to_string()),
+        "user1".to_string(),
     );
 
     let key = b"key";
@@ -215,7 +215,7 @@ async fn test_dynamodb_special_chars_mock() {
     let store = DynamoDbKvStore::new(
         Arc::new(client),
         "TestTable".to_string(),
-        Some("user1".to_string()),
+        "user1".to_string(),
     );
 
     // Test key with special chars: colon, slash, space, unicode

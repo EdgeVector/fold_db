@@ -16,7 +16,13 @@ pub struct NodeManager {
     single_node: Option<Arc<tokio::sync::Mutex<DataFoldNode>>>,
 }
 
+
 impl NodeManager {
+    /// Get the single-tenant node if one exists
+    pub fn get_single_node(&self) -> Option<Arc<tokio::sync::Mutex<DataFoldNode>>> {
+        self.single_node.clone()
+    }
+
     /// Create a new NodeManager
     pub async fn new(config: LambdaConfig) -> Result<Self, IngestionError> {
         let mut manager = Self {
@@ -32,7 +38,10 @@ impl NodeManager {
             }
             _ => {
                 // Single-tenant mode: Create one node now
-                let node = manager.create_node("default").await?;
+                let user_id = std::env::var("FOLDB_USER_ID").map_err(|_| {
+                    IngestionError::configuration_error("FOLDB_USER_ID environment variable required for single-tenant mode")
+                })?;
+                let node = manager.create_node(&user_id).await?;
                 manager.single_node = Some(node);
             }
         }

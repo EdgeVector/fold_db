@@ -66,7 +66,7 @@ impl OperationProcessor {
 
     /// List logs with optional filtering.
     pub async fn list_logs(&self, since: Option<i64>, limit: Option<usize>) -> Vec<crate::logging::core::LogEntry> {
-        crate::logging::LoggingSystem::query_logs(limit, since).await
+        crate::logging::LoggingSystem::query_logs(limit, since).await.unwrap_or_default()
     }
 
     /// Get current logging configuration.
@@ -694,11 +694,15 @@ mod tests {
         // This test ensures the logging methods are available on OperationProcessor
         // without needing to instantiate a full DataFoldNode (which is complex).
         // It relies on the fact that if this compiles, the methods exist.
-        let _ = |processor: &crate::datafold_node::OperationProcessor| async {
+        async fn check_methods(processor: &crate::datafold_node::OperationProcessor) {
              let _ = processor.list_logs(None, None).await;
              let _ = processor.get_log_config().await;
              let _ = processor.get_log_features().await;
-             // We don't execute them to avoid needing a real node/runtime environment
-        };
+        }
+        // check_methods is defined but not called, which satisfies the compiler checking the body.
+        // To strictly avoid "unused" warnings we might want to use it in a phantom way? 
+        // But the original code was: let _ = |...| ...
+        // We can just define it. The compiler checks the body of the function.
+        let _ = check_methods;
     }
 }

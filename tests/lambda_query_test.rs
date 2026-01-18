@@ -2,7 +2,7 @@
 
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, StdoutLogger};
 use datafold::schema::types::Query;
-use datafold::storage::StorageConfig;
+use datafold::storage::DatabaseConfig as StorageConfig;
 use serde_json::json;
 use std::sync::Arc;
 

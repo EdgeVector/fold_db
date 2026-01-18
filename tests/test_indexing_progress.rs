@@ -58,8 +58,9 @@ async fn test_indexing_progress_tracking() {
         map
     };
 
-    let node_arc = Arc::new(tokio::sync::RwLock::new(node)); // Changed from Mutex::new to tokio::sync::RwLock::new
-    let processor = OperationProcessor::new(node_arc.clone());
+    let node_clone = node.clone();
+    let node_arc = Arc::new(tokio::sync::RwLock::new(node));
+    let processor = OperationProcessor::new(node_clone);
 
     let key_value = KeyValue::new(Some("1".to_string()), None);
 

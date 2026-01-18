@@ -11,22 +11,11 @@ impl LambdaContext {
     ///
     /// Returns schemas along with their approval/pending states.
     ///
-    /// # Example
+    /// # Arguments
     ///
-    /// ```ignore
-    /// use datafold::lambda::LambdaContext;
-    ///
-    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let schemas = LambdaContext::list_schemas().await?;
-    ///     
-    ///     for schema in schemas {
-    ///         println!("Schema: {} - State: {:?}", schema.schema.name, schema.state);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
-    pub async fn list_schemas() -> Result<Vec<crate::schema::SchemaWithState>, IngestionError> {
-        let node_mutex = Self::node().await?;
+    /// * `user_id` - User ID for node context
+    pub async fn list_schemas(user_id: String) -> Result<Vec<crate::schema::SchemaWithState>, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
         
@@ -41,21 +30,9 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `schema_name` - Name of the schema to retrieve
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use datafold::lambda::LambdaContext;
-    ///
-    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     if let Some(schema) = LambdaContext::get_schema("users").await? {
-    ///         println!("Schema: {} - State: {:?}", schema.schema.name, schema.state);
-    ///     }
-    ///     Ok(())
-    /// }
-    /// ```
-    pub async fn get_schema(schema_name: &str) -> Result<Option<crate::schema::SchemaWithState>, IngestionError> {
-        let node_mutex = Self::node().await?;
+    /// * `user_id` - User ID for node context
+    pub async fn get_schema(schema_name: &str, user_id: String) -> Result<Option<crate::schema::SchemaWithState>, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
         
@@ -68,20 +45,9 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `schema_name` - Name of the schema to block
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use datafold::lambda::LambdaContext;
-    ///
-    /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     LambdaContext::block_schema("old_schema").await?;
-    ///     println!("Schema blocked");
-    ///     Ok(())
-    /// }
-    /// ```
-    pub async fn block_schema(schema_name: &str) -> Result<(), IngestionError> {
-        let node_mutex = Self::node().await?;
+    /// * `user_id` - User ID for node context
+    pub async fn block_schema(schema_name: &str, user_id: String) -> Result<(), IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
         
@@ -97,19 +63,23 @@ impl LambdaContext {
     ///
     /// Returns a tuple of (schemas_fetched, schemas_loaded, failed_schemas)
     ///
+    /// # Arguments
+    ///
+    /// * `user_id` - User ID for node context
+    ///
     /// # Example
     ///
     /// ```ignore
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let (fetched, loaded, failed) = LambdaContext::load_schemas().await?;
+    ///     let (fetched, loaded, failed) = LambdaContext::load_schemas("user_123").await?;
     ///     println!("Fetched {} schemas, loaded {} successfully", fetched, loaded);
     ///     Ok(())
     /// }
     /// ```
-    pub async fn load_schemas() -> Result<(usize, usize, Vec<String>), IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn load_schemas(user_id: String) -> Result<(usize, usize, Vec<String>), IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
         
@@ -124,6 +94,7 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `schema_name` - Name of the schema to approve
+    /// * `user_id` - User ID for node context
     ///
     /// # Example
     ///
@@ -131,13 +102,13 @@ impl LambdaContext {
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     LambdaContext::approve_schema("users").await?;
+    ///     LambdaContext::approve_schema("users", "user_123".to_string()).await?;
     ///     println!("Schema approved");
     ///     Ok(())
     /// }
     /// ```
-    pub async fn approve_schema(schema_name: &str) -> Result<Option<String>, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn approve_schema(schema_name: &str, user_id: String) -> Result<Option<String>, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
         
@@ -150,6 +121,7 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `schema_name` - Name of the schema
+    /// * `user_id` - User ID for node context
     ///
     /// # Returns
     ///
@@ -161,14 +133,14 @@ impl LambdaContext {
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     if let Some(state) = LambdaContext::get_schema_state("users").await? {
+    ///     if let Some(state) = LambdaContext::get_schema_state("users", "user_123".to_string()).await? {
     ///         println!("Schema state: {:?}", state);
     ///     }
     ///     Ok(())
     /// }
     /// ```
-    pub async fn get_schema_state(schema_name: &str) -> Result<Option<crate::schema::SchemaState>, IngestionError> {
-        let node_mutex = Self::node().await?;
+    pub async fn get_schema_state(schema_name: &str, user_id: String) -> Result<Option<crate::schema::SchemaState>, IngestionError> {
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
         
@@ -185,6 +157,7 @@ impl LambdaContext {
     /// # Arguments
     ///
     /// * `backfill_hash` - The hash of the backfill to retrieve
+    /// * `user_id` - User ID for node context
     ///
     /// # Returns
     ///
@@ -196,7 +169,7 @@ impl LambdaContext {
     /// use datafold::lambda::LambdaContext;
     ///
     /// async fn handler() -> Result<(), Box<dyn std::error::Error>> {
-    ///     if let Some(info) = LambdaContext::get_backfill_status("abc123hash").await? {
+    ///     if let Some(info) = LambdaContext::get_backfill_status("abc123hash", "user_123".to_string()).await? {
     ///         println!("Backfill status: {:?}", info.status);
     ///     }
     ///     Ok(())
@@ -204,8 +177,9 @@ impl LambdaContext {
     /// ```
     pub async fn get_backfill_status(
         backfill_hash: &str,
+        user_id: String,
     ) -> Result<Option<crate::fold_db_core::infrastructure::backfill_tracker::BackfillInfo>, IngestionError> {
-        let node_mutex = Self::node().await?;
+        let node_mutex = Self::get_node(&user_id).await?;
         let node_guard = node_mutex.lock().await;
         let processor = OperationProcessor::new(node_guard.clone());
         

@@ -66,7 +66,11 @@ fi
 # Ensure config directory exists
 mkdir -p config
 
-# Create DynamoDB configuration
+echo "Ensuring node identity..."
+# Run ensure_identity to get the public key
+USER_ID=$(cargo run --quiet --bin ensure_identity)
+echo "Node Identity (User ID): $USER_ID"
+
 echo "Setting up DynamoDB configuration..."
 echo "Table name: $TABLE_NAME"
 echo "Region: $REGION"

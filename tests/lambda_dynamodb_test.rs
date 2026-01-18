@@ -8,7 +8,7 @@
 /// Note: TransformOrchestrator is optional for non-Sled backends, so transforms
 /// will have limited functionality. Core operations (queries, mutations, ingestion) work fine.
 
-use datafold::db_operations::DbOperationsV2;
+use datafold::db_operations::DbOperations;
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
 use datafold::storage::InMemoryNamespacedStore;
 use serde_json::json;
@@ -22,8 +22,8 @@ async fn test_lambda_with_dynamodb_style_db_ops() {
     
     // Create DbOperationsV2 from the store (same way DynamoDB would work)
     let db_ops = Arc::new(
-        DbOperationsV2::from_namespaced_store(store).await
-            .expect("Failed to create DbOperationsV2 from in-memory store")
+        DbOperations::from_namespaced_store(store).await
+            .expect("Failed to create DbOperations from in-memory store")
     );
     
     // Create LambdaConfig with the pre-created DbOperationsV2
@@ -88,7 +88,7 @@ async fn test_lambda_with_dynamodb_style_db_ops() {
             let node_guard = node.lock().await;
             
             // Verify the node has the custom backend
-            let _db_guard = node_guard.get_fold_db().unwrap();
+            let _db_guard = node_guard.get_fold_db().await.unwrap();
             // The db_ops should be using our in-memory store (DynamoDB-style)
             
             println!("✅ Lambda with DynamoDB-style DbOperationsV2 works!");
