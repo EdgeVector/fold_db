@@ -25,6 +25,7 @@ use super::mutation_manager::MutationManager;
 use super::orchestration::index_status::IndexStatusTracker;
 use super::orchestration::TransformOrchestrator;
 use super::query::QueryExecutor;
+use crate::progress::ProgressStore as JobStore;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
@@ -129,9 +130,9 @@ impl FoldDB {
     pub async fn new_with_components(
         db_ops: Arc<DbOperations>,
         db_path: &str,
-        progress_store: Arc<dyn super::orchestration::ProgressStore>,
+        job_store: Option<Arc<dyn JobStore>>,
     ) -> Result<Self, StorageError> {
-        Self::initialize_from_db_ops(db_ops, db_path, progress_store).await
+        Self::initialize_from_db_ops(db_ops, db_path, job_store).await
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
@@ -155,8 +156,10 @@ impl FoldDB {
             "Sled"
         );
 
-        let progress_store = Arc::new(super::orchestration::InMemoryProgressStore::new());
-        Self::initialize_from_db_ops(db_ops, db_path, progress_store).await
+        // For local Sled backend, we use in-memory job store if not provided (though here we hardcode None/Default)
+        // Actually, let's create an in-memory job store for consistency
+        let job_store = Arc::new(crate::progress::InMemoryProgressStore::new());
+        Self::initialize_from_db_ops(db_ops, db_path, Some(job_store)).await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperations
@@ -165,7 +168,7 @@ impl FoldDB {
     async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
-        progress_store: Arc<dyn super::orchestration::ProgressStore>,
+        job_store: Option<Arc<dyn JobStore>>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(AsyncMessageBus::new());
@@ -188,7 +191,11 @@ impl FoldDB {
 
         // Create and start EventMonitor for system-wide observability
         let event_monitor = Arc::new(
-            EventMonitor::new(Arc::clone(&message_bus), Arc::clone(&transform_manager)).await,
+            EventMonitor::new(
+                Arc::clone(&message_bus), 
+                Arc::clone(&transform_manager),
+                job_store.clone()
+            ).await,
         );
         info!("Started EventMonitor for system-wide event tracking");
 
@@ -259,7 +266,7 @@ impl FoldDB {
 
         // Create shared IndexStatusTracker for tracking indexing progress
         // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
-        let index_status_tracker = IndexStatusTracker::new(Some(progress_store));
+        let index_status_tracker = IndexStatusTracker::new(job_store.clone());
 
         // Create and start IndexOrchestrator for event-driven native indexing
         use super::orchestration::index_orchestrator::IndexOrchestrator;

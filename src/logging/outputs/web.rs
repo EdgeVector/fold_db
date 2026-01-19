@@ -1,17 +1,18 @@
 //! Web streaming output handler
 use crate::logging::config::WebConfig;
+use crate::logging::core::{LogEntry, LogLevel, Logger};
 use crate::logging::LoggingError;
-use log::{LevelFilter, Metadata, Record};
+use async_trait::async_trait;
+use log::LevelFilter;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
 /// Web output handler that provides streaming logs via broadcast channel
 pub struct WebOutput {
     config: WebConfig,
-    buffer: Arc<Mutex<VecDeque<String>>>,
-    sender: broadcast::Sender<String>,
+    buffer: Arc<Mutex<VecDeque<LogEntry>>>,
+    sender: broadcast::Sender<String>, // Broadcasts JSON string of LogEntry
     level_filter: RwLock<LevelFilter>,
 }
 
@@ -36,7 +37,7 @@ impl WebOutput {
         })
     }
 
-    pub fn get_logs(&self) -> Vec<String> {
+    pub fn get_logs(&self) -> Vec<LogEntry> {
         self.buffer.lock().unwrap().iter().cloned().collect()
     }
 
@@ -44,45 +45,58 @@ impl WebOutput {
         self.sender.subscribe()
     }
 
-    fn should_log(&self, metadata: &Metadata) -> bool {
+    fn should_log(&self, level: LogLevel) -> bool {
         if !self.config.enabled {
             return false;
         }
 
         if let Ok(filter) = self.level_filter.read() {
-            metadata.level() <= *filter
+             let log_level = match level {
+                LogLevel::Trace => log::Level::Trace,
+                LogLevel::Debug => log::Level::Debug,
+                LogLevel::Info => log::Level::Info,
+                LogLevel::Warn => log::Level::Warn,
+                LogLevel::Error => log::Level::Error,
+            };
+            log_level <= *filter
         } else {
             false
         }
     }
 }
 
-impl log::Log for WebOutput {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        self.should_log(metadata)
-    }
-
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-
-            let msg = format!("[{}][{}] - {}", timestamp, record.level(), record.args());
-
+#[async_trait]
+impl Logger for WebOutput {
+    async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.should_log(entry.level.clone()) {
             // Add to buffer
             if let Ok(mut buffer) = self.buffer.lock() {
-                buffer.push_back(msg.clone());
+                buffer.push_back(entry.clone());
                 if buffer.len() > self.config.max_logs {
                     buffer.pop_front();
                 }
             }
 
             // Send to broadcast channel
-            let _ = self.sender.send(msg);
+            // Serialize LogEntry to JSON string
+            if let Ok(msg) = serde_json::to_string(&entry) {
+                let _ = self.sender.send(msg);
+            }
         }
+        Ok(())
     }
 
-    fn flush(&self) {}
+    async fn query(
+        &self,
+        _user_id: &str,
+        _limit: Option<usize>,
+        from_timestamp: Option<i64>,
+    ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
+        let entries = self.get_logs();
+        let from_ts = from_timestamp.unwrap_or(0);
+        
+        // Filter by timestamp
+        Ok(entries.into_iter().filter(|e| e.timestamp > from_ts).collect())
+    }
 }
+

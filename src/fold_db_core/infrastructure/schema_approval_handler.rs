@@ -107,7 +107,8 @@ async fn handle_transform_schema_approval(
         backfill_hash.clone(),
         event.schema_name.clone(),
         schema_name.clone(),
-    );
+    )
+    .await;
 
     // Execute the transform backfill
     let result = handle_transform_backfill(
@@ -129,14 +130,16 @@ async fn handle_transform_schema_approval(
                 == crate::fold_db_core::infrastructure::backfill_tracker::BackfillStatus::InProgress
                 && info.mutations_expected == 0
             {
-                backfill_tracker.force_complete(backfill_hash);
+                backfill_tracker.force_complete(backfill_hash).await;
             }
         }
     }
 
-    result.inspect_err(|e| {
-        backfill_tracker.fail_backfill(&event.schema_name, e.to_string());
-    })
+    if let Err(e) = &result {
+        backfill_tracker.fail_backfill(&event.schema_name, e.to_string()).await;
+    }
+    
+    result
 }
 
 async fn handle_transform_backfill(
@@ -165,8 +168,8 @@ async fn handle_transform_backfill(
                 // Directly mark as completed since there are no records to process
                 // This avoids waiting for the async event monitor thread
                 // We do both set_mutations_expected and force_complete to handle race conditions
-                backfill_tracker.set_mutations_expected(backfill_hash, 0);
-                backfill_tracker.force_complete(backfill_hash);
+                backfill_tracker.set_mutations_expected(backfill_hash, 0).await;
+                backfill_tracker.force_complete(backfill_hash).await;
 
                 // Verify it was set (for debugging)
                 if let Some(info) = backfill_tracker.get_backfill_by_hash(backfill_hash) {
@@ -183,7 +186,7 @@ async fn handle_transform_backfill(
             Ok(())
         }
         Err(e) => {
-            backfill_tracker.fail_backfill(transform_id, e.to_string());
+            backfill_tracker.fail_backfill(transform_id, e.to_string()).await;
             Err(e)
         }
     }

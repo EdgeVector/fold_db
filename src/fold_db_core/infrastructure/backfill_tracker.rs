@@ -2,7 +2,10 @@
 //!
 //! Tracks the progress and status of backfill operations when transforms are registered
 
+use crate::progress::{Job, JobStatus, JobType, ProgressStore};
+use log::{error, warn};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -170,28 +173,110 @@ impl BackfillInfo {
         let end = self.end_time.unwrap_or_else(current_timestamp_secs);
         end.saturating_sub(self.start_time)
     }
+
+    /// Convert BackfillInfo to generic Job
+    pub fn to_job(&self, user_id: Option<String>) -> Job {
+        let mut job = Job::new(
+            self.backfill_hash.clone(),
+            JobType::Backfill,
+        );
+        job.status = self.status.clone().into();
+
+        if let Some(uid) = user_id {
+            job.user_id = Some(uid);
+        }
+
+        job.error = self.error.clone();
+        job.progress_percentage = if self.mutations_expected > 0 {
+            ((self.mutations_completed as f64 / self.mutations_expected as f64) * 100.0) as u8
+        } else {
+            0
+        };
+
+        if let Some(end) = self.end_time {
+            job.completed_at = Some(end);
+        }
+
+        // Store full BackfillInfo in metadata
+        job.metadata = serde_json::to_value(self).unwrap_or(Value::Null);
+        
+        job
+    }
+
+    /// Update BackfillInfo from generic Job
+    pub fn from_job(job: &Job) -> Option<Self> {
+        if job.job_type != JobType::Backfill {
+            return None;
+        }
+
+        // Try to deserialize from metadata first
+        if let Ok(info) = serde_json::from_value::<BackfillInfo>(job.metadata.clone()) {
+            return Some(info);
+        }
+
+        // Fallback: reconstruct from Job fields (less accurate)
+        None
+    }
+}
+
+impl From<BackfillStatus> for JobStatus {
+    fn from(status: BackfillStatus) -> Self {
+        match status {
+            BackfillStatus::InProgress => JobStatus::Running,
+            BackfillStatus::Completed => JobStatus::Completed,
+            BackfillStatus::Failed => JobStatus::Failed,
+        }
+    }
 }
 
 /// Tracker for all backfill operations
-#[derive(Debug, Clone)]
 pub struct BackfillTracker {
     /// Current and historical backfill operations indexed by backfill_hash
     backfills: Arc<Mutex<HashMap<String, BackfillInfo>>>,
     /// Index from transform_id to latest backfill_hash for quick lookup
     transform_to_hash: Arc<Mutex<HashMap<String, String>>>,
+    /// Optional persistent store for progress
+    progress_store: Option<Arc<dyn ProgressStore>>,
 }
 
 impl BackfillTracker {
     /// Create a new backfill tracker
-    pub fn new() -> Self {
+    pub fn new(progress_store: Option<Arc<dyn ProgressStore>>) -> Self {
         Self {
             backfills: Arc::new(Mutex::new(HashMap::new())),
             transform_to_hash: Arc::new(Mutex::new(HashMap::new())),
+            progress_store,
+        }
+    }
+
+    /// Load active backfills from persistent store
+    pub async fn load_from_store(&self, user_id: Option<String>) {
+        if let Some(store) = &self.progress_store {
+            // This is a simplification: listing all jobs might be expensive.
+            // But we need to repopulate memory cache on startup.
+            // Ideally we filter by JobType::Backfill
+            match store.list_by_user(user_id.as_deref().unwrap_or("global")).await {
+                Ok(jobs) => {
+                    let mut backfills = self.backfills.lock().unwrap();
+                    let mut transform_to_hash = self.transform_to_hash.lock().unwrap();
+                    
+                    for job in jobs {
+                        if let Some(info) = BackfillInfo::from_job(&job) {
+                            backfills.insert(info.backfill_hash.clone(), info.clone());
+                            // Update lookup if it's newer (naive approach)
+                            transform_to_hash.insert(info.transform_id.clone(), info.backfill_hash.clone());
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to load backfills from store: {}", e);
+                }
+            }
         }
     }
 
     /// Start tracking a backfill with a pre-generated hash
-    pub fn start_backfill_with_hash(
+    pub async fn start_backfill_with_hash(
         &self,
         backfill_hash: String,
         transform_id: String,
@@ -200,17 +285,27 @@ impl BackfillTracker {
         let info =
             BackfillInfo::new_with_hash(backfill_hash.clone(), transform_id.clone(), schema_name);
 
-        // Store by hash
-        self.backfills
-            .lock()
-            .unwrap()
-            .insert(backfill_hash.clone(), info);
+        {
+            // Store by hash
+            self.backfills
+                .lock()
+                .unwrap()
+                .insert(backfill_hash.clone(), info.clone());
 
-        // Update transform_id -> hash mapping
-        self.transform_to_hash
-            .lock()
-            .unwrap()
-            .insert(transform_id, backfill_hash);
+            // Update transform_id -> hash mapping
+            self.transform_to_hash
+                .lock()
+                .unwrap()
+                .insert(transform_id, backfill_hash);
+        }
+        
+        // Persist
+        if let Some(store) = &self.progress_store {
+            let job = info.to_job(None); // TODO: Pass user_id if available
+            if let Err(e) = store.save(&job).await {
+                error!("Failed to persist backfill start: {}", e);
+            }
+        }
     }
 
     /// Generate a backfill hash without starting a backfill (for pre-generation)
@@ -220,83 +315,142 @@ impl BackfillTracker {
 
     /// Set the expected number of mutations for this backfill
     /// If count is 0, immediately mark the backfill as completed (no data to process)
-    pub fn set_mutations_expected(&self, backfill_hash: &str, count: u64) {
-        let mut backfills = self.backfills.lock().unwrap();
-        if let Some(info) = backfills.get_mut(backfill_hash) {
-            let was_in_progress = info.status == BackfillStatus::InProgress;
-            info.mutations_expected = count;
-            info.records_produced = count; // Also set records_produced to match
+    pub async fn set_mutations_expected(&self, backfill_hash: &str, count: u64) {
+        let mut info_clone = None;
+        {
+            let mut backfills = self.backfills.lock().unwrap();
+            if let Some(info) = backfills.get_mut(backfill_hash) {
+                let was_in_progress = info.status == BackfillStatus::InProgress;
+                info.mutations_expected = count;
+                info.records_produced = count; // Also set records_produced to match
 
-            // If no mutations are expected, immediately mark as completed
-            // This handles the case where there's no source data to process
-            // Only mark as completed if it's still InProgress (don't overwrite Completed/Failed)
-            if count == 0 && was_in_progress {
-                info.status = BackfillStatus::Completed;
-                info.end_time = Some(current_timestamp_secs());
+                // If no mutations are expected, immediately mark as completed
+                // This handles the case where there's no source data to process
+                // Only mark as completed if it's still InProgress (don't overwrite Completed/Failed)
+                if count == 0 && was_in_progress {
+                    info.status = BackfillStatus::Completed;
+                    info.end_time = Some(current_timestamp_secs());
+                }
+                info_clone = Some(info.clone());
+            } else {
+                // Backfill doesn't exist yet - this can happen in race conditions
+                // Log a warning but don't fail
+                warn!(
+                    "Attempted to set_mutations_expected for non-existent backfill: {}",
+                    backfill_hash
+                );
             }
-        } else {
-            // Backfill doesn't exist yet - this can happen in race conditions
-            // Log a warning but don't fail
-            log::warn!(
-                "Attempted to set_mutations_expected for non-existent backfill: {}",
-                backfill_hash
-            );
+        }
+        
+        if let Some(info) = info_clone {
+             if let Some(store) = &self.progress_store {
+                let job = info.to_job(None);
+                if let Err(e) = store.save(&job).await {
+                    error!("Failed to persist backfill update: {}", e);
+                }
+            }
         }
     }
 
     /// Increment completed mutation count for a backfill
     /// Returns true if all mutations are now complete
-    pub fn increment_mutation_completed(&self, backfill_hash: &str) -> bool {
-        let mut backfills = self.backfills.lock().unwrap();
-        if let Some(info) = backfills.get_mut(backfill_hash) {
-            info.mutations_completed += 1;
+    pub async fn increment_mutation_completed(&self, backfill_hash: &str) -> bool {
+        let mut is_completed = false;
+        let mut info_clone = None;
+        
+        {
+            let mut backfills = self.backfills.lock().unwrap();
+            if let Some(info) = backfills.get_mut(backfill_hash) {
+                info.mutations_completed += 1;
 
-            // Check if all mutations are complete
-            if info.mutations_completed >= info.mutations_expected
-                && info.mutations_expected > 0
-                && info.status == BackfillStatus::InProgress
-            {
-                info.status = BackfillStatus::Completed;
-                info.end_time = Some(current_timestamp_secs());
-                return true;
+                // Check if all mutations are complete
+                if info.mutations_completed >= info.mutations_expected
+                    && info.mutations_expected > 0
+                    && info.status == BackfillStatus::InProgress
+                {
+                    info.status = BackfillStatus::Completed;
+                    info.end_time = Some(current_timestamp_secs());
+                    is_completed = true;
+                    // Provide clone for persistence only on completion or significant steps
+                    info_clone = Some(info.clone());
+                } else if info.mutations_completed % 100 == 0 {
+                    // Optionally persist every 100 items to avoid spamming DB but keep relatively fresh
+                     info_clone = Some(info.clone());
+                }
             }
         }
-        false
+        
+        if let Some(info) = info_clone {
+             if let Some(store) = &self.progress_store {
+                let job = info.to_job(None);
+                // We spawn or await? Await since we are in async fn now.
+                // But error in storage shouldn't fail the operation
+                if let Err(e) = store.save(&job).await {
+                    warn!("Failed to persist backfill progress: {}", e);
+                }
+            }
+        }
+        
+        is_completed
     }
 
     /// Increment failed mutation count for a backfill
     /// If failure rate exceeds threshold, mark the backfill as failed
-    pub fn increment_mutation_failed(&self, backfill_hash: &str, error: String) {
-        let mut backfills = self.backfills.lock().unwrap();
-        if let Some(info) = backfills.get_mut(backfill_hash) {
-            info.mutations_failed += 1;
+    pub async fn increment_mutation_failed(&self, backfill_hash: &str, error_msg: String) {
+        let mut info_clone = None;
+        {
+            let mut backfills = self.backfills.lock().unwrap();
+            if let Some(info) = backfills.get_mut(backfill_hash) {
+                info.mutations_failed += 1;
 
-            // If more than 10% of mutations fail, mark the backfill as failed
-            let total_processed = info.mutations_completed + info.mutations_failed;
-            let failure_rate = if total_processed > 0 {
-                info.mutations_failed as f64 / total_processed as f64
-            } else {
-                0.0
-            };
+                // If more than 10% of mutations fail, mark the backfill as failed
+                let total_processed = info.mutations_completed + info.mutations_failed;
+                let failure_rate = if total_processed > 0 {
+                    info.mutations_failed as f64 / total_processed as f64
+                } else {
+                    0.0
+                };
 
-            if failure_rate > 0.1 && total_processed > 10 {
-                info.status = BackfillStatus::Failed;
-                info.error = Some(format!(
-                    "Backfill failed: {} mutations failed ({:.1}% failure rate). Last error: {}",
-                    info.mutations_failed,
-                    failure_rate * 100.0,
-                    error
-                ));
-                info.end_time = Some(current_timestamp_secs());
+                if failure_rate > 0.1 && total_processed > 10 {
+                    info.status = BackfillStatus::Failed;
+                    info.error = Some(format!(
+                        "Backfill failed: {} mutations failed ({:.1}% failure rate). Last error: {}",
+                        info.mutations_failed,
+                        failure_rate * 100.0,
+                        error_msg
+                    ));
+                    info.end_time = Some(current_timestamp_secs());
+                    info_clone = Some(info.clone());
+                }
+            }
+        }
+        
+        if let Some(info) = info_clone {
+             if let Some(store) = &self.progress_store {
+                let job = info.to_job(None);
+                if let Err(e) = store.save(&job).await {
+                    error!("Failed to persist backfill failure: {}", e);
+                }
             }
         }
     }
 
     /// Mark backfill as failed by transform_id (uses latest backfill for that transform)
-    pub fn fail_backfill(&self, transform_id: &str, error: String) {
+    pub async fn fail_backfill(&self, transform_id: &str, error_msg: String) {
+        let mut info_clone = None;
         if let Some(hash) = self.transform_to_hash.lock().unwrap().get(transform_id) {
             if let Some(info) = self.backfills.lock().unwrap().get_mut(hash) {
-                info.mark_failed(error);
+                info.mark_failed(error_msg);
+                info_clone = Some(info.clone());
+            }
+        }
+        
+        if let Some(info) = info_clone {
+             if let Some(store) = &self.progress_store {
+                let job = info.to_job(None);
+                if let Err(e) = store.save(&job).await {
+                    error!("Failed to persist backfill failure: {}", e);
+                }
             }
         }
     }
@@ -316,11 +470,24 @@ impl BackfillTracker {
     }
 
     /// Force mark a backfill as completed by hash (used when we know it should be done)
-    pub fn force_complete(&self, backfill_hash: &str) {
-        let mut backfills = self.backfills.lock().unwrap();
-        if let Some(info) = backfills.get_mut(backfill_hash) {
-            if info.status == BackfillStatus::InProgress {
-                info.mark_completed();
+    pub async fn force_complete(&self, backfill_hash: &str) {
+        let mut info_clone = None;
+        {
+            let mut backfills = self.backfills.lock().unwrap();
+            if let Some(info) = backfills.get_mut(backfill_hash) {
+                if info.status == BackfillStatus::InProgress {
+                    info.mark_completed();
+                    info_clone = Some(info.clone());
+                }
+            }
+        }
+        
+        if let Some(info) = info_clone {
+             if let Some(store) = &self.progress_store {
+                let job = info.to_job(None);
+                if let Err(e) = store.save(&job).await {
+                    error!("Failed to persist backfill completion: {}", e);
+                }
             }
         }
     }
@@ -364,6 +531,6 @@ impl BackfillTracker {
 
 impl Default for BackfillTracker {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
