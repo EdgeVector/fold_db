@@ -303,6 +303,7 @@ impl LoggingSystem {
                 };
 
                 crate::logging::core::LogEntry {
+                    id: uuid::Uuid::new_v4().to_string(),
                     timestamp: e.timestamp,
                     level,
                     event_type: "web_logger".to_string(),
