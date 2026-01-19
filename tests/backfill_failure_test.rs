@@ -2,14 +2,14 @@ use std::time::Duration;
 
 /// Test to verify that backfill failure threshold is respected
 /// This is a simplified test that verifies the backfill tracker's failure detection logic
-#[test]
-fn test_backfill_failure_threshold_detection() {
+#[tokio::test]
+async fn test_backfill_failure_threshold_detection() {
     use datafold::fold_db_core::infrastructure::backfill_tracker::{
         BackfillStatus, BackfillTracker,
     };
 
     // Create a backfill tracker
-    let tracker = BackfillTracker::new();
+    let tracker = BackfillTracker::new(None);
 
     // Generate and start a backfill
     let backfill_hash = BackfillTracker::generate_hash("TestTransform", "TestSource");
@@ -17,24 +17,24 @@ fn test_backfill_failure_threshold_detection() {
         backfill_hash.clone(),
         "TestTransform".to_string(),
         "TestSource".to_string(),
-    );
+    ).await;
 
     println!("✅ Started backfill with hash: {}", backfill_hash);
 
     // Set expected mutations
-    tracker.set_mutations_expected(&backfill_hash, 100);
+    tracker.set_mutations_expected(&backfill_hash, 100).await;
 
     // Simulate 15 failures and 5 successes (75% failure rate, should trigger failure)
     for i in 0..15 {
-        tracker.increment_mutation_failed(&backfill_hash, format!("Test error {}", i));
+        tracker.increment_mutation_failed(&backfill_hash, format!("Test error {}", i)).await;
     }
 
     for _ in 0..5 {
-        tracker.increment_mutation_completed(&backfill_hash);
+        tracker.increment_mutation_completed(&backfill_hash).await;
     }
 
     // Give a moment for state updates
-    std::thread::sleep(Duration::from_millis(100));
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Check backfill status
     let backfills = tracker.get_all_backfills();
@@ -67,14 +67,14 @@ fn test_backfill_failure_threshold_detection() {
 }
 
 /// Test to verify that backfills with low failure rates complete successfully
-#[test]
-fn test_backfill_low_failure_rate_completes() {
+#[tokio::test]
+async fn test_backfill_low_failure_rate_completes() {
     use datafold::fold_db_core::infrastructure::backfill_tracker::{
         BackfillStatus, BackfillTracker,
     };
 
     // Create a backfill tracker
-    let tracker = BackfillTracker::new();
+    let tracker = BackfillTracker::new(None);
 
     // Generate and start a backfill
     let backfill_hash = BackfillTracker::generate_hash("TestTransform", "TestSource");
@@ -82,25 +82,25 @@ fn test_backfill_low_failure_rate_completes() {
         backfill_hash.clone(),
         "TestTransform".to_string(),
         "TestSource".to_string(),
-    );
+    ).await;
 
     println!("✅ Started backfill with hash: {}", backfill_hash);
 
     // Set expected mutations
     let expected_count = 100;
-    tracker.set_mutations_expected(&backfill_hash, expected_count);
+    tracker.set_mutations_expected(&backfill_hash, expected_count).await;
 
     // Simulate 5 failures and 95 successes (5% failure rate, should complete when all done)
     for i in 0..5 {
-        tracker.increment_mutation_failed(&backfill_hash, format!("Test error {}", i));
+        tracker.increment_mutation_failed(&backfill_hash, format!("Test error {}", i)).await;
     }
 
     for _ in 0..expected_count {
-        tracker.increment_mutation_completed(&backfill_hash);
+        tracker.increment_mutation_completed(&backfill_hash).await;
     }
 
     // Give a moment for state updates
-    std::thread::sleep(Duration::from_millis(100));
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Check backfill status
     let backfills = tracker.get_all_backfills();
