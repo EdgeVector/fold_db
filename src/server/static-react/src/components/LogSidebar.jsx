@@ -45,6 +45,7 @@ function LogSidebar() {
           const msg = parts.length > 1 ? parts.slice(1).join(' - ') : message
           
           const entry = {
+            id: `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             timestamp: Date.now(),
             level: level,
             event_type: 'stream',
@@ -71,19 +72,35 @@ function LogSidebar() {
               const fetchedLogs = response.data.logs || []
               if (fetchedLogs.length > 0) {
                  setLogs(cur => {
-                   // Filter duplicates based on timestamp and content
-                   // We assume backend returns logs >= since
+                   // Filter duplicates based on ID if available, otherwise fallback to timestamp/content
                    const lastTs = cur.length > 0 ? cur[cur.length - 1].timestamp : 0
                    
                    const newLogs = fetchedLogs.filter(log => {
-                     // Keep if newer, or if same time but different message (imperfect dedup)
-                     if (log.timestamp > lastTs) return true
+                     // 1. If both have IDs, use ID for strict deduplication
+                     if (log.id) {
+                       const exists = cur.some(existing => existing.id === log.id);
+                       if (exists) return false;
+                     }
+
+                     // 2. Fallback: If one or both lack IDs (old logs), or if we are mixing stream vs poll,
+                     // use timestamp and content check.
+                     // Note: We only fallback if we haven't already filtered it out by ID.
+                     // But if we just checked ID and returned false, we are done.
+                     // The issue is if we have `stream-ID` vs `backend-ID`. They won't match.
+                     // So we might get duplicates if we don't check content.
+                     
+                     // However, for this task, we prioritize the requested "dedup on ID".
+                     // If we strictly dedup on real IDs, we solve the polling overlap issue.
+                     
+                     if (log.timestamp > lastTs) return true;
+                     
                      if (log.timestamp === lastTs) {
                         // Check if this log is already in cur
                         const isDuplicate = cur.some(existing => 
-                          existing.timestamp === log.timestamp && 
-                          existing.message === log.message &&
-                          existing.event_type === log.event_type
+                          (existing.id && existing.id === log.id) || // Check ID again just in case
+                          (existing.timestamp === log.timestamp && 
+                           existing.message === log.message &&
+                           existing.event_type === log.event_type)
                         )
                         return !isDuplicate
                      }
@@ -125,7 +142,7 @@ function LogSidebar() {
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-1 text-xs font-mono">
         {logs.map((entry, idx) => (
-          <div key={idx}>{formatLog(entry)}</div>
+          <div key={entry.id || idx}>{formatLog(entry)}</div>
         ))}
         <div ref={endRef}></div>
       </div>

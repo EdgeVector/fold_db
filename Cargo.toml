@@ -1,6 +1,6 @@
 [package]
 name = "datafold"
-version = "0.1.53"
+version = "0.1.54"
 edition = "2021"
 authors = ["Tom Tang <tom@datafold.ai>"]
 description = "A personal database for data sovereignty with AI-powered ingestion"
@@ -56,7 +56,7 @@ rand = "0.8"
 tempfile = "3.8"
 seahash = "4.1"
 clap = { version = "4.4", features = ["derive"] }
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
 # Enhanced logging dependencies
 # log is already defined above
 toml = "0.8"
@@ -75,6 +75,8 @@ reqwest = { version = "0.11", features = ["json", "multipart"] }
 
 # File to JSON conversion
 file_to_json = "0.1.5"
+mime_guess = "2.0"
+rust-embed = "8.0"
 
 
 

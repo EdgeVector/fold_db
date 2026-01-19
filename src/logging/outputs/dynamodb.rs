@@ -16,6 +16,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 struct DynamoDbLogItem {
     user_id: String,
     timestamp: i64,
+    #[serde(default)] 
+    id: Option<String>,
     level: LogLevel,
     event_type: String,
     message: String,
@@ -37,6 +39,7 @@ impl DynamoDbLogItem {
                 .user_id
                 .ok_or_else(|| "Missing user_id for DynamoDB log entry".to_string())?,
             timestamp: entry.timestamp,
+            id: Some(entry.id),
             level: entry.level,
             event_type: entry.event_type,
             message: entry.message,
@@ -46,7 +49,20 @@ impl DynamoDbLogItem {
     }
 
     fn into_entry(self) -> LogEntry {
+        // For backward compatibility: if no ID exists, generate a deterministic one
+        // based on the log content so that repeated fetches return the same ID
+        let id = self.id.unwrap_or_else(|| {
+            use std::hash::Hasher;
+            let mut hasher = seahash::SeaHasher::new();
+            hasher.write(self.user_id.as_bytes());
+            hasher.write_i64(self.timestamp);
+            hasher.write(self.event_type.as_bytes());
+            hasher.write(self.message.as_bytes());
+            format!("{:x}", hasher.finish())
+        });
+
         LogEntry {
+            id,
             timestamp: self.timestamp,
             level: self.level,
             event_type: self.event_type,
