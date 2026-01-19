@@ -99,11 +99,9 @@ impl LambdaContext {
         let _log_bridge = LogBridge::new(logger.clone(), None);
         // Note: set_boxed_logger requires "std" feature in "log" crate which seems missing in Lambda build?
         // Commenting out for now to catch compilation error.
-        /*
-        if let Err(e) = log::set_boxed_logger(Box::new(log_bridge)) {
+        if let Err(e) = log::set_boxed_logger(Box::new(_log_bridge)) {
              eprintln!("Warning: Failed to set logger: {}", e);
         }
-        */
         // Still set level filter
         log::set_max_level(log::LevelFilter::Info);
 

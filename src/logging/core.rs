@@ -44,6 +44,7 @@ pub fn get_current_user_id() -> Option<String> {
 /// manages user_id internally based on how it was initialized.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
+    pub id: String,
     pub timestamp: i64,
     pub level: LogLevel,
     pub event_type: String,
@@ -217,6 +218,7 @@ impl UserLogger {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
 
         let entry = LogEntry {
+            id: uuid::Uuid::new_v4().to_string(),
             timestamp,
             level,
             event_type: event_type.to_string(),
@@ -355,6 +357,7 @@ impl log::Log for LogBridge {
             };
 
             let entry = LogEntry {
+                id: uuid::Uuid::new_v4().to_string(),
                 timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
