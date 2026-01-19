@@ -60,8 +60,8 @@ function ProgressBar({ progress, className = '' }) {
   }
 
   const formatDuration = (startedAt, completedAt) => {
-    const start = new Date(startedAt)
-    const end = completedAt ? new Date(completedAt) : new Date()
+    const start = new Date(startedAt * 1000)
+    const end = completedAt ? new Date(completedAt * 1000) : new Date()
     const duration = Math.round((end - start) / 1000)
     
     if (duration < 60) {

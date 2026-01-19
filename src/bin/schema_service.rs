@@ -53,7 +53,7 @@ struct Cli {
 /// * DynamoDB configuration is invalid (when using DynamoDB mode)
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    datafold::web_logger::init().ok();
+    datafold::logging::LoggingSystem::init_default().await.ok();
 
     // Parse command-line arguments
     let Cli { port, db_path } = Cli::parse();

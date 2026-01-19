@@ -12,6 +12,7 @@ use log::info;
 use crate::transform::manager::TransformManager;
 
 use super::backfill_tracker::{BackfillInfo, BackfillTracker};
+use crate::progress::ProgressStore;
 // Re-export for public API
 pub use super::event_statistics::{EventStatistics, MutationStats, QueryStats, TransformStats};
 use super::message_bus::{AsyncMessageBus, Event};
@@ -28,6 +29,7 @@ impl EventMonitor {
     pub async fn new(
         message_bus: Arc<AsyncMessageBus>,
         transform_manager: Arc<TransformManager>,
+        progress_store: Option<Arc<dyn ProgressStore>>,
     ) -> Self {
         let statistics = Arc::new(Mutex::new(EventStatistics {
             monitoring_start_time: SystemTime::now()
@@ -37,7 +39,7 @@ impl EventMonitor {
             ..Default::default()
         }));
 
-        let backfill_tracker = Arc::new(BackfillTracker::new());
+        let backfill_tracker = Arc::new(BackfillTracker::new(progress_store));
 
         info!("🔍 EventMonitor: Starting system-wide event monitoring");
 
@@ -331,7 +333,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let monitor = EventMonitor::new(Arc::clone(&bus_arc), transform_manager).await;
+        let monitor = EventMonitor::new(Arc::clone(&bus_arc), transform_manager, None).await;
 
         // Publish various events
         bus_arc

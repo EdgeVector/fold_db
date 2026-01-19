@@ -28,7 +28,7 @@ impl BackfillManager {
             loop {
                 match consumer.recv().await {
                     Some(Event::BackfillExpectedMutations(event)) => {
-                        tracker.set_mutations_expected(&event.backfill_hash, event.count);
+                        tracker.set_mutations_expected(&event.backfill_hash, event.count).await;
                     }
                     Some(_) => {}
                     None => break,
@@ -44,7 +44,7 @@ impl BackfillManager {
             loop {
                 match consumer.recv().await {
                     Some(Event::BackfillMutationFailed(event)) => {
-                        tracker.increment_mutation_failed(&event.backfill_hash, event.error);
+                        tracker.increment_mutation_failed(&event.backfill_hash, event.error).await;
                     }
                     Some(_) => {}
                     None => break,
@@ -63,7 +63,7 @@ impl BackfillManager {
                         if let Some(context) = &event.mutation_context {
                             if let Some(backfill_hash) = &context.backfill_hash {
                                 let _is_complete =
-                                    tracker.increment_mutation_completed(backfill_hash);
+                                    tracker.increment_mutation_completed(backfill_hash).await;
                             }
                         }
                     }

@@ -34,24 +34,36 @@ function LogSidebar() {
       .catch(() => setLogs([]))
 
     // Set up log streaming using systemClient
-    // Note: SSE returns strings, we convert to pseudo-entries for consistency
     const eventSource = systemClient.createLogStream(
       (message) => {
         setLogs(prev => {
-          // Parse string "LEVEL - message" if possible, or wrap
-          // This is a rough heuristic matching legacy WebLogger format
-          const parts = message.split(' - ')
-          const level = parts.length > 1 ? parts[0] : 'INFO'
-          const msg = parts.length > 1 ? parts.slice(1).join(' - ') : message
-          
-          const entry = {
-            id: `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: Date.now(),
-            level: level,
-            event_type: 'stream',
-            message: msg
+          let entry;
+          try {
+            // New format: message is a JSON string of LogEntry
+            entry = JSON.parse(message);
+          } catch {
+            // Fallback for legacy format: "LEVEL - message" or raw string
+            const parts = message.split(' - ')
+            const level = parts.length > 1 ? parts[0] : 'INFO';
+            // Simple heuristic to strip [timestamp] if present in legacy format
+            // But usually raw message doesn't have it if it came from legacy web logger
+            // unless formatted.
+            
+            entry = {
+              id: `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              timestamp: Date.now(),
+              level: level,
+              event_type: 'stream (legacy)',
+              message: message
+            };
           }
-          
+
+          // Deduplication:
+          // Check if we already have this ID
+          if (entry.id && prev.some(existing => existing.id === entry.id)) {
+             return prev;
+          }
+
           return [...prev, entry]
         })
       },
@@ -72,39 +84,24 @@ function LogSidebar() {
               const fetchedLogs = response.data.logs || []
               if (fetchedLogs.length > 0) {
                  setLogs(cur => {
-                   // Filter duplicates based on ID if available, otherwise fallback to timestamp/content
-                   const lastTs = cur.length > 0 ? cur[cur.length - 1].timestamp : 0
+                   // Filter duplicates based on ID
                    
                    const newLogs = fetchedLogs.filter(log => {
-                     // 1. If both have IDs, use ID for strict deduplication
+                     // Strict deduplication by ID
                      if (log.id) {
                        const exists = cur.some(existing => existing.id === log.id);
                        if (exists) return false;
-                     }
-
-                     // 2. Fallback: If one or both lack IDs (old logs), or if we are mixing stream vs poll,
-                     // use timestamp and content check.
-                     // Note: We only fallback if we haven't already filtered it out by ID.
-                     // But if we just checked ID and returned false, we are done.
-                     // The issue is if we have `stream-ID` vs `backend-ID`. They won't match.
-                     // So we might get duplicates if we don't check content.
+                     } 
                      
-                     // However, for this task, we prioritize the requested "dedup on ID".
-                     // If we strictly dedup on real IDs, we solve the polling overlap issue.
+                     // Fallback for missing IDs (shouldn't happen with new backend)
+                     // or if we somehow have a log without ID in cur
+                     const isTypesSame = cur.some(existing => 
+                         !existing.id && // Only check content if existing has no ID
+                         existing.timestamp === log.timestamp && 
+                         existing.message === log.message
+                     );
                      
-                     if (log.timestamp > lastTs) return true;
-                     
-                     if (log.timestamp === lastTs) {
-                        // Check if this log is already in cur
-                        const isDuplicate = cur.some(existing => 
-                          (existing.id && existing.id === log.id) || // Check ID again just in case
-                          (existing.timestamp === log.timestamp && 
-                           existing.message === log.message &&
-                           existing.event_type === log.event_type)
-                        )
-                        return !isDuplicate
-                     }
-                     return false
+                     return !isTypesSame;
                    })
                    
                    if (newLogs.length === 0) return cur

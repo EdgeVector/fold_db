@@ -3,7 +3,7 @@
 //! This module provides real-time status information about background indexing
 //! operations for UI display and monitoring.
 
-use super::progress_store::{InMemoryProgressStore, ProgressStore};
+use crate::progress::{InMemoryProgressStore, ProgressStore, Job, JobType, JobStatus};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -65,17 +65,45 @@ impl IndexStatusTracker {
         }
     }
 
+    /// Helper to safe/load status from generic store
+    async fn save_status(&self, status: &IndexingStatus) -> Result<(), String> {
+        let mut job = Job::new("indexing_status".to_string(), JobType::Indexing)
+            .with_user("global".to_string())
+            .with_metadata(serde_json::to_value(status).unwrap());
+        
+        // Map status
+        if status.state == IndexingState::Indexing {
+            job.status = JobStatus::Running;
+            job.message = format!("Indexing... {} queued", status.operations_queued);
+        } else {
+            job.status = JobStatus::Completed;
+            job.message = "Idle".to_string();
+        }
+        
+        self.store.save(&job).await
+    }
+
+    async fn load_status(&self) -> Result<IndexingStatus, String> {
+        // Use list_by_user("global") to ensure we find it regardless of context
+        let jobs = self.store.list_by_user("global").await?;
+        if let Some(job) = jobs.iter().find(|j| j.id == "indexing_status") {
+             Ok(serde_json::from_value(job.metadata.clone()).unwrap_or_default())
+        } else {
+            Ok(IndexingStatus::default())
+        }
+    }
+
     /// Mark the start of a batch indexing operation
     pub async fn start_batch(&self, batch_size: usize) {
         log::debug!("IndexStatusTracker: Starting batch of size {}", batch_size);
-        let mut status = self.store.load_status().await.unwrap_or_default();
+        let mut status = self.load_status().await.unwrap_or_default();
 
         status.state = IndexingState::Indexing;
         status.operations_in_progress = batch_size;
         status.current_batch_size = Some(batch_size);
         status.current_batch_start_time = Some(Self::current_timestamp());
 
-        if let Err(e) = self.store.save_status(&status).await {
+        if let Err(e) = self.save_status(&status).await {
             log::error!(
                 "IndexStatusTracker: Failed to save status in start_batch: {}",
                 e
@@ -92,7 +120,7 @@ impl IndexStatusTracker {
             batch_size,
             duration_ms
         );
-        let mut status = self.store.load_status().await.unwrap_or_default();
+        let mut status = self.load_status().await.unwrap_or_default();
 
         // Ensure the "Indexing" state is visible for at least 500ms
         if let Some(start_time) = status.current_batch_start_time {
@@ -128,7 +156,7 @@ impl IndexStatusTracker {
             status.operations_per_second = (batch_size as f64 / duration_ms as f64) * 1000.0;
         }
 
-        if let Err(e) = self.store.save_status(&status).await {
+        if let Err(e) = self.save_status(&status).await {
             log::error!(
                 "IndexStatusTracker: Failed to save status in complete_batch: {}",
                 e
@@ -143,9 +171,9 @@ impl IndexStatusTracker {
 
     /// Update the number of operations queued
     pub async fn set_queued(&self, count: usize) {
-        let mut status = self.store.load_status().await.unwrap_or_default();
+        let mut status = self.load_status().await.unwrap_or_default();
         status.operations_queued = count;
-        if let Err(e) = self.store.save_status(&status).await {
+        if let Err(e) = self.save_status(&status).await {
             log::error!(
                 "IndexStatusTracker: Failed to save status in set_queued: {}",
                 e
@@ -155,12 +183,13 @@ impl IndexStatusTracker {
 
     /// Get the current indexing status
     pub async fn get_status(&self) -> IndexingStatus {
-        match self.store.load_status().await {
+        match self.load_status().await {
             Ok(status) => {
                 log::debug!("IndexStatusTracker: get_status loaded: {:?}", status);
                 status
             }
             Err(e) => {
+                // If it fails (e.g. timeout), log and return default
                 log::error!("IndexStatusTracker: Failed to load status: {}", e);
                 IndexingStatus::default()
             }

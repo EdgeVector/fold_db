@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node = DataFoldNode::new(config).await?;
 
     // Start the HTTP server
-    let bind_address = format!("127.0.0.1:{}", http_port);
+    let bind_address = format!("0.0.0.0:{}", http_port);
     let http_server = DataFoldHttpServer::new(node, &bind_address).await?;
 
     http_server
