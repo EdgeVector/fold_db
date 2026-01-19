@@ -1,6 +1,5 @@
 use crate::datafold_node::OperationProcessor;
 use crate::server::http_server::AppState;
-use crate::web_logger;
 use actix_web::{web, HttpResponse, Responder, Result};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -60,23 +59,28 @@ pub async fn list_logs(
     responses((status = 200, description = "Stream logs"))
 )]
 pub async fn stream_logs() -> impl Responder {
-    // SSE streaming is specific to HTTP server, keeping direct access for now
-    let rx = match web_logger::subscribe() {
+    // Subscribe to new WebOutput via logging module
+    let rx = match crate::logging::subscribe() {
         Some(r) => r,
         None => return HttpResponse::InternalServerError().finish(),
     };
+    
+    // The WebOutput now broadcasts JSON strings (LogEntry serialized)
+    // We wrap them in SSE format: "data: {JSON}\n\n"
     let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
         match msg {
-            Ok(line) => Some(Ok::<web::Bytes, actix_web::Error>(web::Bytes::from(
-                format!("data: {}\n\n", line),
+            Ok(json_str) => Some(Ok::<web::Bytes, actix_web::Error>(web::Bytes::from(
+                format!("data: {}\n\n", json_str),
             ))),
-            Err(_) => None,
+            Err(_) => None, // Broadcast error (lagging, etc)
         }
     });
+
     HttpResponse::Ok()
         .insert_header(("Content-Type", "text/event-stream"))
         .streaming(stream)
 }
+
 
 /// Get current logging configuration
 #[utoipa::path(

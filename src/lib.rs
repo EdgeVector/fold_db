@@ -43,8 +43,9 @@ pub mod storage;
 pub mod testing_utils;
 pub mod transform;
 pub mod utils;
+pub mod progress;
 
-pub mod web_logger;
+
 
 // Re-export main types for convenience
 pub use datafold_node::config::load_node_config;

@@ -13,6 +13,7 @@ use crate::utils::http_errors;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use actix_cors::Cors;
+use actix_files::Files;
 
 use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
@@ -94,8 +95,8 @@ impl DataFoldHttpServer {
                     "Failed to initialize enhanced logging system, falling back to web logger: {}",
                     e
                 );
-                // Fall back to old web logger for backward compatibility
-                crate::web_logger::init().ok();
+                // Fall back to default logging
+                crate::logging::LoggingSystem::init_default().await.ok();
             }
         }
 
@@ -192,6 +193,9 @@ impl DataFoldHttpServer {
                 .app_data(upload_storage_data.clone())
                 .app_data(json_config)
                 .configure(Self::configure_api)
+                // Serve static files from the React app build directory
+                // This must be last to allow API routes to take precedence
+                .service(Files::new("/", "./src/server/static-react/dist").index_file("index.html"))
         })
         .bind(&self.bind_address)
         .map_err(|e| FoldDbError::Config(format!("Failed to bind HTTP server: {}", e)))?

@@ -306,6 +306,56 @@ impl UserLogger {
     }
 }
 
+/// Multi-logger implementation that broadcasts logs to multiple async loggers
+pub struct MultiAsyncLogger {
+    loggers: Vec<Arc<dyn Logger>>,
+}
+
+impl MultiAsyncLogger {
+    pub fn new(loggers: Vec<Arc<dyn Logger>>) -> Self {
+        Self { loggers }
+    }
+}
+
+#[async_trait]
+impl Logger for MultiAsyncLogger {
+    async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        for logger in &self.loggers {
+            // We clone the entry for each logger since they need ownership or a copy
+            // LogEntry is Clone, so this is fine.
+            if let Err(e) = logger.log(entry.clone()).await {
+                // We don't want to fail everything if one logger fails, but maybe we should log it?
+                // For now, silently continue or print to stderr
+                eprintln!("Error in MultiAsyncLogger: {}", e);
+            }
+        }
+        Ok(())
+    }
+
+    async fn query(
+        &self,
+        user_id: &str,
+        limit: Option<usize>,
+        from_timestamp: Option<i64>,
+    ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
+         // Query the first logger that supports querying?
+         // Or aggregate?
+         // For now, let's just query the first one that returns results, or just the first one.
+         // Typically, we only have one "storage" logger (DynamoDB) and one "stream" logger (Web).
+         // Web might hold recent logs in memory.
+
+         for logger in &self.loggers {
+             // Try to query
+             match logger.query(user_id, limit, from_timestamp).await {
+                 Ok(logs) if !logs.is_empty() => return Ok(logs),
+                 Ok(_) => continue, // Try next logger
+                 Err(_) => continue,
+             }
+         }
+         Ok(vec![])
+    }
+}
+
 /// Bridge that forwards Rust's log crate to custom Logger
 ///
 /// This allows all internal datafold logging (using `log::info!()`, etc.)

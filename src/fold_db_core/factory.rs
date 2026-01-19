@@ -2,7 +2,8 @@
 use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 #[cfg(feature = "aws-backend")]
-use crate::fold_db_core::orchestration::{DynamoDbProgressStore, ProgressStore};
+#[cfg(feature = "aws-backend")]
+use crate::progress::{DynamoDbProgressStore as DynamoDbJobStore, ProgressStore as JobStore};
 use crate::fold_db_core::FoldDB;
 #[cfg(feature = "aws-backend")]
 use crate::logging::features::LogFeature;
@@ -91,6 +92,7 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
                     "native_index".to_string(),
                     dynamo_config.tables.native_index.clone(),
                 ),
+                ("process".to_string(), dynamo_config.tables.process.clone()),
             ]);
 
             let resolver = TableNameResolver::Explicit(map);
@@ -116,27 +118,22 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
             // Generate path string for compatibility
             let path_str = "data";
 
-            // Initialize ProgressStore
-            let progress_store: Arc<dyn ProgressStore> = {
+
+            // Initialize JobStore (Generic)
+            let job_store: Option<Arc<dyn JobStore>> = {
                 let table_name = dynamo_config.tables.process.clone();
+                let region = dynamo_config.region.clone();
 
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Using DynamoDB progress store (table: {})",
-                    table_name
-                );
-
-                Arc::new(DynamoDbProgressStore::new(
-                    client,
+                let store = DynamoDbJobStore::new(
+                    client.clone(),
                     table_name,
-                    user_id.clone(),
-                ))
+                );
+                Some(Arc::new(store))
             };
 
             // Use the new constructor that accepts components
             Ok(Arc::new(Mutex::new(
-                FoldDB::new_with_components(db_ops, path_str, progress_store)
+                FoldDB::new_with_components(db_ops, path_str, job_store)
                     .await
                     .map_err(|e| FoldDbError::Config(e.to_string()))?,
             )))
