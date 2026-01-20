@@ -2,7 +2,7 @@
 use async_trait::async_trait;
 use datafold::ingestion::IngestionError;
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, LogEntry, LogLevel, Logger};
-use datafold::storage::DatabaseConfig as StorageConfig;
+use datafold::storage::DatabaseConfig;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,7 +53,7 @@ async fn test_sync_ingestion_logging_context() {
     let test_logger = UserIdTestLogger::new();
 
     // Initialize Lambda context
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(

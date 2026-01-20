@@ -91,7 +91,15 @@ impl LambdaContext {
     ) -> Result<Option<IngestionProgress>, IngestionError> {
         let ctx = Self::get()?;
         let tracker = ctx.progress_tracker.clone();
-        Ok(tracker.load(progress_id).await.unwrap_or(None))
+        
+        match tracker.load(progress_id).await {
+            Ok(Some(job)) => Ok(Some(job.into())),
+            Ok(None) => Ok(None),
+            Err(e) => {
+                log::error!("Failed to load progress {}: {}", progress_id, e);
+                Ok(None)
+            }
+        }
     }
 
     /// Get all active ingestion progress
@@ -112,7 +120,15 @@ impl LambdaContext {
     pub async fn get_all_progress() -> Result<Vec<IngestionProgress>, IngestionError> {
         let ctx = Self::get()?;
         let tracker = ctx.progress_tracker.clone();
-        Ok(tracker.list().await.unwrap_or_default())
+        let user_id = crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
+        
+        match tracker.list_by_user(&user_id).await {
+            Ok(jobs) => Ok(jobs.into_iter().map(|j| j.into()).collect()),
+            Err(e) => {
+                log::error!("Failed to list progress for user {}: {}", user_id, e);
+                Ok(Vec::new())
+            }
+        }
     }
 
     /// Ingest JSON data asynchronously (returns immediately with progress_id)

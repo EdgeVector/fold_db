@@ -37,7 +37,7 @@
 #[cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
 #[cfg(feature = "lambda")]
-use datafold::storage::StorageConfig;
+use datafold::storage::DatabaseConfig;
 #[cfg(feature = "lambda")]
 use lambda_runtime::{run, service_fn, Error, LambdaEvent};
 #[cfg(feature = "lambda")]
@@ -85,7 +85,7 @@ async fn main() -> Result<(), Error> {
     tracing::info!("Initializing Lambda context...");
 
     // Create Lambda configuration
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: std::env::temp_dir(),
     };
     let mut config = LambdaConfig::new(storage_config, LambdaLogging::Stdout);

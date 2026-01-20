@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_lambda_with_dynamodb_style_db_ops() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     // Create an in-memory store that implements the same interface as DynamoDB
     // This simulates DynamoDB without requiring AWS credentials or LocalStack
     let store = Arc::new(InMemoryNamespacedStore::new());

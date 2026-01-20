@@ -1,7 +1,7 @@
 #![cfg(feature = "lambda")]
 use async_trait::async_trait;
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, LogEntry, LogLevel, Logger};
-use datafold::storage::DatabaseConfig as StorageConfig;
+use datafold::storage::DatabaseConfig;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -74,7 +74,7 @@ async fn test_lambda_json_ingestion_with_logging() {
     let logger_clone = test_logger.clone();
 
     // Initialize Lambda context with test logger
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(
