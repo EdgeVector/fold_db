@@ -2,7 +2,7 @@
 
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, StdoutLogger};
 use datafold::schema::types::Query;
-use datafold::storage::DatabaseConfig as StorageConfig;
+use datafold::storage::DatabaseConfig;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -30,7 +30,7 @@ async fn test_lambda_query_multi_tenancy() {
     // Given the constraints, I will use StorageConfig::Local to verify the API signature and basic flow.
     // The "default" node will be returned for all user_ids, but the API calls should succeed.
 
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)

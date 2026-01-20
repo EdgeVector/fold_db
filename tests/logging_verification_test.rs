@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, LogEntry, LogLevel, Logger};
-use datafold::storage::DatabaseConfig as StorageConfig;
+use datafold::storage::DatabaseConfig;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ impl Logger for MockLogger {
 #[tokio::test]
 async fn test_lambda_logging_integration() {
     let temp_dir = std::env::temp_dir().join(format!("logging_test_{}", uuid::Uuid::new_v4()));
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
 

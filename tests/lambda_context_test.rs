@@ -1,12 +1,13 @@
 #![cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
-use datafold::storage::DatabaseConfig as StorageConfig;
+use datafold::storage::DatabaseConfig;
 use serde_json::json;
 
 #[tokio::test]
 async fn test_lambda_context_initialization() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)
@@ -39,10 +40,11 @@ async fn test_lambda_context_initialization() {
 
 #[tokio::test]
 async fn test_lambda_context_double_init_fails() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     let temp_dir1 = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
     let temp_dir2 = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
 
-    let storage_config1 = StorageConfig::Local {
+    let storage_config1 = DatabaseConfig::Local {
         path: temp_dir1.clone(),
     };
     let config1 = LambdaConfig::new(storage_config1, LambdaLogging::Stdout)
@@ -56,7 +58,7 @@ async fn test_lambda_context_double_init_fails() {
 
     // Try to re-initialize (should fail)
     // Try to re-initialize with different config (should fail because context is singleton)
-    let storage_config2 = StorageConfig::Local {
+    let storage_config2 = DatabaseConfig::Local {
         path: temp_dir2.clone(),
     };
     let config2 = LambdaConfig::new(storage_config2, LambdaLogging::Stdout)
@@ -83,8 +85,9 @@ async fn test_lambda_context_double_init_fails() {
 
 #[tokio::test]
 async fn test_lambda_context_with_schema_service_url() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)
@@ -116,8 +119,9 @@ async fn test_lambda_context_with_schema_service_url() {
 
 #[tokio::test]
 async fn test_lambda_context_get_progress_nonexistent() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)
@@ -155,8 +159,9 @@ async fn test_lambda_context_get_progress_nonexistent() {
 
 #[tokio::test]
 async fn test_lambda_context_access_after_init() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)
@@ -195,8 +200,9 @@ async fn test_lambda_context_access_after_init() {
 
 #[tokio::test]
 async fn test_lambda_context_ingest_json_returns_progress_id() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     let temp_dir = std::env::temp_dir().join(format!("lambda_test_{}", uuid::Uuid::new_v4()));
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout)
