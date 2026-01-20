@@ -89,15 +89,14 @@ impl NodeManager {
         use crate::datafold_node::config::{DatabaseConfig, NodeConfig};
         use crate::fold_db_core::factory;
         use crate::fold_db_core::FoldDB;
-        use crate::storage::DatabaseConfig as StorageConfig; // Alias for compatibility with code below or just update
 
         // Convert LambdaStorage to NodeConfig or handle DbOps case
         let (db, node_config) = match &self.config.storage {
             LambdaStorage::Config(storage_config) => {
                 let mut node_config = match storage_config {
-                    StorageConfig::Local { path } => NodeConfig::new(path.clone()),
+                    DatabaseConfig::Local { path } => NodeConfig::new(path.clone()),
                     #[cfg(feature = "aws-backend")]
-                    StorageConfig::DynamoDb(dynamo_config) => {
+                    DatabaseConfig::DynamoDb(dynamo_config) => {
                         let mut cfg = NodeConfig::default();
                         let mut d_cfg = dynamo_config.clone();
                         d_cfg.user_id = Some(user_id.to_string());
@@ -123,10 +122,10 @@ impl NodeManager {
 
                 // Manually create components, effectively replicating what create_fold_db does for custom ops
                 let progress_store =
-                    Arc::new(crate::fold_db_core::orchestration::InMemoryProgressStore::new());
+                    Arc::new(crate::progress::InMemoryProgressStore::new());
 
                 let fold_db =
-                    FoldDB::new_with_components(Arc::clone(db_ops), &db_path, progress_store)
+                    FoldDB::new_with_components(Arc::clone(db_ops), &db_path, Some(progress_store))
                         .await
                         .map_err(|e| IngestionError::StorageError(e.to_string()))?;
 
@@ -170,6 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_manager_single_mode() {
+        std::env::set_var("FOLDB_USER_ID", "test_user");
         let temp_dir = tempdir().unwrap();
         let db_path = temp_dir.path().join("db");
 

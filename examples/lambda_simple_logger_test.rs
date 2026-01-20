@@ -25,7 +25,7 @@
 #[cfg(feature = "lambda")]
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging, StdoutLogger};
 #[cfg(feature = "lambda")]
-use datafold::storage::StorageConfig;
+use datafold::storage::DatabaseConfig;
 #[cfg(feature = "lambda")]
 use lambda_runtime::{run, service_fn, Error, LambdaEvent};
 #[cfg(feature = "lambda")]
@@ -83,7 +83,7 @@ async fn main() -> Result<(), Error> {
 
     // Create Lambda configuration with StdoutLogger
     // In production, replace StdoutLogger with your custom logger (e.g., DynamoDbLogger)
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: std::env::temp_dir(),
     };
     let config = LambdaConfig::new(storage_config, LambdaLogging::Stdout);

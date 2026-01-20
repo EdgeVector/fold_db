@@ -40,12 +40,7 @@ impl LambdaContext {
                 let table_name = dynamo_config.tables.process.clone();
                 let region = dynamo_config.region.clone();
 
-                Arc::new(DynamoDbProgressStore::new(table_name, region).await.map_err(|e| {
-                    IngestionError::StorageError(format!(
-                        "Failed to initialize process table: {}",
-                        e
-                    ))
-                })?)
+                Arc::new(DynamoDbProgressStore::from_config(table_name, region).await)
             }
             _ => {
                 // For Local/S3/DbOps, fallback to environment variable or in-memory

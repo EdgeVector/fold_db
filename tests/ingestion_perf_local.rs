@@ -1,19 +1,20 @@
 #![cfg(feature = "lambda")]
 use datafold::ingestion::progress::IngestionStep;
 use datafold::lambda::{LambdaConfig, LambdaContext, LambdaLogging};
-use datafold::storage::DatabaseConfig as StorageConfig;
+use datafold::storage::DatabaseConfig;
 use serde_json::json;
 
 use tokio::time::{sleep, Duration, Instant};
 
 #[tokio::test]
 async fn test_ingestion_performance_breakdown() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     println!("Starting Ingestion Performance Test (Local)...");
 
     // 1. Setup Lambda Context (Local)
     let temp_dir =
         std::env::temp_dir().join(format!("ingestion_perf_test_{}", uuid::Uuid::new_v4()));
-    let storage_config = StorageConfig::Local {
+    let storage_config = DatabaseConfig::Local {
         path: temp_dir.clone(),
     };
 

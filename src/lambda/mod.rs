@@ -7,12 +7,13 @@
 //!
 //! ```ignore
 //! use datafold::lambda::{LambdaContext, LambdaConfig};
+//! use datafold::storage::DatabaseConfig;
 //!
 //! #[tokio::main]
 //! async fn main() {
 //!     // Initialize once during cold start
 //!     let config = LambdaConfig::new(
-//!         StorageConfig::Local { path: PathBuf::from("/tmp/folddb") },
+//!         DatabaseConfig::Local { path: PathBuf::from("/tmp/folddb") },
 //!         LambdaLogging::Stdout
 //!     );
 //!     LambdaContext::init(config).await.expect("Failed to initialize");
