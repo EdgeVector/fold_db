@@ -68,6 +68,10 @@ pub enum IngestionError {
     /// Storage errors (S3, file system, etc.)
     #[error("Storage error: {0}")]
     StorageError(String),
+
+    /// Security/Auth errors
+    #[error("Security error: {0}")]
+    SecurityError(String),
 }
 
 impl IngestionError {
@@ -124,6 +128,11 @@ impl IngestionError {
     /// Create a new storage error
     pub fn storage_error(msg: impl Into<String>) -> Self {
         Self::StorageError(msg.into())
+    }
+
+    /// Create a new security error
+    pub fn security_error(msg: impl Into<String>) -> Self {
+        Self::SecurityError(msg.into())
     }
 }
 
