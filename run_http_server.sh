@@ -168,7 +168,7 @@ echo "Schema migration is disabled. Schema service will start with an empty data
 echo "Starting the HTTP server on port 9001 in the background..."
 # Export OPENROUTER_API_KEY if set in .zshrc
 source ~/.zshrc 2>/dev/null || true
-nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
+nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" --user-id "default-dev-user" > server.log 2>&1 &
 
 # Get the process ID
 SERVER_PID=$!

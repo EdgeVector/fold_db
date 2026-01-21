@@ -212,7 +212,7 @@ source ~/.zshrc 2>/dev/null || true
 
 
 
-RUST_LOG=debug nohup cargo run --features aws-backend --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
+RUST_LOG=debug nohup cargo run --features aws-backend --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" --user-id "test_user_verification" > server.log 2>&1 &
 
 # Get the process ID
 SERVER_PID=$!

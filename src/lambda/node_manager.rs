@@ -110,6 +110,20 @@ impl NodeManager {
                     node_config = node_config.with_schema_service_url(schema_url);
                 }
 
+                // Deterministically generate identity keys from user_id
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(user_id.as_bytes());
+                let result = hasher.finalize();
+                let secret_seed = result.as_slice();
+
+                let keypair = crate::security::Ed25519KeyPair::from_secret_key(secret_seed)
+                    .map_err(|e| IngestionError::SecurityError(e.to_string()))?;
+
+                // Set identity on config
+                node_config = node_config
+                    .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
+
                 let db = factory::create_fold_db(&node_config.database)
                     .await
                     .map_err(|e| IngestionError::StorageError(e.to_string()))?;
@@ -121,8 +135,7 @@ impl NodeManager {
                 let db_path = "custom_backend".to_string();
 
                 // Manually create components, effectively replicating what create_fold_db does for custom ops
-                let progress_store =
-                    Arc::new(crate::progress::InMemoryProgressStore::new());
+                let progress_store = Arc::new(crate::progress::InMemoryProgressStore::new());
 
                 let fold_db =
                     FoldDB::new_with_components(Arc::clone(db_ops), &db_path, Some(progress_store))
@@ -131,12 +144,26 @@ impl NodeManager {
 
                 let node_config = NodeConfig::new(std::path::PathBuf::from(db_path));
 
-                // If schema service URL is provided in LambdaConfig, apply it to NodeConfig
-                let node_config = if let Some(schema_url) = &self.config.schema_service_url {
-                    node_config.with_schema_service_url(schema_url)
-                } else {
-                    node_config
+                // If schema service URL is provided in LambdaConfig, apply it to node_config FIRST
+                // (fix: shadowed variable usage)
+                let mut node_config = match &self.config.schema_service_url {
+                    Some(schema_url) => node_config.with_schema_service_url(schema_url),
+                    None => node_config,
                 };
+
+                // Deterministically generate identity keys from user_id
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(user_id.as_bytes());
+                let result = hasher.finalize();
+                let secret_seed = result.as_slice();
+
+                let keypair = crate::security::Ed25519KeyPair::from_secret_key(secret_seed)
+                    .map_err(|e| IngestionError::SecurityError(e.to_string()))?;
+
+                // Set identity on config
+                node_config = node_config
+                    .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
 
                 (Arc::new(tokio::sync::Mutex::new(fold_db)), node_config)
             }
