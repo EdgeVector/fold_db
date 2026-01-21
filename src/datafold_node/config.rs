@@ -27,6 +27,12 @@ pub struct NodeConfig {
     /// URL of the schema service (optional, if not provided will load from local directories)
     #[serde(default)]
     pub schema_service_url: Option<String>,
+    /// Explicitly provided node public key (Base64)
+    #[serde(default)]
+    pub public_key: Option<String>,
+    /// Explicitly provided node private key (Base64)
+    #[serde(default)]
+    pub private_key: Option<String>,
 }
 
 fn default_network_listen_address() -> String {
@@ -41,6 +47,8 @@ impl Default for NodeConfig {
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
+            public_key: None,
+            private_key: None,
         }
     }
 }
@@ -54,6 +62,8 @@ impl NodeConfig {
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
+            public_key: None,
+            private_key: None,
         }
     }
 
@@ -75,6 +85,13 @@ impl NodeConfig {
     /// Set the schema service URL
     pub fn with_schema_service_url(mut self, url: &str) -> Self {
         self.schema_service_url = Some(url.to_string());
+        self
+    }
+
+    /// Set the node identity keys
+    pub fn with_identity(mut self, public_key: &str, private_key: &str) -> Self {
+        self.public_key = Some(public_key.to_string());
+        self.private_key = Some(private_key.to_string());
         self
     }
 }

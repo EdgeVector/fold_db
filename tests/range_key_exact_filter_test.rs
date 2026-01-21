@@ -7,7 +7,6 @@ use datafold::schema::types::operations::Query;
 use datafold::MutationType;
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tempfile::TempDir;
 
 /// Test that querying by an exact range key returns only records matching that range key

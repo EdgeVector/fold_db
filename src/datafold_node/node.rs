@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crate::datafold_node::config::NodeConfig;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
-use crate::security::{Ed25519KeyPair, EncryptionManager, SecurityConfig, SecurityManager};
+use crate::security::{EncryptionManager, SecurityConfig, SecurityManager};
 
 /// A node in the DataFold distributed database system.
 ///
@@ -52,19 +52,24 @@ impl DataFoldNode {
     ///
     /// Now fully async to support storage abstraction!
     pub async fn new(#[allow(unused_mut)] mut config: NodeConfig) -> FoldDbResult<Self> {
-        // Try to load identity from file first, otherwise generate new
-        let (private_key, public_key) = match load_persisted_identity() {
-            Ok(Some((priv_k, pub_k))) => (priv_k, pub_k),
-            _ => {
-                // Fallback to generating a new keypair (and optionally persisting it?)
-                // For now, we maintain the behavior of generating one if not found,
-                // but ideally the environment should be set up by ensure_identity.
-                let keypair = Ed25519KeyPair::generate().map_err(|e| {
-                    FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
-                })?;
-                (keypair.secret_key_base64(), keypair.public_key_base64())
-            }
-        };
+        // 1. Try to use identity from config
+        // 2. Fallback to loading from file (legacy/local dev)
+        // 3. Fail if neither is present (NO AUTO-GENERATION)
+        let (private_key, public_key) =
+            if let (Some(priv_k), Some(pub_k)) = (&config.private_key, &config.public_key) {
+                (priv_k.clone(), pub_k.clone())
+            } else {
+                match load_persisted_identity() {
+                    Ok(Some((priv_k, pub_k))) => (priv_k, pub_k),
+                    _ => {
+                        return Err(FoldDbError::SecurityError(
+                            "Node identity (keys) not configured and no persisted identity found. \
+                        Auto-generation is disabled. Please provide identity."
+                                .to_string(),
+                        ));
+                    }
+                }
+            };
 
         // Update config with public key as user_id if not set (for DynamoDB)
         #[cfg(feature = "aws-backend")]
@@ -137,11 +142,23 @@ impl DataFoldNode {
     /// * `db` - Pre-created FoldDB instance
     pub async fn new_with_db(config: NodeConfig, db: Arc<Mutex<FoldDB>>) -> FoldDbResult<Self> {
         // Generate a new keypair (we can't update DB config as it's already created)
-        let keypair = Ed25519KeyPair::generate().map_err(|e| {
-            FoldDbError::SecurityError(format!("Failed to generate keypair: {}", e))
-        })?;
-        let private_key = keypair.secret_key_base64();
-        let public_key = keypair.public_key_base64();
+        // 1. Check config for identity
+        let (private_key, public_key) =
+            if let (Some(priv_k), Some(pub_k)) = (&config.private_key, &config.public_key) {
+                (priv_k.clone(), pub_k.clone())
+            } else {
+                // 2. Fallback to loading from file
+                match load_persisted_identity() {
+                    Ok(Some((priv_k, pub_k))) => (priv_k, pub_k),
+                    _ => {
+                        return Err(FoldDbError::SecurityError(
+                            "Node identity (keys) not configured and no persisted identity found. \
+                        Auto-generation is disabled."
+                                .to_string(),
+                        ));
+                    }
+                }
+            };
 
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
