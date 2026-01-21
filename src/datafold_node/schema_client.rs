@@ -131,14 +131,37 @@ impl SchemaServiceClient {
 
         #[derive(Deserialize)]
         struct SchemasListResponse {
-            schemas: Vec<String>,
+            schemas: Vec<serde_json::Value>,
         }
 
         let schemas_response: SchemasListResponse = response.json().await.map_err(|e| {
             FoldDbError::Config(format!("Failed to parse schema list response: {}", e))
         })?;
 
-        Ok(schemas_response.schemas)
+        let names: Vec<String> = schemas_response
+            .schemas
+            .into_iter()
+            .filter_map(|v| {
+                if let Some(s) = v.as_str() {
+                    Some(s.to_string())
+                } else if let Some(obj) = v.as_object() {
+                    // Try "name" or "schema.name"
+                    obj.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            obj.get("schema")
+                                .and_then(|s| s.get("name"))
+                                .and_then(|n| n.as_str())
+                                .map(|s| s.to_string())
+                        })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Ok(names)
     }
 
     /// Get all available schemas with their full definitions from the schema service
@@ -364,6 +387,51 @@ mod tests {
 
         // Schema name should be the topology_hash (64 char hex string)
         assert_eq!(response.schema.name.len(), 64);
+
+        handle.stop(true).await;
+    }
+
+    #[actix_web::test]
+    async fn list_schemas_handles_objects() {
+        let temp_dir = tempdir().expect("failed to create tempdir");
+        let _db_path = temp_dir
+            .path()
+            .join("test_schema_list_db")
+            .to_string_lossy()
+            .to_string();
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind");
+        let port = listener.local_addr().unwrap().port();
+
+        let server = HttpServer::new(|| {
+            App::new().route(
+                "/api/schemas",
+                web::get().to(|| async {
+                    HttpResponse::Ok().json(serde_json::json!({
+                        "schemas": [
+                            "simple_string_schema",
+                            {"name": "object_schema", "state": "approved"},
+                            {"schema": {"name": "nested_schema"}}
+                        ]
+                    }))
+                }),
+            )
+        })
+        .listen(listener)
+        .expect("failed to listen")
+        .run();
+
+        let handle = server.handle();
+        actix_web::rt::spawn(server);
+        sleep(Duration::from_millis(50)).await;
+
+        let client = SchemaServiceClient::new(&format!("http://127.0.0.1:{}", port));
+        let schemas = client.list_schemas().await.expect("failed to list schemas");
+
+        assert!(schemas.contains(&"simple_string_schema".to_string()));
+        assert!(schemas.contains(&"object_schema".to_string()));
+        assert!(schemas.contains(&"nested_schema".to_string()));
+        assert_eq!(schemas.len(), 3);
 
         handle.stop(true).await;
     }
