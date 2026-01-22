@@ -118,7 +118,9 @@ async fn _test_local_mutation_execution() {
         std::fs::remove_dir_all(&temp_dir).ok();
     }
 
-    let config = NodeConfig::new(temp_dir.clone()).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(temp_dir.clone())
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
 
     let node = DataFoldNode::new(config)
         .await

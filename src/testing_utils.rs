@@ -62,6 +62,7 @@ impl TestDatabaseFactory {
             public_key: None,
             private_key: None,
         }
+        .with_generated_identity_for_tests()
     }
 
     /// Create named test tree (consolidates multiple create_test_tree functions)

@@ -138,6 +138,7 @@ mod tests {
         let mut config =
             crate::datafold_node::config::NodeConfig::new(temp_dir.path().to_path_buf());
         config.schema_service_url = Some("mock://test".to_string());
+        let config = config.with_generated_identity_for_tests();
 
         // Create the node
         let node = DataFoldNode::new(config).await.unwrap();

@@ -96,6 +96,16 @@ impl NodeConfig {
     }
 }
 
+impl NodeConfig {
+    pub fn with_generated_identity_for_tests(mut self) -> Self {
+        let keypair = crate::security::Ed25519KeyPair::generate()
+            .expect("failed to generate test identity");
+        self.public_key = Some(keypair.public_key_base64());
+        self.private_key = Some(keypair.secret_key_base64());
+        self
+    }
+}
+
 /// Load a node configuration from the given path or from the `NODE_CONFIG`
 /// environment variable.
 ///

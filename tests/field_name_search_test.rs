@@ -14,7 +14,9 @@ async fn test_search_by_field_name() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
-    let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(db_path)
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
     let node = DataFoldNode::new(config)
         .await
         .expect("failed to create DataFoldNode");
@@ -156,7 +158,9 @@ async fn test_search_nonexistent_field_name() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
-    let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(db_path)
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
     let node = DataFoldNode::new(config)
         .await
         .expect("failed to create DataFoldNode");
@@ -241,7 +245,9 @@ async fn test_combined_field_name_and_word_search() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
-    let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(db_path)
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
     let node = DataFoldNode::new(config)
         .await
         .expect("failed to create DataFoldNode");

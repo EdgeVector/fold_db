@@ -47,7 +47,9 @@ async fn test_mutation_performance_direct() {
     }
 
     // Create node configuration
-    let config = NodeConfig::new(temp_db_path.to_path_buf()).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(temp_db_path.to_path_buf())
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
 
     let node = DataFoldNode::new(config)
         .await

@@ -18,7 +18,9 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     let temp_db_path = temp_dir.path().to_str().unwrap();
 
     // Initialize node with temporary database and mock schema service
-    let config = NodeConfig::new(temp_db_path.into()).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(temp_db_path.into())
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
     let node = DataFoldNode::new(config)
         .await
         .expect("Failed to create DataFoldNode");
@@ -264,7 +266,9 @@ async fn test_range_key_set_in_query_object() {
     let temp_db_path = temp_dir.path().to_str().unwrap();
 
     // Initialize node with temporary database and mock schema service
-    let config = NodeConfig::new(temp_db_path.into()).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(temp_db_path.into())
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
     let node = DataFoldNode::new(config)
         .await
         .expect("Failed to create DataFoldNode");

@@ -29,9 +29,13 @@ impl SchemaServiceClient {
     /// Create a new schema service client
     pub fn new(schema_service_url: &str) -> Self {
         // Create client with timeout to prevent hanging
-        let client = reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
+            .connect_timeout(std::time::Duration::from_secs(10));
+        if is_loopback_url(schema_service_url) {
+            client_builder = client_builder.no_proxy();
+        }
+        let client = client_builder
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -273,6 +277,11 @@ impl SchemaServiceClient {
 
         Ok(())
     }
+}
+
+fn is_loopback_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.contains("localhost") || lower.contains("127.0.0.1") || lower.contains("[::1]")
 }
 
 #[cfg(test)]

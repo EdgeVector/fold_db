@@ -366,8 +366,9 @@ mod tests {
     #[tokio::test]
     async fn test_node_private_key_generation() {
         let temp_dir = tempdir().unwrap();
-        let config =
-            NodeConfig::new(temp_dir.path().to_path_buf()).with_schema_service_url("test://mock");
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock")
+            .with_generated_identity_for_tests();
         let node = DataFoldNode::new(config).await.unwrap();
 
         // Verify that private and public keys were generated

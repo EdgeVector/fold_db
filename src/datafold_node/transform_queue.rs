@@ -97,17 +97,9 @@ mod tests {
     #[tokio::test]
     async fn queue_info_works() {
         let dir = tempdir().unwrap();
-        let config = NodeConfig {
-            database: crate::datafold_node::config::DatabaseConfig::Local {
-                path: dir.path().to_path_buf(),
-            },
-            default_trust_distance: 1,
-            network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
-            security_config: Default::default(),
-            schema_service_url: None,
-            public_key: None,
-            private_key: None,
-        };
+        let config = NodeConfig::new(dir.path().to_path_buf())
+            .with_generated_identity_for_tests()
+            .with_network_listen_address("/ip4/127.0.0.1/tcp/0");
         let node = DataFoldNode::new(config).await.unwrap();
         let info = node.get_transform_queue_info().await.unwrap();
         assert!(info.is_empty);

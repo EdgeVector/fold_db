@@ -11,7 +11,9 @@ async fn test_native_word_index_search_updates_with_mutations() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
-    let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
+    let config = NodeConfig::new(db_path)
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
     let node = DataFoldNode::new(config)
         .await
         .expect("failed to create DataFoldNode");

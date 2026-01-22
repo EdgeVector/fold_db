@@ -11,7 +11,8 @@ async fn test_node_starts_without_schema_service() {
 
     // Create node configuration WITHOUT schema service URL
     let config = NodeConfig::new(test_db_path.to_path_buf())
-        .with_network_listen_address("/ip4/127.0.0.1/tcp/9002");
+        .with_network_listen_address("/ip4/127.0.0.1/tcp/9002")
+        .with_generated_identity_for_tests();
 
     // Attempt to create the node - should succeed without schema service URL
     let result = DataFoldNode::new(config).await;
@@ -35,7 +36,8 @@ async fn test_node_new_loads_schemas_for_testing() {
     // Create node configuration with mock schema service URL
     let config = NodeConfig::new(test_db_path.to_path_buf())
         .with_network_listen_address("/ip4/127.0.0.1/tcp/9003")
-        .with_schema_service_url("test://mock");
+        .with_schema_service_url("test://mock")
+        .with_generated_identity_for_tests();
 
     // Create a new node using DataFoldNode::new() with mock service
     let node = DataFoldNode::new(config)

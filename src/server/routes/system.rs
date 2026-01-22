@@ -511,8 +511,9 @@ mod tests {
     use tempfile::tempdir;
 
     async fn create_test_state(temp_dir: &tempfile::TempDir) -> web::Data<AppState> {
-        let config =
-            NodeConfig::new(temp_dir.path().to_path_buf()).with_schema_service_url("test://mock");
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock")
+            .with_generated_identity_for_tests();
         let node = DataFoldNode::new(config).await.unwrap();
 
         web::Data::new(AppState {
