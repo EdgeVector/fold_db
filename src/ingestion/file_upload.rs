@@ -112,9 +112,28 @@ pub async fn upload_file(
         ingestion_config,
     };
 
-    let progress_id =
-        spawn_background_ingestion(spawn_config, progress_tracker.get_ref(), state.node.clone())
-            .await;
+    let progress_id = match form_data.progress_id {
+        Some(id) => id,
+        None => {
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Missing progress_id in upload request"
+            );
+            return HttpResponse::BadRequest().json(json!({
+                "success": false,
+                "error": "Missing required field: progress_id"
+            }));
+        }
+    };
+
+    let progress_id = spawn_background_ingestion(
+        spawn_config,
+        progress_tracker.get_ref(),
+        state.node.clone(),
+        progress_id,
+    )
+    .await;
 
     // Return immediately with the progress_id
     log_feature!(

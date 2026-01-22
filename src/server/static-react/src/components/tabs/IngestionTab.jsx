@@ -100,10 +100,15 @@ function IngestionTab({ onResult }) {
     try {
       const parsedData = JSON.parse(jsonData)
       
+      const newProgressId = crypto.randomUUID()
+      // Set progress ID immediately to start polling/tracking logic
+      setProgressId(newProgressId)
+
       const options = {
         autoExecute,
         trustDistance,
-        pubKey
+        pubKey,
+        progressId: newProgressId
       }
 
       const response = await ingestionClient.processIngestion(parsedData, options)

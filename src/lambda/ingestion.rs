@@ -91,7 +91,7 @@ impl LambdaContext {
     ) -> Result<Option<IngestionProgress>, IngestionError> {
         let ctx = Self::get()?;
         let tracker = ctx.progress_tracker.clone();
-        
+
         match tracker.load(progress_id).await {
             Ok(Some(job)) => Ok(Some(job.into())),
             Ok(None) => Ok(None),
@@ -120,8 +120,9 @@ impl LambdaContext {
     pub async fn get_all_progress() -> Result<Vec<IngestionProgress>, IngestionError> {
         let ctx = Self::get()?;
         let tracker = ctx.progress_tracker.clone();
-        let user_id = crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
-        
+        let user_id =
+            crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
+
         match tracker.list_by_user(&user_id).await {
             Ok(jobs) => Ok(jobs.into_iter().map(|j| j.into()).collect()),
             Err(e) => {
@@ -167,13 +168,11 @@ impl LambdaContext {
         trust_distance: u32,
         pub_key: String,
         user_id: String,
+        progress_id: String,
     ) -> Result<String, IngestionError> {
         let ctx = Self::get()?;
         let node = Self::get_node(&user_id).await?; // Use user-specific node
         let progress_tracker = ctx.progress_tracker.clone();
-
-        // Generate unique progress ID
-        let progress_id = uuid::Uuid::new_v4().to_string();
 
         // Start progress tracking
         let progress_service = ProgressService::new(progress_tracker);
@@ -273,7 +272,7 @@ impl LambdaContext {
     ///         {"id": 2, "name": "Bob"}
     ///     ]);
     ///     
-    ///     let response = LambdaContext::ingest_json_sync(data, true, 0, "user_123".to_string()).await?;
+    ///     let response = LambdaContext::ingest_json_sync(data, true, 0, "user_123".to_string(), "my-uuid".to_string()).await?;
     ///     
     ///     println!("Ingested {} mutations", response.mutations_executed);
     ///     Ok(())
@@ -285,13 +284,11 @@ impl LambdaContext {
         trust_distance: u32,
         pub_key: String,
         user_id: String,
+        progress_id: String,
     ) -> Result<IngestionResponse, IngestionError> {
         let ctx = Self::get()?;
         let node = Self::get_node(&user_id).await?; // Use user-specific node
         let progress_tracker = ctx.progress_tracker.clone();
-
-        // Generate unique progress ID
-        let progress_id = uuid::Uuid::new_v4().to_string();
 
         // Start progress tracking
         let progress_service = ProgressService::new(progress_tracker);
