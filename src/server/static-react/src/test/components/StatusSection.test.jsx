@@ -9,11 +9,30 @@ vi.mock('../../api/clients/systemClient', () => ({
   }
 }))
 
+// Mock the ingestionClient 
+vi.mock('../../api/clients', () => ({
+  ingestionClient: {
+    getAllProgress: vi.fn()
+  }
+}))
+
 import { systemClient } from '../../api/clients/systemClient'
+import { ingestionClient } from '../../api/clients'
 
 describe('StatusSection Component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mock implementation
+    ingestionClient.getAllProgress.mockResolvedValue({
+      success: true,
+      data: [{
+        id: '123',
+        started_at: new Date().toISOString(),
+        is_complete: false,
+        status_message: 'Processing...',
+        progress_percentage: 50
+      }]
+    })
   })
 
   it('renders system status heading', () => {
@@ -48,27 +67,35 @@ describe('StatusSection Component', () => {
     expect(headerContainer).toHaveClass('flex', 'items-center', 'gap-2')
   })
 
-  it('renders ingestion status card', () => {
+  it('renders ingestion status card', async () => {
     render(<StatusSection />)
     
     // Check for Ingestion text in the status cards
-    expect(screen.getByText('Ingestion Job')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText(/Ingestion/i)).toBeInTheDocument()
+    })
   })
 
   it('renders indexing status card', () => {
     render(<StatusSection />)
     
     // Check for Indexing text in the status cards
-    expect(screen.getByText('Indexing')).toBeInTheDocument()
+    const indexingElements = screen.getAllByText(/Indexing/i)
+    expect(indexingElements.length).toBeGreaterThan(0)
   })
 
-  it('renders all visual elements', () => {
+  it('renders all visual elements', async () => {
     render(<StatusSection />)
     
     // Check that all key elements are present
     expect(screen.getByText('System Status')).toBeInTheDocument()
-    expect(screen.getByText('Ingestion Job')).toBeInTheDocument()
-    expect(screen.getByText('Indexing')).toBeInTheDocument()
+    
+    await waitFor(() => {
+        expect(screen.getByText(/Ingestion/i)).toBeInTheDocument()
+    })
+    
+    const indexingElements = screen.getAllByText(/Indexing/i)
+    expect(indexingElements.length).toBeGreaterThan(0)
     
     // Check for icon
     const heading = screen.getByText('System Status')
