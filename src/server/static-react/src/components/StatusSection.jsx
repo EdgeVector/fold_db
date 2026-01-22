@@ -8,70 +8,44 @@ function StatusSection() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
   const [resetResult, setResetResult] = useState(null)
-  const [ingestionProgress, setIngestionProgress] = useState(null)
+  const [activeJobs, setActiveJobs] = useState([])
 
-  const [activeProgressId, setActiveProgressId] = useState(null)
-
-  // Listen for ingestion events
+  // Poll for all ingestion progress
   useEffect(() => {
-    const handleIngestionStart = (event) => {
-      console.log('🔵 StatusSection: Received ingestion-started event', event.detail)
-      setActiveProgressId(event.detail.progressId)
-      // Show ingestion immediately, even before first poll
-      setIngestionProgress({
-        progress_percentage: 0,
-        status_message: 'Starting ingestion...',
-        is_complete: false
-      })
-      console.log('🔵 StatusSection: Set initial ingestion progress')
-    }
-
-    window.addEventListener('ingestion-started', handleIngestionStart)
-    console.log('🔵 StatusSection: Listening for ingestion-started events')
-    return () => window.removeEventListener('ingestion-started', handleIngestionStart)
-  }, [])
-
-  // Poll ingestion progress
-  useEffect(() => {
-    if (!activeProgressId) return
-
     let mounted = true
     let timeoutId
 
     const poll = async () => {
       try {
-        const response = await ingestionClient.getProgress(activeProgressId)
+        const response = await ingestionClient.getAllProgress()
         if (mounted && response.success && response.data) {
-          setIngestionProgress(response.data)
-
-          // Keep polling if not complete, stop polling once complete (but keep the data)
-          if (!response.data.is_complete) {
-            timeoutId = setTimeout(poll, 200) // Poll faster (200ms)
-          } else {
-            // Leave the completed progress visible - don't clear it
-            setActiveProgressId(null) // Stop polling
-          }
-        } else {
-          if (mounted) timeoutId = setTimeout(poll, 200)
+          // Sort jobs by started_at desc (newest first)
+          const sortedJobs = [...response.data].sort((a, b) => 
+            new Date(b.started_at) - new Date(a.started_at)
+          ).slice(0, 1) // Only show the most recent job
+          setActiveJobs(sortedJobs)
+        }
+        if (mounted) {
+          timeoutId = setTimeout(poll, 1000) // Poll every 1s
         }
       } catch (error) {
-        console.error('Error polling ingestion:', error)
-        if (mounted) timeoutId = setTimeout(poll, 500)
+        console.error('Error polling ingestion progress:', error)
+        if (mounted) {
+          timeoutId = setTimeout(poll, 2000) // Backoff on error
+        }
       }
     }
 
-    // Start immediately
     poll()
 
     return () => {
       mounted = false
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [activeProgressId])
+  }, [])
 
   // Use the hook for indexing status with automatic backoff
-  // This will poll every 1s when active, and 5s when idle (default behavior of the hook)
-  const { status: indexingStatus } = useIndexingStatus(1000);
+  const { status: indexingStatus } = useIndexingStatus(1000)
 
   const handleResetDatabase = async () => {
     setIsResetting(true)
@@ -82,7 +56,6 @@ function StatusSection() {
 
       if (response.success && response.data) {
         setResetResult({ type: 'success', message: response.data.message })
-        // Refresh the page after a short delay to show the new clean state
         setTimeout(() => {
           window.location.reload()
         }, 2000)
@@ -141,63 +114,81 @@ function StatusSection() {
     )
   }
 
-  // Get ingestion status info
-  const getIngestionStatus = () => {
-    console.log('🟡 StatusSection getIngestionStatus:', {
-      hasProgress: !!ingestionProgress,
-      percentage: ingestionProgress?.progress_percentage,
-      isComplete: ingestionProgress?.is_complete,
-      results: ingestionProgress?.results
-    })
+  // Helper to render a job card
+  const renderJobCard = (job) => {
+    const isCompleted = job.is_complete
+    const isFailed = job.is_failed
+    const isActive = !isCompleted
 
-    if (ingestionProgress && !ingestionProgress.is_complete) {
-      const elapsed = ingestionProgress.started_at
-        ? Math.floor((new Date() - new Date(ingestionProgress.started_at)) / 1000)
-        : 0
-
-      return {
-        state: 'active',
-        title: 'Ingestion Job',
-        detail: ingestionProgress.status_message,
-        percentage: ingestionProgress.progress_percentage,
-        metrics: elapsed > 0 ? [`${elapsed}s elapsed`] : [],
-        color: 'blue'
-      }
+    // Calculate duration
+    let durationStr = ''
+    if (job.started_at) {
+      const start = new Date(job.started_at)
+      const end = job.completed_at ? new Date(job.completed_at) : new Date()
+      const seconds = Math.floor((end - start) / 1000)
+      durationStr = seconds > 0 ? `${seconds}s` : 'Just started'
     }
 
-    if (ingestionProgress?.is_complete && ingestionProgress?.results) {
-      const elapsed = ingestionProgress.started_at && ingestionProgress.completed_at
-        ? Math.floor((new Date(ingestionProgress.completed_at) - new Date(ingestionProgress.started_at)) / 1000)
-        : 0
-
-      return {
-        state: 'completed',
-        title: 'Ingestion Job',
-        detail: 'Last ingestion completed',
-        metrics: [
-          `${ingestionProgress.results.mutations_executed || 0} items ingested`,
-          elapsed > 0 ? `${elapsed}s duration` : null
-        ].filter(Boolean),
-        color: 'green'
-      }
+    // Determine status color/text
+    const statusColor = isFailed ? 'red' : (isCompleted ? 'green' : 'blue')
+    const statusText = isFailed ? 'Failed' : (isCompleted ? 'Complete' : 'Active')
+    
+    // Construct metrics
+    const metrics = []
+    if (durationStr) metrics.push(durationStr)
+    if (job.results?.mutations_executed !== undefined) {
+      metrics.push(`${job.results.mutations_executed} items`)
     }
 
-    return {
-      state: 'idle',
-      title: 'Ingestion Job',
-      detail: 'No active ingestion',
-      metrics: [],
-      color: 'gray'
-    }
+    return (
+      <div key={job.id} className={`p-4 rounded-lg border-2 border-${statusColor}-200 bg-${statusColor}-50`}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className={`w-2.5 h-2.5 rounded-full bg-${statusColor}-500 ${isActive ? 'animate-pulse' : ''}`}></div>
+            <h3 className={`font-semibold text-${statusColor}-900`}>
+              Ingestion Job
+            </h3>
+          </div>
+          <span className={`text-xs font-medium px-2 py-1 rounded bg-${statusColor}-100 text-${statusColor}-700`}>
+            {statusText}
+          </span>
+        </div>
+
+        <p className={`text-sm text-${statusColor}-700 truncate`} title={job.status_message}>
+          {job.status_message}
+        </p>
+
+        {metrics.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {metrics.map((metric, idx) => (
+              <span key={idx} className={`text-xs font-medium px-2 py-1 rounded bg-${statusColor}-100 text-${statusColor}-800`}>
+                {metric}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Progress Bar for active jobs */}
+        {isActive && !isFailed && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className={`text-xs font-medium text-${statusColor}-700`}>Progress</span>
+              <span className={`text-xs font-semibold text-${statusColor}-900`}>{job.progress_percentage}%</span>
+            </div>
+            <div className={`w-full bg-${statusColor}-200 rounded-full h-2`}>
+              <div
+                className={`bg-${statusColor}-600 h-2 rounded-full transition-all duration-300`}
+                style={{ width: `${job.progress_percentage}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   // Get indexing status info
   const getIndexingStatusInfo = () => {
-    console.log('🟡 StatusSection getIndexingStatus:', {
-      indexingState: indexingStatus?.state,
-      totalOps: indexingStatus?.total_operations_processed
-    })
-
     if (indexingStatus?.state === 'Indexing') {
       return {
         state: 'active',
@@ -230,7 +221,6 @@ function StatusSection() {
     }
   }
 
-  const ingestionInfo = getIngestionStatus()
   const indexingInfo = getIndexingStatusInfo()
 
   return (
@@ -254,81 +244,8 @@ function StatusSection() {
 
         {/* Dashboard Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Ingestion Status Card */}
-          <div className={`p-4 rounded-lg border-2 ${ingestionInfo.state === 'active'
-              ? 'border-blue-200 bg-blue-50'
-              : ingestionInfo.state === 'completed'
-                ? 'border-green-200 bg-green-50'
-                : 'border-gray-200 bg-gray-50'
-            }`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${ingestionInfo.state === 'active'
-                    ? 'bg-blue-500 animate-pulse'
-                    : ingestionInfo.state === 'completed'
-                      ? 'bg-green-500'
-                      : 'bg-gray-400'
-                  }`}></div>
-                <h3 className={`font-semibold ${ingestionInfo.state === 'active'
-                    ? 'text-blue-900'
-                    : ingestionInfo.state === 'completed'
-                      ? 'text-green-900'
-                      : 'text-gray-700'
-                  }`}>
-                  {ingestionInfo.title}
-                </h3>
-              </div>
-              <span className={`text-xs font-medium px-2 py-1 rounded ${ingestionInfo.state === 'active'
-                  ? 'bg-blue-100 text-blue-700'
-                  : ingestionInfo.state === 'completed'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-200 text-gray-600'
-                }`}>
-                {ingestionInfo.state === 'active' ? 'Active' : ingestionInfo.state === 'completed' ? 'Complete' : 'Idle'}
-              </span>
-            </div>
-
-            <p className={`text-sm ${ingestionInfo.state === 'active'
-                ? 'text-blue-700'
-                : ingestionInfo.state === 'completed'
-                  ? 'text-green-700'
-                  : 'text-gray-500'
-              }`}>
-              {ingestionInfo.detail}
-            </p>
-
-            {ingestionInfo.metrics && ingestionInfo.metrics.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {ingestionInfo.metrics.map((metric, idx) => (
-                  <span key={idx} className={`text-xs font-medium px-2 py-1 rounded ${ingestionInfo.state === 'active'
-                      ? 'bg-blue-100 text-blue-800'
-                      : ingestionInfo.state === 'completed'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}>
-                    {metric}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {ingestionInfo.percentage !== undefined && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium text-blue-700">Progress</span>
-                  <span className="text-xs font-semibold text-blue-900">{ingestionInfo.percentage}%</span>
-                </div>
-                <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${ingestionInfo.percentage}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Indexing Status Card */}
+          
+          {/* Indexing Status Card - Always First or Last? Let's keep it constant */}
           <div className={`p-4 rounded-lg border-2 ${indexingInfo.state === 'active'
               ? 'border-indigo-200 bg-indigo-50'
               : indexingInfo.state === 'completed'
@@ -386,6 +303,17 @@ function StatusSection() {
               </div>
             )}
           </div>
+
+          {/* Active Job Cards */}
+          {activeJobs.length > 0 && activeJobs.map(job => renderJobCard(job))}
+          
+          {/* Placeholder if no jobs and indexing is idle? Optional. */}
+           {activeJobs.length === 0 && indexingInfo.state === 'idle' && (
+            <div className="p-4 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm">
+              No active jobs
+            </div>
+          )}
+
         </div>
 
         {resetResult && (
