@@ -59,14 +59,6 @@ export interface ProcessIngestionRequest {
 
 // ...
 
-const request: ProcessIngestionRequest = {
-  data,
-  auto_execute: options.autoExecute ?? true,
-  trust_distance: options.trustDistance ?? 0,
-  pub_key: options.pubKey ?? "default",
-  progress_id: options.progressId || crypto.randomUUID(),
-};
-
 export interface ProcessIngestionResponse {
   success: boolean;
   error?: string;
