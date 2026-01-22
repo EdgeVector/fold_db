@@ -475,35 +475,45 @@ impl OllamaService {
 
     /// Extract JSON from the AI response text
     fn extract_json_from_response(&self, response_text: &str) -> IngestionResult<String> {
-        // Look for JSON block markers
-        if let Some(start) = response_text.find("```json") {
+        // First try to find a JSON block marker
+        let text_to_parse = if let Some(start) = response_text.find("```json") {
             let search_start = start + 7; // Length of "```json"
             if let Some(end_offset) = response_text[search_start..].find("```") {
                 let json_end = search_start + end_offset;
-                return Ok(response_text[search_start..json_end].trim().to_string());
+                &response_text[search_start..json_end]
+            } else {
+                &response_text[search_start..]
             }
-        }
+        } else if let Some(start) = response_text.find('{') {
+            &response_text[start..]
+        } else {
+            response_text
+        };
 
-        // Look for "Here's the response:" followed by JSON
-        if let Some(start) = response_text.find("Here's the response:") {
-            let json_start = response_text[start + 20..].trim(); // Skip "Here's the response:"
-            if let Some(json_start_pos) = json_start.find('{') {
-                let json_candidate = json_start[json_start_pos..].trim();
-                if let Some(end) = json_candidate.rfind('}') {
-                    let json_str = json_candidate[..=end].to_string();
-                    if serde_json::from_str::<Value>(&json_str).is_ok() {
-                        return Ok(json_str);
-                    }
+        // Use serde_json stream deserializer to parse the first valid JSON value
+        let deserialize_stream =
+            serde_json::Deserializer::from_str(text_to_parse).into_iter::<Value>();
+
+        for value in deserialize_stream {
+            match value {
+                Ok(v) => {
+                    // Valid JSON found, re-serialize it to ensure it's clean
+                    return serde_json::to_string(&v).map_err(|e| {
+                        IngestionError::ai_response_validation_error(format!(
+                            "Failed to serialize extracted JSON: {}",
+                            e
+                        ))
+                    });
                 }
+                Err(_) => continue, // Keep looking if parsing fails
             }
         }
 
-        // Look for direct JSON (starts with { and ends with })
+        // Fallback: simpler extraction if stream parsing failed
         if let Some(start) = response_text.find('{') {
             if let Some(end) = response_text.rfind('}') {
                 if end > start {
                     let json_candidate = response_text[start..=end].to_string();
-                    // Try to parse the JSON to validate it's complete
                     if serde_json::from_str::<Value>(&json_candidate).is_ok() {
                         return Ok(json_candidate);
                     }
@@ -511,7 +521,7 @@ impl OllamaService {
             }
         }
 
-        // If no JSON found, try the entire response
+        // If all else fails, return trimmed text
         Ok(response_text.trim().to_string())
     }
 
@@ -592,6 +602,27 @@ That should work."###;
             r###"{"existing_schemas": ["test"], "new_schemas": null, "mutation_mappers": {}}"###;
         let result = service.extract_json_from_response(response_direct);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_extract_json_with_trailing_brace() {
+        let service = create_test_service();
+
+        let response_trailing = r###"
+        {
+            "existing_schemas": ["test"],
+            "new_schemas": null,
+            "mutation_mappers": {}
+        }
+        some extra text with a } closing brace
+        "###;
+
+        let result = service.extract_json_from_response(response_trailing);
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        // Should be parseable
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.get("existing_schemas").is_some());
     }
 
     #[test]
