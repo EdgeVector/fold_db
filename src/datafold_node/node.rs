@@ -360,23 +360,35 @@ impl DataFoldNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::Ed25519KeyPair;
     use base64::{engine::general_purpose, Engine as _};
     use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_node_private_key_generation() {
         let temp_dir = tempdir().unwrap();
-        let config =
-            NodeConfig::new(temp_dir.path().to_path_buf()).with_schema_service_url("test://mock");
+
+        // Generate identity for the test
+        let keypair = Ed25519KeyPair::generate().unwrap();
+        let pub_key = keypair.public_key_base64();
+        let priv_key = keypair.secret_key_base64();
+
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock")
+            .with_identity(&pub_key, &priv_key);
+
         let node = DataFoldNode::new(config).await.unwrap();
 
-        // Verify that private and public keys were generated
+        // Verify that private and public keys were generated (or rather, loaded correctly)
         let private_key = node.get_node_private_key();
         let public_key = node.get_node_public_key();
 
         assert!(!private_key.is_empty());
         assert!(!public_key.is_empty());
         assert_ne!(private_key, public_key);
+
+        assert_eq!(private_key, priv_key);
+        assert_eq!(public_key, pub_key);
 
         // Verify that the keys are valid base64
         assert!(general_purpose::STANDARD.decode(private_key).is_ok());

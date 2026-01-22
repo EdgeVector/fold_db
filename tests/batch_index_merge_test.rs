@@ -20,7 +20,10 @@ async fn test_batch_index_merges_existing_entries() {
     let temp_dir = TempDir::new().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_path_buf();
 
-    let config = NodeConfig::new(db_path).with_schema_service_url("test://mock");
+    let keypair = datafold::security::Ed25519KeyPair::generate().unwrap();
+    let config = NodeConfig::new(db_path)
+        .with_schema_service_url("test://mock")
+        .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
     let node = DataFoldNode::new(config)
         .await
         .expect("failed to create DataFoldNode");

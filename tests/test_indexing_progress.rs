@@ -10,7 +10,9 @@ use std::sync::Arc;
 #[tokio::test]
 async fn test_indexing_progress_tracking() {
     // Setup
-    let config = TestDatabaseFactory::create_test_node_config();
+    let mut config = TestDatabaseFactory::create_test_node_config();
+    let keypair = datafold::security::Ed25519KeyPair::generate().unwrap();
+    config = config.with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
     let node = DataFoldNode::new(config).await.unwrap();
 
     // Create a schema
