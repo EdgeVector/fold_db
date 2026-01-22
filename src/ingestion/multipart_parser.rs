@@ -23,6 +23,7 @@ pub struct UploadFormData {
     pub pub_key: String,
     /// Whether this file already existed (true = duplicate upload)
     pub already_exists: bool,
+    pub progress_id: Option<String>,
 }
 
 /// Extract and parse multipart form data
@@ -36,6 +37,7 @@ pub async fn parse_multipart(
     let mut auto_execute = true;
     let mut trust_distance = 0;
     let mut pub_key = "default".to_string();
+    let mut progress_id = None;
     #[cfg(feature = "aws-backend")]
     let mut s3_file_path: Option<String> = None;
 
@@ -82,6 +84,9 @@ pub async fn parse_multipart(
                 pub_key = parse_field_as_string(&mut field)
                     .await
                     .unwrap_or_else(|| "default".to_string());
+            }
+            Some("progressId") | Some("progress_id") => {
+                progress_id = parse_field_as_string(&mut field).await;
             }
             _ => {}
         }
@@ -135,6 +140,7 @@ pub async fn parse_multipart(
         trust_distance,
         pub_key,
         already_exists,
+        progress_id,
     })
 }
 

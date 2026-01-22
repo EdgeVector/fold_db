@@ -134,7 +134,8 @@ function FileUploadTab({ onResult }) {
 
     // Reset all progress-related state immediately
     setIsUploading(true)
-    setProgressId(null)
+    const newProgressId = crypto.randomUUID()
+    setProgressId(newProgressId)
     
     // Clear any previous results
     onResult(null)
@@ -165,6 +166,7 @@ function FileUploadTab({ onResult }) {
       formData.append('autoExecute', autoExecute.toString())
       formData.append('trustDistance', trustDistance.toString())
       formData.append('pubKey', pubKey)
+      formData.append('progress_id', newProgressId)
 
       const response = await fetch('/api/ingestion/upload', {
         method: 'POST',

@@ -29,9 +29,8 @@ pub async fn spawn_background_ingestion(
     config: IngestionSpawnConfig,
     progress_tracker: &ProgressTracker,
     node: Arc<RwLock<DataFoldNode>>,
+    progress_id: String,
 ) -> String {
-    let progress_id = uuid::Uuid::new_v4().to_string();
-
     // Start progress tracking
     let progress_service = ProgressService::new(progress_tracker.clone());
     progress_service.start_progress(progress_id.clone()).await;
