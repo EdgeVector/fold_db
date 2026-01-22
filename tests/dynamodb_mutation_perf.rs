@@ -94,6 +94,16 @@ async fn test_dynamodb_mutation_performance() {
         network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
         security_config: Default::default(),
         schema_service_url: Some("test://mock".to_string()), // Use test schema service to avoid needing running service
+        public_key: Some(
+            datafold::security::Ed25519KeyPair::generate()
+                .unwrap()
+                .public_key_base64(),
+        ),
+        private_key: Some(
+            datafold::security::Ed25519KeyPair::generate()
+                .unwrap()
+                .secret_key_base64(),
+        ),
     };
 
     // 2. Initialize Node

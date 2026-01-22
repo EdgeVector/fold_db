@@ -139,6 +139,10 @@ mod tests {
             crate::datafold_node::config::NodeConfig::new(temp_dir.path().to_path_buf());
         config.schema_service_url = Some("mock://test".to_string());
 
+        let keypair = crate::security::Ed25519KeyPair::generate().unwrap();
+        config.public_key = Some(keypair.public_key_base64());
+        config.private_key = Some(keypair.secret_key_base64());
+
         // Create the node
         let node = DataFoldNode::new(config).await.unwrap();
 

@@ -105,8 +105,16 @@ mod tests {
             network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
             security_config: Default::default(),
             schema_service_url: None,
-            public_key: None,
-            private_key: None,
+            public_key: Some(
+                crate::security::Ed25519KeyPair::generate()
+                    .unwrap()
+                    .public_key_base64(),
+            ),
+            private_key: Some(
+                crate::security::Ed25519KeyPair::generate()
+                    .unwrap()
+                    .secret_key_base64(),
+            ),
         };
         let node = DataFoldNode::new(config).await.unwrap();
         let info = node.get_transform_queue_info().await.unwrap();

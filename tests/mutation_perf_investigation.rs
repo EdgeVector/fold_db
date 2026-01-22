@@ -118,7 +118,10 @@ async fn _test_local_mutation_execution() {
         std::fs::remove_dir_all(&temp_dir).ok();
     }
 
-    let config = NodeConfig::new(temp_dir.clone()).with_schema_service_url("test://mock");
+    let keypair = datafold::security::Ed25519KeyPair::generate().unwrap();
+    let config = NodeConfig::new(temp_dir.clone())
+        .with_schema_service_url("test://mock")
+        .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
 
     let node = DataFoldNode::new(config)
         .await
