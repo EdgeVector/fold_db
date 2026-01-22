@@ -157,7 +157,7 @@ function StatusSection() {
 
       return {
         state: 'active',
-        title: 'Ingesting Data',
+        title: 'Ingestion Job',
         detail: ingestionProgress.status_message,
         percentage: ingestionProgress.progress_percentage,
         metrics: elapsed > 0 ? [`${elapsed}s elapsed`] : [],
@@ -172,7 +172,7 @@ function StatusSection() {
 
       return {
         state: 'completed',
-        title: 'Ingestion',
+        title: 'Ingestion Job',
         detail: 'Last ingestion completed',
         metrics: [
           `${ingestionProgress.results.mutations_executed || 0} items ingested`,
@@ -184,7 +184,7 @@ function StatusSection() {
 
     return {
       state: 'idle',
-      title: 'Ingestion',
+      title: 'Ingestion Job',
       detail: 'No active ingestion',
       metrics: [],
       color: 'gray'

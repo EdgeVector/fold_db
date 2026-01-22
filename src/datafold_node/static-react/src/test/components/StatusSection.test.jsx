@@ -52,7 +52,7 @@ describe('StatusSection Component', () => {
     render(<StatusSection />)
     
     // Check for Ingestion text in the status cards
-    expect(screen.getByText('Ingestion')).toBeInTheDocument()
+    expect(screen.getByText('Ingestion Job')).toBeInTheDocument()
   })
 
   it('renders indexing status card', () => {
@@ -67,7 +67,7 @@ describe('StatusSection Component', () => {
     
     // Check that all key elements are present
     expect(screen.getByText('System Status')).toBeInTheDocument()
-    expect(screen.getByText('Ingestion')).toBeInTheDocument()
+    expect(screen.getByText('Ingestion Job')).toBeInTheDocument()
     expect(screen.getByText('Indexing')).toBeInTheDocument()
     
     // Check for icon
