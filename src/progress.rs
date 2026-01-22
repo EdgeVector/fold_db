@@ -1,17 +1,17 @@
 //! Generic progress tracking system for DataFold
 //!
-//! Provides a unified way to track long-running jobs (Ingestion, Backfill, etc.) 
+//! Provides a unified way to track long-running jobs (Ingestion, Backfill, etc.)
 //! with pluggable persistence (InMemory, DynamoDB).
 
 use async_trait::async_trait;
+#[cfg(feature = "aws-backend")]
+use aws_sdk_dynamodb::types::AttributeValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use utoipa::ToSchema;
-#[cfg(feature = "aws-backend")]
-use aws_sdk_dynamodb::types::AttributeValue;
 #[cfg(feature = "aws-backend")]
 use std::time::SystemTime;
+use utoipa::ToSchema;
 
 /// Type of job being tracked
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
@@ -45,17 +45,17 @@ pub struct Job {
     pub progress_percentage: u8,
     /// User-facing status message
     pub message: String,
-    
+
     /// User ID who owns this job
     #[serde(default)]
     pub user_id: Option<String>,
 
     /// Metadata specific to the job type (stored as JSON)
     pub metadata: serde_json::Value,
-    
+
     /// Results when completed (stored as JSON)
     pub result: Option<serde_json::Value>,
-    
+
     /// Timestamp when created (Unix seconds)
     pub created_at: u64,
     /// Timestamp when last updated (Unix seconds)
@@ -72,7 +72,7 @@ impl Job {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-            
+
         Self {
             id,
             job_type,
@@ -88,12 +88,12 @@ impl Job {
             error: None,
         }
     }
-    
+
     pub fn with_user(mut self, user_id: String) -> Self {
         self.user_id = Some(user_id);
         self
     }
-    
+
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = metadata;
         self
@@ -178,7 +178,8 @@ impl ProgressStore for InMemoryProgressStore {
 
     async fn list_by_user(&self, user_id: &str) -> Result<Vec<Job>, String> {
         let store = self.store.lock().unwrap();
-        Ok(store.values()
+        Ok(store
+            .values()
             .filter(|j| j.user_id.as_deref() == Some(user_id) || j.user_id.is_none())
             .cloned()
             .collect())
@@ -203,7 +204,7 @@ impl DynamoDbProgressStore {
     pub fn new(client: aws_sdk_dynamodb::Client, table_name: String) -> Self {
         Self { client, table_name }
     }
-    
+
     // Legacy constructor for backward compatibility or ease of use (optional)
     pub async fn from_config(table_name: String, region: String) -> Self {
         let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
@@ -213,9 +214,9 @@ impl DynamoDbProgressStore {
         let client = aws_sdk_dynamodb::Client::new(&config);
         Self { client, table_name }
     }
-    
+
     // Additional helpers for DynamoDB could be added here (e.g. ensure_table_exists)
-    
+
     fn item_to_job(&self, item: &HashMap<String, AttributeValue>) -> Option<Job> {
         let json = item.get("data")?.as_s().ok()?;
         serde_json::from_str(json).ok()
@@ -229,7 +230,7 @@ impl ProgressStore for DynamoDbProgressStore {
         // We use user_id as partition key, and job_id as sort key
         // If user_id is missing, we use "global" or similar
         let pk = job.user_id.clone().unwrap_or_else(|| "global".to_string());
-        
+
         let json = serde_json::to_string(job).map_err(|e| e.to_string())?;
 
         // TTL: 24 hours
@@ -237,7 +238,7 @@ impl ProgressStore for DynamoDbProgressStore {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
-            + (24 * 60 * 60)) as i64;
+            + (1 * 60 * 60)) as i64;
 
         self.client
             .put_item()
@@ -246,7 +247,7 @@ impl ProgressStore for DynamoDbProgressStore {
             .item("SK", AttributeValue::S(job.id.clone()))
             .item("data", AttributeValue::S(json))
             .item("ttl", AttributeValue::N(ttl.to_string()))
-             // Indexed fields for filtering could be added here
+            // Indexed fields for filtering could be added here
             .send()
             .await
             .map(|_| ())
@@ -258,26 +259,28 @@ impl ProgressStore for DynamoDbProgressStore {
         // If we don't know the User ID, we might need a GSI or to Query.
         // For strict multi-tenancy we SHOULD know the user_id.
         // However, the interface `load(id)` implies global uniqueness lookup.
-        
+
         // If we assume the ID is unique enough, we might need a GSI on SK?
         // OR we change the interface to `load(id, user_id)`.
-        
+
         // FOR NOW: We will assume we can't easily implement efficient global load without GSI.
         // We will fallback to a Scan if really needed, OR we rely on the caller knowing the context?
         // Actually, let's keep it simple: WE require user_id for scalable lookups.
-        
+
         // But the trait is `load(id)`.
         // Let's rely on a convention: if we are in a context where we know the user, we should use `list_by_user` and filter.
         // Or we implement a GSI lookup.
-        
+
         // Given existing Lambda/Ingestion code often just passes ID...
         // The previous implementation used user_id from "current_user()" helper.
         // That WAS context aware.
-        
+
         // We can replicate that pattern:
-        let user_id = crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
-        
-        let result = self.client
+        let user_id =
+            crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
+
+        let result = self
+            .client
             .get_item()
             .table_name(&self.table_name)
             .key("PK", AttributeValue::S(user_id))
@@ -294,7 +297,8 @@ impl ProgressStore for DynamoDbProgressStore {
     }
 
     async fn list_by_user(&self, user_id: &str) -> Result<Vec<Job>, String> {
-        let result = self.client
+        let result = self
+            .client
             .query()
             .table_name(&self.table_name)
             .key_condition_expression("PK = :uid")
@@ -304,16 +308,14 @@ impl ProgressStore for DynamoDbProgressStore {
             .map_err(|e| e.to_string())?;
 
         let items = result.items.unwrap_or_default();
-        Ok(items
-            .iter()
-            .filter_map(|i| self.item_to_job(i))
-            .collect())
+        Ok(items.iter().filter_map(|i| self.item_to_job(i)).collect())
     }
 
     async fn delete(&self, id: &str) -> Result<(), String> {
-         let user_id = crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
-         
-         self.client
+        let user_id =
+            crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
+
+        self.client
             .delete_item()
             .table_name(&self.table_name)
             .key("PK", AttributeValue::S(user_id))
