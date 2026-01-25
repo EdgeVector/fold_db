@@ -39,6 +39,8 @@ pub struct IngestionResults {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct IngestionProgress {
     pub id: String,
+    /// Job type: "ingestion", "indexing", "backfill", or custom
+    pub job_type: String,
     pub current_step: IngestionStep,
     pub progress_percentage: u8,
     pub status_message: String,
@@ -63,8 +65,17 @@ impl From<Job> for IngestionProgress {
             }
         };
 
+        // Convert JobType to string for API response
+        let job_type_str = match &job.job_type {
+            JobType::Ingestion => "ingestion".to_string(),
+            JobType::Indexing => "indexing".to_string(),
+            JobType::Backfill => "backfill".to_string(),
+            JobType::Other(s) => s.clone(),
+        };
+
         IngestionProgress {
             id: job.id,
+            job_type: job_type_str,
             current_step,
             progress_percentage: job.progress_percentage,
             status_message: job.message,
@@ -236,7 +247,8 @@ impl ProgressService {
             .await
             .unwrap_or_default()
             .into_iter()
-            .filter(|j| matches!(j.job_type, JobType::Ingestion))
+            // Include both Ingestion and Indexing jobs
+            .filter(|j| matches!(j.job_type, JobType::Ingestion | JobType::Indexing))
             .map(|j| j.into())
             .collect()
     }

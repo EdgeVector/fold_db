@@ -9,7 +9,7 @@ function StatusSection() {
   const [resetResult, setResetResult] = useState(null)
   const [activeJobs, setActiveJobs] = useState([])
 
-  // Poll for all ingestion progress
+  // Poll for all progress (ingestion + indexing)
   useEffect(() => {
     let mounted = true
     let timeoutId
@@ -18,17 +18,33 @@ function StatusSection() {
       try {
         const response = await ingestionClient.getAllProgress()
         if (mounted && response.success && response.data) {
-          // Sort jobs by started_at desc (newest first)
-          const sortedJobs = [...response.data].sort((a, b) => 
-            new Date(b.started_at) - new Date(a.started_at)
-          ).slice(0, 1) // Only show the most recent job
-          setActiveJobs(sortedJobs)
+          const jobs = Array.isArray(response.data) ? response.data : []
+          
+          // Separate active (running) jobs from completed/failed
+          const activeJobs = jobs.filter(j => !j.is_complete)
+          const recentCompleted = jobs.filter(j => j.is_complete)
+            .sort((a, b) => (b.completed_at || 0) - (a.completed_at || 0))
+            .slice(0, 1) // Only show most recent completed
+          
+          // Prioritize active jobs, then show recent completed if no active jobs
+          let displayJobs = []
+          if (activeJobs.length > 0) {
+            // Sort active jobs by started_at desc (newest first)
+            displayJobs = [...activeJobs].sort((a, b) => 
+              (b.started_at || 0) - (a.started_at || 0)
+            ).slice(0, 3) // Show up to 3 active jobs
+          } else if (recentCompleted.length > 0) {
+            // Show most recent completed job if no active jobs
+            displayJobs = recentCompleted
+          }
+          
+          setActiveJobs(displayJobs)
         }
         if (mounted) {
           timeoutId = setTimeout(poll, 1000) // Poll every 1s
         }
       } catch (error) {
-        console.error('Error polling ingestion progress:', error)
+        console.error('Error polling progress:', error)
         if (mounted) {
           timeoutId = setTimeout(poll, 2000) // Backoff on error
         }
@@ -117,25 +133,45 @@ function StatusSection() {
     const isCompleted = job.is_complete
     const isFailed = job.is_failed
     const isActive = !isCompleted
+    const isIndexing = job.job_type === 'indexing'
 
     // Calculate duration
     let durationStr = ''
     if (job.started_at) {
-      const start = new Date(job.started_at)
-      const end = job.completed_at ? new Date(job.completed_at) : new Date()
-      const seconds = Math.floor((end - start) / 1000)
+      // started_at is Unix seconds, convert to milliseconds for Date
+      const startMs = typeof job.started_at === 'number' ? job.started_at * 1000 : new Date(job.started_at).getTime()
+      const endMs = job.completed_at 
+        ? (typeof job.completed_at === 'number' ? job.completed_at * 1000 : new Date(job.completed_at).getTime())
+        : Date.now()
+      const seconds = Math.floor((endMs - startMs) / 1000)
       durationStr = seconds > 0 ? `${seconds}s` : 'Just started'
     }
 
-    // Determine status color/text
-    const statusColor = isFailed ? 'red' : (isCompleted ? 'green' : 'blue')
+    // Determine status color/text - use purple for indexing to differentiate
+    let statusColor
+    if (isFailed) {
+      statusColor = 'red'
+    } else if (isCompleted) {
+      statusColor = 'green'
+    } else if (isIndexing) {
+      statusColor = 'purple'
+    } else {
+      statusColor = 'blue'
+    }
     const statusText = isFailed ? 'Failed' : (isCompleted ? 'Complete' : 'Active')
+    
+    // Determine job title based on type
+    const jobTitle = isIndexing ? 'Indexing Job' : 'Ingestion Job'
     
     // Construct metrics
     const metrics = []
     if (durationStr) metrics.push(durationStr)
     if (job.results?.mutations_executed !== undefined) {
       metrics.push(`${job.results.mutations_executed} items`)
+    }
+    // For indexing jobs, show operations processed if available
+    if (isIndexing && job.results?.total_operations_processed !== undefined) {
+      metrics.push(`${job.results.total_operations_processed} indexed`)
     }
 
     return (
@@ -144,7 +180,7 @@ function StatusSection() {
           <div className="flex items-center gap-2">
             <div className={`w-2.5 h-2.5 rounded-full bg-${statusColor}-500 ${isActive ? 'animate-pulse' : ''}`}></div>
             <h3 className={`font-semibold text-${statusColor}-900`}>
-              Ingestion Job
+              {jobTitle}
             </h3>
           </div>
           <span className={`text-xs font-medium px-2 py-1 rounded bg-${statusColor}-100 text-${statusColor}-700`}>

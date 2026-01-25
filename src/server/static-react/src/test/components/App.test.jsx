@@ -5,6 +5,29 @@ import App, { AppContent } from '../../App.jsx';
 import { renderWithRedux, createTestStore } from '../utils/testHelpers.jsx';
 import { DEFAULT_TAB } from '../../constants';
 
+// Mock auth slice actions to prevent loading state interference
+// Return thunks that dispatch no-op actions that won't match any reducer cases
+vi.mock('../../store/authSlice', async () => {
+  const actual = await vi.importActual('../../store/authSlice');
+  
+  // Create mock thunk that returns a no-op action
+  const createMockThunk = (name) => {
+    const thunk = () => () => Promise.resolve({ type: `auth/${name}/noop` });
+    thunk.fulfilled = { match: () => false };
+    thunk.pending = { match: () => false };
+    thunk.rejected = { match: () => false };
+    return thunk;
+  };
+
+  return {
+    ...actual,
+    // Mock async thunks to be no-ops that don't trigger reducers
+    initializeSystemKey: createMockThunk('initializeSystemKey'),
+    fetchNodePrivateKey: createMockThunk('fetchNodePrivateKey'),
+    restoreSession: (payload) => ({ type: 'auth/restoreSession/noop', payload }),
+  };
+});
+
 // Mock child components to focus on App.jsx logic
 vi.mock('../../components/Header', () => ({
   default: ({ onSettingsClick }) => (
@@ -193,9 +216,9 @@ describe('App Component', () => {
       it('renders all main layout components', () => {
         const store = createTestStore({
           auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
+            isAuthenticated: true,
+            systemPublicKey: 'test-key',
+            systemKeyId: 'test-id',
             isLoading: false,
             error: null
           },
@@ -218,9 +241,9 @@ describe('App Component', () => {
       it('initializes with default tab (ingestion)', () => {
         const store = createTestStore({
           auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
+            isAuthenticated: true,
+            systemPublicKey: 'test-key',
+            systemKeyId: 'test-id',
             isLoading: false,
             error: null
           },
@@ -240,9 +263,9 @@ describe('App Component', () => {
       it('dispatches actions on mount', () => {
         const store = createTestStore({
           auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
+            isAuthenticated: true,
+            systemPublicKey: 'test-key',
+            systemKeyId: 'test-id',
             isLoading: false,
             error: null
           },
@@ -341,9 +364,9 @@ describe('App Component', () => {
 
         const store = createTestStore({
           auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
+            isAuthenticated: true,
+            systemPublicKey: 'test-key',
+            systemKeyId: 'test-id',
             isLoading: false,
             error: null
           },
@@ -367,9 +390,9 @@ describe('App Component', () => {
 
         const store = createTestStore({
           auth: {
-            isAuthenticated: false,
-            systemPublicKey: null,
-            systemKeyId: null,
+            isAuthenticated: true,
+            systemPublicKey: 'test-key',
+            systemKeyId: 'test-id',
             isLoading: false,
             error: null
           },

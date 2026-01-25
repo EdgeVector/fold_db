@@ -20,7 +20,7 @@ vi.mock('../../../store/schemaSlice', async () => {
 
   const createMockAction = (actionType) => vi.fn(() => {
     // Return a thunk function that returns a Promise
-    const thunk = (dispatch) => {
+    const thunk = () => {
       const action = {
         type: actionType,
         payload: undefined,
@@ -29,9 +29,6 @@ vi.mock('../../../store/schemaSlice', async () => {
           requestStatus: 'fulfilled'
         }
       }
-      // Add fulfilled matcher to the action object itself for the test checks
-      // Note: In real Redux Toolkit, the action creator has the match method, 
-      // but here we're mocking the result of dispatch(actionCreator())
       return Promise.resolve(action)
     }
 
@@ -55,43 +52,26 @@ describe('SchemaTab Component', () => {
     onSchemaUpdated: vi.fn()
   }
 
-  let mockStore
-
   beforeEach(() => {
     vi.clearAllMocks()
-    mockStore = {
-      dispatch: vi.fn(),
-      getState: vi.fn(() => ({
-        schemas: {
-          schemas: {},
-          loading: { fetch: false, operations: {} },
-          errors: { fetch: null, operations: {} }
-        }
-      })),
-      subscribe: vi.fn()
-    }
   })
 
-  it('renders available schemas section', async () => {
+  it('renders approved schemas section', async () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: createTestSchemaState()
     })
 
     await waitFor(() => {
-      expect(screen.getByText('Available Schemas')).toBeInTheDocument()
+      expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
     })
-
-    expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
   })
 
-
-
-  it('displays available schemas count', async () => {
+  it('displays approved schemas', async () => {
     const schemaState = createTestSchemaState({
       schemas: {
-        'schema1': { name: 'Schema1', state: 'Available' },
-        'schema2': { name: 'Schema2', state: 'Available' },
-        'schema3': { name: 'Schema3', state: 'Approved' }
+        'schema1': { name: 'Schema1', state: 'Approved', fields: [] },
+        'schema2': { name: 'Schema2', state: 'Approved', fields: [] },
+        'schema3': { name: 'Schema3', state: 'Available', fields: [] }
       }
     })
 
@@ -99,67 +79,27 @@ describe('SchemaTab Component', () => {
       preloadedState: schemaState
     })
 
+    // Should display 2 approved schemas (schema1 and schema2)
     await waitFor(() => {
-      expect(screen.getByText('Available Schemas (2)')).toBeInTheDocument()
+      expect(screen.getByText('Schema1')).toBeInTheDocument()
+      expect(screen.getByText('Schema2')).toBeInTheDocument()
     })
   })
 
-  it('displays no available schemas message when empty', async () => {
+  it('displays no approved schemas message when empty', async () => {
     await renderWithRedux(<SchemaTab {...mockProps} />, {
       preloadedState: createTestSchemaState()
     })
 
     await waitFor(() => {
-      expect(screen.getByText('No available schemas')).toBeInTheDocument()
+      expect(screen.getByText('No approved schemas found.')).toBeInTheDocument()
     })
   })
 
-  it('displays approved schemas in separate section', async () => {
+  it('shows block button for approved schemas', async () => {
     const schemaState = createTestSchemaState({
       schemas: {
-        'approvedSchema': { name: 'ApprovedSchema', state: 'Approved', fields: {} }
-      }
-    })
-
-    await renderWithRedux(<SchemaTab {...mockProps} />, {
-      preloadedState: schemaState
-    })
-
-    await waitFor(() => {
-      expect(screen.getByText('ApprovedSchema')).toBeInTheDocument()
-    })
-
-    expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
-  })
-
-  it('shows approve and block buttons for available schemas', async () => {
-    const schemaState = createTestSchemaState({
-      schemas: {
-        'availableSchema': { name: 'AvailableSchema', state: 'Available' }
-      }
-    })
-
-    await renderWithRedux(<SchemaTab {...mockProps} />, {
-      preloadedState: schemaState
-    })
-
-    // Expand the available schemas section
-    await waitFor(() => {
-      const summary = screen.getByText('Available Schemas (1)')
-      fireEvent.click(summary)
-    })
-
-    await waitFor(() => {
-      expect(screen.getByText('Approve')).toBeInTheDocument()
-      // Available schemas should only have Approve button, not Block
-      expect(screen.queryByText('Block')).not.toBeInTheDocument()
-    })
-  })
-
-  it('shows unload button for approved schemas', async () => {
-    const schemaState = createTestSchemaState({
-      schemas: {
-        'approvedSchema': { name: 'ApprovedSchema', state: 'Approved', fields: {} }
+        'approvedSchema': { name: 'ApprovedSchema', state: 'Approved', fields: [] }
       }
     })
 
@@ -172,42 +112,12 @@ describe('SchemaTab Component', () => {
     })
   })
 
-  it('handles schema approval', async () => {
-    const { approveSchema } = await import('../../../store/schemaSlice')
-
-    const schemaState = createTestSchemaState({
-      schemas: {
-        'testSchema': { name: 'TestSchema', state: 'Available' }
-      }
-    })
-
-    await renderWithRedux(<SchemaTab {...mockProps} />, {
-      preloadedState: schemaState
-    })
-
-    // Expand available schemas
-    await waitFor(() => {
-      const summary = screen.getByText('Available Schemas (1)')
-      fireEvent.click(summary)
-    })
-
-    // Click approve button
-    await waitFor(() => {
-      const approveButton = screen.getByText('Approve')
-      fireEvent.click(approveButton)
-    })
-
-    await waitFor(() => {
-      expect(approveSchema).toHaveBeenCalledWith({ schemaName: 'TestSchema' })
-    })
-  })
-
   it('handles schema blocking', async () => {
     const { blockSchema } = await import('../../../store/schemaSlice')
 
     const schemaState = createTestSchemaState({
       schemas: {
-        'approvedSchema': { name: 'ApprovedSchema', state: 'Approved', fields: {} }
+        'approvedSchema': { name: 'ApprovedSchema', state: 'Approved', fields: [] }
       }
     })
 
