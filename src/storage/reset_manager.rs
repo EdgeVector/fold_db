@@ -74,6 +74,11 @@ impl DynamoDbResetManager {
         // 6. Delete logs (uses user_id/timestamp schema instead of PK/SK)
         self.delete_logs_for_user(user_id).await?;
 
+        // 7. Clean up any orphaned "global" entries in the process table
+        // (from jobs that were created without proper user_id)
+        self.delete_items_by_pk(&self.tables.process, "global")
+            .await?;
+
         log::info!("✅ Database reset complete for user: {}", user_id);
         Ok(())
     }

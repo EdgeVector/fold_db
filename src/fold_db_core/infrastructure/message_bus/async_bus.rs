@@ -4,7 +4,7 @@
 //! for async communication between components.
 
 use super::error_handling::{AsyncRecvError, AsyncTryRecvError, MessageBusError, MessageBusResult};
-use super::events::{Event, EventType};
+use super::events::{Event, EventEnvelope, EventType};
 use super::{
     atom_events::{AtomCreated, FieldValueSet},
     query_events::{MutationExecuted, QueryExecuted},
@@ -214,6 +214,19 @@ impl AsyncMessageBus {
     pub async fn subscriber_count(&self, event_type: &str) -> usize {
         let registry = self.registry.lock().await;
         registry.get_subscribers(event_type).len()
+    }
+
+    /// Create an EventEnvelope with current user context
+    ///
+    /// Use this when you need to serialize an event for external transport
+    /// (e.g., SNS/SQS, HTTP, etc.) to preserve user_id context.
+    pub fn create_envelope(event: Event) -> EventEnvelope {
+        EventEnvelope::new(event)
+    }
+
+    /// Create an EventEnvelope with explicit user_id
+    pub fn create_envelope_with_user(event: Event, user_id: String) -> EventEnvelope {
+        EventEnvelope::with_user(event, user_id)
     }
 }
 

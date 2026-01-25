@@ -12,6 +12,8 @@ use crate::fold_db_core::orchestration::index_status::IndexStatusTracker;
 pub struct IndexOrchestrator {
     db_ops: Arc<DbOperations>,
     index_status_tracker: Option<IndexStatusTracker>,
+    pending_tasks:
+        Arc<crate::fold_db_core::infrastructure::pending_task_tracker::PendingTaskTracker>,
 }
 
 impl IndexOrchestrator {
@@ -19,10 +21,14 @@ impl IndexOrchestrator {
     pub fn new(
         db_ops: Arc<DbOperations>,
         index_status_tracker: Option<IndexStatusTracker>,
+        pending_tasks: Arc<
+            crate::fold_db_core::infrastructure::pending_task_tracker::PendingTaskTracker,
+        >,
     ) -> Self {
         Self {
             db_ops,
             index_status_tracker,
+            pending_tasks,
         }
     }
 
@@ -33,6 +39,8 @@ impl IndexOrchestrator {
         let db_ops = Arc::clone(&self.db_ops);
         let tracker = self.index_status_tracker.clone();
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
+
+        let pending_tasks = self.pending_tasks.clone();
 
         // Spawn a task to listen for MutationExecuted events
         tokio::spawn(async move {
@@ -46,11 +54,28 @@ impl IndexOrchestrator {
                             }
 
                             debug!(
-                                "🔎 IndexOrchestrator: Received mutation event with {} rows",
-                                data.len()
+                                "🔎 IndexOrchestrator: Received mutation event with {} rows, user_id: {:?}",
+                                data.len(),
+                                event.user_id
                             );
 
-                            Self::process_indexing(&db_ops, &tracker, &event).await;
+                            // Track the task
+                            pending_tasks.increment();
+
+                            // Process indexing within user context (critical for multi-tenant DynamoDB writes)
+                            if let Some(ref user_id) = event.user_id {
+                                crate::logging::core::run_with_user(user_id, async {
+                                    Self::process_indexing(&db_ops, &tracker, &event).await;
+                                })
+                                .await;
+                            } else {
+                                // No user context - process anyway (will use default user_id)
+                                warn!("🔎 IndexOrchestrator: No user_id in event, using default");
+                                Self::process_indexing(&db_ops, &tracker, &event).await;
+                            }
+
+                            // Task completed
+                            pending_tasks.decrement();
                         }
                     }
                     Some(_) => {} // Ignore other events

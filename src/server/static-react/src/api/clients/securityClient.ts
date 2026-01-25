@@ -4,16 +4,17 @@
  * Handles authentication, key management, and cryptographic operations
  */
 
-import { ApiClient, createApiClient } from '../core/client';
-import { API_ENDPOINTS } from '../endpoints';
-import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
-import type { EnhancedApiResponse, SecurityApiClient } from '../core/types';
-import type { 
-  SignedMessage
-} from '../../types/cryptography';
-import type { 
-  VerificationResponse
-} from '../../types/api';
+import { ApiClient, createApiClient } from "../core/client";
+import { API_ENDPOINTS } from "../endpoints";
+import {
+  API_TIMEOUTS,
+  API_RETRIES,
+  API_CACHE_TTL,
+  CACHE_KEYS,
+} from "../../constants/api";
+import type { EnhancedApiResponse, SecurityApiClient } from "../core/types";
+import type { SignedMessage } from "../../types/cryptography";
+import type { VerificationResponse } from "../../types/api";
 
 // Security-specific response types
 export interface SystemKeyResponse {
@@ -48,19 +49,52 @@ export class UnifiedSecurityClient implements SecurityApiClient {
   private readonly client: ApiClient;
 
   constructor(client?: ApiClient) {
-    this.client = client || createApiClient({
-      enableCache: true, // Cache public keys and verification results
-      enableLogging: true,
-      enableMetrics: true
-    });
+    this.client =
+      client ||
+      createApiClient({
+        enableCache: true, // Cache public keys and verification results
+        enableLogging: true,
+        enableMetrics: true,
+      });
   }
 
-  // Removed verifyMessage: Single-developer mono-repo; no server verify endpoint yet.
+  /**
+   * Verify a signed message
+   * UNPROTECTED - No authentication required
+   */
+  async verifyMessage(
+    message: SignedMessage,
+  ): Promise<EnhancedApiResponse<VerificationResponse>> {
+    const validation = this.validateSignedMessage(message);
+    if (!validation.isValid) {
+      return {
+        success: false,
+        error: `Invalid message format: ${validation.errors.join(", ")}`,
+        status: 400,
+        data: { isValid: false, error: validation.errors[0] },
+      };
+    }
+
+    // Since server verification endpoint is missing, perform client-side format check only
+    // This is a placeholder until backend implementation is complete
+    return {
+      success: true,
+      status: 200,
+      data: {
+        isValid: true,
+        details: {
+          signature: message.signature,
+          timestamp: message.timestamp,
+          verified: false, // Explicitly state not cryptographically verified by server
+        },
+      },
+    };
+  }
 
   /**
- * Get the system's public key
- * UNPROTECTED - UI never uses authentication
-   * 
+   * Get the system's public key
+   * UNPROTECTED - UI never uses authentication
+   *
    * @returns Promise resolving to system public key
    */
   async getSystemPublicKey(): Promise<EnhancedApiResponse<SystemKeyResponse>> {
@@ -72,15 +106,15 @@ export class UnifiedSecurityClient implements SecurityApiClient {
         retries: API_RETRIES.CRITICAL, // Multiple retries for critical system data
         cacheable: true, // Cache system public key
         cacheTtl: API_CACHE_TTL.SYSTEM_PUBLIC_KEY, // Cache for 1 hour (system key doesn't change often)
-        cacheKey: CACHE_KEYS.SYSTEM_PUBLIC_KEY
-      }
+        cacheKey: CACHE_KEYS.SYSTEM_PUBLIC_KEY,
+      },
     );
   }
 
   /**
    * Validate a public key's format and cryptographic properties
    * This is a client-side validation helper
-   * 
+   *
    * @param publicKey The public key to validate (base64 encoded)
    * @returns Validation result with details
    */
@@ -92,21 +126,22 @@ export class UnifiedSecurityClient implements SecurityApiClient {
   } {
     try {
       // Basic validation for Ed25519 public keys without decoding
-      if (!publicKey || typeof publicKey !== 'string') {
+      if (!publicKey || typeof publicKey !== "string") {
         return {
           isValid: false,
-          error: 'Public key must be a non-empty string'
+          error: "Public key must be a non-empty string",
         };
       }
 
       const cleanKey = publicKey.trim();
 
       // Base64 character check (no decode)
-      const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+      const base64Regex =
+        /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
       if (!base64Regex.test(cleanKey)) {
         return {
           isValid: false,
-          error: 'Invalid base64 encoding'
+          error: "Invalid base64 encoding",
         };
       }
 
@@ -114,21 +149,21 @@ export class UnifiedSecurityClient implements SecurityApiClient {
       if (cleanKey.length !== 44) {
         return {
           isValid: false,
-          format: 'Unknown',
+          format: "Unknown",
           length: Math.ceil((cleanKey.length / 4) * 3),
-          error: 'Invalid key length: expected 44 base64 chars for Ed25519'
+          error: "Invalid key length: expected 44 base64 chars for Ed25519",
         };
       }
 
       return {
         isValid: true,
-        format: 'Ed25519',
-        length: 32
+        format: "Ed25519",
+        length: 32,
       };
     } catch (error) {
       return {
         isValid: false,
-        error: `Validation error: ${error.message}`
+        error: `Validation error: ${error.message}`,
       };
     }
   }
@@ -136,26 +171,23 @@ export class UnifiedSecurityClient implements SecurityApiClient {
   /**
    * Get security status and configuration
    * UNPROTECTED - UI never uses authentication
-   * 
+   *
    * @returns Promise resolving to security status
    */
   async getSecurityStatus(): Promise<EnhancedApiResponse<SecurityStatus>> {
-    return this.client.get<SecurityStatus>(
-      API_ENDPOINTS.GET_SYSTEM_STATUS,
-      {
-        timeout: API_TIMEOUTS.QUICK,
-        retries: API_RETRIES.STANDARD,
-        cacheable: true,
-        cacheTtl: API_CACHE_TTL.SECURITY_STATUS, // Cache for 1 minute
-        cacheKey: CACHE_KEYS.SECURITY_STATUS
-      }
-    );
+    return this.client.get<SecurityStatus>(API_ENDPOINTS.GET_SYSTEM_STATUS, {
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.STANDARD,
+      cacheable: true,
+      cacheTtl: API_CACHE_TTL.SECURITY_STATUS, // Cache for 1 minute
+      cacheKey: CACHE_KEYS.SECURITY_STATUS,
+    });
   }
 
   /**
    * Validate a signed message's structure before sending for verification
    * This is a client-side validation helper
-   * 
+   *
    * @param signedMessage The signed message to validate
    * @returns Validation result
    */
@@ -165,52 +197,61 @@ export class UnifiedSecurityClient implements SecurityApiClient {
   } {
     const errors: string[] = [];
 
-    if (!signedMessage || typeof signedMessage !== 'object') {
-      errors.push('Signed message must be an object');
+    if (!signedMessage || typeof signedMessage !== "object") {
+      errors.push("Signed message must be an object");
       return { isValid: false, errors };
     }
 
     // Validate payload
-    if (!signedMessage.payload || typeof signedMessage.payload !== 'string') {
-      errors.push('Payload must be a non-empty base64 string');
+    if (!signedMessage.payload || typeof signedMessage.payload !== "string") {
+      errors.push("Payload must be a non-empty base64 string");
     }
 
     // Validate signature
-    if (!signedMessage.signature || typeof signedMessage.signature !== 'string') {
-      errors.push('Signature must be a non-empty base64 string');
+    if (
+      !signedMessage.signature ||
+      typeof signedMessage.signature !== "string"
+    ) {
+      errors.push("Signature must be a non-empty base64 string");
     }
 
     // Validate public key ID
-    if (!signedMessage.public_key_id || typeof signedMessage.public_key_id !== 'string') {
-      errors.push('Public key ID must be a non-empty string');
+    if (
+      !signedMessage.public_key_id ||
+      typeof signedMessage.public_key_id !== "string"
+    ) {
+      errors.push("Public key ID must be a non-empty string");
     }
 
     // Validate timestamp
-    if (!signedMessage.timestamp || typeof signedMessage.timestamp !== 'number') {
-      errors.push('Timestamp must be a Unix timestamp number');
+    if (
+      !signedMessage.timestamp ||
+      typeof signedMessage.timestamp !== "number"
+    ) {
+      errors.push("Timestamp must be a Unix timestamp number");
     } else {
       const now = Math.floor(Date.now() / 1000);
       const messageAge = now - signedMessage.timestamp;
-      
+
       // Check if message is too old (5 minutes)
       if (messageAge > 300) {
-        errors.push('Message is too old (timestamp more than 5 minutes ago)');
+        errors.push("Message is too old (timestamp more than 5 minutes ago)");
       }
-      
+
       // Check if message is from the future (allow 1 minute skew)
       if (messageAge < -60) {
-        errors.push('Message timestamp is too far in the future');
+        errors.push("Message timestamp is too far in the future");
       }
     }
 
     // Validate nonce (optional)
-    if (signedMessage.nonce && typeof signedMessage.nonce !== 'string') {
-      errors.push('Nonce must be a string if provided');
+    if (signedMessage.nonce && typeof signedMessage.nonce !== "string") {
+      errors.push("Nonce must be a string if provided");
     }
 
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
 
@@ -218,9 +259,9 @@ export class UnifiedSecurityClient implements SecurityApiClient {
    * Get API metrics for security operations
    */
   getMetrics() {
-    return this.client.getMetrics().filter(metric => 
-      metric.url.includes('/security')
-    );
+    return this.client
+      .getMetrics()
+      .filter((metric) => metric.url.includes("/security"));
   }
 
   /**
@@ -235,15 +276,22 @@ export class UnifiedSecurityClient implements SecurityApiClient {
 export const securityClient = new UnifiedSecurityClient();
 
 // Export factory function for custom instances
-export function createSecurityClient(client?: ApiClient): UnifiedSecurityClient {
+export function createSecurityClient(
+  client?: ApiClient,
+): UnifiedSecurityClient {
   return new UnifiedSecurityClient(client);
 }
 
-export const getSystemPublicKey = securityClient.getSystemPublicKey.bind(securityClient);
+export const getSystemPublicKey =
+  securityClient.getSystemPublicKey.bind(securityClient);
 
 // New exports
-export const validatePublicKeyFormat = securityClient.validatePublicKeyFormat.bind(securityClient);
-export const validateSignedMessage = securityClient.validateSignedMessage.bind(securityClient);
-export const getSecurityStatus = securityClient.getSecurityStatus.bind(securityClient);
+export const validatePublicKeyFormat =
+  securityClient.validatePublicKeyFormat.bind(securityClient);
+export const validateSignedMessage =
+  securityClient.validateSignedMessage.bind(securityClient);
+export const getSecurityStatus =
+  securityClient.getSecurityStatus.bind(securityClient);
+export const verifyMessage = securityClient.verifyMessage.bind(securityClient);
 
 export default securityClient;

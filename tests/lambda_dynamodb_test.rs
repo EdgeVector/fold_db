@@ -56,12 +56,14 @@ async fn test_lambda_with_dynamodb_style_db_ops() {
                 {"id": 2, "name": "Test Item 2"}
             ]);
 
+            let test_progress_id = uuid::Uuid::new_v4().to_string();
             let ingestion_result = LambdaContext::ingest_json(
                 test_data.clone(),
                 false, // Don't auto-execute to avoid mutation errors in test
                 0,
                 "test_key".to_string(),
                 "test_user".to_string(),
+                test_progress_id,
             )
             .await;
 

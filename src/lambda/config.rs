@@ -138,7 +138,7 @@ impl LambdaConfig {
     /// use std::sync::Arc;
     ///
     /// // Create your DbOperations with any backend
-    /// let db_ops = Arc::new(DbOperations::from_dynamodb(client, table, Some(user_id)).await?);
+    /// let db_ops = Arc::new(DbOperations::from_cloud(client, table, Some(user_id)).await?);
     /// let config = LambdaConfig::with_db_ops(
     ///     db_ops,
     ///     LambdaLogging::DynamoDb { table_name: "logs".into() }

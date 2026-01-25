@@ -18,26 +18,32 @@ use std::sync::Arc;
 /// - Sort Key (SK): actual_key
 /// - Value: binary data
 ///
-/// The user_id:key format ensures all tables use consistent partition key structure.
+/// The user_id is obtained dynamically from request context (`get_current_user_id()`).
+/// If no user context is available, falls back to default_user_id.
 /// This design enables efficient Query operations instead of expensive Scans.
 pub struct DynamoDbKvStore {
     client: Arc<Client>,
     table_name: String,
-    /// user_id used as the partition key
-    user_id: String,
+    /// Default user_id for operations without request context (e.g., startup)
+    default_user_id: String,
 }
 
 impl DynamoDbKvStore {
     /// Create a new DynamoDB KvStore for a specific table
     ///
     /// - `table_name`: The DynamoDB table name (typically namespace-specific)
-    /// - `user_id`: user_id used as the partition key (for multi-tenant isolation)
-    pub fn new(client: Arc<Client>, table_name: String, user_id: String) -> Self {
+    /// - `default_user_id`: Default user_id used when no request context is available
+    pub fn new(client: Arc<Client>, table_name: String, default_user_id: String) -> Self {
         Self {
             client,
             table_name,
-            user_id,
+            default_user_id,
         }
+    }
+
+    /// Get the current user_id - from request context if available, otherwise default
+    fn get_current_user_id(&self) -> String {
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| self.default_user_id.clone())
     }
 
     /// Get the partition key to use for this store
@@ -47,14 +53,14 @@ impl DynamoDbKvStore {
     }
 
     fn get_partition_key_impl(&self) -> String {
-        self.user_id.clone()
+        self.get_current_user_id()
     }
 
     /// Get partition key (user_id)
     /// Note: This is a change from previous implementation where PK was user_id:key
     /// This change enables Query operations with SK prefix
     fn get_partition_key_with_key(&self, _key: &[u8]) -> String {
-        self.user_id.clone()
+        self.get_current_user_id()
     }
 
     /// Convert a byte key to a string for the sort key (no user_id prefixing)
@@ -375,19 +381,26 @@ pub enum TableNameResolver {
 /// Uses user_id:feature (classification) as partition key and term as sort key
 /// Format: PK = user_id:feature, SK = term
 /// This enables efficient queries like "all words starting with 'hel'"
+/// The user_id is obtained dynamically from request context for multi-tenancy.
 pub struct DynamoDbNativeIndexStore {
     client: Arc<Client>,
     table_name: String,
-    user_id: String,
+    /// Default user_id for operations without request context (e.g., startup)
+    default_user_id: String,
 }
 
 impl DynamoDbNativeIndexStore {
-    fn new(client: Arc<Client>, table_name: String, user_id: String) -> Self {
+    fn new(client: Arc<Client>, table_name: String, default_user_id: String) -> Self {
         Self {
             client,
             table_name,
-            user_id,
+            default_user_id,
         }
+    }
+
+    /// Get the current user_id - from request context if available, otherwise default
+    fn get_current_user_id(&self) -> String {
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| self.default_user_id.clone())
     }
 
     /// Parse key to extract feature and term
@@ -409,7 +422,7 @@ impl DynamoDbNativeIndexStore {
     /// Get partition key (feature) for native index
     /// Format: user_id:feature
     fn get_partition_key(&self, feature: &str) -> String {
-        format!("{}:{}", self.user_id, feature)
+        format!("{}:{}", self.get_current_user_id(), feature)
     }
 }
 
@@ -419,8 +432,8 @@ pub struct DynamoDbNamespacedStore {
     resolver: TableNameResolver,
     /// Whether to automatically create tables if they don't exist
     auto_create: bool,
-    /// user_id that will be used as the partition key (for multi-tenant isolation)
-    user_id: String,
+    /// Default user_id for operations without request context (e.g., startup)
+    default_user_id: String,
 }
 
 impl DynamoDbNamespacedStore {
@@ -429,26 +442,36 @@ impl DynamoDbNamespacedStore {
         client: Client,
         resolver: TableNameResolver,
         auto_create: bool,
-        user_id: String,
+        default_user_id: String,
     ) -> Self {
         Self {
             client: Arc::new(client),
             resolver,
             auto_create,
-            user_id,
+            default_user_id,
         }
     }
 
     /// Create a new DynamoDB NamespacedStore with legacy prefix behavior (auto-create enabled)
-    pub fn new_with_prefix(client: Client, prefix: String, user_id: String) -> Self {
-        Self::new(client, TableNameResolver::Prefix(prefix), true, user_id)
+    pub fn new_with_prefix(client: Client, prefix: String, default_user_id: String) -> Self {
+        Self::new(
+            client,
+            TableNameResolver::Prefix(prefix),
+            true,
+            default_user_id,
+        )
     }
 
-    /// Set user_id for multi-tenant isolation
-    /// The user_id will be used as the partition key
+    /// Set default user_id for multi-tenant isolation
+    /// The user_id will be used as the partition key when no request context is available
     pub fn with_user_id(mut self, user_id: String) -> Self {
-        self.user_id = user_id;
+        self.default_user_id = user_id;
         self
+    }
+
+    /// Get the current user_id - from request context if available, otherwise default
+    fn get_current_user_id(&self) -> String {
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| self.default_user_id.clone())
     }
 
     /// Generate table name for a namespace
@@ -921,11 +944,15 @@ impl NamespacedStore for DynamoDbNamespacedStore {
             let store = DynamoDbNativeIndexStore::new(
                 self.client.clone(),
                 table_name,
-                self.user_id.clone(),
+                self.default_user_id.clone(),
             );
             Ok(Arc::new(store))
         } else {
-            let store = DynamoDbKvStore::new(self.client.clone(), table_name, self.user_id.clone());
+            let store = DynamoDbKvStore::new(
+                self.client.clone(),
+                table_name,
+                self.default_user_id.clone(),
+            );
             Ok(Arc::new(store))
         }
     }

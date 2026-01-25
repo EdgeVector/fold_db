@@ -71,7 +71,7 @@ echo "Ensuring node identity..."
 USER_ID=$(cargo run --quiet --bin ensure_identity)
 echo "Node Identity (User ID): $USER_ID"
 
-echo "Setting up DynamoDB configuration..."
+echo "Setting up Cloud configuration..."
 echo "Table name: $TABLE_NAME"
 echo "Region: $REGION"
 if [ -n "$USER_ID" ]; then
@@ -82,7 +82,7 @@ fi
 cat > "$CONFIG_FILE" <<EOF
 {
   "database": {
-    "type": "dynamodb",
+    "type": "cloud",
     "region": "$REGION",
     "tables": {
       "main": "${TABLE_NAME}-main",
@@ -113,7 +113,7 @@ cat > "$CONFIG_FILE" <<EOF
 }
 EOF
 
-echo "DynamoDB configuration saved to $CONFIG_FILE"
+echo "Cloud configuration saved to $CONFIG_FILE"
 
 # Build the Rust project first (needed to generate OpenAPI spec)
 echo "Building the Rust project..."
@@ -199,8 +199,8 @@ fi
 echo "Schema migration is disabled. Schema service will start with an empty database."
 
 # Run the HTTP server in the background with schema service URL
-echo "Starting the HTTP server on port 9001 with DynamoDB backend..."
-echo "Note: DynamoDB tables will be created automatically if they don't exist."
+echo "Starting the HTTP server on port 9001 with Cloud backend..."
+echo "Note: Cloud/DynamoDB tables will be created automatically if they don't exist."
 echo "Make sure AWS credentials are configured (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, or IAM role)"
 
 # Debug: Print AWS Credential Status
@@ -237,7 +237,7 @@ done
 if [ "$HTTP_READY" = true ]; then
     echo "HTTP server started successfully with PID: $SERVER_PID"
     echo "Server logs are being written to: server.log"
-    echo "DynamoDB configuration:"
+    echo "Cloud configuration:"
     echo "  Table name: $TABLE_NAME"
     echo "  Region: $REGION"
     if [ -n "$USER_ID" ]; then

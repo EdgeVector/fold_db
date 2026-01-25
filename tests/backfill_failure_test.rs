@@ -9,15 +9,17 @@ async fn test_backfill_failure_threshold_detection() {
     };
 
     // Create a backfill tracker
-    let tracker = BackfillTracker::new(None);
+    let tracker = BackfillTracker::new(None, "test_user".to_string());
 
     // Generate and start a backfill
     let backfill_hash = BackfillTracker::generate_hash("TestTransform", "TestSource");
-    tracker.start_backfill_with_hash(
-        backfill_hash.clone(),
-        "TestTransform".to_string(),
-        "TestSource".to_string(),
-    ).await;
+    tracker
+        .start_backfill_with_hash(
+            backfill_hash.clone(),
+            "TestTransform".to_string(),
+            "TestSource".to_string(),
+        )
+        .await;
 
     println!("✅ Started backfill with hash: {}", backfill_hash);
 
@@ -26,7 +28,9 @@ async fn test_backfill_failure_threshold_detection() {
 
     // Simulate 15 failures and 5 successes (75% failure rate, should trigger failure)
     for i in 0..15 {
-        tracker.increment_mutation_failed(&backfill_hash, format!("Test error {}", i)).await;
+        tracker
+            .increment_mutation_failed(&backfill_hash, format!("Test error {}", i))
+            .await;
     }
 
     for _ in 0..5 {
@@ -74,25 +78,31 @@ async fn test_backfill_low_failure_rate_completes() {
     };
 
     // Create a backfill tracker
-    let tracker = BackfillTracker::new(None);
+    let tracker = BackfillTracker::new(None, "test_user".to_string());
 
     // Generate and start a backfill
     let backfill_hash = BackfillTracker::generate_hash("TestTransform", "TestSource");
-    tracker.start_backfill_with_hash(
-        backfill_hash.clone(),
-        "TestTransform".to_string(),
-        "TestSource".to_string(),
-    ).await;
+    tracker
+        .start_backfill_with_hash(
+            backfill_hash.clone(),
+            "TestTransform".to_string(),
+            "TestSource".to_string(),
+        )
+        .await;
 
     println!("✅ Started backfill with hash: {}", backfill_hash);
 
     // Set expected mutations
     let expected_count = 100;
-    tracker.set_mutations_expected(&backfill_hash, expected_count).await;
+    tracker
+        .set_mutations_expected(&backfill_hash, expected_count)
+        .await;
 
     // Simulate 5 failures and 95 successes (5% failure rate, should complete when all done)
     for i in 0..5 {
-        tracker.increment_mutation_failed(&backfill_hash, format!("Test error {}", i)).await;
+        tracker
+            .increment_mutation_failed(&backfill_hash, format!("Test error {}", i))
+            .await;
     }
 
     for _ in 0..expected_count {

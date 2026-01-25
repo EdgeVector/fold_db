@@ -12,10 +12,11 @@ pub mod event_monitor;
 pub mod event_statistics;
 // init module removed
 pub mod message_bus;
+pub mod pending_task_tracker;
 pub mod schema_approval_handler;
 
 pub use event_monitor::EventMonitor;
 pub use message_bus::{
     schema_events::{SchemaChanged, TransformExecuted, TransformTriggered},
-    AsyncMessageBus, Event,
+    AsyncMessageBus, Event, EventEnvelope,
 };

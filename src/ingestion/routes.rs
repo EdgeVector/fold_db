@@ -35,8 +35,20 @@ pub async fn process_json(
     let progress_id = uuid::Uuid::new_v4().to_string();
 
     // Start progress tracking
+    // Start progress tracking
+    let user_id = match crate::logging::core::get_current_user_id() {
+        Some(uid) => uid,
+        None => {
+            return HttpResponse::Unauthorized().json(IngestionResponse::failure(vec![
+                "User not authenticated".to_string(),
+            ]))
+        }
+    };
+
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    progress_service.start_progress(progress_id.clone()).await;
+    progress_service
+        .start_progress(progress_id.clone(), user_id)
+        .await;
 
     // Try to create a simple ingestion service
     let service = match create_simple_ingestion_service().await {
@@ -64,56 +76,62 @@ pub async fn process_json(
     let node_clone = state.node.clone();
     let request_data = request.into_inner();
     let progress_id_clone = progress_id.clone();
+    let user_id_for_task =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "unknown".to_string());
 
     tokio::spawn(async move {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Starting background ingestion with progress_id: {}",
-            progress_id_clone
-        );
+        // Wrap in run_with_user to propagate user context for progress tracking
+        crate::logging::core::run_with_user(&user_id_for_task, async move {
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Starting background ingestion with progress_id: {}",
+                progress_id_clone
+            );
 
-        // Acquire read lock on the node
-        let node_guard = node_clone.read().await;
+            // Acquire read lock on the node
+            let node_guard = node_clone.read().await;
 
-        match service
-            .process_json_with_node_and_progress(
-                request_data,
-                &node_guard,
-                &progress_service,
-                progress_id_clone.clone(),
-            )
-            .await
-        {
-            Ok(response) => {
-                if response.success {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Background ingestion completed successfully: {}",
-                        progress_id_clone
-                    );
-                } else {
+            match service
+                .process_json_with_node_and_progress(
+                    request_data,
+                    &node_guard,
+                    &progress_service,
+                    progress_id_clone.clone(),
+                )
+                .await
+            {
+                Ok(response) => {
+                    if response.success {
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            info,
+                            "Background ingestion completed successfully: {}",
+                            progress_id_clone
+                        );
+                    } else {
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            error,
+                            "Background ingestion failed: {:?}",
+                            response.errors
+                        );
+                    }
+                }
+                Err(e) => {
                     log_feature!(
                         LogFeature::Ingestion,
                         error,
-                        "Background ingestion failed: {:?}",
-                        response.errors
+                        "Background ingestion processing failed: {}",
+                        e
                     );
+                    progress_service
+                        .fail_progress(&progress_id_clone, format!("Processing failed: {}", e))
+                        .await;
                 }
             }
-            Err(e) => {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    error,
-                    "Background ingestion processing failed: {}",
-                    e
-                );
-                progress_service
-                    .fail_progress(&progress_id_clone, format!("Processing failed: {}", e))
-                    .await;
-            }
-        }
+        })
+        .await
     });
 
     // Return immediately with the progress_id so frontend can start polling

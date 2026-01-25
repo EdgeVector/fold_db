@@ -2,7 +2,7 @@ use clap::Parser;
 use datafold::{constants::DEFAULT_SCHEMA_SERVICE_PORT, schema_service::SchemaServiceServer};
 
 #[cfg(feature = "aws-backend")]
-use datafold::storage::DynamoDbConfig;
+use datafold::storage::CloudConfig;
 
 /// Command line options for the schema service binary.
 #[derive(Parser, Debug)]
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if DynamoDB configuration is available from environment
     #[cfg(feature = "aws-backend")]
-    let server = if let Ok(dynamodb_config) = DynamoDbConfig::from_env() {
+    let server = if let Ok(dynamodb_config) = CloudConfig::from_env() {
         println!("🚀 Schema service starting with DynamoDB storage");
         println!(
             "   Tables: {} (main), {} (schemas), etc.",
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("   Region: {}", dynamodb_config.region);
         println!("   ✨ No locking needed - topology hashes ensure idempotent writes!");
 
-        SchemaServiceServer::new_with_dynamodb(dynamodb_config, &bind_address).await?
+        SchemaServiceServer::new_with_cloud(dynamodb_config, &bind_address).await?
     } else {
         println!("🚀 Schema service starting with local sled storage");
         println!("   Database path: {}", db_path);

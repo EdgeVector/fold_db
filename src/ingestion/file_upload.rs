@@ -127,11 +127,20 @@ pub async fn upload_file(
         }
     };
 
+    let user_id = match crate::logging::core::get_current_user_id() {
+        Some(uid) => uid,
+        None => {
+            return HttpResponse::Unauthorized()
+                .json(json!({"success": false, "error": "User not authenticated"}))
+        }
+    };
+
     let progress_id = spawn_background_ingestion(
         spawn_config,
         progress_tracker.get_ref(),
         state.node.clone(),
         progress_id,
+        user_id,
     )
     .await;
 

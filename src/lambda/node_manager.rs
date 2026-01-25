@@ -32,7 +32,7 @@ impl NodeManager {
 
         // Pre-initialize single node if not in DynamoDB mode (single tenant optimization)
         match &config.storage {
-            LambdaStorage::Config(crate::storage::DatabaseConfig::DynamoDb(_)) => {
+            LambdaStorage::Config(crate::storage::DatabaseConfig::Cloud(_)) => {
                 // Multi-tenant mode: Nodes created on demand
             }
             _ => {
@@ -96,11 +96,11 @@ impl NodeManager {
                 let mut node_config = match storage_config {
                     DatabaseConfig::Local { path } => NodeConfig::new(path.clone()),
                     #[cfg(feature = "aws-backend")]
-                    DatabaseConfig::DynamoDb(dynamo_config) => {
+                    DatabaseConfig::Cloud(cloud_config) => {
                         let mut cfg = NodeConfig::default();
-                        let mut d_cfg = dynamo_config.clone();
+                        let mut d_cfg = cloud_config.clone();
                         d_cfg.user_id = Some(user_id.to_string());
-                        cfg.database = DatabaseConfig::DynamoDb(d_cfg);
+                        cfg.database = DatabaseConfig::Cloud(d_cfg);
                         cfg
                     }
                 };
@@ -137,10 +137,14 @@ impl NodeManager {
                 // Manually create components, effectively replicating what create_fold_db does for custom ops
                 let progress_store = Arc::new(crate::progress::InMemoryProgressStore::new());
 
-                let fold_db =
-                    FoldDB::new_with_components(Arc::clone(db_ops), &db_path, Some(progress_store))
-                        .await
-                        .map_err(|e| IngestionError::StorageError(e.to_string()))?;
+                let fold_db = FoldDB::new_with_components(
+                    Arc::clone(db_ops),
+                    &db_path,
+                    Some(progress_store),
+                    Some(user_id.to_string()),
+                )
+                .await
+                .map_err(|e| IngestionError::StorageError(e.to_string()))?;
 
                 let node_config = NodeConfig::new(std::path::PathBuf::from(db_path));
 

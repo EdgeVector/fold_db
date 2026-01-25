@@ -7,9 +7,9 @@
 //! - Programmatic data pipelines
 
 use crate::datafold_node::DataFoldNode;
-use crate::ingestion::json_processor::{convert_file_to_json, flatten_root_layers};
 use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
-use crate::ingestion::{IngestionError, IngestionResponse, ProgressTracker, IngestionConfig};
+use crate::ingestion::json_processor::{convert_file_to_json, flatten_root_layers};
+use crate::ingestion::{IngestionConfig, IngestionError, IngestionResponse, ProgressTracker};
 use crate::storage::UploadStorage;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,18 +27,21 @@ pub struct S3IngestionRequest {
     pub trust_distance: u32,
     /// Public key for authentication
     pub pub_key: String,
+    /// User ID owning the ingestion
+    pub user_id: String,
     /// Optional ingestion configuration (if not provided, will use from_env())
     pub ingestion_config: Option<IngestionConfig>,
 }
 
 impl S3IngestionRequest {
     /// Create a new S3 ingestion request with default settings
-    pub fn new(s3_path: String) -> Self {
+    pub fn new(s3_path: String, user_id: String, pub_key: String) -> Self {
         Self {
             s3_path,
             auto_execute: true,
             trust_distance: 0,
-            pub_key: "default".to_string(),
+            pub_key,
+            user_id,
             ingestion_config: None,
         }
     }
@@ -68,7 +71,7 @@ impl S3IngestionRequest {
     }
 
     /// Set the OpenRouter API key directly (convenience method)
-    /// 
+    ///
     /// This creates an ingestion config with the provided API key and default settings.
     /// If you need more control over the configuration, use `with_ingestion_config` instead.
     pub fn with_openrouter_api_key(mut self, api_key: String) -> Self {
@@ -80,7 +83,12 @@ impl S3IngestionRequest {
     }
 
     /// Set the OpenRouter configuration with custom model and base URL
-    pub fn with_openrouter_config(mut self, api_key: String, model: String, base_url: String) -> Self {
+    pub fn with_openrouter_config(
+        mut self,
+        api_key: String,
+        model: String,
+        base_url: String,
+    ) -> Self {
         let mut config = IngestionConfig::default();
         config.openrouter.api_key = api_key;
         config.openrouter.model = model;
@@ -174,7 +182,13 @@ pub async fn ingest_from_s3_path_async(
         ingestion_config: config,
     };
 
-    let progress_id = spawn_background_ingestion(spawn_config, progress_tracker, node).await;
+    let progress_id = spawn_background_ingestion(
+        spawn_config,
+        progress_tracker,
+        node,
+        request.user_id.clone(),
+    )
+    .await;
 
     Ok(IngestionResponse {
         success: true,
@@ -224,7 +238,7 @@ pub async fn ingest_from_s3_path_async(
 ///         .with_openrouter_api_key("your-api-key".to_string());
 ///     
 ///     let response = ingest_from_s3_path_sync(&request, &upload_storage, &progress_tracker, node, None).await?;
-///     println!("Ingestion complete: {} mutations executed", 
+///     println!("Ingestion complete: {} mutations executed",
 ///              response.mutations_executed);
 ///     
 ///     Ok(())
@@ -238,18 +252,28 @@ pub async fn ingest_from_s3_path_sync(
     ingestion_config: Option<&IngestionConfig>,
 ) -> Result<IngestionResponse, IngestionError> {
     // Start async ingestion
-    let async_response = ingest_from_s3_path_async(request, upload_storage, progress_tracker, node, ingestion_config).await?;
-    
-    let progress_id = async_response.progress_id
+    let async_response = ingest_from_s3_path_async(
+        request,
+        upload_storage,
+        progress_tracker,
+        node,
+        ingestion_config,
+    )
+    .await?;
+
+    let progress_id = async_response
+        .progress_id
         .ok_or_else(|| IngestionError::InvalidInput("No progress_id returned".to_string()))?;
 
     // Poll for completion
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        
-        let progress = progress_tracker.load(&progress_id).await
+
+        let progress = progress_tracker
+            .load(&progress_id)
+            .await
             .map_err(|e| IngestionError::InvalidInput(format!("Failed to load progress: {}", e)))?;
-        
+
         if let Some(progress) = progress {
             if progress.is_complete {
                 // Return complete response with results
@@ -257,9 +281,18 @@ pub async fn ingest_from_s3_path_sync(
                     success: true,
                     progress_id: Some(progress_id),
                     schema_used: progress.results.as_ref().map(|r| r.schema_name.clone()),
-                    new_schema_created: progress.results.as_ref().is_some_and(|r| r.new_schema_created),
-                    mutations_generated: progress.results.as_ref().map_or(0, |r| r.mutations_generated),
-                    mutations_executed: progress.results.as_ref().map_or(0, |r| r.mutations_executed),
+                    new_schema_created: progress
+                        .results
+                        .as_ref()
+                        .is_some_and(|r| r.new_schema_created),
+                    mutations_generated: progress
+                        .results
+                        .as_ref()
+                        .map_or(0, |r| r.mutations_generated),
+                    mutations_executed: progress
+                        .results
+                        .as_ref()
+                        .map_or(0, |r| r.mutations_executed),
                     errors: progress.error_message.into_iter().collect(),
                 });
             }
@@ -324,26 +357,35 @@ mod tests {
 
     #[test]
     fn test_s3_ingestion_request_builder() {
-        let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
-            .with_auto_execute(false)
-            .with_trust_distance(5)
-            .with_pub_key("custom".to_string());
+        let request = S3IngestionRequest::new(
+            "s3://bucket/file.json".to_string(),
+            "user1".to_string(),
+            "default".to_string(),
+        )
+        .with_auto_execute(false)
+        .with_trust_distance(5)
+        .with_pub_key("custom".to_string());
 
         assert_eq!(request.s3_path, "s3://bucket/file.json");
         assert!(!request.auto_execute);
         assert_eq!(request.trust_distance, 5);
         assert_eq!(request.pub_key, "custom");
+        assert_eq!(request.user_id, "user1");
         assert!(request.ingestion_config.is_none());
     }
 
     #[test]
     fn test_s3_ingestion_request_with_api_key() {
-        let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
-            .with_openrouter_api_key("test-key".to_string());
+        let request = S3IngestionRequest::new(
+            "s3://bucket/file.json".to_string(),
+            "user1".to_string(),
+            "key".to_string(),
+        )
+        .with_openrouter_api_key("test-key".to_string());
 
         assert_eq!(request.s3_path, "s3://bucket/file.json");
         assert!(request.ingestion_config.is_some());
-        
+
         let config = request.ingestion_config.unwrap();
         assert_eq!(config.openrouter.api_key, "test-key");
         assert!(config.enabled);
@@ -356,8 +398,12 @@ mod tests {
         custom_config.openrouter.model = "custom-model".to_string();
         custom_config.enabled = true;
 
-        let request = S3IngestionRequest::new("s3://bucket/file.json".to_string())
-            .with_ingestion_config(custom_config);
+        let request = S3IngestionRequest::new(
+            "s3://bucket/file.json".to_string(),
+            "user1".to_string(),
+            "key".to_string(),
+        )
+        .with_ingestion_config(custom_config);
 
         assert!(request.ingestion_config.is_some());
         let config = request.ingestion_config.unwrap();
@@ -372,7 +418,7 @@ mod tests {
 
         let path_without_prefix = &path[5..];
         let parts: Vec<&str> = path_without_prefix.splitn(2, '/').collect();
-        
+
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[0], "my-bucket");
         assert_eq!(parts[1], "path/to/file.json");
@@ -389,4 +435,3 @@ mod tests {
         assert_eq!(filename2, "file.json");
     }
 }
-

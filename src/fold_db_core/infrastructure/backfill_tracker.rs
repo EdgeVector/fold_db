@@ -176,10 +176,7 @@ impl BackfillInfo {
 
     /// Convert BackfillInfo to generic Job
     pub fn to_job(&self, user_id: Option<String>) -> Job {
-        let mut job = Job::new(
-            self.backfill_hash.clone(),
-            JobType::Backfill,
-        );
+        let mut job = Job::new(self.backfill_hash.clone(), JobType::Backfill);
         job.status = self.status.clone().into();
 
         if let Some(uid) = user_id {
@@ -199,7 +196,7 @@ impl BackfillInfo {
 
         // Store full BackfillInfo in metadata
         job.metadata = serde_json::to_value(self).unwrap_or(Value::Null);
-        
+
         job
     }
 
@@ -237,34 +234,36 @@ pub struct BackfillTracker {
     transform_to_hash: Arc<Mutex<HashMap<String, String>>>,
     /// Optional persistent store for progress
     progress_store: Option<Arc<dyn ProgressStore>>,
+    /// User ID owning this tracker
+    user_id: String,
 }
 
 impl BackfillTracker {
     /// Create a new backfill tracker
-    pub fn new(progress_store: Option<Arc<dyn ProgressStore>>) -> Self {
+    pub fn new(progress_store: Option<Arc<dyn ProgressStore>>, user_id: String) -> Self {
         Self {
             backfills: Arc::new(Mutex::new(HashMap::new())),
             transform_to_hash: Arc::new(Mutex::new(HashMap::new())),
             progress_store,
+            user_id,
         }
     }
 
     /// Load active backfills from persistent store
-    pub async fn load_from_store(&self, user_id: Option<String>) {
+    pub async fn load_from_store(&self) {
         if let Some(store) = &self.progress_store {
-            // This is a simplification: listing all jobs might be expensive.
-            // But we need to repopulate memory cache on startup.
-            // Ideally we filter by JobType::Backfill
-            match store.list_by_user(user_id.as_deref().unwrap_or("global")).await {
+            // Filter by JobType::Backfill
+            match store.list_by_user(&self.user_id).await {
                 Ok(jobs) => {
                     let mut backfills = self.backfills.lock().unwrap();
                     let mut transform_to_hash = self.transform_to_hash.lock().unwrap();
-                    
+
                     for job in jobs {
                         if let Some(info) = BackfillInfo::from_job(&job) {
                             backfills.insert(info.backfill_hash.clone(), info.clone());
                             // Update lookup if it's newer (naive approach)
-                            transform_to_hash.insert(info.transform_id.clone(), info.backfill_hash.clone());
+                            transform_to_hash
+                                .insert(info.transform_id.clone(), info.backfill_hash.clone());
                         }
                     }
                 }
@@ -298,10 +297,10 @@ impl BackfillTracker {
                 .unwrap()
                 .insert(transform_id, backfill_hash);
         }
-        
+
         // Persist
         if let Some(store) = &self.progress_store {
-            let job = info.to_job(None); // TODO: Pass user_id if available
+            let job = info.to_job(Some(self.user_id.clone()));
             if let Err(e) = store.save(&job).await {
                 error!("Failed to persist backfill start: {}", e);
             }
@@ -341,10 +340,10 @@ impl BackfillTracker {
                 );
             }
         }
-        
+
         if let Some(info) = info_clone {
-             if let Some(store) = &self.progress_store {
-                let job = info.to_job(None);
+            if let Some(store) = &self.progress_store {
+                let job = info.to_job(Some(self.user_id.clone()));
                 if let Err(e) = store.save(&job).await {
                     error!("Failed to persist backfill update: {}", e);
                 }
@@ -357,7 +356,7 @@ impl BackfillTracker {
     pub async fn increment_mutation_completed(&self, backfill_hash: &str) -> bool {
         let mut is_completed = false;
         let mut info_clone = None;
-        
+
         {
             let mut backfills = self.backfills.lock().unwrap();
             if let Some(info) = backfills.get_mut(backfill_hash) {
@@ -375,14 +374,14 @@ impl BackfillTracker {
                     info_clone = Some(info.clone());
                 } else if info.mutations_completed % 100 == 0 {
                     // Optionally persist every 100 items to avoid spamming DB but keep relatively fresh
-                     info_clone = Some(info.clone());
+                    info_clone = Some(info.clone());
                 }
             }
         }
-        
+
         if let Some(info) = info_clone {
-             if let Some(store) = &self.progress_store {
-                let job = info.to_job(None);
+            if let Some(store) = &self.progress_store {
+                let job = info.to_job(Some(self.user_id.clone()));
                 // We spawn or await? Await since we are in async fn now.
                 // But error in storage shouldn't fail the operation
                 if let Err(e) = store.save(&job).await {
@@ -390,7 +389,7 @@ impl BackfillTracker {
                 }
             }
         }
-        
+
         is_completed
     }
 
@@ -424,10 +423,10 @@ impl BackfillTracker {
                 }
             }
         }
-        
+
         if let Some(info) = info_clone {
-             if let Some(store) = &self.progress_store {
-                let job = info.to_job(None);
+            if let Some(store) = &self.progress_store {
+                let job = info.to_job(Some(self.user_id.clone()));
                 if let Err(e) = store.save(&job).await {
                     error!("Failed to persist backfill failure: {}", e);
                 }
@@ -444,10 +443,10 @@ impl BackfillTracker {
                 info_clone = Some(info.clone());
             }
         }
-        
+
         if let Some(info) = info_clone {
-             if let Some(store) = &self.progress_store {
-                let job = info.to_job(None);
+            if let Some(store) = &self.progress_store {
+                let job = info.to_job(Some(self.user_id.clone()));
                 if let Err(e) = store.save(&job).await {
                     error!("Failed to persist backfill failure: {}", e);
                 }
@@ -481,10 +480,10 @@ impl BackfillTracker {
                 }
             }
         }
-        
+
         if let Some(info) = info_clone {
-             if let Some(store) = &self.progress_store {
-                let job = info.to_job(None);
+            if let Some(store) = &self.progress_store {
+                let job = info.to_job(Some(self.user_id.clone()));
                 if let Err(e) = store.save(&job).await {
                     error!("Failed to persist backfill completion: {}", e);
                 }
@@ -531,6 +530,6 @@ impl BackfillTracker {
 
 impl Default for BackfillTracker {
     fn default() -> Self {
-        Self::new(None)
+        Self::new(None, "default".to_string())
     }
 }

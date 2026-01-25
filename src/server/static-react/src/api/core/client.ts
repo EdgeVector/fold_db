@@ -3,7 +3,7 @@
  * Standardized HTTP client with authentication, caching, retry logic, and error handling
  */
 
-import { 
+import {
   API_REQUEST_TIMEOUT_MS,
   API_RETRY_ATTEMPTS,
   API_RETRY_DELAY_MS,
@@ -14,8 +14,8 @@ import {
   RETRY_CONFIG,
   CACHE_CONFIG,
   SCHEMA_STATES,
-  SCHEMA_OPERATIONS
-} from '../../constants/api';
+  SCHEMA_OPERATIONS,
+} from "../../constants/api";
 
 import {
   ApiError,
@@ -23,8 +23,8 @@ import {
   TimeoutError,
   SchemaStateError,
   ErrorFactory,
-  isRetryableError
-} from './errors';
+  isRetryableError,
+} from "./errors";
 
 import type {
   ApiClientConfig,
@@ -39,14 +39,18 @@ import type {
   BatchRequest,
   BatchResponse,
   SchemaValidationOptions,
-  ApiClientInstance
-} from './types';
+  ApiClientInstance,
+} from "./types";
 
 // Define ErrorInterceptor locally to use concrete ApiError class
 type ErrorInterceptor = (error: ApiError) => ApiError | Promise<ApiError>;
 
-import { store } from '../../store/store';
-import { Buffer } from 'buffer';
+// Store injection to avoid circular dependency
+let store: any = null;
+
+export const injectStore = (s: any) => {
+  store = s;
+};
 
 /**
  * In-memory cache implementation
@@ -72,7 +76,11 @@ class ApiCache {
     return entry.data as T;
   }
 
-  set<T>(key: string, data: T, ttl: number = CACHE_CONFIG.DEFAULT_TTL_MS): void {
+  set<T>(
+    key: string,
+    data: T,
+    ttl: number = CACHE_CONFIG.DEFAULT_TTL_MS,
+  ): void {
     // Implement LRU eviction if cache is full
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
@@ -83,7 +91,7 @@ class ApiCache {
       data,
       timestamp: Date.now(),
       ttl,
-      key
+      key,
     });
   }
 
@@ -149,7 +157,7 @@ export class ApiClient implements ApiClientInstance {
       defaultHeaders: config.defaultHeaders || {},
       enableCache: config.enableCache !== false,
       enableLogging: config.enableLogging !== false,
-      enableMetrics: config.enableMetrics !== false
+      enableMetrics: config.enableMetrics !== false,
     };
 
     this.cache = new ApiCache();
@@ -159,36 +167,54 @@ export class ApiClient implements ApiClientInstance {
   /**
    * HTTP GET method
    */
-  async get<T>(endpoint: string, options: RequestOptions = {}): Promise<EnhancedApiResponse<T>> {
-    return this.request<T>('GET', endpoint, undefined, options);
+  async get<T>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<EnhancedApiResponse<T>> {
+    return this.request<T>("GET", endpoint, undefined, options);
   }
 
   /**
    * HTTP POST method
    */
-  async post<T>(endpoint: string, data?: any, options: RequestOptions = {}): Promise<EnhancedApiResponse<T>> {
-    return this.request<T>('POST', endpoint, data, options);
+  async post<T>(
+    endpoint: string,
+    data?: any,
+    options: RequestOptions = {},
+  ): Promise<EnhancedApiResponse<T>> {
+    return this.request<T>("POST", endpoint, data, options);
   }
 
   /**
    * HTTP PUT method
    */
-  async put<T>(endpoint: string, data?: any, options: RequestOptions = {}): Promise<EnhancedApiResponse<T>> {
-    return this.request<T>('PUT', endpoint, data, options);
+  async put<T>(
+    endpoint: string,
+    data?: any,
+    options: RequestOptions = {},
+  ): Promise<EnhancedApiResponse<T>> {
+    return this.request<T>("PUT", endpoint, data, options);
   }
 
   /**
    * HTTP DELETE method
    */
-  async delete<T>(endpoint: string, options: RequestOptions = {}): Promise<EnhancedApiResponse<T>> {
-    return this.request<T>('DELETE', endpoint, undefined, options);
+  async delete<T>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<EnhancedApiResponse<T>> {
+    return this.request<T>("DELETE", endpoint, undefined, options);
   }
 
   /**
    * HTTP PATCH method
    */
-  async patch<T>(endpoint: string, data?: any, options: RequestOptions = {}): Promise<EnhancedApiResponse<T>> {
-    return this.request<T>('PATCH', endpoint, data, options);
+  async patch<T>(
+    endpoint: string,
+    data?: any,
+    options: RequestOptions = {},
+  ): Promise<EnhancedApiResponse<T>> {
+    return this.request<T>("PATCH", endpoint, data, options);
   }
 
   /**
@@ -196,34 +222,39 @@ export class ApiClient implements ApiClientInstance {
    */
   async batch<T>(requests: BatchRequest[]): Promise<BatchResponse<T>[]> {
     if (requests.length > CACHE_CONFIG.MAX_CACHE_SIZE) {
-      throw new ApiError(`Batch size exceeds limit of ${CACHE_CONFIG.MAX_CACHE_SIZE}`);
+      throw new ApiError(
+        `Batch size exceeds limit of ${CACHE_CONFIG.MAX_CACHE_SIZE}`,
+      );
     }
 
-    const promises = requests.map(async (request): Promise<BatchResponse<T>> => {
-      try {
-        const response = await this.request<T>(
-          request.method,
-          request.url,
-          request.body,
-          request.options
-        );
+    const promises = requests.map(
+      async (request): Promise<BatchResponse<T>> => {
+        try {
+          const response = await this.request<T>(
+            request.method,
+            request.url,
+            request.body,
+            request.options,
+          );
 
-        return {
-          id: request.id,
-          success: response.success,
-          data: response.data,
-          status: response.status
-        };
-      } catch (error) {
-        const apiError = error instanceof ApiError ? error : new ApiError(error.message);
-        return {
-          id: request.id,
-          success: false,
-          error: apiError.message,
-          status: apiError.status
-        };
-      }
-    });
+          return {
+            id: request.id,
+            success: response.success,
+            data: response.data,
+            status: response.status,
+          };
+        } catch (error) {
+          const apiError =
+            error instanceof ApiError ? error : new ApiError(error.message);
+          return {
+            id: request.id,
+            success: false,
+            error: apiError.message,
+            status: apiError.status,
+          };
+        }
+      },
+    );
 
     return Promise.all(promises);
   }
@@ -235,26 +266,29 @@ export class ApiClient implements ApiClientInstance {
     method: HttpMethod,
     endpoint: string,
     data?: any,
-    options: RequestOptions = {}
+    options: RequestOptions = {},
   ): Promise<EnhancedApiResponse<T>> {
     const requestId = options.requestId || this.generateRequestId();
     const startTime = Date.now();
-    
+
     let config: RequestConfig = {
       url: this.buildUrl(endpoint),
       method,
       headers: { ...this.config.defaultHeaders },
       body: data,
       timeout: options.timeout || this.config.timeout,
-      retries: options.retries !== undefined ? options.retries : this.config.retryAttempts,
+      retries:
+        options.retries !== undefined
+          ? options.retries
+          : this.config.retryAttempts,
       validateSchema: !!options.validateSchema,
       requiresAuth: false,
       abortSignal: options.abortSignal,
       metadata: {
         requestId,
         timestamp: startTime,
-        priority: options.priority || 'normal'
-      }
+        priority: options.priority || "normal",
+      },
     };
 
     try {
@@ -265,14 +299,22 @@ export class ApiClient implements ApiClientInstance {
 
       // Schema validation (SCHEMA-002 compliance)
       if (config.validateSchema) {
-        await this.validateSchemaAccess(endpoint, method, options.validateSchema || true);
+        await this.validateSchemaAccess(
+          endpoint,
+          method,
+          options.validateSchema || true,
+        );
       }
 
       // Check cache for GET requests
-      if (method === 'GET' && this.config.enableCache && options.cacheable !== false) {
+      if (
+        method === "GET" &&
+        this.config.enableCache &&
+        options.cacheable !== false
+      ) {
         const cacheKey = this.generateCacheKey(config.url, config.headers);
         const cachedResponse = this.cache.get<EnhancedApiResponse<T>>(cacheKey);
-        
+
         if (cachedResponse) {
           return {
             ...cachedResponse,
@@ -281,8 +323,8 @@ export class ApiClient implements ApiClientInstance {
               cached: true,
               fromCache: true,
               requestId,
-              timestamp: cachedResponse.meta?.timestamp || Date.now()
-            }
+              timestamp: cachedResponse.meta?.timestamp || Date.now(),
+            },
           };
         }
       }
@@ -290,14 +332,14 @@ export class ApiClient implements ApiClientInstance {
       // Deduplicate concurrent requests
       const dedupeKey = `${method}:${config.url}:${JSON.stringify(data)}`;
       const response = await this.requestQueue.getOrCreate(dedupeKey, () =>
-        this.executeRequest<T>(config)
+        this.executeRequest<T>(config),
       );
 
       // Cache successful GET responses
       if (
-        method === 'GET' && 
-        this.config.enableCache && 
-        options.cacheable !== false && 
+        method === "GET" &&
+        this.config.enableCache &&
+        options.cacheable !== false &&
         response.success
       ) {
         const cacheKey = this.generateCacheKey(config.url, config.headers);
@@ -308,7 +350,9 @@ export class ApiClient implements ApiClientInstance {
       // Apply response interceptors
       let finalResponse = response;
       for (const interceptor of this.responseInterceptors) {
-        finalResponse = await interceptor(finalResponse) as EnhancedApiResponse<T>;
+        finalResponse = (await interceptor(
+          finalResponse,
+        )) as EnhancedApiResponse<T>;
       }
 
       // Record metrics
@@ -321,15 +365,17 @@ export class ApiClient implements ApiClientInstance {
           endTime: Date.now(),
           duration: Date.now() - startTime,
           status: response.status,
-          cached: response.meta?.cached || false
+          cached: response.meta?.cached || false,
         });
       }
 
       return finalResponse;
-
     } catch (error) {
-      let apiError = error instanceof ApiError ? error : ErrorFactory.fromNetworkError(error, requestId);
-      
+      let apiError =
+        error instanceof ApiError
+          ? error
+          : ErrorFactory.fromNetworkError(error, requestId);
+
       // Apply error interceptors
       for (const interceptor of this.errorInterceptors) {
         apiError = await interceptor(apiError);
@@ -344,7 +390,7 @@ export class ApiClient implements ApiClientInstance {
           startTime,
           endTime: Date.now(),
           duration: Date.now() - startTime,
-          error: apiError.message
+          error: apiError.message,
         });
       }
 
@@ -355,15 +401,20 @@ export class ApiClient implements ApiClientInstance {
   /**
    * Execute the actual HTTP request with retry logic
    */
-  private async executeRequest<T>(config: RequestConfig): Promise<EnhancedApiResponse<T>> {
+  private async executeRequest<T>(
+    config: RequestConfig,
+  ): Promise<EnhancedApiResponse<T>> {
     let lastError: ApiError;
-    
+
     for (let attempt = 0; attempt <= config.retries; attempt++) {
       try {
         return await this.performRequest<T>(config);
       } catch (error) {
-        lastError = error instanceof ApiError ? error : ErrorFactory.fromNetworkError(error, config.metadata.requestId);
-        
+        lastError =
+          error instanceof ApiError
+            ? error
+            : ErrorFactory.fromNetworkError(error, config.metadata.requestId);
+
         // Don't retry on final attempt or non-retryable errors
         if (attempt === config.retries || !isRetryableError(lastError)) {
           break;
@@ -371,8 +422,9 @@ export class ApiClient implements ApiClientInstance {
 
         // Calculate exponential backoff delay
         const delay = Math.min(
-          this.config.retryDelay * Math.pow(RETRY_CONFIG.EXPONENTIAL_BACKOFF_MULTIPLIER, attempt),
-          RETRY_CONFIG.MAX_RETRY_DELAY_MS
+          this.config.retryDelay *
+            Math.pow(RETRY_CONFIG.EXPONENTIAL_BACKOFF_MULTIPLIER, attempt),
+          RETRY_CONFIG.MAX_RETRY_DELAY_MS,
         );
 
         await this.sleep(delay);
@@ -385,7 +437,9 @@ export class ApiClient implements ApiClientInstance {
   /**
    * Perform the actual HTTP request
    */
-  private async performRequest<T>(config: RequestConfig): Promise<EnhancedApiResponse<T>> {
+  private async performRequest<T>(
+    config: RequestConfig,
+  ): Promise<EnhancedApiResponse<T>> {
     // Set up timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), config.timeout);
@@ -393,7 +447,7 @@ export class ApiClient implements ApiClientInstance {
     try {
       // Prepare headers
       const headers = { ...config.headers };
-      
+
       // No authentication: UI does not require or send auth headers
 
       // Set content type for requests with body
@@ -404,34 +458,47 @@ export class ApiClient implements ApiClientInstance {
       // Add request metadata headers
       headers[REQUEST_HEADERS.REQUEST_ID] = config.metadata.requestId;
 
+      // Add User ID header (Strict User Isolation)
+      if (typeof window !== "undefined") {
+        const userHash = localStorage.getItem("fold_user_hash");
+        if (userHash) {
+          headers["x-user-id"] = userHash;
+        }
+      }
+
       // Prepare fetch options
       const fetchOptions: RequestInit = {
         method: config.method,
         headers,
-        signal: config.abortSignal || controller.signal
+        signal: config.abortSignal || controller.signal,
       };
 
       // Add body for non-GET requests
-      if (config.body && config.method !== 'GET') {
-        fetchOptions.body = this.serializeBody(config.body, headers[REQUEST_HEADERS.CONTENT_TYPE]);
+      if (config.body && config.method !== "GET") {
+        fetchOptions.body = this.serializeBody(
+          config.body,
+          headers[REQUEST_HEADERS.CONTENT_TYPE],
+        );
       }
 
       // Perform the request
       // eslint-disable-next-line no-restricted-globals -- Core HTTP client layer legitimately uses fetch()
       const response = await fetch(config.url, fetchOptions);
-      
+
       clearTimeout(timeoutId);
 
       // Handle response
       return await this.handleResponse<T>(response, config.metadata.requestId);
-
     } catch (error) {
       clearTimeout(timeoutId);
-      
-      if (error.name === 'AbortError') {
-        throw ErrorFactory.fromTimeout(config.timeout, config.metadata.requestId);
+
+      if (error.name === "AbortError") {
+        throw ErrorFactory.fromTimeout(
+          config.timeout,
+          config.metadata.requestId,
+        );
       }
-      
+
       throw ErrorFactory.fromNetworkError(error, config.metadata.requestId);
     }
   }
@@ -439,22 +506,27 @@ export class ApiClient implements ApiClientInstance {
   /**
    * Handle HTTP response and convert to standardized format
    */
-  private async handleResponse<T>(response: Response, requestId: string): Promise<EnhancedApiResponse<T>> {
+  private async handleResponse<T>(
+    response: Response,
+    requestId: string,
+  ): Promise<EnhancedApiResponse<T>> {
     if (!response.ok) {
       throw await ErrorFactory.fromResponse(response, requestId);
     }
 
     let data: T;
-    const contentType = response.headers.get('content-type');
-    
+    const contentType = response.headers.get("content-type");
+
     try {
-      if (contentType?.includes('application/json')) {
+      if (contentType?.includes("application/json")) {
         data = await response.json();
       } else {
-        data = await response.text() as T;
+        data = (await response.text()) as T;
       }
     } catch {
-      throw new ApiError('Failed to parse response', response.status, { requestId });
+      throw new ApiError("Failed to parse response", response.status, {
+        requestId,
+      });
     }
 
     return {
@@ -466,15 +538,18 @@ export class ApiClient implements ApiClientInstance {
         requestId,
         timestamp: Date.now(),
         cached: false,
-        fromCache: false
-      }
+        fromCache: false,
+      },
     };
   }
 
   /**
    * Add authentication headers using the authentication wrapper
    */
-  private async addAuthHeaders(_headers: Record<string, string>, _body?: any): Promise<void> {
+  private async addAuthHeaders(
+    _headers: Record<string, string>,
+    _body?: any,
+  ): Promise<void> {
     // No-op: UI does not perform authentication
     return;
   }
@@ -483,30 +558,36 @@ export class ApiClient implements ApiClientInstance {
    * Validate schema access according to SCHEMA-002 rules
    */
   private async validateSchemaAccess(
-    endpoint: string, 
-    method: HttpMethod, 
-    options: SchemaValidationOptions | boolean
+    endpoint: string,
+    method: HttpMethod,
+    options: SchemaValidationOptions | boolean,
   ): Promise<void> {
     // Extract schema name from endpoint if possible
     const schemaMatch = endpoint.match(/\/schemas\/([^\/]+)/);
     if (!schemaMatch) return; // Not a schema endpoint
 
     const schemaName = schemaMatch[1];
-    const validationOptions = typeof options === 'boolean' ? {} : options;
-    
+    const validationOptions = typeof options === "boolean" ? {} : options;
+
     // For mutation and query operations, only approved schemas are allowed
-    if (endpoint.includes('/mutation') || endpoint.includes('/query')) {
+    if (endpoint.includes("/mutation") || endpoint.includes("/query")) {
       if (validationOptions.requiresApproved !== false) {
         // Get schema state from Redux store
+        if (!store) {
+          console.warn(
+            "Store not injected into ApiClient, skipping schema validation",
+          );
+          return;
+        }
         const schemaState = store.getState().schemas;
         const schemas = Object.values(schemaState.schemas || {});
-        
-        const schema = schemas.find(s => s.name === schemaName);
+
+        const schema = schemas.find((s) => s.name === schemaName);
         if (!schema || schema.state !== SCHEMA_STATES.APPROVED) {
           throw new SchemaStateError(
             schemaName,
-            schema?.state || 'unknown',
-            SCHEMA_OPERATIONS.MUTATION
+            schema?.state || "unknown",
+            SCHEMA_OPERATIONS.MUTATION,
           );
         }
       }
@@ -547,13 +628,16 @@ export class ApiClient implements ApiClientInstance {
   /**
    * Generate cache key for request
    */
-  private generateCacheKey(url: string, headers: Record<string, string>): string {
+  private generateCacheKey(
+    url: string,
+    headers: Record<string, string>,
+  ): string {
     const relevantHeaders = Object.keys(headers)
-      .filter(key => !key.startsWith('X-Request'))
+      .filter((key) => !key.startsWith("X-Request"))
       .sort()
-      .map(key => `${key}:${headers[key]}`)
-      .join(';');
-    
+      .map((key) => `${key}:${headers[key]}`)
+      .join(";");
+
     return `${url}|${relevantHeaders}`;
   }
 
@@ -561,17 +645,17 @@ export class ApiClient implements ApiClientInstance {
    * Build full URL from endpoint
    */
   private buildUrl(endpoint: string): string {
-    if (endpoint.startsWith('http')) {
+    if (endpoint.startsWith("http")) {
       return endpoint;
     }
-    return `${this.config.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    return `${this.config.baseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
   }
 
   /**
    * Sleep utility for retry delays
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -579,7 +663,7 @@ export class ApiClient implements ApiClientInstance {
    */
   private recordMetrics(metrics: RequestMetrics): void {
     this.metrics.push(metrics);
-    
+
     // Keep only last 1000 metrics to prevent memory leaks
     if (this.metrics.length > 1000) {
       this.metrics.splice(0, this.metrics.length - 1000);
@@ -607,7 +691,7 @@ export class ApiClient implements ApiClientInstance {
   getCacheStats(): { size: number; hitRate: number } {
     return {
       size: this.cache.size(),
-      hitRate: this.cache.getHitRate()
+      hitRate: this.cache.getHitRate(),
     };
   }
 

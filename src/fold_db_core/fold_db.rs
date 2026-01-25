@@ -44,6 +44,8 @@ pub struct FoldDB {
     pub(crate) transform_orchestrator: Option<Arc<TransformOrchestrator>>,
     /// Mutation manager for handling all mutation operations
     pub(crate) mutation_manager: MutationManager,
+    /// Tracker for pending background tasks
+    pub(crate) pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
 }
 
 impl FoldDB {
@@ -131,8 +133,10 @@ impl FoldDB {
         db_ops: Arc<DbOperations>,
         db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,
+        user_id: Option<String>,
     ) -> Result<Self, StorageError> {
-        Self::initialize_from_db_ops(db_ops, db_path, job_store).await
+        let actual_user_id = user_id.unwrap_or_else(|| "global".to_string());
+        Self::initialize_from_db_ops(db_ops, db_path, job_store, actual_user_id).await
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
@@ -159,7 +163,7 @@ impl FoldDB {
         // For local Sled backend, we use in-memory job store if not provided (though here we hardcode None/Default)
         // Actually, let's create an in-memory job store for consistency
         let job_store = Arc::new(crate::progress::InMemoryProgressStore::new());
-        Self::initialize_from_db_ops(db_ops, db_path, Some(job_store)).await
+        Self::initialize_from_db_ops(db_ops, db_path, Some(job_store), "local".to_string()).await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperations
@@ -169,9 +173,14 @@ impl FoldDB {
         db_ops: Arc<DbOperations>,
         _db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,
+        user_id: String,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(AsyncMessageBus::new());
+
+        // Initialize pending task tracker
+        let pending_tasks =
+            Arc::new(super::infrastructure::pending_task_tracker::PendingTaskTracker::new());
 
         // Initialize components via event-driven system initialization
         // SystemInitializationRequest removed - dead code
@@ -192,10 +201,12 @@ impl FoldDB {
         // Create and start EventMonitor for system-wide observability
         let event_monitor = Arc::new(
             EventMonitor::new(
-                Arc::clone(&message_bus), 
+                Arc::clone(&message_bus),
                 Arc::clone(&transform_manager),
-                job_store.clone()
-            ).await,
+                job_store.clone(),
+                user_id.clone(),
+            )
+            .await,
         );
         info!("Started EventMonitor for system-wide event tracking");
 
@@ -266,13 +277,16 @@ impl FoldDB {
 
         // Create shared IndexStatusTracker for tracking indexing progress
         // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
-        let index_status_tracker = IndexStatusTracker::new(job_store.clone());
+        // Create shared IndexStatusTracker for tracking indexing progress
+        // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
+        let index_status_tracker = IndexStatusTracker::new(job_store.clone(), user_id);
 
         // Create and start IndexOrchestrator for event-driven native indexing
         use super::orchestration::index_orchestrator::IndexOrchestrator;
         let index_orchestrator = Arc::new(IndexOrchestrator::new(
             Arc::clone(&db_ops),
             Some(index_status_tracker.clone()),
+            Arc::clone(&pending_tasks),
         ));
         index_orchestrator
             .start_event_listener(Arc::clone(&message_bus))
@@ -310,6 +324,7 @@ impl FoldDB {
             event_monitor,
             transform_orchestrator,
             mutation_manager,
+            pending_tasks,
         })
     }
 
@@ -331,6 +346,21 @@ impl FoldDB {
     /// Check if indexing is currently in progress
     pub async fn is_indexing(&self) -> bool {
         self.mutation_manager.is_indexing().await
+    }
+
+    /// Wait for all pending background tasks to complete
+    pub async fn wait_for_background_tasks(&self, timeout: std::time::Duration) -> bool {
+        self.pending_tasks.wait_for_completion(timeout).await
+    }
+
+    /// Increment pending task count manually
+    pub fn increment_pending_tasks(&self) {
+        self.pending_tasks.increment();
+    }
+
+    /// Decrement pending task count manually
+    pub fn decrement_pending_tasks(&self) {
+        self.pending_tasks.decrement();
     }
 
     // ========== CONSOLIDATED SCHEMA API - DELEGATES TO SCHEMA_CORE ==========

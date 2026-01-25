@@ -1,3 +1,4 @@
+use super::middleware::auth::UserContextMiddleware;
 use super::routes::log as log_routes;
 use super::routes::{
     query as query_routes, schema as schema_routes, security as security_routes,
@@ -39,8 +40,6 @@ pub struct DataFoldHttpServer {
     bind_address: String,
 }
 
-
-
 /// Shared application state for the HTTP server.
 pub struct AppState {
     /// The DataFold node
@@ -71,7 +70,8 @@ impl DataFoldHttpServer {
         let logs_config = {
             match &node.config.database {
                 #[cfg(feature = "aws-backend")]
-                crate::datafold_node::config::DatabaseConfig::DynamoDb(d) => {
+                #[cfg(feature = "aws-backend")]
+                crate::datafold_node::config::DatabaseConfig::Cloud(d) => {
                     let user_id = d
                         .user_id
                         .clone()
@@ -82,8 +82,8 @@ impl DataFoldHttpServer {
             }
         };
 
-        // Initialize the enhanced logging system with DynamoDB config if available
-        match crate::logging::LoggingSystem::init_with_dynamodb(logs_config).await {
+        // Initialize the enhanced logging system with Cloud config if available
+        match crate::logging::LoggingSystem::init_with_cloud(logs_config).await {
             Ok(_) => {}
             Err(crate::logging::LoggingError::AlreadyInitialized) => {
                 // Logging system already initialized, which is expected if running from binary
@@ -153,7 +153,8 @@ impl DataFoldHttpServer {
             let node_guard = self.node.read().await;
             match &node_guard.config.database {
                 #[cfg(feature = "aws-backend")]
-                crate::datafold_node::config::DatabaseConfig::DynamoDb(d) => {
+                #[cfg(feature = "aws-backend")]
+                crate::datafold_node::config::DatabaseConfig::Cloud(d) => {
                     Some((d.tables.process.clone(), d.region.clone()))
                 }
                 _ => None,
@@ -186,6 +187,7 @@ impl DataFoldHttpServer {
 
             App::new()
                 .wrap(cors)
+                .wrap(UserContextMiddleware)
                 .app_data(app_state.clone())
                 .app_data(llm_query_state.clone())
                 .app_data(node.clone())
@@ -476,6 +478,3 @@ impl DataFoldHttpServer {
         );
     }
 }
-
-
-

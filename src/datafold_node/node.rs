@@ -73,7 +73,7 @@ impl DataFoldNode {
 
         // Update config with public key as user_id if not set (for DynamoDB)
         #[cfg(feature = "aws-backend")]
-        if let crate::datafold_node::config::DatabaseConfig::DynamoDb(ref mut d) = config.database {
+        if let crate::datafold_node::config::DatabaseConfig::Cloud(ref mut d) = config.database {
             if d.user_id.is_none() {
                 d.user_id = Some(public_key.clone());
             }
@@ -278,6 +278,102 @@ impl DataFoldNode {
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))
     }
+
+    /// Execute a batch of mutations and synchronously update the native index.
+    ///
+    /// This is crucial for serverless environments where background event processing
+    /// might be terminated before indexing is complete.
+    pub async fn mutate_batch_and_index(
+        &self,
+        mutations: Vec<crate::schema::types::operations::Mutation>,
+    ) -> FoldDbResult<Vec<String>> {
+        let mutation_count = mutations.len();
+
+        // 1. Execute mutations
+        let mut db = self.db.lock().await;
+        let mutation_ids = db
+            .mutation_manager
+            .write_mutations_batch_async(mutations.clone())
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+
+        // 2. Index the data synchronously
+        // Access native index manager through db_ops to avoid holding the main db lock too long if possible
+        // But here we already have the lock, and DbOperations is inside FoldDB
+        if let Some(native_index_mgr) = db.db_ops.native_index_manager() {
+            let mut index_operations = Vec::new();
+
+            // Convert mutations to index operations
+            for mutation in mutations {
+                // Only index Create and Update operations
+                match mutation.mutation_type {
+                    crate::schema::types::operations::MutationType::Create
+                    | crate::schema::types::operations::MutationType::Update => {
+                        // Extract fields to index
+                        // Note: We need key_value from the mutation itself
+                        let key_value = mutation.key_value.clone();
+
+                        for (field_name, value) in mutation.fields_and_values {
+                            let excluded = ["uuid", "id", "password", "token"];
+                            if !excluded.iter().any(|e| e.eq_ignore_ascii_case(&field_name)) {
+                                index_operations.push((
+                                    mutation.schema_name.clone(),
+                                    field_name,
+                                    key_value.clone(),
+                                    value,
+                                    None, // Let manager decide classification
+                                ));
+                            }
+                        }
+                    }
+                    _ => {} // Skip deletes
+                }
+            }
+
+            if !index_operations.is_empty() {
+                crate::log_feature!(
+                    crate::logging::features::LogFeature::Database,
+                    info,
+                    "Synchronously indexing {} fields from {} mutations",
+                    index_operations.len(),
+                    mutation_count
+                );
+
+                // Indexing logic
+                let result = if native_index_mgr.is_async() {
+                    native_index_mgr
+                        .batch_index_field_values_with_classifications_async(&index_operations)
+                        .await
+                } else {
+                    native_index_mgr
+                        .batch_index_field_values_with_classifications(&index_operations)
+                };
+
+                if let Err(e) = result {
+                    crate::log_feature!(
+                        crate::logging::features::LogFeature::Database,
+                        warn,
+                        "Synchronous indexing failed: {}",
+                        e
+                    );
+                    // We don't fail the mutation if indexing fails, but we log it
+                } else {
+                    crate::log_feature!(
+                        crate::logging::features::LogFeature::Database,
+                        info,
+                        "Synchronous indexing completed successfully for {} fields",
+                        index_operations.len()
+                    );
+                    // Flush if sync backend
+                    if !native_index_mgr.is_async() {
+                        let _ = native_index_mgr.flush();
+                    }
+                }
+            }
+        }
+
+        Ok(mutation_ids)
+    }
     async fn init_internals(
         config: &NodeConfig,
         db: &Arc<Mutex<FoldDB>>,
@@ -354,6 +450,24 @@ impl DataFoldNode {
     pub async fn is_indexing(&self) -> bool {
         let db = self.db.lock().await;
         db.is_indexing().await
+    }
+
+    /// Wait for all pending background tasks to complete
+    pub async fn wait_for_background_tasks(&self, timeout: std::time::Duration) -> bool {
+        let db = self.db.lock().await;
+        db.wait_for_background_tasks(timeout).await
+    }
+
+    /// Increment pending task count manually
+    pub async fn increment_pending_tasks(&self) {
+        let db = self.db.lock().await;
+        db.increment_pending_tasks();
+    }
+
+    /// Decrement pending task count manually
+    pub async fn decrement_pending_tasks(&self) {
+        let db = self.db.lock().await;
+        db.decrement_pending_tasks();
     }
 }
 

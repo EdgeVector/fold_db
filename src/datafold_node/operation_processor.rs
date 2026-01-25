@@ -669,18 +669,22 @@ impl OperationProcessor {
         // 4. Handle storage reset
         match &config.database {
             #[cfg(feature = "aws-backend")]
-            DatabaseConfig::DynamoDb(dynamo_config) => {
+            #[cfg(feature = "aws-backend")]
+            DatabaseConfig::Cloud(cloud_config) => {
                 let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                     .region(aws_sdk_dynamodb::config::Region::new(
-                        dynamo_config.region.clone(),
+                        cloud_config.region.clone(),
                     ))
                     .load()
                     .await;
                 let client = std::sync::Arc::new(aws_sdk_dynamodb::Client::new(&aws_config));
 
+                // Priority: 1) explicit override, 2) current user context from HTTP request,
+                // 3) config user_id, 4) node public key
                 let uid = user_id_override
                     .map(|s| s.to_string())
-                    .or_else(|| dynamo_config.user_id.clone())
+                    .or_else(|| crate::logging::core::get_current_user_id())
+                    .or_else(|| cloud_config.user_id.clone())
                     .unwrap_or_else(|| self.node.get_node_public_key().to_string());
 
                 log::info!(
@@ -690,7 +694,7 @@ impl OperationProcessor {
 
                 let manager = crate::storage::reset_manager::DynamoDbResetManager::new(
                     client.clone(),
-                    dynamo_config.tables.clone(),
+                    cloud_config.tables.clone(),
                 );
 
                 if let Err(e) = manager.reset_user(&uid).await {

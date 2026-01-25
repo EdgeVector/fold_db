@@ -8,6 +8,8 @@ pub mod dynamodb_utils;
 pub mod error;
 pub mod inmemory_backend;
 #[cfg(feature = "aws-backend")]
+pub mod message_bus;
+#[cfg(feature = "aws-backend")]
 pub mod reset_manager;
 pub mod sled_backend;
 pub mod traits;
@@ -19,14 +21,20 @@ mod tests;
 // Re-exports for convenience and backward compatibility
 pub use config::DatabaseConfig;
 #[cfg(feature = "aws-backend")]
-pub use config::{DynamoDbConfig, ExplicitTables};
+pub use config::{CloudConfig, ExplicitTables};
 #[cfg(feature = "aws-backend")]
-pub use dynamodb_backend::{DynamoDbNamespacedStore, TableNameResolver};
+pub type DynamoDbConfig = CloudConfig;
+#[cfg(feature = "aws-backend")]
+pub use dynamodb_backend::{DynamoDbNamespacedStore as CloudNamespacedStore, TableNameResolver};
+#[cfg(feature = "aws-backend")]
+pub type DynamoDbNamespacedStore = CloudNamespacedStore;
 #[cfg(feature = "aws-backend")]
 pub use dynamodb_store::DynamoDbSchemaStore;
 pub use error::StorageError;
 pub use inmemory_backend::InMemoryNamespacedStore;
 
+#[cfg(feature = "aws-backend")]
+pub use message_bus::CloudMessageBus;
 pub use sled_backend::SledNamespacedStore;
 pub use traits::{NamespacedStore, TypedKvStore};
 pub use upload_storage::UploadStorage;
