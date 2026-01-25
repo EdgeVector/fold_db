@@ -17,14 +17,15 @@ use crate::schema::types::Schema;
 
 use super::dynamodb_utils::{format_dynamodb_error, MAX_RETRIES};
 use crate::retry_operation;
-use crate::storage::DynamoDbConfig;
+use crate::storage::CloudConfig;
 
 /// DynamoDB-backed schema storage
+/// user_id is obtained dynamically from request context for multi-tenancy.
 pub struct DynamoDbSchemaStore {
     client: DynamoClient,
     table_name: String,
-    /// user_id that will be used as part of the partition key
-    user_id: String,
+    /// Default user_id for operations without request context (e.g., startup)
+    default_user_id: String,
 }
 
 impl DynamoDbSchemaStore {
@@ -32,7 +33,7 @@ impl DynamoDbSchemaStore {
     /// Validates that the table exists before returning
     /// Create a new DynamoDB schema store
     /// Validates that the table exists before returning
-    pub async fn new(config: DynamoDbConfig) -> FoldDbResult<Self> {
+    pub async fn new(config: CloudConfig) -> FoldDbResult<Self> {
         // Resolve table name from explicit tables config
         let table_name = config.tables.schemas.clone();
 
@@ -154,15 +155,20 @@ impl DynamoDbSchemaStore {
         Ok(Self {
             client,
             table_name,
-            user_id,
+            default_user_id: user_id,
         })
+    }
+
+    /// Get the current user_id - from request context if available, otherwise default
+    fn get_current_user_id(&self) -> String {
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| self.default_user_id.clone())
     }
 
     /// Get the partition key (hash key) for schemas
     /// Format: user_id
     /// The schema_name goes in the sort key (SK)
     fn get_partition_key(&self) -> String {
-        self.user_id.clone()
+        self.get_current_user_id()
     }
 
     /// Get a schema by its topology hash

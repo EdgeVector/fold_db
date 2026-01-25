@@ -33,12 +33,12 @@ impl LambdaContext {
         // Initialize Progress Store based on storage configuration
         let progress_tracker: ProgressTracker = match &config.storage {
             crate::lambda::config::LambdaStorage::Config(
-                crate::storage::DatabaseConfig::DynamoDb(dynamo_config),
+                crate::storage::DatabaseConfig::Cloud(cloud_config),
             ) => {
                 use crate::progress::DynamoDbProgressStore;
 
-                let table_name = dynamo_config.tables.process.clone();
-                let region = dynamo_config.region.clone();
+                let table_name = cloud_config.tables.process.clone();
+                let region = cloud_config.region.clone();
 
                 Arc::new(DynamoDbProgressStore::from_config(table_name, region).await)
             }
@@ -71,7 +71,7 @@ impl LambdaContext {
                 // If storage is DynamoDb, we use that. Otherwise we might fail or default?
                 // For now, let's try to extract it from storage config if available.
                 let table_name = if let crate::lambda::config::LambdaStorage::Config(
-                    crate::storage::DatabaseConfig::DynamoDb(cfg),
+                    crate::storage::DatabaseConfig::Cloud(cfg),
                 ) = &config.storage
                 {
                     cfg.tables.logs.clone()
@@ -96,7 +96,7 @@ impl LambdaContext {
         // Note: set_boxed_logger requires "std" feature in "log" crate which seems missing in Lambda build?
         // Commenting out for now to catch compilation error.
         if let Err(e) = log::set_boxed_logger(Box::new(_log_bridge)) {
-             eprintln!("Warning: Failed to set logger: {}", e);
+            eprintln!("Warning: Failed to set logger: {}", e);
         }
         // Still set level filter
         log::set_max_level(log::LevelFilter::Info);

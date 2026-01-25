@@ -1,16 +1,28 @@
 /**
  * @fileoverview Crypto Utilities
- * 
+ *
  * Provides cryptographic utilities for signing and validation.
  * Used by Mutation components.
- * 
+ *
  * @module cryptoUtils
  * @since 2.0.0
  */
 
-import { utils, sign, verify } from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha512';
-import { Buffer } from 'buffer';
+import { utils, sign, verify } from "@noble/ed25519";
+import { sha512 } from "@noble/hashes/sha512";
+
+// Polyfill for browser environment
+const decodeBase64 = (str) => {
+  if (typeof Buffer !== "undefined") return Buffer.from(str, "base64");
+  return Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
+};
+
+const encodeBase64 = (bytes) => {
+  if (typeof Buffer !== "undefined")
+    return Buffer.from(bytes).toString("base64");
+  const binString = Array.from(bytes, (x) => String.fromCharCode(x)).join("");
+  return btoa(binString);
+};
 
 // Set up SHA-512 hash function for ed25519
 utils.sha512Sync = (...m) => sha512(utils.concatBytes(...m));
@@ -22,12 +34,13 @@ utils.sha512Sync = (...m) => sha512(utils.concatBytes(...m));
  * @returns {Promise<string>} Base64 encoded signature
  */
 export async function signPayload(payload, privateKeyBase64) {
-  const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  const privateKey = Buffer.from(privateKeyBase64, 'base64');
+  const payloadString =
+    typeof payload === "string" ? payload : JSON.stringify(payload);
+  const privateKey = decodeBase64(privateKeyBase64);
   const message = new TextEncoder().encode(payloadString);
-  
+
   const signature = await sign(message, privateKey);
-  return Buffer.from(signature).toString('base64');
+  return encodeBase64(signature);
 }
 
 /**
@@ -39,11 +52,12 @@ export async function signPayload(payload, privateKeyBase64) {
  */
 export async function verifySignature(signature, payload, publicKeyBase64) {
   try {
-    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const sig = Buffer.from(signature, 'base64');
-    const publicKey = Buffer.from(publicKeyBase64, 'base64');
+    const payloadString =
+      typeof payload === "string" ? payload : JSON.stringify(payload);
+    const sig = decodeBase64(signature);
+    const publicKey = decodeBase64(publicKeyBase64);
     const message = new TextEncoder().encode(payloadString);
-    
+
     return await verify(sig, message, publicKey);
   } catch {
     return false;
@@ -58,18 +72,18 @@ export async function verifySignature(signature, payload, publicKeyBase64) {
  */
 export function validateRangeKey(rangeKey, schema) {
   if (!rangeKey) {
-    return { isValid: false, error: 'Range key is required' };
+    return { isValid: false, error: "Range key is required" };
   }
-  
+
   if (!schema?.isRange) {
-    return { isValid: false, error: 'Schema is not a range schema' };
+    return { isValid: false, error: "Schema is not a range schema" };
   }
-  
+
   // Basic validation - in real implementation this would be more thorough
   if (rangeKey.length < 10) {
-    return { isValid: false, error: 'Range key too short' };
+    return { isValid: false, error: "Range key too short" };
   }
-  
+
   return { isValid: true };
 }
 
@@ -81,7 +95,7 @@ export function validateRangeKey(rangeKey, schema) {
 export function generateSecureRandom(length = 32) {
   const array = new Uint8Array(length);
   crypto.getRandomValues(array);
-  return Buffer.from(array).toString('base64').substring(0, length);
+  return encodeBase64(array).substring(0, length);
 }
 
 /**
@@ -90,7 +104,7 @@ export function generateSecureRandom(length = 32) {
  * @returns {Uint8Array} Decoded bytes
  */
 export function base64ToBytes(base64) {
-  return Buffer.from(base64, 'base64');
+  return decodeBase64(base64);
 }
 
 /**
@@ -99,5 +113,5 @@ export function base64ToBytes(base64) {
  * @returns {string} Base64 encoded string
  */
 export function bytesToBase64(bytes) {
-  return Buffer.from(bytes).toString('base64');
+  return encodeBase64(bytes);
 }

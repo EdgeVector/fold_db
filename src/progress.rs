@@ -227,9 +227,11 @@ impl DynamoDbProgressStore {
 #[async_trait]
 impl ProgressStore for DynamoDbProgressStore {
     async fn save(&self, job: &Job) -> Result<(), String> {
-        // We use user_id as partition key, and job_id as sort key
-        // If user_id is missing, we use "global" or similar
-        let pk = job.user_id.clone().unwrap_or_else(|| "global".to_string());
+        // Require explicit user_id - no global fallback
+        let pk = job
+            .user_id
+            .clone()
+            .ok_or_else(|| "Job must have user_id set for DynamoDB storage".to_string())?;
 
         let json = serde_json::to_string(job).map_err(|e| e.to_string())?;
 
@@ -275,9 +277,9 @@ impl ProgressStore for DynamoDbProgressStore {
         // The previous implementation used user_id from "current_user()" helper.
         // That WAS context aware.
 
-        // We can replicate that pattern:
-        let user_id =
-            crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
+        // Require user context - no default fallback
+        let user_id = crate::logging::core::get_current_user_id()
+            .ok_or_else(|| "User context required to load jobs".to_string())?;
 
         let result = self
             .client
@@ -312,8 +314,9 @@ impl ProgressStore for DynamoDbProgressStore {
     }
 
     async fn delete(&self, id: &str) -> Result<(), String> {
-        let user_id =
-            crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
+        // Require user context - no default fallback
+        let user_id = crate::logging::core::get_current_user_id()
+            .ok_or_else(|| "User context required to delete jobs".to_string())?;
 
         self.client
             .delete_item()

@@ -27,6 +27,8 @@ pub struct MutationExecuted {
         Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
     /// Actual data payload for indexing (list of rows, each row is a map of field->value)
     pub data: Option<Vec<std::collections::HashMap<String, serde_json::Value>>>,
+    /// User ID for multi-tenant isolation (used by IndexOrchestrator to set user context)
+    pub user_id: Option<String>,
 }
 
 impl EventType for MutationExecuted {

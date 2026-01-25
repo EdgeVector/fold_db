@@ -1,4 +1,15 @@
+import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { logoutUser } from '../store/authSlice'
+
 function Header({ onSettingsClick }) {
+  const dispatch = useAppDispatch()
+  const { isAuthenticated, user } = useAppSelector(state => state.auth)
+  
+  const handleLogout = () => {
+    dispatch(logoutUser())
+    localStorage.removeItem('fold_user_id')
+    localStorage.removeItem('fold_user_hash')
+  }
 
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
@@ -12,7 +23,21 @@ function Header({ onSettingsClick }) {
           <span className="text-xl font-semibold text-gray-900">DataFold Node</span>
         </a>
         <div className="flex items-center gap-3">
-        <button
+          {isAuthenticated && (
+            <div className="flex items-center gap-3 mr-2">
+              <span className="text-sm text-gray-600">
+                {user?.id}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="text-sm text-red-600 hover:text-red-700 font-medium"
+              >
+                Logout
+              </button>
+            </div>
+          )}
+          <div className="h-6 w-px bg-gray-300 mx-1"></div>
+          <button
           onClick={onSettingsClick}
           className="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md border border-gray-300 transition-colors"
           title="Settings"

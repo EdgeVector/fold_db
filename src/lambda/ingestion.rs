@@ -176,7 +176,9 @@ impl LambdaContext {
 
         // Start progress tracking
         let progress_service = ProgressService::new(progress_tracker);
-        progress_service.start_progress(progress_id.clone()).await;
+        progress_service
+            .start_progress(progress_id.clone(), user_id.clone())
+            .await;
 
         // Load ingestion config
         let config = IngestionConfig::from_env()?;
@@ -186,6 +188,14 @@ impl LambdaContext {
         let json_data_clone = json_data.clone();
         let pub_key_clone = pub_key.clone();
         let user_id_clone = user_id.clone();
+
+        // Increment pending tasks for the background ingestion
+        {
+            let node_guard = node.lock().await;
+            node_guard.increment_pending_tasks().await;
+        }
+
+        let node_for_bg = node.clone();
 
         // Spawn background ingestion task
         tokio::spawn(async move {
@@ -201,6 +211,8 @@ impl LambdaContext {
                         progress_service
                             .fail_progress(&progress_id_clone, error_msg)
                             .await;
+                        // Don't forget to decrement if we return early!
+                        // But we are inside run_with_user block.
                         return;
                     }
                 };
@@ -243,6 +255,12 @@ impl LambdaContext {
                 }
             })
             .await;
+
+            // Decrement pending tasks now that background work is done
+            {
+                let node_guard = node_for_bg.lock().await;
+                node_guard.decrement_pending_tasks().await;
+            }
         });
 
         Ok(progress_id)
@@ -292,7 +310,9 @@ impl LambdaContext {
 
         // Start progress tracking
         let progress_service = ProgressService::new(progress_tracker);
-        progress_service.start_progress(progress_id.clone()).await;
+        progress_service
+            .start_progress(progress_id.clone(), user_id.clone())
+            .await;
 
         // Load ingestion config
         let config = IngestionConfig::from_env()?;

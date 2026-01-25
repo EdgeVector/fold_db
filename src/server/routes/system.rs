@@ -277,8 +277,9 @@ pub enum DatabaseConfigDto {
     #[serde(rename = "local")]
     Local { path: String },
     #[cfg(feature = "aws-backend")]
-    #[serde(rename = "dynamodb")]
-    DynamoDb(DynamoDbConfigDto),
+    #[cfg(feature = "aws-backend")]
+    #[serde(rename = "cloud", alias = "dynamodb")]
+    Cloud(CloudConfigDto),
 }
 
 /// DTO for ExplicitTables
@@ -298,10 +299,10 @@ pub struct ExplicitTablesDto {
     pub logs: String,
 }
 
-/// DTO for DynamoDbConfig
+/// DTO for CloudConfig (formerly DynamoDbConfig)
 #[cfg(feature = "aws-backend")]
 #[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
-pub struct DynamoDbConfigDto {
+pub struct CloudConfigDto {
     pub region: String,
     /// Explicit table names for all required namespaces
     pub tables: ExplicitTablesDto,
@@ -335,7 +336,8 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
             path: path.to_string_lossy().to_string(),
         },
         #[cfg(feature = "aws-backend")]
-        DatabaseConfig::DynamoDb(config) => DatabaseConfigDto::DynamoDb(DynamoDbConfigDto {
+        #[cfg(feature = "aws-backend")]
+        DatabaseConfig::Cloud(config) => DatabaseConfigDto::Cloud(CloudConfigDto {
             region: config.region.clone(),
             auto_create: config.auto_create,
             user_id: config.user_id.clone(),
@@ -388,28 +390,27 @@ pub async fn update_database_config(
             path: std::path::PathBuf::from(path),
         },
         #[cfg(feature = "aws-backend")]
-        DatabaseConfigDto::DynamoDb(dto) => {
-            DatabaseConfig::DynamoDb(crate::storage::DynamoDbConfig {
-                region: dto.region.clone(),
-                auto_create: dto.auto_create,
-                user_id: dto.user_id.clone(),
-                file_storage_bucket: dto.file_storage_bucket.clone(),
-                tables: crate::storage::ExplicitTables {
-                    main: dto.tables.main.clone(),
-                    metadata: dto.tables.metadata.clone(),
-                    permissions: dto.tables.permissions.clone(),
-                    transforms: dto.tables.transforms.clone(),
-                    orchestrator: dto.tables.orchestrator.clone(),
-                    schema_states: dto.tables.schema_states.clone(),
-                    schemas: dto.tables.schemas.clone(),
-                    public_keys: dto.tables.public_keys.clone(),
-                    transform_queue: dto.tables.transform_queue.clone(),
-                    native_index: dto.tables.native_index.clone(),
-                    process: dto.tables.process.clone(),
-                    logs: dto.tables.logs.clone(),
-                },
-            })
-        }
+        #[cfg(feature = "aws-backend")]
+        DatabaseConfigDto::Cloud(dto) => DatabaseConfig::Cloud(crate::storage::CloudConfig {
+            region: dto.region.clone(),
+            auto_create: dto.auto_create,
+            user_id: dto.user_id.clone(),
+            file_storage_bucket: dto.file_storage_bucket.clone(),
+            tables: crate::storage::ExplicitTables {
+                main: dto.tables.main.clone(),
+                metadata: dto.tables.metadata.clone(),
+                permissions: dto.tables.permissions.clone(),
+                transforms: dto.tables.transforms.clone(),
+                orchestrator: dto.tables.orchestrator.clone(),
+                schema_states: dto.tables.schema_states.clone(),
+                schemas: dto.tables.schemas.clone(),
+                public_keys: dto.tables.public_keys.clone(),
+                transform_queue: dto.tables.transform_queue.clone(),
+                native_index: dto.tables.native_index.clone(),
+                process: dto.tables.process.clone(),
+                logs: dto.tables.logs.clone(),
+            },
+        }),
     };
 
     config.database = new_db_config;
@@ -420,8 +421,8 @@ pub async fn update_database_config(
             // No need to update storage_path as it is removed
         }
         #[cfg(feature = "aws-backend")]
-        DatabaseConfig::DynamoDb(_) => {
-            // Keep existing storage_path for DynamoDB (used for logging/debugging)
+        DatabaseConfig::Cloud(_) => {
+            // Keep existing storage_path for Cloud/DynamoDB (used for logging/debugging)
         }
     }
 

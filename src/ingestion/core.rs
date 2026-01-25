@@ -165,10 +165,9 @@ impl IngestionCore {
             request
                 .trust_distance
                 .unwrap_or(self.config.default_trust_distance),
-            request
-                .pub_key
-                .clone()
-                .unwrap_or_else(|| "default".to_string()),
+            request.pub_key.clone().ok_or_else(|| {
+                IngestionError::invalid_input("Missing pub_key for mutation generation")
+            })?,
             request.source_file_name.clone(),
         )?;
 

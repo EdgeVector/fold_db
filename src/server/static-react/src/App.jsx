@@ -16,9 +16,15 @@ import SettingsModal from './components/SettingsModal'
 import LogSidebar from './components/LogSidebar'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useAppSelector, useAppDispatch } from './store/hooks'
-import { initializeSystemKey, fetchNodePrivateKey } from './store/authSlice'
+import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './store/authSlice'
+import LoginPage from './components/LoginPage'
 import { useEffect } from 'react'
 import { DEFAULT_TAB } from './constants'
+import { store } from './store/store'
+import { injectStore } from './api/core/client'
+
+// Inject store into ApiClient to handle circular dependency safely
+injectStore(store)
 
 export function AppContent() {
   // Initialize activeTab from URL hash if present, otherwise use DEFAULT_TAB
@@ -40,6 +46,8 @@ export function AppContent() {
   const [activeTab, setActiveTab] = useState(getInitialTab())
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [results, setResults] = useState(null)
+  
+
 
   // Sync activeTab with URL hash changes
   useEffect(() => {
@@ -76,7 +84,9 @@ export function AppContent() {
   // Redux state and dispatch
   const dispatch = useAppDispatch()
   const authState = useAppSelector(state => state.auth)
-  const { isAuthenticated: _isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
+  const { isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
+
+  console.log('AppContent render:', { isAuthenticated, activeTab });
 
 
   // Initialize system key on mount
@@ -87,6 +97,15 @@ export function AppContent() {
   // Fetch node private key on mount
   useEffect(() => {
     dispatch(fetchNodePrivateKey())
+  }, [dispatch])
+
+  // Restore session on mount
+  useEffect(() => {
+    const userId = localStorage.getItem('fold_user_id')
+    const userHash = localStorage.getItem('fold_user_hash')
+    if (userId && userHash) {
+      dispatch(restoreSession({ id: userId, hash: userHash }))
+    }
   }, [dispatch])
 
   const handleTabChange = (tab) => {
@@ -137,6 +156,26 @@ export function AppContent() {
       default:
         return null
     }
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated && !_isLoading) {
+    return <LoginPage />;
+  }
+
+  // Show loading spinner while restoring session or checking auth
+  if (_isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <svg className="animate-spin h-10 w-10 text-blue-500 mx-auto mb-4" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

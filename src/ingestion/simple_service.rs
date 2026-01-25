@@ -193,10 +193,9 @@ impl SimpleIngestionService {
                     request
                         .trust_distance
                         .unwrap_or(self.config.default_trust_distance),
-                    request
-                        .pub_key
-                        .clone()
-                        .unwrap_or_else(|| "default".to_string()),
+                    request.pub_key.clone().ok_or_else(|| {
+                        IngestionError::invalid_input("Missing pub_key for mutation generation")
+                    })?,
                     request.source_file_name.clone(),
                 )?;
 
@@ -234,10 +233,9 @@ impl SimpleIngestionService {
                 request
                     .trust_distance
                     .unwrap_or(self.config.default_trust_distance),
-                request
-                    .pub_key
-                    .clone()
-                    .unwrap_or_else(|| "default".to_string()),
+                request.pub_key.clone().ok_or_else(|| {
+                    IngestionError::invalid_input("Missing pub_key for mutation generation")
+                })?,
                 request.source_file_name.clone(),
             )?
         };
@@ -363,10 +361,9 @@ impl SimpleIngestionService {
                     request
                         .trust_distance
                         .unwrap_or(self.config.default_trust_distance),
-                    request
-                        .pub_key
-                        .clone()
-                        .unwrap_or_else(|| "default".to_string()),
+                    request.pub_key.clone().ok_or_else(|| {
+                        IngestionError::invalid_input("Missing pub_key for mutation generation")
+                    })?,
                     request.source_file_name.clone(),
                 )?;
 
@@ -390,10 +387,9 @@ impl SimpleIngestionService {
                 request
                     .trust_distance
                     .unwrap_or(self.config.default_trust_distance),
-                request
-                    .pub_key
-                    .clone()
-                    .unwrap_or_else(|| "default".to_string()),
+                request.pub_key.clone().ok_or_else(|| {
+                    IngestionError::invalid_input("Missing pub_key for mutation generation")
+                })?,
                 request.source_file_name.clone(),
             )?
         };
@@ -972,7 +968,7 @@ impl SimpleIngestionService {
         }
 
         // Execute all mutations in a batch using DataFoldNode directly
-        // This avoids OperationProcessor recursive type conversion (Mutation -> Value -> Mutation)
+        // Use mutate_batch which publishes MutationExecuted events for the IndexOrchestrator
         node.mutate_batch(mutations)
             .await
             .map(|mutation_ids| mutation_ids.len())
@@ -994,6 +990,7 @@ impl SimpleIngestionService {
         }
 
         // Execute all mutations in a batch using DataFoldNode directly
+        // Use mutate_batch which publishes MutationExecuted events for the IndexOrchestrator
         node.mutate_batch(mutations)
             .await
             .map(|mutation_ids| mutation_ids.len())

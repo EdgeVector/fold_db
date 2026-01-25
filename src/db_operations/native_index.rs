@@ -945,7 +945,13 @@ impl NativeIndexManager {
         &self,
         index_operations: &[BatchIndexOperation],
     ) -> Result<(), SchemaError> {
+        log::info!(
+            "[NativeIndex] batch_index_field_values_with_classifications_async: Starting with {} operations",
+            index_operations.len()
+        );
+
         if self.store.is_none() {
+            log::error!("[NativeIndex] No store available for async indexing");
             return Err(SchemaError::InvalidData(
                 "Async batch_index only available with KvStore backend".to_string(),
             ));
@@ -1132,8 +1138,28 @@ impl NativeIndexManager {
             }
 
             // Execute writes and deletes
-            join_all(write_futures).await;
-            join_all(delete_futures).await;
+            log::info!(
+                "[NativeIndex] Executing {} writes and {} deletes",
+                write_futures.len(),
+                delete_futures.len()
+            );
+            let write_results = join_all(write_futures).await;
+            let delete_results = join_all(delete_futures).await;
+
+            let write_errors: Vec<_> = write_results.iter().filter(|r| r.is_err()).collect();
+            let delete_errors: Vec<_> = delete_results.iter().filter(|r| r.is_err()).collect();
+
+            if !write_errors.is_empty() {
+                log::warn!("[NativeIndex] {} write errors occurred", write_errors.len());
+            }
+            if !delete_errors.is_empty() {
+                log::warn!(
+                    "[NativeIndex] {} delete errors occurred",
+                    delete_errors.len()
+                );
+            }
+
+            log::info!("[NativeIndex] Index writes completed");
         }
 
         // 4. Update Record Keys (Parallel)
@@ -1150,6 +1176,9 @@ impl NativeIndexManager {
         });
         join_all(record_write_futures).await;
 
+        log::info!(
+            "[NativeIndex] batch_index_field_values_with_classifications_async: Completed successfully"
+        );
         Ok(())
     }
 

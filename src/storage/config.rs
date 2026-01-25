@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 
-/// Configuration for DynamoDB storage
+/// Configuration for Cloud storage
 #[cfg(feature = "aws-backend")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DynamoDbConfig {
+pub struct CloudConfig {
     /// AWS Region
     pub region: String,
     /// Explicit table names for all required namespaces
@@ -22,7 +22,7 @@ pub struct DynamoDbConfig {
 }
 
 #[cfg(feature = "aws-backend")]
-impl DynamoDbConfig {
+impl CloudConfig {
     /// Create config from environment variables.
     ///
     /// Required environment variables:
@@ -143,10 +143,10 @@ pub enum DatabaseConfig {
         /// Path to the local database file/directory
         path: PathBuf,
     },
-    /// DynamoDB storage
+    /// Cloud storage (DynamoDB etc)
     #[cfg(feature = "aws-backend")]
-    #[serde(rename = "dynamodb")]
-    DynamoDb(DynamoDbConfig),
+    #[serde(rename = "cloud")]
+    Cloud(CloudConfig),
 }
 
 impl Default for DatabaseConfig {
@@ -214,9 +214,9 @@ impl DatabaseConfig {
                 Ok(DatabaseConfig::Local { path })
             }
             #[cfg(feature = "aws-backend")]
-            "dynamodb" => {
-                let config = DynamoDbConfig::from_env()?;
-                Ok(DatabaseConfig::DynamoDb(config))
+            "cloud" | "dynamodb" => {
+                let config = CloudConfig::from_env()?;
+                Ok(DatabaseConfig::Cloud(config))
             }
             _ => Err(ConfigError::InvalidValue(format!(
                 "Invalid DATAFOLD_STORAGE_MODE: '{}'. Must be 'local' or 's3'{}",

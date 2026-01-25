@@ -114,7 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // If using DynamoDB backend, automatically enable DynamoDB logging
     #[cfg(feature = "aws-backend")]
-    if let datafold::datafold_node::config::DatabaseConfig::DynamoDb(ref mut db_config) =
+    if let datafold::datafold_node::config::DatabaseConfig::Cloud(ref mut db_config) =
         config.database
     {
         // Inject the generated user_hash into the DynamoDB config

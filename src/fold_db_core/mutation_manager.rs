@@ -354,6 +354,7 @@ impl MutationManager {
                     fields_affected: data.keys().cloned().collect(),
                     mutation_context,
                     data: Some(vec![data]), // Single data row for this mutation
+                    user_id: crate::logging::core::get_current_user_id(),
                 };
 
                 batch_events.push((event, mutation_id.clone()));

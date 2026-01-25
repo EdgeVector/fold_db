@@ -7,10 +7,11 @@ use std::time::Duration;
 pub const MAX_RETRIES: u32 = 3;
 
 /// Maximum number of retries for batch operations (more retries for unprocessed items)
-pub const MAX_BATCH_RETRIES: u32 = 5;
+pub const MAX_BATCH_RETRIES: u32 = 10;
 
 /// Base delay for exponential backoff (in milliseconds)
-const BASE_DELAY_MS: u64 = 100;
+/// Higher for throttling scenarios
+const BASE_DELAY_MS: u64 = 500;
 
 /// Check if an error is retryable (throttling, service errors, etc.)
 pub fn is_retryable_error(error_msg: &str) -> bool {
@@ -140,11 +141,30 @@ where
             }
             Err(e) => {
                 let error_str = e.to_string();
-                let error_msg =
-                    format_dynamodb_error("batch_write_item", table_name, None, &error_str);
+                // Log full error details for debugging
+                log::error!(
+                    "DynamoDB batch_write_item error for table '{}': {} | Full error: {:?}",
+                    table_name,
+                    error_str,
+                    e
+                );
+                let error_msg = format_dynamodb_error(
+                    "batch_write_item",
+                    table_name,
+                    None,
+                    &format!("{:?}", e),
+                );
 
-                if retries < MAX_BATCH_RETRIES && is_retryable_error(&error_str) {
+                if retries < MAX_BATCH_RETRIES
+                    && (is_retryable_error(&error_str) || is_retryable_error(&format!("{:?}", e)))
+                {
                     let delay = exponential_backoff(retries);
+                    log::info!(
+                        "Retrying batch_write_item after {:?} (attempt {}/{})",
+                        delay,
+                        retries + 1,
+                        MAX_BATCH_RETRIES
+                    );
                     tokio::time::sleep(delay).await;
                     retries += 1;
                     continue;

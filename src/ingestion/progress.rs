@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 // Re-export ProgressTracker and create_tracker for backward compatibility
-pub use crate::progress::{create_tracker as create_progress_tracker, ProgressTracker, ProgressTracker as IngestionProgressStore};
+pub use crate::progress::{
+    create_tracker as create_progress_tracker, ProgressTracker,
+    ProgressTracker as IngestionProgressStore,
+};
 
 /// Steps in the ingestion process
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
@@ -53,7 +56,7 @@ impl From<Job> for IngestionProgress {
         let current_step: IngestionStep = if let Some(step_val) = job.metadata.get("step") {
             serde_json::from_value(step_val.clone()).unwrap_or(IngestionStep::ValidatingConfig)
         } else {
-             match job.status {
+            match job.status {
                 JobStatus::Completed => IngestionStep::Completed,
                 JobStatus::Failed => IngestionStep::Failed,
                 _ => IngestionStep::ValidatingConfig,
@@ -86,12 +89,11 @@ impl ProgressService {
         Self { tracker }
     }
 
-    pub async fn start_progress(&self, id: String) -> IngestionProgress {
+    pub async fn start_progress(&self, id: String, user_id: String) -> IngestionProgress {
         let mut job = Job::new(id, JobType::Ingestion);
-        
-        let user_id = crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
+
         job = job.with_user(user_id);
-        
+
         // Initial metadata
         job.metadata = serde_json::json!({
             "step": IngestionStep::ValidatingConfig
@@ -111,7 +113,7 @@ impl ProgressService {
     ) -> Option<IngestionProgress> {
         if let Ok(Some(mut job)) = self.tracker.load(id).await {
             job.update_progress(Self::step_to_percentage(&step), message);
-             
+
             // Update metadata with step
             if let Ok(step_json) = serde_json::to_value(&step) {
                 if let serde_json::Value::Object(ref mut map) = job.metadata {
@@ -137,8 +139,8 @@ impl ProgressService {
     ) -> Option<IngestionProgress> {
         if let Ok(Some(mut job)) = self.tracker.load(id).await {
             job.update_progress(percentage, message);
-            
-             // Update metadata with step
+
+            // Update metadata with step
             if let Ok(step_json) = serde_json::to_value(&step) {
                 if let serde_json::Value::Object(ref mut map) = job.metadata {
                     map.insert("step".to_string(), step_json);
@@ -146,7 +148,7 @@ impl ProgressService {
                     job.metadata = serde_json::json!({ "step": step_json });
                 }
             }
-            
+
             let _ = self.tracker.save(&job).await;
             Some(job.into())
         } else {
@@ -162,17 +164,17 @@ impl ProgressService {
         if let Ok(Some(mut job)) = self.tracker.load(id).await {
             let result_json = serde_json::to_value(results).ok();
             job.complete(result_json);
-            
-             // Update metadata with step
+
+            // Update metadata with step
             let step = IngestionStep::Completed;
-             if let Ok(step_json) = serde_json::to_value(&step) {
+            if let Ok(step_json) = serde_json::to_value(&step) {
                 if let serde_json::Value::Object(ref mut map) = job.metadata {
                     map.insert("step".to_string(), step_json);
                 } else {
                     job.metadata = serde_json::json!({ "step": step_json });
                 }
             }
-            
+
             let _ = self.tracker.save(&job).await;
             Some(job.into())
         } else {
@@ -187,17 +189,17 @@ impl ProgressService {
     ) -> Option<IngestionProgress> {
         if let Ok(Some(mut job)) = self.tracker.load(id).await {
             job.fail(error_message);
-            
+
             // Update metadata with step
             let step = IngestionStep::Failed;
-             if let Ok(step_json) = serde_json::to_value(&step) {
+            if let Ok(step_json) = serde_json::to_value(&step) {
                 if let serde_json::Value::Object(ref mut map) = job.metadata {
                     map.insert("step".to_string(), step_json);
                 } else {
                     job.metadata = serde_json::json!({ "step": step_json });
                 }
             }
-            
+
             let _ = self.tracker.save(&job).await;
             Some(job.into())
         } else {
@@ -206,7 +208,11 @@ impl ProgressService {
     }
 
     pub async fn get_progress(&self, id: &str) -> Option<IngestionProgress> {
-        self.tracker.load(id).await.unwrap_or(None).map(|j| j.into())
+        self.tracker
+            .load(id)
+            .await
+            .unwrap_or(None)
+            .map(|j| j.into())
     }
 
     pub async fn remove_progress(&self, id: &str) -> Option<IngestionProgress> {
@@ -219,15 +225,22 @@ impl ProgressService {
     }
 
     pub async fn get_all_progress(&self) -> Vec<IngestionProgress> {
-         let user_id = crate::logging::core::get_current_user_id().unwrap_or_else(|| "default".to_string());
-         
-         self.tracker.list_by_user(&user_id).await.unwrap_or_default()
+        // Require user context - no default fallback
+        let user_id = match crate::logging::core::get_current_user_id() {
+            Some(uid) => uid,
+            None => return vec![], // No user context = no jobs to return
+        };
+
+        self.tracker
+            .list_by_user(&user_id)
+            .await
+            .unwrap_or_default()
             .into_iter()
             .filter(|j| matches!(j.job_type, JobType::Ingestion))
             .map(|j| j.into())
             .collect()
     }
-    
+
     fn step_to_percentage(step: &IngestionStep) -> u8 {
         match step {
             IngestionStep::ValidatingConfig => 5,

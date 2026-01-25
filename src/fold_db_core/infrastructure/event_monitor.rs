@@ -30,6 +30,7 @@ impl EventMonitor {
         message_bus: Arc<AsyncMessageBus>,
         transform_manager: Arc<TransformManager>,
         progress_store: Option<Arc<dyn ProgressStore>>,
+        user_id: String,
     ) -> Self {
         let statistics = Arc::new(Mutex::new(EventStatistics {
             monitoring_start_time: SystemTime::now()
@@ -39,7 +40,7 @@ impl EventMonitor {
             ..Default::default()
         }));
 
-        let backfill_tracker = Arc::new(BackfillTracker::new(progress_store));
+        let backfill_tracker = Arc::new(BackfillTracker::new(progress_store, user_id));
 
         info!("🔍 EventMonitor: Starting system-wide event monitoring");
 
@@ -333,7 +334,13 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let monitor = EventMonitor::new(Arc::clone(&bus_arc), transform_manager, None).await;
+        let monitor = EventMonitor::new(
+            Arc::clone(&bus_arc),
+            transform_manager,
+            None,
+            "test_user".to_string(),
+        )
+        .await;
 
         // Publish various events
         bus_arc

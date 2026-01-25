@@ -72,7 +72,7 @@ impl NodeConfig {
         match &self.database {
             DatabaseConfig::Local { path } => path.clone(),
             #[cfg(feature = "aws-backend")]
-            DatabaseConfig::DynamoDb(_) => PathBuf::from("data"), // Default callback for DynamoDB if local path needed
+            DatabaseConfig::Cloud(_) => PathBuf::from("data"), // Default callback for DynamoDB if local path needed
         }
     }
 

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { CheckCircleIcon, TrashIcon } from '@heroicons/react/24/solid'
 import { systemClient } from '../api/clients/systemClient'
 import { ingestionClient } from '../api/clients'
-import { useIndexingStatus } from '../api/clients/indexingClient'
 
 function StatusSection() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
@@ -44,8 +43,7 @@ function StatusSection() {
     }
   }, [])
 
-  // Use the hook for indexing status with automatic backoff
-  const { status: indexingStatus } = useIndexingStatus(1000)
+
 
   const handleResetDatabase = async () => {
     setIsResetting(true)
@@ -187,41 +185,7 @@ function StatusSection() {
     )
   }
 
-  // Get indexing status info
-  const getIndexingStatusInfo = () => {
-    if (indexingStatus?.state === 'Indexing') {
-      return {
-        state: 'active',
-        title: 'Background Indexing',
-        detail: 'Actively processing index operations',
-        metrics: [
-          `${indexingStatus.total_operations_processed.toLocaleString()} ops processed`,
-          `${indexingStatus.operations_per_second.toFixed(0)} ops/sec`
-        ],
-        color: 'indigo'
-      }
-    }
 
-    if (indexingStatus?.total_operations_processed > 0) {
-      return {
-        state: 'completed',
-        title: 'Indexing',
-        detail: 'All operations indexed',
-        metrics: [`${indexingStatus.total_operations_processed.toLocaleString()} total operations`],
-        color: 'green'
-      }
-    }
-
-    return {
-      state: 'idle',
-      title: 'Indexing',
-      detail: 'No indexing activity',
-      metrics: [],
-      color: 'gray'
-    }
-  }
-
-  const indexingInfo = getIndexingStatusInfo()
 
   return (
     <>
@@ -245,70 +209,13 @@ function StatusSection() {
         {/* Dashboard Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           
-          {/* Indexing Status Card - Always First or Last? Let's keep it constant */}
-          <div className={`p-4 rounded-lg border-2 ${indexingInfo.state === 'active'
-              ? 'border-indigo-200 bg-indigo-50'
-              : indexingInfo.state === 'completed'
-                ? 'border-green-200 bg-green-50'
-                : 'border-gray-200 bg-gray-50'
-            }`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${indexingInfo.state === 'active'
-                    ? 'bg-indigo-500 animate-pulse'
-                    : indexingInfo.state === 'completed'
-                      ? 'bg-green-500'
-                      : 'bg-gray-400'
-                  }`}></div>
-                <h3 className={`font-semibold ${indexingInfo.state === 'active'
-                    ? 'text-indigo-900'
-                    : indexingInfo.state === 'completed'
-                      ? 'text-green-900'
-                      : 'text-gray-700'
-                  }`}>
-                  {indexingInfo.title}
-                </h3>
-              </div>
-              <span className={`text-xs font-medium px-2 py-1 rounded ${indexingInfo.state === 'active'
-                  ? 'bg-indigo-100 text-indigo-700'
-                  : indexingInfo.state === 'completed'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-200 text-gray-600'
-                }`}>
-                {indexingInfo.state === 'active' ? 'Active' : indexingInfo.state === 'completed' ? 'Complete' : 'Idle'}
-              </span>
-            </div>
 
-            <p className={`text-sm ${indexingInfo.state === 'active'
-                ? 'text-indigo-700'
-                : indexingInfo.state === 'completed'
-                  ? 'text-green-700'
-                  : 'text-gray-500'
-              }`}>
-              {indexingInfo.detail}
-            </p>
-
-            {indexingInfo.metrics && indexingInfo.metrics.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {indexingInfo.metrics.map((metric, idx) => (
-                  <span key={idx} className={`text-xs font-medium px-2 py-1 rounded ${indexingInfo.state === 'active'
-                      ? 'bg-indigo-100 text-indigo-800'
-                      : indexingInfo.state === 'completed'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}>
-                    {metric}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
 
           {/* Active Job Cards */}
           {activeJobs.length > 0 && activeJobs.map(job => renderJobCard(job))}
           
           {/* Placeholder if no jobs and indexing is idle? Optional. */}
-           {activeJobs.length === 0 && indexingInfo.state === 'idle' && (
+           {activeJobs.length === 0 && (
             <div className="p-4 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm">
               No active jobs
             </div>

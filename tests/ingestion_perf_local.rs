@@ -56,12 +56,14 @@ async fn test_ingestion_performance_breakdown() {
     // 3. Start Ingestion
     // auto_execute = true to measure execution time
     let start_total = Instant::now();
+    let test_progress_id = uuid::Uuid::new_v4().to_string();
     let progress_id = LambdaContext::ingest_json(
         json_data,
         true, // auto_execute
         0,
         "test_key".to_string(),
-        "default".to_string(),
+        "test_user".to_string(),
+        test_progress_id,
     )
     .await
     .expect("Failed to start ingestion");

@@ -112,9 +112,9 @@ impl DbOperations {
     }
 
     /// Convenience constructor for DynamoDB backend with simplified config
-    /// Convenience constructor for DynamoDB backend with simplified config
+    /// Convenience constructor for Cloud backend with simplified config
     #[cfg(feature = "aws-backend")]
-    pub async fn from_dynamodb(
+    pub async fn from_cloud(
         client: aws_sdk_dynamodb::Client,
         table_name: String,
         user_id: String,
@@ -123,9 +123,9 @@ impl DbOperations {
         Self::from_namespaced_store(Arc::new(store)).await
     }
 
-    /// Constructor for DynamoDB backend with detailed configuration
+    /// Constructor for Cloud backend with detailed configuration
     #[cfg(feature = "aws-backend")]
-    pub async fn from_dynamodb_flexible(
+    pub async fn from_cloud_flexible(
         client: aws_sdk_dynamodb::Client,
         resolver: crate::storage::TableNameResolver,
         auto_create: bool,

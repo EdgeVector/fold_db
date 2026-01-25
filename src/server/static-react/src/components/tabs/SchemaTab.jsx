@@ -65,77 +65,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
 
 
-  const renderField = (field, fieldName, isRangeKey = false) => {
-    const formatPermissionPolicy = (policy) => {
-      if (!policy) return 'Unknown'
-      if (policy.NoRequirement !== undefined) return 'No Requirement'
-      if (policy.Distance !== undefined) return `Trust Distance ${policy.Distance}`
-      return 'Unknown'
-    }
 
-    return (
-      <div key={fieldName} className={`rounded-md p-4 hover:bg-gray-100 transition-colors duration-200 ${
-        isRangeKey ? 'bg-purple-50 border border-purple-200' : 'bg-gray-50'
-      }`}>
-        <div className="flex justify-between items-start">
-          <div className="space-y-2">
-            <div className="flex items-center">
-              <span className="font-medium text-gray-900">{fieldName}</span>
-              <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-200 text-gray-700">
-                {field.field_type}
-              </span>
-              {isRangeKey && (
-                <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-purple-200 text-purple-800">
-                  Range Key
-                </span>
-              )}
-            </div>
-            
-            {/* Permission Policies */}
-            {field.permission_policy && (
-              <div className="space-y-1">
-                <div className="flex items-center text-xs text-gray-600">
-                  <span className="font-medium mr-2">Read:</span>
-                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded">
-                    {formatPermissionPolicy(field.permission_policy.read_policy)}
-                  </span>
-                </div>
-                <div className="flex items-center text-xs text-gray-600">
-                  <span className="font-medium mr-2">Write:</span>
-                  <span className="px-1.5 py-0.5 bg-orange-100 text-orange-800 rounded">
-                    {formatPermissionPolicy(field.permission_policy.write_policy)}
-                  </span>
-                </div>
-              </div>
-            )}
-            
-            {field.transform && (
-              <div className="flex items-center text-sm text-gray-600">
-                <svg className="icon icon-xs mr-1" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-                </svg>
-                {field.transform.name}
-              </div>
-            )}
-            {field.molecule_uuid && (
-              <div className="text-xs text-gray-500 break-all">
-                {field.molecule_uuid}
-              </div>
-            )}
-          </div>
-          <span className={`
-            inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-            ${field.writable
-              ? 'bg-green-100 text-green-800'
-              : 'bg-gray-100 text-gray-800'
-            }
-          `}>
-            {field.writable ? 'Writable' : 'Read-only'}
-          </span>
-        </div>
-      </div>
-    )
-  }
 
   const getStateColor = (state) => {
     switch (state?.toLowerCase()) {
@@ -393,9 +323,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     return String(state || '').toLowerCase()
   }
   
-  const availableSchemas = schemas.filter(
-    (schema) => getStateString(schema.state) === 'available'
-  )
+
 
   // Derive approved schemas from the full schema list so newly fetched field
   // details are reflected when a schema is expanded.
@@ -403,73 +331,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     (schema) => getStateString(schema.state) === 'approved'
   )
 
-  const blockedSchemas = schemas.filter(
-    (schema) => getStateString(schema.state) === 'blocked'
-  )
+
 
   return (
     <div className="p-6 space-y-6">
-      {/* Available Schemas Dropdown */}
-      <div>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Available Schemas</h3>
-        <div className="border rounded-lg bg-white shadow-sm">
-          <details className="group">
-            <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50">
-              <span className="font-medium text-gray-900">
-                Available Schemas ({availableSchemas.length})
-              </span>
-              <ChevronRightIcon className="h-5 w-5 text-gray-400 group-open:rotate-90 transition-transform" />
-            </summary>
-            <div className="border-t bg-gray-50">
-              {availableSchemas.length === 0 ? (
-                <div className="p-4 text-gray-500 text-center">No available schemas</div>
-              ) : (
-                <div className="space-y-2 p-4">
-                  {availableSchemas.map(schema => {
-                    const schemaRangeInfo = schema.fields ? getRangeSchemaInfo(schema) : null
-                    const schemaHashRangeInfo = getHashRangeSchemaInfo(schema)
-                    return (
-                      <div key={schema.name} className="flex items-center justify-between p-3 bg-white rounded border">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex items-center space-x-2">
-                            <h4 className="font-medium text-gray-900">{getDisplayName(schema)}</h4>
-                            {schema.descriptive_name && schema.descriptive_name !== schema.name && (
-                              <span className="text-xs text-gray-500">({schema.name})</span>
-                            )}
-                          </div>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStateColor(schema.state)}`}>
-                            {schema.state}
-                          </span>
-                          {schemaRangeInfo && (
-                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-                              Range Schema
-                            </span>
-                          )}
-                          {schemaHashRangeInfo && (
-                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                              HashRange Schema
-                            </span>
-                          )}
-                        </div>
-                      
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => approveSchema(schema.name)}
-                          className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
-                        >
-                          Approve
-                        </button>
-                      </div>
-                    </div>
-                  )})}
-                </div>
-              )}
-            </div>
-          </details>
-        </div>
-        
-      </div>
-
       {/* Approved Schemas List */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-gray-900">Approved Schemas</h3>
@@ -477,18 +342,10 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           approvedSchemas.map(renderSchema)
         ) : (
           <div className="border rounded-lg p-8 bg-white shadow-sm text-center text-gray-500">
-            No approved schemas. Approve schemas from the available list above to see them here.
+            No approved schemas found.
           </div>
         )}
       </div>
-
-      {/* Blocked Schemas (if any) */}
-      {blockedSchemas.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-gray-900">Blocked Schemas</h3>
-          {blockedSchemas.map(renderSchema)}
-        </div>
-      )}
     </div>
   )
 }

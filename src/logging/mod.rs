@@ -10,7 +10,7 @@ pub mod features;
 pub mod outputs;
 pub mod util;
 
-use crate::logging::core::{MultiAsyncLogger, LogBridge, Logger};
+use crate::logging::core::{LogBridge, Logger, MultiAsyncLogger};
 #[cfg(feature = "aws-backend")]
 use crate::logging::outputs::dynamodb::DynamoDbLogger;
 use crate::logging::outputs::web::WebOutput;
@@ -67,8 +67,8 @@ impl LoggingSystem {
         Self::init_with_config(config).await
     }
 
-    /// Initialize logging with explicit DynamoDB configuration
-    pub async fn init_with_dynamodb(
+    /// Initialize logging with explicit Cloud configuration
+    pub async fn init_with_cloud(
         dynamo_config: Option<(String, String, Option<String>)>,
     ) -> Result<(), LoggingError> {
         #[allow(unused_mut)]
@@ -113,7 +113,7 @@ impl LoggingSystem {
 
         // Prepare sync loggers
         let mut sync_loggers: Vec<Box<dyn log::Log>> = Vec::new();
-        
+
         // Prepare async loggers
         let mut async_loggers: Vec<Arc<dyn crate::logging::core::Logger>> = Vec::new();
 
@@ -145,18 +145,18 @@ impl LoggingSystem {
             } else {
                 DynamoDbLogger::new(table_name).await
             };
-            
+
             async_loggers.push(Arc::new(dynamodb_logger));
         }
-        
+
         // Connect async loggers via MultiAsyncLogger and LogBridge if any exist
         if !async_loggers.is_empty() {
             let multi_async = MultiAsyncLogger::new(async_loggers);
             let multi_arc = Arc::new(multi_async);
-            
+
             // Set as global logger for querying
             let _ = GLOBAL_LOGGER.set(multi_arc.clone());
-            
+
             // Bridge to sync world
             let bridge = LogBridge::new(multi_arc, config.general.app_id.clone());
             sync_loggers.push(Box::new(bridge));
@@ -290,16 +290,16 @@ impl LoggingSystem {
         // Try GLOBAL_LOGGER (MultiAsyncLogger or dedicated logger)
         if let Some(logger) = GLOBAL_LOGGER.get() {
             if let Ok(entries) = logger.query(&user_id, limit, from_timestamp).await {
-                 // Sort by timestamp if needed, but MultiAsyncLogger's first successful query does it
+                // Sort by timestamp if needed, but MultiAsyncLogger's first successful query does it
                 return Ok(entries);
             }
         }
-        
+
         // Fallback to GLOBAL_WEB_OUTPUT which stores logs in memory
         if let Some(web_output) = GLOBAL_WEB_OUTPUT.get() {
-             if let Ok(entries) = web_output.query(&user_id, limit, from_timestamp).await {
-                 return Ok(entries);
-             }
+            if let Ok(entries) = web_output.query(&user_id, limit, from_timestamp).await {
+                return Ok(entries);
+            }
         }
 
         Ok(Vec::new())
@@ -334,8 +334,12 @@ pub enum LoggingError {
 
 /// Convenience function to get web logs (backward compatibility)
 pub fn get_logs() -> Vec<String> {
-     if let Some(web_output) = GLOBAL_WEB_OUTPUT.get() {
-        web_output.get_logs().into_iter().map(|e| e.message).collect()
+    if let Some(web_output) = GLOBAL_WEB_OUTPUT.get() {
+        web_output
+            .get_logs()
+            .into_iter()
+            .map(|e| e.message)
+            .collect()
     } else {
         Vec::new()
     }
@@ -355,5 +359,7 @@ pub fn subscribe() -> Option<tokio::sync::broadcast::Receiver<String>> {
 pub fn init() -> Result<(), LoggingError> {
     // We cannot easily run async here without a runtime.
     // Sync initialization is deprecated and not supported for full functionality.
-    Err(LoggingError::Config("Sync initialization deprecated. Use LoggingSystem::init_default().await".to_string()))
+    Err(LoggingError::Config(
+        "Sync initialization deprecated. Use LoggingSystem::init_default().await".to_string(),
+    ))
 }

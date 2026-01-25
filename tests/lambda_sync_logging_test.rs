@@ -76,12 +76,14 @@ async fn test_sync_ingestion_logging_context() {
 
     // Call ingest_json_sync
     // We expect this to fail or succeed, but crucially we want to check logs emitted during execution
+    let test_progress_id = uuid::Uuid::new_v4().to_string();
     let _ = LambdaContext::ingest_json_sync(
         test_data,
         false,
         0,
         "default".to_string(),
         target_user_id.to_string(),
+        test_progress_id,
     )
     .await;
 

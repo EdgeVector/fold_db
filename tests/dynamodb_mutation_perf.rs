@@ -2,7 +2,7 @@
 use datafold::datafold_node::config::DatabaseConfig;
 use datafold::datafold_node::{DataFoldNode, NodeConfig};
 use datafold::schema::types::Mutation;
-use datafold::storage::{DynamoDbConfig, ExplicitTables};
+use datafold::storage::{CloudConfig, ExplicitTables};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -83,7 +83,7 @@ async fn test_dynamodb_mutation_performance() {
 
     // Create Node Config
     let config = NodeConfig {
-        database: DatabaseConfig::DynamoDb(DynamoDbConfig {
+        database: DatabaseConfig::Cloud(CloudConfig {
             region: region.to_string(),
             tables,
             auto_create: true,

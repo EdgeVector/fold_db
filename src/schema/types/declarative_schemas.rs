@@ -234,7 +234,7 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<KeyConfig>,
     /// Field names - plain data fields without transformations
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // #[serde(skip_serializing_if = "Option::is_none")]
     pub fields: Option<Vec<String>>,
     /// Transform fields - computed fields with expressions (optional, only for transform schemas)
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -30,10 +30,13 @@ pub async fn spawn_background_ingestion(
     progress_tracker: &ProgressTracker,
     node: Arc<RwLock<DataFoldNode>>,
     progress_id: String,
+    user_id: String,
 ) -> String {
     // Start progress tracking
     let progress_service = ProgressService::new(progress_tracker.clone());
-    progress_service.start_progress(progress_id.clone()).await;
+    progress_service
+        .start_progress(progress_id.clone(), user_id)
+        .await;
 
     // Create ingestion request
     let ingestion_request = IngestionRequest {
@@ -47,25 +50,31 @@ pub async fn spawn_background_ingestion(
     // Clone for the spawned task
     let progress_id_clone = progress_id.clone();
     let ingestion_config = config.ingestion_config;
+    let user_id_for_task =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "unknown".to_string());
 
-    // Spawn the background task
+    // Spawn the background task with user context propagated
     tokio::spawn(async move {
-        if let Err(e) = run_background_ingestion(
-            ingestion_request,
-            node,
-            progress_service,
-            progress_id_clone,
-            ingestion_config,
-        )
+        // Wrap in run_with_user to propagate user context for progress tracking
+        crate::logging::core::run_with_user(&user_id_for_task, async move {
+            if let Err(e) = run_background_ingestion(
+                ingestion_request,
+                node,
+                progress_service,
+                progress_id_clone,
+                ingestion_config,
+            )
+            .await
+            {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Background ingestion setup failed: {}",
+                    e
+                );
+            }
+        })
         .await
-        {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Background ingestion setup failed: {}",
-                e
-            );
-        }
     });
 
     progress_id

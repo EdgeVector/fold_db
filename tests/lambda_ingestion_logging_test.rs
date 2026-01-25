@@ -65,6 +65,7 @@ impl Logger for TestLogger {
 
 #[tokio::test]
 async fn test_lambda_json_ingestion_with_logging() {
+    std::env::set_var("FOLDB_USER_ID", "test_user");
     // Create unique temp directory for this test
     let temp_dir =
         std::env::temp_dir().join(format!("lambda_ingestion_test_{}", uuid::Uuid::new_v4()));
@@ -134,12 +135,14 @@ async fn test_lambda_json_ingestion_with_logging() {
     println!("Starting JSON ingestion...");
 
     // Ingest JSON data asynchronously (don't auto-execute to avoid mutation errors)
+    let test_progress_id = uuid::Uuid::new_v4().to_string();
     let ingest_result = LambdaContext::ingest_json(
         test_data.clone(),
         false, // auto_execute = false
         0,     // trust_distance
         "test_lambda_key".to_string(),
         "test_user".to_string(), // New user_id parameter
+        test_progress_id,
     )
     .await;
 

@@ -202,6 +202,7 @@ impl MutationExecuted {
             fields_affected,
             mutation_context: None,
             data: None, // Use with_context to populate if needed
+            user_id: crate::logging::core::get_current_user_id(),
         }
     }
 
@@ -220,6 +221,7 @@ impl MutationExecuted {
             fields_affected,
             mutation_context,
             data: None, // Use manual initialization if data payload is required
+            user_id: crate::logging::core::get_current_user_id(),
         }
     }
 }
