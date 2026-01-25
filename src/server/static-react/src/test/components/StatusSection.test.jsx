@@ -76,12 +76,26 @@ describe('StatusSection Component', () => {
     })
   })
 
-  it('renders indexing status card', () => {
+  it('renders indexing job card when indexing job is returned', async () => {
+    // Mock an indexing job response
+    ingestionClient.getAllProgress.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'idx-123',
+        started_at: new Date().toISOString(),
+        is_complete: false,
+        status_message: 'Indexing documents...',
+        progress_percentage: 75,
+        job_type: 'indexing'
+      }]
+    })
+    
     render(<StatusSection />)
     
     // Check for Indexing text in the status cards
-    const indexingElements = screen.getAllByText(/Indexing/i)
-    expect(indexingElements.length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(screen.getByText(/Indexing Job/i)).toBeInTheDocument()
+    })
   })
 
   it('renders all visual elements', async () => {
@@ -90,17 +104,28 @@ describe('StatusSection Component', () => {
     // Check that all key elements are present
     expect(screen.getByText('System Status')).toBeInTheDocument()
     
+    // Wait for the ingestion job from the mock to render
     await waitFor(() => {
-        expect(screen.getByText(/Ingestion/i)).toBeInTheDocument()
+        expect(screen.getByText(/Ingestion Job/i)).toBeInTheDocument()
     })
-    
-    const indexingElements = screen.getAllByText(/Indexing/i)
-    expect(indexingElements.length).toBeGreaterThan(0)
     
     // Check for icon
     const heading = screen.getByText('System Status')
     const icon = heading.parentElement.querySelector('svg')
     expect(icon).toBeInTheDocument()
+  })
+
+  it('shows "No active jobs" placeholder when no jobs are returned', async () => {
+    ingestionClient.getAllProgress.mockResolvedValue({
+      success: true,
+      data: []
+    })
+    
+    render(<StatusSection />)
+    
+    await waitFor(() => {
+      expect(screen.getByText('No active jobs')).toBeInTheDocument()
+    })
   })
 
   describe('Database Reset Functionality', () => {
