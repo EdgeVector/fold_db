@@ -110,17 +110,8 @@ impl FoldDB {
     ///
     /// Now fully async to support DbOperations with storage abstraction!
     pub async fn new(path: &str) -> Result<Self, StorageError> {
-        let db = match sled::open(path) {
-            Ok(db) => db,
-            Err(e) => {
-                if e.to_string().contains("No such file or directory") {
-                    sled::open(path)
-                        .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?
-                } else {
-                    return Err(StorageError::IoError(std::io::Error::other(e.to_string())));
-                }
-            }
-        };
+        let db = sled::open(path)
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
         Self::initialize_from_db(db, path).await
     }

@@ -24,12 +24,11 @@ pub fn apply_status_update(
     source_pub_key: String,
 ) {
     let now = Utc::now();
-    let status_clone = status.clone();
-    *status_field = status_clone.clone();
+    *status_field = status.clone();
     *updated_at_field = now;
     history.push(MoleculeUpdate {
         timestamp: now,
-        status: status_clone,
+        status: status.clone(),
         source_pub_key,
     });
 }
