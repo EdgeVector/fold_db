@@ -683,7 +683,7 @@ impl OperationProcessor {
                 // 3) config user_id, 4) node public key
                 let uid = user_id_override
                     .map(|s| s.to_string())
-                    .or_else(|| crate::logging::core::get_current_user_id())
+                    .or_else(crate::logging::core::get_current_user_id)
                     .or_else(|| cloud_config.user_id.clone())
                     .unwrap_or_else(|| self.node.get_node_public_key().to_string());
 

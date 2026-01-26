@@ -299,7 +299,7 @@ impl KvStore for DynamoDbKvStore {
 
             for key in chunk {
                 let pk = self.get_partition_key_with_key(key);
-                let sk = self.make_sort_key_impl(&key);
+                let sk = self.make_sort_key_impl(key);
                 let mut key_map = HashMap::new();
                 key_map.insert("PK".to_string(), AttributeValue::S(pk));
                 key_map.insert("SK".to_string(), AttributeValue::S(sk));
@@ -370,12 +370,6 @@ pub enum TableNameResolver {
     /// Map namespace to exact table name. keys are namespaces ("main", "metadata", etc)
     Explicit(HashMap<String, String>),
 }
-
-/// DynamoDB-backed NamespacedStore
-///
-/// Each namespace maps to a separate DynamoDB table for optimal performance.
-/// Table names are resolved using the `TableNameResolver`.
-/// The user_id is used as the partition key for multi-tenant isolation.
 
 /// Specialized DynamoDB store for native index with simplified key structure
 /// Uses user_id:feature (classification) as partition key and term as sort key
@@ -467,11 +461,6 @@ impl DynamoDbNamespacedStore {
     pub fn with_user_id(mut self, user_id: String) -> Self {
         self.default_user_id = user_id;
         self
-    }
-
-    /// Get the current user_id - from request context if available, otherwise default
-    fn get_current_user_id(&self) -> String {
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| self.default_user_id.clone())
     }
 
     /// Generate table name for a namespace

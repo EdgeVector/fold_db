@@ -432,8 +432,7 @@ impl DynamoDbSchemaStore {
                     if let Some(schema_json) = item.get("SchemaJson").and_then(|v| v.as_s().ok()) {
                         let schema_name = item
                             .get("SK")
-                            .and_then(|v| v.as_s().ok())
-                            .map(|s| s.clone())
+                            .and_then(|v| v.as_s().ok()).cloned()
                             .unwrap_or_else(|| "unknown".to_string());
 
                         let mut schema: Schema =

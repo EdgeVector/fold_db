@@ -146,7 +146,7 @@ pub enum DatabaseConfig {
     /// Cloud storage (DynamoDB etc)
     #[cfg(feature = "aws-backend")]
     #[serde(rename = "cloud")]
-    Cloud(CloudConfig),
+    Cloud(Box<CloudConfig>),
 }
 
 impl Default for DatabaseConfig {
@@ -216,7 +216,7 @@ impl DatabaseConfig {
             #[cfg(feature = "aws-backend")]
             "cloud" | "dynamodb" => {
                 let config = CloudConfig::from_env()?;
-                Ok(DatabaseConfig::Cloud(config))
+                Ok(DatabaseConfig::Cloud(Box::new(config)))
             }
             _ => Err(ConfigError::InvalidValue(format!(
                 "Invalid DATAFOLD_STORAGE_MODE: '{}'. Must be 'local' or 's3'{}",
