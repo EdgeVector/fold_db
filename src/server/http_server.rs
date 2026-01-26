@@ -82,22 +82,7 @@ impl DataFoldHttpServer {
         };
 
         // Initialize the enhanced logging system with Cloud config if available
-        match crate::logging::LoggingSystem::init_with_cloud(logs_config).await {
-            Ok(_) => {}
-            Err(crate::logging::LoggingError::AlreadyInitialized) => {
-                // Logging system already initialized, which is expected if running from binary
-            }
-            Err(e) => {
-                log_feature!(
-                    LogFeature::HttpServer,
-                    warn,
-                    "Failed to initialize enhanced logging system, falling back to web logger: {}",
-                    e
-                );
-                // Fall back to default logging
-                crate::logging::LoggingSystem::init_default().await.ok();
-            }
-        }
+        crate::logging::LoggingSystem::init_with_fallback(logs_config).await;
 
         Ok(Self {
             node: Arc::new(RwLock::new(node)),
@@ -408,9 +393,25 @@ impl DataFoldHttpServer {
         cfg.route(
             "/llm-query/native-index",
             web::post().to(llm_query::ai_native_index_query),
+        )
+        .route("/llm-query/run", web::post().to(llm_query::run_query))
+        .route(
+            "/llm-query/analyze",
+            web::post().to(llm_query::analyze_query),
+        )
+        .route(
+            "/llm-query/execute",
+            web::post().to(llm_query::execute_query_plan),
+        )
+        .route("/llm-query/chat", web::post().to(llm_query::chat))
+        .route(
+            "/llm-query/analyze-followup",
+            web::post().to(llm_query::analyze_followup),
+        )
+        .route(
+            "/llm-query/backfill/{hash}",
+            web::get().to(llm_query::get_backfill_status),
         );
-        // Removed: /llm-query/run, /llm-query/analyze, /llm-query/execute, /llm-query/chat,
-        // /llm-query/analyze-followup, /llm-query/backfill/{hash} (unused - UI uses native-index directly)
     }
 
     fn configure_security_routes(cfg: &mut web::ServiceConfig) {
