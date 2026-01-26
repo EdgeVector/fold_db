@@ -255,8 +255,8 @@ impl BackfillTracker {
             // Filter by JobType::Backfill
             match store.list_by_user(&self.user_id).await {
                 Ok(jobs) => {
-                    let mut backfills = self.backfills.lock().unwrap();
-                    let mut transform_to_hash = self.transform_to_hash.lock().unwrap();
+                    let mut backfills = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let mut transform_to_hash = self.transform_to_hash.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
                     for job in jobs {
                         if let Some(info) = BackfillInfo::from_job(&job) {
@@ -317,7 +317,7 @@ impl BackfillTracker {
     pub async fn set_mutations_expected(&self, backfill_hash: &str, count: u64) {
         let mut info_clone = None;
         {
-            let mut backfills = self.backfills.lock().unwrap();
+            let mut backfills = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(info) = backfills.get_mut(backfill_hash) {
                 let was_in_progress = info.status == BackfillStatus::InProgress;
                 info.mutations_expected = count;
@@ -358,7 +358,7 @@ impl BackfillTracker {
         let mut info_clone = None;
 
         {
-            let mut backfills = self.backfills.lock().unwrap();
+            let mut backfills = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(info) = backfills.get_mut(backfill_hash) {
                 info.mutations_completed += 1;
 
@@ -398,7 +398,7 @@ impl BackfillTracker {
     pub async fn increment_mutation_failed(&self, backfill_hash: &str, error_msg: String) {
         let mut info_clone = None;
         {
-            let mut backfills = self.backfills.lock().unwrap();
+            let mut backfills = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(info) = backfills.get_mut(backfill_hash) {
                 info.mutations_failed += 1;
 
@@ -437,8 +437,8 @@ impl BackfillTracker {
     /// Mark backfill as failed by transform_id (uses latest backfill for that transform)
     pub async fn fail_backfill(&self, transform_id: &str, error_msg: String) {
         let mut info_clone = None;
-        if let Some(hash) = self.transform_to_hash.lock().unwrap().get(transform_id) {
-            if let Some(info) = self.backfills.lock().unwrap().get_mut(hash) {
+        if let Some(hash) = self.transform_to_hash.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(transform_id) {
+            if let Some(info) = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_mut(hash) {
                 info.mark_failed(error_msg);
                 info_clone = Some(info.clone());
             }
@@ -460,19 +460,19 @@ impl BackfillTracker {
             .lock()
             .unwrap()
             .get(transform_id)
-            .and_then(|hash| self.backfills.lock().unwrap().get(hash).cloned())
+            .and_then(|hash| self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(hash).cloned())
     }
 
     /// Get info for a specific backfill by backfill_hash
     pub fn get_backfill_by_hash(&self, backfill_hash: &str) -> Option<BackfillInfo> {
-        self.backfills.lock().unwrap().get(backfill_hash).cloned()
+        self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(backfill_hash).cloned()
     }
 
     /// Force mark a backfill as completed by hash (used when we know it should be done)
     pub async fn force_complete(&self, backfill_hash: &str) {
         let mut info_clone = None;
         {
-            let mut backfills = self.backfills.lock().unwrap();
+            let mut backfills = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(info) = backfills.get_mut(backfill_hash) {
                 if info.status == BackfillStatus::InProgress {
                     info.mark_completed();
@@ -493,7 +493,7 @@ impl BackfillTracker {
 
     /// Get all backfill info
     pub fn get_all_backfills(&self) -> Vec<BackfillInfo> {
-        self.backfills.lock().unwrap().values().cloned().collect()
+        self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).values().cloned().collect()
     }
 
     /// Get only active (in-progress) backfills
@@ -509,7 +509,7 @@ impl BackfillTracker {
 
     /// Clear old completed backfills (keep only recent ones)
     pub fn cleanup_old_backfills(&self, keep_count: usize) {
-        let mut backfills = self.backfills.lock().unwrap();
+        let mut backfills = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let mut completed: Vec<_> = backfills
             .iter()

@@ -12,8 +12,7 @@ use std::sync::Arc;
 pub struct InputFetcher;
 
 impl InputFetcher {
-    /// Fetch input values with mutation context for incremental processing
-    /// @tomtang keep -- main path
+    /// Fetch input values with mutation context for incremental processing.
     pub async fn fetch_input_values_with_context(
         transform: &Transform,
         db_ops: &Arc<crate::db_operations::DbOperations>,
@@ -47,7 +46,7 @@ impl InputFetcher {
                     mutation_context,
                 )
                 .await?;
-                input_values.insert(input_schema.to_string() + "." + input_field_name, value);
+                input_values.insert(format!("{}.{}", input_schema, input_field_name), value);
             } else {
                 let input_schema = input_field;
                 let schema = db_ops
@@ -64,7 +63,7 @@ impl InputFetcher {
                         mutation_context,
                     )
                     .await?;
-                    let key = input_schema.to_string() + "." + field_name;
+                    let key = format!("{}.{}", input_schema, field_name);
                     input_values.insert(key, value);
                 }
             }
@@ -72,8 +71,7 @@ impl InputFetcher {
         Ok(input_values)
     }
 
-    /// Fetch input for a field with mutation context for incremental processing
-    /// @tomtang keep -- main path
+    /// Fetch input for a field with mutation context for incremental processing.
     async fn fetch_input_for_field_with_context(
         db_ops: &Arc<crate::db_operations::DbOperations>,
         schema: &mut Schema,

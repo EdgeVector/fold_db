@@ -18,12 +18,8 @@ use async_trait::async_trait;
 
 #[async_trait]
 impl TransformRunner for super::TransformManager {
-    /// Execute the transform with the given context
-    /// this is the meat of the transform execution
-    /// @tomtang keep -- main path
-    /// Execute the transform with the given context
-    /// this is the meat of the transform execution
-    /// @tomtang keep -- main path
+    /// Execute the transform with the given context.
+    /// This is the main path for transform execution.
     async fn execute_transform_with_context(
         &self,
         transform_id: &str,
@@ -31,7 +27,6 @@ impl TransformRunner for super::TransformManager {
             crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext,
         >,
     ) -> Result<TransformResult, SchemaError> {
-        // Load the transform from in-memory registered transforms
         // Load the transform from in-memory registered transforms
         let transform = {
             let transforms = self.registered_transforms.read().map_err(|e| {
@@ -113,7 +108,13 @@ impl TransformRunner for super::TransformManager {
         for record in &records {
             // For storage, we need to create a key - using the first field's key or a default
             let key_config = schema.key.clone();
-            let row_key = KeyValue::from_mutation(&record.fields, key_config.as_ref().unwrap());
+            let key_config_ref = key_config.as_ref().ok_or_else(|| {
+                SchemaError::InvalidData(format!(
+                    "Schema '{}' is missing key configuration",
+                    schema.name
+                ))
+            })?;
+            let row_key = KeyValue::from_mutation(&record.fields, key_config_ref);
 
             // Convert field names to hash codes for storage
             let mut code_hash_to_result = std::collections::HashMap::new();

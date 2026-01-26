@@ -199,6 +199,10 @@ impl TypedEngine {
                                         let mut path = depth_path.clone();
                                         path.push(i);
                                         path.push(j);
+                                        let value_text = match &new_item.value.value {
+                                            serde_json::Value::String(s) => s.clone(),
+                                            other => other.to_string(),
+                                        };
                                         emitted.push(EmittedEntry {
                                             row_id: path
                                                 .iter()
@@ -206,9 +210,7 @@ impl TypedEngine {
                                                 .collect::<Vec<_>>()
                                                 .join("/"),
                                             atom_uuid: new_item.value.atom_uuid.clone(),
-                                            value_text: Some(
-                                                new_item.value.value.as_str().unwrap().to_string(),
-                                            ),
+                                            value_text: Some(value_text),
                                         });
                                     }
                                 }
