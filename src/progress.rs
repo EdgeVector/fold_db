@@ -166,18 +166,18 @@ impl InMemoryProgressStore {
 #[async_trait]
 impl ProgressStore for InMemoryProgressStore {
     async fn save(&self, job: &Job) -> Result<(), String> {
-        let mut store = self.store.lock().unwrap();
+        let mut store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         store.insert(job.id.clone(), job.clone());
         Ok(())
     }
 
     async fn load(&self, id: &str) -> Result<Option<Job>, String> {
-        let store = self.store.lock().unwrap();
+        let store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(store.get(id).cloned())
     }
 
     async fn list_by_user(&self, user_id: &str) -> Result<Vec<Job>, String> {
-        let store = self.store.lock().unwrap();
+        let store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(store
             .values()
             .filter(|j| j.user_id.as_deref() == Some(user_id) || j.user_id.is_none())
@@ -186,7 +186,7 @@ impl ProgressStore for InMemoryProgressStore {
     }
 
     async fn delete(&self, id: &str) -> Result<(), String> {
-        let mut store = self.store.lock().unwrap();
+        let mut store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         store.remove(id);
         Ok(())
     }

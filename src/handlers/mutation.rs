@@ -11,9 +11,13 @@ use crate::schema::types::operations::{Mutation, MutationType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::time::Duration;
 
 #[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
+
+/// Default timeout for waiting on background tasks after batch mutations.
+const DEFAULT_BACKGROUND_TASK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Response for mutation execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,7 +93,7 @@ pub async fn execute_mutations_batch(
     match node.mutate_batch(mutations).await {
         Ok(mutation_ids) => {
             // Wait for background tasks (indexing) to complete
-            node.wait_for_background_tasks(std::time::Duration::from_secs(5))
+            node.wait_for_background_tasks(DEFAULT_BACKGROUND_TASK_TIMEOUT)
                 .await;
 
             Ok(ApiResponse::success_with_user(

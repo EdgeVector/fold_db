@@ -63,7 +63,7 @@ impl NodeManager {
 
         // Check cache first
         {
-            let nodes = self.nodes.lock().unwrap();
+            let nodes = self.nodes.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(node) = nodes.get(user_id) {
                 return Ok(node.clone());
             }
@@ -74,7 +74,7 @@ impl NodeManager {
 
         // Cache it
         {
-            let mut nodes = self.nodes.lock().unwrap();
+            let mut nodes = self.nodes.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             nodes.insert(user_id.to_string(), node.clone());
         }
 

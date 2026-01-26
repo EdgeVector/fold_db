@@ -504,7 +504,10 @@ mod tests {
         IterationItem {
             key: KeyValue::new(Some("test".to_string()), None),
             value: FieldValue {
-                value: serde_json::Value::Number(serde_json::Number::from_f64(num).unwrap()),
+                value: serde_json::Value::Number(
+                    serde_json::Number::from_f64(num)
+                        .expect("Test number must be finite (not NaN or infinity)"),
+                ),
                 atom_uuid: "test-uuid".to_string(),
                 source_file_name: None,
             },

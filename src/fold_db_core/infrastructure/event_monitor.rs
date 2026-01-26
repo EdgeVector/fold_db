@@ -54,7 +54,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::FieldValueSet(_) = event {
-                    stats.lock().unwrap().increment_field_value_sets();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_field_value_sets();
                 }
             }
         });
@@ -65,7 +65,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::AtomCreated(_) = event {
-                    stats.lock().unwrap().increment_atom_creations();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_atom_creations();
                 }
             }
         });
@@ -76,7 +76,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::AtomUpdated(_) = event {
-                    stats.lock().unwrap().increment_atom_updates();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_atom_updates();
                 }
             }
         });
@@ -87,7 +87,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::MoleculeCreated(_) = event {
-                    stats.lock().unwrap().increment_molecule_creations();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_molecule_creations();
                 }
             }
         });
@@ -98,7 +98,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::MoleculeUpdated(_) = event {
-                    stats.lock().unwrap().increment_molecule_updates();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_molecule_updates();
                 }
             }
         });
@@ -109,7 +109,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::SchemaLoaded(_) = event {
-                    stats.lock().unwrap().increment_schema_loads();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_schema_loads();
                 }
             }
         });
@@ -120,7 +120,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::SchemaChanged(_) = event {
-                    stats.lock().unwrap().increment_schema_changes();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_schema_changes();
                 }
             }
         });
@@ -131,7 +131,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::TransformTriggered(_) = event {
-                    stats.lock().unwrap().increment_transform_triggers();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_transform_triggers();
                 }
             }
         });
@@ -145,7 +145,7 @@ impl EventMonitor {
                     let is_error =
                         e.result.contains("error:") || e.result.contains("execution_error:");
                     let success = !is_error;
-                    stats.lock().unwrap().increment_transform_executions(
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_transform_executions(
                         &e.transform_id,
                         success,
                         0,
@@ -160,7 +160,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::TransformRegistered(_) = event {
-                    stats.lock().unwrap().increment_transform_registrations();
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_transform_registrations();
                 }
             }
         });
@@ -196,7 +196,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::QueryExecuted(e) = event {
-                    stats.lock().unwrap().increment_query_executions(
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_query_executions(
                         &e.schema,
                         &e.query_type,
                         e.execution_time_ms,
@@ -212,7 +212,7 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::MutationExecuted(e) = event {
-                    stats.lock().unwrap().increment_mutation_executions(&e);
+                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_mutation_executions(&e);
                 }
             }
         });
@@ -225,7 +225,10 @@ impl EventMonitor {
 
     /// Get current event statistics
     pub fn get_statistics(&self) -> EventStatistics {
-        self.statistics.lock().unwrap().clone()
+        self.statistics
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// Get the backfill tracker

@@ -38,7 +38,12 @@ impl WebOutput {
     }
 
     pub fn get_logs(&self) -> Vec<LogEntry> {
-        self.buffer.lock().unwrap().iter().cloned().collect()
+        self.buffer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
