@@ -98,9 +98,9 @@ impl NodeManager {
                     #[cfg(feature = "aws-backend")]
                     DatabaseConfig::Cloud(cloud_config) => {
                         let mut cfg = NodeConfig::default();
-                        let mut d_cfg = cloud_config.clone();
+                        let mut d_cfg = (**cloud_config).clone();
                         d_cfg.user_id = Some(user_id.to_string());
-                        cfg.database = DatabaseConfig::Cloud(d_cfg);
+                        cfg.database = DatabaseConfig::Cloud(Box::new(d_cfg));
                         cfg
                     }
                 };

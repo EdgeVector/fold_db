@@ -9,8 +9,6 @@ use aws_sdk_dynamodb::types::AttributeValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "aws-backend")]
-use std::time::SystemTime;
 use utoipa::ToSchema;
 
 /// Type of job being tracked
@@ -240,7 +238,7 @@ impl ProgressStore for DynamoDbProgressStore {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
-            + (1 * 60 * 60)) as i64;
+            + (60 * 60)) as i64;
 
         self.client
             .put_item()

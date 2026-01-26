@@ -152,7 +152,7 @@ where
                     "batch_write_item",
                     table_name,
                     None,
-                    &format!("{:?}", e),
+                    format!("{:?}", e),
                 );
 
                 if retries < MAX_BATCH_RETRIES

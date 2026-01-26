@@ -5,10 +5,8 @@ use crate::fold_db_core::FoldDB;
 #[cfg(feature = "aws-backend")]
 use crate::logging::features::LogFeature;
 #[cfg(feature = "aws-backend")]
-#[cfg(feature = "aws-backend")]
 use crate::progress::{DynamoDbProgressStore as DynamoDbJobStore, ProgressStore as JobStore};
 use crate::storage::config::DatabaseConfig;
-#[cfg(feature = "aws-backend")]
 #[cfg(feature = "aws-backend")]
 use crate::storage::TableNameResolver;
 use std::sync::Arc;
@@ -118,8 +116,6 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
             // Initialize JobStore (Generic)
             let job_store: Option<Arc<dyn JobStore>> = {
                 let table_name = cloud_config.tables.process.clone();
-                let region = cloud_config.region.clone();
-
                 let store = DynamoDbJobStore::new(client.clone(), table_name);
                 Some(Arc::new(store))
             };

@@ -106,7 +106,7 @@ impl DynamoDbResetManager {
                     "query",
                     table_name,
                     None,
-                    &e.to_string(),
+                    e.to_string(),
                 ))
             })?;
 

@@ -373,9 +373,8 @@ pub enum DatabaseConfigDto {
     #[serde(rename = "local")]
     Local { path: String },
     #[cfg(feature = "aws-backend")]
-    #[cfg(feature = "aws-backend")]
     #[serde(rename = "cloud", alias = "dynamodb")]
-    Cloud(CloudConfigDto),
+    Cloud(Box<CloudConfigDto>),
 }
 
 /// DTO for ExplicitTables
@@ -432,8 +431,7 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
             path: path.to_string_lossy().to_string(),
         },
         #[cfg(feature = "aws-backend")]
-        #[cfg(feature = "aws-backend")]
-        DatabaseConfig::Cloud(config) => DatabaseConfigDto::Cloud(CloudConfigDto {
+        DatabaseConfig::Cloud(config) => DatabaseConfigDto::Cloud(Box::new(CloudConfigDto {
             region: config.region.clone(),
             auto_create: config.auto_create,
             user_id: config.user_id.clone(),
@@ -452,7 +450,7 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
                 process: config.tables.process.clone(),
                 logs: config.tables.logs.clone(),
             },
-        }),
+        })),
     };
 
     HttpResponse::Ok().json(db_config)
@@ -486,8 +484,7 @@ pub async fn update_database_config(
             path: std::path::PathBuf::from(path),
         },
         #[cfg(feature = "aws-backend")]
-        #[cfg(feature = "aws-backend")]
-        DatabaseConfigDto::Cloud(dto) => DatabaseConfig::Cloud(crate::storage::CloudConfig {
+        DatabaseConfigDto::Cloud(dto) => DatabaseConfig::Cloud(Box::new(crate::storage::CloudConfig {
             region: dto.region.clone(),
             auto_create: dto.auto_create,
             user_id: dto.user_id.clone(),
@@ -506,7 +503,7 @@ pub async fn update_database_config(
                 process: dto.tables.process.clone(),
                 logs: dto.tables.logs.clone(),
             },
-        }),
+        })),
     };
 
     config.database = new_db_config;

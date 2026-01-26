@@ -182,7 +182,7 @@ impl Logger for DynamoDbLogger {
     /// Log an event to DynamoDB
     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let item_struct = DynamoDbLogItem::try_from_entry(entry)
-            .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))?;
+            .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
         let item = serde_dynamo::to_item(item_struct)?;
 
         self.client
