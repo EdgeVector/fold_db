@@ -196,6 +196,23 @@ impl LoggingSystem {
         Ok(())
     }
 
+    /// Initialize logging with automatic fallback on failure.
+    ///
+    /// Attempts cloud logging first (if config provided), falls back to default
+    /// logging on error. Silently succeeds if logging is already initialized.
+    pub async fn init_with_fallback(
+        cloud_config: Option<(String, String, Option<String>)>,
+    ) {
+        match Self::init_with_cloud(cloud_config).await {
+            Ok(_) => {}
+            Err(LoggingError::AlreadyInitialized) => {}
+            Err(e) => {
+                eprintln!("Cloud logging init failed ({}), using default", e);
+                let _ = Self::init_default().await;
+            }
+        }
+    }
+
     /// Get the global logging configuration
     pub async fn get_config() -> Option<LogConfig> {
         if let Some(config_arc) = LOGGING_CONFIG.get() {
