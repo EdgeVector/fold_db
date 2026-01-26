@@ -56,26 +56,24 @@ impl Default for IndexingStatus {
 #[derive(Clone)]
 pub struct IndexStatusTracker {
     store: Arc<dyn ProgressStore>,
-    /// Default user_id used when no task-local context is available
-    default_user_id: String,
 }
 
 impl IndexStatusTracker {
-    pub fn new(store: Option<Arc<dyn ProgressStore>>, user_id: String) -> Self {
+    pub fn new(store: Option<Arc<dyn ProgressStore>>) -> Self {
         Self {
             store: store.unwrap_or_else(|| Arc::new(InMemoryProgressStore::new())),
-            default_user_id: user_id,
         }
     }
 
-    /// Get the effective user_id - from task-local context if available, otherwise default
-    fn get_effective_user_id(&self) -> String {
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| self.default_user_id.clone())
+    /// Get the user_id from task-local context - returns error if not available
+    fn get_user_id(&self) -> Result<String, String> {
+        crate::logging::core::get_current_user_id()
+            .ok_or_else(|| "User context required for index status tracking".to_string())
     }
 
-    /// Helper to safe/load status from generic store
+    /// Helper to save/load status from generic store
     async fn save_status(&self, status: &IndexingStatus) -> Result<(), String> {
-        let user_id = self.get_effective_user_id();
+        let user_id = self.get_user_id()?;
         let mut job = Job::new("indexing_status".to_string(), JobType::Indexing)
             .with_user(user_id)
             .with_metadata(serde_json::to_value(status).unwrap());
@@ -93,7 +91,7 @@ impl IndexStatusTracker {
     }
 
     async fn load_status(&self) -> Result<IndexingStatus, String> {
-        let user_id = self.get_effective_user_id();
+        let user_id = self.get_user_id()?;
         let jobs = self.store.list_by_user(&user_id).await?;
         if let Some(job) = jobs.iter().find(|j| j.id == "indexing_status") {
             Ok(serde_json::from_value(job.metadata.clone()).unwrap_or_default())

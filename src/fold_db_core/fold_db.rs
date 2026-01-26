@@ -279,7 +279,7 @@ impl FoldDB {
         // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
         // Create shared IndexStatusTracker for tracking indexing progress
         // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
-        let index_status_tracker = IndexStatusTracker::new(job_store.clone(), user_id);
+        let index_status_tracker = IndexStatusTracker::new(job_store.clone());
 
         // Create and start IndexOrchestrator for event-driven native indexing
         use super::orchestration::index_orchestrator::IndexOrchestrator;

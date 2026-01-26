@@ -5,7 +5,7 @@
  */
 
 // Schema Client
-export { 
+export {
   schemaClient,
   UnifiedSchemaClient,
   createSchemaClient,
@@ -18,8 +18,8 @@ export {
   loadSchema,
   unloadSchema,
   getApprovedSchemas,
-  validateSchemaForOperation
-} from './schemaClient';
+  validateSchemaForOperation,
+} from "./schemaClient";
 
 // Security Client
 export {
@@ -30,8 +30,8 @@ export {
   getSystemPublicKey,
   validatePublicKeyFormat,
   validateSignedMessage,
-  getSecurityStatus
-} from './securityClient';
+  getSecurityStatus,
+} from "./securityClient";
 
 // System Client
 export {
@@ -42,8 +42,8 @@ export {
   resetDatabase,
   getSystemStatus,
   createLogStream,
-  validateResetRequest
-} from './systemClient';
+  validateResetRequest,
+} from "./systemClient";
 
 // Transform Client
 export {
@@ -56,11 +56,11 @@ export {
   refreshQueue,
   getTransform,
   removeFromQueue,
-  validateTransformId
-} from './transformClient';
+  validateTransformId,
+} from "./transformClient";
 
 // Mutation Client (if exists)
-export * from './mutationClient';
+export * from "./mutationClient";
 
 // Ingestion Client
 export {
@@ -73,52 +73,54 @@ export {
   validateData,
   processIngestion,
   validateIngestionRequest,
-  createIngestionRequest
-} from './ingestionClient';
+  createIngestionRequest,
+} from "./ingestionClient";
 
 // LLM Query Client
-export { llmQueryClient } from './llmQueryClient';
+export { llmQueryClient } from "./llmQueryClient";
 // Native Index Client
-export { nativeIndexClient, NativeIndexClient } from './nativeIndexClient';
+export { nativeIndexClient, NativeIndexClient } from "./nativeIndexClient";
 // Indexing Status Client
-export { getIndexingStatus, useIndexingStatus } from './indexingClient';
-export type { IndexingStatus } from './indexingClient';
+export { getIndexingStatus, useIndexingStatus } from "./indexingClient";
+export type { IndexingStatus } from "./indexingClient";
 
 // Type exports for convenience
 export type {
   SchemasByStateResponse,
   SchemasWithStateResponse,
-  SchemaStatusResponse
-} from './schemaClient';
+  SchemaStatusResponse,
+} from "./schemaClient";
 
 export type {
   SystemKeyResponse,
   KeyValidationResult,
-  SecurityStatus
-} from './securityClient';
+  SecurityStatus,
+} from "./securityClient";
 
 export type {
   LogsResponse,
   ResetDatabaseRequest,
   ResetDatabaseResponse,
-  SystemStatusResponse
-} from './systemClient';
+  SystemStatusResponse,
+} from "./systemClient";
 
 export type {
   Transform,
   TransformsResponse,
   QueueInfo,
   AddToQueueRequest,
-  AddToQueueResponse
-} from './transformClient';
+  AddToQueueResponse,
+} from "./transformClient";
 
 export type {
   IngestionStatus,
+  IngestionProgress,
+  IngestionResults,
   OpenRouterConfig,
   OllamaConfig,
   IngestionConfig,
   ValidationRequest,
   ValidationResponse,
   ProcessIngestionRequest,
-  ProcessIngestionResponse
-} from './ingestionClient';
+  ProcessIngestionResponse,
+} from "./ingestionClient";

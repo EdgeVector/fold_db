@@ -52,8 +52,10 @@ export default function NativeIndexTab({ onResult }) {
     try {
       const res = await nativeIndexClient.search(term)
       if (res.success) {
-        setResults(res.data || [])
-        onResult({ success: true, data: res.data || [] })
+        // API returns { ok: true, results: [...] } in data, extract results array
+        const resultsArray = res.data?.results || []
+        setResults(resultsArray)
+        onResult({ success: true, data: resultsArray })
       } else {
         setError(res.error || 'Search failed')
         onResult({ error: res.error || 'Search failed', status: res.status })
@@ -106,8 +108,8 @@ export default function NativeIndexTab({ onResult }) {
     if (!res.success) {
       throw new Error(res.error || 'Query failed')
     }
-    // Server returns array of { key, fields }
-    const arr = Array.isArray(res.data) ? res.data : []
+    // Server returns { ok, results, user_hash } in data - extract results array
+    const arr = Array.isArray(res.data?.results) ? res.data.results : []
     // Prefer exact key match if present
     const match = arr.find(x => {
       const kh = x?.key?.hash ?? null

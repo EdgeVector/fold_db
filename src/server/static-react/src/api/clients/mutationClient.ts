@@ -2,6 +2,8 @@
  * Mutation API Client - Unified Implementation
  * Replaces existing mutationClient.ts with standardized approach
  * Implements SCHEMA-002 compliance for mutation operations
+ *
+ * Uses generated TypeScript types from Rust backend for type safety.
  */
 
 import { ApiClient, createApiClient } from "../core/client";
@@ -9,7 +11,38 @@ import { API_ENDPOINTS } from "../endpoints";
 import { SCHEMA_STATES } from "../../constants/api";
 import type { EnhancedApiResponse, MutationApiClient } from "../core/types";
 
-// Mutation-specific response types
+// Import generated types from Rust backend for API consistency
+import type {
+  QueryResponse as BackendQueryResponse,
+  IndexSearchResponse as BackendIndexSearchResponse,
+  MutationResponse as BackendMutationResponse,
+  SingleMutationResponse as BackendSingleMutationResponse,
+} from "@generated/generated";
+
+// Re-export backend types for consumers
+export type {
+  BackendQueryResponse,
+  BackendIndexSearchResponse,
+  BackendMutationResponse,
+  BackendSingleMutationResponse,
+};
+
+// Local types for client-specific functionality (not generated from backend)
+export interface ValidationResult {
+  isValid: boolean;
+  errors?: string[];
+  warnings?: string[];
+  schemaCompliance?: {
+    schemaName: string;
+    isApproved: boolean;
+    missingFields?: string[];
+    invalidFields?: string[];
+  };
+}
+
+// Backward-compatible local types for client methods
+// These will be migrated to use BackendMutationResponse/BackendQueryResponse
+// once the client layer is refactored to handle the new response structures
 export interface MutationResponse {
   success: boolean;
   result?: unknown;
@@ -24,18 +57,6 @@ export interface QueryResponse {
   totalCount?: number;
   hasMore?: boolean;
   metadata?: Record<string, unknown>;
-}
-
-export interface ValidationResult {
-  isValid: boolean;
-  errors?: string[];
-  warnings?: string[];
-  schemaCompliance?: {
-    schemaName: string;
-    isApproved: boolean;
-    missingFields?: string[];
-    invalidFields?: string[];
-  };
 }
 
 /**

@@ -269,35 +269,28 @@ impl LoggingSystem {
         limit: Option<usize>,
         from_timestamp: Option<i64>,
     ) -> Result<Vec<crate::logging::core::LogEntry>, LoggingError> {
+        // Try to get user_id from config, but allow fallback for WebOutput which doesn't need it
         let user_id = if let Some(config_arc) = LOGGING_CONFIG.get() {
-            config_arc
-                .read()
-                .await
-                .general
-                .app_id
-                .clone()
-                .ok_or_else(|| {
-                    LoggingError::Config(
-                        "No user_id (app_id) configured for logging query".to_string(),
-                    )
-                })?
+            config_arc.read().await.general.app_id.clone()
         } else {
-            return Err(LoggingError::Config(
-                "Logging system not initialized".to_string(),
-            ));
+            None
         };
 
-        // Try GLOBAL_LOGGER (MultiAsyncLogger or dedicated logger)
-        if let Some(logger) = GLOBAL_LOGGER.get() {
-            if let Ok(entries) = logger.query(&user_id, limit, from_timestamp).await {
-                // Sort by timestamp if needed, but MultiAsyncLogger's first successful query does it
-                return Ok(entries);
+        // If we have a user_id, try GLOBAL_LOGGER first (e.g., DynamoDB)
+        if let Some(uid) = &user_id {
+            if let Some(logger) = GLOBAL_LOGGER.get() {
+                if let Ok(entries) = logger.query(uid, limit, from_timestamp).await {
+                    if !entries.is_empty() {
+                        return Ok(entries);
+                    }
+                }
             }
         }
 
-        // Fallback to GLOBAL_WEB_OUTPUT which stores logs in memory
+        // Fallback to GLOBAL_WEB_OUTPUT which stores logs in memory (doesn't need user_id)
         if let Some(web_output) = GLOBAL_WEB_OUTPUT.get() {
-            if let Ok(entries) = web_output.query(&user_id, limit, from_timestamp).await {
+            let dummy_user = user_id.as_deref().unwrap_or("anonymous");
+            if let Ok(entries) = web_output.query(dummy_user, limit, from_timestamp).await {
                 return Ok(entries);
             }
         }
