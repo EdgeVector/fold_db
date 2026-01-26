@@ -669,7 +669,6 @@ impl OperationProcessor {
         // 4. Handle storage reset
         match &config.database {
             #[cfg(feature = "aws-backend")]
-            #[cfg(feature = "aws-backend")]
             DatabaseConfig::Cloud(cloud_config) => {
                 let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
                     .region(aws_sdk_dynamodb::config::Region::new(

@@ -70,7 +70,6 @@ impl DataFoldHttpServer {
         let logs_config = {
             match &node.config.database {
                 #[cfg(feature = "aws-backend")]
-                #[cfg(feature = "aws-backend")]
                 crate::datafold_node::config::DatabaseConfig::Cloud(d) => {
                     let user_id = d
                         .user_id
@@ -152,7 +151,6 @@ impl DataFoldHttpServer {
         let dynamo_config = {
             let node_guard = self.node.read().await;
             match &node_guard.config.database {
-                #[cfg(feature = "aws-backend")]
                 #[cfg(feature = "aws-backend")]
                 crate::datafold_node::config::DatabaseConfig::Cloud(d) => {
                     Some((d.tables.process.clone(), d.region.clone()))

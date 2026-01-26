@@ -105,5 +105,3 @@ impl FilterApplicator for SingleField {
         HashRangeFilterResult::new(matches)
     }
 }
-
-impl SingleField {}
