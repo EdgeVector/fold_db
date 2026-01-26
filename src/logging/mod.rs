@@ -340,11 +340,7 @@ pub fn get_logs() -> Vec<String> {
 
 /// Convenience function to subscribe to web logs (backward compatibility)
 pub fn subscribe() -> Option<tokio::sync::broadcast::Receiver<String>> {
-    if let Some(web_output) = GLOBAL_WEB_OUTPUT.get() {
-        Some(web_output.subscribe())
-    } else {
-        None
-    }
+    GLOBAL_WEB_OUTPUT.get().map(|web_output| web_output.subscribe())
 }
 
 /// Initialize logging with backward compatibility

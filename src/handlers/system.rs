@@ -76,7 +76,7 @@ pub async fn get_indexing_status(
         Ok(status) => {
             // Convert to JSON Value
             let status_json =
-                serde_json::to_value(&status).unwrap_or_else(|_| serde_json::Value::Null);
+                serde_json::to_value(&status).unwrap_or(serde_json::Value::Null);
             Ok(ApiResponse::success_with_user(
                 IndexingStatusResponse {
                     status: status_json,

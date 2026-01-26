@@ -157,7 +157,7 @@ pub async fn get_schema(
         Ok(Some(schema_with_state)) => {
             // Convert to JSON Value
             let schema_json = serde_json::to_value(&schema_with_state)
-                .unwrap_or_else(|_| serde_json::Value::Null);
+                .unwrap_or(serde_json::Value::Null);
             Ok(ApiResponse::success_with_user(
                 SchemaResponse {
                     schema: schema_json,
