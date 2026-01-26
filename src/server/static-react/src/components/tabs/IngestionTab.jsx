@@ -32,47 +32,33 @@ function IngestionTab({ onResult }) {
     
     try {
       const parsedData = JSON.parse(jsonData)
-      
-      const newProgressId = crypto.randomUUID()
 
       const options = {
         autoExecute,
         trustDistance,
-        pubKey,
-        progressId: newProgressId
+        pubKey
       }
 
       const response = await ingestionClient.processIngestion(parsedData, options)
       
       if (response.success) {
-        // Check if we got a progress ID for tracking
-        if (response.data.progress_id) {
-          // Emit event for header status tracker (StatusSection will pick this up)
-          console.log('🟢 IngestionTab: Dispatching ingestion-started event', response.data.progress_id)
-          window.dispatchEvent(new CustomEvent('ingestion-started', {
-            detail: { progressId: response.data.progress_id }
-          }))
-          
-          setJsonData('') // Clear the form on success
-          setIsLoading(false)
-        } else {
-          // Fallback to immediate result if no progress tracking
-          onResult(response.data)
-          setJsonData('') // Clear the form on success
-          setIsLoading(false)
-        }
+        onResult({
+          success: true,
+          data: response.data
+        })
+        setJsonData('') // Clear the form on success
       } else {
         onResult({
           success: false,
           error: 'Failed to process ingestion'
         })
-        setIsLoading(false)
       }
     } catch (error) {
       onResult({
         success: false,
         error: error.message || 'Failed to process ingestion'
       })
+    } finally {
       setIsLoading(false)
     }
   }

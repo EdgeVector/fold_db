@@ -1,7 +1,6 @@
-use crate::datafold_node::OperationProcessor;
+use crate::handlers::schema as schema_handlers;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-
 use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
@@ -10,6 +9,18 @@ use serde_json::json;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleSuccessResponse {
     pub success: bool,
+}
+
+/// Helper to convert HandlerError to HttpResponse
+fn handler_error_to_response(e: crate::handlers::HandlerError) -> HttpResponse {
+    let status_code = match e.status_code() {
+        400 => actix_web::http::StatusCode::BAD_REQUEST,
+        401 => actix_web::http::StatusCode::UNAUTHORIZED,
+        404 => actix_web::http::StatusCode::NOT_FOUND,
+        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    HttpResponse::build(status_code).json(e.to_response())
 }
 
 #[utoipa::path(
@@ -22,12 +33,16 @@ pub struct SimpleSuccessResponse {
     )
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    // Get user from context
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
 
-    match processor.list_schemas().await {
-        Ok(schemas) => HttpResponse::Ok().json(schemas),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to list schemas: {}", e)})),
+    let node = state.node.read().await;
+
+    // Use shared handler
+    match schema_handlers::list_schemas(&user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -47,13 +62,15 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
 
-    match processor.get_schema(&name).await {
-        Ok(Some(schema_with_state)) => HttpResponse::Ok().json(schema_with_state),
-        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Schema not found"})),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get schema: {}", e)})),
+    let node = state.node.read().await;
+
+    // Use shared handler
+    match schema_handlers::get_schema(&name, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -72,12 +89,15 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
 
-    match processor.approve_schema(&schema_name).await {
-        Ok(backfill_hash) => HttpResponse::Ok().json(backfill_hash),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to approve schema: {}", e)})),
+    let node = state.node.read().await;
+
+    // Use shared handler
+    match schema_handlers::approve_schema(&schema_name, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -96,12 +116,15 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
 )]
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
 
-    match processor.block_schema(&schema_name).await {
-        Ok(_) => HttpResponse::Ok().json(SimpleSuccessResponse { success: true }),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to block schema: {}", e)})),
+    let node = state.node.read().await;
+
+    // Use shared handler
+    match schema_handlers::block_schema(&schema_name, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -124,7 +147,7 @@ pub async fn get_backfill_status(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let backfill_hash = path.into_inner();
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let processor = crate::datafold_node::OperationProcessor::new(state.node.read().await.clone());
 
     match processor.get_backfill(&backfill_hash).await {
         Ok(Some(info)) => HttpResponse::Ok().json(info),
@@ -145,29 +168,28 @@ pub async fn get_backfill_status(
     )
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
 
-    match processor.load_schemas().await {
-        Ok((schema_count, loaded_count, failed_schemas)) => {
-            log_feature!(
-                LogFeature::Schema,
-                info,
-                "Loaded {} of {} schemas from schema service",
-                loaded_count,
-                schema_count
-            );
+    let node = state.node.read().await;
 
-            HttpResponse::Ok().json(json!({
-                "available_schemas_loaded": schema_count,
-                "schemas_loaded_to_db": loaded_count,
-                "failed_schemas": failed_schemas
-            }))
+    // Use shared handler
+    match schema_handlers::load_schemas(&user_hash, &node).await {
+        Ok(response) => {
+            if let Some(ref data) = response.data {
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Loaded {} of {} schemas from schema service",
+                    data.schemas_loaded_to_db,
+                    data.available_schemas_loaded
+                );
+            }
+            HttpResponse::Ok().json(response)
         }
         Err(e) => {
             log_feature!(LogFeature::Schema, error, "Failed to load schemas: {}", e);
-            HttpResponse::InternalServerError().json(json!({
-                "error": format!("Failed to load schemas: {}", e)
-            }))
+            handler_error_to_response(e)
         }
     }
 }

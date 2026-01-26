@@ -316,10 +316,6 @@ impl DataFoldHttpServer {
     fn configure_query_routes(cfg: &mut web::ServiceConfig) {
         cfg.route("/query", web::post().to(query_routes::execute_query))
             .route("/mutation", web::post().to(query_routes::execute_mutation))
-            .route(
-                "/mutations/batch",
-                web::post().to(query_routes::execute_mutations_batch),
-            )
             .route("/transforms", web::get().to(query_routes::list_transforms))
             .route(
                 "/transforms/queue",
@@ -334,20 +330,8 @@ impl DataFoldHttpServer {
                 web::get().to(query_routes::get_all_backfills),
             )
             .route(
-                "/transforms/backfills/active",
-                web::get().to(query_routes::get_active_backfills),
-            )
-            .route(
-                "/transforms/backfills/statistics",
-                web::get().to(query_routes::get_backfill_statistics),
-            )
-            .route(
                 "/transforms/backfills/{id}",
                 web::get().to(query_routes::get_backfill),
-            )
-            .route(
-                "/transforms/statistics",
-                web::get().to(query_routes::get_transform_statistics),
             )
             .route(
                 "/native-index/search",
@@ -373,20 +357,12 @@ impl DataFoldHttpServer {
             web::get().to(ingestion_routes::get_status),
         )
         .route(
-            "/ingestion/health",
-            web::get().to(ingestion_routes::health_check),
-        )
-        .route(
             "/ingestion/config",
             web::get().to(ingestion_routes::get_ingestion_config),
         )
         .route(
             "/ingestion/config",
             web::post().to(ingestion_routes::save_ingestion_config),
-        )
-        .route(
-            "/ingestion/validate",
-            web::post().to(ingestion_routes::validate_json),
         )
         .route(
             "/ingestion/progress",
@@ -400,17 +376,7 @@ impl DataFoldHttpServer {
 
     fn configure_log_routes(cfg: &mut web::ServiceConfig) {
         cfg.route("/logs", web::get().to(log_routes::list_logs))
-            .route("/logs/stream", web::get().to(log_routes::stream_logs))
-            .route("/logs/config", web::get().to(log_routes::get_config))
-            .route(
-                "/logs/config/reload",
-                web::post().to(log_routes::reload_config),
-            )
-            .route("/logs/features", web::get().to(log_routes::get_features))
-            .route(
-                "/logs/level",
-                web::put().to(log_routes::update_feature_level),
-            );
+            .route("/logs/stream", web::get().to(log_routes::stream_logs));
     }
 
     fn configure_system_routes(cfg: &mut web::ServiceConfig) {
@@ -431,10 +397,6 @@ impl DataFoldHttpServer {
             web::post().to(system_routes::reset_database),
         )
         .route(
-            "/system/reset-schema-service",
-            web::post().to(system_routes::reset_schema_service),
-        )
-        .route(
             "/system/database-config",
             web::get().to(system_routes::get_database_config),
         )
@@ -445,28 +407,12 @@ impl DataFoldHttpServer {
     }
 
     fn configure_llm_query_routes(cfg: &mut web::ServiceConfig) {
-        cfg.route("/llm-query/run", web::post().to(llm_query::run_query))
-            .route(
-                "/llm-query/analyze",
-                web::post().to(llm_query::analyze_query),
-            )
-            .route(
-                "/llm-query/execute",
-                web::post().to(llm_query::execute_query_plan),
-            )
-            .route("/llm-query/chat", web::post().to(llm_query::chat))
-            .route(
-                "/llm-query/analyze-followup",
-                web::post().to(llm_query::analyze_followup),
-            )
-            .route(
-                "/llm-query/native-index",
-                web::post().to(llm_query::ai_native_index_query),
-            )
-            .route(
-                "/llm-query/backfill/{hash}",
-                web::get().to(llm_query::get_backfill_status),
-            );
+        cfg.route(
+            "/llm-query/native-index",
+            web::post().to(llm_query::ai_native_index_query),
+        );
+        // Removed: /llm-query/run, /llm-query/analyze, /llm-query/execute, /llm-query/chat,
+        // /llm-query/analyze-followup, /llm-query/backfill/{hash} (unused - UI uses native-index directly)
     }
 
     fn configure_security_routes(cfg: &mut web::ServiceConfig) {

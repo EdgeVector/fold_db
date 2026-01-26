@@ -401,10 +401,25 @@ pub async fn get_all_progress(progress_tracker: web::Data<ProgressTracker>) -> i
         "Received request for all progress"
     );
 
-    let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    let all_progress = progress_service.get_all_progress().await;
+    // Get user from context
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
 
-    HttpResponse::Ok().json(all_progress)
+    // Use shared handler
+    match crate::handlers::ingestion::get_all_progress(&user_hash, progress_tracker.get_ref()).await
+    {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => {
+            let status_code = match e.status_code() {
+                400 => actix_web::http::StatusCode::BAD_REQUEST,
+                401 => actix_web::http::StatusCode::UNAUTHORIZED,
+                404 => actix_web::http::StatusCode::NOT_FOUND,
+                503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+                _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            HttpResponse::build(status_code).json(e.to_response())
+        }
+    }
 }
 
 #[cfg(test)]

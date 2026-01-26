@@ -81,9 +81,10 @@ function QueryTab({ onResult }) {
       }
       
       // Pass the actual query data from response.data
+      // API returns { ok: true, results: [...] } in data, extract results array
       onResult({
         success: true,
-        data: response.data // The actual query results are directly in response.data
+        data: response.data?.results || response.data
       });
     } catch (error) {
       console.error('Failed to execute query:', error);

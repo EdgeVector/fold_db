@@ -53,7 +53,6 @@ export interface ProcessIngestionRequest {
   auto_execute: boolean;
   trust_distance: number;
   pub_key: string;
-  progress_id: string; // Mandatory for backend, but we generate if missing
 }
 // ... (interface continues, but we are just replacing the request construction part mostly)
 
@@ -123,6 +122,21 @@ export class UnifiedIngestionClient {
       timeout: API_TIMEOUTS.QUICK,
       retries: API_RETRIES.STANDARD,
       cacheable: false, // Status should always be fresh
+    });
+  }
+
+  /**
+   * Get all active ingestion progress
+   * UNPROTECTED - Progress status is public for monitoring
+   *
+   * @returns Promise resolving to array of ingestion progress items
+   */
+  async getAllProgress(): Promise<EnhancedApiResponse<IngestionProgress[]>> {
+    return this.client.get<IngestionProgress[]>("/ingestion/progress", {
+      requiresAuth: false,
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.STANDARD,
+      cacheable: false, // Progress should always be fresh
     });
   }
 
@@ -200,7 +214,6 @@ export class UnifiedIngestionClient {
       autoExecute?: boolean;
       trustDistance?: number;
       pubKey?: string;
-      progressId?: string;
     } = {},
   ): Promise<EnhancedApiResponse<ProcessIngestionResponse>> {
     const request: ProcessIngestionRequest = {
@@ -208,7 +221,6 @@ export class UnifiedIngestionClient {
       auto_execute: options.autoExecute ?? true,
       trust_distance: options.trustDistance ?? 0,
       pub_key: options.pubKey ?? "default",
-      progress_id: options.progressId || crypto.randomUUID(),
     };
 
     // Validate request before sending
@@ -301,7 +313,6 @@ export class UnifiedIngestionClient {
       auto_execute: options.autoExecute ?? true,
       trust_distance: options.trustDistance ?? 0,
       pub_key: options.pubKey ?? "default",
-      progress_id: options.progressId || crypto.randomUUID(),
     };
   }
 
@@ -317,37 +328,6 @@ export class UnifiedIngestionClient {
   /**
    * Clear ingestion-related cache (though ingestion operations should not be cached)
    */
-  /**
-   * Get ingestion progress by ID
-   *
-   * @param id Progress ID
-   * @returns Promise resolving to progress information
-   */
-  async getProgress(
-    id: string,
-  ): Promise<EnhancedApiResponse<IngestionProgress>> {
-    return this.client.get<IngestionProgress>(`/ingestion/progress/${id}`, {
-      requiresAuth: false,
-      timeout: API_TIMEOUTS.QUICK,
-      retries: API_RETRIES.STANDARD,
-      cacheable: false,
-    });
-  }
-
-  /**
-   * Get all active ingestion progress
-   *
-   * @returns Promise resolving to all active progress
-   */
-  async getAllProgress(): Promise<EnhancedApiResponse<IngestionProgress[]>> {
-    return this.client.get<IngestionProgress[]>("/ingestion/progress", {
-      requiresAuth: false,
-      timeout: API_TIMEOUTS.QUICK,
-      retries: API_RETRIES.STANDARD,
-      cacheable: false,
-    });
-  }
-
   clearCache(): void {
     this.client.clearCache();
   }
@@ -362,17 +342,5 @@ export function createIngestionClient(
 ): UnifiedIngestionClient {
   return new UnifiedIngestionClient(client);
 }
-
-// Type exports
-export type {
-  IngestionStatus,
-  OpenRouterConfig,
-  OllamaConfig,
-  IngestionConfig,
-  ValidationRequest,
-  ValidationResponse,
-  ProcessIngestionRequest,
-  ProcessIngestionResponse,
-};
 
 export default ingestionClient;

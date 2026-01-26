@@ -41,7 +41,7 @@ ed25519-dalek = { version = "2.0", features = ["rand_core", "serde"] }
 aes-gcm = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-ts-rs = { version = "10", optional = true }
+ts-rs = { version = "10", optional = true, features = ["serde-compat", "serde-json-impl"] }
 sled = "0.34"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

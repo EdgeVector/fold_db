@@ -1,9 +1,21 @@
-use crate::datafold_node::OperationProcessor;
 use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder, Result};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio_stream::wrappers::BroadcastStream; // Keep for backward compatibility
+
+/// Helper to convert HandlerError to HttpResponse
+fn handler_error_to_response(e: crate::handlers::HandlerError) -> HttpResponse {
+    let status_code = match e.status_code() {
+        400 => actix_web::http::StatusCode::BAD_REQUEST,
+        401 => actix_web::http::StatusCode::UNAUTHORIZED,
+        404 => actix_web::http::StatusCode::NOT_FOUND,
+        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    HttpResponse::build(status_code).json(e.to_response())
+}
 
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 pub struct LogLevelUpdate {
@@ -36,19 +48,18 @@ pub async fn list_logs(
     query: web::Query<ListLogsQuery>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    let temp_processor_node = state.node.read().await.clone();
-    let processor = OperationProcessor::new(temp_processor_node);
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    let logs = processor.list_logs(query.since, Some(1000)).await;
-
-    HttpResponse::Ok().json(serde_json::json!({
-        "logs": logs,
-        "count": logs.len(),
-        "timestamp": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-    }))
+    match crate::handlers::logs::list_logs(query.since, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(json!({
+             "logs": response.data.as_ref().map(|d| &d.logs).unwrap_or(&json!([])),
+             "count": response.data.as_ref().map(|d| d.count).unwrap_or(0),
+             "timestamp": response.data.as_ref().map(|d| d.timestamp).unwrap_or(0)
+        })),
+        Err(e) => handler_error_to_response(e),
+    }
 }
 
 /// Stream logs via Server-Sent Events (backward compatibility)
@@ -64,7 +75,7 @@ pub async fn stream_logs() -> impl Responder {
         Some(r) => r,
         None => return HttpResponse::InternalServerError().finish(),
     };
-    
+
     // The WebOutput now broadcasts JSON strings (LogEntry serialized)
     // We wrap them in SSE format: "data: {JSON}\n\n"
     let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
@@ -81,7 +92,6 @@ pub async fn stream_logs() -> impl Responder {
         .streaming(stream)
 }
 
-
 /// Get current logging configuration
 #[utoipa::path(
     get,
@@ -90,19 +100,15 @@ pub async fn stream_logs() -> impl Responder {
     responses((status = 200, description = "Logging configuration", body = LogConfigResponse))
 )]
 pub async fn get_config(state: web::Data<AppState>) -> Result<impl Responder> {
-    let temp_processor_node = state.node.read().await.clone();
-    let processor = OperationProcessor::new(temp_processor_node);
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    if let Some(config) = processor.get_log_config().await {
-        Ok(HttpResponse::Ok().json(serde_json::json!({
-            "config": config
-        })))
-    } else {
-        let current_level = log::max_level().to_string();
-        Ok(HttpResponse::Ok().json(LogConfigResponse {
-            message: "Basic logging configuration".to_string(),
-            current_level,
-        }))
+    match crate::handlers::logs::get_log_config(&user_hash, &node).await {
+        Ok(response) => Ok(HttpResponse::Ok().json(json!({
+            "config": response.data.as_ref().map(|d| &d.config).unwrap_or(&json!(null))
+        }))),
+        Err(e) => Ok(handler_error_to_response(e)),
     }
 }
 
@@ -129,21 +135,23 @@ pub async fn update_feature_level(
         })));
     }
 
-    let temp_processor_node = state.node.read().await.clone();
-    let processor = OperationProcessor::new(temp_processor_node);
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.update_log_feature_level(&level_update.feature, &level_update.level).await {
-        Ok(_) => {
-            Ok(HttpResponse::Ok().json(serde_json::json!({
-                "success": true,
-                "message": format!("Updated {} log level to {}", level_update.feature, level_update.level)
-            })))
-        }
-        Err(e) => {
-            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": format!("Failed to update log level: {}", e)
-            })))
-        }
+    match crate::handlers::logs::update_log_feature_level(
+        &level_update.feature,
+        &level_update.level,
+        &user_hash,
+        &node,
+    )
+    .await
+    {
+        Ok(response) => Ok(HttpResponse::Ok().json(json!({
+            "success": response.data.as_ref().map(|d| d.success).unwrap_or(false),
+            "message": response.data.as_ref().map(|d| &d.message)
+        }))),
+        Err(e) => Ok(handler_error_to_response(e)),
     }
 }
 
@@ -155,17 +163,16 @@ pub async fn update_feature_level(
     responses((status = 200, description = "Reloaded"), (status = 400, description = "Bad request"))
 )]
 pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder> {
-    let temp_processor_node = state.node.read().await.clone();
-    let processor = OperationProcessor::new(temp_processor_node);
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.reload_log_config("config/logging.toml").await {
-        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
-            "success": true,
-            "message": "Configuration reloaded successfully"
+    match crate::handlers::logs::reload_log_config("config/logging.toml", &user_hash, &node).await {
+        Ok(response) => Ok(HttpResponse::Ok().json(json!({
+            "success": response.data.as_ref().map(|d| d.success).unwrap_or(false),
+            "message": response.data.as_ref().map(|d| &d.message)
         }))),
-        Err(e) => Ok(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": format!("Failed to reload configuration: {}", e)
-        }))),
+        Err(e) => Ok(handler_error_to_response(e)),
     }
 }
 
@@ -177,30 +184,15 @@ pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder>
     responses((status = 200, description = "Features", body = serde_json::Value))
 )]
 pub async fn get_features(state: web::Data<AppState>) -> Result<impl Responder> {
-    let temp_processor_node = state.node.read().await.clone();
-    let processor = OperationProcessor::new(temp_processor_node);
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    if let Some(features) = processor.get_log_features().await {
-        Ok(HttpResponse::Ok().json(serde_json::json!({
-            "features": features,
-            "available_levels": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
-        })))
-    } else {
-        let current_level = log::max_level().to_string();
-        Ok(HttpResponse::Ok().json(serde_json::json!({
-            "features": {
-                "transform": current_level,
-                "network": current_level,
-                "database": current_level,
-                "schema": current_level,
-                "query": current_level,
-                "mutation": current_level,
-                "permissions": current_level,
-                "http_server": current_level,
-                "tcp_server": current_level,
-                "ingestion": current_level
-            },
-            "available_levels": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
-        })))
+    match crate::handlers::logs::get_log_features(&user_hash, &node).await {
+        Ok(response) => Ok(HttpResponse::Ok().json(json!({
+            "features": response.data.as_ref().map(|d| &d.features).unwrap_or(&json!(null)),
+            "available_levels": response.data.as_ref().map(|d| &d.available_levels).unwrap_or(&vec![])
+        }))),
+        Err(e) => Ok(handler_error_to_response(e)),
     }
 }

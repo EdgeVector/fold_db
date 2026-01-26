@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { CheckCircleIcon, TrashIcon } from '@heroicons/react/24/solid'
+import { useState, useEffect, useCallback } from 'react'
+import { CheckCircleIcon, TrashIcon, ArrowPathIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/solid'
 import { systemClient } from '../api/clients/systemClient'
 import { ingestionClient } from '../api/clients'
 
@@ -7,59 +7,37 @@ function StatusSection() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
   const [resetResult, setResetResult] = useState(null)
-  const [activeJobs, setActiveJobs] = useState([])
+  const [jobs, setJobs] = useState([])
+  const [isLoadingJobs, setIsLoadingJobs] = useState(true)
 
-  // Poll for all progress (ingestion + indexing)
-  useEffect(() => {
-    let mounted = true
-    let timeoutId
-
-    const poll = async () => {
-      try {
-        const response = await ingestionClient.getAllProgress()
-        if (mounted && response.success && response.data) {
-          const jobs = Array.isArray(response.data) ? response.data : []
-          
-          // Separate active (running) jobs from completed/failed
-          const activeJobs = jobs.filter(j => !j.is_complete)
-          const recentCompleted = jobs.filter(j => j.is_complete)
-            .sort((a, b) => (b.completed_at || 0) - (a.completed_at || 0))
-            .slice(0, 1) // Only show most recent completed
-          
-          // Prioritize active jobs, then show recent completed if no active jobs
-          let displayJobs = []
-          if (activeJobs.length > 0) {
-            // Sort active jobs by started_at desc (newest first)
-            displayJobs = [...activeJobs].sort((a, b) => 
-              (b.started_at || 0) - (a.started_at || 0)
-            ).slice(0, 3) // Show up to 3 active jobs
-          } else if (recentCompleted.length > 0) {
-            // Show most recent completed job if no active jobs
-            displayJobs = recentCompleted
-          }
-          
-          setActiveJobs(displayJobs)
-        }
-        if (mounted) {
-          timeoutId = setTimeout(poll, 1000) // Poll every 1s
-        }
-      } catch (error) {
-        console.error('Error polling progress:', error)
-        if (mounted) {
-          timeoutId = setTimeout(poll, 2000) // Backoff on error
-        }
+  // Poll for progress updates
+  const fetchProgress = useCallback(async () => {
+    try {
+      const response = await ingestionClient.getAllProgress()
+      // Handle both { success, data } wrapper and { ok, progress } backend format
+      const progressData = response.data?.progress || response.data || response.progress || []
+      if (Array.isArray(progressData)) {
+        setJobs(progressData)
+      } else {
+        setJobs([])
       }
-    }
-
-    poll()
-
-    return () => {
-      mounted = false
-      if (timeoutId) clearTimeout(timeoutId)
+    } catch (error) {
+      console.error('Failed to fetch progress:', error)
+      setJobs([])
+    } finally {
+      setIsLoadingJobs(false)
     }
   }, [])
 
+  useEffect(() => {
+    // Initial fetch
+    fetchProgress()
 
+    // Set up polling - poll every 2 seconds
+    const intervalId = setInterval(fetchProgress, 2000)
+
+    return () => clearInterval(intervalId)
+  }, [fetchProgress])
 
   const handleResetDatabase = async () => {
     setIsResetting(true)
@@ -68,20 +46,104 @@ function StatusSection() {
     try {
       const response = await systemClient.resetDatabase(true)
 
+      // Handle both immediate success (legacy) and async job started (new)
       if (response.success && response.data) {
-        setResetResult({ type: 'success', message: response.data.message })
-        setTimeout(() => {
-          window.location.reload()
-        }, 2000)
+        if (response.data.job_id) {
+          // Async reset started - job will show in progress
+          setResetResult({ 
+            type: 'success', 
+            message: `Reset started (Job: ${response.data.job_id.substring(0, 8)}...). Progress will appear above.`
+          })
+          // Don't reload - let the user see progress
+          setShowConfirmDialog(false)
+          setIsResetting(false)
+        } else {
+          // Legacy immediate completion
+          setResetResult({ type: 'success', message: response.data.message })
+          setTimeout(() => {
+            window.location.reload()
+          }, 2000)
+        }
       } else {
         setResetResult({ type: 'error', message: response.error || 'Reset failed' })
+        setShowConfirmDialog(false)
+        setIsResetting(false)
       }
     } catch (error) {
       setResetResult({ type: 'error', message: `Network error: ${error.message}` })
-    } finally {
-      setIsResetting(false)
       setShowConfirmDialog(false)
+      setIsResetting(false)
     }
+  }
+
+  const renderJobCard = (job) => {
+    const isIndexing = job.job_type === 'indexing'
+    const isDatabaseReset = job.job_type === 'database_reset'
+    const jobLabel = isDatabaseReset ? 'Database Reset' : isIndexing ? 'Indexing Job' : 'Ingestion Job'
+    const cardColor = isDatabaseReset ? 'red' : isIndexing ? 'purple' : 'blue'
+    
+    // Determine status icon and color
+    let StatusIcon = ArrowPathIcon
+    let statusColor = 'text-blue-500'
+    let bgColor = `bg-${cardColor}-50`
+    let borderColor = `border-${cardColor}-200`
+    
+    if (job.is_complete) {
+      StatusIcon = CheckCircleIcon
+      statusColor = 'text-green-500'
+      bgColor = 'bg-green-50'
+      borderColor = 'border-green-200'
+    } else if (job.is_failed) {
+      StatusIcon = XCircleIcon
+      statusColor = 'text-red-500'
+      bgColor = 'bg-red-50'
+      borderColor = 'border-red-200'
+    }
+
+    return (
+      <div 
+        key={job.id} 
+        className={`p-4 rounded-lg border-2 ${borderColor} ${bgColor} mb-3`}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <StatusIcon className={`w-5 h-5 ${statusColor} ${!job.is_complete && !job.is_failed ? 'animate-spin' : ''}`} />
+            <span className={`font-medium ${isIndexing ? 'text-purple-800' : 'text-blue-800'}`}>
+              {jobLabel}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <ClockIcon className="w-3 h-3" />
+            <span>{new Date(job.started_at).toLocaleTimeString()}</span>
+          </div>
+        </div>
+        
+        {/* Progress bar */}
+        <div className="mb-2">
+          <div className="flex justify-between text-xs text-gray-600 mb-1">
+            <span>{job.status_message || 'Processing...'}</span>
+            <span>{job.progress_percentage || 0}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className={`h-2 rounded-full transition-all duration-300 ${
+                job.is_failed ? 'bg-red-500' : 
+                job.is_complete ? 'bg-green-500' : 
+                isDatabaseReset ? 'bg-orange-500' :
+                isIndexing ? 'bg-purple-500' : 'bg-blue-500'
+              }`}
+              style={{ width: `${job.progress_percentage || 0}%` }}
+            />
+          </div>
+        </div>
+
+        {job.error_message && (
+          <div className="text-xs text-red-600 mt-2">
+            Error: {job.error_message}
+          </div>
+        )}
+      </div>
+    )
   }
 
   const ResetConfirmDialog = () => {
@@ -128,100 +190,11 @@ function StatusSection() {
     )
   }
 
-  // Helper to render a job card
-  const renderJobCard = (job) => {
-    const isCompleted = job.is_complete
-    const isFailed = job.is_failed
-    const isActive = !isCompleted
-    const isIndexing = job.job_type === 'indexing'
-
-    // Calculate duration
-    let durationStr = ''
-    if (job.started_at) {
-      // started_at is Unix seconds, convert to milliseconds for Date
-      const startMs = typeof job.started_at === 'number' ? job.started_at * 1000 : new Date(job.started_at).getTime()
-      const endMs = job.completed_at 
-        ? (typeof job.completed_at === 'number' ? job.completed_at * 1000 : new Date(job.completed_at).getTime())
-        : Date.now()
-      const seconds = Math.floor((endMs - startMs) / 1000)
-      durationStr = seconds > 0 ? `${seconds}s` : 'Just started'
-    }
-
-    // Determine status color/text - use purple for indexing to differentiate
-    let statusColor
-    if (isFailed) {
-      statusColor = 'red'
-    } else if (isCompleted) {
-      statusColor = 'green'
-    } else if (isIndexing) {
-      statusColor = 'purple'
-    } else {
-      statusColor = 'blue'
-    }
-    const statusText = isFailed ? 'Failed' : (isCompleted ? 'Complete' : 'Active')
-    
-    // Determine job title based on type
-    const jobTitle = isIndexing ? 'Indexing Job' : 'Ingestion Job'
-    
-    // Construct metrics
-    const metrics = []
-    if (durationStr) metrics.push(durationStr)
-    if (job.results?.mutations_executed !== undefined) {
-      metrics.push(`${job.results.mutations_executed} items`)
-    }
-    // For indexing jobs, show operations processed if available
-    if (isIndexing && job.results?.total_operations_processed !== undefined) {
-      metrics.push(`${job.results.total_operations_processed} indexed`)
-    }
-
-    return (
-      <div key={job.id} className={`p-4 rounded-lg border-2 border-${statusColor}-200 bg-${statusColor}-50`}>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <div className={`w-2.5 h-2.5 rounded-full bg-${statusColor}-500 ${isActive ? 'animate-pulse' : ''}`}></div>
-            <h3 className={`font-semibold text-${statusColor}-900`}>
-              {jobTitle}
-            </h3>
-          </div>
-          <span className={`text-xs font-medium px-2 py-1 rounded bg-${statusColor}-100 text-${statusColor}-700`}>
-            {statusText}
-          </span>
-        </div>
-
-        <p className={`text-sm text-${statusColor}-700 truncate`} title={job.status_message}>
-          {job.status_message}
-        </p>
-
-        {metrics.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {metrics.map((metric, idx) => (
-              <span key={idx} className={`text-xs font-medium px-2 py-1 rounded bg-${statusColor}-100 text-${statusColor}-800`}>
-                {metric}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Progress Bar for active jobs */}
-        {isActive && !isFailed && (
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className={`text-xs font-medium text-${statusColor}-700`}>Progress</span>
-              <span className={`text-xs font-semibold text-${statusColor}-900`}>{job.progress_percentage}%</span>
-            </div>
-            <div className={`w-full bg-${statusColor}-200 rounded-full h-2`}>
-              <div
-                className={`bg-${statusColor}-600 h-2 rounded-full transition-all duration-300`}
-                style={{ width: `${job.progress_percentage}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-
+  // Filter to show active jobs first, then most recent completed
+  const activeJobs = jobs.filter(j => !j.is_complete && !j.is_failed)
+  const displayJobs = activeJobs.length > 0 
+    ? activeJobs.slice(0, 3) 
+    : jobs.filter(j => j.is_complete || j.is_failed).slice(0, 1)
 
   return (
     <>
@@ -242,22 +215,22 @@ function StatusSection() {
           </button>
         </div>
 
-        {/* Dashboard Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-
-
-          {/* Active Job Cards */}
-          {activeJobs.length > 0 && activeJobs.map(job => renderJobCard(job))}
-          
-          {/* Placeholder if no jobs and indexing is idle? Optional. */}
-           {activeJobs.length === 0 && (
-            <div className="p-4 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 text-sm">
-              No active jobs
+        {/* Job Progress Section */}
+        {isLoadingJobs ? (
+          <div className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 flex items-center justify-center">
+            <ArrowPathIcon className="w-5 h-5 text-gray-400 animate-spin mr-2" />
+            <span className="text-gray-500">Loading status...</span>
+          </div>
+        ) : displayJobs.length > 0 ? (
+          displayJobs.map(job => renderJobCard(job))
+        ) : (
+          <div className="p-4 rounded-lg border-2 border-green-200 bg-green-50">
+            <div className="flex items-center gap-2">
+              <CheckCircleIcon className="w-5 h-5 text-green-500" />
+              <span className="text-green-800 font-medium">No active jobs</span>
             </div>
-          )}
-
-        </div>
+          </div>
+        )}
 
         {resetResult && (
           <div className={`mt-3 p-3 rounded-md text-sm ${resetResult.type === 'success'

@@ -8,6 +8,18 @@ use serde_json::json;
 use crate::datafold_node::DataFoldNode;
 use crate::server::http_server::AppState;
 
+/// Helper to convert HandlerError to HttpResponse
+fn handler_error_to_response(e: crate::handlers::HandlerError) -> HttpResponse {
+    let status_code = match e.status_code() {
+        400 => actix_web::http::StatusCode::BAD_REQUEST,
+        401 => actix_web::http::StatusCode::UNAUTHORIZED,
+        404 => actix_web::http::StatusCode::NOT_FOUND,
+        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    HttpResponse::build(status_code).json(e.to_response())
+}
+
 /// Get system status information
 #[utoipa::path(
     get,
@@ -17,15 +29,15 @@ use crate::server::http_server::AppState;
         (status = 200, description = "System status", body = serde_json::Value)
     )
 )]
-pub async fn get_system_status(_state: web::Data<AppState>) -> impl Responder {
-    HttpResponse::Ok().json(json!({
-        "status": "running",
-        "uptime": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
-        "version": env!("CARGO_PKG_VERSION")
-    }))
+pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
+
+    match crate::handlers::system::get_system_status(&user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
+    }
 }
 
 /// Get the node's private key
@@ -41,20 +53,25 @@ pub async fn get_system_status(_state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder {
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
     let node = state.node.read().await;
 
-    let private_key = node.get_node_private_key();
-
-    log_feature!(
-        LogFeature::HttpServer,
-        info,
-        "Node private key retrieved successfully"
-    );
-    HttpResponse::Ok().json(json!({
-        "success": true,
-        "private_key": private_key,
-        "message": "Node private key retrieved successfully"
-    }))
+    match crate::handlers::system::get_node_private_key(&user_hash, &node).await {
+        Ok(response) => {
+            log_feature!(
+                LogFeature::HttpServer,
+                info,
+                "Node private key retrieved successfully"
+            );
+            HttpResponse::Ok().json(json!({
+                "success": response.data.as_ref().map(|d| d.success).unwrap_or(false),
+                "private_key": response.data.as_ref().map(|d| &d.key),
+                "message": response.data.as_ref().map(|d| &d.message)
+            }))
+        }
+        Err(e) => handler_error_to_response(e),
+    }
 }
 
 /// Get the node's public key
@@ -70,20 +87,25 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
     )
 )]
 pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
     let node = state.node.read().await;
 
-    let public_key = node.get_node_public_key();
-
-    log_feature!(
-        LogFeature::HttpServer,
-        info,
-        "Node public key retrieved successfully"
-    );
-    HttpResponse::Ok().json(json!({
-        "success": true,
-        "public_key": public_key,
-        "message": "Node public key retrieved successfully"
-    }))
+    match crate::handlers::system::get_node_public_key(&user_hash, &node).await {
+        Ok(response) => {
+            log_feature!(
+                LogFeature::HttpServer,
+                info,
+                "Node public key retrieved successfully"
+            );
+            HttpResponse::Ok().json(json!({
+                "success": response.data.as_ref().map(|d| d.success).unwrap_or(false),
+                "public_key": response.data.as_ref().map(|d| &d.key),
+                "message": response.data.as_ref().map(|d| &d.message)
+            }))
+        }
+        Err(e) => handler_error_to_response(e),
+    }
 }
 
 /// Request body for database reset
@@ -92,11 +114,14 @@ pub struct ResetDatabaseRequest {
     pub confirm: bool,
 }
 
-/// Response for database reset
+/// Response for database reset (async job)
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct ResetDatabaseResponse {
     pub success: bool,
     pub message: String,
+    /// Job ID for tracking progress (only present when async)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
 }
 
 /// Response for schema service reset
@@ -106,102 +131,173 @@ pub struct ResetSchemaServiceResponse {
     pub message: String,
 }
 
-/// Reset the database and restart the node
+/// Reset the database (async background job)
 ///
-/// This endpoint completely resets the database by:
-/// 1. Stopping network services
-/// 2. Closing the current database
-/// 3. Recreating a new database instance
-/// 4. Clearing all data and state
+/// This endpoint initiates a database reset as a background job:
+/// 1. Returns immediately with a job ID for progress tracking
+/// 2. The background job clears all data for the current user
+/// 3. Progress can be monitored via /api/ingestion/progress/{job_id}
 ///
 /// This is a destructive operation that cannot be undone.
 ///
-/// # WARNING: Multi-Tenancy
+/// # Multi-Tenancy Support
 ///
-/// **DO NOT USE THIS ENDPOINT IN A MULTI-TENANCY ENVIRONMENT.**
-/// This reset operation clears ALL data from ALL DynamoDB tables, including data
-/// from all tenants. In a multi-tenancy setup where multiple users share the same
-/// DynamoDB tables (differentiated by user_id partition keys), this will delete
-/// data belonging to all tenants, not just the current tenant.
-///
-/// For multi-tenancy environments, implement tenant-specific reset operations
-/// that only clear data for a specific user_id.
+/// This endpoint respects multi-tenancy by only clearing data for the
+/// current user (identified via x-user-hash header). It uses the scan-free
+/// DynamoDbResetManager to efficiently delete data partitioned by user.
 #[utoipa::path(
     post,
     path = "/api/system/reset-database",
     tag = "system",
     request_body = ResetDatabaseRequest,
     responses(
-        (status = 200, description = "Database reset result", body = ResetDatabaseResponse),
+        (status = 202, description = "Database reset job started", body = ResetDatabaseResponse),
         (status = 400, description = "Bad request", body = ResetDatabaseResponse),
         (status = 500, description = "Server error", body = ResetDatabaseResponse)
     )
 )]
 pub async fn reset_database(
     state: web::Data<AppState>,
+    progress_tracker: web::Data<crate::progress::ProgressTracker>,
     req: web::Json<ResetDatabaseRequest>,
 ) -> impl Responder {
+    use crate::progress::{Job, JobType};
+
     // Require explicit confirmation
     if !req.confirm {
         return HttpResponse::BadRequest().json(ResetDatabaseResponse {
             success: false,
             message: "Reset confirmation required. Set 'confirm' to true.".to_string(),
+            job_id: None,
         });
     }
 
-    // Use OperationProcessor for the reset logic
-    let temp_processor_node = state.node.read().await.clone();
-    let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
+    // Get user ID from context (required for multi-tenancy)
+    let user_id =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
 
-    // Perform the reset (Schema service, DB close, storage clear)
-    if let Err(e) = processor.perform_database_reset(None).await {
+    // Generate a unique job ID
+    let job_id = format!("reset_{}", uuid::Uuid::new_v4());
+
+    // Create the job entry
+    let mut job = Job::new(job_id.clone(), JobType::Other("database_reset".to_string()));
+    job = job.with_user(user_id.clone());
+    job.update_progress(5, "Initializing database reset...".to_string());
+
+    // Save initial job state
+    if let Err(e) = progress_tracker.save(&job).await {
         log_feature!(
             LogFeature::HttpServer,
             error,
-            "Database reset operations failed: {}",
+            "Failed to create reset job: {}",
             e
         );
         return HttpResponse::InternalServerError().json(ResetDatabaseResponse {
             success: false,
-            message: format!("Database reset operations failed: {}", e),
+            message: format!("Failed to create reset job: {}", e),
+            job_id: None,
         });
     }
 
-    // Now re-initialize the node
-    let mut node_lock = state.node.write().await;
-    let config = node_lock.config.clone();
+    // Clone dependencies for the background task
+    let state_clone = state.clone();
+    let tracker_clone = progress_tracker.clone();
+    let job_id_clone = job_id.clone();
+    let user_id_clone = user_id.clone();
 
-    // Create a new node instance (this will recreate the database)
-    match DataFoldNode::new(config).await {
-        Ok(new_node) => {
-            // Replace the node in the state
-            *node_lock = new_node;
+    // Spawn the background reset task
+    tokio::spawn(async move {
+        // Set user context for the background task
+        crate::logging::core::run_with_user(&user_id_clone.clone(), async move {
+            // Update progress: Starting schema service reset
+            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                job.update_progress(10, "Resetting schema service...".to_string());
+                let _ = tracker_clone.save(&job).await;
+            }
 
-            log_feature!(
-                LogFeature::HttpServer,
-                info,
-                "Database and schema service reset completed successfully"
-            );
-            HttpResponse::Ok().json(ResetDatabaseResponse {
-                success: true,
-                message:
-                    "Database and schema service reset successfully. All data has been cleared."
-                        .to_string(),
-            })
-        }
-        Err(e) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                error,
-                "Database reset failed: {}",
-                e
-            );
-            HttpResponse::InternalServerError().json(ResetDatabaseResponse {
-                success: false,
-                message: format!("Database reset failed: {}", e),
-            })
-        }
-    }
+            // Create processor
+            let temp_processor_node = state_clone.node.read().await.clone();
+            let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
+
+            // Step 1: Reset schema service
+            if let Err(e) = processor.reset_schema_service().await {
+                log::warn!("Schema service reset failed (continuing): {}", e);
+            }
+
+            // Update progress: Clearing DynamoDB tables
+            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                job.update_progress(30, "Clearing user data from storage...".to_string());
+                let _ = tracker_clone.save(&job).await;
+            }
+
+            // Step 2: Perform the storage reset
+            if let Err(e) = processor.perform_database_reset(Some(&user_id_clone)).await {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    error,
+                    "Database reset failed: {}",
+                    e
+                );
+                if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                    job.fail(format!("Database reset failed: {}", e));
+                    let _ = tracker_clone.save(&job).await;
+                }
+                return;
+            }
+
+            // Update progress: Re-initializing node
+            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                job.update_progress(80, "Re-initializing node...".to_string());
+                let _ = tracker_clone.save(&job).await;
+            }
+
+            // Step 3: Re-initialize the node
+            let mut node_lock = state_clone.node.write().await;
+            let config = node_lock.config.clone();
+
+            match DataFoldNode::new(config).await {
+                Ok(new_node) => {
+                    *node_lock = new_node;
+                    log_feature!(
+                        LogFeature::HttpServer,
+                        info,
+                        "Database reset completed successfully for user: {}",
+                        user_id_clone
+                    );
+
+                    // Mark job as complete
+                    if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                        job.complete(Some(serde_json::json!({
+                            "user_id": user_id_clone,
+                            "message": "Database reset successfully. All data has been cleared."
+                        })));
+                        let _ = tracker_clone.save(&job).await;
+                    }
+                }
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::HttpServer,
+                        error,
+                        "Failed to re-initialize node after reset: {}",
+                        e
+                    );
+                    if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                        job.fail(format!("Node re-initialization failed: {}", e));
+                        let _ = tracker_clone.save(&job).await;
+                    }
+                }
+            }
+        })
+        .await;
+    });
+
+    // Return immediately with accepted status and job ID
+    HttpResponse::Accepted().json(ResetDatabaseResponse {
+        success: true,
+        message: "Database reset started. Monitor progress via /api/ingestion/progress endpoint."
+            .to_string(),
+        job_id: Some(job_id),
+    })
 }
 
 /// Reset the schema service database
@@ -602,13 +698,14 @@ mod tests {
     async fn test_reset_database_without_confirmation() {
         let temp_dir = tempdir().unwrap();
         let state = create_test_state(&temp_dir).await;
+        let progress_tracker = web::Data::new(crate::progress::create_tracker(None).await);
 
         let req_body = ResetDatabaseRequest { confirm: false };
         let req = test::TestRequest::post()
             .set_json(&req_body)
             .to_http_request();
 
-        let resp = reset_database(state, web::Json(req_body))
+        let resp = reset_database(state, progress_tracker, web::Json(req_body))
             .await
             .respond_to(&req);
         assert_eq!(resp.status(), 400);
@@ -618,22 +715,22 @@ mod tests {
     async fn test_reset_database_with_confirmation() {
         let temp_dir = tempdir().unwrap();
         let state = create_test_state(&temp_dir).await;
+        let progress_tracker = web::Data::new(crate::progress::create_tracker(None).await);
 
         let req_body = ResetDatabaseRequest { confirm: true };
         let req = test::TestRequest::post()
             .set_json(&req_body)
             .to_http_request();
 
-        let resp = reset_database(state, web::Json(req_body))
+        let resp = reset_database(state, progress_tracker, web::Json(req_body))
             .await
             .respond_to(&req);
-        // The response should be either 200 (success) or 500 (expected failure in test env)
-        // Both are acceptable as the API is working correctly
-        assert!(resp.status() == 200 || resp.status() == 500);
+        // The response should be 202 (Accepted) for async job started, or 500 for internal error
+        assert!(resp.status() == 202 || resp.status() == 500);
 
-        // If it's a 500, verify it's the expected database reset error
+        // If it's a 500, verify it's the expected job creation error (no user context in test)
         if resp.status() == 500 {
-            // This is expected in the test environment due to file system constraints
+            // This is expected in the test environment due to user context constraints
             // The important thing is that the API endpoint exists and processes the request
         }
     }

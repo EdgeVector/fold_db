@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { transformClient } from '../../api/clients'
-import BackfillMonitor from '../BackfillMonitor'
 
 const INITIAL_QUEUE_STATE = {
   queue: [],
@@ -114,9 +113,6 @@ const TransformsTab = ({ onResult }) => {
           Queue Status: {queueInfo.isEmpty ? 'Empty' : `${queueInfo.length} transform(s) queued`}
         </div>
       </div>
-
-      {/* Backfill Monitoring Section */}
-      <BackfillMonitor />
 
       {!queueInfo.isEmpty && (
         <div className="bg-blue-50 p-4 rounded-lg" data-testid="transform-queue">

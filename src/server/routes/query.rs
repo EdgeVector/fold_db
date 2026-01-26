@@ -1,11 +1,22 @@
-use crate::datafold_node::OperationProcessor;
-
+use crate::handlers::query as query_handlers;
 use crate::schema::types::operations::{Operation, Query};
 use crate::server::http_server::AppState;
 use actix_web::{web, HttpResponse, Responder};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+/// Helper to convert HandlerError to HttpResponse
+fn handler_error_to_response(e: crate::handlers::HandlerError) -> HttpResponse {
+    let status_code = match e.status_code() {
+        400 => actix_web::http::StatusCode::BAD_REQUEST,
+        401 => actix_web::http::StatusCode::UNAUTHORIZED,
+        404 => actix_web::http::StatusCode::NOT_FOUND,
+        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    HttpResponse::build(status_code).json(e.to_response())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessResponse {
@@ -39,17 +50,23 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
         query_inner.filter
     );
 
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.execute_query_json(query_inner).await {
-        Ok(data) => {
-            log::info!("✅ Query completed: {} records returned", data.len());
-            HttpResponse::Ok().json(data)
+    // Use shared handler
+    match query_handlers::execute_query(query_inner, &user_hash, &node).await {
+        Ok(response) => {
+            if let Some(ref data) = response.data {
+                if let serde_json::Value::Array(ref arr) = data.results {
+                    log::info!("✅ Query completed: {} records returned", arr.len());
+                }
+            }
+            HttpResponse::Ok().json(response)
         }
         Err(e) => {
             log::error!("❌ Query failed: {}", e);
-            HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Failed to execute query: {}", e)}))
+            handler_error_to_response(e)
         }
     }
 }
@@ -96,22 +113,28 @@ pub async fn execute_mutation(
             }
         };
 
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    log::info!("🚀 Executing mutation via OperationProcessor");
-    match processor
-        .execute_mutation(schema, fields_and_values, key_value, mutation_type)
-        .await
+    log::info!("🚀 Executing mutation via shared handler");
+    match crate::handlers::mutation::execute_mutation_from_components(
+        schema,
+        fields_and_values,
+        key_value,
+        mutation_type,
+        &user_hash,
+        &node,
+    )
+    .await
     {
-        Ok(mutation_id) => {
-            log::info!("✅ Mutation executed successfully: {}", mutation_id);
-            HttpResponse::Ok().json(json!({"mutation_id": mutation_id, "success": true}))
+        Ok(response) => {
+            log::info!("✅ Mutation executed successfully");
+            HttpResponse::Ok().json(response)
         }
         Err(e) => {
             log::error!("❌ Mutation execution failed: {}", e);
-            HttpResponse::InternalServerError().json(
-                json!({"error": format!("Failed to execute mutation: {}", e), "success": false}),
-            )
+            handler_error_to_response(e)
         }
     }
 }
@@ -132,15 +155,19 @@ pub async fn execute_mutations_batch(
     mutations_data: web::Json<Vec<Value>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor
-        .execute_mutations_batch(mutations_data.into_inner())
-        .await
+    match crate::handlers::mutation::execute_mutations_batch_from_json(
+        mutations_data.into_inner(),
+        &user_hash,
+        &node,
+    )
+    .await
     {
-        Ok(mutation_ids) => HttpResponse::Ok().json(mutation_ids),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to execute batch mutations: {}", e)})),
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -154,12 +181,15 @@ pub async fn execute_mutations_batch(
     )
 )]
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.list_transforms().await {
-        Ok(map) => HttpResponse::Ok().json(map),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to list transforms: {}", e)})),
+    match crate::handlers::transform::list_transforms(&user_hash, &node).await {
+        Ok(response) => {
+            HttpResponse::Ok().json(response.data.map(|d| d.transforms).unwrap_or(json!({})))
+        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -180,18 +210,21 @@ pub async fn add_to_transform_queue(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let transform_id = path.into_inner();
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor
-        .add_to_transform_queue(&transform_id, "manual_api_trigger")
-        .await
+    match crate::handlers::transform::add_to_transform_queue(&transform_id, &user_hash, &node).await
     {
-        Ok(_) => HttpResponse::Ok().json(SuccessResponse {
-            success: true,
-            message: format!("Transform '{}' added to queue", transform_id),
+        Ok(response) => HttpResponse::Ok().json(SuccessResponse {
+            success: response.data.as_ref().map(|d| d.success).unwrap_or(false),
+            message: response
+                .data
+                .as_ref()
+                .map(|d| d.message.clone())
+                .unwrap_or_default(),
         }),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to add transform to queue: {}", e)})),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -205,15 +238,16 @@ pub async fn add_to_transform_queue(
     )
 )]
 pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.get_transform_queue().await {
-        Ok((len, queued)) => HttpResponse::Ok().json(json!({
-            "length": len,
-            "queued_transforms": queued
+    match crate::handlers::transform::get_transform_queue(&user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(json!({
+            "length": response.data.as_ref().map(|d| d.length).unwrap_or(0),
+            "queued_transforms": response.data.as_ref().map(|d| &d.queued_transforms).unwrap_or(&vec![])
         })),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get transform queue info: {}", e)})),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -227,12 +261,15 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.get_all_backfills().await {
-        Ok(backfills) => HttpResponse::Ok().json(backfills),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get backfills: {}", e)})),
+    match crate::handlers::transform::get_all_backfills(&user_hash, &node).await {
+        Ok(response) => {
+            HttpResponse::Ok().json(response.data.map(|d| d.backfills).unwrap_or(json!([])))
+        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -246,12 +283,15 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.get_active_backfills().await {
-        Ok(backfills) => HttpResponse::Ok().json(backfills),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get active backfills: {}", e)})),
+    match crate::handlers::transform::get_active_backfills(&user_hash, &node).await {
+        Ok(response) => {
+            HttpResponse::Ok().json(response.data.map(|d| d.backfills).unwrap_or(json!([])))
+        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -270,14 +310,15 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
 )]
 pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let transform_id = path.into_inner();
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.get_backfill(&transform_id).await {
-        Ok(Some(backfill)) => HttpResponse::Ok().json(backfill),
-        Ok(None) => HttpResponse::NotFound()
-            .json(json!({"error": format!("Backfill not found for transform: {}", transform_id)})),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get backfill: {}", e)})),
+    match crate::handlers::transform::get_backfill(&transform_id, &user_hash, &node).await {
+        Ok(response) => {
+            HttpResponse::Ok().json(response.data.map(|d| d.backfill).unwrap_or(json!(null)))
+        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -291,12 +332,15 @@ pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -
     )
 )]
 pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.get_transform_statistics().await {
-        Ok(stats) => HttpResponse::Ok().json(stats),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get transform statistics: {}", e)})),
+    match crate::handlers::transform::get_transform_statistics(&user_hash, &node).await {
+        Ok(response) => {
+            HttpResponse::Ok().json(response.data.map(|d| d.stats).unwrap_or(json!(null)))
+        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -331,18 +375,24 @@ pub async fn native_index_search(
 
     info!("API: Searching for term: '{}'", term);
 
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    debug!("API: Acquired database, calling native_search_all_classifications");
-    match processor.native_index_search(&term).await {
-        Ok(results) => {
-            info!("API: Search completed, found {} results", results.len());
-            HttpResponse::Ok().json(results)
+    // Use shared handler
+    debug!("API: Acquired database, calling native_index_search via shared handler");
+    match query_handlers::native_index_search(&term, &user_hash, &node).await {
+        Ok(response) => {
+            if let Some(ref data) = response.data {
+                if let serde_json::Value::Array(ref arr) = data.results {
+                    info!("API: Search completed, found {} results", arr.len());
+                }
+            }
+            HttpResponse::Ok().json(response)
         }
         Err(e) => {
             error!("API: Search failed: {}", e);
-            HttpResponse::InternalServerError()
-                .json(json!({"error": format!("Native index search failed: {}", e)}))
+            handler_error_to_response(e)
         }
     }
 }
@@ -356,12 +406,15 @@ pub async fn native_index_search(
     )
 )]
 pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.get_backfill_statistics().await {
-        Ok(stats) => HttpResponse::Ok().json(stats),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get backfill statistics: {}", e)})),
+    match crate::handlers::transform::get_backfill_statistics(&user_hash, &node).await {
+        Ok(response) => {
+            HttpResponse::Ok().json(response.data.map(|d| d.stats).unwrap_or(json!(null)))
+        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -376,12 +429,15 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
     )
 )]
 pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
-    let processor = OperationProcessor::new(state.node.read().await.clone());
+    let user_hash =
+        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let node = state.node.read().await;
 
-    match processor.get_indexing_status().await {
-        Ok(status) => HttpResponse::Ok().json(status),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get indexing status: {}", e)})),
+    match crate::handlers::system::get_indexing_status(&user_hash, &node).await {
+        Ok(response) => {
+            HttpResponse::Ok().json(response.data.map(|d| d.status).unwrap_or(json!(null)))
+        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 

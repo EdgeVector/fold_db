@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ingestionClient } from '../../api/clients'
-import ProgressBar from '../ProgressBar'
 
 function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -10,61 +9,12 @@ function FileUploadTab({ onResult }) {
   const [pubKey, setPubKey] = useState('default')
   const [isUploading, setIsUploading] = useState(false)
   const [ingestionStatus, setIngestionStatus] = useState(null)
-  const [currentProgress, setCurrentProgress] = useState(null)
-  const [progressId, setProgressId] = useState(null)
   const [useS3Path, setUseS3Path] = useState(false)
   const [s3FilePath, setS3FilePath] = useState('')
 
   useEffect(() => {
     fetchIngestionStatus()
   }, [])
-
-  // Poll for progress updates when we have a progress ID
-  useEffect(() => {
-    if (!progressId) return
-
-    const pollProgress = async () => {
-      try {
-        // Poll for specific progress ID
-        const response = await ingestionClient.getProgress(progressId)
-        if (response.success && response.data) {
-          setCurrentProgress(response.data)
-          
-          // Stop polling if complete or failed
-          if (response.data.is_complete) {
-            setIsUploading(false)
-            setProgressId(null)
-            
-            // Show results
-            if (response.data.results) {
-              onResult({
-                success: true,
-                data: {
-                  schema_used: response.data.results.schema_name,
-                  new_schema_created: response.data.results.new_schema_created,
-                  mutations_generated: response.data.results.mutations_generated,
-                  mutations_executed: response.data.results.mutations_executed
-                }
-              })
-            } else if (response.data.error_message) {
-              onResult({
-                success: false,
-                error: response.data.error_message
-              })
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch progress:', error)
-      }
-    }
-
-    // Poll immediately, then every 200ms for faster updates
-    pollProgress()
-    const interval = setInterval(pollProgress, 200)
-
-    return () => clearInterval(interval)
-  }, [progressId, onResult])
 
   const fetchIngestionStatus = async () => {
     try {
@@ -132,41 +82,21 @@ function FileUploadTab({ onResult }) {
       }
     }
 
-    // Reset all progress-related state immediately
     setIsUploading(true)
-    const newProgressId = crypto.randomUUID()
-    setProgressId(newProgressId)
-    
-    // Clear any previous results
     onResult(null)
-    
-    // Show initial progress state immediately
-    setCurrentProgress({
-      progress_percentage: 0,
-      status_message: useS3Path ? 'Processing S3 file...' : 'Uploading file...',
-      current_step: 'ValidatingConfig',
-      is_complete: false,
-      started_at: new Date().toISOString()
-    })
-    
-    // Small delay to ensure UI updates before starting upload
-    await new Promise(resolve => setTimeout(resolve, 100))
 
     try {
       const formData = new FormData()
       
       if (useS3Path) {
-        // S3 path mode - send s3FilePath instead of file
         formData.append('s3FilePath', s3FilePath)
       } else {
-        // Regular file upload mode
         formData.append('file', selectedFile)
       }
       
       formData.append('autoExecute', autoExecute.toString())
       formData.append('trustDistance', trustDistance.toString())
       formData.append('pubKey', pubKey)
-      formData.append('progress_id', newProgressId)
 
       const response = await fetch('/api/ingestion/upload', {
         method: 'POST',
@@ -175,31 +105,29 @@ function FileUploadTab({ onResult }) {
 
       const result = await response.json()
 
-      if (result.success && result.progress_id) {
-        // Start polling for the specific progress ID
-        setProgressId(result.progress_id)
-        
-        // Emit event for header status tracker
-        console.log('🟢 FileUploadTab: Dispatching ingestion-started event', result.progress_id)
-        window.dispatchEvent(new CustomEvent('ingestion-started', {
-          detail: { progressId: result.progress_id }
-        }))
-        console.log('🟢 FileUploadTab: Event dispatched')
+      if (result.success) {
+        onResult({
+          success: true,
+          data: {
+            schema_used: result.schema_name || result.schema_used,
+            new_schema_created: result.new_schema_created,
+            mutations_generated: result.mutations_generated,
+            mutations_executed: result.mutations_executed
+          }
+        })
       } else {
         onResult({
           success: false,
           error: result.error || 'Failed to process file'
         })
-        setIsUploading(false)
-        setCurrentProgress(null)
       }
     } catch (error) {
       onResult({
         success: false,
         error: error.message || 'Failed to process file'
       })
+    } finally {
       setIsUploading(false)
-      setCurrentProgress(null)
     }
   }
 
@@ -230,9 +158,17 @@ function FileUploadTab({ onResult }) {
         </div>
       )}
 
-      {/* Progress Bar - Shows Ingestion Progress */}
-      {currentProgress && (
-        <ProgressBar progress={currentProgress} />
+      {/* Uploading Indicator */}
+      {isUploading && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-blue-800 font-medium">Processing file...</span>
+          </div>
+        </div>
       )}
 
       {/* Mode Toggle */}
@@ -423,4 +359,3 @@ function FileUploadTab({ onResult }) {
 }
 
 export default FileUploadTab
-

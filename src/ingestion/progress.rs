@@ -247,8 +247,11 @@ impl ProgressService {
             .await
             .unwrap_or_default()
             .into_iter()
-            // Include both Ingestion and Indexing jobs
-            .filter(|j| matches!(j.job_type, JobType::Ingestion | JobType::Indexing))
+            // Include Ingestion, Indexing, and database_reset jobs
+            .filter(|j| {
+                matches!(j.job_type, JobType::Ingestion | JobType::Indexing)
+                    || matches!(&j.job_type, JobType::Other(s) if s == "database_reset")
+            })
             .map(|j| j.into())
             .collect()
     }
