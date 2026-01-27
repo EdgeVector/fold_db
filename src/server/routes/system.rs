@@ -1,24 +1,13 @@
 use crate::datafold_node::config::DatabaseConfig;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::server::routes::handler_error_to_response;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::datafold_node::DataFoldNode;
 use crate::server::http_server::AppState;
-
-/// Helper to convert HandlerError to HttpResponse
-fn handler_error_to_response(e: crate::handlers::HandlerError) -> HttpResponse {
-    let status_code = match e.status_code() {
-        400 => actix_web::http::StatusCode::BAD_REQUEST,
-        401 => actix_web::http::StatusCode::UNAUTHORIZED,
-        404 => actix_web::http::StatusCode::NOT_FOUND,
-        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
-        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    HttpResponse::build(status_code).json(e.to_response())
-}
 
 /// Get system status information
 #[utoipa::path(
@@ -484,26 +473,28 @@ pub async fn update_database_config(
             path: std::path::PathBuf::from(path),
         },
         #[cfg(feature = "aws-backend")]
-        DatabaseConfigDto::Cloud(dto) => DatabaseConfig::Cloud(Box::new(crate::storage::CloudConfig {
-            region: dto.region.clone(),
-            auto_create: dto.auto_create,
-            user_id: dto.user_id.clone(),
-            file_storage_bucket: dto.file_storage_bucket.clone(),
-            tables: crate::storage::ExplicitTables {
-                main: dto.tables.main.clone(),
-                metadata: dto.tables.metadata.clone(),
-                permissions: dto.tables.permissions.clone(),
-                transforms: dto.tables.transforms.clone(),
-                orchestrator: dto.tables.orchestrator.clone(),
-                schema_states: dto.tables.schema_states.clone(),
-                schemas: dto.tables.schemas.clone(),
-                public_keys: dto.tables.public_keys.clone(),
-                transform_queue: dto.tables.transform_queue.clone(),
-                native_index: dto.tables.native_index.clone(),
-                process: dto.tables.process.clone(),
-                logs: dto.tables.logs.clone(),
-            },
-        })),
+        DatabaseConfigDto::Cloud(dto) => {
+            DatabaseConfig::Cloud(Box::new(crate::storage::CloudConfig {
+                region: dto.region.clone(),
+                auto_create: dto.auto_create,
+                user_id: dto.user_id.clone(),
+                file_storage_bucket: dto.file_storage_bucket.clone(),
+                tables: crate::storage::ExplicitTables {
+                    main: dto.tables.main.clone(),
+                    metadata: dto.tables.metadata.clone(),
+                    permissions: dto.tables.permissions.clone(),
+                    transforms: dto.tables.transforms.clone(),
+                    orchestrator: dto.tables.orchestrator.clone(),
+                    schema_states: dto.tables.schema_states.clone(),
+                    schemas: dto.tables.schemas.clone(),
+                    public_keys: dto.tables.public_keys.clone(),
+                    transform_queue: dto.tables.transform_queue.clone(),
+                    native_index: dto.tables.native_index.clone(),
+                    process: dto.tables.process.clone(),
+                    logs: dto.tables.logs.clone(),
+                },
+            }))
+        }
     };
 
     config.database = new_db_config;

@@ -2,6 +2,7 @@ use crate::handlers::schema as schema_handlers;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
+use crate::server::routes::handler_error_to_response;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -9,18 +10,6 @@ use serde_json::json;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleSuccessResponse {
     pub success: bool,
-}
-
-/// Helper to convert HandlerError to HttpResponse
-fn handler_error_to_response(e: crate::handlers::HandlerError) -> HttpResponse {
-    let status_code = match e.status_code() {
-        400 => actix_web::http::StatusCode::BAD_REQUEST,
-        401 => actix_web::http::StatusCode::UNAUTHORIZED,
-        404 => actix_web::http::StatusCode::NOT_FOUND,
-        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
-        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    HttpResponse::build(status_code).json(e.to_response())
 }
 
 #[utoipa::path(

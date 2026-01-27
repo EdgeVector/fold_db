@@ -1,21 +1,10 @@
 use crate::server::http_server::AppState;
+use crate::server::routes::handler_error_to_response;
 use actix_web::{web, HttpResponse, Responder, Result};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio_stream::wrappers::BroadcastStream; // Keep for backward compatibility
-
-/// Helper to convert HandlerError to HttpResponse
-fn handler_error_to_response(e: crate::handlers::HandlerError) -> HttpResponse {
-    let status_code = match e.status_code() {
-        400 => actix_web::http::StatusCode::BAD_REQUEST,
-        401 => actix_web::http::StatusCode::UNAUTHORIZED,
-        404 => actix_web::http::StatusCode::NOT_FOUND,
-        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
-        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    HttpResponse::build(status_code).json(e.to_response())
-}
 
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 pub struct LogLevelUpdate {

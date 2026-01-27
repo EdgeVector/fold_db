@@ -29,6 +29,7 @@
 //! ```
 
 pub mod ingestion;
+pub mod llm;
 pub mod logs;
 pub mod mutation;
 pub mod query;
