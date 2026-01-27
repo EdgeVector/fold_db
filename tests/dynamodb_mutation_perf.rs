@@ -83,13 +83,13 @@ async fn test_dynamodb_mutation_performance() {
 
     // Create Node Config
     let config = NodeConfig {
-        database: DatabaseConfig::Cloud(CloudConfig {
+        database: DatabaseConfig::Cloud(Box::new(CloudConfig {
             region: region.to_string(),
             tables,
             auto_create: true,
             user_id: None,
             file_storage_bucket: None,
-        }),
+        })),
         default_trust_distance: 1,
         network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
         security_config: Default::default(),

@@ -226,15 +226,6 @@ impl ProgressService {
             .map(|j| j.into())
     }
 
-    pub async fn remove_progress(&self, id: &str) -> Option<IngestionProgress> {
-        if let Ok(Some(job)) = self.tracker.load(id).await {
-            let _ = self.tracker.delete(id).await;
-            Some(job.into())
-        } else {
-            None
-        }
-    }
-
     pub async fn get_all_progress(&self) -> Vec<IngestionProgress> {
         // Require user context - no default fallback
         let user_id = match crate::logging::core::get_current_user_id() {

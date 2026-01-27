@@ -181,7 +181,6 @@ async fn test_dynamo_progress_persistence_and_backfill_integration() {
 
     println!("Backfill integration verified successfully!");
 
-    // Cleanup
-    store.delete(&job_id).await.unwrap();
-    store.delete(&backfill_hash).await.unwrap();
+    // Note: Jobs are not deleted - they will expire naturally via TTL or be overwritten
+    // No cleanup needed
 }

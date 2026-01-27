@@ -139,7 +139,6 @@ pub trait ProgressStore: Send + Sync {
     async fn save(&self, job: &Job) -> Result<(), String>;
     async fn load(&self, id: &str) -> Result<Option<Job>, String>;
     async fn list_by_user(&self, user_id: &str) -> Result<Vec<Job>, String>;
-    async fn delete(&self, id: &str) -> Result<(), String>;
 }
 
 /// In-memory implementation (for testing/single-tenant)
@@ -164,29 +163,32 @@ impl InMemoryProgressStore {
 #[async_trait]
 impl ProgressStore for InMemoryProgressStore {
     async fn save(&self, job: &Job) -> Result<(), String> {
-        let mut store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         store.insert(job.id.clone(), job.clone());
         Ok(())
     }
 
     async fn load(&self, id: &str) -> Result<Option<Job>, String> {
-        let store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(store.get(id).cloned())
     }
 
     async fn list_by_user(&self, user_id: &str) -> Result<Vec<Job>, String> {
-        let store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(store
             .values()
             .filter(|j| j.user_id.as_deref() == Some(user_id) || j.user_id.is_none())
             .cloned()
             .collect())
-    }
-
-    async fn delete(&self, id: &str) -> Result<(), String> {
-        let mut store = self.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        store.remove(id);
-        Ok(())
     }
 }
 
@@ -309,22 +311,6 @@ impl ProgressStore for DynamoDbProgressStore {
 
         let items = result.items.unwrap_or_default();
         Ok(items.iter().filter_map(|i| self.item_to_job(i)).collect())
-    }
-
-    async fn delete(&self, id: &str) -> Result<(), String> {
-        // Require user context - no default fallback
-        let user_id = crate::logging::core::get_current_user_id()
-            .ok_or_else(|| "User context required to delete jobs".to_string())?;
-
-        self.client
-            .delete_item()
-            .table_name(&self.table_name)
-            .key("PK", AttributeValue::S(user_id))
-            .key("SK", AttributeValue::S(id.to_string()))
-            .send()
-            .await
-            .map(|_| ())
-            .map_err(|e| e.to_string())
     }
 }
 
