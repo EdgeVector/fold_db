@@ -28,21 +28,21 @@ describe('Component Integration Tests', () => {
       )
 
       // All tabs should be enabled
-      expect(screen.getByRole('button', { name: /schemas tab/i })).toBeEnabled()
-      expect(screen.getByRole('button', { name: /mutation tab/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /ingestion tab/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /ai query tab/i })).toBeEnabled()
 
       // Unmount and re-mount with different active tab
       unmount()
       await renderWithRedux(
         <TabNavigation
-          activeTab="schemas"
+          activeTab="llm-query"
           onTabChange={onTabChange}
         />, { initialState: createAuthenticatedState() }
       )
 
       // Tabs remain enabled
-      expect(screen.getByRole('button', { name: /schemas tab/i })).toBeEnabled()
-      expect(screen.getByRole('button', { name: /mutation tab/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /ingestion tab/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /ai query tab/i })).toBeEnabled()
     })
   })
 
@@ -106,7 +106,7 @@ describe('Component Integration Tests', () => {
 
 
   describe('Complete Workflow Integration', () => {
-    it('simulates a complete schema selection and mutation workflow', async () => {
+    it('simulates a complete schema selection and form workflow', async () => {
       const user = userEvent.setup()
       const onTabChange = jest.fn()
       const onSchemaChange = jest.fn()
@@ -121,10 +121,10 @@ describe('Component Integration Tests', () => {
         <div>
           {/* Tab Navigation */}
           <TabNavigation
-            activeTab="mutation"
+            activeTab="ingestion"
             onTabChange={onTabChange}
           />
-          
+
           {/* Form Components */}
           <SelectField
             name="schema"
@@ -133,7 +133,7 @@ describe('Component Integration Tests', () => {
             onChange={onSchemaChange}
             options={mockSchemas}
           />
-          
+
           <TextField
             name="rangeKey"
             label="Range Key"
@@ -145,10 +145,10 @@ describe('Component Integration Tests', () => {
         { initialState: createAuthenticatedState() }
       )
 
-      // Navigate to mutation tab
-      const mutationTab = screen.getByRole('button', { name: /mutation tab/i })
-      await user.click(mutationTab)
-      expect(onTabChange).toHaveBeenCalledWith('mutation')
+      // Navigate to AI Query tab
+      const aiQueryTab = screen.getByRole('button', { name: /ai query tab/i })
+      await user.click(aiQueryTab)
+      expect(onTabChange).toHaveBeenCalledWith('llm-query')
 
       // Select a schema
       const schemaSelect = screen.getByRole('combobox')

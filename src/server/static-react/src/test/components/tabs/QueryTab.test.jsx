@@ -8,7 +8,7 @@ import { renderWithRedux, createTestSchemaState, createMockAuthState } from '../
 vi.mock('../../../api/clients/mutationClient', () => {
   const post = vi.fn(() => Promise.resolve({
     success: true,
-    data: { results: ['test result'] }
+    data: ['test result']
   }));
 
   return {
@@ -151,7 +151,7 @@ describe('QueryTab Component', () => {
     await waitFor(() => {
       expect(mockOnResult).toHaveBeenCalledWith({
         success: true,
-        data: { results: ['test result'] }
+        data: ['test result']
       })
     }, { timeout: 5000 })
   }, 10000)

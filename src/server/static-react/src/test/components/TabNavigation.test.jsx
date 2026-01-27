@@ -39,10 +39,9 @@ describe('TabNavigation', () => {
 
   it('renders advanced group tabs', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
-    
-    expect(screen.getByText('Schemas')).toBeInTheDocument()
-    expect(screen.getByText('Query')).toBeInTheDocument()
-    expect(screen.getByText('Mutation')).toBeInTheDocument()
+
+    // Current advanced tab in DEFAULT_TABS
+    expect(screen.getByText('Native Index Query')).toBeInTheDocument()
   })
 
   it('displays Advanced label for advanced group', async () => {
@@ -52,9 +51,9 @@ describe('TabNavigation', () => {
   })
 
   it('highlights active tab correctly', async () => {
-    await renderWithRedux(<TabNavigation {...defaultProps} activeTab="schemas" />, { initialState: createAuthenticatedState() })
-    
-    const activeTab = screen.getByRole('button', { name: /schemas tab/i })
+    await renderWithRedux(<TabNavigation {...defaultProps} activeTab="ingestion" />, { initialState: createAuthenticatedState() })
+
+    const activeTab = screen.getByRole('button', { name: /ingestion tab/i })
     expect(activeTab).toHaveAttribute('aria-current', 'page')
   })
 
@@ -85,11 +84,11 @@ describe('TabNavigation', () => {
 
   it('calls onTabChange when clicking enabled tab', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
-    
-    const schemasTab = screen.getByRole('button', { name: /schemas tab/i })
-    fireEvent.click(schemasTab)
-    
-    expect(defaultProps.onTabChange).toHaveBeenCalledWith('schemas')
+
+    const aiQueryTab = screen.getByRole('button', { name: /ai query tab/i })
+    fireEvent.click(aiQueryTab)
+
+    expect(defaultProps.onTabChange).toHaveBeenCalledWith('llm-query')
   })
 
   it('calls onTabChange when clicking any tab', async () => {
@@ -155,12 +154,12 @@ describe('TabNavigation', () => {
   })
 
   it('has proper accessibility attributes', async () => {
-    await renderWithRedux(<TabNavigation {...defaultProps} activeTab="schemas" />, { initialState: createAuthenticatedState() })
-    
-    const activeTab = screen.getByRole('button', { name: /schemas tab/i })
+    await renderWithRedux(<TabNavigation {...defaultProps} activeTab="ingestion" />, { initialState: createAuthenticatedState() })
+
+    const activeTab = screen.getByRole('button', { name: /ingestion tab/i })
     expect(activeTab).toHaveAttribute('aria-current', 'page')
-    
-    const inactiveTab = screen.getByRole('button', { name: /ingestion tab/i })
+
+    const inactiveTab = screen.getByRole('button', { name: /ai query tab/i })
     expect(inactiveTab).not.toHaveAttribute('aria-current')
   })
 })
