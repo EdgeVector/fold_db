@@ -8,7 +8,7 @@ import { renderWithRedux, createTestSchemaState, createMockAuthState } from '../
 vi.mock('../../../api/clients/mutationClient', () => {
   const post = vi.fn(() => Promise.resolve({
     success: true,
-    data: ['test result']
+    data: { results: ['test result'] }
   }));
 
   return {

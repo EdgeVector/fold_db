@@ -88,6 +88,10 @@ function FileUploadTab({ onResult }) {
     try {
       const formData = new FormData()
       
+      // Generate a progress_id for tracking
+      const progressId = crypto.randomUUID()
+      formData.append('progress_id', progressId)
+      
       if (useS3Path) {
         formData.append('s3FilePath', s3FilePath)
       } else {

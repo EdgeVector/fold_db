@@ -31,8 +31,11 @@ pub async fn process_json(
         "Received JSON ingestion request"
     );
 
-    // Generate a unique progress ID
-    let progress_id = uuid::Uuid::new_v4().to_string();
+    // Use client-provided progress_id if available, otherwise generate one
+    let progress_id = request
+        .progress_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // Start progress tracking
     // Start progress tracking

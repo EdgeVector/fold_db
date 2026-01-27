@@ -80,25 +80,73 @@ function StatusSection() {
     const isIndexing = job.job_type === 'indexing'
     const isDatabaseReset = job.job_type === 'database_reset'
     const jobLabel = isDatabaseReset ? 'Database Reset' : isIndexing ? 'Indexing Job' : 'Ingestion Job'
-    const cardColor = isDatabaseReset ? 'red' : isIndexing ? 'purple' : 'blue'
     
-    // Determine status icon and color
-    let StatusIcon = ArrowPathIcon
-    let statusColor = 'text-blue-500'
-    let bgColor = `bg-${cardColor}-50`
-    let borderColor = `border-${cardColor}-200`
-    
+    // Completed jobs get a subtle, grayed-out appearance
     if (job.is_complete) {
-      StatusIcon = CheckCircleIcon
-      statusColor = 'text-green-500'
-      bgColor = 'bg-green-50'
-      borderColor = 'border-green-200'
-    } else if (job.is_failed) {
-      StatusIcon = XCircleIcon
-      statusColor = 'text-red-500'
-      bgColor = 'bg-red-50'
-      borderColor = 'border-red-200'
+      return (
+        <div 
+          key={job.id} 
+          className="p-3 rounded-lg border border-gray-200 bg-gray-50 mb-3 opacity-75"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircleIcon className="w-5 h-5 text-gray-400" />
+              <span className="font-medium text-gray-500">
+                {jobLabel}
+              </span>
+              <span className="text-xs text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
+                Complete
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-gray-400">
+              <ClockIcon className="w-3 h-3" />
+              <span>{new Date(job.started_at).toLocaleTimeString()}</span>
+            </div>
+          </div>
+          <div className="text-xs text-gray-400 mt-1">
+            {job.status_message || 'Completed successfully'}
+          </div>
+        </div>
+      )
     }
+
+    // Failed jobs show error state
+    if (job.is_failed) {
+      return (
+        <div 
+          key={job.id} 
+          className="p-4 rounded-lg border-2 border-red-200 bg-red-50 mb-3"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <XCircleIcon className="w-5 h-5 text-red-500" />
+              <span className="font-medium text-red-800">
+                {jobLabel}
+              </span>
+              <span className="text-xs text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
+                Failed
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <ClockIcon className="w-3 h-3" />
+              <span>{new Date(job.started_at).toLocaleTimeString()}</span>
+            </div>
+          </div>
+          {job.error_message && (
+            <div className="text-xs text-red-600 mt-2">
+              Error: {job.error_message}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    // In-progress jobs show full progress bar
+    const cardColor = isDatabaseReset ? 'red' : isIndexing ? 'purple' : 'blue'
+    const bgColor = `bg-${cardColor}-50`
+    const borderColor = `border-${cardColor}-200`
+    const textColor = isIndexing ? 'text-purple-800' : isDatabaseReset ? 'text-red-800' : 'text-blue-800'
+    const barColor = isDatabaseReset ? 'bg-orange-500' : isIndexing ? 'bg-purple-500' : 'bg-blue-500'
 
     return (
       <div 
@@ -107,9 +155,12 @@ function StatusSection() {
       >
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <StatusIcon className={`w-5 h-5 ${statusColor} ${!job.is_complete && !job.is_failed ? 'animate-spin' : ''}`} />
-            <span className={`font-medium ${isIndexing ? 'text-purple-800' : 'text-blue-800'}`}>
+            <ArrowPathIcon className="w-5 h-5 text-blue-500 animate-spin" />
+            <span className={`font-medium ${textColor}`}>
               {jobLabel}
+            </span>
+            <span className={`text-xs ${textColor} bg-white/50 px-2 py-0.5 rounded-full`}>
+              In Progress
             </span>
           </div>
           <div className="flex items-center gap-1 text-xs text-gray-500">
@@ -118,7 +169,7 @@ function StatusSection() {
           </div>
         </div>
         
-        {/* Progress bar */}
+        {/* Progress bar - only shown for in-progress jobs */}
         <div className="mb-2">
           <div className="flex justify-between text-xs text-gray-600 mb-1">
             <span>{job.status_message || 'Processing...'}</span>
@@ -126,22 +177,11 @@ function StatusSection() {
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
-              className={`h-2 rounded-full transition-all duration-300 ${
-                job.is_failed ? 'bg-red-500' : 
-                job.is_complete ? 'bg-green-500' : 
-                isDatabaseReset ? 'bg-orange-500' :
-                isIndexing ? 'bg-purple-500' : 'bg-blue-500'
-              }`}
+              className={`h-2 rounded-full transition-all duration-300 ${barColor}`}
               style={{ width: `${job.progress_percentage || 0}%` }}
             />
           </div>
         </div>
-
-        {job.error_message && (
-          <div className="text-xs text-red-600 mt-2">
-            Error: {job.error_message}
-          </div>
-        )}
       </div>
     )
   }

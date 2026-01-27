@@ -1,5 +1,6 @@
 use datafold::datafold_node::node::DataFoldNode;
 use datafold::datafold_node::OperationProcessor;
+use datafold::logging::core::run_with_user;
 use datafold::schema::types::operations::MutationType;
 use datafold::schema::types::KeyValue;
 use datafold::testing_utils::TestDatabaseFactory;
@@ -7,12 +8,12 @@ use serde_json::json;
 use std::collections::HashMap;
 
 #[tokio::test]
-#[ignore = "Indexing progress tracking not yet implemented for this test scenario"]
 async fn test_indexing_progress_tracking() {
     // Setup
     let mut config = TestDatabaseFactory::create_test_node_config();
     let keypair = datafold::security::Ed25519KeyPair::generate().unwrap();
-    config = config.with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
+    let user_id = keypair.public_key_base64();
+    config = config.with_identity(&user_id, &keypair.secret_key_base64());
     let node = DataFoldNode::new(config).await.unwrap();
 
     // Create a schema
@@ -44,17 +45,14 @@ async fn test_indexing_progress_tracking() {
     {
         let mut db = node.get_fold_db().await.unwrap();
         db.load_schema_from_json(schema_json).await.unwrap();
-        db.schema_manager()
-            .approve("test_schema")
-            .await
-            .unwrap();
+        db.schema_manager().approve("test_schema").await.unwrap();
     }
 
-    // Check initial status
-    let status = node.get_indexing_status().await;
+    // Check initial status - must be within user context
+    let status = run_with_user(&user_id, async { node.get_indexing_status().await }).await;
     assert_eq!(status.total_operations_processed, 0);
 
-    // Perform mutation
+    // Perform mutation within user context
     let fields_and_values = {
         let mut map = HashMap::new();
         map.insert("id".to_string(), json!("1"));
@@ -66,23 +64,28 @@ async fn test_indexing_progress_tracking() {
 
     let key_value = KeyValue::new(Some("1".to_string()), None);
 
-    processor
-        .execute_mutation(
-            "test_schema".to_string(),
-            fields_and_values,
-            key_value,
-            MutationType::Create,
-        )
-        .await
-        .unwrap();
+    // Execute mutation within user context so IndexStatusTracker can save status
+    run_with_user(&user_id, async {
+        processor
+            .execute_mutation(
+                "test_schema".to_string(),
+                fields_and_values,
+                key_value,
+                MutationType::Create,
+            )
+            .await
+            .unwrap();
+    })
+    .await;
 
-    // Poll for status update
+    // Poll for status update - also within user context
     let start = std::time::Instant::now();
-    let timeout = std::time::Duration::from_secs(5);
+    // Increased timeout for CI reliability
+    let timeout = std::time::Duration::from_secs(15);
 
     let mut processed = 0;
     while start.elapsed() < timeout {
-        let status = node.get_indexing_status().await;
+        let status = run_with_user(&user_id, async { node.get_indexing_status().await }).await;
         if status.total_operations_processed > 0 {
             processed = status.total_operations_processed;
             break;

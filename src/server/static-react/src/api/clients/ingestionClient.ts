@@ -53,6 +53,7 @@ export interface ProcessIngestionRequest {
   auto_execute: boolean;
   trust_distance: number;
   pub_key: string;
+  progress_id: string;
 }
 // ... (interface continues, but we are just replacing the request construction part mostly)
 
@@ -216,11 +217,15 @@ export class UnifiedIngestionClient {
       pubKey?: string;
     } = {},
   ): Promise<EnhancedApiResponse<ProcessIngestionResponse>> {
+    // Generate a UUID for progress tracking
+    const progressId = crypto.randomUUID();
+
     const request: ProcessIngestionRequest = {
       data,
       auto_execute: options.autoExecute ?? true,
       trust_distance: options.trustDistance ?? 0,
       pub_key: options.pubKey ?? "default",
+      progress_id: progressId,
     };
 
     // Validate request before sending
@@ -313,6 +318,7 @@ export class UnifiedIngestionClient {
       auto_execute: options.autoExecute ?? true,
       trust_distance: options.trustDistance ?? 0,
       pub_key: options.pubKey ?? "default",
+      progress_id: options.progressId ?? crypto.randomUUID(),
     };
   }
 
