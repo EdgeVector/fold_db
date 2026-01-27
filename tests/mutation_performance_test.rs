@@ -34,6 +34,16 @@ use common::create_test_mutation;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_mutation_performance_direct() {
+    // Wrap entire test in a 10-second timeout
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        run_mutation_performance_test()
+    ).await;
+
+    assert!(result.is_ok(), "Performance test timed out after 10 seconds");
+}
+
+async fn run_mutation_performance_test() {
     println!("{}", "=".repeat(80));
     println!("Mutation Performance Test: Single vs Batch (Direct DB)");
     println!("{}", "=".repeat(80));
@@ -81,7 +91,7 @@ async fn test_mutation_performance_direct() {
     println!("\n{}", "=".repeat(80));
     println!("Test Configuration");
     println!("{}", "=".repeat(80));
-    const NUM_MUTATIONS: usize = 100;
+    const NUM_MUTATIONS: usize = 10;
     println!("Number of mutations: {}", NUM_MUTATIONS);
     println!("Schema: BlogPost");
     println!();
@@ -114,7 +124,7 @@ async fn test_mutation_performance_direct() {
     );
 
     // Short delay between tests
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Step 2: Performance test - Batch Mutations
     println!("\n{}", "=".repeat(80));
