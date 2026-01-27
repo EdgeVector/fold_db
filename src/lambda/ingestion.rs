@@ -224,6 +224,7 @@ impl LambdaContext {
                     trust_distance: Some(trust_distance),
                     pub_key: Some(pub_key_clone),
                     source_file_name: None,
+                    progress_id: Some(progress_id_clone.clone()),
                 };
 
                 // Process ingestion
@@ -327,6 +328,7 @@ impl LambdaContext {
             trust_distance: Some(trust_distance),
             pub_key: Some(pub_key),
             source_file_name: None,
+            progress_id: Some(progress_id.clone()),
         };
 
         // Process synchronously

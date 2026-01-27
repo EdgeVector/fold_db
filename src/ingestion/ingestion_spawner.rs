@@ -45,6 +45,7 @@ pub async fn spawn_background_ingestion(
         trust_distance: Some(config.trust_distance),
         pub_key: Some(config.pub_key),
         source_file_name: config.source_file_name,
+        progress_id: Some(progress_id.clone()),
     };
 
     // Clone for the spawned task
