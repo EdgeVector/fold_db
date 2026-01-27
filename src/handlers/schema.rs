@@ -156,8 +156,8 @@ pub async fn get_schema(
     match processor.get_schema(schema_name).await {
         Ok(Some(schema_with_state)) => {
             // Convert to JSON Value
-            let schema_json = serde_json::to_value(&schema_with_state)
-                .unwrap_or(serde_json::Value::Null);
+            let schema_json =
+                serde_json::to_value(&schema_with_state).unwrap_or(serde_json::Value::Null);
             Ok(ApiResponse::success_with_user(
                 SchemaResponse {
                     schema: schema_json,
@@ -234,6 +234,47 @@ pub async fn load_schemas(
         )),
         Err(e) => Err(HandlerError::Internal(format!(
             "Failed to load schemas: {}",
+            e
+        ))),
+    }
+}
+
+/// Response for backfill status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+)]
+pub struct BackfillStatusResponse {
+    /// Backfill information
+    pub backfill: serde_json::Value,
+}
+
+/// Get backfill status by hash
+pub async fn get_backfill_status(
+    backfill_hash: &str,
+    user_hash: &str,
+    node: &DataFoldNode,
+) -> HandlerResult<BackfillStatusResponse> {
+    let processor = OperationProcessor::new(node.clone());
+
+    match processor.get_backfill(backfill_hash).await {
+        Ok(Some(info)) => {
+            let backfill_json = serde_json::to_value(&info).unwrap_or(serde_json::Value::Null);
+            Ok(ApiResponse::success_with_user(
+                BackfillStatusResponse {
+                    backfill: backfill_json,
+                },
+                user_hash,
+            ))
+        }
+        Ok(None) => Err(HandlerError::NotFound(format!(
+            "Backfill not found: {}",
+            backfill_hash
+        ))),
+        Err(e) => Err(HandlerError::Internal(format!(
+            "Failed to get backfill status: {}",
             e
         ))),
     }

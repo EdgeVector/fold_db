@@ -112,20 +112,11 @@ pub async fn upload_file(
         ingestion_config,
     };
 
-    let progress_id = match form_data.progress_id {
-        Some(id) => id,
-        None => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Missing progress_id in upload request"
-            );
-            return HttpResponse::BadRequest().json(json!({
-                "success": false,
-                "error": "Missing required field: progress_id"
-            }));
-        }
-    };
+    // Use client-provided progress_id if available, otherwise generate one
+    let progress_id = form_data
+        .progress_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let user_id = match crate::logging::core::get_current_user_id() {
         Some(uid) => uid,
