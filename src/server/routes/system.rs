@@ -1,7 +1,7 @@
 use crate::datafold_node::config::DatabaseConfig;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::server::routes::handler_error_to_response;
+use crate::server::routes::{handler_error_to_response, require_user_context};
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -19,8 +19,10 @@ use crate::server::http_server::AppState;
     )
 )]
 pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::system::get_system_status(&user_hash, &node).await {
@@ -42,8 +44,10 @@ pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::system::get_node_private_key(&user_hash, &node).await {
@@ -76,8 +80,10 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
     )
 )]
 pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::system::get_node_public_key(&user_hash, &node).await {
@@ -162,8 +168,10 @@ pub async fn reset_database(
     }
 
     // Get user ID from context (required for multi-tenancy)
-    let user_id =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_id = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
     // Generate a unique job ID
     let job_id = format!("reset_{}", uuid::Uuid::new_v4());
@@ -612,9 +620,13 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let state = create_test_state(&temp_dir).await;
 
-        let req = test::TestRequest::get().to_http_request();
-        let resp = get_system_status(state).await.respond_to(&req);
-        assert_eq!(resp.status(), 200);
+        // Need to run with user context since routes now require authentication
+        crate::logging::core::run_with_user("test_user", async move {
+            let req = test::TestRequest::get().to_http_request();
+            let resp = get_system_status(state).await.respond_to(&req);
+            assert_eq!(resp.status(), 200);
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -622,18 +634,21 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let state = create_test_state(&temp_dir).await;
 
-        let req = test::TestRequest::get().to_http_request();
-        let resp = get_node_private_key(state).await.respond_to(&req);
-        assert_eq!(resp.status(), 200);
+        crate::logging::core::run_with_user("test_user", async move {
+            let req = test::TestRequest::get().to_http_request();
+            let resp = get_node_private_key(state).await.respond_to(&req);
+            assert_eq!(resp.status(), 200);
 
-        // Parse the response to verify it contains the private key
-        let body = resp.into_body();
-        let bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
-        let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+            // Parse the response to verify it contains the private key
+            let body = resp.into_body();
+            let bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
+            let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
 
-        assert!(response["success"].as_bool().unwrap_or(false));
-        assert!(response["private_key"].as_str().is_some());
-        assert!(!response["private_key"].as_str().unwrap_or("").is_empty());
+            assert!(response["success"].as_bool().unwrap_or(false));
+            assert!(response["private_key"].as_str().is_some());
+            assert!(!response["private_key"].as_str().unwrap_or("").is_empty());
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -641,18 +656,21 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let state = create_test_state(&temp_dir).await;
 
-        let req = test::TestRequest::get().to_http_request();
-        let resp = get_node_public_key(state).await.respond_to(&req);
-        assert_eq!(resp.status(), 200);
+        crate::logging::core::run_with_user("test_user", async move {
+            let req = test::TestRequest::get().to_http_request();
+            let resp = get_node_public_key(state).await.respond_to(&req);
+            assert_eq!(resp.status(), 200);
 
-        // Parse the response to verify it contains the public key
-        let body = resp.into_body();
-        let bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
-        let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+            // Parse the response to verify it contains the public key
+            let body = resp.into_body();
+            let bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
+            let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
 
-        assert!(response["success"].as_bool().unwrap_or(false));
-        assert!(response["public_key"].as_str().is_some());
-        assert!(!response["public_key"].as_str().unwrap_or("").is_empty());
+            assert!(response["success"].as_bool().unwrap_or(false));
+            assert!(response["public_key"].as_str().is_some());
+            assert!(!response["public_key"].as_str().unwrap_or("").is_empty());
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -660,26 +678,29 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let state = create_test_state(&temp_dir).await;
 
-        // Get private key
-        let req1 = test::TestRequest::get().to_http_request();
-        let resp1 = get_node_private_key(state.clone()).await.respond_to(&req1);
-        let body1 = resp1.into_body();
-        let bytes1 = actix_web::body::to_bytes(body1).await.unwrap_or_default();
-        let response1: serde_json::Value = serde_json::from_slice(&bytes1).unwrap_or_default();
-        let private_key = response1["private_key"].as_str().unwrap_or("");
+        crate::logging::core::run_with_user("test_user", async move {
+            // Get private key
+            let req1 = test::TestRequest::get().to_http_request();
+            let resp1 = get_node_private_key(state.clone()).await.respond_to(&req1);
+            let body1 = resp1.into_body();
+            let bytes1 = actix_web::body::to_bytes(body1).await.unwrap_or_default();
+            let response1: serde_json::Value = serde_json::from_slice(&bytes1).unwrap_or_default();
+            let private_key = response1["private_key"].as_str().unwrap_or("").to_string();
 
-        // Get public key
-        let req2 = test::TestRequest::get().to_http_request();
-        let resp2 = get_node_public_key(state).await.respond_to(&req2);
-        let body2 = resp2.into_body();
-        let bytes2 = actix_web::body::to_bytes(body2).await.unwrap_or_default();
-        let response2: serde_json::Value = serde_json::from_slice(&bytes2).unwrap_or_default();
-        let public_key = response2["public_key"].as_str().unwrap_or("");
+            // Get public key
+            let req2 = test::TestRequest::get().to_http_request();
+            let resp2 = get_node_public_key(state).await.respond_to(&req2);
+            let body2 = resp2.into_body();
+            let bytes2 = actix_web::body::to_bytes(body2).await.unwrap_or_default();
+            let response2: serde_json::Value = serde_json::from_slice(&bytes2).unwrap_or_default();
+            let public_key = response2["public_key"].as_str().unwrap_or("").to_string();
 
-        // Verify they are different
-        assert_ne!(private_key, public_key);
-        assert!(!private_key.is_empty());
-        assert!(!public_key.is_empty());
+            // Verify they are different
+            assert_ne!(private_key, public_key);
+            assert!(!private_key.is_empty());
+            assert!(!public_key.is_empty());
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -705,21 +726,18 @@ mod tests {
         let state = create_test_state(&temp_dir).await;
         let progress_tracker = web::Data::new(crate::progress::create_tracker(None).await);
 
-        let req_body = ResetDatabaseRequest { confirm: true };
-        let req = test::TestRequest::post()
-            .set_json(&req_body)
-            .to_http_request();
+        crate::logging::core::run_with_user("test_user", async move {
+            let req_body = ResetDatabaseRequest { confirm: true };
+            let req = test::TestRequest::post()
+                .set_json(&req_body)
+                .to_http_request();
 
-        let resp = reset_database(state, progress_tracker, web::Json(req_body))
-            .await
-            .respond_to(&req);
-        // The response should be 202 (Accepted) for async job started, or 500 for internal error
-        assert!(resp.status() == 202 || resp.status() == 500);
-
-        // If it's a 500, verify it's the expected job creation error (no user context in test)
-        if resp.status() == 500 {
-            // This is expected in the test environment due to user context constraints
-            // The important thing is that the API endpoint exists and processes the request
-        }
+            let resp = reset_database(state, progress_tracker, web::Json(req_body))
+                .await
+                .respond_to(&req);
+            // The response should be 202 (Accepted) for async job started, or 500 for internal error
+            assert!(resp.status() == 202 || resp.status() == 500);
+        })
+        .await;
     }
 }

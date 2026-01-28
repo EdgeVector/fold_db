@@ -35,7 +35,7 @@ pub async fn spawn_background_ingestion(
     // Start progress tracking
     let progress_service = ProgressService::new(progress_tracker.clone());
     progress_service
-        .start_progress(progress_id.clone(), user_id)
+        .start_progress(progress_id.clone(), user_id.clone())
         .await;
 
     // Create ingestion request
@@ -48,11 +48,10 @@ pub async fn spawn_background_ingestion(
         progress_id: Some(progress_id.clone()),
     };
 
-    // Clone for the spawned task
+    // Clone for the spawned task - use the validated user_id parameter
     let progress_id_clone = progress_id.clone();
     let ingestion_config = config.ingestion_config;
-    let user_id_for_task =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "unknown".to_string());
+    let user_id_for_task = user_id; // Use the provided user_id, not task-local storage
 
     // Spawn the background task with user context propagated
     tokio::spawn(async move {

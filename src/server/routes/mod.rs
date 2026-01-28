@@ -6,4 +6,4 @@ pub mod security;
 pub mod system;
 
 // Re-export common utilities for convenience
-pub use common::handler_error_to_response;
+pub use common::{handler_error_to_response, require_user_context};

@@ -2,7 +2,7 @@ use crate::handlers::schema as schema_handlers;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
-use crate::server::routes::handler_error_to_response;
+use crate::server::routes::{handler_error_to_response, require_user_context};
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,9 +22,11 @@ pub struct SimpleSuccessResponse {
     )
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
-    // Get user from context
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    // Get user from context - required for multi-tenancy
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
     let node = state.node.read().await;
 
@@ -51,8 +53,10 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
     let node = state.node.read().await;
 
@@ -78,8 +82,10 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
     let node = state.node.read().await;
 
@@ -105,8 +111,10 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
 )]
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
     let node = state.node.read().await;
 
@@ -157,8 +165,10 @@ pub async fn get_backfill_status(
     )
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
     let node = state.node.read().await;
 

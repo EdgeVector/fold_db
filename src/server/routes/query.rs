@@ -1,7 +1,7 @@
 use crate::handlers::query as query_handlers;
 use crate::schema::types::operations::{Operation, Query};
 use crate::server::http_server::AppState;
-use crate::server::routes::handler_error_to_response;
+use crate::server::routes::{handler_error_to_response, require_user_context};
 use actix_web::{web, HttpResponse, Responder};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -39,8 +39,10 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
         query_inner.filter
     );
 
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     // Use shared handler
@@ -102,8 +104,10 @@ pub async fn execute_mutation(
             }
         };
 
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     log::info!("🚀 Executing mutation via shared handler");
@@ -144,8 +148,10 @@ pub async fn execute_mutations_batch(
     mutations_data: web::Json<Vec<Value>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::mutation::execute_mutations_batch_from_json(
@@ -170,8 +176,10 @@ pub async fn execute_mutations_batch(
     )
 )]
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::list_transforms(&user_hash, &node).await {
@@ -199,8 +207,10 @@ pub async fn add_to_transform_queue(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let transform_id = path.into_inner();
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::add_to_transform_queue(&transform_id, &user_hash, &node).await
@@ -227,8 +237,10 @@ pub async fn add_to_transform_queue(
     )
 )]
 pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::get_transform_queue(&user_hash, &node).await {
@@ -250,8 +262,10 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::get_all_backfills(&user_hash, &node).await {
@@ -272,8 +286,10 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::get_active_backfills(&user_hash, &node).await {
@@ -299,8 +315,10 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
 )]
 pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let transform_id = path.into_inner();
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::get_backfill(&transform_id, &user_hash, &node).await {
@@ -321,8 +339,10 @@ pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -
     )
 )]
 pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::get_transform_statistics(&user_hash, &node).await {
@@ -364,8 +384,10 @@ pub async fn native_index_search(
 
     info!("API: Searching for term: '{}'", term);
 
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     // Use shared handler
@@ -395,8 +417,10 @@ pub async fn native_index_search(
     )
 )]
 pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::transform::get_backfill_statistics(&user_hash, &node).await {
@@ -418,8 +442,10 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
     )
 )]
 pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::system::get_indexing_status(&user_hash, &node).await {
