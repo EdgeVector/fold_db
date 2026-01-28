@@ -4,12 +4,17 @@ use datafold::{
     datafold_node::{load_node_config, DataFoldNode},
     server::http_server::DataFoldHttpServer,
 };
-use sha2::{Digest, Sha256};
-use std::io::{self, Write};
 
 /// Command line options for the HTTP server binary.
+///
+/// The HTTP server is now stateless - it accepts any user_hash from the
+/// X-User-Hash header on each request, matching the Lambda implementation.
 #[derive(Parser, Debug)]
-#[command(author, version, about)]
+#[command(
+    author,
+    version,
+    about = "Stateless DataFold HTTP Server - user identity comes from X-User-Hash header on each request"
+)]
 struct Cli {
     /// Port for the HTTP server
     #[arg(long, default_value_t = DEFAULT_HTTP_PORT)]
@@ -18,27 +23,29 @@ struct Cli {
     /// Schema service URL (if provided, node will fetch schemas from this service)
     #[arg(long)]
     schema_service_url: Option<String>,
-
-    /// User identifier to use for multi-tenancy (will be hashed)
-    #[arg(long)]
-    user_id: Option<String>,
 }
 
 /// Main entry point for the DataFold HTTP server.
 ///
-/// This function starts a DataFold HTTP server that serves the UI and provides
-/// REST API endpoints for schemas, queries, and mutations. It initializes the node,
-/// loads configuration, and starts the HTTP server.
+/// This is a STATELESS HTTP server - user identity comes from the X-User-Hash
+/// header on each incoming request, just like the Lambda implementation.
 ///
 /// # Command-Line Arguments
 ///
 /// * `--port <PORT>` - Port for the HTTP server (default: 9001)
 /// * `--schema-service-url <URL>` - URL of the schema service
-/// * `--user-id <ID>` - User identifier (will be hashed and used as user_id)
 ///
 /// # Environment Variables
 ///
 /// * `NODE_CONFIG` - Path to the node configuration file (default: config/node_config.json)
+///
+/// # Client-Side Authentication
+///
+/// The UI generates a user_hash from the user identifier using:
+///   user_hash = SHA256(user_id)[0:32] (first 32 hex characters)
+///
+/// This hash is sent with every request in the X-User-Hash header.
+/// The server uses this to isolate user data in task-local storage.
 ///
 /// # Returns
 ///
@@ -56,72 +63,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let Cli {
         port: http_port,
         schema_service_url,
-        user_id,
     } = Cli::parse();
 
-    // Handle user_id: get from args or prompt
-    let user_identifier = match user_id {
-        Some(id) => id,
-        None => {
-            print!("Enter user identifier: ");
-            io::stdout().flush()?;
-            let mut buffer = String::new();
-            io::stdin().read_line(&mut buffer)?;
-            buffer.trim().to_string()
-        }
-    };
+    println!("┌─────────────────────────────────────────────────────────┐");
+    println!("│         DataFold HTTP Server (Stateless Mode)          │");
+    println!("├─────────────────────────────────────────────────────────┤");
+    println!("│  User identity comes from X-User-Hash header per-request  │");
+    println!("│  Client generates: user_hash = SHA256(user_id)[0:32]   │");
+    println!("└─────────────────────────────────────────────────────────┘");
 
-    if user_identifier.is_empty() {
-        return Err("User identifier cannot be empty".into());
-    }
-
-    // Generate hash from identifier (SHA-256, take first 32 chars of hex)
-    // This matches the frontend implementation in authSlice.ts
-    let mut hasher = Sha256::new();
-    hasher.update(user_identifier.as_bytes());
-    let result = hasher.finalize();
-    let hash_hex = result
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
-    let user_hash = hash_hex[0..32].to_string();
-
-    println!(
-        "Using user hash: {} (from identifier: '{}')",
-        user_hash, user_identifier
-    );
-
-    // Load node configuration first to determine backend
+    // Load node configuration
     let mut config = load_node_config(None, None)?;
 
     // Initialize logging system with environment configuration
     #[allow(unused_mut)]
     let mut log_config = datafold::logging::config::LogConfig::from_env().unwrap_or_default();
 
-    // Deterministically generate keys from user_hash (which is 32 hex chars = 16 bytes? NO.
-    // The previous code took hash_hex[0..32]. That is 32 hex chars, representing 16 bytes?
-    // Wait. SHA256 is 32 bytes. Hex string is 64 chars.
-    // hash_hex[0..32] is likely just the first 16 bytes of the hash represented as hex.
-    // BUT we need 32 bytes for the secret key seed.
-    // Let's use the FULL 32 bytes of the SHA256 hash (result) directly.
-    let secret_seed = result.as_slice(); // SHA256 result is [u8; 32] GenericArray
-    let keypair = datafold::security::Ed25519KeyPair::from_secret_key(secret_seed)
-        .expect("Failed to generate keypair from seed");
+    // Generate a system-level keypair for the node itself
+    // This is separate from user identity - used for node-level operations
+    let keypair =
+        datafold::security::Ed25519KeyPair::generate().expect("Failed to generate node keypair");
 
-    println!("Generated deterministic identity:");
+    println!("Generated system node identity:");
     println!("  Public Key: {}", keypair.public_key_base64());
-    println!("  User Hash:  {}", user_hash);
 
-    // If using DynamoDB backend, automatically enable DynamoDB logging
+    // If using DynamoDB backend, enable DynamoDB logging
     #[cfg(feature = "aws-backend")]
     if let datafold::datafold_node::config::DatabaseConfig::Cloud(ref mut db_config) =
         config.database
     {
-        // Inject the generated user_hash into the DynamoDB config
-        // This ensures the node uses our hash instead of generating one from the public key
-        db_config.user_id = Some(user_hash.clone());
+        // Note: user_id is NOT set here - it comes from per-request headers
+        // The middleware will inject it via task-local context
 
-        // Only enable if not explicitly disabled via env vars
+        // Only enable DynamoDB logging if not explicitly disabled
         if std::env::var("DATAFOLD_LOG_DYNAMODB_ENABLED").is_err() {
             log_config.outputs.dynamodb.enabled = true;
             log_config.outputs.dynamodb.table_name = db_config.tables.logs.clone();
@@ -129,13 +103,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Inject identity into config
+    // Inject system-level identity into config
     config.public_key = Some(keypair.public_key_base64());
     config.private_key = Some(keypair.secret_key_base64());
-
-    // Also inject into log config if needed?
-    // The previous code for DataFoldHttpServer::new extracts user_id from config.database for logs.
-    // So modifying config.database above should be sufficient for DataFoldHttpServer logic.
 
     if let Err(e) = datafold::logging::LoggingSystem::init_with_config(log_config).await {
         eprintln!("Failed to initialize logging system: {}", e);
@@ -143,14 +113,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set schema service URL if provided
     if let Some(url) = schema_service_url {
+        println!("Schema service URL: {}", url);
         config.schema_service_url = Some(url);
     }
 
-    // Create node (now async!)
+    // Create node
     let node = DataFoldNode::new(config).await?;
 
     // Start the HTTP server
     let bind_address = format!("0.0.0.0:{}", http_port);
+    println!("\nStarting server on http://localhost:{}", http_port);
+    println!("Waiting for authenticated requests with X-User-Hash header...\n");
+
     let http_server = DataFoldHttpServer::new(node, &bind_address).await?;
 
     http_server
@@ -169,7 +143,6 @@ mod tests {
     fn defaults() {
         let cli = Cli::parse_from(["test"]);
         assert_eq!(cli.port, DEFAULT_HTTP_PORT);
-        assert_eq!(cli.user_id, None);
     }
 
     #[test]
@@ -179,8 +152,11 @@ mod tests {
     }
 
     #[test]
-    fn custom_user_id() {
-        let cli = Cli::parse_from(["test", "--user-id", "alice"]);
-        assert_eq!(cli.user_id, Some("alice".to_string()));
+    fn with_schema_service() {
+        let cli = Cli::parse_from(["test", "--schema-service-url", "http://localhost:9002"]);
+        assert_eq!(
+            cli.schema_service_url,
+            Some("http://localhost:9002".to_string())
+        );
     }
 }

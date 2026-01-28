@@ -1,5 +1,5 @@
 use crate::server::http_server::AppState;
-use crate::server::routes::handler_error_to_response;
+use crate::server::routes::{handler_error_to_response, require_user_context};
 use actix_web::{web, HttpResponse, Responder, Result};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -37,8 +37,10 @@ pub async fn list_logs(
     query: web::Query<ListLogsQuery>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
     let node = state.node.read().await;
 
     match crate::handlers::logs::list_logs(query.since, &user_hash, &node).await {
@@ -89,8 +91,10 @@ pub async fn stream_logs() -> impl Responder {
     responses((status = 200, description = "Logging configuration", body = LogConfigResponse))
 )]
 pub async fn get_config(state: web::Data<AppState>) -> Result<impl Responder> {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return Ok(response),
+    };
     let node = state.node.read().await;
 
     match crate::handlers::logs::get_log_config(&user_hash, &node).await {
@@ -124,8 +128,10 @@ pub async fn update_feature_level(
         })));
     }
 
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return Ok(response),
+    };
     let node = state.node.read().await;
 
     match crate::handlers::logs::update_log_feature_level(
@@ -152,8 +158,10 @@ pub async fn update_feature_level(
     responses((status = 200, description = "Reloaded"), (status = 400, description = "Bad request"))
 )]
 pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder> {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return Ok(response),
+    };
     let node = state.node.read().await;
 
     match crate::handlers::logs::reload_log_config("config/logging.toml", &user_hash, &node).await {
@@ -173,8 +181,10 @@ pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder>
     responses((status = 200, description = "Features", body = serde_json::Value))
 )]
 pub async fn get_features(state: web::Data<AppState>) -> Result<impl Responder> {
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return Ok(response),
+    };
     let node = state.node.read().await;
 
     match crate::handlers::logs::get_log_features(&user_hash, &node).await {

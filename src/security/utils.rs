@@ -298,11 +298,16 @@ impl SecurityMiddleware {
             ));
         }
 
-        // Return the owner ID if available
-        Ok(result
+        // Return the owner ID from the public key info
+        // Fail if no owner ID available - anonymous operations not allowed
+        result
             .public_key_info
             .map(|info| info.owner_id)
-            .unwrap_or_else(|| "anonymous".to_string()))
+            .ok_or_else(|| {
+                SecurityError::SignatureVerificationFailed(
+                    "No owner ID associated with this public key".to_string(),
+                )
+            })
     }
 
     /// Extract and validate a signed message from JSON

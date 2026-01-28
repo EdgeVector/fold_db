@@ -52,10 +52,12 @@ where
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let svc = self.service.clone();
 
-        // Extract x-user-id header
+        // Extract user hash from headers - check x-user-hash first (primary, matches Lambda)
+        // then fall back to x-user-id for backwards compatibility
         let user_id = req
             .headers()
-            .get("x-user-id")
+            .get("x-user-hash")
+            .or_else(|| req.headers().get("x-user-id"))
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
@@ -64,19 +66,10 @@ where
                 // Run the next service in the user context
                 run_with_user(&uid, async move { svc.call(req).await }).await
             } else {
-                // strict mode: if no user_id, you can block or fall back to "anonymous"
-                // For now, let's fall back to "anonymous" or "system" to avoid breaking non-auth routes (like static files)
-                // However, the user asked for strict usage.
-                // We'll fallback to "default" so it behaves like before but logs warn?
-                // Or better, "unauthenticated".
-
-                // NOTE: Static files and some system routes might not have the header.
-                // We shouldn't block static files.
-                // But for API routes we want it.
-                // For now, let's just propagate the context if present, but we WON'T block if absent here.
-                // The `routes/ingestion.rs` specifically returned 401 if missing.
-                // That logic in `routes` will now find the user_id if we set it here.
-
+                // No user context - request will proceed without user identity.
+                // API routes use require_user_context() helper to return 401 if needed.
+                // Static files and health checks can proceed without authentication.
+                // This middleware only PROPAGATES context, it doesn't ENFORCE it.
                 svc.call(req).await
             }
         })

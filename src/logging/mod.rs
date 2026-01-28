@@ -200,9 +200,7 @@ impl LoggingSystem {
     ///
     /// Attempts cloud logging first (if config provided), falls back to default
     /// logging on error. Silently succeeds if logging is already initialized.
-    pub async fn init_with_fallback(
-        cloud_config: Option<(String, String, Option<String>)>,
-    ) {
+    pub async fn init_with_fallback(cloud_config: Option<(String, String, Option<String>)>) {
         match Self::init_with_cloud(cloud_config).await {
             Ok(_) => {}
             Err(LoggingError::AlreadyInitialized) => {}
@@ -304,9 +302,12 @@ impl LoggingSystem {
             }
         }
 
-        // Fallback to GLOBAL_WEB_OUTPUT which stores logs in memory (doesn't need user_id)
+        // Fallback to GLOBAL_WEB_OUTPUT which stores logs in memory
+        // Note: WebOutput doesn't actually use user_id for log storage - it's an in-memory buffer.
+        // The "unknown" value is just a placeholder for the Logger trait interface.
+        // This is NOT user data isolation - just internal logging.
         if let Some(web_output) = GLOBAL_WEB_OUTPUT.get() {
-            let dummy_user = user_id.as_deref().unwrap_or("anonymous");
+            let dummy_user = user_id.as_deref().unwrap_or("unknown");
             if let Ok(entries) = web_output.query(dummy_user, limit, from_timestamp).await {
                 return Ok(entries);
             }
@@ -357,7 +358,9 @@ pub fn get_logs() -> Vec<String> {
 
 /// Convenience function to subscribe to web logs (backward compatibility)
 pub fn subscribe() -> Option<tokio::sync::broadcast::Receiver<String>> {
-    GLOBAL_WEB_OUTPUT.get().map(|web_output| web_output.subscribe())
+    GLOBAL_WEB_OUTPUT
+        .get()
+        .map(|web_output| web_output.subscribe())
 }
 
 /// Initialize logging with backward compatibility

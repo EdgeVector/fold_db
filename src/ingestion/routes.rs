@@ -79,8 +79,16 @@ pub async fn process_json(
     let node_clone = state.node.clone();
     let request_data = request.into_inner();
     let progress_id_clone = progress_id.clone();
-    let user_id_for_task =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "unknown".to_string());
+    // Re-use the already validated user_id from above for the background task
+    let user_id_for_task = match crate::logging::core::get_current_user_id() {
+        Some(uid) => uid,
+        None => {
+            // This shouldn't happen since we already checked above, but fail safe
+            return HttpResponse::Unauthorized().json(IngestionResponse::failure(vec![
+                "User context lost during request processing".to_string(),
+            ]));
+        }
+    };
 
     tokio::spawn(async move {
         // Wrap in run_with_user to propagate user context for progress tracking
@@ -404,9 +412,11 @@ pub async fn get_all_progress(progress_tracker: web::Data<ProgressTracker>) -> i
         "Received request for all progress"
     );
 
-    // Get user from context
-    let user_hash =
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| "anonymous".to_string());
+    // Get user from context - required for multi-tenancy
+    let user_hash = match crate::server::routes::require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
     // Use shared handler
     match crate::handlers::ingestion::get_all_progress(&user_hash, progress_tracker.get_ref()).await
