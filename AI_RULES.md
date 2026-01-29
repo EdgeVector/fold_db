@@ -16,7 +16,7 @@ Coding standards. Follow these to avoid creating spagetti code.
 - validate your changes -- in the browser.
 
 current UI test:
-./run_http_server_cloud.sh
+./run
 navigate to http://localhost:9001
 login -- if needed with test_user
 press reset database button -- confirm on the modal, wait for reset to complete

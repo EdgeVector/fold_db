@@ -128,6 +128,11 @@ impl HandlerError {
     pub fn to_response(&self) -> ApiResponse<()> {
         ApiResponse::error(self.to_string())
     }
+
+    /// Convert to ApiResponse with user context
+    pub fn to_response_with_user(&self, user_hash: impl Into<String>) -> ApiResponse<()> {
+        ApiResponse::error_with_user(self.to_string(), user_hash)
+    }
 }
 
 /// Result type for handlers
