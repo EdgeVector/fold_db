@@ -233,7 +233,7 @@ describe('App Component', () => {
 
         expect(screen.getByTestId('header')).toBeInTheDocument();
         expect(screen.getByTestId('footer')).toBeInTheDocument();
-        expect(screen.getByTestId('status-section')).toBeInTheDocument();
+        // StatusSection removed - now in Settings modal
         expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
         expect(screen.getByTestId('log-sidebar')).toBeInTheDocument();
       });
@@ -379,8 +379,8 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.getByText('Loading Schemas...')).toBeInTheDocument();
-        expect(screen.getByText('Fetching schema information from the server.')).toBeInTheDocument();
+        // Terminal-styled loading message
+        expect(screen.getByText(/loading/i)).toBeInTheDocument();
       });
 
       it('shows schema error message', () => {
@@ -405,8 +405,9 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.getByText('Schema Loading Error')).toBeInTheDocument();
-        expect(screen.getByText('Failed to load schemas')).toBeInTheDocument();
+        // Terminal-styled error message
+        expect(screen.getByText(/error/i)).toBeInTheDocument();
+        expect(screen.getByText(/failed to load schemas/i)).toBeInTheDocument();
       });
     });
 

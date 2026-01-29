@@ -254,7 +254,7 @@ function SettingsModal({ isOpen, onClose }) {
 
     if (checking) {
       return (
-        <span className="inline-flex items-center text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+        <span className="inline-flex items-center text-xs badge-terminal px-2 py-1">
           <svg className="animate-spin h-3 w-3 mr-1" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -271,7 +271,7 @@ function SettingsModal({ isOpen, onClose }) {
             e.stopPropagation()
             checkStatus(envId)
           }}
-          className="text-xs text-blue-600 hover:text-blue-700 underline"
+          className="text-xs text-terminal-blue hover:text-terminal-cyan underline"
         >
           Test Connection
         </button>
@@ -280,14 +280,14 @@ function SettingsModal({ isOpen, onClose }) {
 
     if (status.success) {
       return (
-        <span className="inline-flex items-center text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+        <span className="inline-flex items-center text-xs badge-terminal badge-terminal-success px-2 py-1">
           ✓ Online {status.responseTime && `(${status.responseTime}ms)`}
         </span>
       )
     }
 
     return (
-      <span className="inline-flex items-center text-xs bg-red-100 text-red-700 px-2 py-1 rounded" title={status.error}>
+      <span className="inline-flex items-center text-xs badge-terminal badge-terminal-error px-2 py-1" title={status.error}>
         ✗ Offline
       </span>
     )
@@ -300,18 +300,18 @@ function SettingsModal({ isOpen, onClose }) {
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Background overlay */}
         <div
-          className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
+          className="fixed inset-0 transition-opacity bg-black bg-opacity-80"
           onClick={onClose}
         />
 
         {/* Modal panel */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-          <div className="bg-white">
-            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Settings</h3>
+        <div className="inline-block align-bottom card-terminal text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full border border-terminal">
+          <div className="bg-terminal">
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-terminal">
+              <h3 className="text-lg font-medium text-terminal-green"><span className="text-terminal-dim">$</span> settings</h3>
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-terminal-dim hover:text-terminal transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -320,14 +320,14 @@ function SettingsModal({ isOpen, onClose }) {
             </div>
 
             {/* Tabs */}
-            <div className="border-b border-gray-200">
+            <div className="border-b border-terminal">
               <nav className="flex px-6">
                 <button
                   onClick={() => setActiveTab('ai')}
                   className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'ai'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-terminal-green text-terminal-green'
+                      : 'border-transparent text-terminal-dim hover:text-terminal hover:border-terminal'
                   }`}
                 >
                   AI Configuration
@@ -336,8 +336,8 @@ function SettingsModal({ isOpen, onClose }) {
                   onClick={() => setActiveTab('transforms')}
                   className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'transforms'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-terminal-green text-terminal-green'
+                      : 'border-transparent text-terminal-dim hover:text-terminal hover:border-terminal'
                   }`}
                 >
                   Transforms
@@ -346,8 +346,8 @@ function SettingsModal({ isOpen, onClose }) {
                   onClick={() => setActiveTab('keys')}
                   className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'keys'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-terminal-green text-terminal-green'
+                      : 'border-transparent text-terminal-dim hover:text-terminal hover:border-terminal'
                   }`}
                 >
                   Key Management
@@ -356,8 +356,8 @@ function SettingsModal({ isOpen, onClose }) {
                   onClick={() => setActiveTab('schema-service')}
                   className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'schema-service'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-terminal-green text-terminal-green'
+                      : 'border-transparent text-terminal-dim hover:text-terminal hover:border-terminal'
                   }`}
                 >
                   Schema Service
@@ -366,8 +366,8 @@ function SettingsModal({ isOpen, onClose }) {
                   onClick={() => setActiveTab('database')}
                   className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'database'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-terminal-green text-terminal-green'
+                      : 'border-transparent text-terminal-dim hover:text-terminal hover:border-terminal'
                   }`}
                 >
                   Database
@@ -380,13 +380,13 @@ function SettingsModal({ isOpen, onClose }) {
                 <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Provider
+                  <label className="block text-sm font-medium text-terminal-dim mb-1">
+                    --provider
                   </label>
                   <select
                     value={aiProvider}
                     onChange={(e) => setAiProvider(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                    className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                   >
                     <option value="OpenRouter">OpenRouter</option>
                     <option value="Ollama">Ollama</option>
@@ -395,13 +395,13 @@ function SettingsModal({ isOpen, onClose }) {
 
                 {aiProvider === 'OpenRouter' ? (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Model
+                    <label className="block text-sm font-medium text-terminal-dim mb-1">
+                      --model
                     </label>
                     <select
                       value={openrouterModel}
                       onChange={(e) => setOpenrouterModel(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded text-sm"
+                      className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                     >
                       <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
                       <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
@@ -419,15 +419,15 @@ function SettingsModal({ isOpen, onClose }) {
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Model
+                    <label className="block text-sm font-medium text-terminal-dim mb-1">
+                      --model
                     </label>
                     <input
                       type="text"
                       value={ollamaModel}
                       onChange={(e) => setOllamaModel(e.target.value)}
                       placeholder="e.g., llama3"
-                      className="w-full p-2 border border-gray-300 rounded text-sm"
+                      className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                     />
                   </div>
                 )}
@@ -435,15 +435,15 @@ function SettingsModal({ isOpen, onClose }) {
 
               {aiProvider === 'OpenRouter' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    API Key <span className="text-xs text-gray-500">(<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">get key</a>)</span>
+                  <label className="block text-sm font-medium text-terminal-dim mb-1">
+                    --api-key <span className="text-xs text-terminal-dim">(<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-terminal-cyan hover:underline">get key</a>)</span>
                   </label>
                   <input
                     type="password"
                     value={openrouterApiKey}
                     onChange={(e) => setOpenrouterApiKey(e.target.value)}
                     placeholder="sk-or-..."
-                    className="w-full p-2 border border-gray-300 rounded text-sm"
+                    className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                   />
                 </div>
               )}
@@ -452,17 +452,17 @@ function SettingsModal({ isOpen, onClose }) {
               <div>
                 <button
                   onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                  className="text-sm text-terminal-dim hover:text-terminal flex items-center gap-1"
                 >
                   <span>{showAdvanced ? '▼' : '▶'}</span>
-                  Advanced Settings
+                  --advanced
                 </button>
                 
                 {showAdvanced && (
-                  <div className="mt-3 space-y-3 pl-4 border-l-2 border-gray-200">
+                  <div className="mt-3 space-y-3 pl-4 border-l-2 border-terminal">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Base URL
+                      <label className="block text-sm font-medium text-terminal-dim mb-1">
+                        --base-url
                       </label>
                       <input
                         type="text"
@@ -475,7 +475,7 @@ function SettingsModal({ isOpen, onClose }) {
                           ? 'https://openrouter.ai/api/v1'
                           : 'http://localhost:11434'
                         }
-                        className="w-full p-2 border border-gray-300 rounded text-sm"
+                        className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                       />
                     </div>
                   </div>
@@ -483,10 +483,10 @@ function SettingsModal({ isOpen, onClose }) {
               </div>
 
                   {configSaveStatus && (
-                    <div className={`p-3 rounded-md ${
+                    <div className={`p-3 border-l-4 ${
                       configSaveStatus.success 
-                        ? 'bg-green-50 text-green-800 border border-green-200' 
-                        : 'bg-red-50 text-red-800 border border-red-200'
+                        ? 'border-terminal-green text-terminal-green' 
+                        : 'border-terminal-red text-terminal-red'
                     }`}>
                       <span className="text-sm font-medium">
                         {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
@@ -507,8 +507,8 @@ function SettingsModal({ isOpen, onClose }) {
               {activeTab === 'schema-service' && (
                 <div className="space-y-4">
                   <div className="mb-4">
-                    <h4 className="text-md font-semibold text-gray-900 mb-2">Schema Service Environment</h4>
-                    <p className="text-sm text-gray-600 mb-4">
+                    <h4 className="text-md font-semibold text-terminal-green mb-2"># Schema Service Environment</h4>
+                    <p className="text-sm text-terminal-dim mb-4">
                       Select which schema service endpoint to use. This affects where schemas are loaded from and saved to.
                     </p>
                   </div>
@@ -517,10 +517,10 @@ function SettingsModal({ isOpen, onClose }) {
                     {Object.values(SCHEMA_SERVICE_ENVIRONMENTS).map(env => (
                       <label
                         key={env.id}
-                        className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        className={`flex items-start p-4 border cursor-pointer transition-all card-terminal ${
                           selectedSchemaEnv === env.id
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                            ? 'border-terminal-green'
+                            : 'border-terminal hover:border-terminal-dim'
                         }`}
                       >
                         <input
@@ -533,20 +533,20 @@ function SettingsModal({ isOpen, onClose }) {
                         />
                         <div className="flex-1">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-semibold text-gray-900">{env.name}</span>
+                            <span className="text-sm font-semibold text-terminal">{env.name}</span>
                             <div className="flex items-center gap-2">
                               {getStatusBadge(env.id)}
                               {selectedSchemaEnv === env.id && (
-                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Active</span>
+                                <span className="text-xs badge-terminal badge-terminal-success">Active</span>
                               )}
                             </div>
                           </div>
-                          <p className="text-xs text-gray-600 mt-1">{env.description}</p>
-                          <p className="text-xs text-gray-500 mt-1 font-mono">
+                          <p className="text-xs text-terminal-dim mt-1">{env.description}</p>
+                          <p className="text-xs text-terminal-dim mt-1 font-mono">
                             {env.baseUrl || window.location.origin}
                           </p>
                           {connectionStatus[env.id] && !connectionStatus[env.id].success && (
-                            <p className="text-xs text-red-600 mt-1">
+                            <p className="text-xs text-terminal-red mt-1">
                               Error: {connectionStatus[env.id].error}
                             </p>
                           )}
@@ -556,10 +556,10 @@ function SettingsModal({ isOpen, onClose }) {
                   </div>
 
                   {configSaveStatus && (
-                    <div className={`p-3 rounded-md ${
+                    <div className={`p-3 border-l-4 ${
                       configSaveStatus.success 
-                        ? 'bg-green-50 text-green-800 border border-green-200' 
-                        : 'bg-red-50 text-red-800 border border-red-200'
+                        ? 'border-terminal-green text-terminal-green' 
+                        : 'border-terminal-red text-terminal-red'
                     }`}>
                       <span className="text-sm font-medium">
                         {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
@@ -572,20 +572,20 @@ function SettingsModal({ isOpen, onClose }) {
               {activeTab === 'database' && (
                 <div className="space-y-4">
                   <div className="mb-4">
-                    <h4 className="text-md font-semibold text-gray-900 mb-2">Database Storage Backend</h4>
-                    <p className="text-sm text-gray-600 mb-4">
+                    <h4 className="text-md font-semibold text-terminal-green mb-2"># Database Storage Backend</h4>
+                    <p className="text-sm text-terminal-dim mb-4">
                       Choose the storage backend for your database. Changes require a server restart.
                     </p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Storage Type
+                    <label className="block text-sm font-medium text-terminal-dim mb-2">
+                      --storage-type
                     </label>
                     <select
                       value={dbType}
                       onChange={(e) => setDbType(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded text-sm"
+                      className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                     >
                       <option value="local">Local (Sled)</option>
                       <option value="dynamodb">DynamoDB</option>
@@ -595,24 +595,24 @@ function SettingsModal({ isOpen, onClose }) {
 
                   {dbType === 'local' ? (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Storage Path
+                      <label className="block text-sm font-medium text-terminal-dim mb-1">
+                        --path
                       </label>
                       <input
                         type="text"
                         value={dbPath}
                         onChange={(e) => setDbPath(e.target.value)}
                         placeholder="data"
-                        className="w-full p-2 border border-gray-300 rounded text-sm"
+                        className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-terminal-dim mt-1">
                         Local filesystem path where the database will be stored
                       </p>
                     </div>
                   ) : dbType === 'dynamodb' ? (
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-terminal-dim mb-1">
                           Table Name <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -620,14 +620,14 @@ function SettingsModal({ isOpen, onClose }) {
                           value={dynamoTableName}
                           onChange={(e) => setDynamoTableName(e.target.value)}
                           placeholder="DataFoldStorage"
-                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          className="w-full p-2 border border-terminal text-sm"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-terminal-dim mt-1">
                           Base table name (namespaces will be appended automatically)
                         </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-terminal-dim mb-1">
                           AWS Region <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -635,14 +635,14 @@ function SettingsModal({ isOpen, onClose }) {
                           value={dynamoRegion}
                           onChange={(e) => setDynamoRegion(e.target.value)}
                           placeholder="us-west-2"
-                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          className="w-full p-2 border border-terminal text-sm"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-terminal-dim mt-1">
                           AWS region where your DynamoDB tables are located
                         </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-terminal-dim mb-1">
                           User ID (Optional)
                         </label>
                         <input
@@ -650,14 +650,14 @@ function SettingsModal({ isOpen, onClose }) {
                           value={dynamoUserId}
                           onChange={(e) => setDynamoUserId(e.target.value)}
                           placeholder="Leave empty for single-tenant"
-                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          className="w-full p-2 border border-terminal text-sm"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-terminal-dim mt-1">
                           User ID for multi-tenant isolation (uses partition key)
                         </p>
                       </div>
-                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                        <p className="text-xs text-yellow-800">
+                      <div className="p-3 card-terminal border border-terminal-yellow ">
+                        <p className="text-xs text-terminal-yellow">
                           <strong>Note:</strong> Ensure your AWS credentials are configured (via environment variables, IAM role, or AWS CLI). 
                           The DynamoDB tables will be created automatically if they don't exist.
                         </p>
@@ -666,7 +666,7 @@ function SettingsModal({ isOpen, onClose }) {
                   ) : (
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-terminal-dim mb-1">
                           S3 Bucket <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -674,14 +674,14 @@ function SettingsModal({ isOpen, onClose }) {
                           value={s3Bucket}
                           onChange={(e) => setS3Bucket(e.target.value)}
                           placeholder="my-datafold-bucket"
-                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          className="w-full p-2 border border-terminal text-sm"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-terminal-dim mt-1">
                           S3 bucket name where the database will be stored
                         </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-terminal-dim mb-1">
                           AWS Region <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -689,14 +689,14 @@ function SettingsModal({ isOpen, onClose }) {
                           value={s3Region}
                           onChange={(e) => setS3Region(e.target.value)}
                           placeholder="us-east-1"
-                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          className="w-full p-2 border border-terminal text-sm"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-terminal-dim mt-1">
                           AWS region where your S3 bucket is located
                         </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-terminal-dim mb-1">
                           S3 Prefix (Optional)
                         </label>
                         <input
@@ -704,14 +704,14 @@ function SettingsModal({ isOpen, onClose }) {
                           value={s3Prefix}
                           onChange={(e) => setS3Prefix(e.target.value)}
                           placeholder="folddb"
-                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          className="w-full p-2 border border-terminal text-sm"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-terminal-dim mt-1">
                           Prefix/path within the bucket (defaults to "folddb")
                         </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-terminal-dim mb-1">
                           Local Cache Path
                         </label>
                         <input
@@ -719,14 +719,14 @@ function SettingsModal({ isOpen, onClose }) {
                           value={s3LocalPath}
                           onChange={(e) => setS3LocalPath(e.target.value)}
                           placeholder="/tmp/folddb-data"
-                          className="w-full p-2 border border-gray-300 rounded text-sm"
+                          className="w-full p-2 border border-terminal text-sm"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-terminal-dim mt-1">
                           Local filesystem path for caching S3 data (defaults to /tmp/folddb-data)
                         </p>
                       </div>
-                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                        <p className="text-xs text-yellow-800">
+                      <div className="p-3 card-terminal border border-terminal-yellow ">
+                        <p className="text-xs text-terminal-yellow">
                           <strong>Note:</strong> Ensure your AWS credentials are configured (via environment variables, IAM role, or AWS CLI). 
                           The database will be synced to/from S3 on startup and shutdown.
                         </p>
@@ -735,26 +735,26 @@ function SettingsModal({ isOpen, onClose }) {
                   )}
 
                   {/* Danger Zone - Reset Database */}
-                  <div className="mt-8 pt-6 border-t border-red-200">
+                  <div className="mt-8 pt-6 border-t border-terminal-red">
                     <div className="flex items-center gap-2 mb-3">
                       <TrashIcon className="w-5 h-5 text-red-500" />
-                      <h4 className="text-md font-semibold text-red-800">Danger Zone</h4>
+                      <h4 className="text-md font-semibold text-terminal-red">Danger Zone</h4>
                     </div>
-                    <p className="text-sm text-gray-600 mb-4">
+                    <p className="text-sm text-terminal-dim mb-4">
                       Permanently delete all data and restart the database. This action cannot be undone.
                     </p>
                     
                     {!showResetConfirm ? (
                       <button
                         onClick={() => setShowResetConfirm(true)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 border border-red-300 rounded-md hover:bg-red-50 hover:border-red-400 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 border border-red-300  hover:card-terminal hover:border-red-400 transition-colors"
                       >
                         <TrashIcon className="w-4 h-4" />
                         Reset Database
                       </button>
                     ) : (
-                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-sm text-red-800 mb-3">
+                      <div className="p-4 card-terminal border border-terminal-red ">
+                        <p className="text-sm text-terminal-red mb-3">
                           <strong>Are you sure?</strong> This will:
                         </p>
                         <ul className="list-disc list-inside text-sm text-red-700 mb-4 space-y-1">
@@ -766,14 +766,14 @@ function SettingsModal({ isOpen, onClose }) {
                           <button
                             onClick={handleResetDatabase}
                             disabled={isResetting}
-                            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="px-4 py-2 text-sm font-medium text-white bg-red-600  hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           >
                             {isResetting ? 'Resetting...' : 'Yes, Reset Database'}
                           </button>
                           <button
                             onClick={() => setShowResetConfirm(false)}
                             disabled={isResetting}
-                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                            className="px-4 py-2 text-sm font-medium text-terminal-dim bg-terminal border border-terminal  hover:bg-terminal transition-colors"
                           >
                             Cancel
                           </button>
@@ -782,9 +782,9 @@ function SettingsModal({ isOpen, onClose }) {
                     )}
 
                     {resetResult && (
-                      <div className={`mt-4 p-3 rounded-md text-sm ${resetResult.type === 'success'
-                          ? 'bg-green-50 text-green-800 border border-green-200'
-                          : 'bg-red-50 text-red-800 border border-red-200'
+                      <div className={`mt-4 p-3  text-sm ${resetResult.type === 'success'
+                          ? 'text-terminal-green border border-terminal-green'
+                          : 'card-terminal text-terminal-red border border-terminal-red'
                         }`}>
                         {resetResult.message}
                       </div>
@@ -792,10 +792,10 @@ function SettingsModal({ isOpen, onClose }) {
                   </div>
 
                   {configSaveStatus && (
-                    <div className={`p-3 rounded-md ${
+                    <div className={`p-3  ${
                       configSaveStatus.success 
-                        ? 'bg-green-50 text-green-800 border border-green-200' 
-                        : 'bg-red-50 text-red-800 border border-red-200'
+                        ? 'text-terminal-green border border-terminal-green' 
+                        : 'card-terminal text-terminal-red border border-terminal-red'
                     }`}>
                       <span className="text-sm font-medium">
                         {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
@@ -807,18 +807,18 @@ function SettingsModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3 border-t border-gray-200">
+          <div className="bg-terminal px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3 border-t border-terminal">
             {activeTab === 'ai' || activeTab === 'schema-service' || activeTab === 'database' ? (
               <>
                 <button
                   onClick={activeTab === 'ai' ? saveAiConfig : activeTab === 'schema-service' ? saveSchemaServiceConfig : saveDatabaseConfig}
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                  className="btn-terminal btn-terminal-primary sm:ml-3 sm:w-auto sm:text-sm"
                 >
-                  {activeTab === 'database' ? 'Save and Restart DB' : 'Save Configuration'}
+                  → {activeTab === 'database' ? 'Save and Restart DB' : 'Save Configuration'}
                 </button>
                 <button
                   onClick={onClose}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
+                  className="btn-terminal sm:mt-0 sm:w-auto sm:text-sm"
                 >
                   Cancel
                 </button>
@@ -826,7 +826,7 @@ function SettingsModal({ isOpen, onClose }) {
             ) : (
               <button
                 onClick={onClose}
-                className="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:w-auto sm:text-sm"
+                className="btn-terminal sm:w-auto sm:text-sm"
               >
                 Close
               </button>

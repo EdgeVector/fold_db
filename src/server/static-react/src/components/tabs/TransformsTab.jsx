@@ -108,19 +108,19 @@ const TransformsTab = ({ onResult }) => {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-800">Transforms</h2>
-        <div className="text-sm text-gray-600">
+        <h2 className="text-xl font-semibold text-terminal-green"># transforms</h2>
+        <div className="text-sm text-terminal-dim">
           Queue Status: {queueInfo.isEmpty ? 'Empty' : `${queueInfo.length} transform(s) queued`}
         </div>
       </div>
 
       {!queueInfo.isEmpty && (
-        <div className="bg-blue-50 p-4 rounded-lg" data-testid="transform-queue">
-          <h3 className="text-md font-medium text-blue-800 mb-2">Transform Queue</h3>
-          <ul className="list-disc list-inside space-y-1">
+        <div className="card-terminal p-4 border-l-4 border-terminal-cyan" data-testid="transform-queue">
+          <h3 className="text-md font-medium text-terminal-cyan mb-2">$ queue</h3>
+          <ul className="list-none space-y-1">
             {queueInfo.queue.map((transformId, index) => (
-              <li key={`${transformId}-${index}`} className="text-blue-700">
-                {transformId}
+              <li key={`${transformId}-${index}`} className="text-terminal-dim font-mono text-sm">
+                → {transformId}
               </li>
             ))}
           </ul>
@@ -128,21 +128,21 @@ const TransformsTab = ({ onResult }) => {
       )}
 
       {isLoadingTransforms && (
-        <div className="bg-blue-50 p-4 rounded-lg" role="status">
+        <div className="card-terminal p-4" role="status">
           <div className="flex items-center">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-            <span className="text-blue-800">Loading transforms...</span>
+            <div className="animate-spin h-4 w-4 border-b-2 border-terminal-green mr-2"></div>
+            <span className="text-terminal-dim">Loading transforms...</span>
           </div>
         </div>
       )}
 
       {transformsError && (
-        <div className="bg-red-50 p-4 rounded-lg" role="alert">
+        <div className="card-terminal p-4 border-l-4 border-terminal-red" role="alert">
           <div className="flex items-center">
-            <span className="text-red-800">Error loading transforms: {transformsError}</span>
+            <span className="text-terminal-red">Error loading transforms: {transformsError}</span>
             <button
               onClick={fetchTransforms}
-              className="ml-4 px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+              className="ml-4 btn-terminal text-sm"
             >
               Retry
             </button>
@@ -164,14 +164,14 @@ const TransformsTab = ({ onResult }) => {
             // Determine schema type - fields are flattened, so access directly
             const schemaType = transform.schema_type
             let schemaTypeLabel = 'Single'
-            let schemaTypeColor = 'bg-gray-100 text-gray-800'
+            let schemaTypeColor = 'badge-terminal'
             
             if (schemaType?.Range) {
               schemaTypeLabel = 'Range'
-              schemaTypeColor = 'bg-blue-100 text-blue-800'
+              schemaTypeColor = 'badge-terminal badge-terminal-info'
             } else if (schemaType?.HashRange) {
               schemaTypeLabel = 'HashRange'
-              schemaTypeColor = 'bg-purple-100 text-purple-800'
+              schemaTypeColor = 'badge-terminal text-terminal-purple'
             }
 
             // Get key configuration and transform fields - flattened
@@ -181,22 +181,22 @@ const TransformsTab = ({ onResult }) => {
             const fieldNames = Object.keys(transformFieldsObj)
 
             return (
-              <div key={transformId} className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+              <div key={transformId} className="card-terminal p-4 border-l-4 border-terminal-blue">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900">{schemaName}</h3>
+                    <h3 className="text-lg font-semibold text-terminal">{schemaName}</h3>
                     <div className="flex gap-2 mt-2 flex-wrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${schemaTypeColor}`}>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium ${schemaTypeColor}`}>
                         {schemaTypeLabel}
                       </span>
                       {transformFieldsCount > 0 && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium badge-terminal badge-terminal-success">
                           {transformFieldsCount} field{transformFieldsCount !== 1 ? 's' : ''}
                         </span>
                       )}
                     </div>
                     {fieldNames.length > 0 && (
-                      <div className="mt-2 text-sm text-gray-600">
+                      <div className="mt-2 text-sm text-terminal-dim">
                         <span className="font-medium">Fields:</span> {fieldNames.join(', ')}
                       </div>
                     )}
@@ -206,22 +206,22 @@ const TransformsTab = ({ onResult }) => {
                 <div className="mt-3 space-y-3">
                   {/* Key Configuration */}
                   {keyConfig && (
-                    <div className="bg-blue-50 rounded p-3">
-                      <div className="text-sm font-medium text-blue-900 mb-1">Key Configuration:</div>
-                      <div className="text-sm text-blue-800 space-y-1">
+                    <div className="card-terminal p-3 border-l-2 border-terminal-cyan">
+                      <div className="text-sm font-medium text-terminal-cyan mb-1">--key-config:</div>
+                      <div className="text-sm text-terminal-dim space-y-1 font-mono">
                         {keyConfig.hash_field && (
                           <div>
-                            <span className="font-medium">Hash Key:</span> {keyConfig.hash_field}
+                            hash_key: {keyConfig.hash_field}
                           </div>
                         )}
                         {keyConfig.range_field && (
                           <div>
-                            <span className="font-medium">Range Key:</span> {keyConfig.range_field}
+                            range_key: {keyConfig.range_field}
                           </div>
                         )}
                         {!keyConfig.hash_field && !keyConfig.range_field && keyConfig.key_field && (
                           <div>
-                            <span className="font-medium">Key:</span> {keyConfig.key_field}
+                            key: {keyConfig.key_field}
                           </div>
                         )}
                       </div>
@@ -231,12 +231,12 @@ const TransformsTab = ({ onResult }) => {
                   {/* Transform Fields */}
                   {transformFieldsCount > 0 && (
                     <div>
-                      <div className="text-sm font-medium text-gray-700 mb-2">Transform Fields:</div>
-                      <div className="bg-gray-50 rounded p-3 space-y-2">
+                      <div className="text-sm font-medium text-terminal-dim mb-2">--transform-fields:</div>
+                      <div className="card-terminal p-3 space-y-2">
                         {Object.entries(transformFieldsObj).map(([fieldName, logic]) => (
-                          <div key={fieldName} className="border-l-2 border-gray-300 pl-3">
-                            <div className="font-medium text-gray-900 text-sm">{fieldName}</div>
-                            <div className="text-gray-600 font-mono text-xs mt-1 break-all">{logic}</div>
+                          <div key={fieldName} className="border-l-2 border-terminal pl-3">
+                            <div className="font-medium text-terminal text-sm">{fieldName}</div>
+                            <div className="text-terminal-dim font-mono text-xs mt-1 break-all">{logic}</div>
                           </div>
                         ))}
                       </div>
@@ -248,15 +248,15 @@ const TransformsTab = ({ onResult }) => {
                   <button
                     onClick={() => handleAddToQueue(transformId, null)}
                     disabled={isLoading}
-                    className={`px-4 py-2 text-sm font-medium rounded-md text-white ${
-                      isLoading ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                    className={`btn-terminal btn-terminal-primary text-sm ${
+                      isLoading ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
-                    {isLoading ? 'Adding...' : 'Add to Queue'}
+                    {isLoading ? '→ Adding...' : '→ Add to Queue'}
                   </button>
 
                   {errorMessage && (
-                    <span className="text-sm text-red-600">Error: {errorMessage}</span>
+                    <span className="text-sm text-terminal-red">Error: {errorMessage}</span>
                   )}
                 </div>
               </div>
@@ -266,9 +266,9 @@ const TransformsTab = ({ onResult }) => {
       )}
 
       {!isLoadingTransforms && !transformsError && transforms.length === 0 && (
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <p className="text-gray-600">No transforms registered</p>
-          <p className="text-sm text-gray-500 mt-1">
+        <div className="card-terminal p-4">
+          <p className="text-terminal-dim">No transforms registered</p>
+          <p className="text-sm text-terminal-dim mt-1">
             Register a transform in a schema to view it here and add it to the processing queue.
           </p>
         </div>

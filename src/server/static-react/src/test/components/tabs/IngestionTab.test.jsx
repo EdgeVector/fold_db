@@ -90,7 +90,7 @@ describe('IngestionTab Component', () => {
     })
 
     expect(screen.getByPlaceholderText('Enter your JSON data here or load a sample...')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Process Data' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /process data/i })).toBeInTheDocument()
   })
 
   it('allows JSON input interaction', async () => {
@@ -125,7 +125,7 @@ describe('IngestionTab Component', () => {
     const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
     fireEvent.change(jsonInput, { target: { value: '{"name": "John", "age": 30}' } })
 
-    const processButton = screen.getByRole('button', { name: 'Process Data' })
+    const processButton = screen.getByRole('button', { name: /process data/i })
     expect(processButton).toBeInTheDocument()
     expect(processButton).not.toBeDisabled()
   })

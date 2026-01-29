@@ -165,42 +165,43 @@ export function AppContent() {
   // Show loading spinner while restoring session or checking auth
   if (_isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
+      <div className="h-screen flex items-center justify-center bg-terminal">
         <div className="text-center">
-          <svg className="animate-spin h-10 w-10 text-blue-500 mx-auto mb-4" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          <p className="text-gray-500">Loading...</p>
+          <div className="mb-4">
+            <span className="spinner-terminal w-8 h-8"></span>
+          </div>
+          <p className="text-terminal-green font-mono text-sm">
+            <span className="text-terminal-dim">$ </span>
+            initializing...
+            <span className="cursor"></span>
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
+    <div className="h-screen flex flex-col bg-terminal overflow-hidden">
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto">
-          <div className="container mx-auto px-4 py-6">
-            <div className="mt-6">
+          <div className="container mx-auto px-4 py-4">
+            <div className="mt-4">
               {/* Schema Loading/Error States */}
               {schemasError && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mb-4 p-4 card-terminal border-l-4 border-terminal-red">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                      </svg>
+                      <span className="text-terminal-red text-lg">✖</span>
                     </div>
                     <div className="ml-3">
-                      <h3 className="text-sm font-medium text-red-800">
-                        Schema Loading Error
+                      <h3 className="text-sm font-medium text-terminal-red">
+                        ERROR: Schema Loading Failed
                       </h3>
-                      <div className="mt-2 text-sm text-red-700">
-                        <p>{schemasError}</p>
+                      <div className="mt-2 text-sm text-terminal-dim">
+                        <p><span className="text-terminal-red">→</span> {schemasError}</p>
                       </div>
                     </div>
                   </div>
@@ -208,34 +209,41 @@ export function AppContent() {
               )}
 
               {schemasLoading && (
-                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="mb-4 p-4 card-terminal border-l-4 border-terminal-blue">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      <svg className="animate-spin h-5 w-5 text-blue-400" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
+                      <span className="spinner-terminal"></span>
                     </div>
                     <div className="ml-3">
-                      <h3 className="text-sm font-medium text-blue-800">
+                      <h3 className="text-sm font-medium text-terminal-blue">
                         Loading Schemas...
                       </h3>
-                      <div className="mt-2 text-sm text-blue-700">
-                        <p>Fetching schema information from the server.</p>
+                      <div className="mt-1 text-sm text-terminal-dim">
+                        <p><span className="text-terminal-blue">→</span> Fetching schema data from server</p>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Tab Navigation Component (TASK-002) */}
+              {/* Tab Navigation Component */}
               <TabNavigation
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
               />
 
-              <div className="mt-4">
-                {renderActiveTab()}
+              <div className="mt-4 card-terminal">
+                <div className="card-terminal-header">
+                  <span className="text-terminal-green text-sm font-medium">
+                    <span className="text-terminal-dim">$</span> {activeTab}
+                  </span>
+                  <span className="text-xs text-terminal-dim">
+                    {new Date().toLocaleTimeString()}
+                  </span>
+                </div>
+                <div className="card-terminal-body">
+                  {renderActiveTab()}
+                </div>
               </div>
             </div>
 

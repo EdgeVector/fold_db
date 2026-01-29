@@ -9,21 +9,31 @@ import { render, screen } from '@testing-library/react';
 import Footer from '../../components/Footer.jsx';
 
 describe('Footer Component', () => {
-  it('renders footer with correct structure', () => {
+  it('renders footer with correct terminal structure', () => {
     render(<Footer />);
     
     const footer = screen.getByRole('contentinfo');
     expect(footer).toBeInTheDocument();
-    expect(footer).toHaveClass('bg-white', 'border-t', 'border-gray-200', 'py-3');
+    expect(footer).toHaveClass('bg-terminal-lighter', 'border-t', 'border-terminal', 'py-2');
   });
 
-  it('displays current year in copyright text', () => {
+  it('displays fold_db branding', () => {
+    render(<Footer />);
+    
+    expect(screen.getByText('fold_db')).toBeInTheDocument();
+  });
+
+  it('displays current year in copyright', () => {
     render(<Footer />);
     
     const currentYear = new Date().getFullYear();
-    const copyrightText = screen.getByText(`DataFold Node © ${currentYear}`);
-    expect(copyrightText).toBeInTheDocument();
-    expect(copyrightText).toHaveClass('text-gray-600', 'text-sm');
+    expect(screen.getByText(`© ${currentYear}`)).toBeInTheDocument();
+  });
+
+  it('displays version number', () => {
+    render(<Footer />);
+    
+    expect(screen.getByText('node v1.0.0')).toBeInTheDocument();
   });
 
   it('has proper semantic structure', () => {
@@ -34,8 +44,14 @@ describe('Footer Component', () => {
     expect(container).toBeInTheDocument();
   });
 
+  it('uses terminal color classes', () => {
+    render(<Footer />);
+    
+    const textElement = screen.getByText('fold_db');
+    expect(textElement).toHaveClass('text-terminal-green');
+  });
+
   it('renders without crashing', () => {
     expect(() => render(<Footer />)).not.toThrow();
   });
 });
-

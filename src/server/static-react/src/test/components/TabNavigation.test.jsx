@@ -25,29 +25,33 @@ describe('TabNavigation', () => {
   it('renders all default tabs', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
     
+    // Tab labels are rendered in lowercase CLI-style (e.g., "ingestion" instead of "Ingestion")
     DEFAULT_TABS.forEach(tab => {
-      expect(screen.getByText(tab.label)).toBeInTheDocument()
+      const cliLabel = tab.label.toLowerCase().replace(/\s+/g, '-')
+      expect(screen.getByText(cliLabel)).toBeInTheDocument()
     })
   })
 
   it('renders main group tabs', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
     
-    expect(screen.getByText('Ingestion')).toBeInTheDocument()
-    expect(screen.getByText('AI Query')).toBeInTheDocument()
+    // CLI-style lowercase labels
+    expect(screen.getByText('ingestion')).toBeInTheDocument()
+    expect(screen.getByText('ai-query')).toBeInTheDocument()
   })
 
   it('renders advanced group tabs', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
 
-    // Current advanced tab in DEFAULT_TABS
-    expect(screen.getByText('Native Index Query')).toBeInTheDocument()
+    // CLI-style lowercase labels
+    expect(screen.getByText('native-index-query')).toBeInTheDocument()
   })
 
   it('displays Advanced label for advanced group', async () => {
     await renderWithRedux(<TabNavigation {...defaultProps} />, { initialState: createAuthenticatedState() })
     
-    expect(screen.getByText('Advanced')).toBeInTheDocument()
+    // CLI-style advanced label
+    expect(screen.getByText('--advanced')).toBeInTheDocument()
   })
 
   it('highlights active tab correctly', async () => {
@@ -112,11 +116,12 @@ describe('TabNavigation', () => {
     
     await renderWithRedux(<TabNavigation {...defaultProps} tabs={customTabs} />, { initialState: createAuthenticatedState() })
     
-    expect(screen.getByText('Custom Tab 1')).toBeInTheDocument()
-    expect(screen.getByText('Custom Tab 2')).toBeInTheDocument()
+    // CLI-style lowercase labels
+    expect(screen.getByText('custom-tab-1')).toBeInTheDocument()
+    expect(screen.getByText('custom-tab-2')).toBeInTheDocument()
     
-    // Should not render default tabs
-    expect(screen.queryByText('Schemas')).not.toBeInTheDocument()
+    // Should not render default tabs when custom tabs provided
+    expect(screen.queryByText('ingestion')).not.toBeInTheDocument()
   })
 
   it('displays tab icons when provided', async () => {

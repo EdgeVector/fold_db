@@ -645,53 +645,55 @@ The key to success lies in understanding not just the technical aspects, but als
     <div className="space-y-4">
       {/* Status Bar */}
       {ingestionStatus && (
-        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+        <div className="card-terminal p-3 border-l-4 border-terminal-green">
           <div className="flex items-center gap-4 text-sm">
-            <span className={`px-2 py-1 rounded text-xs font-medium ${
+            <span className={`badge-terminal ${
               ingestionStatus.enabled && ingestionStatus.configured 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-red-100 text-red-800'
+                ? 'badge-terminal-success' 
+                : 'badge-terminal-error'
             }`}>
               {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Configured'}
             </span>
-            <span className="text-gray-600">{ingestionStatus.provider} · {ingestionStatus.model}</span>
-            <span className="text-xs text-gray-500">Configure AI settings using the Settings button in the header</span>
+            <span className="text-terminal-dim">{ingestionStatus.provider} · {ingestionStatus.model}</span>
+            <span className="text-xs text-terminal-dim">Configure AI settings using the Settings button in the header</span>
           </div>
         </div>
       )}
 
 
-      <div className="bg-white p-4 rounded-lg shadow">
+      <div className="card-terminal p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-medium text-gray-900">JSON Data</h3>
+          <h3 className="text-terminal-green font-medium">
+            <span className="text-terminal-dim">$</span> JSON Data
+          </h3>
           <div className="flex gap-2">
             <button
               onClick={() => loadSampleData('blogposts')}
-              className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100"
+              className="btn-terminal text-xs py-1 px-2 text-terminal-green border-terminal-green"
             >
               Blog Posts (100)
             </button>
             <button
               onClick={() => loadSampleData('twitter')}
-              className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100"
+              className="btn-terminal text-xs py-1 px-2 text-terminal-blue border-terminal-blue"
             >
               Twitter
             </button>
             <button
               onClick={() => loadSampleData('instagram')}
-              className="px-2 py-1 bg-pink-50 text-pink-700 rounded text-xs hover:bg-pink-100"
+              className="btn-terminal text-xs py-1 px-2 text-terminal-pink border-terminal-pink"
             >
               Instagram
             </button>
             <button
               onClick={() => loadSampleData('linkedin')}
-              className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-xs hover:bg-indigo-100"
+              className="btn-terminal text-xs py-1 px-2 text-terminal-purple border-terminal-purple"
             >
               LinkedIn
             </button>
             <button
               onClick={() => loadSampleData('tiktok')}
-              className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs hover:bg-purple-100"
+              className="btn-terminal text-xs py-1 px-2 text-terminal-cyan border-terminal-cyan"
             >
               TikTok
             </button>
@@ -703,36 +705,46 @@ The key to success lies in understanding not just the technical aspects, but als
           value={jsonData}
           onChange={(e) => setJsonData(e.target.value)}
           placeholder="Enter your JSON data here or load a sample..."
-          className="w-full h-64 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="textarea-terminal w-full h-64"
         />
       </div>
 
       {/* Process Button */}
-      <div className="bg-white p-4 rounded-lg shadow">
+      <div className="card-terminal p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
                 checked={autoExecute}
                 onChange={(e) => setAutoExecute(e.target.checked)}
-                className="rounded"
+                className="w-4 h-4 accent-terminal-green bg-terminal border-terminal"
               />
-              <span className="text-gray-700">Auto-execute mutations</span>
+              <span className="text-terminal">Auto-execute mutations</span>
             </label>
-            <span className="text-xs text-gray-500">AI will analyze and automatically map data to schemas</span>
+            <span className="text-xs text-terminal-dim">AI will analyze and automatically map data to schemas</span>
           </div>
           
           <button
             onClick={processIngestion}
             disabled={isLoading || !jsonData.trim()}
-            className={`px-6 py-2.5 rounded font-medium transition-colors ${
+            className={`btn-terminal px-6 py-2.5 font-medium ${
               isLoading || !jsonData.trim()
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'opacity-50 cursor-not-allowed'
+                : 'btn-terminal-primary'
             }`}
           >
-            {isLoading ? 'Processing...' : 'Process Data'}
+            {isLoading ? (
+              <>
+                <span className="spinner-terminal"></span>
+                <span>Processing...</span>
+              </>
+            ) : (
+              <>
+                <span>→</span>
+                <span>Process Data</span>
+              </>
+            )}
           </button>
         </div>
       </div>

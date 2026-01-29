@@ -11,7 +11,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!userId.trim()) {
-      setError('Please enter a user identifier')
+      setError('ERROR: User identifier required')
       return
     }
 
@@ -21,63 +21,116 @@ export default function LoginPage() {
       localStorage.setItem('fold_user_id', result.id)
       localStorage.setItem('fold_user_hash', result.hash)
     } catch (err) {
-      setError('Login failed: ' + err.message)
+      setError('ERROR: ' + err.message)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Sign in to Exemem
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Enter your user identifier to access your Exemem node
-        </p>
-      </div>
+    <div className="min-h-screen bg-terminal flex flex-col justify-center py-12 px-4">
+      <div className="w-full max-w-md mx-auto">
+        {/* ASCII-style logo */}
+        <div className="text-center mb-8">
+          <pre className="ascii-art inline-block text-terminal-green text-left" style={{ fontSize: '0.5rem', lineHeight: 1.1 }}>
+{`
+ ██████╗  █████╗ ████████╗ █████╗ ███████╗ ██████╗ ██╗     ██████╗ 
+ ██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗██╔════╝██╔═══██╗██║     ██╔══██╗
+ ██║  ██║███████║   ██║   ███████║█████╗  ██║   ██║██║     ██║  ██║
+ ██║  ██║██╔══██║   ██║   ██╔══██║██╔══╝  ██║   ██║██║     ██║  ██║
+ ██████╔╝██║  ██║   ██║   ██║  ██║██║     ╚██████╔╝███████╗██████╔╝
+ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝      ╚═════╝ ╚══════╝╚═════╝ 
+`}
+          </pre>
+          <p className="text-terminal-dim text-sm mt-4">
+            <span className="text-terminal-green">v1.0.0</span> | Personal Data Node
+          </p>
+        </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="userId" className="block text-sm font-medium text-gray-700">
-                User Identifier
-              </label>
-              <div className="mt-1">
-                <input
-                  id="userId"
-                  name="userId"
-                  type="text"
-                  autoComplete="username"
-                  required
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="e.g. alice-dev"
-                  value={userId}
-                  onChange={(e) => {
-                    setUserId(e.target.value)
-                    setError('')
-                  }}
-                  autoFocus
-                />
-              </div>
+        {/* Terminal window */}
+        <div className="terminal-window">
+          <div className="terminal-header">
+            <div className="terminal-dot terminal-dot-red"></div>
+            <div className="terminal-dot terminal-dot-yellow"></div>
+            <div className="terminal-dot terminal-dot-green"></div>
+            <span className="terminal-title">fold_db --login</span>
+          </div>
+          
+          <div className="terminal-body p-6">
+            <div className="mb-4 text-terminal-dim text-sm">
+              <p className="mb-1">Welcome to Fold DB.</p>
+              <p>Enter your user identifier to continue.</p>
             </div>
 
-            {error && (
-              <div className="text-sm text-red-600">
-                {error}
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <div>
+                <div className="flex items-center">
+                  <span className="text-terminal-green mr-2">$</span>
+                  <span className="text-terminal-cyan mr-2">login</span>
+                  <span className="text-terminal-dim mr-2">--user</span>
+                  <input
+                    id="userId"
+                    name="userId"
+                    type="text"
+                    autoComplete="username"
+                    required
+                    className="flex-1 bg-transparent border-none outline-none text-terminal-green focus:ring-0 p-0"
+                    placeholder="<user-id>"
+                    value={userId}
+                    onChange={(e) => {
+                      setUserId(e.target.value)
+                      setError('')
+                    }}
+                    autoFocus
+                    style={{ caretColor: 'var(--terminal-green)' }}
+                  />
+                  {!userId && <span className="cursor"></span>}
+                </div>
+                <div className="border-b border-terminal-lighter mt-2"></div>
               </div>
-            )}
 
-            <div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-              >
-                {isLoading ? 'Connecting...' : 'Continue'}
-              </button>
+              {error && (
+                <div className="text-sm text-terminal-red flex items-center gap-2">
+                  <span>✖</span>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="btn-terminal btn-terminal-primary w-full justify-center"
+                >
+                  {isLoading ? (
+                    <>
+                      <span className="spinner-terminal"></span>
+                      <span>Connecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>→</span>
+                      <span>Connect</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-6 pt-4 border-t border-terminal-lighter">
+              <p className="text-xs text-terminal-dim">
+                <span className="text-terminal-yellow">TIP:</span> Use any identifier (e.g., email, username) to create or access your node.
+              </p>
             </div>
-          </form>
+          </div>
+        </div>
+
+        {/* Status bar */}
+        <div className="mt-4 flex items-center justify-center text-xs text-terminal-dim gap-4">
+          <div className="flex items-center gap-2">
+            <span className="status-dot status-online"></span>
+            <span>Server Online</span>
+          </div>
+          <span>|</span>
+          <span>Secure Connection</span>
         </div>
       </div>
     </div>

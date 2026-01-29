@@ -13,26 +13,17 @@ describe('Header Component', () => {
       preloadedState: defaultPreloadedState
     })
     
-    expect(screen.getByText('DataFold Node')).toBeInTheDocument()
+    // Header now shows "$ fold_db" - look for fold_db text
+    expect(screen.getByText(/fold_db/i)).toBeInTheDocument()
   })
 
-  it('has correct styling classes', () => {
+  it('has correct terminal styling classes', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
     
     const header = screen.getByRole('banner')
-    expect(header).toHaveClass('bg-white', 'border-b', 'border-gray-200', 'shadow-sm', 'flex-shrink-0')
-  })
-
-  it('displays database SVG icon', () => {
-    renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
-      preloadedState: defaultPreloadedState
-    })
-    
-    const svg = document.querySelector('svg')
-    expect(svg).toBeInTheDocument()
-    expect(svg).toHaveClass('w-8', 'h-8', 'flex-shrink-0')
+    expect(header).toHaveClass('bg-terminal-lighter', 'border-b', 'border-terminal', 'flex-shrink-0')
   })
 
   it('has proper semantic structure', () => {
@@ -57,31 +48,32 @@ describe('Header Component', () => {
     expect(container).toHaveClass('flex', 'items-center', 'justify-between', 'px-6', 'py-3')
   })
 
-  it('title link has hover effects', () => {
+  it('title link has terminal hover effects', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
     
     const link = screen.getByRole('link')
-    expect(link).toHaveClass('flex', 'items-center', 'gap-3', 'text-blue-600', 'hover:text-blue-700', 'transition-colors')
+    expect(link).toHaveClass('flex', 'items-center', 'gap-3', 'text-terminal-green')
   })
 
-  it('displays settings button with correct classes', () => {
+  it('displays config button', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
     
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
-    expect(settingsButton).toHaveClass('inline-flex', 'items-center', 'gap-2', 'px-3', 'py-2', 'text-sm')
+    const configButton = screen.getByRole('button', { name: /config/i })
+    expect(configButton).toBeInTheDocument()
+    expect(configButton).toHaveClass('btn-terminal')
   })
 
-  it('settings button contains icon', () => {
+  it('config button contains settings icon', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
     
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
-    const icon = settingsButton.querySelector('svg')
+    const configButton = screen.getByRole('button', { name: /config/i })
+    const icon = configButton.querySelector('svg')
     expect(icon).toBeInTheDocument()
     expect(icon).toHaveClass('w-4', 'h-4')
   })
@@ -91,37 +83,40 @@ describe('Header Component', () => {
       preloadedState: defaultPreloadedState
     })
     
-    const title = screen.getByText('DataFold Node')
-    expect(title).toHaveClass('text-xl', 'font-semibold', 'text-gray-900')
+    // Find the span containing the title text
+    const titleSpan = screen.getByText(/fold_db/i).closest('span')
+    expect(titleSpan).toHaveClass('text-xl', 'font-bold', 'tracking-tight')
   })
 
-  it('renders settings button', () => {
-    renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
-      preloadedState: defaultPreloadedState
-    })
-    
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
-    expect(settingsButton).toBeInTheDocument()
-  })
-
-  it('calls onSettingsClick when settings button is clicked', () => {
+  it('calls onSettingsClick when config button is clicked', () => {
     const mockSettingsClick = vi.fn()
     renderWithRedux(<Header onSettingsClick={mockSettingsClick} />, {
       preloadedState: defaultPreloadedState
     })
     
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
-    fireEvent.click(settingsButton)
+    const configButton = screen.getByRole('button', { name: /config/i })
+    fireEvent.click(configButton)
     
     expect(mockSettingsClick).toHaveBeenCalledTimes(1)
   })
 
-  it('settings button has correct styling', () => {
+  it('displays version badge', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
     
-    const settingsButton = screen.getByRole('button', { name: /settings/i })
-    expect(settingsButton).toHaveClass('inline-flex', 'items-center', 'gap-2', 'px-3', 'py-2', 'text-sm', 'text-gray-700', 'hover:bg-gray-100', 'rounded-md', 'border', 'border-gray-300', 'transition-colors')
+    expect(screen.getByText('v1.0')).toBeInTheDocument()
+  })
+
+  it('shows user info when authenticated', () => {
+    const authenticatedState = {
+      auth: createMockAuthState({ isAuthenticated: true, user: { id: 'testuser' } })
+    }
+    renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
+      preloadedState: authenticatedState
+    })
+    
+    expect(screen.getByText('testuser')).toBeInTheDocument()
+    expect(screen.getByText('exit')).toBeInTheDocument()
   })
 })

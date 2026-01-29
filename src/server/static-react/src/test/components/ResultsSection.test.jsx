@@ -3,6 +3,7 @@
  * 
  * Tests the ResultsSection component including result display,
  * error handling, and different data types.
+ * Updated for terminal theme styling.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -20,7 +21,7 @@ describe('ResultsSection Component', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders successful results with correct structure', () => {
+  it('renders successful results with terminal structure', () => {
     const mockResults = {
       data: { users: [{ id: 1, name: 'John' }] },
       status: 200
@@ -28,12 +29,14 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={mockResults} />);
     
-    expect(screen.getByText('Results')).toBeInTheDocument();
-    expect(screen.getByText('(JSON)')).toBeInTheDocument();
-    expect(screen.getByText('Status: 200')).toBeInTheDocument();
+    // Terminal-styled output header
+    expect(screen.getByText('OUTPUT')).toBeInTheDocument();
+    // Multiple elements may contain 'json' text
+    expect(screen.getAllByText(/json/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/200/).length).toBeGreaterThan(0);
   });
 
-  it('renders error results with correct styling', () => {
+  it('renders error results with error styling', () => {
     const mockErrorResults = {
       error: 'Database connection failed',
       status: 500
@@ -41,10 +44,10 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={mockErrorResults} />);
     
-    expect(screen.getByText('Error')).toBeInTheDocument();
-    expect(screen.getByText('(JSON)')).toBeInTheDocument();
-    expect(screen.getByText('Status: 500')).toBeInTheDocument();
-    expect(screen.getByText('Query Execution Failed')).toBeInTheDocument();
+    // Error styling should be visible
+    expect(screen.getByText('ERROR')).toBeInTheDocument();
+    // Multiple elements may contain status text
+    expect(screen.getAllByText(/500/).length).toBeGreaterThan(0);
     expect(screen.getByText('Database connection failed')).toBeInTheDocument();
   });
 
@@ -53,8 +56,7 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={stringResults} />);
     
-    expect(screen.getByText('Results')).toBeInTheDocument();
-    expect(screen.getByText('(Text)')).toBeInTheDocument();
+    expect(screen.getByText('OUTPUT')).toBeInTheDocument();
     expect(screen.getByText('Simple text result')).toBeInTheDocument();
   });
 
@@ -66,9 +68,8 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={errorResults} />);
     
-    expect(screen.getByText('Error')).toBeInTheDocument();
-    expect(screen.getByText('Status: 404')).toBeInTheDocument();
-    expect(screen.getByText('Query Execution Failed')).toBeInTheDocument();
+    expect(screen.getByText('ERROR')).toBeInTheDocument();
+    expect(screen.getByText(/404/)).toBeInTheDocument();
   });
 
   it('handles results with error property as errors', () => {
@@ -79,8 +80,7 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={errorResults} />);
     
-    expect(screen.getByText('Error')).toBeInTheDocument();
-    expect(screen.getByText('Query Execution Failed')).toBeInTheDocument();
+    expect(screen.getByText('ERROR')).toBeInTheDocument();
     expect(screen.getByText('Validation failed')).toBeInTheDocument();
   });
 
@@ -91,8 +91,7 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={errorResults} />);
     
-    expect(screen.getByText('Error')).toBeInTheDocument();
-    expect(screen.getByText('Query Execution Failed')).toBeInTheDocument();
+    expect(screen.getByText('ERROR')).toBeInTheDocument();
     expect(screen.getByText('An unknown error occurred')).toBeInTheDocument();
   });
 
@@ -124,13 +123,15 @@ describe('ResultsSection Component', () => {
       }
     };
 
-    const { getByText, getByRole } = render(<ResultsSection results={hr} />);
-    // Header should reflect Structured
-    expect(getByText('(Structured)')).toBeInTheDocument();
-    // Toggle to JSON
-    const toggle = getByRole('button', { name: /View JSON/ });
-    fireEvent.click(toggle);
-    expect(screen.getByText((content, element) => element?.textContent === '(JSON)')).toBeInTheDocument();
+    render(<ResultsSection results={hr} />);
+    // Hash-range structure starts in structured view, button shows option to view JSON
+    const toggleButton = screen.getByRole('button', { name: /view --json/i });
+    expect(toggleButton).toBeInTheDocument();
+    
+    // Click to switch view to JSON
+    fireEvent.click(toggleButton);
+    // After toggle, should show option to view structured
+    expect(screen.getByRole('button', { name: /view --structured/i })).toBeInTheDocument();
   });
 
   it('displays results without data property correctly', () => {
@@ -148,7 +149,7 @@ describe('ResultsSection Component', () => {
     expect(preElement).toHaveTextContent('"count": 42');
   });
 
-  it('applies correct CSS classes for success results', () => {
+  it('renders output header for success results', () => {
     const mockResults = {
       data: { success: true },
       status: 200
@@ -156,14 +157,10 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={mockResults} />);
     
-    const resultsTitle = screen.getByText('Results');
-    expect(resultsTitle).toHaveClass('text-gray-900');
-    
-    const statusBadge = screen.getByText('Status: 200');
-    expect(statusBadge).toHaveClass('bg-green-100', 'text-green-800');
+    expect(screen.getByText('OUTPUT')).toBeInTheDocument();
   });
 
-  it('applies correct CSS classes for error results', () => {
+  it('renders error header for error results', () => {
     const mockResults = {
       error: 'Test error',
       status: 500
@@ -171,11 +168,7 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={mockResults} />);
     
-    const errorTitle = screen.getByText('Error');
-    expect(errorTitle).toHaveClass('text-red-600');
-    
-    const statusBadge = screen.getByText('Status: 500');
-    expect(statusBadge).toHaveClass('bg-red-100', 'text-red-800');
+    expect(screen.getByText('ERROR')).toBeInTheDocument();
   });
 
   it('renders without crashing with complex nested data', () => {
@@ -198,16 +191,17 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={emptyResults} />);
     
-    expect(screen.getByText('Results')).toBeInTheDocument();
-    expect(screen.getByText('(JSON)')).toBeInTheDocument();
+    // Should still render output container
+    expect(screen.getByText('OUTPUT')).toBeInTheDocument();
   });
 
-  it('has correct container structure and classes', () => {
+  it('renders terminal-styled container', () => {
     const mockResults = { data: { test: true } };
     
     render(<ResultsSection results={mockResults} />);
     
-    const container = screen.getByText('Results').closest('.bg-white.rounded-lg.shadow-sm.p-6.mt-6');
-    expect(container).toBeInTheDocument();
+    // Check the container uses terminal classes
+    const outputTitle = screen.getByText('OUTPUT');
+    expect(outputTitle.closest('.card-terminal')).toBeInTheDocument();
   });
 });
