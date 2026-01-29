@@ -1,6 +1,5 @@
 // Components
 export { FoldDbProvider } from "./components/FoldDbProvider";
-export { default as StatusSection } from "./components/StatusSection";
 export { default as ResultsSection } from "./components/ResultsSection";
 export { default as TabNavigation } from "./components/TabNavigation";
 export { default as SettingsModal } from "./components/SettingsModal";

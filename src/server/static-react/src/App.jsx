@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { FoldDbProvider } from './components/FoldDbProvider'
 import Header from './components/Header'
 import Footer from './components/Footer'
-import StatusSection from './components/StatusSection'
 import ResultsSection from './components/ResultsSection'
 import TabNavigation from './components/TabNavigation'
 import SchemaTab from './components/tabs/SchemaTab'
@@ -186,8 +185,6 @@ export function AppContent() {
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto">
           <div className="container mx-auto px-4 py-6">
-            <StatusSection />
-
             <div className="mt-6">
               {/* Schema Loading/Error States */}
               {schemasError && (

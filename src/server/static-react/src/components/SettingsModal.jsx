@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ingestionClient } from '../api/clients'
-import { getDatabaseConfig, updateDatabaseConfig } from '../api/clients/systemClient'
+import { getDatabaseConfig, updateDatabaseConfig, resetDatabase } from '../api/clients/systemClient'
+import { TrashIcon } from '@heroicons/react/24/solid'
 import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
 import { useSchemaServiceConfig, SCHEMA_SERVICE_ENVIRONMENTS } from '../contexts/SchemaServiceConfigContext'
@@ -33,6 +34,11 @@ function SettingsModal({ isOpen, onClose }) {
   const [s3Region, setS3Region] = useState('us-east-1')
   const [s3Prefix, setS3Prefix] = useState('folddb')
   const [s3LocalPath, setS3LocalPath] = useState('/tmp/folddb-data')
+  
+  // Database reset state
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
+  const [resetResult, setResetResult] = useState(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -207,6 +213,39 @@ function SettingsModal({ isOpen, onClose }) {
       setConfigSaveStatus(null)
       onClose()
     }, 1500)
+  }
+
+  const handleResetDatabase = async () => {
+    setIsResetting(true)
+    setResetResult(null)
+
+    try {
+      const response = await resetDatabase(true)
+
+      if (response.success && response.data) {
+        if (response.data.job_id) {
+          setResetResult({ 
+            type: 'success', 
+            message: `Reset started (Job: ${response.data.job_id.substring(0, 8)}...). The database will be reset in the background.`
+          })
+          setShowResetConfirm(false)
+          setIsResetting(false)
+        } else {
+          setResetResult({ type: 'success', message: response.data.message || 'Database reset successfully' })
+          setTimeout(() => {
+            window.location.reload()
+          }, 2000)
+        }
+      } else {
+        setResetResult({ type: 'error', message: response.error || 'Reset failed' })
+        setShowResetConfirm(false)
+        setIsResetting(false)
+      }
+    } catch (error) {
+      setResetResult({ type: 'error', message: `Network error: ${error.message}` })
+      setShowResetConfirm(false)
+      setIsResetting(false)
+    }
   }
 
   const getStatusBadge = (envId) => {
@@ -694,6 +733,63 @@ function SettingsModal({ isOpen, onClose }) {
                       </div>
                     </div>
                   )}
+
+                  {/* Danger Zone - Reset Database */}
+                  <div className="mt-8 pt-6 border-t border-red-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <TrashIcon className="w-5 h-5 text-red-500" />
+                      <h4 className="text-md font-semibold text-red-800">Danger Zone</h4>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Permanently delete all data and restart the database. This action cannot be undone.
+                    </p>
+                    
+                    {!showResetConfirm ? (
+                      <button
+                        onClick={() => setShowResetConfirm(true)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 border border-red-300 rounded-md hover:bg-red-50 hover:border-red-400 transition-colors"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                        Reset Database
+                      </button>
+                    ) : (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-800 mb-3">
+                          <strong>Are you sure?</strong> This will:
+                        </p>
+                        <ul className="list-disc list-inside text-sm text-red-700 mb-4 space-y-1">
+                          <li>Remove all schemas</li>
+                          <li>Delete all stored data</li>
+                          <li>Reset network connections</li>
+                        </ul>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={handleResetDatabase}
+                            disabled={isResetting}
+                            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {isResetting ? 'Resetting...' : 'Yes, Reset Database'}
+                          </button>
+                          <button
+                            onClick={() => setShowResetConfirm(false)}
+                            disabled={isResetting}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {resetResult && (
+                      <div className={`mt-4 p-3 rounded-md text-sm ${resetResult.type === 'success'
+                          ? 'bg-green-50 text-green-800 border border-green-200'
+                          : 'bg-red-50 text-red-800 border border-red-200'
+                        }`}>
+                        {resetResult.message}
+                      </div>
+                    )}
+                  </div>
 
                   {configSaveStatus && (
                     <div className={`p-3 rounded-md ${
