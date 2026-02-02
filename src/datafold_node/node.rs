@@ -440,6 +440,14 @@ impl DataFoldNode {
         crate::datafold_node::schema_client::SchemaServiceClient::new(url)
     }
 
+    /// Get the unified progress tracker
+    /// This is the single source of truth for all job progress (ingestion, indexing, reset, etc.)
+    /// Local deployments use Sled storage, cloud deployments use DynamoDB
+    pub async fn get_progress_tracker(&self) -> crate::progress::ProgressTracker {
+        let db = self.db.lock().await;
+        db.get_progress_tracker()
+    }
+
     /// Get the current indexing status
     pub async fn get_indexing_status(&self) -> crate::fold_db_core::orchestration::IndexingStatus {
         let db = self.db.lock().await;

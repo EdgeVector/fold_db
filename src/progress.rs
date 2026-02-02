@@ -192,6 +192,93 @@ impl ProgressStore for InMemoryProgressStore {
     }
 }
 
+/// Sled-backed implementation for persistent local storage
+pub struct SledProgressStore {
+    tree: sled::Tree,
+}
+
+impl SledProgressStore {
+    pub fn new(tree: sled::Tree) -> Self {
+        Self { tree }
+    }
+
+    /// Create composite key for user+job lookup: "user_id:job_id"
+    fn make_key(user_id: &str, job_id: &str) -> Vec<u8> {
+        format!("{}:{}", user_id, job_id).into_bytes()
+    }
+
+    /// Parse composite key to extract user_id
+    #[allow(dead_code)]
+    fn parse_key(key: &[u8]) -> Option<(String, String)> {
+        let key_str = std::str::from_utf8(key).ok()?;
+        let parts: Vec<&str> = key_str.splitn(2, ':').collect();
+        if parts.len() == 2 {
+            Some((parts[0].to_string(), parts[1].to_string()))
+        } else {
+            None
+        }
+    }
+}
+
+#[async_trait]
+impl ProgressStore for SledProgressStore {
+    async fn save(&self, job: &Job) -> Result<(), String> {
+        // Require explicit user_id
+        let user_id = job
+            .user_id
+            .as_ref()
+            .ok_or_else(|| "Job must have user_id set for Sled storage".to_string())?;
+
+        let key = Self::make_key(user_id, &job.id);
+        let json = serde_json::to_vec(job).map_err(|e| e.to_string())?;
+
+        self.tree
+            .insert(key, json)
+            .map_err(|e| format!("Sled insert error: {}", e))?;
+
+        // Flush to ensure persistence
+        self.tree
+            .flush_async()
+            .await
+            .map_err(|e| format!("Sled flush error: {}", e))?;
+
+        Ok(())
+    }
+
+    async fn load(&self, id: &str) -> Result<Option<Job>, String> {
+        // Need user context to load
+        let user_id = crate::logging::core::get_current_user_id()
+            .ok_or_else(|| "User context required to load jobs".to_string())?;
+
+        let key = Self::make_key(&user_id, id);
+
+        match self.tree.get(&key).map_err(|e| e.to_string())? {
+            Some(bytes) => {
+                let job: Job = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                Ok(Some(job))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn list_by_user(&self, user_id: &str) -> Result<Vec<Job>, String> {
+        let prefix = format!("{}:", user_id);
+        let mut jobs = Vec::new();
+
+        for result in self.tree.scan_prefix(prefix.as_bytes()) {
+            let (_, value) = result.map_err(|e| e.to_string())?;
+            if let Ok(job) = serde_json::from_slice::<Job>(&value) {
+                jobs.push(job);
+            }
+        }
+
+        // Sort by created_at descending (most recent first)
+        jobs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(jobs)
+    }
+}
+
 /// DynamoDB implementation
 #[cfg(feature = "aws-backend")]
 pub struct DynamoDbProgressStore {
@@ -316,6 +403,38 @@ impl ProgressStore for DynamoDbProgressStore {
 
 pub type ProgressTracker = Arc<dyn ProgressStore>;
 
+/// Configuration for creating a progress tracker
+pub enum ProgressStoreConfig {
+    /// Use Sled for local persistent storage
+    Sled(sled::Tree),
+    /// Use DynamoDB for cloud storage (table_name, region)
+    #[cfg(feature = "aws-backend")]
+    DynamoDB(String, String),
+    /// Use in-memory storage (for testing only)
+    InMemory,
+}
+
+/// Create a progress tracker from configuration
+pub async fn create_tracker_from_config(config: ProgressStoreConfig) -> ProgressTracker {
+    match config {
+        ProgressStoreConfig::Sled(tree) => {
+            Arc::new(SledProgressStore::new(tree)) as ProgressTracker
+        }
+        #[cfg(feature = "aws-backend")]
+        ProgressStoreConfig::DynamoDB(table_name, region) => {
+            let store = DynamoDbProgressStore::from_config(table_name, region).await;
+            Arc::new(store) as ProgressTracker
+        }
+        ProgressStoreConfig::InMemory => Arc::new(InMemoryProgressStore::new()) as ProgressTracker,
+    }
+}
+
+/// Create a progress tracker with Sled storage (for local persistent storage)
+pub fn create_tracker_with_sled(tree: sled::Tree) -> ProgressTracker {
+    Arc::new(SledProgressStore::new(tree))
+}
+
+/// Legacy function - prefer create_tracker_from_config
 pub async fn create_tracker(dynamo_config: Option<(String, String)>) -> ProgressTracker {
     if let Some((table_name, region)) = dynamo_config {
         #[cfg(feature = "aws-backend")]

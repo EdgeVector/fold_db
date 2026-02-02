@@ -7,7 +7,6 @@ use super::routes::{
 use crate::datafold_node::llm_query;
 use crate::datafold_node::DataFoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
-use crate::ingestion::create_progress_tracker;
 use crate::ingestion::routes as ingestion_routes;
 use crate::utils::http_errors;
 
@@ -132,19 +131,12 @@ impl DataFoldHttpServer {
         // Create individual dependencies for ingestion routes
         let node = web::Data::new(self.node.clone());
 
-        // Extract DynamoDB config for progress tracker if available
-        let dynamo_config = {
+        // Get the unified progress tracker from the node
+        // This is the single source of truth for all progress - local uses Sled, cloud uses DynamoDB
+        let progress_tracker_data = {
             let node_guard = self.node.read().await;
-            match &node_guard.config.database {
-                #[cfg(feature = "aws-backend")]
-                crate::datafold_node::config::DatabaseConfig::Cloud(d) => {
-                    Some((d.tables.process.clone(), d.region.clone()))
-                }
-                _ => None,
-            }
+            web::Data::new(node_guard.get_progress_tracker().await)
         };
-
-        let progress_tracker_data = web::Data::new(create_progress_tracker(dynamo_config).await);
         let upload_storage_data = web::Data::new(upload_storage.clone());
 
         // Create shared application state for routes that still need it

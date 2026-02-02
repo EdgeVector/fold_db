@@ -26,6 +26,7 @@ use super::orchestration::index_status::IndexStatusTracker;
 use super::orchestration::TransformOrchestrator;
 use super::query::QueryExecutor;
 use crate::progress::ProgressStore as JobStore;
+use crate::progress::ProgressTracker;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
@@ -46,6 +47,9 @@ pub struct FoldDB {
     pub(crate) mutation_manager: MutationManager,
     /// Tracker for pending background tasks
     pub(crate) pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
+    /// Unified progress tracker for all job types (ingestion, indexing, etc.)
+    /// This is the single source of truth for progress - local uses Sled, cloud uses DynamoDB
+    pub(crate) progress_tracker: ProgressTracker,
 }
 
 impl FoldDB {
@@ -151,9 +155,11 @@ impl FoldDB {
             "Sled"
         );
 
-        // For local Sled backend, we use in-memory job store if not provided (though here we hardcode None/Default)
-        // Actually, let's create an in-memory job store for consistency
-        let job_store = Arc::new(crate::progress::InMemoryProgressStore::new());
+        // For local Sled backend, create persistent progress store using a dedicated sled tree
+        let progress_tree = db
+            .open_tree("progress")
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
+        let job_store: ProgressTracker = crate::progress::create_tracker_with_sled(progress_tree);
         Self::initialize_from_db_ops(db_ops, db_path, Some(job_store), "local".to_string()).await
     }
 
@@ -172,6 +178,10 @@ impl FoldDB {
         // Initialize pending task tracker
         let pending_tasks =
             Arc::new(super::infrastructure::pending_task_tracker::PendingTaskTracker::new());
+
+        // Use provided progress tracker or create an in-memory one (for testing)
+        let progress_tracker: ProgressTracker =
+            job_store.unwrap_or_else(|| Arc::new(crate::progress::InMemoryProgressStore::new()));
 
         // Initialize components via event-driven system initialization
         // SystemInitializationRequest removed - dead code
@@ -194,7 +204,7 @@ impl FoldDB {
             EventMonitor::new(
                 Arc::clone(&message_bus),
                 Arc::clone(&transform_manager),
-                job_store.clone(),
+                Some(progress_tracker.clone()),
                 user_id.clone(),
             )
             .await,
@@ -268,9 +278,7 @@ impl FoldDB {
 
         // Create shared IndexStatusTracker for tracking indexing progress
         // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
-        // Create shared IndexStatusTracker for tracking indexing progress
-        // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
-        let index_status_tracker = IndexStatusTracker::new(job_store.clone());
+        let index_status_tracker = IndexStatusTracker::new(Some(progress_tracker.clone()));
 
         // Create and start IndexOrchestrator for event-driven native indexing
         use super::orchestration::index_orchestrator::IndexOrchestrator;
@@ -316,6 +324,7 @@ impl FoldDB {
             transform_orchestrator,
             mutation_manager,
             pending_tasks,
+            progress_tracker,
         })
     }
 
@@ -325,6 +334,12 @@ impl FoldDB {
             .flush()
             .await
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))
+    }
+
+    /// Get the unified progress tracker
+    /// This is the single source of truth for all job progress (ingestion, indexing, etc.)
+    pub fn get_progress_tracker(&self) -> ProgressTracker {
+        self.progress_tracker.clone()
     }
 
     // ========== INDEXING STATUS API ==========
