@@ -3,8 +3,8 @@ import { systemClient } from '../api/clients/systemClient'
 
 function LogSidebar() {
   const [logs, setLogs] = useState([])
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  const endRef = useRef(null)
+  const [isCollapsed, setIsCollapsed] = useState(true) // Start collapsed
+  const logContainerRef = useRef(null)
 
   const formatLog = (entry) => {
     if (typeof entry === 'string') return entry
@@ -15,40 +15,34 @@ function LogSidebar() {
   const getLevelColor = (level) => {
     switch (level?.toUpperCase()) {
       case 'ERROR':
-        return 'text-terminal-red'
+        return '#ef4444'
       case 'WARN':
       case 'WARNING':
-        return 'text-terminal-yellow'
+        return '#f59e0b'
       case 'INFO':
-        return 'text-terminal-blue'
+        return '#666'
       case 'DEBUG':
-        return 'text-terminal-purple'
+        return '#999'
       default:
-        return 'text-terminal-dim'
+        return '#999'
     }
   }
 
   const formatLogEntry = (entry) => {
     if (typeof entry === 'string') {
-      return <span className="text-terminal-dim">{entry}</span>
+      return <span style={{ color: '#999' }}>{entry}</span>
     }
-    
+
     const levelColor = getLevelColor(entry.level)
-    const time = entry.timestamp 
+    const time = entry.timestamp
       ? new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false })
       : ''
-    
+
     return (
       <>
-        <span className="text-terminal-dim">{time}</span>
-        <span className={`ml-2 ${levelColor}`}>[{entry.level}]</span>
-        <span className="text-terminal-cyan ml-1">[{entry.event_type}]</span>
-        <span className="text-terminal ml-1">{entry.message}</span>
-        {entry.metadata && (
-          <span className="text-terminal-dim ml-1">
-            {JSON.stringify(entry.metadata)}
-          </span>
-        )}
+        <span style={{ color: '#999' }}>{time}</span>
+        <span style={{ color: levelColor, marginLeft: '8px' }}>[{entry.level}]</span>
+        <span style={{ color: '#666', marginLeft: '4px' }}>{entry.message}</span>
       </>
     )
   }
@@ -86,7 +80,7 @@ function LogSidebar() {
           } catch {
             const parts = message.split(' - ')
             const level = parts.length > 1 ? parts[0] : 'INFO';
-            
+
             entry = {
               id: `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               timestamp: Date.now(),
@@ -124,17 +118,17 @@ function LogSidebar() {
                      if (log.id) {
                        const exists = cur.some(existing => existing.id === log.id);
                        if (exists) return false;
-                     } 
-                     
-                     const isTypesSame = cur.some(existing => 
+                     }
+
+                     const isTypesSame = cur.some(existing =>
                          !existing.id &&
-                         existing.timestamp === log.timestamp && 
+                         existing.timestamp === log.timestamp &&
                          existing.message === log.message
                      );
-                     
+
                      return !isTypesSame;
                    })
-                   
+
                    if (newLogs.length === 0) return cur
                    return [...cur, ...newLogs]
                  })
@@ -142,7 +136,7 @@ function LogSidebar() {
             }
           })
           .catch(err => console.warn('Log polling error:', err))
-        
+
         return currentLogs
       })
     }, 2000)
@@ -153,19 +147,39 @@ function LogSidebar() {
     }
   }, [])
 
+  // Auto-scroll only within the log container, not the page
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
+    }
   }, [logs])
 
   if (isCollapsed) {
     return (
-      <aside className="w-10 sidebar-terminal">
+      <aside style={{
+        width: '40px',
+        background: '#fff',
+        borderLeft: '1px solid #e5e5e5',
+        display: 'flex',
+        flexDirection: 'column',
+        flexShrink: 0
+      }}>
         <button
           onClick={() => setIsCollapsed(false)}
-          className="w-full h-full flex items-center justify-center text-terminal-dim hover:text-terminal-green transition-colors"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#999',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer'
+          }}
           title="Expand logs"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
@@ -174,65 +188,127 @@ function LogSidebar() {
   }
 
   return (
-    <aside className="w-80 sidebar-terminal">
-      <div className="sidebar-terminal-header">
-        <div className="flex items-center gap-2">
-          <span className="text-terminal-green">$</span>
-          <h2 className="text-sm font-medium text-terminal">logs</h2>
-          <span className="badge-terminal text-xs">{logs.length}</span>
+    <aside style={{
+      width: '320px',
+      background: '#fff',
+      borderLeft: '1px solid #e5e5e5',
+      display: 'flex',
+      flexDirection: 'column',
+      flexShrink: 0,
+      height: '100%',
+      overflow: 'hidden'
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid #e5e5e5',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '14px', fontWeight: 500, color: '#111' }}>Logs</span>
+          <span style={{
+            fontSize: '11px',
+            color: '#999',
+            padding: '2px 8px',
+            background: '#f5f5f5',
+            border: '1px solid #e5e5e5'
+          }}>{logs.length}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
             onClick={handleClear}
-            className="text-xs text-terminal-dim hover:text-terminal-yellow transition-colors"
-            title="Clear logs"
+            style={{
+              fontSize: '12px',
+              color: '#999',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer'
+            }}
           >
             clear
           </button>
           <button
             onClick={handleCopy}
-            className="text-xs text-terminal-dim hover:text-terminal-blue transition-colors"
-            title="Copy logs"
+            style={{
+              fontSize: '12px',
+              color: '#999',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer'
+            }}
           >
             copy
           </button>
           <button
             onClick={() => setIsCollapsed(true)}
-            className="text-terminal-dim hover:text-terminal transition-colors"
+            style={{
+              color: '#999',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px'
+            }}
             title="Collapse"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </button>
         </div>
       </div>
-      
-      <div className="flex-1 overflow-y-auto p-3 space-y-1 text-xs">
+
+      {/* Log content - fixed height with internal scroll */}
+      <div
+        ref={logContainerRef}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '12px',
+          fontSize: '12px',
+          fontFamily: "'SF Mono', Monaco, monospace",
+          lineHeight: 1.6
+        }}
+      >
         {logs.length === 0 ? (
-          <div className="text-terminal-dim text-center py-8">
-            <p>No logs yet...</p>
-            <p className="mt-1 text-terminal-green">
-              <span className="cursor"></span>
-            </p>
+          <div style={{ color: '#999', textAlign: 'center', padding: '32px 0' }}>
+            No logs yet
           </div>
         ) : (
           logs.map((entry, idx) => (
-            <div 
-              key={entry.id || idx} 
-              className="py-1 px-2 hover:bg-terminal-lighter rounded transition-colors leading-relaxed"
+            <div
+              key={entry.id || idx}
+              style={{
+                padding: '4px 0',
+                borderBottom: '1px solid #f5f5f5'
+              }}
             >
               {formatLogEntry(entry)}
             </div>
           ))
         )}
-        <div ref={endRef}></div>
       </div>
-      
+
       {/* Status bar */}
-      <div className="px-3 py-2 border-t border-terminal text-xs text-terminal-dim flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="status-dot status-online"></span>
+      <div style={{
+        padding: '8px 16px',
+        borderTop: '1px solid #e5e5e5',
+        fontSize: '11px',
+        color: '#999',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{
+            width: '6px',
+            height: '6px',
+            background: '#22c55e',
+            borderRadius: '50%'
+          }}></span>
           <span>streaming</span>
         </div>
         <span>{logs.length} entries</span>

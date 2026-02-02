@@ -45,7 +45,7 @@ export function AppContent() {
   const [activeTab, setActiveTab] = useState(getInitialTab())
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [results, setResults] = useState(null)
-  
+
 
 
   // Sync activeTab with URL hash changes
@@ -165,15 +165,25 @@ export function AppContent() {
   // Show loading spinner while restoring session or checking auth
   if (_isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-terminal">
-        <div className="text-center">
-          <div className="mb-4">
-            <span className="spinner-terminal w-8 h-8"></span>
-          </div>
-          <p className="text-terminal-green font-mono text-sm">
-            <span className="text-terminal-dim">$ </span>
-            initializing...
-            <span className="cursor"></span>
+      <div style={{
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#fafafa'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '24px',
+            height: '24px',
+            border: '2px solid #e5e5e5',
+            borderTopColor: '#111',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+            margin: '0 auto 16px'
+          }}></div>
+          <p style={{ color: '#666', fontSize: '14px' }}>
+            Loading...
           </p>
         </div>
       </div>
@@ -181,73 +191,89 @@ export function AppContent() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-terminal overflow-hidden">
+    <div style={{
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      background: '#fafafa',
+      overflow: 'hidden'
+    }}>
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
-      <div className="flex flex-1 overflow-hidden">
-        <main className="flex-1 overflow-y-auto">
-          <div className="container mx-auto px-4 py-4">
-            <div className="mt-4">
-              {/* Schema Loading/Error States */}
-              {schemasError && (
-                <div className="mb-4 p-4 card-terminal border-l-4 border-terminal-red">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <span className="text-terminal-red text-lg">✖</span>
-                    </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-terminal-red">
-                        ERROR: Schema Loading Failed
-                      </h3>
-                      <div className="mt-2 text-sm text-terminal-dim">
-                        <p><span className="text-terminal-red">→</span> {schemasError}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <main style={{ flex: 1, overflowY: 'auto' }}>
+          {/* Tab Navigation */}
+          <TabNavigation
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+          />
 
-              {schemasLoading && (
-                <div className="mb-4 p-4 card-terminal border-l-4 border-terminal-blue">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <span className="spinner-terminal"></span>
-                    </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-terminal-blue">
-                        Loading Schemas...
-                      </h3>
-                      <div className="mt-1 text-sm text-terminal-dim">
-                        <p><span className="text-terminal-blue">→</span> Fetching schema data from server</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab Navigation Component */}
-              <TabNavigation
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-              />
-
-              <div className="mt-4 card-terminal">
-                <div className="card-terminal-header">
-                  <span className="text-terminal-green text-sm font-medium">
-                    <span className="text-terminal-dim">$</span> {activeTab}
-                  </span>
-                  <span className="text-xs text-terminal-dim">
-                    {new Date().toLocaleTimeString()}
-                  </span>
-                </div>
-                <div className="card-terminal-body">
-                  {renderActiveTab()}
-                </div>
+          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 40px' }}>
+            {/* Schema Loading/Error States */}
+            {schemasError && (
+              <div style={{
+                marginBottom: '24px',
+                padding: '16px 20px',
+                background: '#fff',
+                border: '1px solid #fecaca',
+                borderLeftWidth: '3px',
+                borderLeftColor: '#ef4444'
+              }}>
+                <p style={{ color: '#ef4444', fontSize: '14px', margin: 0 }}>
+                  {schemasError}
+                </p>
               </div>
+            )}
+
+            {schemasLoading && (
+              <div style={{
+                marginBottom: '24px',
+                padding: '16px 20px',
+                background: '#fff',
+                border: '1px solid #e5e5e5'
+              }}>
+                <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
+                  Loading schemas...
+                </p>
+              </div>
+            )}
+
+            {/* Section Title */}
+            <div style={{
+              fontSize: '11px',
+              textTransform: 'uppercase',
+              letterSpacing: '2px',
+              color: '#999',
+              marginBottom: '24px'
+            }}>
+              {activeTab.replace('-', ' ')}
             </div>
 
-            {results && <ResultsSection results={results} />}
+            {/* Tab Content */}
+            <div style={{
+              background: '#fff',
+              border: '1px solid #e5e5e5',
+              padding: '32px'
+            }}>
+              {renderActiveTab()}
+            </div>
+
+            {/* Results */}
+            {results && (
+              <div style={{ marginTop: '48px' }}>
+                <div style={{
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '2px',
+                  color: '#999',
+                  marginBottom: '24px'
+                }}>
+                  Results
+                </div>
+                <ResultsSection results={results} />
+              </div>
+            )}
           </div>
         </main>
 

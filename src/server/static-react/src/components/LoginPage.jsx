@@ -11,7 +11,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!userId.trim()) {
-      setError('ERROR: User identifier required')
+      setError('User identifier required')
       return
     }
 
@@ -21,116 +21,139 @@ export default function LoginPage() {
       localStorage.setItem('fold_user_id', result.id)
       localStorage.setItem('fold_user_hash', result.hash)
     } catch (err) {
-      setError('ERROR: ' + err.message)
+      setError(err.message)
     }
   }
 
   return (
-    <div className="min-h-screen bg-terminal flex flex-col justify-center py-12 px-4">
-      <div className="w-full max-w-md mx-auto">
-        {/* ASCII-style logo */}
-        <div className="text-center mb-8">
-          <pre className="ascii-art inline-block text-terminal-green text-left" style={{ fontSize: '0.5rem', lineHeight: 1.1 }}>
-{`
- ██████╗  █████╗ ████████╗ █████╗ ███████╗ ██████╗ ██╗     ██████╗ 
- ██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗██╔════╝██╔═══██╗██║     ██╔══██╗
- ██║  ██║███████║   ██║   ███████║█████╗  ██║   ██║██║     ██║  ██║
- ██║  ██║██╔══██║   ██║   ██╔══██║██╔══╝  ██║   ██║██║     ██║  ██║
- ██████╔╝██║  ██║   ██║   ██║  ██║██║     ╚██████╔╝███████╗██████╔╝
- ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝      ╚═════╝ ╚══════╝╚═════╝ 
-`}
-          </pre>
-          <p className="text-terminal-dim text-sm mt-4">
-            <span className="text-terminal-green">v1.0.0</span> | Personal Data Node
+    <div style={{
+      minHeight: '100vh',
+      background: '#fafafa',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      padding: '48px 24px'
+    }}>
+      <div style={{ maxWidth: '400px', margin: '0 auto', width: '100%' }}>
+        {/* Logo */}
+        <div style={{ marginBottom: '64px' }}>
+          <h1 style={{
+            fontSize: '32px',
+            fontWeight: 300,
+            letterSpacing: '-1px',
+            color: '#111',
+            marginBottom: '8px'
+          }}>
+            datafold
+          </h1>
+          <p style={{ color: '#999', fontSize: '14px' }}>
+            Personal data sovereignty
           </p>
         </div>
 
-        {/* Terminal window */}
-        <div className="terminal-window">
-          <div className="terminal-header">
-            <div className="terminal-dot terminal-dot-red"></div>
-            <div className="terminal-dot terminal-dot-yellow"></div>
-            <div className="terminal-dot terminal-dot-green"></div>
-            <span className="terminal-title">fold_db --login</span>
+        {/* Login form */}
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '11px',
+              textTransform: 'uppercase',
+              letterSpacing: '2px',
+              color: '#999',
+              marginBottom: '12px'
+            }}>
+              User Identifier
+            </label>
+            <input
+              id="userId"
+              name="userId"
+              type="text"
+              autoComplete="username"
+              required
+              style={{
+                width: '100%',
+                padding: '16px 20px',
+                border: '1px solid #e5e5e5',
+                background: '#fff',
+                fontSize: '15px',
+                color: '#111',
+                outline: 'none',
+                transition: 'border-color 0.2s',
+                boxSizing: 'border-box'
+              }}
+              placeholder="Enter your identifier"
+              value={userId}
+              onChange={(e) => {
+                setUserId(e.target.value)
+                setError('')
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#111'}
+              onBlur={(e) => e.target.style.borderColor = '#e5e5e5'}
+              autoFocus
+            />
           </div>
-          
-          <div className="terminal-body p-6">
-            <div className="mb-4 text-terminal-dim text-sm">
-              <p className="mb-1">Welcome to Fold DB.</p>
-              <p>Enter your user identifier to continue.</p>
+
+          {error && (
+            <div style={{
+              marginBottom: '24px',
+              padding: '12px 16px',
+              background: '#fff',
+              border: '1px solid #fecaca',
+              color: '#ef4444',
+              fontSize: '14px'
+            }}>
+              {error}
             </div>
+          )}
 
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div>
-                <div className="flex items-center">
-                  <span className="text-terminal-green mr-2">$</span>
-                  <span className="text-terminal-cyan mr-2">login</span>
-                  <span className="text-terminal-dim mr-2">--user</span>
-                  <input
-                    id="userId"
-                    name="userId"
-                    type="text"
-                    autoComplete="username"
-                    required
-                    className="flex-1 bg-transparent border-none outline-none text-terminal-green focus:ring-0 p-0"
-                    placeholder="<user-id>"
-                    value={userId}
-                    onChange={(e) => {
-                      setUserId(e.target.value)
-                      setError('')
-                    }}
-                    autoFocus
-                    style={{ caretColor: 'var(--terminal-green)' }}
-                  />
-                  {!userId && <span className="cursor"></span>}
-                </div>
-                <div className="border-b border-terminal-lighter mt-2"></div>
-              </div>
+          <button
+            type="submit"
+            disabled={isLoading}
+            style={{
+              width: '100%',
+              padding: '16px 32px',
+              background: '#111',
+              color: '#fff',
+              border: 'none',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: isLoading ? 'wait' : 'pointer',
+              transition: 'background 0.2s',
+              opacity: isLoading ? 0.7 : 1
+            }}
+            onMouseOver={(e) => !isLoading && (e.target.style.background = '#333')}
+            onMouseOut={(e) => !isLoading && (e.target.style.background = '#111')}
+          >
+            {isLoading ? 'Connecting...' : 'Continue'}
+          </button>
+        </form>
 
-              {error && (
-                <div className="text-sm text-terminal-red flex items-center gap-2">
-                  <span>✖</span>
-                  <span>{error}</span>
-                </div>
-              )}
+        {/* Tip */}
+        <p style={{
+          marginTop: '32px',
+          color: '#999',
+          fontSize: '13px',
+          lineHeight: 1.6
+        }}>
+          Use any identifier (email, username) to create or access your node.
+        </p>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="btn-terminal btn-terminal-primary w-full justify-center"
-                >
-                  {isLoading ? (
-                    <>
-                      <span className="spinner-terminal"></span>
-                      <span>Connecting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>→</span>
-                      <span>Connect</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-
-            <div className="mt-6 pt-4 border-t border-terminal-lighter">
-              <p className="text-xs text-terminal-dim">
-                <span className="text-terminal-yellow">TIP:</span> Use any identifier (e.g., email, username) to create or access your node.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Status bar */}
-        <div className="mt-4 flex items-center justify-center text-xs text-terminal-dim gap-4">
-          <div className="flex items-center gap-2">
-            <span className="status-dot status-online"></span>
-            <span>Server Online</span>
-          </div>
-          <span>|</span>
-          <span>Secure Connection</span>
+        {/* Status */}
+        <div style={{
+          marginTop: '64px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '13px',
+          color: '#999'
+        }}>
+          <span style={{
+            width: '8px',
+            height: '8px',
+            background: '#22c55e',
+            borderRadius: '50%'
+          }}></span>
+          Server online
         </div>
       </div>
     </div>
