@@ -68,6 +68,29 @@ if [ "$EMPTY_DB" = true ]; then
     empty_db
 fi
 
+# Ensure local configuration (override any cloud config from run.sh)
+echo "Setting up local configuration..."
+CONFIG_FILE="config/node_config.json"
+mkdir -p config
+cat > "$CONFIG_FILE" <<EOF
+{
+  "database": {
+    "type": "local",
+    "path": "data"
+  },
+  "storage_path": "data",
+  "default_trust_distance": 1,
+  "network_listen_address": "/ip4/0.0.0.0/tcp/0",
+  "security_config": {
+    "require_tls": false,
+    "require_signatures": false,
+    "encrypt_at_rest": false
+  },
+  "schema_service_url": "http://127.0.0.1:9002"
+}
+EOF
+echo "Local configuration saved to $CONFIG_FILE"
+
 # Build the Rust project first (needed to generate OpenAPI spec)
 echo "Building the Rust project..."
 cargo build
@@ -168,7 +191,7 @@ echo "Schema migration is disabled. Schema service will start with an empty data
 echo "Starting the HTTP server on port 9001 in the background..."
 # Export OPENROUTER_API_KEY if set in .zshrc
 source ~/.zshrc 2>/dev/null || true
-nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" --user-id "default-dev-user" > server.log 2>&1 &
+nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
 
 # Get the process ID
 SERVER_PID=$!
