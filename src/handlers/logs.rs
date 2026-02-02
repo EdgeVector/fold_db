@@ -109,7 +109,8 @@ pub async fn query_user_logs<L: Logger>(
                 .collect();
 
             let count = logs.len();
-            log::info!("Found {} logs for user {}", count, user_hash);
+            // Use debug level to avoid logging about logs
+            log::debug!("Found {} logs for user {}", count, user_hash);
 
             Ok(ApiResponse::success_with_user(
                 UserLogQueryResponse {
