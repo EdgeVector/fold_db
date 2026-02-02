@@ -123,6 +123,33 @@ datafold_http_server --port 9001
 
 Then visit `http://localhost:9001` for the web interface.
 
+## 🌐 Global Schema Service
+
+DataFold provides a **Global Schema Service** at [schema.folddb.com](https://schema.folddb.com) for sharing and discovering schemas across the network.
+
+### How It Works
+
+The global schema service is managed **automatically** through two processes:
+
+1. **AI-Powered Ingestion** - When ingesting data, the LLM analyzes your data structure and automatically checks the global schema registry for matching schemas. If a compatible schema exists, it's used; otherwise, a new schema may be registered.
+
+2. **AI Query Processing** - When executing natural language queries, the system consults the global schema service to understand available data structures and optimize query execution across nodes.
+
+### Features
+
+- **Automatic Schema Discovery** - Schemas are matched and reused automatically during ingestion
+- **Schema Registry** - Published schemas are available for all DataFold nodes to discover
+- **Interoperability** - Shared schemas enable seamless data exchange between nodes
+- **Version Tracking** - Schema versions are tracked over time
+
+### Configuration
+
+Set the schema service URL via environment variable:
+
+```bash
+export DATAFOLD_SCHEMA_SERVICE_URL=https://schema.folddb.com
+```
+
 ## 📖 Core Concepts
 
 ### Schemas
