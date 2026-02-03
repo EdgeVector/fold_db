@@ -1315,14 +1315,12 @@ impl NativeIndexManager {
         let mut entries = Vec::new();
         for result in tree.scan_prefix(prefix.as_bytes()) {
             match result {
-                Ok((_key, value)) => {
-                    match serde_json::from_slice::<IndexEntry>(&value) {
-                        Ok(entry) => entries.push(entry),
-                        Err(e) => {
-                            log::warn!("Failed to deserialize IndexEntry: {}", e);
-                        }
+                Ok((_key, value)) => match serde_json::from_slice::<IndexEntry>(&value) {
+                    Ok(entry) => entries.push(entry),
+                    Err(e) => {
+                        log::warn!("Failed to deserialize IndexEntry: {}", e);
                     }
-                }
+                },
                 Err(e) => {
                     log::warn!("Sled scan error: {}", e);
                 }
@@ -1440,12 +1438,60 @@ impl NativeIndexManager {
         self.scan_index_prefix(&prefix).await
     }
 
+    /// Search for field names using append-only index - sync version for Sled only
+    pub fn search_field_names_append_only_sync(
+        &self,
+        term: &str,
+    ) -> Result<Vec<IndexEntry>, SchemaError> {
+        let Some(ref tree) = self.tree else {
+            return Err(SchemaError::InvalidData(
+                "Sync field name search only available with Sled backend.".to_string(),
+            ));
+        };
+
+        let normalized = term.trim().to_ascii_lowercase();
+        if normalized.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, normalized);
+
+        log::debug!(
+            "[NativeIndex] search_field_names_append_only_sync: Searching with prefix '{}'",
+            prefix
+        );
+
+        let mut entries = Vec::new();
+        for result in tree.scan_prefix(prefix.as_bytes()) {
+            match result {
+                Ok((_key, value)) => match serde_json::from_slice::<IndexEntry>(&value) {
+                    Ok(entry) => entries.push(entry),
+                    Err(e) => {
+                        log::warn!("Failed to deserialize IndexEntry: {}", e);
+                    }
+                },
+                Err(e) => {
+                    log::warn!("Sled scan error: {}", e);
+                }
+            }
+        }
+
+        log::info!(
+            "[NativeIndex] search_field_names_append_only_sync: Found {} field name entries for term '{}'",
+            entries.len(),
+            term
+        );
+
+        Ok(entries)
+    }
+
     /// Scan index entries by prefix
     async fn scan_index_prefix(&self, prefix: &str) -> Result<Vec<IndexEntry>, SchemaError> {
         let results = if let Some(ref store) = self.store {
-            store.scan_prefix(prefix.as_bytes()).await.map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to scan prefix: {}", e))
-            })?
+            store
+                .scan_prefix(prefix.as_bytes())
+                .await
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to scan prefix: {}", e)))?
         } else if let Some(ref tree) = self.tree {
             tree.scan_prefix(prefix.as_bytes())
                 .filter_map(|r| r.ok())
@@ -1487,9 +1533,12 @@ impl NativeIndexManager {
         );
 
         let reverse_entries = if let Some(ref store) = self.store {
-            store.scan_prefix(rev_prefix.as_bytes()).await.map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to scan reverse prefix: {}", e))
-            })?
+            store
+                .scan_prefix(rev_prefix.as_bytes())
+                .await
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!("Failed to scan reverse prefix: {}", e))
+                })?
         } else if let Some(ref tree) = self.tree {
             tree.scan_prefix(rev_prefix.as_bytes())
                 .filter_map(|r| r.ok())
@@ -1634,7 +1683,10 @@ mod tests {
             .await
             .expect("search failed");
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].key, KeyValue::new(Some("key1".to_string()), None));
+        assert_eq!(
+            results[0].key,
+            KeyValue::new(Some("key1".to_string()), None)
+        );
 
         // Verify classification is "word"
         assert_eq!(results[0].classification, "word");
@@ -1873,7 +1925,10 @@ mod tests {
             .await
             .expect("search failed");
 
-        assert!(!results.is_empty(), "Should find results for field name email");
+        assert!(
+            !results.is_empty(),
+            "Should find results for field name email"
+        );
     }
 
     #[test]
@@ -1905,7 +1960,10 @@ mod tests {
 
         assert_eq!(result.schema_name, "Tweet");
         assert_eq!(result.field, "content");
-        assert_eq!(result.key_value, KeyValue::new(Some("abc123".to_string()), None));
+        assert_eq!(
+            result.key_value,
+            KeyValue::new(Some("abc123".to_string()), None)
+        );
         assert_eq!(result.value, serde_json::json!("test value"));
         assert!(result.metadata.is_some());
     }

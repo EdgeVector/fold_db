@@ -115,11 +115,8 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Build the React frontend (prebuild will read OPENAPI_URL file)
-echo "Building the React frontend..."
+# Ensure frontend dependencies are installed
 cd src/server/static-react
-
-# Only install if node_modules doesn't exist
 if [ ! -d "node_modules" ]; then
     echo "Installing frontend dependencies..."
     npm install
@@ -127,18 +124,7 @@ if [ ! -d "node_modules" ]; then
         echo "Failed to install frontend dependencies. Exiting."
         exit 1
     fi
-else
-    echo "Frontend dependencies already installed, skipping npm install"
 fi
-
-OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
-
-if [ $? -ne 0 ]; then
-    echo "React build failed. Exiting."
-    exit 1
-fi
-
-# Go back to root directory
 cd ../../..
 
 # Schema Service Configuration
@@ -224,13 +210,20 @@ if [ "$HTTP_READY" = true ]; then
     echo "HTTP server started successfully with PID: $SERVER_PID"
     echo "Server logs are being written to: server.log"
     echo "Schema service: $SCHEMA_SERVICE_URL"
+    echo ""
+    echo "Starting Vite dev server with hot reload..."
+    echo "Access app at: http://localhost:5173"
+    echo ""
+
+    # Start Vite dev server (foreground for hot reload)
+    cd src/server/static-react
+    npm run dev
+
+    # Cleanup when Vite exits
+    kill $SERVER_PID 2>/dev/null || true
     if [ "$LOCAL_SCHEMA" = true ]; then
-        echo "To stop both servers, run: kill $SCHEMA_SERVICE_PID $SERVER_PID"
-        echo "To view schema service logs, run: tail -f schema_service.log"
-    else
-        echo "To stop the server, run: kill $SERVER_PID"
+        kill $SCHEMA_SERVICE_PID 2>/dev/null || true
     fi
-    echo "To view server logs, run: tail -f server.log"
 else
     echo "HTTP server failed to become healthy within 30 seconds. Check server.log for details."
     if [ "$LOCAL_SCHEMA" = true ]; then

@@ -128,23 +128,12 @@ cargo run --features aws-backend --quiet --bin openapi_dump > target/openapi.jso
 
 
 
-# Build the React frontend (prebuild will read OPENAPI_URL file)
-echo "Building the React frontend..."
+# Ensure frontend dependencies are installed
 cd src/server/static-react
-
-# Only install if node_modules doesn't exist
 if [ ! -d "node_modules" ]; then
     echo "Installing frontend dependencies..."
     npm install
-else
-    echo "Frontend dependencies already installed, skipping npm install"
 fi
-
-OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
-
-
-
-# Go back to root directory
 cd ../../..
 
 # Using the global schema service at schema.folddb.com
@@ -227,10 +216,16 @@ if [ "$HTTP_READY" = true ]; then
     fi
     echo "  Schema Service: $SCHEMA_SERVICE_URL"
     echo ""
-    echo "To stop the server, run: kill $SERVER_PID"
-    echo "To view server logs, run: tail -f server.log"
+    echo "Starting Vite dev server with hot reload..."
+    echo "Access app at: http://localhost:5173"
     echo ""
-    echo "Note: DynamoDB tables will be created automatically on first use."
+
+    # Start Vite dev server (foreground for hot reload)
+    cd src/server/static-react
+    npm run dev
+
+    # Cleanup backend when Vite exits
+    kill $SERVER_PID 2>/dev/null || true
 else
     echo "HTTP server failed to become healthy within 60 seconds. Check server.log for details."
     kill $SERVER_PID 2>/dev/null

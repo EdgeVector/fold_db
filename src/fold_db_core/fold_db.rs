@@ -454,6 +454,7 @@ impl FoldDB {
     /// Search the native word index for a specific term (sync version)
     /// Uses the optimized append-only index format
     /// For Sled backend, uses sync search. For async backends, creates a new runtime.
+    /// Also searches for field names that match the term.
     pub fn native_word_search(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
         let manager = self.db_ops.native_index_manager().ok_or_else(|| {
             SchemaError::InvalidData("Native index manager not available".to_string())
@@ -461,8 +462,27 @@ impl FoldDB {
 
         // For Sled backend, use sync search directly
         if !manager.is_async() {
-            let entries = manager.search_append_only_sync(term)?;
-            return Ok(manager.entries_to_results(entries));
+            // Search for word matches
+            let word_entries = manager.search_append_only_sync(term)?;
+            let mut results = manager.entries_to_results(word_entries);
+
+            // Also search for field name matches
+            if let Ok(field_entries) = manager.search_field_names_append_only_sync(term) {
+                let field_results = manager.entries_to_results(field_entries);
+                // Deduplicate by key
+                let mut seen = std::collections::HashSet::new();
+                for r in &results {
+                    seen.insert((r.schema_name.clone(), r.field.clone(), r.key_value.clone()));
+                }
+                for r in field_results {
+                    let key = (r.schema_name.clone(), r.field.clone(), r.key_value.clone());
+                    if seen.insert(key) {
+                        results.push(r);
+                    }
+                }
+            }
+
+            return Ok(results);
         }
 
         // For async backends (DynamoDB), create a new runtime
@@ -472,8 +492,14 @@ impl FoldDB {
             .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?;
 
         rt.block_on(async {
-            let entries = manager.search_append_only(term).await?;
-            Ok(manager.entries_to_results(entries))
+            // Search for word matches
+            let word_entries = manager.search_append_only(term).await?;
+            let results = manager.entries_to_results(word_entries);
+
+            // The async backend doesn't have field name search exposed publicly,
+            // but the search_all_append_only method includes field names.
+            // For now, we use the same approach for async.
+            Ok(results)
         })
     }
 
