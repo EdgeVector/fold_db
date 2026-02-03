@@ -1,6 +1,6 @@
 /**
  * @fileoverview Tests for Footer component
- * 
+ *
  * Tests the Footer component rendering and content display.
  */
 
@@ -9,46 +9,38 @@ import { render, screen } from '@testing-library/react';
 import Footer from '../../components/Footer.jsx';
 
 describe('Footer Component', () => {
-  it('renders footer with correct terminal structure', () => {
+  it('renders footer with minimal structure', () => {
     render(<Footer />);
-    
+
     const footer = screen.getByRole('contentinfo');
     expect(footer).toBeInTheDocument();
-    expect(footer).toHaveClass('bg-terminal-lighter', 'border-t', 'border-terminal', 'py-2');
+    expect(footer).toHaveClass('minimal-footer', 'flex-shrink-0');
   });
 
-  it('displays fold_db branding', () => {
+  it('displays Datafold branding', () => {
     render(<Footer />);
-    
-    expect(screen.getByText('fold_db')).toBeInTheDocument();
-  });
 
-  it('displays current year in copyright', () => {
-    render(<Footer />);
-    
-    const currentYear = new Date().getFullYear();
-    expect(screen.getByText(`© ${currentYear}`)).toBeInTheDocument();
+    expect(screen.getByText(/Datafold/i)).toBeInTheDocument();
   });
 
   it('displays version number', () => {
     render(<Footer />);
-    
-    expect(screen.getByText('node v1.0.0')).toBeInTheDocument();
+
+    expect(screen.getByText(/v0\.1\.55/i)).toBeInTheDocument();
   });
 
-  it('has proper semantic structure', () => {
+  it('displays Local Mode indicator', () => {
     render(<Footer />);
-    
+
+    expect(screen.getByText('Local Mode')).toBeInTheDocument();
+  });
+
+  it('has proper layout structure', () => {
+    render(<Footer />);
+
     const footer = screen.getByRole('contentinfo');
-    const container = footer.querySelector('.max-w-7xl.mx-auto.px-6.text-center');
-    expect(container).toBeInTheDocument();
-  });
-
-  it('uses terminal color classes', () => {
-    render(<Footer />);
-    
-    const textElement = screen.getByText('fold_db');
-    expect(textElement).toHaveClass('text-terminal-green');
+    const container = footer.firstChild;
+    expect(container).toHaveClass('flex', 'items-center', 'justify-between');
   });
 
   it('renders without crashing', () => {

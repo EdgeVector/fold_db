@@ -405,8 +405,7 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        // Terminal-styled error message
-        expect(screen.getByText(/error/i)).toBeInTheDocument();
+        // Error message is displayed (component shows the error text directly)
         expect(screen.getByText(/failed to load schemas/i)).toBeInTheDocument();
       });
     });

@@ -12,28 +12,28 @@ describe('Header Component', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
-    
-    // Header now shows "$ fold_db" - look for fold_db text
-    expect(screen.getByText(/fold_db/i)).toBeInTheDocument()
+
+    // Header shows "datafold"
+    expect(screen.getByText(/datafold/i)).toBeInTheDocument()
   })
 
-  it('has correct terminal styling classes', () => {
+  it('has minimal header styling', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
-    
+
     const header = screen.getByRole('banner')
-    expect(header).toHaveClass('bg-terminal-lighter', 'border-b', 'border-terminal', 'flex-shrink-0')
+    expect(header).toHaveClass('minimal-header', 'flex-shrink-0')
   })
 
   it('has proper semantic structure', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
-    
+
     const header = screen.getByRole('banner')
     expect(header).toBeInTheDocument()
-    
+
     const link = screen.getByRole('link')
     expect(link).toBeInTheDocument()
     expect(link).toHaveAttribute('href', '/')
@@ -43,69 +43,47 @@ describe('Header Component', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
-    
+
     const container = screen.getByRole('banner').firstChild
-    expect(container).toHaveClass('flex', 'items-center', 'justify-between', 'px-6', 'py-3')
+    expect(container).toHaveClass('flex', 'items-center', 'justify-between')
   })
 
-  it('title link has terminal hover effects', () => {
+  it('title link has minimal logo class', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
-    
+
     const link = screen.getByRole('link')
-    expect(link).toHaveClass('flex', 'items-center', 'gap-3', 'text-terminal-green')
+    expect(link).toHaveClass('minimal-logo')
   })
 
-  it('displays config button', () => {
+  it('displays settings button', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
-    
-    const configButton = screen.getByRole('button', { name: /config/i })
-    expect(configButton).toBeInTheDocument()
-    expect(configButton).toHaveClass('btn-terminal')
+
+    const settingsButton = screen.getByRole('button', { name: /settings/i })
+    expect(settingsButton).toBeInTheDocument()
   })
 
-  it('config button contains settings icon', () => {
+  it('displays connected status', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
-    
-    const configButton = screen.getByRole('button', { name: /config/i })
-    const icon = configButton.querySelector('svg')
-    expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('w-4', 'h-4')
+
+    expect(screen.getByText('Connected')).toBeInTheDocument()
   })
 
-  it('title has correct typography classes', () => {
-    renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
-      preloadedState: defaultPreloadedState
-    })
-    
-    // Find the span containing the title text
-    const titleSpan = screen.getByText(/fold_db/i).closest('span')
-    expect(titleSpan).toHaveClass('text-xl', 'font-bold', 'tracking-tight')
-  })
-
-  it('calls onSettingsClick when config button is clicked', () => {
+  it('calls onSettingsClick when settings button is clicked', () => {
     const mockSettingsClick = vi.fn()
     renderWithRedux(<Header onSettingsClick={mockSettingsClick} />, {
       preloadedState: defaultPreloadedState
     })
-    
-    const configButton = screen.getByRole('button', { name: /config/i })
-    fireEvent.click(configButton)
-    
-    expect(mockSettingsClick).toHaveBeenCalledTimes(1)
-  })
 
-  it('displays version badge', () => {
-    renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
-      preloadedState: defaultPreloadedState
-    })
-    
-    expect(screen.getByText('v1.0')).toBeInTheDocument()
+    const settingsButton = screen.getByRole('button', { name: /settings/i })
+    fireEvent.click(settingsButton)
+
+    expect(mockSettingsClick).toHaveBeenCalledTimes(1)
   })
 
   it('shows user info when authenticated', () => {
@@ -115,8 +93,8 @@ describe('Header Component', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: authenticatedState
     })
-    
+
     expect(screen.getByText('testuser')).toBeInTheDocument()
-    expect(screen.getByText('exit')).toBeInTheDocument()
+    expect(screen.getByText('logout')).toBeInTheDocument()
   })
 })
