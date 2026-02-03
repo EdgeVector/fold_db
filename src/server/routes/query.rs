@@ -382,12 +382,16 @@ pub async fn native_index_search(
         }
     };
 
-    info!("API: Searching for term: '{}'", term);
-
     let user_hash = match require_user_context() {
         Ok(hash) => hash,
         Err(response) => return response,
     };
+
+    info!(
+        "API: Searching native index for term: '{}', user_hash: '{}'",
+        term, user_hash
+    );
+
     let node = state.node.read().await;
 
     // Use shared handler

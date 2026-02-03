@@ -181,6 +181,13 @@ impl KvStore for DynamoDbKvStore {
         let prefix_str = String::from_utf8_lossy(prefix).to_string();
         let pk = self.get_partition_key_impl();
 
+        log::debug!(
+            "[DynamoDbKvStore] scan_prefix: table='{}', PK='{}', SK begins_with '{}'",
+            self.table_name,
+            pk,
+            prefix_str
+        );
+
         // Use Query instead of Scan for efficiency
         // PK = user_id, SK begins_with prefix
         let mut results = Vec::new();
@@ -743,6 +750,12 @@ impl KvStore for DynamoDbNativeIndexStore {
         };
 
         let pk = self.get_partition_key(&feature);
+
+        log::debug!(
+            "[DynamoDbNativeIndexStore] scan_prefix: PK='{}', SK begins_with '{}'",
+            pk,
+            term_prefix
+        );
 
         // Query with feature as PK and term prefix on SK
         let mut results = Vec::new();
