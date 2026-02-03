@@ -109,7 +109,7 @@ cat > "$CONFIG_FILE" <<EOF
     "require_signatures": false,
     "encrypt_at_rest": false
   },
-  "schema_service_url": "https://ygyu7ritx8.execute-api.us-west-2.amazonaws.com/schema"
+  "schema_service_url": "https://schema.folddb.com"
 }
 EOF
 
@@ -129,26 +129,16 @@ cargo run --features aws-backend --quiet --bin openapi_dump > target/openapi.jso
 
 
 # Build the React frontend (prebuild will read OPENAPI_URL file)
-# Build the React frontend (prebuild will read OPENAPI_URL file)
 echo "Building the React frontend..."
 cd src/server/static-react
 
-# Clean up node_modules if it exists to avoid ENOTEMPTY errors
-if [ -d "node_modules" ]; then
-    echo "Cleaning up existing node_modules..."
-    rm -rf node_modules
+# Only install if node_modules doesn't exist
+if [ ! -d "node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    npm install
+else
+    echo "Frontend dependencies already installed, skipping npm install"
 fi
-
-# Remove package-lock.json if it exists to ensure a clean install
-if [ -f "package-lock.json" ]; then
-    echo "Removing package-lock.json for clean install..."
-    rm -f package-lock.json
-fi
-
-echo "Installing frontend dependencies..."
-npm install
-
-
 
 OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
 
@@ -157,9 +147,8 @@ OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
 # Go back to root directory
 cd ../../..
 
-# Using the global schema service (via API Gateway)
-# Once schema.folddb.com is set up, change to: https://schema.folddb.com
-SCHEMA_SERVICE_URL="https://ygyu7ritx8.execute-api.us-west-2.amazonaws.com/schema"
+# Using the global schema service at schema.folddb.com
+SCHEMA_SERVICE_URL="https://schema.folddb.com"
 echo "Using global schema service at: $SCHEMA_SERVICE_URL"
 
 # Export DynamoDB config for ProgressStore (uses prefix to generate table names)

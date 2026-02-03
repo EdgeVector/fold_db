@@ -91,7 +91,7 @@ cat > "$CONFIG_FILE" <<EOF
     "require_signatures": false,
     "encrypt_at_rest": false
   },
-  "schema_service_url": "https://ygyu7ritx8.execute-api.us-west-2.amazonaws.com/schema"
+  "schema_service_url": "https://schema.folddb.com"
 }
 EOF
 echo "Local configuration saved to $CONFIG_FILE"
@@ -119,24 +119,16 @@ fi
 echo "Building the React frontend..."
 cd src/server/static-react
 
-# Clean up node_modules if it exists to avoid ENOTEMPTY errors
-if [ -d "node_modules" ]; then
-    echo "Cleaning up existing node_modules..."
-    rm -rf node_modules
-fi
-
-# Remove package-lock.json if it exists to ensure a clean install
-if [ -f "package-lock.json" ]; then
-    echo "Removing package-lock.json for clean install..."
-    rm -f package-lock.json
-fi
-
-echo "Installing frontend dependencies..."
-npm install
-
-if [ $? -ne 0 ]; then
-    echo "Failed to install frontend dependencies. Exiting."
-    exit 1
+# Only install if node_modules doesn't exist
+if [ ! -d "node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    npm install
+    if [ $? -ne 0 ]; then
+        echo "Failed to install frontend dependencies. Exiting."
+        exit 1
+    fi
+else
+    echo "Frontend dependencies already installed, skipping npm install"
 fi
 
 OPENAPI_URL="file://$PWD/../../../target/openapi.json" npm run build
@@ -150,10 +142,9 @@ fi
 cd ../../..
 
 # Schema Service Configuration
-# By default, use the global schema service (via API Gateway)
-# Once schema.folddb.com is set up, change to: https://schema.folddb.com
+# By default, use the global schema service at schema.folddb.com
 # Use --local-schema flag to run a local schema service for testing/offline development
-SCHEMA_SERVICE_URL="https://ygyu7ritx8.execute-api.us-west-2.amazonaws.com/schema"
+SCHEMA_SERVICE_URL="https://schema.folddb.com"
 
 if [ "$LOCAL_SCHEMA" = true ]; then
     SCHEMA_SERVICE_URL="http://127.0.0.1:9002"
