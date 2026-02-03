@@ -8,11 +8,17 @@ use super::session::SessionManager;
 use super::types::*;
 use crate::handlers::llm as shared_handlers;
 use crate::ingestion::IngestionConfig;
+use crate::logging::core::get_current_user_id;
 use crate::server::http_server::AppState;
 use crate::server::routes::handler_error_to_response;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 use std::sync::Arc;
+
+/// Get user hash from request context, with fallback to "http_user"
+fn get_user_hash() -> String {
+    get_current_user_id().unwrap_or_else(|| "http_user".to_string())
+}
 
 /// Shared state for LLM query routes
 pub struct LlmQueryState {
@@ -77,11 +83,11 @@ pub async fn analyze_query(
     };
 
     let node = app_state.node.read().await;
-    let user_hash = "http_user"; // HTTP server uses a default user context
+    let user_hash = get_user_hash(); // HTTP server uses a default user context
 
     match shared_handlers::analyze_query(
         request.into_inner(),
-        user_hash,
+        &user_hash,
         service.as_ref(),
         llm_state.session_manager.as_ref(),
         &node,
@@ -121,11 +127,11 @@ pub async fn execute_query_plan(
 ) -> impl Responder {
     let service = llm_state.service.as_ref().map(|s| s.as_ref());
     let node = app_state.node.read().await;
-    let user_hash = "http_user";
+    let user_hash = get_user_hash();
 
     match shared_handlers::execute_query_plan(
         request.into_inner(),
-        user_hash,
+        &user_hash,
         service,
         llm_state.session_manager.as_ref(),
         &node,
@@ -171,11 +177,11 @@ pub async fn analyze_followup(
     };
 
     let node = app_state.node.read().await;
-    let user_hash = "http_user";
+    let user_hash = get_user_hash();
 
     match shared_handlers::analyze_followup(
         request.into_inner(),
-        user_hash,
+        &user_hash,
         service.as_ref(),
         llm_state.session_manager.as_ref(),
         &node,
@@ -220,11 +226,11 @@ pub async fn chat(
     };
 
     let node = app_state.node.read().await;
-    let user_hash = "http_user";
+    let user_hash = get_user_hash();
 
     match shared_handlers::chat(
         request.into_inner(),
-        user_hash,
+        &user_hash,
         service.as_ref(),
         llm_state.session_manager.as_ref(),
         &node,
@@ -265,9 +271,9 @@ pub async fn get_backfill_status(
 ) -> impl Responder {
     let backfill_hash = path.into_inner();
     let node = app_state.node.read().await;
-    let user_hash = "http_user";
+    let user_hash = get_user_hash();
 
-    match shared_handlers::get_backfill_status(&backfill_hash, user_hash, &node).await {
+    match shared_handlers::get_backfill_status(&backfill_hash, &user_hash, &node).await {
         Ok(response) => {
             if let Some(data) = response.data {
                 HttpResponse::Ok().json(BackfillStatusResponse {
@@ -308,11 +314,11 @@ pub async fn run_query(
     };
 
     let node = app_state.node.read().await;
-    let user_hash = "http_user";
+    let user_hash = get_user_hash();
 
     match shared_handlers::run_query(
         request.into_inner(),
-        user_hash,
+        &user_hash,
         service.as_ref(),
         llm_state.session_manager.as_ref(),
         &node,
@@ -358,11 +364,11 @@ pub async fn ai_native_index_query(
     };
 
     let node = app_state.node.read().await;
-    let user_hash = "http_user";
+    let user_hash = get_user_hash();
 
     match shared_handlers::ai_native_index_query(
         request.into_inner(),
-        user_hash,
+        &user_hash,
         service.as_ref(),
         llm_state.session_manager.as_ref(),
         &node,
