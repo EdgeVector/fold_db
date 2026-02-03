@@ -40,7 +40,7 @@ fn convert_object_fields_to_array(mut schema_json: serde_json::Value) -> serde_j
 }
 
 /// Helper function to convert JSON to Schema
-fn json_to_schema(value: serde_json::Value) -> datafold::schema::types::Schema {
+fn json_to_schema(value: serde_json::Value) -> fold_db::schema::types::Schema {
     serde_json::from_value(value).expect("failed to deserialize schema from JSON")
 }
 

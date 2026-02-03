@@ -3,10 +3,10 @@ use std::collections::HashMap;
 
 // Helper function to convert ExecutionResult to records (copied from transform_runner.rs)
 fn convert_execution_result_to_records(
-    execution_result: &datafold::transform::result_types::ExecutionResult,
+    execution_result: &fold_db::transform::result_types::ExecutionResult,
 ) -> Result<
-    Vec<datafold::fold_db_core::query::formatter::Record>,
-    datafold::schema::types::SchemaError,
+    Vec<fold_db::fold_db_core::query::formatter::Record>,
+    fold_db::schema::types::SchemaError,
 > {
     let mut records = Vec::new();
 
@@ -34,7 +34,7 @@ fn convert_execution_result_to_records(
             };
             record_fields.insert(field_name, value);
         }
-        records.push(datafold::fold_db_core::query::formatter::Record {
+        records.push(fold_db::fold_db_core::query::formatter::Record {
             fields: record_fields,
             metadata: HashMap::new(),
         });
@@ -57,7 +57,7 @@ fn execute_engine_and_convert_to_records() {
             "title": "BlogPost.title"
         }
     });
-    let transform_schema: datafold::schema::types::DeclarativeSchemaDefinition =
+    let transform_schema: fold_db::schema::types::DeclarativeSchemaDefinition =
         serde_json::from_value(transform_schema_json).unwrap();
 
     // Build expressions and parse chains
@@ -68,8 +68,8 @@ fn execute_engine_and_convert_to_records() {
         .map(|(field, hash)| (field.clone(), hash_to_code.get(hash).unwrap().clone()))
         .collect();
     let parsed =
-        datafold::transform::shared_utilities::parse_expressions_batch(&expressions).unwrap();
-    let chains_map: HashMap<String, datafold::transform::chain_parser::ParsedChain> = parsed
+        fold_db::transform::shared_utilities::parse_expressions_batch(&expressions).unwrap();
+    let chains_map: HashMap<String, fold_db::transform::chain_parser::ParsedChain> = parsed
         .iter()
         .map(|(field, chain)| (field.clone(), chain.clone()))
         .collect();
@@ -95,8 +95,8 @@ fn execute_engine_and_convert_to_records() {
     );
 
     // Build typed input per target field used by the chains
-    type FV = datafold::schema::types::field::FieldValue;
-    type KV = datafold::schema::types::key_value::KeyValue;
+    type FV = fold_db::schema::types::field::FieldValue;
+    type KV = fold_db::schema::types::key_value::KeyValue;
     let mut typed_input: HashMap<String, HashMap<KV, FV>> = HashMap::new();
 
     // Two blog posts with stable keys
@@ -138,7 +138,7 @@ fn execute_engine_and_convert_to_records() {
     insert_field("BlogPost.author", json!("Carol"), json!("Dylan"));
     insert_field("BlogPost.title", json!("First"), json!("Second"));
 
-    let exec = datafold::transform::iterator_stack_typed::adapter::execute_fields_typed(
+    let exec = fold_db::transform::iterator_stack_typed::adapter::execute_fields_typed(
         &chains_map,
         &typed_input,
     );

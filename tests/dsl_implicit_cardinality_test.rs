@@ -20,7 +20,7 @@ fn test_implicit_cardinality_execution() {
     let mut content_atoms = HashMap::new();
     content_atoms.insert(
         KeyValue::new(Some("row1".to_string()), None),
-        datafold::schema::types::field::FieldValue {
+        fold_db::schema::types::field::FieldValue {
             value: json!("Hello world"),
             atom_uuid: "atom1".to_string(),
             source_file_name: None,
@@ -28,7 +28,7 @@ fn test_implicit_cardinality_execution() {
     );
     content_atoms.insert(
         KeyValue::new(Some("row2".to_string()), None),
-        datafold::schema::types::field::FieldValue {
+        fold_db::schema::types::field::FieldValue {
             value: json!("Another test"),
             atom_uuid: "atom2".to_string(),
             source_file_name: None,

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 async fn test_indexing_progress_tracking() {
     // Setup
     let mut config = TestDatabaseFactory::create_test_node_config();
-    let keypair = datafold::security::Ed25519KeyPair::generate().unwrap();
+    let keypair = fold_db::security::Ed25519KeyPair::generate().unwrap();
     let user_id = keypair.public_key_base64();
     config = config.with_identity(&user_id, &keypair.secret_key_base64());
     let node = DataFoldNode::new(config).await.unwrap();

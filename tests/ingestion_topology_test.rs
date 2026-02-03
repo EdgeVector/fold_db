@@ -9,13 +9,13 @@ async fn test_schema_service_rejects_schema_without_topologies() {
         .to_string_lossy()
         .to_string();
 
-    let state = datafold::schema_service::server::SchemaServiceState::new(db_path)
+    let state = fold_db::schema_service::server::SchemaServiceState::new(db_path)
         .expect("Failed to create schema service state");
 
     // Create schema WITHOUT topologies
-    let schema = datafold::schema::types::Schema::new(
+    let schema = fold_db::schema::types::Schema::new(
         "TestSchema".to_string(),
-        datafold::schema::types::SchemaType::Single,
+        fold_db::schema::types::SchemaType::Single,
         None,
         Some(vec!["id".to_string(), "name".to_string()]),
         None,

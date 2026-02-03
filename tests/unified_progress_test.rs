@@ -154,7 +154,7 @@ async fn test_dynamo_progress_persistence_and_backfill_integration() {
         "Backfill job should be persisted immediately"
     );
     let bf_job = bf_job.unwrap();
-    assert_eq!(bf_job.status, datafold::progress::JobStatus::Running); // start sets it to InProgress -> Running?
+    assert_eq!(bf_job.status, fold_db::progress::JobStatus::Running); // start sets it to InProgress -> Running?
                                                                        // BackfillStatus::InProgress maps to JobStatus::Running.
 
     // Update Backfill
@@ -176,7 +176,7 @@ async fn test_dynamo_progress_persistence_and_backfill_integration() {
     let bf_completed = bf_completed.unwrap();
     assert_eq!(
         bf_completed.status,
-        datafold::progress::JobStatus::Completed
+        fold_db::progress::JobStatus::Completed
     );
 
     println!("Backfill integration verified successfully!");

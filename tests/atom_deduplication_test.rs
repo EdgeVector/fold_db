@@ -89,7 +89,7 @@ async fn test_atom_deduplication_in_db() {
         .get_item::<Atom>(&atom_key)
         .await
         .map_err(|e| {
-            datafold::schema::SchemaError::InvalidData(format!(
+            fold_db::schema::SchemaError::InvalidData(format!(
                 "Failed to check existing atom: {}",
                 e
             ))

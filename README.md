@@ -61,6 +61,7 @@ cargo install datafold
 ```
 
 This provides three binaries:
+
 - `datafold_cli` - Command-line interface
 - `datafold_http_server` - HTTP server with web UI
 - `datafold_node` - P2P node server
@@ -82,18 +83,18 @@ version.
 ### Basic Usage
 
 ```rust
-use datafold::{DataFoldNode, IngestionCore, Schema};
+use fold_db::{DataFoldNode, IngestionCore, Schema};
 use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize a DataFold node
     let node = DataFoldNode::new_with_defaults().await?;
-    
+
     // Create an ingestion pipeline
-    let config = datafold::IngestionConfig::from_env_allow_empty();
+    let config = fold_db::IngestionConfig::from_env_allow_empty();
     let ingestion = IngestionCore::new(config)?;
-    
+
     // Process JSON data with automatic schema generation
     let data = json!({
         "name": "John Doe",
@@ -104,11 +105,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "notifications": true
         }
     });
-    
+
     let response = ingestion.process_json_ingestion(
-        datafold::IngestionRequest { data }
+        fold_db::IngestionRequest { data }
     ).await?;
-    
+
     println!("Ingestion result: {:?}", response);
     Ok(())
 }
@@ -153,10 +154,11 @@ export DATAFOLD_SCHEMA_SERVICE_URL=https://schema.folddb.com
 ## 📖 Core Concepts
 
 ### Schemas
+
 DataFold uses dynamic schemas that define data structure and operations:
 
 ```rust
-use datafold::{Schema, Operation};
+use fold_db::{Schema, Operation};
 
 // Load a schema
 let schema_json = std::fs::read_to_string("my_schema.json")?;
@@ -168,10 +170,11 @@ let result = node.execute_operation(operation).await?;
 ```
 
 ### AI-Powered Ingestion
+
 Automatically analyze and ingest data from any source:
 
 ```rust
-use datafold::{IngestionConfig, IngestionCore};
+use fold_db::{IngestionConfig, IngestionCore};
 
 // Configure with OpenRouter API
 let config = IngestionConfig {
@@ -187,10 +190,11 @@ let result = ingestion.process_json_ingestion(request).await?;
 ```
 
 ### Distributed Networking
+
 Connect nodes in a P2P network:
 
 ```rust
-use datafold::{NetworkConfig, NetworkCore};
+use fold_db::{NetworkConfig, NetworkCore};
 
 let network_config = NetworkConfig::default();
 let network = NetworkCore::new(network_config).await?;
@@ -211,7 +215,7 @@ DataFold includes a comprehensive React frontend with a unified API client archi
 The frontend uses specialized API clients that eliminate boilerplate code and provide consistent error handling, caching, and authentication:
 
 ```typescript
-import { schemaClient, securityClient, systemClient } from '../api/clients';
+import { schemaClient, securityClient, systemClient } from "../api/clients";
 
 // Schema operations with automatic caching
 const response = await schemaClient.getSchemas();
@@ -251,11 +255,11 @@ const verification = await securityClient.verifyMessage(signedMessage);
 import {
   isNetworkError,
   isAuthenticationError,
-  isSchemaStateError
-} from '../api/core/errors';
+  isSchemaStateError,
+} from "../api/core/errors";
 
 try {
-  const response = await schemaClient.approveSchema('users');
+  const response = await schemaClient.approveSchema("users");
 } catch (error) {
   if (isAuthenticationError(error)) {
     redirectToLogin();
@@ -305,6 +309,7 @@ See [`SOCIAL_MEDIA_INGESTION_PROPOSAL.md`](SOCIAL_MEDIA_INGESTION_PROPOSAL.md) f
 DataFold provides two ways to ingest files:
 
 **1. Traditional File Upload**
+
 ```bash
 curl -X POST http://localhost:9001/api/ingestion/upload \
   -F "file=@/path/to/local/file.json" \
@@ -312,6 +317,7 @@ curl -X POST http://localhost:9001/api/ingestion/upload \
 ```
 
 **2. S3 File Path (No Re-upload Required)**
+
 ```bash
 curl -X POST http://localhost:9001/api/ingestion/upload \
   -F "s3FilePath=s3://my-bucket/path/to/file.json" \
@@ -319,8 +325,9 @@ curl -X POST http://localhost:9001/api/ingestion/upload \
 ```
 
 **3. Programmatic API (for Lambda/Rust code)**
+
 ```rust
-use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
+use fold_db::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
 
 // Async ingestion (returns immediately with progress_id)
 let request = S3IngestionRequest::new("s3://bucket/file.json".to_string());
@@ -328,18 +335,20 @@ let response = ingest_from_s3_path_async(&request, &state).await?;
 println!("Started: {}", response.progress_id.unwrap());
 
 // Or sync ingestion (waits for completion)
-use datafold::ingestion::ingest_from_s3_path_sync;
+use fold_db::ingestion::ingest_from_s3_path_sync;
 let response = ingest_from_s3_path_sync(&request, &state).await?;
 println!("Complete: {} mutations", response.mutations_executed);
 ```
 
 The S3 file path option allows you to process files already stored in S3 without uploading them again, saving bandwidth and time. This is particularly useful for:
+
 - **Lambda Functions** - Process S3 events programmatically
 - **ETL Pipelines** - Ingest pipeline outputs already in S3
 - **Batch Processing** - Process existing S3 files at scale
 - **Data Lakes** - Integration with S3-based data lakes
 
 **Requirements for S3 file paths:**
+
 - S3 storage mode must be configured (`DATAFOLD_UPLOAD_STORAGE_MODE=s3`)
 - AWS credentials with `s3:GetObject` permissions
 
@@ -392,7 +401,7 @@ The UI will be available at `http://localhost:5173`.
 DataFold can run in serverless environments like AWS Lambda using S3-backed storage:
 
 ```rust
-use datafold::{FoldDB, S3Config};
+use fold_db::{FoldDB, S3Config};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -402,16 +411,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "us-west-2".to_string(),
         "production".to_string(),
     );
-    
+
     // Database automatically downloads from S3 on startup
     let db = FoldDB::new_with_s3(config).await?;
-    
+
     // Use normally - all operations are local
     // ... queries, mutations, transforms ...
-    
+
     // Sync back to S3
     db.flush_to_s3().await?;
-    
+
     Ok(())
 }
 ```
@@ -450,8 +459,8 @@ datafold = { version = "0.1.0", features = ["lambda"] }
 Initialize the `LambdaContext` with `LambdaStorage::DynamoDb`:
 
 ```rust
-use datafold::lambda::{LambdaConfig, LambdaContext, LambdaStorage, LambdaLogging};
-use datafold::storage::{DynamoDbConfig, ExplicitTables};
+use fold_db::lambda::{LambdaConfig, LambdaContext, LambdaStorage, LambdaLogging};
+use fold_db::storage::{DynamoDbConfig, ExplicitTables};
 
 // Using ExplicitTables::from_prefix for convenience
 let config = LambdaConfig::new(
@@ -471,17 +480,17 @@ LambdaContext::init(config).await?;
 
 The system requires and automatically manages **11 tables** per deployment. Using `ExplicitTables::from_prefix("MyApp")`, they are:
 
-*   `MyApp-main` (Data)
-*   `MyApp-metadata`
-*   `MyApp-node_id_schema_permissions`
-*   `MyApp-transforms`
-*   `MyApp-orchestrator_state`
-*   `MyApp-schema_states`
-*   `MyApp-schemas`
-*   `MyApp-public_keys`
-*   `MyApp-transform_queue_tree`
-*   `MyApp-native_index`
-*   `MyApp-process` (Process Tracking)
+- `MyApp-main` (Data)
+- `MyApp-metadata`
+- `MyApp-node_id_schema_permissions`
+- `MyApp-transforms`
+- `MyApp-orchestrator_state`
+- `MyApp-schema_states`
+- `MyApp-schemas`
+- `MyApp-public_keys`
+- `MyApp-transform_queue_tree`
+- `MyApp-native_index`
+- `MyApp-process` (Process Tracking)
 
 ### Multi-Tenancy
 
@@ -511,7 +520,7 @@ See [`examples/`](examples/) directory for:
 
 ```rust
 // Quick example: Ingest S3 file in Lambda
-use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
+use fold_db::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
 
 let request = S3IngestionRequest::new("s3://bucket/data.json".to_string());
 let response = ingest_from_s3_path_async(&request, &state).await?;
@@ -546,6 +555,7 @@ DataFold uses JSON configuration files. Default config:
 ```
 
 Environment variables:
+
 - `OPENROUTER_API_KEY` - API key for AI-powered ingestion
 - `DATAFOLD_CONFIG` - Path to configuration file
 

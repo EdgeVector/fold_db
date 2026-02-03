@@ -10,7 +10,7 @@ async fn test_node_starts_without_schema_service() {
     let test_db_path = temp_dir.path().join("test_db");
 
     // Create node configuration WITHOUT schema service URL
-    let keypair = datafold::security::Ed25519KeyPair::generate().unwrap();
+    let keypair = fold_db::security::Ed25519KeyPair::generate().unwrap();
     let config = NodeConfig::new(test_db_path.to_path_buf())
         .with_network_listen_address("/ip4/127.0.0.1/tcp/9002")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
@@ -35,7 +35,7 @@ async fn test_node_new_loads_schemas_for_testing() {
     let test_db_path = temp_dir.path().join("test_db");
 
     // Create node configuration with mock schema service URL
-    let keypair = datafold::security::Ed25519KeyPair::generate().unwrap();
+    let keypair = fold_db::security::Ed25519KeyPair::generate().unwrap();
     let config = NodeConfig::new(test_db_path.to_path_buf())
         .with_network_listen_address("/ip4/127.0.0.1/tcp/9003")
         .with_schema_service_url("test://mock")
