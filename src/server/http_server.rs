@@ -146,6 +146,29 @@ impl DataFoldHttpServer {
         // Create LLM query state (gracefully handles missing configuration)
         let llm_query_state = web::Data::new(llm_query::LlmQueryState::new());
 
+        // Create progress tracker based on database config
+        let progress_tracker = {
+            #[cfg(feature = "aws-backend")]
+            {
+                if let crate::datafold_node::config::DatabaseConfig::Cloud(cloud_config) =
+                    &self.node_manager.get_base_config().database
+                {
+                    crate::progress::create_tracker(Some((
+                        cloud_config.tables.process.clone(),
+                        cloud_config.region.clone(),
+                    )))
+                    .await
+                } else {
+                    crate::progress::create_tracker(None).await
+                }
+            }
+            #[cfg(not(feature = "aws-backend"))]
+            {
+                crate::progress::create_tracker(None).await
+            }
+        };
+        let progress_tracker_data = web::Data::new(progress_tracker);
+
         // Start the HTTP server
         let server = ActixHttpServer::new(move || {
             // Create CORS middleware
@@ -165,6 +188,7 @@ impl DataFoldHttpServer {
                 .app_data(app_state.clone())
                 .app_data(llm_query_state.clone())
                 .app_data(upload_storage_data.clone())
+                .app_data(progress_tracker_data.clone())
                 .app_data(json_config)
                 .configure(Self::configure_api)
                 // Serve static files from the React app build directory

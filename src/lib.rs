@@ -72,5 +72,8 @@ pub use ingestion::{IngestionConfig, IngestionCore, IngestionError, IngestionRes
 // Re-export storage types
 pub use storage::{DatabaseConfig, StorageError};
 
+// Re-export node manager for multi-tenant deployments
+pub use server::{NodeManager, NodeManagerConfig, NodeManagerError};
+
 // Re-export commonly used constants
 pub use constants::{DEFAULT_HTTP_PORT, DEFAULT_P2P_PORT};
