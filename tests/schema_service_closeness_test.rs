@@ -1,4 +1,4 @@
-use datafold::schema_service::server::{SchemaAddOutcome, SchemaServiceState};
+use fold_db::schema_service::server::{SchemaAddOutcome, SchemaServiceState};
 use serde_json::json;
 use std::collections::HashMap;
 use tempfile::tempdir;

@@ -1,8 +1,8 @@
 use clap::Parser;
-use datafold::{constants::DEFAULT_SCHEMA_SERVICE_PORT, schema_service::SchemaServiceServer};
+use fold_db::{constants::DEFAULT_SCHEMA_SERVICE_PORT, schema_service::SchemaServiceServer};
 
 #[cfg(feature = "aws-backend")]
-use datafold::storage::CloudConfig;
+use fold_db::storage::CloudConfig;
 
 /// Command line options for the schema service binary.
 #[derive(Parser, Debug)]
@@ -53,7 +53,7 @@ struct Cli {
 /// * DynamoDB configuration is invalid (when using DynamoDB mode)
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    datafold::logging::LoggingSystem::init_default().await.ok();
+    fold_db::logging::LoggingSystem::init_default().await.ok();
 
     // Parse command-line arguments
     let Cli { port, db_path } = Cli::parse();
@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::Cli;
     use clap::Parser;
-    use datafold::constants::DEFAULT_SCHEMA_SERVICE_PORT;
+    use fold_db::constants::DEFAULT_SCHEMA_SERVICE_PORT;
 
     #[test]
     fn defaults() {

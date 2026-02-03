@@ -3,9 +3,9 @@
 //! These tests verify that the append-only index properly handles entries with
 //! different classifications for the same field value.
 
-use datafold::db_operations::NativeIndexManager;
-use datafold::schema::types::key_value::KeyValue;
-use datafold::storage::{NamespacedStore, SledNamespacedStore};
+use fold_db::db_operations::NativeIndexManager;
+use fold_db::schema::types::key_value::KeyValue;
+use fold_db::storage::{NamespacedStore, SledNamespacedStore};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;

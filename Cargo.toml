@@ -1,28 +1,8 @@
 [package]
-name = "datafold"
-version = "0.1.55"
+name = "fold_db"
+version = "0.1.0"
 edition = "2021"
-authors = ["Tom Tang <tom@datafold.ai>"]
-description = "A personal database for data sovereignty with AI-powered ingestion"
-documentation = "https://docs.rs/datafold"
-homepage = "https://datafold.ai"
-repository = "https://github.com/shiba4life/fold_db"
-readme = "README.md"
-license = "MIT OR Apache-2.0"
-keywords = ["database", "distributed", "schema", "ingestion"]
-categories = ["database", "data-structures", "network-programming"]
-exclude = [
-    "data/*",
-    "schema_registry/*",
-    "test_db/*",
-    "target/*",
-    "sample_data/*",
-    "*.log",
-    ".github/*",
-    ".roo/*",
-    "**/.DS_Store",
-    ".DS_Store",
-]
+publish = false
 
 [features]
 default = []
@@ -104,7 +84,7 @@ tracing-subscriber = "0.3"
 tracing = "0.1"
 
 [lib]
-name = "datafold"
+name = "fold_db"
 path = "src/lib.rs"
 
 # Note: Binary paths based on actual file structure

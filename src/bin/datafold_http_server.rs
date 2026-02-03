@@ -1,8 +1,11 @@
 use clap::Parser;
-use datafold::{
+use fold_db::{
     constants::DEFAULT_HTTP_PORT,
-    datafold_node::{load_node_config, DataFoldNode},
-    server::http_server::DataFoldHttpServer,
+    datafold_node::load_node_config,
+    server::{
+        http_server::DataFoldHttpServer,
+        node_manager::{NodeManager, NodeManagerConfig},
+    },
 };
 
 /// Command line options for the HTTP server binary.
@@ -30,6 +33,16 @@ struct Cli {
 /// This is a STATELESS HTTP server - user identity comes from the X-User-Hash
 /// header on each incoming request, just like the Lambda implementation.
 ///
+/// # Architecture
+///
+/// The server uses lazy per-user node initialization:
+/// - On startup: Only configuration is loaded, no DynamoDB access
+/// - On first request for a user: Node is created with user context
+/// - Subsequent requests: Node is cached and reused
+///
+/// This aligns with Lambda's multi-tenant architecture and avoids issues
+/// with DynamoDB access before user context is available.
+///
 /// # Command-Line Arguments
 ///
 /// * `--port <PORT>` - Port for the HTTP server (default: 9001)
@@ -55,7 +68,6 @@ struct Cli {
 ///
 /// Returns an error if:
 /// * The configuration file cannot be read or parsed
-/// * The node cannot be initialized
 /// * The HTTP server cannot be started
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,6 +82,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("├─────────────────────────────────────────────────────────┤");
     println!("│  User identity comes from X-User-Hash header per-request  │");
     println!("│  Client generates: user_hash = SHA256(user_id)[0:32]   │");
+    println!("│                                                         │");
+    println!("│  Nodes are created lazily on first request per user.   │");
+    println!("│  No DynamoDB access during startup.                    │");
     println!("└─────────────────────────────────────────────────────────┘");
 
     // Load node configuration
@@ -77,19 +92,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize logging system with environment configuration
     #[allow(unused_mut)]
-    let mut log_config = datafold::logging::config::LogConfig::from_env().unwrap_or_default();
-
-    // Generate a system-level keypair for the node itself
-    // This is separate from user identity - used for node-level operations
-    let keypair =
-        datafold::security::Ed25519KeyPair::generate().expect("Failed to generate node keypair");
-
-    println!("Generated system node identity:");
-    println!("  Public Key: {}", keypair.public_key_base64());
+    let mut log_config = fold_db::logging::config::LogConfig::from_env().unwrap_or_default();
 
     // If using DynamoDB backend, enable DynamoDB logging
     #[cfg(feature = "aws-backend")]
-    if let datafold::datafold_node::config::DatabaseConfig::Cloud(ref mut db_config) =
+    if let fold_db::datafold_node::config::DatabaseConfig::Cloud(ref mut db_config) =
         config.database
     {
         // Note: user_id is NOT set here - it comes from per-request headers
@@ -103,11 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Inject system-level identity into config
-    config.public_key = Some(keypair.public_key_base64());
-    config.private_key = Some(keypair.secret_key_base64());
-
-    if let Err(e) = datafold::logging::LoggingSystem::init_with_config(log_config).await {
+    if let Err(e) = fold_db::logging::LoggingSystem::init_with_config(log_config).await {
         eprintln!("Failed to initialize logging system: {}", e);
     }
 
@@ -117,15 +120,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.schema_service_url = Some(url);
     }
 
-    // Create node
-    let node = DataFoldNode::new(config).await?;
+    // Create NodeManager instead of a single node
+    // Nodes will be created lazily per-user on first request
+    let node_manager_config = NodeManagerConfig {
+        base_config: config,
+    };
+    let node_manager = NodeManager::new(node_manager_config);
+
+    println!("\n✅ NodeManager initialized (nodes created lazily per-user)");
 
     // Start the HTTP server
     let bind_address = format!("0.0.0.0:{}", http_port);
-    println!("\nStarting server on http://localhost:{}", http_port);
+    println!("Starting server on http://localhost:{}", http_port);
     println!("Waiting for authenticated requests with X-User-Hash header...\n");
 
-    let http_server = DataFoldHttpServer::new(node, &bind_address).await?;
+    let http_server = DataFoldHttpServer::new(node_manager, &bind_address).await?;
 
     http_server
         .run()
@@ -137,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::Cli;
     use clap::Parser;
-    use datafold::constants::DEFAULT_HTTP_PORT;
+    use fold_db::constants::DEFAULT_HTTP_PORT;
 
     #[test]
     fn defaults() {

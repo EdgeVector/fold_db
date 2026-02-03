@@ -1,4 +1,4 @@
-use datafold::fold_db_core::FoldDB;
+use fold_db::fold_db_core::FoldDB;
 use serde_json::json;
 use std::thread;
 use std::time::Duration;

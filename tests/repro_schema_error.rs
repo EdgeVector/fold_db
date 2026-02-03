@@ -1,4 +1,4 @@
-use datafold::fold_db_core::fold_db::FoldDB;
+use fold_db::fold_db_core::fold_db::FoldDB;
 
 #[tokio::test]
 async fn test_reproduce_schema_mismatch() {

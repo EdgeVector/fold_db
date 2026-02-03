@@ -9,6 +9,7 @@ use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
+use crate::server::routes::require_node;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::{json, Value};
 
@@ -75,20 +76,14 @@ pub async fn process_json(
         }
     };
 
-    // Spawn ingestion as a background task and return immediately with progress_id
-    let node_clone = state.node.clone();
+    // Get user and node from NodeManager
+    let (user_id_for_task, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+
     let request_data = request.into_inner();
     let progress_id_clone = progress_id.clone();
-    // Re-use the already validated user_id from above for the background task
-    let user_id_for_task = match crate::logging::core::get_current_user_id() {
-        Some(uid) => uid,
-        None => {
-            // This shouldn't happen since we already checked above, but fail safe
-            return HttpResponse::Unauthorized().json(IngestionResponse::failure(vec![
-                "User context lost during request processing".to_string(),
-            ]));
-        }
-    };
 
     tokio::spawn(async move {
         // Wrap in run_with_user to propagate user context for progress tracking
@@ -100,8 +95,8 @@ pub async fn process_json(
                 progress_id_clone
             );
 
-            // Acquire read lock on the node
-            let node_guard = node_clone.read().await;
+            // Acquire lock on the node
+            let node_guard = node_arc.lock().await;
 
             match service
                 .process_json_with_node_and_progress(

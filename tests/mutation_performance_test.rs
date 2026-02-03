@@ -12,10 +12,10 @@ use std::time::Instant;
 
 use serde_json::json;
 
-use datafold::datafold_node::{DataFoldNode, NodeConfig};
-use datafold::schema::types::Mutation;
-// use datafold::MutationType; - Removed as it's implied or handled by helper if we pass "Create" string
-// use datafold::schema::types::key_value::KeyValue; - Removed as helper abstracts this
+use fold_db::datafold_node::{DataFoldNode, NodeConfig};
+use fold_db::schema::types::Mutation;
+// use fold_db::MutationType; - Removed as it's implied or handled by helper if we pass "Create" string
+// use fold_db::schema::types::key_value::KeyValue; - Removed as helper abstracts this
 
 mod common;
 use common::create_test_mutation;

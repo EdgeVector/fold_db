@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use datafold::datafold_node::{DataFoldNode, start_embedded_server, EmbeddedServerHandle, load_node_config};
+use fold_db::datafold_node::{DataFoldNode, start_embedded_server, EmbeddedServerHandle, load_node_config};
 use tauri::{Manager, State};
 use serde::{Serialize, Deserialize};
 

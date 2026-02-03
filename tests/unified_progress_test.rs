@@ -1,9 +1,9 @@
 #[cfg(feature = "aws-backend")]
 #[tokio::test]
 async fn test_dynamo_progress_persistence_and_backfill_integration() {
-    use datafold::fold_db_core::infrastructure::backfill_tracker::BackfillTracker;
-    use datafold::progress::{DynamoDbProgressStore, Job, JobType, ProgressStore};
-    use datafold::storage::config::CloudConfig;
+    use fold_db::fold_db_core::infrastructure::backfill_tracker::BackfillTracker;
+    use fold_db::progress::{DynamoDbProgressStore, Job, JobType, ProgressStore};
+    use fold_db::storage::config::CloudConfig;
     use std::sync::Arc;
 
     println!("Starting DynamoDB Progress Tracker Test...");

@@ -42,7 +42,7 @@ async fn test_schema_service_rejects_schema_without_topologies() {
 
 #[test]
 fn test_topology_inference_from_sample_data() {
-    use datafold::schema::types::{PrimitiveType, Schema, SchemaType, TopologyNode};
+    use fold_db::schema::types::{PrimitiveType, Schema, SchemaType, TopologyNode};
     use serde_json::json;
 
     // Create a schema

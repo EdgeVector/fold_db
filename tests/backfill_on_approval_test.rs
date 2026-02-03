@@ -1,6 +1,6 @@
-use datafold::fold_db_core::infrastructure::backfill_tracker::BackfillStatus;
-use datafold::fold_db_core::FoldDB;
-use datafold::schema::SchemaState;
+use fold_db::fold_db_core::infrastructure::backfill_tracker::BackfillStatus;
+use fold_db::fold_db_core::FoldDB;
+use fold_db::schema::SchemaState;
 use serde_json::json;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -103,7 +103,7 @@ async fn test_backfill_triggered_on_schema_approval() {
     println!("📋 Backfills before approval: {}", backfill_before_count);
 
     // Generate backfill hash for the transform
-    use datafold::fold_db_core::infrastructure::backfill_tracker::BackfillTracker;
+    use fold_db::fold_db_core::infrastructure::backfill_tracker::BackfillTracker;
     let backfill_hash = BackfillTracker::generate_hash("BlogPostWordIndex", "BlogPost");
     println!("🔄 Generated backfill hash: {}", backfill_hash);
 

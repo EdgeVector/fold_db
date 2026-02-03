@@ -1,4 +1,4 @@
-use datafold::security::Ed25519KeyPair;
+use fold_db::security::Ed25519KeyPair;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;

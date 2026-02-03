@@ -1,6 +1,6 @@
-use datafold::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
-use datafold::fold_db_core::infrastructure::message_bus::Event;
-use datafold::fold_db_core::FoldDB;
+use fold_db::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
+use fold_db::fold_db_core::infrastructure::message_bus::Event;
+use fold_db::fold_db_core::FoldDB;
 use serde_json::json;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -74,7 +74,7 @@ async fn test_blogpost_mutation_triggers_transforms() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Approve both schemas so transforms can be triggered
-    use datafold::schema::SchemaState;
+    use fold_db::schema::SchemaState;
     fold_db
         .schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
@@ -244,7 +244,7 @@ async fn test_partial_mutation_triggers_subset_of_transforms() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Approve both schemas so transforms can be triggered
-    use datafold::schema::SchemaState;
+    use fold_db::schema::SchemaState;
     fold_db
         .schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
@@ -363,7 +363,7 @@ async fn test_content_mutation_triggers_word_transform() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // Approve both schemas so transforms can be triggered
-    use datafold::schema::SchemaState;
+    use fold_db::schema::SchemaState;
     fold_db
         .schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)

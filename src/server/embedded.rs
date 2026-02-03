@@ -5,6 +5,7 @@
 //! the main thread.
 
 use super::http_server::DataFoldHttpServer;
+use super::node_manager::{NodeManager, NodeManagerConfig};
 use crate::datafold_node::DataFoldNode;
 use crate::error::FoldDbResult;
 use std::sync::Arc;
@@ -63,8 +64,8 @@ impl EmbeddedServerHandle {
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use datafold::datafold_node::{DataFoldNode, start_embedded_server};
-/// use datafold::datafold_node::config::NodeConfig;
+/// use fold_db::datafold_node::{DataFoldNode, start_embedded_server};
+/// use fold_db::datafold_node::config::NodeConfig;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -87,7 +88,18 @@ pub async fn start_embedded_server(
     port: u16,
 ) -> FoldDbResult<EmbeddedServerHandle> {
     let bind_address = format!("127.0.0.1:{}", port);
-    let server = DataFoldHttpServer::new(node, &bind_address).await?;
+
+    // Wrap the node in a NodeManager for compatibility with the HTTP server
+    // For embedded single-user scenarios, we use a default user ID
+    let node_manager_config = NodeManagerConfig {
+        base_config: node.config.clone(),
+    };
+    let node_manager = NodeManager::new(node_manager_config);
+
+    // Pre-populate the NodeManager with the provided node using a default embedded user
+    node_manager.set_node("embedded_user", node).await;
+
+    let server = DataFoldHttpServer::new(node_manager, &bind_address).await?;
 
     let address = bind_address.clone();
     let task_handle = tokio::spawn(async move { server.run().await });

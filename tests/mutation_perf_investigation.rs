@@ -2,8 +2,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use datafold::datafold_node::{DataFoldNode, NodeConfig};
-use datafold::ingestion::mutation_generator::MutationGenerator;
+use fold_db::datafold_node::{DataFoldNode, NodeConfig};
+use fold_db::ingestion::mutation_generator::MutationGenerator;
 
 mod common;
 use common::create_test_mutation;

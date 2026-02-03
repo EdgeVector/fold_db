@@ -1,4 +1,4 @@
-use datafold::schema::{Field, SchemaCore, SchemaState};
+use fold_db::schema::{Field, SchemaCore, SchemaState};
 
 fn user_schema_json() -> String {
     r#"{

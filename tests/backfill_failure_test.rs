@@ -4,7 +4,7 @@ use std::time::Duration;
 /// This is a simplified test that verifies the backfill tracker's failure detection logic
 #[tokio::test]
 async fn test_backfill_failure_threshold_detection() {
-    use datafold::fold_db_core::infrastructure::backfill_tracker::{
+    use fold_db::fold_db_core::infrastructure::backfill_tracker::{
         BackfillStatus, BackfillTracker,
     };
 
@@ -73,7 +73,7 @@ async fn test_backfill_failure_threshold_detection() {
 /// Test to verify that backfills with low failure rates complete successfully
 #[tokio::test]
 async fn test_backfill_low_failure_rate_completes() {
-    use datafold::fold_db_core::infrastructure::backfill_tracker::{
+    use fold_db::fold_db_core::infrastructure::backfill_tracker::{
         BackfillStatus, BackfillTracker,
     };
 

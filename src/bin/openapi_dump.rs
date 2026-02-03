@@ -1,4 +1,4 @@
 fn main() {
-    let json = datafold::server::openapi::build_openapi();
+    let json = fold_db::server::openapi::build_openapi();
     println!("{}", json);
 }

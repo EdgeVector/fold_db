@@ -6,4 +6,6 @@ pub mod security;
 pub mod system;
 
 // Re-export common utilities for convenience
-pub use common::{handler_error_to_response, require_user_context};
+pub use common::{
+    get_node_for_user, handler_error_to_response, require_node, require_user_context,
+};

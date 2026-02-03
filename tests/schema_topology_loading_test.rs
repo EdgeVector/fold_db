@@ -1,5 +1,5 @@
 /// Test to verify that schemas with field_topologies can be loaded successfully
-use datafold::schema::SchemaCore;
+use fold_db::schema::SchemaCore;
 
 #[tokio::test]
 async fn test_load_blogpost_schema_with_topology() {
@@ -201,7 +201,7 @@ async fn test_schema_with_array_topology() {
 
 #[tokio::test]
 async fn test_schema_json_roundtrip() {
-    use datafold::schema::types::DeclarativeSchemaDefinition;
+    use fold_db::schema::types::DeclarativeSchemaDefinition;
 
     // Read the BlogPost schema file
     let contents = std::fs::read_to_string("tests/schemas_for_testing/BlogPost.json")

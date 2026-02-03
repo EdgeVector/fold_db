@@ -1,9 +1,9 @@
-use datafold::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
-// use datafold::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted; // Duplicated
-// use datafold::fold_db_core::infrastructure::message_bus::schema_events::TransformExecuted;
-use datafold::fold_db_core::infrastructure::message_bus::Event;
-use datafold::fold_db_core::FoldDB;
-use datafold::schema::SchemaState;
+use fold_db::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
+// use fold_db::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted; // Duplicated
+// use fold_db::fold_db_core::infrastructure::message_bus::schema_events::TransformExecuted;
+use fold_db::fold_db_core::infrastructure::message_bus::Event;
+use fold_db::fold_db_core::FoldDB;
+use fold_db::schema::SchemaState;
 use serde_json::json;
 use std::time::Duration;
 use tempfile::TempDir;

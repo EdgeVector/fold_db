@@ -1,5 +1,5 @@
-use datafold::datafold_node::config::NodeConfig;
-use datafold::datafold_node::DataFoldNode;
+use fold_db::datafold_node::config::NodeConfig;
+use fold_db::datafold_node::DataFoldNode;
 use tempfile::TempDir;
 
 /// Test to verify that DataFoldNode starts successfully when no schema service is configured

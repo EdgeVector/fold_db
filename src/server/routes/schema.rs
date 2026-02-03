@@ -2,7 +2,7 @@ use crate::handlers::schema as schema_handlers;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
-use crate::server::routes::{handler_error_to_response, require_user_context};
+use crate::server::routes::{handler_error_to_response, require_node};
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,13 +22,12 @@ pub struct SimpleSuccessResponse {
     )
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
-    // Get user from context - required for multi-tenancy
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
 
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     // Use shared handler
     match schema_handlers::list_schemas(&user_hash, &node).await {
@@ -53,12 +52,12 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
 
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     // Use shared handler
     match schema_handlers::get_schema(&name, &user_hash, &node).await {
@@ -82,12 +81,12 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
 
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     // Use shared handler
     match schema_handlers::approve_schema(&schema_name, &user_hash, &node).await {
@@ -111,12 +110,12 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
 )]
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
 
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     // Use shared handler
     match schema_handlers::block_schema(&schema_name, &user_hash, &node).await {
@@ -144,7 +143,13 @@ pub async fn get_backfill_status(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let backfill_hash = path.into_inner();
-    let processor = crate::datafold_node::OperationProcessor::new(state.node.read().await.clone());
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let _user_hash = user_hash; // For logging/context if needed
+    let node = node_arc.lock().await;
+    let processor = crate::datafold_node::OperationProcessor::new((*node).clone());
 
     match processor.get_backfill(&backfill_hash).await {
         Ok(Some(info)) => HttpResponse::Ok().json(info),
@@ -165,12 +170,12 @@ pub async fn get_backfill_status(
     )
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
 
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     // Use shared handler
     match schema_handlers::load_schemas(&user_hash, &node).await {

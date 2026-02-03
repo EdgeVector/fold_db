@@ -1,5 +1,5 @@
-use datafold::fold_db_core::orchestration::queue_manager::QueueManager;
-use datafold::fold_db_core::FoldDB;
+use fold_db::fold_db_core::orchestration::queue_manager::QueueManager;
+use fold_db::fold_db_core::FoldDB;
 use tempfile::TempDir;
 
 /// Test to verify that the transform queue properly deduplicates items based on mutation_id

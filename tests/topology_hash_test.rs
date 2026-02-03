@@ -1,4 +1,4 @@
-use datafold::schema::types::{
+use fold_db::schema::types::{
     DeclarativeSchemaDefinition, JsonTopology, PrimitiveType, SchemaType, TopologyNode,
 };
 use std::collections::HashMap;

@@ -34,14 +34,11 @@ impl DynamoDbKvStore {
         Self { client, table_name }
     }
 
-    /// Get the current user_id from request context - returns error if not available
+    /// Get the current user_id from request context
+    /// Falls back to "__system__" for system-level operations (e.g., node_id, metadata)
+    /// when no user context is available (server startup, background tasks)
     fn get_current_user_id(&self) -> StorageResult<String> {
-        crate::logging::core::get_current_user_id().ok_or_else(|| {
-            StorageError::ConfigurationError(
-                "No user_id available in request context - operations require user context"
-                    .to_string(),
-            )
-        })
+        Ok(crate::logging::core::get_current_user_id().unwrap_or_else(|| "__system__".to_string()))
     }
 
     /// Get the partition key to use for this store
@@ -391,19 +388,15 @@ impl DynamoDbNativeIndexStore {
         Self { client, table_name }
     }
 
-    /// Get the current user_id from request context - returns error if not available
+    /// Get the current user_id from request context
+    /// Falls back to "__system__" for system-level operations when no user context is available
     fn get_current_user_id(&self) -> StorageResult<String> {
         let context_user = crate::logging::core::get_current_user_id();
         log::debug!(
             "[DynamoDbNativeIndexStore] get_current_user_id: context={:?}",
             context_user
         );
-        context_user.ok_or_else(|| {
-            StorageError::ConfigurationError(
-                "No user_id available in request context - operations require user context"
-                    .to_string(),
-            )
-        })
+        Ok(context_user.unwrap_or_else(|| "__system__".to_string()))
     }
 
     /// Parse key to extract feature and term

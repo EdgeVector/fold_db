@@ -225,7 +225,7 @@ impl ClientSecurity {
     pub fn generate_client_example() -> String {
         r#"
 // Example client-side usage
-use datafold::security::*;
+use fold_db::security::*;
 
 // 1. Generate a key pair
 let keypair = ClientSecurity::generate_client_keypair()?;

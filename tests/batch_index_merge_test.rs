@@ -4,9 +4,9 @@
 //! was replacing index entries instead of merging them, causing records to disappear
 //! when multiple batches indexed the same term.
 
-use datafold::datafold_node::DataFoldNode;
-use datafold::schema::SchemaState;
-use datafold::NodeConfig;
+use fold_db::datafold_node::DataFoldNode;
+use fold_db::schema::SchemaState;
+use fold_db::NodeConfig;
 use serde_json::json;
 use tempfile::TempDir;
 

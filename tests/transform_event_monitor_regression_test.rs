@@ -1,4 +1,4 @@
-use datafold::fold_db_core::FoldDB;
+use fold_db::fold_db_core::FoldDB;
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;

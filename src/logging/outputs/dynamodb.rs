@@ -16,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 struct DynamoDbLogItem {
     user_id: String,
     timestamp: i64,
-    #[serde(default)] 
+    #[serde(default)]
     id: Option<String>,
     level: LogLevel,
     event_type: String,
@@ -180,9 +180,14 @@ impl DynamoDbLogger {
 #[async_trait]
 impl Logger for DynamoDbLogger {
     /// Log an event to DynamoDB
+    /// Silently skips entries without user_id (e.g., during server startup)
     async fn log(&self, entry: LogEntry) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let item_struct = DynamoDbLogItem::try_from_entry(entry)
-            .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+        // Skip logging if no user_id is available - this happens during server startup
+        // before any user context is established
+        let item_struct = match DynamoDbLogItem::try_from_entry(entry) {
+            Ok(item) => item,
+            Err(_) => return Ok(()), // Silently skip - no user context available
+        };
         let item = serde_dynamo::to_item(item_struct)?;
 
         self.client

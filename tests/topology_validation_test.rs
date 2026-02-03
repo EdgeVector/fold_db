@@ -1,4 +1,4 @@
-use datafold::schema::types::{
+use fold_db::schema::types::{
     DeclarativeSchemaDefinition, JsonTopology, KeyConfig, PrimitiveType, SchemaType, TopologyNode,
 };
 use serde_json::json;

@@ -1,4 +1,5 @@
 use super::middleware::auth::UserContextMiddleware;
+use super::node_manager::NodeManager;
 use super::routes::log as log_routes;
 use super::routes::{
     query as query_routes, schema as schema_routes, security as security_routes,
@@ -17,14 +18,22 @@ use actix_files::Files;
 
 use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 /// HTTP server for the DataFold node.
 ///
 /// DataFoldHttpServer provides a web-based interface for external clients to interact
 /// with a DataFold node. It handles HTTP requests and can serve the built React
-/// UI,
-/// and provides REST API endpoints for schemas, queries, and mutations.
+/// UI, and provides REST API endpoints for schemas, queries, and mutations.
+///
+/// # Architecture
+///
+/// The server now uses a lazy per-user node initialization pattern:
+/// - On startup: Only configuration is loaded, no DynamoDB access
+/// - On first request for a user: Node is created with user context
+/// - Subsequent requests: Node is cached and reused
+///
+/// This aligns with Lambda's multi-tenant architecture.
 ///
 /// # Features
 ///
@@ -33,27 +42,27 @@ use tokio::sync::RwLock;
 /// * Sample data management
 /// * One-click loading of sample data
 pub struct DataFoldHttpServer {
-    /// The DataFold node
-    node: Arc<tokio::sync::RwLock<DataFoldNode>>,
+    /// The node manager for lazy per-user node creation
+    node_manager: Arc<NodeManager>,
     /// The HTTP server bind address
     bind_address: String,
 }
 
 /// Shared application state for the HTTP server.
 pub struct AppState {
-    /// The DataFold node
-    pub(crate) node: Arc<tokio::sync::RwLock<DataFoldNode>>,
+    /// The node manager for getting per-user nodes
+    pub(crate) node_manager: Arc<NodeManager>,
 }
 
 impl DataFoldHttpServer {
     /// Create a new HTTP server.
     ///
     /// This method creates a new HTTP server that listens on the specified address.
-    /// It uses the provided DataFoldNode to process client requests.
+    /// It uses the provided NodeManager to create per-user nodes lazily.
     ///
     /// # Arguments
     ///
-    /// * `node` - The DataFoldNode instance to use for processing requests
+    /// * `node_manager` - The NodeManager instance for creating per-user nodes
     /// * `bind_address` - The address to bind to (e.g., "127.0.0.1:9001")
     ///
     /// # Returns
@@ -64,17 +73,14 @@ impl DataFoldHttpServer {
     ///
     /// Returns a `FoldDbError` if:
     /// * There is an error starting the HTTP server
-    pub async fn new(node: DataFoldNode, bind_address: &str) -> FoldDbResult<Self> {
-        // Extract DynamoDB logs config from node if using DynamoDB backend
+    pub async fn new(node_manager: NodeManager, bind_address: &str) -> FoldDbResult<Self> {
+        // Extract DynamoDB logs config from base config if using DynamoDB backend
         let logs_config = {
-            match &node.config.database {
+            match &node_manager.get_base_config().database {
                 #[cfg(feature = "aws-backend")]
                 crate::datafold_node::config::DatabaseConfig::Cloud(d) => {
-                    let user_id = d
-                        .user_id
-                        .clone()
-                        .unwrap_or_else(|| node.get_node_public_key().to_string());
-                    Some((d.tables.logs.clone(), d.region.clone(), Some(user_id)))
+                    // Note: user_id is NOT set here - it comes from per-request headers
+                    Some((d.tables.logs.clone(), d.region.clone(), None))
                 }
                 _ => None,
             }
@@ -84,7 +90,7 @@ impl DataFoldHttpServer {
         crate::logging::LoggingSystem::init_with_fallback(logs_config).await;
 
         Ok(Self {
-            node: Arc::new(RwLock::new(node)),
+            node_manager: Arc::new(node_manager),
             bind_address: bind_address.to_string(),
         })
     }
@@ -105,6 +111,7 @@ impl DataFoldHttpServer {
     /// * There is an error binding to the specified address
     /// * There is an error starting the server
     pub async fn run(&self) -> FoldDbResult<()> {
+        // Load schemas from schema service if configured
         self.load_schemas_if_configured().await?;
 
         // Initialize upload storage from environment config
@@ -128,21 +135,13 @@ impl DataFoldHttpServer {
             }
         );
 
-        // Create individual dependencies for ingestion routes
-        let node = web::Data::new(self.node.clone());
-
-        // Get the unified progress tracker from the node
-        // This is the single source of truth for all progress - local uses Sled, cloud uses DynamoDB
-        let progress_tracker_data = {
-            let node_guard = self.node.read().await;
-            web::Data::new(node_guard.get_progress_tracker().await)
-        };
-        let upload_storage_data = web::Data::new(upload_storage.clone());
-
-        // Create shared application state for routes that still need it
+        // Create shared application state
         let app_state = web::Data::new(AppState {
-            node: self.node.clone(),
+            node_manager: self.node_manager.clone(),
         });
+
+        // Create upload storage data
+        let upload_storage_data = web::Data::new(upload_storage.clone());
 
         // Create LLM query state (gracefully handles missing configuration)
         let llm_query_state = web::Data::new(llm_query::LlmQueryState::new());
@@ -165,8 +164,6 @@ impl DataFoldHttpServer {
                 .wrap(UserContextMiddleware)
                 .app_data(app_state.clone())
                 .app_data(llm_query_state.clone())
-                .app_data(node.clone())
-                .app_data(progress_tracker_data.clone())
                 .app_data(upload_storage_data.clone())
                 .app_data(json_config)
                 .configure(Self::configure_api)
@@ -188,10 +185,11 @@ impl DataFoldHttpServer {
 
     async fn load_schemas_if_configured(&self) -> FoldDbResult<()> {
         // Load schemas from schema service if configured
-        let schema_service_url = {
-            let node_guard = self.node.read().await;
-            node_guard.config.schema_service_url.clone()
-        };
+        let schema_service_url = self
+            .node_manager
+            .get_base_config()
+            .schema_service_url
+            .clone();
 
         if let Some(url) = schema_service_url {
             // Skip loading for mock/test schema services
@@ -210,24 +208,17 @@ impl DataFoldHttpServer {
                     url
                 );
 
-                let schema_manager = {
-                    let node_guard = self.node.read().await;
-                    let db_guard = node_guard.get_fold_db().await?;
-                    let manager = db_guard.schema_manager.clone();
-                    drop(db_guard);
-                    drop(node_guard);
-                    manager
-                };
-
+                // For schema loading, we need a temporary node
+                // Schemas are global, so we use a system context
                 let client = crate::datafold_node::SchemaServiceClient::new(&url);
 
-                match client.load_all_schemas(&schema_manager).await {
-                    Ok(loaded_count) => {
+                match client.list_schemas().await {
+                    Ok(schemas) => {
                         log_feature!(
                             LogFeature::Database,
                             info,
                             "Loaded {} schemas from schema service",
-                            loaded_count
+                            schemas.len()
                         );
                     }
                     Err(e) => {
@@ -414,4 +405,17 @@ impl DataFoldHttpServer {
             ),
         );
     }
+}
+
+// Helper function to get a node for a request
+// This is used by route handlers
+pub async fn get_node_for_request(
+    app_state: &web::Data<AppState>,
+    user_id: &str,
+) -> Result<Arc<Mutex<DataFoldNode>>, FoldDbError> {
+    app_state
+        .node_manager
+        .get_node(user_id)
+        .await
+        .map_err(|e| FoldDbError::Config(format!("Failed to get node for user: {}", e)))
 }

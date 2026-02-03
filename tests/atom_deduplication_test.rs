@@ -1,5 +1,5 @@
-use datafold::atom::Atom;
-use datafold::testing_utils::TestDatabaseFactory;
+use fold_db::atom::Atom;
+use fold_db::testing_utils::TestDatabaseFactory;
 use serde_json::json;
 
 #[test]
@@ -84,7 +84,7 @@ async fn test_atom_deduplication_in_db() {
     // Use the same pattern as in atom_operations_v2.rs
     let atom_key = format!("atom:{}", atom1.uuid());
     // atoms_store() returns &Arc<TypedKvStore>, dereference to get TypedKvStore which implements TypedStore
-    use datafold::storage::traits::TypedStore;
+    use fold_db::storage::traits::TypedStore;
     let stored_atom: Option<Atom> = (**db_ops.atoms_store())
         .get_item::<Atom>(&atom_key)
         .await

@@ -9,6 +9,7 @@ use crate::ingestion::{IngestionConfig, ProgressTracker};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
+use crate::server::routes::require_node;
 use crate::storage::UploadStorage;
 use actix_multipart::Multipart;
 use actix_web::{web, HttpResponse, Responder};
@@ -118,18 +119,15 @@ pub async fn upload_file(
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    let user_id = match crate::logging::core::get_current_user_id() {
-        Some(uid) => uid,
-        None => {
-            return HttpResponse::Unauthorized()
-                .json(json!({"success": false, "error": "User not authenticated"}))
-        }
+    let (user_id, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
     };
 
     let progress_id = spawn_background_ingestion(
         spawn_config,
         progress_tracker.get_ref(),
-        state.node.clone(),
+        node_arc,
         progress_id,
         user_id,
     )

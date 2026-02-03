@@ -119,8 +119,8 @@ impl S3IngestionRequest {
 /// # Example
 ///
 /// ```ignore
-/// use datafold::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
-/// use datafold::storage::UploadStorage;
+/// use fold_db::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
+/// use fold_db::storage::UploadStorage;
 /// use std::sync::Arc;
 ///
 /// #[tokio::main]
@@ -221,8 +221,8 @@ pub async fn ingest_from_s3_path_async(
 /// # Example
 ///
 /// ```ignore
-/// use datafold::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
-/// use datafold::storage::UploadStorage;
+/// use fold_db::ingestion::{ingest_from_s3_path_sync, S3IngestionRequest};
+/// use fold_db::storage::UploadStorage;
 /// use std::sync::Arc;
 ///
 /// #[tokio::main]

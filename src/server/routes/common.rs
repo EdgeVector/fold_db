@@ -1,7 +1,11 @@
 //! Common utilities for HTTP routes.
 
-use actix_web::{http::StatusCode, HttpResponse};
+use crate::datafold_node::DataFoldNode;
+use crate::server::http_server::AppState;
+use actix_web::{http::StatusCode, web, HttpResponse};
 use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Convert a HandlerError to an appropriate HTTP response.
 ///
@@ -31,4 +35,31 @@ pub fn require_user_context() -> Result<String, HttpResponse> {
             "code": "MISSING_USER_CONTEXT"
         }))
     })
+}
+
+/// Get a node for the current user from the NodeManager.
+///
+/// This is the key function for lazy per-user node initialization.
+/// Nodes are created on first request and cached for subsequent requests.
+pub async fn get_node_for_user(
+    state: &web::Data<AppState>,
+    user_id: &str,
+) -> Result<Arc<Mutex<DataFoldNode>>, HttpResponse> {
+    state.node_manager.get_node(user_id).await.map_err(|e| {
+        log::error!("Failed to get node for user {}: {}", user_id, e);
+        HttpResponse::InternalServerError().json(json!({
+            "ok": false,
+            "error": format!("Failed to initialize user context: {}", e),
+            "code": "NODE_CREATION_FAILED"
+        }))
+    })
+}
+
+/// Helper macro-like pattern to get node for current user context
+pub async fn require_node(
+    state: &web::Data<AppState>,
+) -> Result<(String, Arc<Mutex<DataFoldNode>>), HttpResponse> {
+    let user_hash = require_user_context()?;
+    let node = get_node_for_user(state, &user_hash).await?;
+    Ok((user_hash, node))
 }

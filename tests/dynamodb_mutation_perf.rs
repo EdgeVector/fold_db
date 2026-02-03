@@ -1,8 +1,8 @@
 #![cfg(feature = "aws-backend")]
-use datafold::datafold_node::config::DatabaseConfig;
-use datafold::datafold_node::{DataFoldNode, NodeConfig};
-use datafold::schema::types::Mutation;
-use datafold::storage::{CloudConfig, ExplicitTables};
+use fold_db::datafold_node::config::DatabaseConfig;
+use fold_db::datafold_node::{DataFoldNode, NodeConfig};
+use fold_db::schema::types::Mutation;
+use fold_db::storage::{CloudConfig, ExplicitTables};
 use serde_json::json;
 use std::collections::HashMap;
 

@@ -1,13 +1,11 @@
-use crate::datafold_node::config::DatabaseConfig;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::server::routes::{handler_error_to_response, require_user_context};
+use crate::server::http_server::AppState;
+use crate::server::routes::{handler_error_to_response, require_node, require_user_context};
+use crate::storage::config::DatabaseConfig;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-
-use crate::datafold_node::DataFoldNode;
-use crate::server::http_server::AppState;
 
 /// Get system status information
 #[utoipa::path(
@@ -19,11 +17,11 @@ use crate::server::http_server::AppState;
     )
 )]
 pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     match crate::handlers::system::get_system_status(&user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),
@@ -44,11 +42,11 @@ pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder {
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     match crate::handlers::system::get_node_private_key(&user_hash, &node).await {
         Ok(response) => {
@@ -80,11 +78,11 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
     )
 )]
 pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
-    let user_hash = match require_user_context() {
-        Ok(hash) => hash,
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
         Err(response) => return response,
     };
-    let node = state.node.read().await;
+    let node = node_arc.lock().await;
 
     match crate::handlers::system::get_node_public_key(&user_hash, &node).await {
         Ok(response) => {
@@ -197,7 +195,7 @@ pub async fn reset_database(
     }
 
     // Clone dependencies for the background task
-    let state_clone = state.clone();
+    let node_manager_clone = state.node_manager.clone();
     let tracker_clone = progress_tracker.clone();
     let job_id_clone = job_id.clone();
     let user_id_clone = user_id.clone();
@@ -212,8 +210,26 @@ pub async fn reset_database(
                 let _ = tracker_clone.save(&job).await;
             }
 
+            // Get node from NodeManager for this user
+            let node_arc = match node_manager_clone.get_node(&user_id_clone).await {
+                Ok(n) => n,
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::HttpServer,
+                        error,
+                        "Failed to get node for reset: {}",
+                        e
+                    );
+                    if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                        job.fail(format!("Failed to get node: {}", e));
+                        let _ = tracker_clone.save(&job).await;
+                    }
+                    return;
+                }
+            };
+
             // Create processor
-            let temp_processor_node = state_clone.node.read().await.clone();
+            let temp_processor_node = node_arc.lock().await.clone();
             let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
 
             // Step 1: Reset schema service
@@ -242,47 +258,23 @@ pub async fn reset_database(
                 return;
             }
 
-            // Update progress: Re-initializing node
+            // Step 3: Invalidate the cached node so it gets re-created on next access
+            node_manager_clone.invalidate_node(&user_id_clone).await;
+
+            log_feature!(
+                LogFeature::HttpServer,
+                info,
+                "Database reset completed successfully for user: {}",
+                user_id_clone
+            );
+
+            // Mark job as complete
             if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                job.update_progress(80, "Re-initializing node...".to_string());
+                job.complete(Some(serde_json::json!({
+                    "user_id": user_id_clone,
+                    "message": "Database reset successfully. All data has been cleared."
+                })));
                 let _ = tracker_clone.save(&job).await;
-            }
-
-            // Step 3: Re-initialize the node
-            let mut node_lock = state_clone.node.write().await;
-            let config = node_lock.config.clone();
-
-            match DataFoldNode::new(config).await {
-                Ok(new_node) => {
-                    *node_lock = new_node;
-                    log_feature!(
-                        LogFeature::HttpServer,
-                        info,
-                        "Database reset completed successfully for user: {}",
-                        user_id_clone
-                    );
-
-                    // Mark job as complete
-                    if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                        job.complete(Some(serde_json::json!({
-                            "user_id": user_id_clone,
-                            "message": "Database reset successfully. All data has been cleared."
-                        })));
-                        let _ = tracker_clone.save(&job).await;
-                    }
-                }
-                Err(e) => {
-                    log_feature!(
-                        LogFeature::HttpServer,
-                        error,
-                        "Failed to re-initialize node after reset: {}",
-                        e
-                    );
-                    if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                        job.fail(format!("Node re-initialization failed: {}", e));
-                        let _ = tracker_clone.save(&job).await;
-                    }
-                }
             }
         })
         .await;
@@ -324,8 +316,12 @@ pub async fn reset_schema_service(
         });
     }
 
-    // Get the schema service client from the node
-    let node = state.node.read().await;
+    // Get the schema service client from the node via NodeManager
+    let (_user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let node = node_arc.lock().await;
     let schema_client = node.get_schema_client();
 
     // Call the schema service reset endpoint
@@ -420,8 +416,8 @@ pub struct DatabaseConfigResponse {
     )
 )]
 pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
-    let node = state.node.read().await;
-    let config = &node.config;
+    // Get the base configuration from NodeManager (not per-user)
+    let config = state.node_manager.get_base_config();
 
     let db_config = match &config.database {
         DatabaseConfig::Local { path } => DatabaseConfigDto::Local {
@@ -469,136 +465,24 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn update_database_config(
-    state: web::Data<AppState>,
-    req: web::Json<DatabaseConfigRequest>,
+    _state: web::Data<AppState>,
+    _req: web::Json<DatabaseConfigRequest>,
 ) -> impl Responder {
-    let node = state.node.read().await;
-    let mut config = node.config.clone();
-
-    // Convert DTO to internal config
-    let new_db_config = match &req.database {
-        DatabaseConfigDto::Local { path } => DatabaseConfig::Local {
-            path: std::path::PathBuf::from(path),
-        },
-        #[cfg(feature = "aws-backend")]
-        DatabaseConfigDto::Cloud(dto) => {
-            DatabaseConfig::Cloud(Box::new(crate::storage::CloudConfig {
-                region: dto.region.clone(),
-                auto_create: dto.auto_create,
-                user_id: dto.user_id.clone(),
-                file_storage_bucket: dto.file_storage_bucket.clone(),
-                tables: crate::storage::ExplicitTables {
-                    main: dto.tables.main.clone(),
-                    metadata: dto.tables.metadata.clone(),
-                    permissions: dto.tables.permissions.clone(),
-                    transforms: dto.tables.transforms.clone(),
-                    orchestrator: dto.tables.orchestrator.clone(),
-                    schema_states: dto.tables.schema_states.clone(),
-                    schemas: dto.tables.schemas.clone(),
-                    public_keys: dto.tables.public_keys.clone(),
-                    transform_queue: dto.tables.transform_queue.clone(),
-                    native_index: dto.tables.native_index.clone(),
-                    process: dto.tables.process.clone(),
-                    logs: dto.tables.logs.clone(),
-                },
-            }))
-        }
-    };
-
-    config.database = new_db_config;
-
-    // Update storage_path for backward compatibility
-    match &config.database {
-        DatabaseConfig::Local { path: _ } => {
-            // No need to update storage_path as it is removed
-        }
-        #[cfg(feature = "aws-backend")]
-        DatabaseConfig::Cloud(_) => {
-            // Keep existing storage_path for Cloud/DynamoDB (used for logging/debugging)
-        }
-    }
-
-    // Updated config object is prepared above in `config` variable
-
-    // Use OperationProcessor to write configuration and handle DB logic
-    let temp_processor_node = state.node.read().await.clone();
-    let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
-
-    // Define config_path for recovery
-    let config_path =
-        std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
-
-    let updated_config = match processor
-        .update_database_configuration(config.database)
-        .await
-    {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                error,
-                "Failed to update database configuration: {}",
-                e
-            );
-            return HttpResponse::InternalServerError().json(DatabaseConfigResponse {
-                success: false,
-                message: format!("Failed to update database configuration: {}", e),
-                requires_restart: false,
-            });
-        }
-    };
-
-    // Create a new node instance with the updated config
-    match DataFoldNode::new(updated_config.clone()).await {
-        Ok(new_node) => {
-            // Replace the node in the state
-            let mut node = state.node.write().await;
-            *node = new_node;
-
-            log_feature!(
-                LogFeature::HttpServer,
-                info,
-                "Database configuration updated and node restarted successfully"
-            );
-
-            HttpResponse::Ok().json(DatabaseConfigResponse {
-                success: true,
-                message: "Database configuration updated and node restarted successfully."
-                    .to_string(),
-                requires_restart: false,
-            })
-        }
-        Err(e) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                error,
-                "Failed to recreate node with new database configuration: {}",
-                e
-            );
-
-            // Try to reload the old config
-            if let Ok(old_config) =
-                crate::datafold_node::config::load_node_config(Some(&config_path), None)
-            {
-                if let Ok(old_node) = DataFoldNode::new(old_config).await {
-                    let mut node = state.node.write().await;
-                    *node = old_node;
-                }
-            }
-
-            HttpResponse::InternalServerError().json(DatabaseConfigResponse {
-                success: false,
-                message: format!("Failed to restart node with new database configuration: {}. The previous configuration has been restored.", e),
-                requires_restart: false,
-            })
-        }
-    }
+    // NOTE: Dynamic database config updates are not supported in multi-tenant mode
+    // The database configuration is set at startup and affects all users.
+    // To change the database configuration, update the config file and restart the server.
+    HttpResponse::BadRequest().json(DatabaseConfigResponse {
+        success: false,
+        message: "Dynamic database configuration updates are not supported. Please update the configuration file and restart the server.".to_string(),
+        requires_restart: true,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::datafold_node::{DataFoldNode, NodeConfig};
+    use crate::server::node_manager::{NodeManager, NodeManagerConfig};
     use actix_web::test;
     use std::sync::Arc;
     use tempfile::tempdir;
@@ -608,10 +492,17 @@ mod tests {
         let config = NodeConfig::new(temp_dir.path().to_path_buf())
             .with_schema_service_url("test://mock")
             .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-        let node = DataFoldNode::new(config).await.unwrap();
+        let node = DataFoldNode::new(config.clone()).await.unwrap();
+
+        // Create NodeManager and pre-populate with test node
+        let node_manager_config = NodeManagerConfig {
+            base_config: config,
+        };
+        let node_manager = NodeManager::new(node_manager_config);
+        node_manager.set_node("test_user", node).await;
 
         web::Data::new(AppState {
-            node: Arc::new(tokio::sync::RwLock::new(node)),
+            node_manager: Arc::new(node_manager),
         })
     }
 

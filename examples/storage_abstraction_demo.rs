@@ -7,8 +7,8 @@
 ///! ```bash
 ///! cargo run --example storage_abstraction_demo
 ///! ```
-use datafold::db_operations::DbOperations;
-use datafold::storage::{InMemoryNamespacedStore, NamespacedStore};
+use fold_db::db_operations::DbOperations;
+use fold_db::storage::{InMemoryNamespacedStore, NamespacedStore};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

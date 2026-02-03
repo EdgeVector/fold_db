@@ -1,4 +1,4 @@
-use datafold::schema::types::{KeyConfig, KeyValue, Mutation, MutationType};
+use fold_db::schema::types::{KeyConfig, KeyValue, Mutation, MutationType};
 use std::collections::HashMap;
 
 #[allow(dead_code)]

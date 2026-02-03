@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::IngestionConfig;
@@ -28,7 +28,7 @@ pub struct IngestionSpawnConfig {
 pub async fn spawn_background_ingestion(
     config: IngestionSpawnConfig,
     progress_tracker: &ProgressTracker,
-    node: Arc<RwLock<DataFoldNode>>,
+    node: Arc<Mutex<DataFoldNode>>,
     progress_id: String,
     user_id: String,
 ) -> String {
@@ -83,7 +83,7 @@ pub async fn spawn_background_ingestion(
 /// Run the actual ingestion process in background
 async fn run_background_ingestion(
     ingestion_request: IngestionRequest,
-    node: Arc<RwLock<DataFoldNode>>,
+    node: Arc<Mutex<DataFoldNode>>,
     progress_service: ProgressService,
     progress_id: String,
     ingestion_config: IngestionConfig,
@@ -117,7 +117,7 @@ async fn run_background_ingestion(
     // Process the ingestion
     // Lock the node
     {
-        let node_guard = node.read().await;
+        let node_guard = node.lock().await;
         match service
             .process_json_with_node_and_progress(
                 ingestion_request,

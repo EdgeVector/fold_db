@@ -153,14 +153,10 @@ impl DynamoDbSchemaStore {
         Ok(Self { client, table_name })
     }
 
-    /// Get the current user_id from request context - returns error if not available
+    /// Get the current user_id from request context
+    /// Falls back to "__system__" for system-level operations when no user context is available
     fn get_current_user_id(&self) -> FoldDbResult<String> {
-        crate::logging::core::get_current_user_id().ok_or_else(|| {
-            FoldDbError::Config(
-                "No user_id available in request context - operations require user context"
-                    .to_string(),
-            )
-        })
+        Ok(crate::logging::core::get_current_user_id().unwrap_or_else(|| "__system__".to_string()))
     }
 
     /// Get the partition key (hash key) for schemas

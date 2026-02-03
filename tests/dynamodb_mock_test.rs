@@ -3,8 +3,8 @@ use aws_sdk_dynamodb::config::Region;
 use aws_smithy_runtime_api::client::http::HttpClient;
 use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
-use datafold::storage::dynamodb_backend::DynamoDbKvStore;
-use datafold::storage::traits::KvStore;
+use fold_db::storage::dynamodb_backend::DynamoDbKvStore;
+use fold_db::storage::traits::KvStore;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
