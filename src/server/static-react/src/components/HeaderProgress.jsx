@@ -130,14 +130,10 @@ function HeaderProgress() {
           {statusText}
         </span>
 
-        {/* Mini progress bar */}
-        <div className="w-16 h-1.5 bg-terminal-lighter rounded-full overflow-hidden">
-          <div 
-            className={`h-full transition-all duration-300 rounded-full ${
-              isReset ? 'bg-terminal-red' : 
-              isJobIndexing ? 'bg-terminal-purple' : 
-              'bg-terminal-cyan'
-            }`}
+        {/* Mini progress bar - black */}
+        <div className="w-16 h-1.5 bg-gray-400 rounded-full overflow-hidden">
+          <div
+            className="h-full transition-all duration-300 rounded-full bg-black"
             style={{ width: `${avgProgress}%` }}
           />
         </div>

@@ -146,11 +146,10 @@ function StatusSection() {
     const bgColor = `bg-${cardColor}-50`
     const borderColor = `border-${cardColor}-200`
     const textColor = isIndexing ? 'text-purple-800' : isDatabaseReset ? 'text-red-800' : 'text-blue-800'
-    const barColor = isDatabaseReset ? 'bg-orange-500' : isIndexing ? 'bg-purple-500' : 'bg-blue-500'
 
     return (
-      <div 
-        key={job.id} 
+      <div
+        key={job.id}
         className={`p-4 rounded-lg border-2 ${borderColor} ${bgColor} mb-3`}
       >
         <div className="flex items-center justify-between mb-2">
@@ -168,16 +167,16 @@ function StatusSection() {
             <span>{new Date(job.started_at).toLocaleTimeString()}</span>
           </div>
         </div>
-        
-        {/* Progress bar - only shown for in-progress jobs */}
+
+        {/* Progress bar - black bar showing percentage */}
         <div className="mb-2">
           <div className="flex justify-between text-xs text-gray-600 mb-1">
             <span>{job.status_message || 'Processing...'}</span>
-            <span>{job.progress_percentage || 0}%</span>
+            <span className="font-medium">{job.progress_percentage || 0}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className={`h-2 rounded-full transition-all duration-300 ${barColor}`}
+          <div className="w-full bg-gray-300 rounded-full h-3">
+            <div
+              className="h-3 rounded-full transition-all duration-300 bg-black"
               style={{ width: `${job.progress_percentage || 0}%` }}
             />
           </div>
