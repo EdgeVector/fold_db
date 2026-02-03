@@ -1399,14 +1399,12 @@ impl NativeIndexManager {
         let mut all_entries = Vec::new();
         let mut seen = HashSet::new();
 
-        for result in results {
-            if let Ok(entries) = result {
-                for entry in entries {
-                    // Deduplicate by schema + key + field
-                    let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
-                    if seen.insert(key) {
-                        all_entries.push(entry);
-                    }
+        for entries in results.into_iter().flatten() {
+            for entry in entries {
+                // Deduplicate by schema + key + field
+                let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
+                if seen.insert(key) {
+                    all_entries.push(entry);
                 }
             }
         }
