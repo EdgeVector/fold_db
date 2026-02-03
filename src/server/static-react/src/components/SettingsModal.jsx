@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
 import { ingestionClient } from '../api/clients'
-import { getDatabaseConfig, updateDatabaseConfig, resetDatabase } from '../api/clients/systemClient'
+import { getDatabaseConfig, updateDatabaseConfig, resetDatabase, getSystemStatus } from '../api/clients/systemClient'
 import { TrashIcon } from '@heroicons/react/24/solid'
 import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
-import { useSchemaServiceConfig, SCHEMA_SERVICE_ENVIRONMENTS } from '../contexts/SchemaServiceConfigContext'
-import { checkSchemaServiceStatus } from '../api/clients/configuredSchemaClient'
 
 function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('ai')
@@ -18,11 +16,9 @@ function SettingsModal({ isOpen, onClose }) {
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   
-  // Schema service configuration
-  const { environment, setEnvironment } = useSchemaServiceConfig()
-  const [selectedSchemaEnv, setSelectedSchemaEnv] = useState(environment.id)
-  const [connectionStatus, setConnectionStatus] = useState({})
-  const [checkingStatus, setCheckingStatus] = useState({})
+  // Schema service status (from backend)
+  const [schemaServiceUrl, setSchemaServiceUrl] = useState(null)
+  const [schemaServiceLoading, setSchemaServiceLoading] = useState(false)
   
   // Database configuration
   const [dbType, setDbType] = useState('local')
@@ -44,13 +40,26 @@ function SettingsModal({ isOpen, onClose }) {
     if (isOpen) {
       loadAiConfig()
       loadDatabaseConfig()
-      setSelectedSchemaEnv(environment.id)
-      // Auto-check current environment status when opening the schema service tab
+      // Load schema service URL when opening the schema service tab
       if (activeTab === 'schema-service') {
-        checkStatus(environment.id)
+        loadSchemaServiceStatus()
       }
     }
-  }, [isOpen, environment.id, activeTab])
+  }, [isOpen, activeTab])
+
+  const loadSchemaServiceStatus = async () => {
+    setSchemaServiceLoading(true)
+    try {
+      const response = await getSystemStatus()
+      if (response.success && response.data) {
+        setSchemaServiceUrl(response.data.schema_service_url || null)
+      }
+    } catch (error) {
+      console.error('Failed to load schema service status:', error)
+    } finally {
+      setSchemaServiceLoading(false)
+    }
+  }
 
   const loadAiConfig = async () => {
     try {
@@ -101,27 +110,6 @@ function SettingsModal({ isOpen, onClose }) {
     setTimeout(() => setConfigSaveStatus(null), 3000)
   }
 
-  const checkStatus = async (envId) => {
-    const env = Object.values(SCHEMA_SERVICE_ENVIRONMENTS).find(e => e.id === envId)
-    if (!env) return
-    
-    setCheckingStatus(prev => ({ ...prev, [envId]: true }))
-    
-    try {
-      const result = await checkSchemaServiceStatus(env.baseUrl)
-      setConnectionStatus(prev => ({
-        ...prev,
-        [envId]: result
-      }))
-    } catch (error) {
-      setConnectionStatus(prev => ({
-        ...prev,
-        [envId]: { success: false, error: error.message }
-      }))
-    } finally {
-      setCheckingStatus(prev => ({ ...prev, [envId]: false }))
-    }
-  }
 
   const loadDatabaseConfig = async () => {
     try {
@@ -206,14 +194,6 @@ function SettingsModal({ isOpen, onClose }) {
     setTimeout(() => setConfigSaveStatus(null), 5000)
   }
 
-  const saveSchemaServiceConfig = () => {
-    setEnvironment(selectedSchemaEnv)
-    setConfigSaveStatus({ success: true, message: 'Schema service environment updated successfully' })
-    setTimeout(() => {
-      setConfigSaveStatus(null)
-      onClose()
-    }, 1500)
-  }
 
   const handleResetDatabase = async () => {
     setIsResetting(true)
@@ -248,50 +228,6 @@ function SettingsModal({ isOpen, onClose }) {
     }
   }
 
-  const getStatusBadge = (envId) => {
-    const status = connectionStatus[envId]
-    const checking = checkingStatus[envId]
-
-    if (checking) {
-      return (
-        <span className="inline-flex items-center text-xs badge-terminal px-2 py-1">
-          <svg className="animate-spin h-3 w-3 mr-1" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          Checking...
-        </span>
-      )
-    }
-
-    if (!status) {
-      return (
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            checkStatus(envId)
-          }}
-          className="text-xs text-terminal-blue hover:text-terminal-cyan underline"
-        >
-          Test Connection
-        </button>
-      )
-    }
-
-    if (status.success) {
-      return (
-        <span className="inline-flex items-center text-xs badge-terminal badge-terminal-success px-2 py-1">
-          ✓ Online {status.responseTime && `(${status.responseTime}ms)`}
-        </span>
-      )
-    }
-
-    return (
-      <span className="inline-flex items-center text-xs badge-terminal badge-terminal-error px-2 py-1" title={status.error}>
-        ✗ Offline
-      </span>
-    )
-  }
 
   if (!isOpen) return null
 
@@ -507,65 +443,65 @@ function SettingsModal({ isOpen, onClose }) {
               {activeTab === 'schema-service' && (
                 <div className="space-y-4">
                   <div className="mb-4">
-                    <h4 className="text-md font-semibold text-terminal-green mb-2"># Schema Service Environment</h4>
+                    <h4 className="text-md font-semibold text-terminal-green mb-2"># Schema Service</h4>
                     <p className="text-sm text-terminal-dim mb-4">
-                      Select which schema service endpoint to use. This affects where schemas are loaded from and saved to.
+                      The schema service provides centralized schema management and prevents duplicate schemas.
                     </p>
                   </div>
 
-                  <div className="space-y-3">
-                    {Object.values(SCHEMA_SERVICE_ENVIRONMENTS).map(env => (
-                      <label
-                        key={env.id}
-                        className={`flex items-start p-4 border cursor-pointer transition-all card-terminal ${
-                          selectedSchemaEnv === env.id
-                            ? 'border-terminal-green'
-                            : 'border-terminal hover:border-terminal-dim'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="schemaEnvironment"
-                          value={env.id}
-                          checked={selectedSchemaEnv === env.id}
-                          onChange={(e) => setSelectedSchemaEnv(e.target.value)}
-                          className="mt-1 mr-3"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-semibold text-terminal">{env.name}</span>
-                            <div className="flex items-center gap-2">
-                              {getStatusBadge(env.id)}
-                              {selectedSchemaEnv === env.id && (
-                                <span className="text-xs badge-terminal badge-terminal-success">Active</span>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-xs text-terminal-dim mt-1">{env.description}</p>
-                          <p className="text-xs text-terminal-dim mt-1 font-mono">
-                            {env.baseUrl || window.location.origin}
-                          </p>
-                          {connectionStatus[env.id] && !connectionStatus[env.id].success && (
-                            <p className="text-xs text-terminal-red mt-1">
-                              Error: {connectionStatus[env.id].error}
-                            </p>
-                          )}
+                  <div className="p-4 border border-terminal card-terminal">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-medium text-terminal-dim">Backend Configuration</span>
+                      {schemaServiceLoading ? (
+                        <span className="inline-flex items-center text-xs badge-terminal px-2 py-1">
+                          <svg className="animate-spin h-3 w-3 mr-1" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Loading...
+                        </span>
+                      ) : (
+                        <button
+                          onClick={loadSchemaServiceStatus}
+                          className="text-xs text-terminal-blue hover:text-terminal-cyan"
+                        >
+                          Refresh
+                        </button>
+                      )}
+                    </div>
+
+                    {schemaServiceUrl ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center text-xs badge-terminal badge-terminal-success px-2 py-1">
+                            ✓ Connected
+                          </span>
+                          <span className="text-sm text-terminal">Remote Schema Service</span>
                         </div>
-                      </label>
-                    ))}
+                        <p className="text-xs text-terminal-dim font-mono break-all">
+                          {schemaServiceUrl}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center text-xs badge-terminal px-2 py-1">
+                            ○ Local
+                          </span>
+                          <span className="text-sm text-terminal">Embedded Schema Storage</span>
+                        </div>
+                        <p className="text-xs text-terminal-dim">
+                          Schemas are stored locally. No remote schema service configured.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
-                  {configSaveStatus && (
-                    <div className={`p-3 border-l-4 ${
-                      configSaveStatus.success 
-                        ? 'border-terminal-green text-terminal-green' 
-                        : 'border-terminal-red text-terminal-red'
-                    }`}>
-                      <span className="text-sm font-medium">
-                        {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
-                      </span>
-                    </div>
-                  )}
+                  <div className="p-3 border border-terminal-dim card-terminal">
+                    <p className="text-xs text-terminal-dim">
+                      <strong>Note:</strong> Schema service configuration is set at server startup via the <code className="text-terminal-cyan">--schema-service-url</code> flag or environment variable.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -808,10 +744,10 @@ function SettingsModal({ isOpen, onClose }) {
           </div>
 
           <div className="bg-terminal px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3 border-t border-terminal">
-            {activeTab === 'ai' || activeTab === 'schema-service' || activeTab === 'database' ? (
+            {activeTab === 'ai' || activeTab === 'database' ? (
               <>
                 <button
-                  onClick={activeTab === 'ai' ? saveAiConfig : activeTab === 'schema-service' ? saveSchemaServiceConfig : saveDatabaseConfig}
+                  onClick={activeTab === 'ai' ? saveAiConfig : saveDatabaseConfig}
                   className="btn-terminal btn-terminal-primary sm:ml-3 sm:w-auto sm:text-sm"
                 >
                   → {activeTab === 'database' ? 'Save and Restart DB' : 'Save Configuration'}

@@ -28,6 +28,9 @@ pub struct SystemStatusResponse {
     pub status: String,
     pub uptime: u64,
     pub version: String,
+    /// Schema service URL configured on the backend (None = local/embedded)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_service_url: Option<String>,
 }
 
 /// Response for node key
@@ -123,7 +126,7 @@ pub struct SecurityKeyResponse {
 /// Get system status
 pub async fn get_system_status(
     user_hash: &str,
-    _node: &DataFoldNode,
+    node: &DataFoldNode,
 ) -> HandlerResult<SystemStatusResponse> {
     Ok(ApiResponse::success_with_user(
         SystemStatusResponse {
@@ -133,6 +136,7 @@ pub async fn get_system_status(
                 .unwrap_or_default()
                 .as_secs(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            schema_service_url: node.schema_service_url(),
         },
         user_hash,
     ))

@@ -37,25 +37,11 @@ export interface ResetDatabaseResponse {
 }
 
 export interface SystemStatusResponse {
-  status: 'healthy' | 'degraded' | 'unhealthy';
+  status: string;
   uptime: number;
   version?: string;
-  node_id?: string;
-  last_activity?: number;
-  database: {
-    connected: boolean;
-    schemas_count?: number;
-    size?: number;
-  };
-  network: {
-    peers_count?: number;
-    status?: string;
-  };
-  memory: {
-    used?: number;
-    total?: number;
-    percentage?: number;
-  };
+  /** Schema service URL configured on the backend (undefined = local/embedded) */
+  schema_service_url?: string;
 }
 
 export interface NodeKeyResponse {
