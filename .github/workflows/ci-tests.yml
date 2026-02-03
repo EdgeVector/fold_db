@@ -54,6 +54,12 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Build frontend (required for rust_embed)
+        run: |
+          cd src/server/static-react
+          npm ci
+          npm run build
+
       - name: Run clippy
         id: clippy
         continue-on-error: true
