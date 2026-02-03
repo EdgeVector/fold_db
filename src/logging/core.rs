@@ -338,21 +338,21 @@ impl Logger for MultiAsyncLogger {
         limit: Option<usize>,
         from_timestamp: Option<i64>,
     ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
-         // Query the first logger that supports querying?
-         // Or aggregate?
-         // For now, let's just query the first one that returns results, or just the first one.
-         // Typically, we only have one "storage" logger (DynamoDB) and one "stream" logger (Web).
-         // Web might hold recent logs in memory.
+        // Query the first logger that supports querying?
+        // Or aggregate?
+        // For now, let's just query the first one that returns results, or just the first one.
+        // Typically, we only have one "storage" logger (DynamoDB) and one "stream" logger (Web).
+        // Web might hold recent logs in memory.
 
-         for logger in &self.loggers {
-             // Try to query
-             match logger.query(user_id, limit, from_timestamp).await {
-                 Ok(logs) if !logs.is_empty() => return Ok(logs),
-                 Ok(_) => continue, // Try next logger
-                 Err(_) => continue,
-             }
-         }
-         Ok(vec![])
+        for logger in &self.loggers {
+            // Try to query
+            match logger.query(user_id, limit, from_timestamp).await {
+                Ok(logs) if !logs.is_empty() => return Ok(logs),
+                Ok(_) => continue, // Try next logger
+                Err(_) => continue,
+            }
+        }
+        Ok(vec![])
     }
 }
 
@@ -376,17 +376,15 @@ impl Logger for MultiAsyncLogger {
 pub struct LogBridge {
     logger: Arc<dyn Logger>,
     handle: tokio::runtime::Handle,
-    default_user_id: Option<String>,
 }
 
 impl LogBridge {
     /// Create a new log bridge
     /// Must be called from within a Tokio runtime
-    pub fn new(logger: Arc<dyn Logger>, default_user_id: Option<String>) -> Self {
+    pub fn new(logger: Arc<dyn Logger>) -> Self {
         Self {
             logger,
             handle: tokio::runtime::Handle::current(),
-            default_user_id,
         }
     }
 }
@@ -415,7 +413,7 @@ impl log::Log for LogBridge {
                 level,
                 event_type: record.target().to_string(),
                 message: record.args().to_string(),
-                user_id: get_current_user_id().or_else(|| self.default_user_id.clone()),
+                user_id: get_current_user_id(),
                 metadata: None,
             };
 

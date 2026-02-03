@@ -24,8 +24,6 @@ use crate::storage::CloudConfig;
 pub struct DynamoDbSchemaStore {
     client: DynamoClient,
     table_name: String,
-    /// Default user_id for operations without request context (e.g., startup)
-    default_user_id: String,
 }
 
 impl DynamoDbSchemaStore {
@@ -152,29 +150,30 @@ impl DynamoDbSchemaStore {
             }
         }
 
-        Ok(Self {
-            client,
-            table_name,
-            default_user_id: user_id,
-        })
+        Ok(Self { client, table_name })
     }
 
-    /// Get the current user_id - from request context if available, otherwise default
-    fn get_current_user_id(&self) -> String {
-        crate::logging::core::get_current_user_id().unwrap_or_else(|| self.default_user_id.clone())
+    /// Get the current user_id from request context - returns error if not available
+    fn get_current_user_id(&self) -> FoldDbResult<String> {
+        crate::logging::core::get_current_user_id().ok_or_else(|| {
+            FoldDbError::Config(
+                "No user_id available in request context - operations require user context"
+                    .to_string(),
+            )
+        })
     }
 
     /// Get the partition key (hash key) for schemas
     /// Format: user_id
     /// The schema_name goes in the sort key (SK)
-    fn get_partition_key(&self) -> String {
+    fn get_partition_key(&self) -> FoldDbResult<String> {
         self.get_current_user_id()
     }
 
     /// Get a schema by its topology hash
     /// Includes retry logic for transient failures
     pub async fn get_schema(&self, schema_name: &str) -> FoldDbResult<Option<Schema>> {
-        let pk = self.get_partition_key();
+        let pk = self.get_partition_key()?;
         let result = retry_operation!(
             self.client
                 .get_item()
@@ -243,7 +242,7 @@ impl DynamoDbSchemaStore {
             .as_secs();
 
         // Check if schema already exists to preserve CreatedAt
-        let pk = self.get_partition_key();
+        let pk = self.get_partition_key()?;
         let existing_item = self
             .client
             .get_item()
@@ -275,7 +274,7 @@ impl DynamoDbSchemaStore {
             timestamp.to_string()
         };
 
-        let pk = self.get_partition_key();
+        let pk = self.get_partition_key()?;
         retry_operation!(
             self.client
                 .put_item()
@@ -305,7 +304,7 @@ impl DynamoDbSchemaStore {
     pub async fn list_schema_names(&self) -> FoldDbResult<Vec<String>> {
         let mut schema_names = Vec::new();
         let mut last_evaluated_key: Option<HashMap<String, AttributeValue>> = None;
-        let pk = self.get_partition_key();
+        let pk = self.get_partition_key()?;
 
         loop {
             let key_to_use = last_evaluated_key.take();
@@ -378,7 +377,7 @@ impl DynamoDbSchemaStore {
     pub async fn get_all_schemas(&self) -> FoldDbResult<Vec<Schema>> {
         let mut schemas = Vec::new();
         let mut last_evaluated_key: Option<HashMap<String, AttributeValue>> = None;
-        let pk = self.get_partition_key();
+        let pk = self.get_partition_key()?;
 
         loop {
             let key_to_use = last_evaluated_key.take();
@@ -432,7 +431,8 @@ impl DynamoDbSchemaStore {
                     if let Some(schema_json) = item.get("SchemaJson").and_then(|v| v.as_s().ok()) {
                         let schema_name = item
                             .get("SK")
-                            .and_then(|v| v.as_s().ok()).cloned()
+                            .and_then(|v| v.as_s().ok())
+                            .cloned()
                             .unwrap_or_else(|| "unknown".to_string());
 
                         let mut schema: Schema =
@@ -475,7 +475,7 @@ impl DynamoDbSchemaStore {
             let mut write_requests = Vec::new();
 
             for name in chunk {
-                let pk = self.get_partition_key();
+                let pk = self.get_partition_key()?;
                 let mut key_map = HashMap::new();
                 key_map.insert("PK".to_string(), AttributeValue::S(pk.clone()));
                 key_map.insert("SK".to_string(), AttributeValue::S(name.clone()));

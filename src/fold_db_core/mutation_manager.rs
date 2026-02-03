@@ -13,16 +13,12 @@ use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 use super::infrastructure::message_bus::{AsyncMessageBus, Event};
 use super::orchestration::index_status::IndexStatusTracker;
 use crate::atom::Atom;
-use crate::db_operations::DbOperations;
+use crate::db_operations::{DbOperations, MoleculeData};
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::{SchemaCore, SchemaError};
-use crate::storage::traits::TypedStore;
-use futures_util::future::join_all;
 use log::{debug, error, warn};
 use std::collections::HashSet;
-use std::future::Future;
-use std::pin::Pin;
 
 /// Manages mutation operations for the FoldDB system
 pub struct MutationManager {
@@ -128,9 +124,10 @@ impl MutationManager {
             // Indexing is now handled asynchronously via IndexOrchestrator subscribing to MutationExecuted events
 
             // Process all mutations for this schema with 3-phase optimization
-            // Phase 1: Concurrent Atom Creation
+            // Phase 1: Create atoms in memory, then batch store
             let phase1_start = std::time::Instant::now();
-            let mut atom_tasks = Vec::new();
+            let mut atoms_to_store: Vec<Atom> = Vec::new();
+            let mut atom_results: Vec<(usize, String, Atom)> = Vec::new();
 
             // Pre-calculate key values for all mutations to avoid doing it in the inner loop
             let mut mutation_key_values = Vec::with_capacity(schema_mutations.len());
@@ -161,31 +158,27 @@ impl MutationManager {
                 }
                 validation_time += val_start.elapsed();
 
-                // Collect atom creation tasks
+                // Create atoms in memory (no storage yet)
                 for (field_name, value) in &mutation.fields_and_values {
-                    let db_ops = self.db_ops.clone();
-                    let s_name = schema_name.clone();
-                    let p_key = mutation.pub_key.clone();
-                    let val = value.clone();
-                    let src = mutation.source_file_name.clone();
-                    let f_name = field_name.clone();
-
-                    atom_tasks.push(async move {
-                        let atom = db_ops
-                            .create_and_store_atom_for_mutation_deferred(&s_name, &p_key, val, src)
-                            .await?;
-                        Ok::<_, SchemaError>((idx, f_name, atom))
-                    });
+                    let atom = DbOperations::create_atom(
+                        &schema_name,
+                        &mutation.pub_key,
+                        value.clone(),
+                        mutation.source_file_name.clone(),
+                    );
+                    atoms_to_store.push(atom.clone());
+                    atom_results.push((idx, field_name.clone(), atom));
                 }
             }
 
-            // Execute Phase 1
-            let atom_results_raw = join_all(atom_tasks).await;
-            let atom_results: Vec<(usize, String, Atom)> = atom_results_raw
-                .into_iter()
-                .collect::<Result<_, SchemaError>>()?;
+            // Batch store all atoms at once
+            if !atoms_to_store.is_empty() {
+                log::info!("💾 Batch storing {} atoms", atoms_to_store.len());
+                self.db_ops.batch_store_atoms(atoms_to_store).await?;
+            }
+
             *timing_breakdown
-                .entry("  - create_atoms_parallel")
+                .entry("  - create_atoms_batch")
                 .or_insert(std::time::Duration::ZERO) += phase1_start.elapsed();
 
             // Phase 2: Serial Memory Update and Index Collection
@@ -223,78 +216,41 @@ impl MutationManager {
                 .entry("  - update_memory_serial")
                 .or_insert(std::time::Duration::ZERO) += phase2_start.elapsed();
 
-            // Phase 3: Concurrent Molecule Persistence
+            // Phase 3: Batch Molecule Persistence
             let phase3_start = std::time::Instant::now();
-            #[allow(clippy::type_complexity)]
-            let mut persist_tasks: Vec<
-                Pin<Box<dyn Future<Output = Result<(), SchemaError>> + Send>>,
-            > = Vec::new();
+            let mut molecules_to_store: Vec<(String, MoleculeData)> = Vec::new();
 
             for field_name in modified_fields {
                 let schema_field = schema.runtime_fields.get(&field_name).unwrap();
                 let molecule_uuid = schema_field.common().molecule_uuid().unwrap().to_string(); // verified is_some above
-                let ref_key = format!("ref:{}", molecule_uuid);
-                let db_ops = self.db_ops.clone();
 
                 match schema_field {
                     FieldVariant::Single(f) => {
                         if let Some(molecule) = f.base.molecule.clone() {
-                            persist_tasks.push(Box::pin(async move {
-                                db_ops
-                                    .molecules_store()
-                                    .put_item(&ref_key, &molecule)
-                                    .await
-                                    .map_err(|e| {
-                                        SchemaError::InvalidData(format!(
-                                            "Failed to store molecule: {}",
-                                            e
-                                        ))
-                                    })
-                            }));
+                            molecules_to_store.push((molecule_uuid, MoleculeData::Single(molecule)));
                         }
                     }
                     FieldVariant::Range(f) => {
                         if let Some(molecule) = f.base.molecule.clone() {
-                            persist_tasks.push(Box::pin(async move {
-                                db_ops
-                                    .molecules_store()
-                                    .put_item(&ref_key, &molecule)
-                                    .await
-                                    .map_err(|e| {
-                                        SchemaError::InvalidData(format!(
-                                            "Failed to store molecule: {}",
-                                            e
-                                        ))
-                                    })
-                            }));
+                            molecules_to_store.push((molecule_uuid, MoleculeData::Range(molecule)));
                         }
                     }
                     FieldVariant::HashRange(f) => {
                         if let Some(molecule) = f.base.molecule.clone() {
-                            persist_tasks.push(Box::pin(async move {
-                                db_ops
-                                    .molecules_store()
-                                    .put_item(&ref_key, &molecule)
-                                    .await
-                                    .map_err(|e| {
-                                        SchemaError::InvalidData(format!(
-                                            "Failed to store molecule: {}",
-                                            e
-                                        ))
-                                    })
-                            }));
+                            molecules_to_store.push((molecule_uuid, MoleculeData::HashRange(molecule)));
                         }
                     }
                 }
             }
 
-            let persist_results_raw = join_all(persist_tasks).await;
-            for res in persist_results_raw {
-                res?; // Propagate any errors from molecule persistence
+            // Batch store all molecules at once
+            if !molecules_to_store.is_empty() {
+                log::info!("💾 Batch storing {} molecules", molecules_to_store.len());
+                self.db_ops.batch_store_molecules(molecules_to_store).await?;
             }
 
             *timing_breakdown
-                .entry("  - write_molecules_parallel")
+                .entry("  - write_molecules_batch")
                 .or_insert(std::time::Duration::ZERO) += phase3_start.elapsed();
 
             // Populate mutation contexts for events

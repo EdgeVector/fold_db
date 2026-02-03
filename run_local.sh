@@ -41,6 +41,7 @@ empty_db() {
 # Parse flags
 RESET_DB=false
 EMPTY_DB=false
+LOCAL_SCHEMA=false
 for arg in "$@"; do
     case "$arg" in
         --reset-db)
@@ -49,6 +50,10 @@ for arg in "$@"; do
             ;;
         --empty-db)
             EMPTY_DB=true
+            shift
+            ;;
+        --local-schema)
+            LOCAL_SCHEMA=true
             shift
             ;;
         *)
@@ -86,7 +91,7 @@ cat > "$CONFIG_FILE" <<EOF
     "require_signatures": false,
     "encrypt_at_rest": false
   },
-  "schema_service_url": "http://127.0.0.1:9002"
+  "schema_service_url": "https://ygyu7ritx8.execute-api.us-west-2.amazonaws.com/schema"
 }
 EOF
 echo "Local configuration saved to $CONFIG_FILE"
@@ -144,54 +149,65 @@ fi
 # Go back to root directory
 cd ../../..
 
-# Start the schema service first
-echo "Starting the schema service on port 9002 in the background..."
-nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
+# Schema Service Configuration
+# By default, use the global schema service (via API Gateway)
+# Once schema.folddb.com is set up, change to: https://schema.folddb.com
+# Use --local-schema flag to run a local schema service for testing/offline development
+SCHEMA_SERVICE_URL="https://ygyu7ritx8.execute-api.us-west-2.amazonaws.com/schema"
 
-# Get the schema service process ID
-SCHEMA_SERVICE_PID=$!
+if [ "$LOCAL_SCHEMA" = true ]; then
+    SCHEMA_SERVICE_URL="http://127.0.0.1:9002"
+    
+    # Start the schema service
+    echo "Starting LOCAL schema service on port 9002 in the background..."
+    nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
 
-# Wait for schema service to be healthy with proper health check
-echo "Waiting for schema service to be ready..."
-SCHEMA_READY=false
-for i in {1..30}; do
-    if kill -0 $SCHEMA_SERVICE_PID 2>/dev/null; then
-        if curl -s http://127.0.0.1:9002/api/health > /dev/null 2>&1; then
-            SCHEMA_READY=true
-            break
+    # Get the schema service process ID
+    SCHEMA_SERVICE_PID=$!
+
+    # Wait for schema service to be healthy with proper health check
+    echo "Waiting for local schema service to be ready..."
+    SCHEMA_READY=false
+    for i in {1..30}; do
+        if kill -0 $SCHEMA_SERVICE_PID 2>/dev/null; then
+            if curl -s http://127.0.0.1:9002/api/health > /dev/null 2>&1; then
+                SCHEMA_READY=true
+                break
+            fi
+            sleep 1
+        else
+            echo "Schema service process died. Check schema_service.log for details."
+            exit 1
         fi
-        sleep 1
+    done
+
+    if [ "$SCHEMA_READY" = true ]; then
+        echo "Local schema service started successfully with PID: $SCHEMA_SERVICE_PID"
+        echo "Schema service logs are being written to: schema_service.log"
     else
-        echo "Schema service process died. Check schema_service.log for details."
+        echo "Local schema service failed to become healthy within 30 seconds. Check schema_service.log for details."
+        kill $SCHEMA_SERVICE_PID 2>/dev/null
         exit 1
     fi
-done
-
-if [ "$SCHEMA_READY" = true ]; then
-    echo "Schema service started successfully with PID: $SCHEMA_SERVICE_PID"
-    echo "Schema service logs are being written to: schema_service.log"
 else
-    echo "Schema service failed to become healthy within 30 seconds. Check schema_service.log for details."
-    kill $SCHEMA_SERVICE_PID 2>/dev/null
-    exit 1
+    echo "Using global schema service at: $SCHEMA_SERVICE_URL"
+    
+    # Verify global schema service is reachable
+    echo "Checking schema service connectivity..."
+    if curl -s --connect-timeout 5 "$SCHEMA_SERVICE_URL" > /dev/null 2>&1; then
+        echo "Schema service is reachable."
+    else
+        echo "WARNING: Global schema service at $SCHEMA_SERVICE_URL may not be reachable."
+        echo "         Consider using --local-schema flag for offline development."
+        echo "         The server will still start, but schema operations may fail."
+    fi
 fi
-
-# Migrate schemas from available_schemas to the database
-# DISABLED: Migration is commented out - schema service will start with empty database
-# echo "Migrating schemas from available_schemas to database..."
-# python3 scripts/migrate_schemas_to_db.py --schemas-dir available_schemas --service-url http://127.0.0.1:9002
-# 
-# if [ $? -ne 0 ]; then
-#     echo "Warning: Schema migration had issues. Check output above."
-#     echo "Continuing with server startup..."
-# fi
-echo "Schema migration is disabled. Schema service will start with an empty database."
 
 # Run the HTTP server in the background with schema service URL
 echo "Starting the HTTP server on port 9001 in the background..."
 # Export OPENROUTER_API_KEY if set in .zshrc
 source ~/.zshrc 2>/dev/null || true
-nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "http://127.0.0.1:9002" > server.log 2>&1 &
+nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "$SCHEMA_SERVICE_URL" > server.log 2>&1 &
 
 # Get the process ID
 SERVER_PID=$!
@@ -216,12 +232,19 @@ done
 if [ "$HTTP_READY" = true ]; then
     echo "HTTP server started successfully with PID: $SERVER_PID"
     echo "Server logs are being written to: server.log"
-    echo "To stop both servers, run: kill $SCHEMA_SERVICE_PID $SERVER_PID"
+    echo "Schema service: $SCHEMA_SERVICE_URL"
+    if [ "$LOCAL_SCHEMA" = true ]; then
+        echo "To stop both servers, run: kill $SCHEMA_SERVICE_PID $SERVER_PID"
+        echo "To view schema service logs, run: tail -f schema_service.log"
+    else
+        echo "To stop the server, run: kill $SERVER_PID"
+    fi
     echo "To view server logs, run: tail -f server.log"
-    echo "To view schema service logs, run: tail -f schema_service.log"
 else
     echo "HTTP server failed to become healthy within 30 seconds. Check server.log for details."
-    kill $SCHEMA_SERVICE_PID 2>/dev/null
+    if [ "$LOCAL_SCHEMA" = true ]; then
+        kill $SCHEMA_SERVICE_PID 2>/dev/null
+    fi
     kill $SERVER_PID 2>/dev/null
     exit 1
 fi

@@ -339,15 +339,10 @@ impl DataFoldNode {
                     mutation_count
                 );
 
-                // Indexing logic
-                let result = if native_index_mgr.is_async() {
-                    native_index_mgr
-                        .batch_index_field_values_with_classifications_async(&index_operations)
-                        .await
-                } else {
-                    native_index_mgr
-                        .batch_index_field_values_with_classifications(&index_operations)
-                };
+                // Use append-only indexing (optimized: no read-modify-write)
+                let result = native_index_mgr
+                    .batch_index_append_only(&index_operations)
+                    .await;
 
                 if let Err(e) = result {
                     crate::log_feature!(

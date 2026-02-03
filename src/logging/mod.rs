@@ -158,7 +158,7 @@ impl LoggingSystem {
             let _ = GLOBAL_LOGGER.set(multi_arc.clone());
 
             // Bridge to sync world
-            let bridge = LogBridge::new(multi_arc, config.general.app_id.clone());
+            let bridge = LogBridge::new(multi_arc);
             sync_loggers.push(Box::new(bridge));
         }
 

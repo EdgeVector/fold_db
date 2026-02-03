@@ -364,6 +364,7 @@ pub async fn ai_native_index_query(
     };
 
     let node = app_state.node.read().await;
+
     let user_hash = get_user_hash();
 
     match shared_handlers::ai_native_index_query(

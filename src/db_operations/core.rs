@@ -119,7 +119,9 @@ impl DbOperations {
         table_name: String,
         user_id: String,
     ) -> Result<Self, crate::storage::StorageError> {
-        let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name, user_id.clone());
+        // Note: user_id is no longer passed to the store - it's obtained from request context
+        let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
+        let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
         Self::from_namespaced_store(Arc::new(store)).await
     }
 
@@ -131,7 +133,9 @@ impl DbOperations {
         auto_create: bool,
         user_id: String,
     ) -> Result<Self, crate::storage::StorageError> {
-        let store = DynamoDbNamespacedStore::new(client, resolver, auto_create, user_id.clone());
+        // Note: user_id is no longer passed to the store - it's obtained from request context
+        let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
+        let store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
         Self::from_namespaced_store(Arc::new(store)).await
     }
 

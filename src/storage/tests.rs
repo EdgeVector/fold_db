@@ -175,11 +175,8 @@ mod storage_abstraction_tests {
                 .load()
                 .await;
             let client = Client::new(&config);
-            let dynamodb_store = DynamoDbNamespacedStore::new_with_prefix(
-                client,
-                "test-table".to_string(),
-                "user_123".to_string(),
-            );
+            let dynamodb_store =
+                DynamoDbNamespacedStore::new_with_prefix(client, "test-table".to_string());
 
             match dynamodb_store.open_namespace("test").await {
                 Ok(dynamodb_kv) => {
@@ -232,34 +229,13 @@ mod storage_abstraction_tests {
             .await;
         let client = Arc::new(Client::new(&config));
 
-        // Test with user_id - partition key should be user_id
-        let store_with_user = DynamoDbKvStore::new(
-            client.clone(),
-            "test-table".to_string(),
-            "user_123".to_string(),
-        );
-
-        // Test partition key
-        let pk = store_with_user.get_partition_key();
-        assert_eq!(pk, "user_123");
+        // Create a store to test the sort key function which doesn't require user context
+        let store = DynamoDbKvStore::new(client.clone(), "test-table".to_string());
 
         // Test sort key (should not have user_id prefix)
         let test_key = b"atom:abc123";
-        let sort_key = store_with_user.make_sort_key(test_key);
+        let sort_key = store.make_sort_key(test_key);
         assert_eq!(sort_key, "atom:abc123");
-
-        // Test without user_id - partition key should be "default"
-        let store_without_user = DynamoDbKvStore::new(
-            client.clone(),
-            "test-table".to_string(),
-            "default".to_string(),
-        );
-
-        let pk_default = store_without_user.get_partition_key();
-        assert_eq!(pk_default, "default");
-
-        let sort_key_no_user = store_without_user.make_sort_key(test_key);
-        assert_eq!(sort_key_no_user, "atom:abc123");
     }
 
     #[tokio::test]
@@ -275,39 +251,34 @@ mod storage_abstraction_tests {
         let client = Client::new(&config);
 
         // Test table name generation
-        let store = DynamoDbNamespacedStore::new_with_prefix(
-            client,
-            "DataFoldStorage".to_string(),
-            "main_user".to_string(),
-        );
+        let store = DynamoDbNamespacedStore::new_with_prefix(client, "DataFoldStorage".to_string());
         let table_name = store.get_table_name_for_namespace("main");
         assert_eq!(table_name, "DataFoldStorage-main");
 
-        // Test with user_id
-        let store_with_user = DynamoDbNamespacedStore::new_with_prefix(
+        // Test that opening a namespace works (user context will be obtained from request context)
+        let store2 = DynamoDbNamespacedStore::new_with_prefix(
             Client::new(&config),
             "DataFoldStorage".to_string(),
-            "default".to_string(),
-        )
-        .with_user_id("user_456".to_string());
+        );
 
-        // Verify user_id is stored
-        // (We can't directly access private fields, but we can test through open_namespace)
-        // Note: This will fail if AWS credentials are not configured, which is expected in CI/test environments
-        match store_with_user.open_namespace("test").await {
+        // Verify the store is created correctly
+        // Note: open_namespace will fail without AWS credentials or user context,
+        // which is expected in CI/test environments
+        match store2.open_namespace("test").await {
             Ok(kv) => {
-                // The kv store should have user_id set, which will be used as the partition key
+                // The kv store will obtain user_id from request context
                 assert_eq!(kv.backend_name(), "dynamodb");
             }
             Err(e) => {
-                // If AWS is not available, that's ok - we're just testing the structure
-                // The error should be about table creation/access, not about the store structure
+                // If AWS is not available or user context is missing, that's ok - we're just testing the structure
+                // The error should be about table creation/access or user context, not about the store structure
                 let error_msg = e.to_string();
                 assert!(
                     error_msg.contains("DynamoDbError")
                         || error_msg.contains("dispatch failure")
                         || error_msg.contains("credentials")
-                        || error_msg.contains("table"),
+                        || error_msg.contains("table")
+                        || error_msg.contains("user_id"),
                     "Unexpected error: {}",
                     error_msg
                 );

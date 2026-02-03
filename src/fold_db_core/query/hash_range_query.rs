@@ -28,11 +28,12 @@ impl HashRangeQueryProcessor {
         fields: &[String],
         filter: Option<HashRangeFilter>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        log::debug!(
-            "🔍 HashRangeQueryProcessor::query_with_filter: schema={}, fields={:?}, filter={:?}",
+        let current_user = crate::logging::core::get_current_user_id();
+        log::info!(
+            "🔍 HashRangeQueryProcessor: schema={}, filter={:?}, user_context={:?}",
             schema.name,
-            fields,
-            filter
+            filter,
+            current_user
         );
         let mut result = HashMap::new();
         for (field_name, field) in schema.runtime_fields.iter_mut() {

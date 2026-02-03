@@ -2,8 +2,8 @@
 pub mod core;
 pub mod error_utils;
 pub mod sync_wrapper;
-// Legacy v1 - Disabled to avoid conflicts with v2
-mod atom_operations;
+// Atom and molecule operations
+pub mod atom_operations;
 mod metadata_operations;
 pub mod native_index;
 mod native_index_ai_classifier;
@@ -22,3 +22,4 @@ pub use native_index_classification::{
     FieldClassification, SplitStrategy,
 };
 pub use sync_wrapper::DbOperationsSync;
+pub use atom_operations::MoleculeData;

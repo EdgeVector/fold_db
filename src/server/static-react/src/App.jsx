@@ -85,9 +85,6 @@ export function AppContent() {
   const authState = useAppSelector(state => state.auth)
   const { isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
 
-  console.log('AppContent render:', { isAuthenticated, activeTab });
-
-
   // Initialize system key on mount
   useEffect(() => {
     dispatch(initializeSystemKey())
