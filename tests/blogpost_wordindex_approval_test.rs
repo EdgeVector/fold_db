@@ -1,4 +1,5 @@
 use fold_db::fold_db_core::FoldDB;
+use fold_db::SchemaState;
 use serde_json::json;
 use std::thread;
 use std::time::Duration;
@@ -90,7 +91,7 @@ async fn test_blogpost_wordindex_approval_and_transform_visibility() {
             .get("BlogPostWordIndex")
             .copied()
             .unwrap_or_default(),
-        datafold::schema::SchemaState::Available,
+        SchemaState::Available,
         "BlogPostWordIndex should be in Available state before approval"
     );
 
@@ -127,7 +128,7 @@ async fn test_blogpost_wordindex_approval_and_transform_visibility() {
     // Now approve the BlogPostWordIndex schema
     fold_db
         .schema_manager()
-        .set_schema_state("BlogPostWordIndex", datafold::schema::SchemaState::Approved)
+        .set_schema_state("BlogPostWordIndex", SchemaState::Approved)
         .await
         .expect("Failed to approve BlogPostWordIndex schema");
 
@@ -145,7 +146,7 @@ async fn test_blogpost_wordindex_approval_and_transform_visibility() {
             .get("BlogPostWordIndex")
             .copied()
             .unwrap_or_default(),
-        datafold::schema::SchemaState::Approved,
+        SchemaState::Approved,
         "BlogPostWordIndex should be in Approved state after approval"
     );
 
@@ -186,7 +187,7 @@ async fn test_blogpost_wordindex_approval_and_transform_visibility() {
 
     assert_eq!(
         blogpost_wordindex_schema.state,
-        datafold::schema::SchemaState::Approved,
+        SchemaState::Approved,
         "BlogPostWordIndex schema should be in Approved state in schemas with states"
     );
 
@@ -268,7 +269,7 @@ async fn test_blogpost_wordindex_approval_from_file() {
             .get("BlogPostWordIndex")
             .copied()
             .unwrap_or_default(),
-        datafold::schema::SchemaState::Available,
+        SchemaState::Available,
         "BlogPostWordIndex should be in Available state when loaded from file"
     );
 
@@ -295,7 +296,7 @@ async fn test_blogpost_wordindex_approval_from_file() {
     // Now approve the schema
     fold_db
         .schema_manager()
-        .set_schema_state("BlogPostWordIndex", datafold::schema::SchemaState::Approved)
+        .set_schema_state("BlogPostWordIndex", SchemaState::Approved)
         .await
         .expect("Failed to approve BlogPostWordIndex schema from file");
 
@@ -313,7 +314,7 @@ async fn test_blogpost_wordindex_approval_from_file() {
             .get("BlogPostWordIndex")
             .copied()
             .unwrap_or_default(),
-        datafold::schema::SchemaState::Approved,
+        SchemaState::Approved,
         "BlogPostWordIndex should be in Approved state after approval from file"
     );
 
