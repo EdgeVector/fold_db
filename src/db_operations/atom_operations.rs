@@ -1,11 +1,115 @@
 use super::core::DbOperations;
-use crate::atom::Atom;
+use crate::atom::{Atom, Molecule, MoleculeHashRange, MoleculeRange};
 use crate::schema::types::field::FieldVariant;
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
 use serde_json::Value;
 
+/// Enum to hold different molecule types for batch storage
+#[derive(Clone)]
+pub enum MoleculeData {
+    Single(Molecule),
+    Range(MoleculeRange),
+    HashRange(MoleculeHashRange),
+}
+
 impl DbOperations {
+    /// Creates an atom in memory without storing it.
+    /// Used for batch operations where atoms are collected first then stored together.
+    pub fn create_atom(
+        schema_name: &str,
+        pub_key: &str,
+        value: Value,
+        source_file_name: Option<String>,
+    ) -> Atom {
+        let mut atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+        if let Some(filename) = source_file_name {
+            atom = atom.with_source_file_name(filename);
+        }
+        atom
+    }
+
+    /// Batch store multiple atoms efficiently.
+    /// Uses DynamoDB BatchWriteItem to store up to 25 atoms per API call.
+    /// Deduplicates by key since atoms with identical content have the same UUID.
+    pub async fn batch_store_atoms(&self, atoms: Vec<Atom>) -> Result<(), SchemaError> {
+        if atoms.is_empty() {
+            return Ok(());
+        }
+
+        // Deduplicate by key - atoms with same content have same UUID
+        // DynamoDB batch_write_item doesn't allow duplicate keys in the same batch
+        let mut seen_keys = std::collections::HashSet::new();
+        let items: Vec<(String, Atom)> = atoms
+            .into_iter()
+            .filter_map(|atom| {
+                let key = format!("atom:{}", atom.uuid());
+                if seen_keys.insert(key.clone()) {
+                    Some((key, atom))
+                } else {
+                    None // Skip duplicate keys
+                }
+            })
+            .collect();
+
+        log::info!("💾 Batch storing {} atoms to DynamoDB (after dedup)", items.len());
+
+        self.atoms_store()
+            .batch_put_items(items)
+            .await
+            .map_err(|e| {
+                log::error!("❌ Failed to batch store atoms: {}", e);
+                SchemaError::InvalidData(format!("Failed to batch store atoms: {}", e))
+            })?;
+
+        log::info!("✅ Batch stored atoms successfully");
+        Ok(())
+    }
+
+    /// Batch store multiple molecules efficiently.
+    /// Accepts a vector of (molecule_uuid, molecule_data) tuples.
+    /// Deduplicates by key to prevent DynamoDB batch_write_item errors.
+    pub async fn batch_store_molecules(
+        &self,
+        molecules: Vec<(String, MoleculeData)>,
+    ) -> Result<(), SchemaError> {
+        if molecules.is_empty() {
+            return Ok(());
+        }
+
+        // Deduplicate by key - DynamoDB batch_write_item doesn't allow duplicate keys
+        let mut seen_keys = std::collections::HashSet::new();
+        let items: Vec<(String, serde_json::Value)> = molecules
+            .into_iter()
+            .filter_map(|(uuid, mol_data)| {
+                let ref_key = format!("ref:{}", uuid);
+                if seen_keys.insert(ref_key.clone()) {
+                    let value = match mol_data {
+                        MoleculeData::Single(mol) => serde_json::to_value(mol).unwrap(),
+                        MoleculeData::Range(mol) => serde_json::to_value(mol).unwrap(),
+                        MoleculeData::HashRange(mol) => serde_json::to_value(mol).unwrap(),
+                    };
+                    Some((ref_key, value))
+                } else {
+                    None // Skip duplicate keys
+                }
+            })
+            .collect();
+
+        log::info!("💾 Batch storing {} molecules to DynamoDB (after dedup)", items.len());
+
+        self.molecules_store()
+            .batch_put_items(items)
+            .await
+            .map_err(|e| {
+                log::error!("❌ Failed to batch store molecules: {}", e);
+                SchemaError::InvalidData(format!("Failed to batch store molecules: {}", e))
+            })?;
+
+        log::info!("✅ Batch stored molecules successfully");
+        Ok(())
+    }
+
     /// Creates and stores an atom for a mutation field with deferred flush.
     /// If an atom with the same content already exists (content-based deduplication),
     /// returns the existing atom instead of creating a duplicate.

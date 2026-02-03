@@ -1210,7 +1210,20 @@ impl NativeIndexManager {
             let mut all_entries = index_entries;
             all_entries.extend(reverse_entries);
 
-            store.batch_put(all_entries).await.map_err(|e| {
+            // Deduplicate by key - DynamoDB batch_write_item doesn't allow duplicate keys
+            // This can happen when entries are created within the same millisecond
+            let mut seen_keys = std::collections::HashSet::new();
+            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = all_entries
+                .into_iter()
+                .filter(|(key, _)| seen_keys.insert(key.clone()))
+                .collect();
+
+            log::info!(
+                "[NativeIndex] batch_index_append_only: After dedup: {} entries",
+                deduped_entries.len()
+            );
+
+            store.batch_put(deduped_entries).await.map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to batch write index entries: {}", e))
             })?;
         } else if let Some(ref tree) = self.tree {
