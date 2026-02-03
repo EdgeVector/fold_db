@@ -211,13 +211,16 @@ impl LlmQueryService {
             .await
     }
 
-    /// Execute a complete AI-native index query workflow and return both AI interpretation and raw results
-    pub async fn execute_ai_native_index_query_with_results(
+    /// Search the native index and return deduplicated results (without AI interpretation)
+    ///
+    /// This is the first step of the AI-native index query workflow.
+    /// Call `interpret_native_index_results` separately to get AI interpretation.
+    pub async fn search_native_index(
         &self,
         user_query: &str,
         schemas: &[crate::schema::SchemaWithState],
         db_ops: &crate::db_operations::DbOperations,
-    ) -> Result<(String, Vec<crate::db_operations::IndexResult>), String> {
+    ) -> Result<Vec<crate::db_operations::IndexResult>, String> {
         // Step 1: Generate native index search terms using AI
         let search_terms = self
             .generate_native_index_search_terms(user_query, schemas)
@@ -275,11 +278,29 @@ impl LlmQueryService {
         let deduplicated_results = self.deduplicate_results(all_results);
 
         log::info!(
-            "LLM Query: Sending {} deduplicated results to AI for interpretation",
+            "LLM Query: Found {} deduplicated results from native index",
             deduplicated_results.len()
         );
 
-        // Step 3: Send results to AI for interpretation
+        Ok(deduplicated_results)
+    }
+
+    /// Execute a complete AI-native index query workflow and return both AI interpretation and raw results
+    pub async fn execute_ai_native_index_query_with_results(
+        &self,
+        user_query: &str,
+        schemas: &[crate::schema::SchemaWithState],
+        db_ops: &crate::db_operations::DbOperations,
+    ) -> Result<(String, Vec<crate::db_operations::IndexResult>), String> {
+        // Search the native index
+        let deduplicated_results = self.search_native_index(user_query, schemas, db_ops).await?;
+
+        log::info!(
+            "LLM Query: Sending {} results to AI for interpretation",
+            deduplicated_results.len()
+        );
+
+        // Send results to AI for interpretation
         let ai_interpretation = self
             .interpret_native_index_results(user_query, &deduplicated_results)
             .await?;
@@ -510,7 +531,10 @@ impl LlmQueryService {
     }
 
     /// Interpret native index search results using AI
-    async fn interpret_native_index_results(
+    ///
+    /// This method takes search results (potentially hydrated with actual values)
+    /// and sends them to the AI for interpretation and summarization.
+    pub async fn interpret_native_index_results(
         &self,
         original_query: &str,
         results: &[crate::db_operations::IndexResult],

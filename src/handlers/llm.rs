@@ -6,11 +6,16 @@
 use crate::datafold_node::llm_query::{types::*, LlmQueryService, SessionManager};
 use crate::datafold_node::node::DataFoldNode;
 use crate::datafold_node::OperationProcessor;
+use crate::db_operations::IndexResult;
 use crate::fold_db_core::query::records_from_field_map;
+use crate::fold_db_core::FoldDB;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::schema::field::HashRangeFilter;
+use crate::schema::types::Query;
 use crate::schema::SchemaWithState;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 // ============================================================================
 // Response Types
@@ -715,7 +720,156 @@ pub async fn get_backfill_status(
     }
 }
 
+// ============================================================================
+// Hydration Helper Functions
+// ============================================================================
+
+/// Maximum number of results to hydrate (for performance)
+const MAX_HYDRATE_RESULTS: usize = 50;
+
+/// Hydrate index results by fetching actual field values from the database
+///
+/// This function takes index search results (which only contain references) and
+/// fetches the actual field values from the database, populating the `value` field.
+///
+/// # Arguments
+/// * `results` - Vector of IndexResult from native index search
+/// * `fold_db` - Reference to FoldDb for querying records
+///
+/// # Returns
+/// * Vector of IndexResult with populated `value` fields
+async fn hydrate_index_results(
+    mut results: Vec<IndexResult>,
+    fold_db: &FoldDB,
+) -> Vec<IndexResult> {
+    if results.is_empty() {
+        return results;
+    }
+
+    // Limit the number of results to hydrate for performance
+    let hydrate_count = results.len().min(MAX_HYDRATE_RESULTS);
+
+    log::debug!(
+        "Hydrating {} of {} index results",
+        hydrate_count,
+        results.len()
+    );
+
+    // Group results by schema_name to batch queries
+    let mut schema_groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (idx, result) in results.iter().enumerate().take(hydrate_count) {
+        schema_groups
+            .entry(result.schema_name.clone())
+            .or_default()
+            .push(idx);
+    }
+
+    // For each schema, fetch all needed records in one query
+    for (schema_name, indices) in schema_groups {
+        // Collect unique keys for this schema
+        let mut keys_to_fetch: Vec<(String, String)> = Vec::new();
+        let mut key_to_indices: HashMap<String, Vec<usize>> = HashMap::new();
+
+        for idx in &indices {
+            let result = &results[*idx];
+            let hash = result.key_value.hash.clone().unwrap_or_default();
+            let range = result.key_value.range.clone().unwrap_or_default();
+
+            // Create a key identifier for deduplication
+            let key_id = format!("{}:{}", hash, range);
+
+            if !key_to_indices.contains_key(&key_id) {
+                keys_to_fetch.push((hash, range));
+            }
+            key_to_indices.entry(key_id).or_default().push(*idx);
+        }
+
+        if keys_to_fetch.is_empty() {
+            continue;
+        }
+
+        // Build a query to fetch all records for this schema
+        // Use HashRangeKeys filter if we have multiple keys
+        let filter = if keys_to_fetch.len() == 1 {
+            let (hash, range) = &keys_to_fetch[0];
+            if !hash.is_empty() && !range.is_empty() {
+                Some(HashRangeFilter::HashRangeKey {
+                    hash: hash.clone(),
+                    range: range.clone(),
+                })
+            } else if !hash.is_empty() {
+                Some(HashRangeFilter::HashKey(hash.clone()))
+            } else if !range.is_empty() {
+                Some(HashRangeFilter::RangePrefix(range.clone()))
+            } else {
+                None
+            }
+        } else {
+            // Use batch filter for multiple keys
+            Some(HashRangeFilter::HashRangeKeys(keys_to_fetch.clone()))
+        };
+
+        // Get all field names we need to fetch
+        let fields_needed: Vec<String> = indices
+            .iter()
+            .map(|idx| results[*idx].field.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let query = Query {
+            schema_name: schema_name.clone(),
+            fields: fields_needed,
+            filter,
+        };
+
+        // Execute the query
+        match fold_db.query_executor.query(query).await {
+            Ok(field_results) => {
+                // field_results is HashMap<field_name, HashMap<KeyValue, FieldValue>>
+                // We need to map back to our results
+
+                for (idx, result) in results.iter_mut().enumerate().take(hydrate_count) {
+                    if result.schema_name != schema_name {
+                        continue;
+                    }
+
+                    // Find the value for this result's field and key
+                    if let Some(field_data) = field_results.get(&result.field) {
+                        if let Some(field_value) = field_data.get(&result.key_value) {
+                            // Extract the actual value from FieldValue
+                            result.value = field_value.value.clone();
+                            log::trace!(
+                                "Hydrated result {}: schema={}, field={}, key={:?}",
+                                idx,
+                                result.schema_name,
+                                result.field,
+                                result.key_value
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to hydrate results for schema {}: {}",
+                    schema_name,
+                    e
+                );
+            }
+        }
+    }
+
+    log::debug!("Hydration complete");
+    results
+}
+
 /// Execute an AI-native index query workflow
+///
+/// This handler implements a three-step process:
+/// 1. Search the native index for matching entries
+/// 2. Hydrate results by fetching actual field values from records
+/// 3. Send hydrated results to AI for interpretation
 ///
 /// # Arguments
 /// * `request` - The run query request
@@ -744,35 +898,48 @@ pub async fn ai_native_index_query(
         .create_or_get_session(request.session_id.clone(), request.query.clone())
         .map_err(|e| HandlerError::Internal(format!("Failed to create session: {}", e)))?;
 
-    // Get available schemas
-    let schemas: Vec<SchemaWithState> = {
-        let db_guard = node
-            .get_fold_db()
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
-        db_guard
-            .schema_manager()
-            .get_schemas_with_states()
-            .map_err(|e| HandlerError::Internal(format!("Failed to get schemas: {}", e)))?
-    };
-
-    // Get db_ops for native index query
-    let db_ops = {
-        let db_guard = node
-            .get_fold_db()
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
-        db_guard.get_db_ops()
-    };
-
-    // Execute AI-native index query workflow
-    let (ai_interpretation, raw_results) = service
-        .execute_ai_native_index_query_with_results(&request.query, &schemas, &db_ops)
+    // Get FoldDb for both schema access and hydration queries
+    let db_guard = node
+        .get_fold_db()
         .await
-        .map_err(|e| HandlerError::Internal(format!("AI-native index query failed: {}", e)))?;
+        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+
+    // Get available schemas
+    let schemas: Vec<SchemaWithState> = db_guard
+        .schema_manager()
+        .get_schemas_with_states()
+        .map_err(|e| HandlerError::Internal(format!("Failed to get schemas: {}", e)))?;
+
+    // Get db_ops for native index search
+    let db_ops = db_guard.get_db_ops();
+
+    // Step 1: Search the native index
+    let search_results = service
+        .search_native_index(&request.query, &schemas, &db_ops)
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Native index search failed: {}", e)))?;
+
+    log::info!(
+        "AI Native Index Query: found {} results, hydrating...",
+        search_results.len()
+    );
+
+    // Step 2: Hydrate results by fetching actual field values
+    let hydrated_results = hydrate_index_results(search_results, &db_guard).await;
+
+    log::info!(
+        "AI Native Index Query: hydration complete, {} results ready for AI interpretation",
+        hydrated_results.len()
+    );
+
+    // Step 3: Send hydrated results to AI for interpretation
+    let ai_interpretation = service
+        .interpret_native_index_results(&request.query, &hydrated_results)
+        .await
+        .map_err(|e| HandlerError::Internal(format!("AI interpretation failed: {}", e)))?;
 
     // Store results in session for context tracking
-    let results_as_json: Vec<Value> = raw_results
+    let results_as_json: Vec<Value> = hydrated_results
         .into_iter()
         .map(|result| serde_json::to_value(result).unwrap_or(json!({})))
         .collect();

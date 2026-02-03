@@ -437,18 +437,48 @@ impl FoldDB {
     pub fn schema_manager(&self) -> Arc<SchemaCore> {
         Arc::clone(&self.schema_manager)
     }
-    /// Search the native word index for a specific term
+    /// Search the native word index for a specific term (async version)
+    /// Uses the optimized append-only index format
+    pub async fn native_word_search_async(
+        &self,
+        term: &str,
+    ) -> Result<Vec<IndexResult>, SchemaError> {
+        let manager = self.db_ops.native_index_manager().ok_or_else(|| {
+            SchemaError::InvalidData("Native index manager not available".to_string())
+        })?;
+
+        let entries = manager.search_append_only(term).await?;
+        Ok(manager.entries_to_results(entries))
+    }
+
+    /// Search the native word index for a specific term (sync version)
+    /// Uses the optimized append-only index format
+    /// For Sled backend, uses sync search. For async backends, creates a new runtime.
     pub fn native_word_search(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        self.db_ops
-            .native_index_manager()
-            .ok_or_else(|| {
-                SchemaError::InvalidData("Native index manager not available".to_string())
-            })?
-            .search_word(term)
+        let manager = self.db_ops.native_index_manager().ok_or_else(|| {
+            SchemaError::InvalidData("Native index manager not available".to_string())
+        })?;
+
+        // For Sled backend, use sync search directly
+        if !manager.is_async() {
+            let entries = manager.search_append_only_sync(term)?;
+            return Ok(manager.entries_to_results(entries));
+        }
+
+        // For async backends (DynamoDB), create a new runtime
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?;
+
+        rt.block_on(async {
+            let entries = manager.search_append_only(term).await?;
+            Ok(manager.entries_to_results(entries))
+        })
     }
 
     /// Search native index across all classification types and aggregate results
-    /// This now includes field name matches via search_word
+    /// Uses the optimized append-only index format
     pub async fn native_search_all_classifications(
         &self,
         term: &str,
@@ -458,19 +488,13 @@ impl FoldDB {
             term
         );
 
-        // Delegate to NativeIndexManager which has the full implementation
         let manager = self.db_ops.native_index_manager().ok_or_else(|| {
             SchemaError::InvalidData("Native index manager not available".to_string())
         })?;
 
-        // Use async version if store is available (DynamoDB), otherwise use sync (Sled)
-        if manager.is_async() {
-            // DynamoDB backend - use async
-            manager.search_all_classifications_async(term).await
-        } else {
-            // Sled backend - use sync
-            manager.search_all_classifications(term)
-        }
+        // Use append-only search for all classifications
+        let entries = manager.search_all_append_only(term).await?;
+        Ok(manager.entries_to_results(entries))
     }
 
     /// Get the transform orchestrator for managing transform execution

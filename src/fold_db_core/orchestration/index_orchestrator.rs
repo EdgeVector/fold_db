@@ -154,15 +154,10 @@ impl IndexOrchestrator {
 
         let start = std::time::Instant::now();
 
-        // Execute Batch Indexing
-        let result = if native_index_mgr.is_async() {
-            native_index_mgr
-                .batch_index_field_values_with_classifications_async(&index_operations)
-                .await
-        } else {
-            // Fallback for sync
-            native_index_mgr.batch_index_field_values_with_classifications(&index_operations)
-        };
+        // Execute Batch Indexing using append-only method (optimized: no read-modify-write)
+        let result = native_index_mgr
+            .batch_index_append_only(&index_operations)
+            .await;
 
         if let Err(e) = result {
             error!("❌ IndexOrchestrator: Batch indexing failed: {}", e);
@@ -175,14 +170,7 @@ impl IndexOrchestrator {
                 .await;
         }
 
-        // Note: we do NOT call flush() here explicitely?
-        // MutationManager used to call `native_index_mgr.flush()` looply.
-        // But `batch_index...` usually handles storage?
-        // Sled `apply_batch` doesn't strictly flush to disk immediately unless Flush is called.
-        // However, async DynamoDB definitely writes.
-        // For eventual consistency, we can rely on OS flush or background flush.
-        // Or we can call `native_index_mgr.flush()` if we want to be safe (for Sled).
-
+        // Flush for sync backends (Sled)
         if !native_index_mgr.is_async() {
             let _ = native_index_mgr.flush();
         }

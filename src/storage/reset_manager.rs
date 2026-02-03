@@ -32,7 +32,9 @@ impl DynamoDbResetManager {
 
         // 2. Identify all features (index partitions) to clean
         let mut features_to_clean = HashSet::new();
-        features_to_clean.insert("word".to_string()); // Always clean default "word" feature
+        features_to_clean.insert("word".to_string()); // Legacy/old format word index
+        features_to_clean.insert("idx".to_string()); // Append-only index entries (idx:{term}:...)
+        features_to_clean.insert("rev".to_string()); // Reverse index mappings (rev:{schema}:...)
 
         for schema in &schemas {
             for _topology in schema.field_topologies.values() {
@@ -44,7 +46,7 @@ impl DynamoDbResetManager {
             }
         }
 
-        // 3. Delete from Native Index (for each feature)
+        // 3. Delete from Native Index (for each feature/partition)
         for feature in features_to_clean {
             self.delete_native_index_for_feature(user_id, &feature)
                 .await?;
