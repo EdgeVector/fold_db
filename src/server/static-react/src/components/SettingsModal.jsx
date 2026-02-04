@@ -358,13 +358,26 @@ function SettingsModal({ isOpen, onClose }) {
                     <label className="block text-sm font-medium text-terminal-dim mb-1">
                       --model
                     </label>
-                    <input
-                      type="text"
+                    <select
                       value={ollamaModel}
                       onChange={(e) => setOllamaModel(e.target.value)}
-                      placeholder="e.g., llama3"
                       className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
-                    />
+                    >
+                      <option value="llama3.3">Llama 3.3 (70B)</option>
+                      <option value="llama3.2">Llama 3.2 (3B)</option>
+                      <option value="llama3.1">Llama 3.1 (8B)</option>
+                      <option value="llama3">Llama 3 (8B)</option>
+                      <option value="mistral">Mistral (7B)</option>
+                      <option value="mixtral">Mixtral 8x7B</option>
+                      <option value="codellama">Code Llama (7B)</option>
+                      <option value="deepseek-coder-v2">DeepSeek Coder V2</option>
+                      <option value="qwen2.5">Qwen 2.5 (7B)</option>
+                      <option value="phi3">Phi-3 (3.8B)</option>
+                      <option value="gemma2">Gemma 2 (9B)</option>
+                    </select>
+                    <p className="text-xs text-terminal-dim mt-1">
+                      Requires Ollama running locally. Pull model with: <code className="text-terminal-cyan">ollama pull {ollamaModel}</code>
+                    </p>
                   </div>
                 )}
               </div>
