@@ -758,28 +758,79 @@ impl SimpleIngestionService {
         mutation_mappers: &HashMap<String, String>,
         node: &DataFoldNode,
     ) -> IngestionResult<()> {
-        // Get the schema from the schema manager
+        // Get the schema from the schema manager, fetching from service if not found locally
         let mut schema = {
             let db_guard = node
                 .get_fold_db()
                 .await
                 .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
-            let schema = db_guard
+            let local_schema = db_guard
                 .schema_manager
                 .get_schema(schema_name)
                 .map_err(|e| {
                     IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
                         format!("Failed to fetch schema '{}': {}", schema_name, e),
                     ))
-                })?
-                .ok_or_else(|| {
-                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                        format!("Schema '{}' not found", schema_name),
-                    ))
-                })?
-                .clone();
+                })?;
+            let schema_manager = db_guard.schema_manager.clone();
             drop(db_guard);
-            schema
+
+            match local_schema {
+                Some(s) => s.clone(),
+                None => {
+                    // Schema not found locally - try to fetch from schema service
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Schema '{}' not found locally, fetching from schema service",
+                        schema_name
+                    );
+
+                    let fetched_schema = node
+                        .fetch_schema_from_service(schema_name)
+                        .await
+                        .map_err(|e| {
+                            IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                                format!("Failed to fetch schema '{}' from service: {}", schema_name, e),
+                            ))
+                        })?;
+
+                    // Load the fetched schema into the local schema manager
+                    let json_str = serde_json::to_string(&fetched_schema).map_err(|e| {
+                        IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                            format!("Failed to serialize fetched schema: {}", e),
+                        ))
+                    })?;
+
+                    schema_manager
+                        .load_schema_from_json(&json_str)
+                        .await
+                        .map_err(|e| {
+                            IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                                format!("Failed to load fetched schema locally: {}", e),
+                            ))
+                        })?;
+
+                    // Auto-approve the schema since it came from the service
+                    schema_manager
+                        .approve(schema_name)
+                        .await
+                        .map_err(|e| {
+                            IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
+                                format!("Failed to approve fetched schema: {}", e),
+                            ))
+                        })?;
+
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "Successfully fetched and loaded schema '{}' from service",
+                        schema_name
+                    );
+
+                    fetched_schema
+                }
+            }
         };
 
         // Check if schema already has all required topologies

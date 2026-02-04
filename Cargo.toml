@@ -56,6 +56,7 @@ reqwest = { version = "0.11", features = ["json", "multipart"] }
 
 # File to JSON conversion
 file_to_json = "0.1.5"
+csv = "1.3"
 mime_guess = "2.0"
 rust-embed = "8.0"
 
@@ -96,6 +97,14 @@ path = "src/bin/datafold_http_server.rs"
 [[bin]]
 name = "ensure_identity"
 path = "src/bin/ensure_identity.rs"
+
+[[bin]]
+name = "schema_service"
+path = "src/bin/schema_service.rs"
+
+[[bin]]
+name = "openapi_dump"
+path = "src/bin/openapi_dump.rs"
 
 [profile.dev-release]
 inherits = "release"

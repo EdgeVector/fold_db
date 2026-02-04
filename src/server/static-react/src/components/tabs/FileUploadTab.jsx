@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ingestionClient } from '../../api/clients'
 
 function FileUploadTab({ onResult }) {
@@ -9,11 +9,20 @@ function FileUploadTab({ onResult }) {
   const [pubKey, setPubKey] = useState('default')
   const [isUploading, setIsUploading] = useState(false)
   const [ingestionStatus, setIngestionStatus] = useState(null)
-  const [useS3Path, setUseS3Path] = useState(false)
+  const [uploadMode, setUploadMode] = useState('upload') // 'upload', 's3-path', 'batch-folder'
   const [s3FilePath, setS3FilePath] = useState('')
+  const [folderPath, setFolderPath] = useState('sample_data')
+  const [batchProgress, setBatchProgress] = useState(null)
+  const [fileProgresses, setFileProgresses] = useState({})
+  const pollIntervalRef = useRef(null)
 
   useEffect(() => {
     fetchIngestionStatus()
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
+    }
   }, [])
 
   const fetchIngestionStatus = async () => {
@@ -24,6 +33,105 @@ function FileUploadTab({ onResult }) {
       }
     } catch (error) {
       console.error('Failed to fetch ingestion status:', error)
+    }
+  }
+
+  const pollFileProgress = useCallback(async (progressIds) => {
+    const progresses = {}
+    let allComplete = true
+
+    for (const info of progressIds) {
+      try {
+        const response = await fetch(`/api/ingestion/progress/${info.progress_id}`)
+        if (response.ok) {
+          const progress = await response.json()
+          progresses[info.progress_id] = {
+            ...progress,
+            file_name: info.file_name
+          }
+          if (!progress.is_complete) {
+            allComplete = false
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to fetch progress for ${info.file_name}:`, error)
+      }
+    }
+
+    setFileProgresses(progresses)
+
+    if (allComplete && pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+      setIsUploading(false)
+
+      const completed = Object.values(progresses).filter(p => p.is_complete && !p.is_failed).length
+      const failed = Object.values(progresses).filter(p => p.is_failed).length
+
+      onResult({
+        success: failed === 0,
+        data: {
+          total_files: progressIds.length,
+          completed,
+          failed,
+          message: `Processed ${completed} files successfully${failed > 0 ? `, ${failed} failed` : ''}`
+        }
+      })
+    }
+  }, [onResult])
+
+  const handleBatchFolderIngest = async () => {
+    if (!folderPath) {
+      onResult({
+        success: false,
+        error: 'Please provide a folder path'
+      })
+      return
+    }
+
+    setIsUploading(true)
+    setBatchProgress(null)
+    setFileProgresses({})
+    onResult(null)
+
+    try {
+      const response = await fetch('/api/ingestion/batch-folder', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          folder_path: folderPath,
+          auto_execute: autoExecute
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setBatchProgress(result)
+
+        // Start polling for individual file progress
+        if (result.file_progress_ids && result.file_progress_ids.length > 0) {
+          pollIntervalRef.current = setInterval(() => {
+            pollFileProgress(result.file_progress_ids)
+          }, 1000)
+          // Initial poll
+          pollFileProgress(result.file_progress_ids)
+        }
+      } else {
+        setIsUploading(false)
+        onResult({
+          success: false,
+          error: result.error || 'Failed to start batch ingestion'
+        })
+      }
+    } catch (error) {
+      setIsUploading(false)
+      onResult({
+        success: false,
+        error: error.message || 'Failed to start batch ingestion'
+      })
     }
   }
 
@@ -63,8 +171,14 @@ function FileUploadTab({ onResult }) {
   }, [])
 
   const handleUpload = async () => {
+    // Handle batch folder mode separately
+    if (uploadMode === 'batch-folder') {
+      handleBatchFolderIngest()
+      return
+    }
+
     // Validate input based on mode
-    if (useS3Path) {
+    if (uploadMode === 's3-path') {
       if (!s3FilePath || !s3FilePath.startsWith('s3://')) {
         onResult({
           success: false,
@@ -87,12 +201,12 @@ function FileUploadTab({ onResult }) {
 
     try {
       const formData = new FormData()
-      
+
       // Generate a progress_id for tracking
       const progressId = crypto.randomUUID()
       formData.append('progress_id', progressId)
-      
-      if (useS3Path) {
+
+      if (uploadMode === 's3-path') {
         formData.append('s3FilePath', s3FilePath)
       } else {
         formData.append('file', selectedFile)
@@ -163,11 +277,29 @@ function FileUploadTab({ onResult }) {
       )}
 
       {/* Uploading Indicator */}
-      {isUploading && (
+      {isUploading && uploadMode !== 'batch-folder' && (
         <div className="card-terminal p-4 border-l-4 border-terminal-blue">
           <div className="flex items-center gap-3">
             <span className="spinner-terminal"></span>
             <span className="text-terminal-blue font-medium">$ processing file...<span className="cursor"></span></span>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Processing Indicator */}
+      {isUploading && uploadMode === 'batch-folder' && (
+        <div className="card-terminal p-4 border-l-4 border-terminal-blue">
+          <div className="flex items-center gap-3">
+            <span className="spinner-terminal"></span>
+            <span className="text-terminal-blue font-medium">
+              $ processing batch...
+              {batchProgress && (
+                <span className="text-terminal-dim ml-2">
+                  ({Object.values(fileProgresses).filter(p => p.is_complete).length}/{batchProgress.files_found} complete)
+                </span>
+              )}
+              <span className="cursor"></span>
+            </span>
           </div>
         </div>
       )}
@@ -179,8 +311,8 @@ function FileUploadTab({ onResult }) {
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="radio"
-              checked={!useS3Path}
-              onChange={() => setUseS3Path(false)}
+              checked={uploadMode === 'upload'}
+              onChange={() => setUploadMode('upload')}
               className="accent-terminal-green"
             />
             <span className="text-sm text-terminal">upload</span>
@@ -188,17 +320,26 @@ function FileUploadTab({ onResult }) {
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="radio"
-              checked={useS3Path}
-              onChange={() => setUseS3Path(true)}
+              checked={uploadMode === 's3-path'}
+              onChange={() => setUploadMode('s3-path')}
               className="accent-terminal-green"
             />
             <span className="text-sm text-terminal">s3-path</span>
           </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              checked={uploadMode === 'batch-folder'}
+              onChange={() => setUploadMode('batch-folder')}
+              className="accent-terminal-green"
+            />
+            <span className="text-sm text-terminal">batch-folder</span>
+          </label>
         </div>
       </div>
 
-      {/* S3 Path Input or File Upload */}
-      {useS3Path ? (
+      {/* Mode-specific Input */}
+      {uploadMode === 's3-path' && (
         <div className="card-terminal p-6">
           <h3 className="text-terminal-green font-medium mb-4">
             <span className="text-terminal-dim">$</span> S3 File Path
@@ -219,71 +360,137 @@ function FileUploadTab({ onResult }) {
             </p>
           </div>
         </div>
-      ) : (
+      )}
+
+      {uploadMode === 'batch-folder' && (
+        <div className="card-terminal p-6">
+          <h3 className="text-terminal-green font-medium mb-4">
+            <span className="text-terminal-dim">$</span> Batch Folder Ingestion
+          </h3>
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-terminal-dim">
+              --folder-path
+            </label>
+            <input
+              type="text"
+              value={folderPath}
+              onChange={(e) => setFolderPath(e.target.value)}
+              placeholder="sample_data"
+              className="input-terminal w-full"
+            />
+            <p className="text-xs text-terminal-dim">
+              # Path relative to project root or absolute path. Supported files: .json, .csv, .txt, .md
+            </p>
+          </div>
+
+          {/* Batch Progress Display */}
+          {batchProgress && (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-terminal-dim">batch_id:</span>
+                <span className="text-terminal-cyan font-mono text-xs">{batchProgress.batch_id.slice(0, 8)}...</span>
+                <span className="text-terminal-dim">|</span>
+                <span className="text-terminal-dim">files:</span>
+                <span className="text-terminal-green">{batchProgress.files_found}</span>
+              </div>
+
+              {/* Individual File Progress */}
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {Object.entries(fileProgresses).map(([id, progress]) => (
+                  <div key={id} className="flex items-center gap-3 text-sm bg-terminal-darker p-2 rounded">
+                    <span className={`w-2 h-2 rounded-full ${
+                      progress.is_failed ? 'bg-terminal-red' :
+                      progress.is_complete ? 'bg-terminal-green' :
+                      'bg-terminal-yellow animate-pulse'
+                    }`}></span>
+                    <span className="text-terminal font-mono text-xs truncate flex-1">
+                      {progress.file_name}
+                    </span>
+                    <span className="text-terminal-dim text-xs">
+                      {progress.progress_percentage}%
+                    </span>
+                    <span className={`text-xs ${
+                      progress.is_failed ? 'text-terminal-red' :
+                      progress.is_complete ? 'text-terminal-green' :
+                      'text-terminal-yellow'
+                    }`}>
+                      {progress.is_failed ? 'failed' :
+                       progress.is_complete ? 'done' :
+                       progress.current_step || 'processing'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {uploadMode === 'upload' && (
         <div className="card-terminal p-6">
           <h3 className="text-terminal-green font-medium mb-4">
             <span className="text-terminal-dim">$</span> Upload File
           </h3>
-        
-        <div
-          className={`border-2 border-dashed p-12 text-center transition-colors ${
-            isDragging
-              ? 'border-terminal-green bg-terminal-light'
-              : 'border-terminal bg-terminal hover:border-terminal-green'
-          }`}
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="space-y-4">
-            {/* Upload Icon - ASCII style */}
-            <div className="text-terminal-dim font-mono text-3xl">
-              ↑
-            </div>
 
-            {/* Text */}
-            {selectedFile ? (
-              <div className="space-y-2">
-                <p className="text-terminal-green font-medium">{selectedFile.name}</p>
-                <p className="text-sm text-terminal-dim">{formatFileSize(selectedFile.size)}</p>
-                <button
-                  onClick={() => setSelectedFile(null)}
-                  className="text-sm text-terminal-red hover:glow-red"
+          <div
+            className={`border-2 border-dashed p-12 text-center transition-colors ${
+              isDragging
+                ? 'border-terminal-green bg-terminal-light'
+                : 'border-terminal bg-terminal hover:border-terminal-green'
+            }`}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="space-y-4">
+              {/* Upload Icon - ASCII style */}
+              <div className="text-terminal-dim font-mono text-3xl">
+                ↑
+              </div>
+
+              {/* Text */}
+              {selectedFile ? (
+                <div className="space-y-2">
+                  <p className="text-terminal-green font-medium">{selectedFile.name}</p>
+                  <p className="text-sm text-terminal-dim">{formatFileSize(selectedFile.size)}</p>
+                  <button
+                    onClick={() => setSelectedFile(null)}
+                    className="text-sm text-terminal-red hover:glow-red"
+                  >
+                    [x] remove
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-terminal mb-2">
+                    Drag and drop a file here, or click to select
+                  </p>
+                  <p className="text-sm text-terminal-dim">
+                    # Supported: PDF, DOCX, TXT, CSV, JSON, XML
+                  </p>
+                </div>
+              )}
+
+              {/* Hidden File Input */}
+              <input
+                type="file"
+                id="file-upload"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
+              {/* Browse Button */}
+              {!selectedFile && (
+                <label
+                  htmlFor="file-upload"
+                  className="btn-terminal btn-terminal-primary inline-block cursor-pointer"
                 >
-                  [x] remove
-                </button>
-              </div>
-            ) : (
-              <div>
-                <p className="text-terminal mb-2">
-                  Drag and drop a file here, or click to select
-                </p>
-                <p className="text-sm text-terminal-dim">
-                  # Supported: PDF, DOCX, TXT, CSV, JSON, XML
-                </p>
-              </div>
-            )}
-
-            {/* Hidden File Input */}
-            <input
-              type="file"
-              id="file-upload"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-            
-            {/* Browse Button */}
-            {!selectedFile && (
-              <label
-                htmlFor="file-upload"
-                className="btn-terminal btn-terminal-primary inline-block cursor-pointer"
-              >
-                → Browse Files
-              </label>
-            )}
+                  → Browse Files
+                </label>
+              )}
+            </div>
           </div>
-        </div>
         </div>
       )}
 
@@ -304,12 +511,20 @@ function FileUploadTab({ onResult }) {
               # File → JSON → AI analysis → Schema mapping
             </span>
           </div>
-          
+
           <button
             onClick={handleUpload}
-            disabled={isUploading || (!useS3Path && !selectedFile) || (useS3Path && !s3FilePath)}
+            disabled={
+              isUploading ||
+              (uploadMode === 'upload' && !selectedFile) ||
+              (uploadMode === 's3-path' && !s3FilePath) ||
+              (uploadMode === 'batch-folder' && !folderPath)
+            }
             className={`btn-terminal px-6 py-2.5 font-medium ${
-              isUploading || (!useS3Path && !selectedFile) || (useS3Path && !s3FilePath)
+              isUploading ||
+              (uploadMode === 'upload' && !selectedFile) ||
+              (uploadMode === 's3-path' && !s3FilePath) ||
+              (uploadMode === 'batch-folder' && !folderPath)
                 ? 'opacity-50 cursor-not-allowed'
                 : 'btn-terminal-primary'
             }`}
@@ -322,7 +537,11 @@ function FileUploadTab({ onResult }) {
             ) : (
               <>
                 <span>→</span>
-                <span>{useS3Path ? 'Process S3 File' : 'Upload & Process'}</span>
+                <span>
+                  {uploadMode === 's3-path' ? 'Process S3 File' :
+                   uploadMode === 'batch-folder' ? 'Ingest Folder' :
+                   'Upload & Process'}
+                </span>
               </>
             )}
           </button>
@@ -336,10 +555,28 @@ function FileUploadTab({ onResult }) {
           <div className="text-sm text-terminal-dim">
             <p className="font-medium mb-1 text-terminal-cyan"># How it works:</p>
             <ol className="list-decimal list-inside space-y-1">
-              <li>{useS3Path ? 'Provide an S3 file path (files already in S3 are not re-uploaded)' : 'Upload any file type (PDFs, documents, spreadsheets, etc.)'}</li>
-              <li>File is automatically converted to JSON using AI</li>
-              <li>AI analyzes the JSON and maps it to appropriate schemas</li>
-              <li>Data is stored in the database with the file location tracked</li>
+              {uploadMode === 'batch-folder' ? (
+                <>
+                  <li>Specify a folder path containing files to ingest</li>
+                  <li>All supported files (.json, .csv, .txt, .md) are processed in parallel</li>
+                  <li>Each file is converted to JSON and analyzed by AI</li>
+                  <li>Data is mapped to schemas and stored in the database</li>
+                </>
+              ) : uploadMode === 's3-path' ? (
+                <>
+                  <li>Provide an S3 file path (files already in S3 are not re-uploaded)</li>
+                  <li>File is automatically converted to JSON using AI</li>
+                  <li>AI analyzes the JSON and maps it to appropriate schemas</li>
+                  <li>Data is stored in the database with the file location tracked</li>
+                </>
+              ) : (
+                <>
+                  <li>Upload any file type (PDFs, documents, spreadsheets, etc.)</li>
+                  <li>File is automatically converted to JSON using AI</li>
+                  <li>AI analyzes the JSON and maps it to appropriate schemas</li>
+                  <li>Data is stored in the database with the file location tracked</li>
+                </>
+              )}
             </ol>
           </div>
         </div>

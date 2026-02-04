@@ -3,6 +3,12 @@
 //! Manages DataFold nodes for different tenants, caching them for reuse.
 //! This enables lazy node initialization - nodes are only created when
 //! a user makes their first request, avoiding DynamoDB access during startup.
+//!
+//! # Storage Mode Behavior
+//!
+//! - **Cloud mode (DynamoDB)**: Creates separate nodes per user with user_id isolation
+//! - **Local mode (Sled)**: Shares a single node across all users (single-tenant)
+//!   This avoids Sled lock conflicts since only one process can hold the lock.
 
 use crate::datafold_node::config::NodeConfig;
 use crate::datafold_node::DataFoldNode;
@@ -40,22 +46,39 @@ pub struct NodeManager {
     config: NodeManagerConfig,
     /// Cache of active nodes (user_id -> Node)
     nodes: Arc<Mutex<HashMap<String, Arc<Mutex<DataFoldNode>>>>>,
+    /// Shared node for local mode (single-tenant)
+    /// In local Sled mode, we share one node to avoid lock conflicts
+    shared_local_node: Arc<Mutex<Option<Arc<Mutex<DataFoldNode>>>>>,
+    /// Whether we're in local mode
+    is_local_mode: bool,
 }
 
 impl NodeManager {
     /// Create a new NodeManager
     pub fn new(config: NodeManagerConfig) -> Self {
+        let is_local_mode = matches!(config.base_config.database, DatabaseConfig::Local { .. });
         Self {
             config,
             nodes: Arc::new(Mutex::new(HashMap::new())),
+            shared_local_node: Arc::new(Mutex::new(None)),
+            is_local_mode,
         }
     }
 
     /// Get a node for a specific user, creating one if it doesn't exist
+    ///
+    /// In local mode (Sled), returns a shared node for all users to avoid lock conflicts.
+    /// In cloud mode (DynamoDB), creates/returns a per-user node with user_id isolation.
     pub async fn get_node(
         &self,
         user_id: &str,
     ) -> Result<Arc<Mutex<DataFoldNode>>, NodeManagerError> {
+        // Local mode: use shared single node to avoid Sled lock conflicts
+        if self.is_local_mode {
+            return self.get_shared_local_node(user_id).await;
+        }
+
+        // Cloud mode: per-user nodes with DynamoDB partition isolation
         // Check cache first
         {
             let nodes = self.nodes.lock().await;
@@ -72,6 +95,32 @@ impl NodeManager {
             let mut nodes = self.nodes.lock().await;
             nodes.insert(user_id.to_string(), node.clone());
         }
+
+        Ok(node)
+    }
+
+    /// Get or create the shared local node (for Sled mode)
+    ///
+    /// Uses a mutex to ensure only one node is ever created, avoiding race conditions
+    /// where multiple concurrent requests could try to create the node simultaneously.
+    async fn get_shared_local_node(
+        &self,
+        user_id: &str,
+    ) -> Result<Arc<Mutex<DataFoldNode>>, NodeManagerError> {
+        // Hold the lock for the entire check-and-create operation to avoid races
+        let mut shared = self.shared_local_node.lock().await;
+
+        // If we already have a shared node, return it
+        if let Some(node) = shared.as_ref() {
+            return Ok(node.clone());
+        }
+
+        // Create the shared node while still holding the lock
+        // This ensures only one thread creates the node
+        let node = self.create_node(user_id).await?;
+
+        // Store it as the shared node
+        *shared = Some(node.clone());
 
         Ok(node)
     }
@@ -137,8 +186,16 @@ impl NodeManager {
     /// Set a pre-existing node in the cache
     /// This is useful for embedded scenarios where the node is created externally
     pub async fn set_node(&self, user_id: &str, node: DataFoldNode) {
+        let node_arc = Arc::new(Mutex::new(node));
+
+        // In local mode, also set the shared_local_node so get_node finds it
+        if self.is_local_mode {
+            let mut shared = self.shared_local_node.lock().await;
+            *shared = Some(node_arc.clone());
+        }
+
         let mut nodes = self.nodes.lock().await;
-        nodes.insert(user_id.to_string(), Arc::new(Mutex::new(node)));
+        nodes.insert(user_id.to_string(), node_arc);
     }
 
     /// Get the base configuration

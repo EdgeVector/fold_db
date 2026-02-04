@@ -361,6 +361,10 @@ impl DataFoldHttpServer {
         .route(
             "/ingestion/progress/{id}",
             web::get().to(ingestion_routes::get_progress),
+        )
+        .route(
+            "/ingestion/batch-folder",
+            web::post().to(ingestion_routes::batch_folder_ingest),
         );
     }
 

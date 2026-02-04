@@ -263,6 +263,26 @@ impl DataFoldNode {
             .map(|response| response.schema)
     }
 
+    /// Fetch a specific schema from the schema service by name/hash.
+    /// Returns an error if the schema service URL is not configured or if the fetch fails.
+    pub async fn fetch_schema_from_service(
+        &self,
+        schema_name: &str,
+    ) -> FoldDbResult<crate::schema::types::Schema> {
+        let schema_service_url = self.schema_service_url().ok_or_else(|| {
+            FoldDbError::Config("Schema service URL is not configured".to_string())
+        })?;
+
+        if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
+            return Err(FoldDbError::Config(
+                "Cannot fetch schemas from test/mock schema service".to_string(),
+            ));
+        }
+
+        let client = crate::datafold_node::SchemaServiceClient::new(&schema_service_url);
+        client.get_schema(schema_name).await
+    }
+
     /// Execute a batch of mutations.
     ///
     /// This is a convenience method that delegates to the underlying FoldDB.
