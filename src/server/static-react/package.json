@@ -15,7 +15,6 @@
   },
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm run generate:endpoints",
     "build": "vite build",
     "build:lib": "vite build --config vite.config.lib.js",
     "preview": "vite preview",
