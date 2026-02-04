@@ -102,25 +102,18 @@ function LlmQueryTab({ onResult }) {
           addToLog('system', `🔍 Need new data: ${analysis.reasoning}`);
           addToLog('system', '🤖 Starting AI agent...');
 
-          const response = await fetch('/api/llm-query/agent', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              query: userInput,
-              session_id: sessionId,
-              max_iterations: 10
-            }),
+          const agentResponse = await llmQueryClient.agentQuery({
+            query: userInput,
+            session_id: sessionId,
+            max_iterations: 10
           });
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI agent query'}`);
+          if (!agentResponse.ok) {
+            addToLog('system', `❌ Error: ${agentResponse.error || 'Failed to run AI agent query'}`);
             return;
           }
 
-          const result = await response.json();
+          const result = agentResponse.data;
 
           // Update session ID if returned from the server
           if (result.session_id) {
@@ -146,25 +139,18 @@ function LlmQueryTab({ onResult }) {
         // New query - use AI agent with tool calling
         addToLog('system', '🤖 Starting AI agent...');
 
-        const response = await fetch('/api/llm-query/agent', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            query: userInput,
-            session_id: sessionId,
-            max_iterations: 10
-          }),
+        const agentResponse = await llmQueryClient.agentQuery({
+          query: userInput,
+          session_id: sessionId,
+          max_iterations: 10
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI agent query'}`);
+        if (!agentResponse.ok) {
+          addToLog('system', `❌ Error: ${agentResponse.error || 'Failed to run AI agent query'}`);
           return;
         }
 
-        const result = await response.json();
+        const result = agentResponse.data;
 
         // Update session ID if returned from the server
         if (result.session_id) {

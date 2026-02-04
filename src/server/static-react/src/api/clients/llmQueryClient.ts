@@ -79,6 +79,24 @@ export interface FollowupAnalysis {
   reasoning: string;
 }
 
+export interface AgentQueryRequest {
+  query: string;
+  session_id?: string;
+  max_iterations?: number;
+}
+
+export interface ToolCallRecord {
+  tool: string;
+  params: Record<string, any>;
+  result: any;
+}
+
+export interface AgentQueryResponse {
+  answer: string;
+  tool_calls: ToolCallRecord[];
+  session_id: string;
+}
+
 export const llmQueryClient = {
   /**
    * Run a query in a single step (analyze + execute with internal polling loop)
@@ -120,6 +138,13 @@ export const llmQueryClient = {
    */
   async getBackfillStatus(hash: string) {
     return client.get<BackfillStatusResponse>(`/llm-query/backfill/${hash}`);
+  },
+
+  /**
+   * Run an autonomous agent query with tool calling
+   */
+  async agentQuery(request: AgentQueryRequest) {
+    return client.post<AgentQueryResponse>('/llm-query/agent', request);
   }
 };
 
