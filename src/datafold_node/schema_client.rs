@@ -68,19 +68,58 @@ impl SchemaServiceClient {
                 ))
             })?;
 
-        if response.status() == StatusCode::CREATED {
-            let add_schema_response =
-                response
-                    .json::<AddSchemaResponse>()
-                    .await
-                    .map_err(|error| {
-                        FoldDbError::Config(format!(
-                            "Failed to parse schema creation response: {}",
-                            error
-                        ))
-                    })?;
+        if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
+            // Try to parse as AddSchemaResponse first
+            let body_text = response.text().await.map_err(|error| {
+                FoldDbError::Config(format!("Failed to read schema response body: {}", error))
+            })?;
 
-            return Ok(add_schema_response);
+            // Try parsing as AddSchemaResponse
+            if let Ok(add_schema_response) = serde_json::from_str::<AddSchemaResponse>(&body_text) {
+                return Ok(add_schema_response);
+            }
+
+            // Try parsing as the new format with "ok" and "outcome" fields
+            #[derive(Deserialize)]
+            struct SchemaServiceResponse {
+                ok: bool,
+                outcome: Option<String>,
+                schema: Option<Schema>,
+            }
+
+            if let Ok(service_response) = serde_json::from_str::<SchemaServiceResponse>(&body_text) {
+                if service_response.ok {
+                    // If we have a schema directly, use it
+                    if let Some(schema) = service_response.schema {
+                        return Ok(AddSchemaResponse {
+                            schema,
+                            mutation_mappers: HashMap::new(),
+                        });
+                    }
+                    // Otherwise, we need to fetch the schema by name from the outcome
+                    // The outcome contains the schema definition, extract the name/hash
+                    if let Some(outcome) = &service_response.outcome {
+                        // Extract schema name from outcome string (it contains topology_hash)
+                        if let Some(start) = outcome.find("topology_hash: Some(\"") {
+                            let start = start + 21;
+                            if let Some(end) = outcome[start..].find('"') {
+                                let schema_name = &outcome[start..start + end];
+                                // Fetch the full schema from the service
+                                let schema = self.get_schema(schema_name).await?;
+                                return Ok(AddSchemaResponse {
+                                    schema,
+                                    mutation_mappers: HashMap::new(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            return Err(FoldDbError::Config(format!(
+                "Failed to parse schema creation response: {}",
+                body_text
+            )));
         }
 
         if response.status() == StatusCode::CONFLICT {
