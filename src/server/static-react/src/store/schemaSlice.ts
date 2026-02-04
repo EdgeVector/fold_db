@@ -383,8 +383,13 @@ const schemaSlice = createSlice({
 
 // Base selectors
 export const selectSchemaState = (state: RootState) => state.schemas;
-export const selectAllSchemas = (state: RootState) => Object.values(state.schemas.schemas);
 export const selectSchemasById = (state: RootState) => state.schemas.schemas;
+
+// Memoized selector to avoid creating new array on every call
+export const selectAllSchemas = createSelector(
+  [selectSchemasById],
+  (schemas) => Object.values(schemas)
+);
 
 // SCHEMA-002 compliant selectors - only approved schemas for operations
 export const selectApprovedSchemas = createSelector(

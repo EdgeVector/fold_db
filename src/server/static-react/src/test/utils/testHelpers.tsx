@@ -13,7 +13,7 @@ export const createAuthenticatedState = () => ({
     isAuthenticated: true,
     systemPublicKey: 'mock-public-key-base64',
     systemKeyId: 'mock-key-id',
-    privateKey: new Uint8Array(32).fill(1),
+    privateKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=', // Base64-encoded mock key
     publicKeyId: 'mock-public-key-id',
     isLoading: false,
     error: null,

@@ -16,10 +16,8 @@ export default function LoginPage() {
     }
 
     try {
-      const result = await dispatch(loginUser(userId.trim())).unwrap()
-      // Persist to local storage
-      localStorage.setItem('fold_user_id', result.id)
-      localStorage.setItem('fold_user_hash', result.hash)
+      // loginUser thunk handles localStorage persistence internally
+      await dispatch(loginUser(userId.trim())).unwrap()
     } catch (err) {
       setError(err.message)
     }
@@ -44,7 +42,7 @@ export default function LoginPage() {
             color: '#111',
             marginBottom: '8px'
           }}>
-            datafold
+            SoverignDB
           </h1>
           <p style={{ color: '#999', fontSize: '14px' }}>
             Personal data sovereignty

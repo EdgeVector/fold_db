@@ -15,7 +15,7 @@ export interface KeyAuthenticationState {
   };
   systemPublicKey: string | null;
   systemKeyId: string | null;
-  privateKey: Uint8Array | null;
+  privateKey: string | null; // Base64-encoded private key (serializable)
   publicKeyId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -42,7 +42,7 @@ export const initializeSystemKey = createAsyncThunk(
       console.log("initializeSystemKey thunk response:", response);
 
       if (response.success && response.data && response.data.private_key) {
-        // Convert base64 private key to bytes
+        // Convert base64 private key to bytes for key derivation
         const privateKeyBytes = base64ToBytes(response.data.private_key);
 
         // Generate public key from private key for verification
@@ -55,7 +55,7 @@ export const initializeSystemKey = createAsyncThunk(
         return {
           systemPublicKey: derivedPublicKeyBase64,
           systemKeyId: "node-private-key",
-          privateKey: privateKeyBytes,
+          privateKey: response.data.private_key, // Store as base64 string (serializable)
           isSystemReady: true,
         };
       } else {
@@ -108,7 +108,7 @@ export const validatePrivateKey = createAsyncThunk(
 
       if (matches) {
         return {
-          privateKey: privateKeyBytes,
+          privateKey: privateKeyBase64, // Store as base64 string (serializable)
           publicKeyId: systemKeyId,
           isAuthenticated: true,
         };
@@ -137,7 +137,7 @@ export const refreshSystemKey = createAsyncThunk(
         const response = await getNodePrivateKey();
 
         if (response.success && response.data && response.data.private_key) {
-          // Convert base64 private key to bytes
+          // Convert base64 private key to bytes for key derivation
           const privateKeyBytes = base64ToBytes(response.data.private_key);
 
           // Generate public key from private key for verification
@@ -150,7 +150,7 @@ export const refreshSystemKey = createAsyncThunk(
           return {
             systemPublicKey: derivedPublicKeyBase64,
             systemKeyId: "node-private-key",
-            privateKey: privateKeyBytes,
+            privateKey: response.data.private_key, // Store as base64 string (serializable)
             isSystemReady: true,
           };
         } else {
@@ -188,11 +188,8 @@ export const fetchNodePrivateKey = createAsyncThunk(
       console.log("fetchNodePrivateKey thunk response:", response);
 
       if (response.success && response.data && response.data.private_key) {
-        // Convert base64 private key to bytes
-        const privateKeyBytes = base64ToBytes(response.data.private_key);
-
         return {
-          privateKey: privateKeyBytes,
+          privateKey: response.data.private_key, // Store as base64 string (serializable)
           publicKeyId: "node-private-key", // Use a consistent identifier
           isSystemReady: true,
         };
@@ -221,6 +218,11 @@ export const loginUser = createAsyncThunk(
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
       const userHash = hashHex.substring(0, 32);
+
+      // Set localStorage BEFORE returning so credentials are available
+      // when Redux state change triggers component re-renders and API calls
+      localStorage.setItem("fold_user_id", userId);
+      localStorage.setItem("fold_user_hash", userHash);
 
       return { id: userId, hash: userHash };
     } catch {

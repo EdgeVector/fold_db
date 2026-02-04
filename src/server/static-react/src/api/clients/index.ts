@@ -55,8 +55,6 @@ export {
   addToQueue,
   refreshQueue,
   getTransform,
-  removeFromQueue,
-  validateTransformId,
 } from "./transformClient";
 
 // Mutation Client (if exists)
@@ -67,13 +65,6 @@ export {
   ingestionClient,
   UnifiedIngestionClient,
   createIngestionClient,
-  getStatus,
-  getConfig,
-  saveConfig,
-  validateData,
-  processIngestion,
-  validateIngestionRequest,
-  createIngestionRequest,
 } from "./ingestionClient";
 
 // LLM Query Client

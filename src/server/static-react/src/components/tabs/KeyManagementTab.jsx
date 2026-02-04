@@ -4,16 +4,15 @@ import { useState } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { validatePrivateKey, clearAuthentication } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
-import { bytesToBase64 } from '../../utils/cryptoUtils';
 
 function KeyManagementTab({ onResult: _onResult }) {
     // Redux state and dispatch
     const dispatch = useAppDispatch();
     const authState = useAppSelector(state => state.auth);
     const { isAuthenticated, systemPublicKey, systemKeyId, privateKey, isLoading, error: _authError } = authState;
-    
-    // Convert private key to base64 for display
-    const privateKeyBase64 = privateKey ? bytesToBase64(privateKey) : null;
+
+    // privateKey is now stored as base64 string (no conversion needed)
+    const privateKeyBase64 = privateKey;
     
     const [copiedField, setCopiedField] = useState(null);
     

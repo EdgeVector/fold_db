@@ -13,18 +13,18 @@
  * @see {@link https://github.com/datafold/datafold/docs/project_logic.md#schema-002} SCHEMA-002 compliance documentation
  */
 
-import { useEffect, useCallback } from 'react';
-import { useAppSelector, useAppDispatch } from '../store/hooks.ts';
+import { useEffect, useCallback } from "react";
+import { useAppSelector, useAppDispatch } from "../store/hooks.ts";
 import {
   fetchSchemas,
   selectApprovedSchemas,
   selectAllSchemas,
   selectFetchLoading,
   selectFetchError,
-  selectCacheInfo
-} from '../store/schemaSlice';
-import { SCHEMA_STATES } from '../constants/redux.js';
-import { normalizeSchemaState } from '../utils/rangeSchemaHelpers.js';
+  selectCacheInfo,
+} from "../store/schemaSlice";
+import { SCHEMA_STATES } from "../constants/redux.js";
+import { normalizeSchemaState } from "../utils/rangeSchemaHelpers.js";
 
 /**
  * @typedef {Object} Schema
@@ -115,7 +115,7 @@ import { normalizeSchemaState } from '../utils/rangeSchemaHelpers.js';
  *
  * @since 2.0.0
  */
-export function useApprovedSchemas() {
+export function useApprovedSchemas({ enabled = true } = {}) {
   // Redux state and dispatch
   const dispatch = useAppDispatch();
   const approvedSchemas = useAppSelector(selectApprovedSchemas);
@@ -131,40 +131,51 @@ export function useApprovedSchemas() {
    * Manual refetch function that bypasses cache
    */
   const refetch = useCallback(async () => {
-    // Force refresh by dispatching with forceRefresh: true
-    dispatch(fetchSchemas({ forceRefresh: true }));
-  }, [dispatch]);
+    // Only refetch if enabled
+    if (enabled) {
+      // Force refresh by dispatching with forceRefresh: true
+      dispatch(fetchSchemas({ forceRefresh: true }));
+    }
+  }, [dispatch, enabled]);
 
   /**
    * Get specific schema by name
    * @param {string} name - Schema name
    * @returns {Object|null} Schema object or null if not found
    */
-  const getSchemaByName = useCallback((name) => {
-    return allSchemas.find(schema => schema.name === name) || null;
-  }, [allSchemas]);
+  const getSchemaByName = useCallback(
+    (name) => {
+      return allSchemas.find((schema) => schema.name === name) || null;
+    },
+    [allSchemas],
+  );
 
   /**
    * Check if a schema is approved (SCHEMA-002 compliance)
    * @param {string} name - Schema name
    * @returns {boolean} True if schema is approved
    */
-  const isSchemaApproved = useCallback((name) => {
-    const schema = getSchemaByName(name);
-    if (!schema) return false;
-    
-    // Use the consolidated normalization function for consistency
-    const normalizedState = normalizeSchemaState(schema.state);
-    return normalizedState === SCHEMA_STATES.APPROVED;
-  }, [getSchemaByName]);
+  const isSchemaApproved = useCallback(
+    (name) => {
+      const schema = getSchemaByName(name);
+      if (!schema) return false;
 
-  // Initial fetch on mount if cache is invalid
+      // Use the consolidated normalization function for consistency
+      const normalizedState = normalizeSchemaState(schema.state);
+      return normalizedState === SCHEMA_STATES.APPROVED;
+    },
+    [getSchemaByName],
+  );
+
+  // Initial fetch on mount if cache is invalid AND enabled
   useEffect(() => {
-    if (!cacheInfo.isValid) {
-      console.log('🟡 useApprovedSchemas: Cache invalid, fetching schemas');
+    if (enabled && !cacheInfo.isValid) {
+      console.log(
+        "🟡 useApprovedSchemas: Cache invalid and enabled, fetching schemas",
+      );
       dispatch(fetchSchemas());
     }
-  }, [dispatch]); // Remove cacheInfo.isValid dependency to prevent refetch on cache invalidation
+  }, [dispatch, enabled]); // Only fetch when enabled changes to true
 
   return {
     approvedSchemas,
@@ -174,7 +185,7 @@ export function useApprovedSchemas() {
     getSchemaByName,
     isSchemaApproved,
     // Additional utility for components that need all schemas for display
-    allSchemas
+    allSchemas,
   };
 }
 

@@ -71,31 +71,12 @@ export function AppContent() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [activeTab]);
 
-  // Use the new useApprovedSchemas hook (TASK-001)
-  const {
-    approvedSchemas: _approvedSchemas,
-    allSchemas: _allSchemas,
-    isLoading: schemasLoading,
-    error: schemasError,
-    refetch: refetchSchemas
-  } = useApprovedSchemas()
-
   // Redux state and dispatch
   const dispatch = useAppDispatch()
   const authState = useAppSelector(state => state.auth)
   const { isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
 
-  // Initialize system key on mount
-  useEffect(() => {
-    dispatch(initializeSystemKey())
-  }, [dispatch])
-
-  // Fetch node private key on mount
-  useEffect(() => {
-    dispatch(fetchNodePrivateKey())
-  }, [dispatch])
-
-  // Restore session on mount
+  // Restore session on mount FIRST - this must run before other effects
   useEffect(() => {
     const userId = localStorage.getItem('fold_user_id')
     const userHash = localStorage.getItem('fold_user_hash')
@@ -103,6 +84,30 @@ export function AppContent() {
       dispatch(restoreSession({ id: userId, hash: userHash }))
     }
   }, [dispatch])
+
+  // Initialize system key ONLY after authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(initializeSystemKey())
+    }
+  }, [dispatch, isAuthenticated])
+
+  // Fetch node private key ONLY after authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(fetchNodePrivateKey())
+    }
+  }, [dispatch, isAuthenticated])
+
+  // Use the new useApprovedSchemas hook (TASK-001)
+  // Only fetch schemas when authenticated
+  const {
+    approvedSchemas: _approvedSchemas,
+    allSchemas: _allSchemas,
+    isLoading: schemasLoading,
+    error: schemasError,
+    refetch: refetchSchemas
+  } = useApprovedSchemas({ enabled: isAuthenticated })
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)

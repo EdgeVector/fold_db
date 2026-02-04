@@ -103,9 +103,20 @@ export class UnifiedSchemaClient {
     }
 
     // Normalize response into Schema[]
+    // The backend returns { ok: true, schemas: [...], count: N, user_hash: '...' }
     const raw = (response as any).data;
     let list: Schema[] = [];
-    if (Array.isArray(raw)) {
+
+    if (raw && typeof raw === 'object' && 'schemas' in raw) {
+      // Extract schemas from response envelope
+      const schemas = raw.schemas;
+      if (Array.isArray(schemas)) {
+        list = schemas as Schema[];
+      } else if (schemas && typeof schemas === 'object') {
+        list = Object.values(schemas as Record<string, Schema>);
+      }
+    } else if (Array.isArray(raw)) {
+      // Direct array response (legacy format)
       list = raw as Schema[];
     } else if (raw && typeof raw === 'object') {
       // Server may return an object map from name -> Schema
