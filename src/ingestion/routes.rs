@@ -3,7 +3,7 @@
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
-use crate::ingestion::simple_service::SimpleIngestionService;
+use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::IngestionResponse;
 use crate::ingestion::ProgressTracker;
 use crate::log_feature;
@@ -85,7 +85,7 @@ pub async fn process_json(
         .await;
 
     // Try to create a simple ingestion service
-    let service = match create_simple_ingestion_service().await {
+    let service = match create_ingestion_service().await {
         Ok(service) => service,
         Err(e) => {
             log_feature!(
@@ -199,7 +199,7 @@ pub async fn get_status() -> impl Responder {
         "Received ingestion status request"
     );
 
-    match create_simple_ingestion_service().await {
+    match create_ingestion_service().await {
         Ok(service) => match service.get_status() {
             Ok(status) => HttpResponse::Ok().json(status),
             Err(e) => {
@@ -238,7 +238,7 @@ pub async fn get_status() -> impl Responder {
     responses((status = 200, description = "Health OK", body = Value), (status = 503, description = "Health not OK", body = Value))
 )]
 pub async fn health_check() -> impl Responder {
-    match create_simple_ingestion_service().await {
+    match create_ingestion_service().await {
         Ok(service) => {
             let status = service.get_status();
 
@@ -290,7 +290,7 @@ pub async fn validate_json(request: web::Json<Value>) -> impl Responder {
         "Received JSON validation request"
     );
 
-    match create_simple_ingestion_service().await {
+    match create_ingestion_service().await {
         Ok(service) => match service.validate_input(&request.into_inner()) {
             Ok(()) => HttpResponse::Ok().json(json!({
                 "valid": true,
@@ -377,10 +377,10 @@ pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Resp
 }
 
 /// Create a simple ingestion service with potentially updated config
-async fn create_simple_ingestion_service(
-) -> Result<SimpleIngestionService, crate::ingestion::IngestionError> {
+async fn create_ingestion_service(
+) -> Result<IngestionService, crate::ingestion::IngestionError> {
     let config = IngestionConfig::from_env()?;
-    SimpleIngestionService::new(config)
+    IngestionService::new(config)
 }
 
 /// Get ingestion progress by ID
@@ -574,7 +574,7 @@ pub async fn batch_folder_ingest(
     }
 
     // Try to create ingestion service
-    let service = match create_simple_ingestion_service().await {
+    let service = match create_ingestion_service().await {
         Ok(service) => service,
         Err(e) => {
             log_feature!(

@@ -1,6 +1,7 @@
-//! Simplified ingestion service that works with DataFoldNode's existing interface
+//! AI-powered ingestion service that works with DataFoldNode
 //!
-//! Now refactored to take &DataFoldNode references, enabling usage with both Mutex and RwLock.
+//! Handles JSON data ingestion with AI schema recommendation, mutation generation,
+//! and execution. Refactored to take &DataFoldNode references for flexible locking.
 
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::AIProvider;
@@ -29,8 +30,8 @@ struct SchemaCacheEntry {
     timestamp: Instant,
 }
 
-/// Simplified ingestion service that works with DataFoldNode
-pub struct SimpleIngestionService {
+/// AI-powered ingestion service that works with DataFoldNode
+pub struct IngestionService {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,
     ollama_service: Option<OllamaService>,
@@ -38,8 +39,8 @@ pub struct SimpleIngestionService {
     schema_cache: Arc<Mutex<Option<SchemaCacheEntry>>>,
 }
 
-impl SimpleIngestionService {
-    /// Create a new simple ingestion service
+impl IngestionService {
+    /// Create a new ingestion service
     pub fn new(config: IngestionConfig) -> IngestionResult<Self> {
         let openrouter_service = if config.provider == AIProvider::OpenRouter {
             Some(OpenRouterService::new(

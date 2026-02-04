@@ -8,7 +8,7 @@ use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::IngestionConfig;
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
-use crate::ingestion::simple_service::SimpleIngestionService;
+use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::IngestionError;
 use crate::ingestion::ProgressTracker;
 use crate::log_feature;
@@ -96,7 +96,7 @@ async fn run_background_ingestion(
     );
 
     // Create ingestion service
-    let service = match create_simple_ingestion_service(ingestion_config).await {
+    let service = match create_ingestion_service(ingestion_config).await {
         Ok(s) => s,
         Err(e) => {
             let error_msg = format!("Ingestion service not available: {}", e);
@@ -163,8 +163,8 @@ async fn run_background_ingestion(
 }
 
 /// Create a simple ingestion service with potentially updated config
-async fn create_simple_ingestion_service(
+async fn create_ingestion_service(
     config: IngestionConfig,
-) -> Result<SimpleIngestionService, IngestionError> {
-    SimpleIngestionService::new(config)
+) -> Result<IngestionService, IngestionError> {
+    IngestionService::new(config)
 }

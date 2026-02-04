@@ -38,7 +38,7 @@ pub mod openrouter_service;
 pub mod progress;
 pub mod routes;
 
-pub mod simple_service;
+pub mod ingestion_service;
 pub mod structure_analyzer;
 
 use serde::{Deserialize, Serialize};

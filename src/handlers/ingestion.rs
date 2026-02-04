@@ -7,7 +7,7 @@ use crate::datafold_node::node::DataFoldNode;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::progress::{IngestionProgress, ProgressService, ProgressTracker};
-use crate::ingestion::simple_service::SimpleIngestionService;
+use crate::ingestion::ingestion_service::IngestionService;
 use crate::progress::JobType;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -126,11 +126,11 @@ pub fn extract_ingestion_data(payload: &Value) -> Result<(Value, Option<String>)
 }
 
 /// Create ingestion service from config
-async fn create_ingestion_service() -> Result<SimpleIngestionService, HandlerError> {
+async fn create_ingestion_service() -> Result<IngestionService, HandlerError> {
     let config = IngestionConfig::from_env().map_err(|e| {
         HandlerError::ServiceUnavailable(format!("Ingestion not configured: {}", e))
     })?;
-    SimpleIngestionService::new(config).map_err(|e| {
+    IngestionService::new(config).map_err(|e| {
         HandlerError::ServiceUnavailable(format!("Failed to create ingestion service: {}", e))
     })
 }
