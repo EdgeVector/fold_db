@@ -12,7 +12,7 @@ function SettingsModal({ isOpen, onClose }) {
   const [openrouterModel, setOpenrouterModel] = useState('anthropic/claude-3.5-sonnet')
   const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1')
   const [ollamaModel, setOllamaModel] = useState('llama3')
-  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://192.168.1.226:11434')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   
@@ -69,7 +69,7 @@ function SettingsModal({ isOpen, onClose }) {
         setOpenrouterModel(response.data.openrouter.model || 'anthropic/claude-3.5-sonnet')
         setOpenrouterBaseUrl(response.data.openrouter.base_url || 'https://openrouter.ai/api/v1')
         setOllamaModel(response.data.ollama.model || 'llama3')
-        setOllamaBaseUrl(response.data.ollama.base_url || 'http://localhost:11434')
+        setOllamaBaseUrl(response.data.ollama.base_url || 'http://192.168.1.226:11434')
         setAiProvider(response.data.provider || 'OpenRouter')
       }
     } catch (error) {
@@ -420,9 +420,9 @@ function SettingsModal({ isOpen, onClose }) {
                           ? setOpenrouterBaseUrl(e.target.value)
                           : setOllamaBaseUrl(e.target.value)
                         }
-                        placeholder={aiProvider === 'OpenRouter' 
+                        placeholder={aiProvider === 'OpenRouter'
                           ? 'https://openrouter.ai/api/v1'
-                          : 'http://localhost:11434'
+                          : 'http://192.168.1.226:11434'
                         }
                         className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
                       />
