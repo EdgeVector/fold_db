@@ -697,6 +697,35 @@ impl IngestionService {
             }
         }
 
+        // Ensure schema has key configuration for mutations to work
+        if schema.key.is_none() {
+            // Use the first field as the hash key, or generate an ID field if no fields exist
+            let hash_field = if let Some(fields) = &schema.fields {
+                fields.first().cloned()
+            } else if !schema.field_topologies.is_empty() {
+                schema.field_topologies.keys().next().cloned()
+            } else {
+                None
+            };
+
+            if let Some(field_name) = hash_field {
+                schema.key = Some(crate::schema::types::KeyConfig::new(
+                    Some(field_name.clone()),
+                    None,
+                ));
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Added default key configuration using field '{}' for schema",
+                    field_name
+                );
+            } else {
+                return Err(IngestionError::SchemaCreationError(
+                    "Cannot create schema without at least one field for key configuration".to_string(),
+                ));
+            }
+        }
+
         // Use topology_hash as schema name for structure-based deduplication
         schema.compute_schema_topology_hash();
         let topology_hash = schema
@@ -833,6 +862,31 @@ impl IngestionService {
                 }
             }
         };
+
+        // Ensure schema has key configuration
+        if schema.key.is_none() {
+            let hash_field = if let Some(fields) = &schema.fields {
+                fields.first().cloned()
+            } else if !schema.field_topologies.is_empty() {
+                schema.field_topologies.keys().next().cloned()
+            } else {
+                None
+            };
+
+            if let Some(field_name) = hash_field {
+                schema.key = Some(crate::schema::types::KeyConfig::new(
+                    Some(field_name.clone()),
+                    None,
+                ));
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Added default key configuration using field '{}' for existing schema '{}'",
+                    field_name,
+                    schema_name
+                );
+            }
+        }
 
         // Check if schema already has all required topologies
         let fields_to_check: Vec<String> = mutation_mappers
