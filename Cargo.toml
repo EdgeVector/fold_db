@@ -14,7 +14,7 @@ aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "aws-sdk-sns", "a
 # Utilities
 
 # Cryptography
-ring = "0.16.20"
+ring = "0.17.14"
 base64 = "0.21.0"
 ed25519-dalek = { version = "2.0", features = ["rand_core", "serde"] }
 aes-gcm = "0.10"
