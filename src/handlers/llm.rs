@@ -80,6 +80,22 @@ pub struct AiNativeIndexHandlerResponse {
     pub session_id: String,
 }
 
+/// Request for agent query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentQueryHandlerRequest {
+    pub query: String,
+    pub session_id: Option<String>,
+    pub max_iterations: Option<usize>,
+}
+
+/// Response for agent query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentQueryHandlerResponse {
+    pub answer: String,
+    pub tool_calls: Vec<crate::datafold_node::llm_query::types::ToolCallRecord>,
+    pub session_id: String,
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -971,6 +987,90 @@ pub async fn ai_native_index_query(
             ai_interpretation,
             raw_results: results_as_json,
             query: request.query,
+            session_id,
+        },
+        user_hash,
+    ))
+}
+
+/// Execute an agent query - an autonomous LLM agent that can use tools
+///
+/// The agent iteratively:
+/// 1. Analyzes the user's query
+/// 2. Calls tools (query, list_schemas, get_schema, search) as needed
+/// 3. Returns a final answer when complete
+///
+/// # Arguments
+/// * `request` - The agent query request
+/// * `user_hash` - User identifier for isolation
+/// * `service` - LLM query service
+/// * `session_manager` - Session manager for tracking conversation state
+/// * `node` - DataFold node instance
+///
+/// # Returns
+/// * `HandlerResult<AgentQueryHandlerResponse>` - Agent response with answer and tool calls
+pub async fn agent_query(
+    request: AgentQueryHandlerRequest,
+    user_hash: &str,
+    service: &LlmQueryService,
+    session_manager: &SessionManager,
+    node: &DataFoldNode,
+) -> HandlerResult<AgentQueryHandlerResponse> {
+    log::info!(
+        "Agent Query: received for user: {}, query: {}",
+        user_hash,
+        &request.query[..request.query.len().min(100)]
+    );
+
+    // Create or get session
+    let session_id = session_manager
+        .create_or_get_session(request.session_id.clone(), request.query.clone())
+        .map_err(|e| HandlerError::Internal(format!("Failed to create session: {}", e)))?;
+
+    // Get available schemas
+    let schemas: Vec<SchemaWithState> = {
+        let db_guard = node
+            .get_fold_db()
+            .await
+            .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+        db_guard
+            .schema_manager()
+            .get_schemas_with_states()
+            .map_err(|e| HandlerError::Internal(format!("Failed to get schemas: {}", e)))?
+    };
+
+    // Default max iterations
+    let max_iterations = request.max_iterations.unwrap_or(10);
+
+    // Run the agent
+    let (answer, tool_calls) = service
+        .run_agent_query(&request.query, &schemas, node, user_hash, max_iterations)
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Agent query failed: {}", e)))?;
+
+    // Store conversation in session
+    if let Err(e) =
+        session_manager.add_message(&session_id, "user".to_string(), request.query.clone())
+    {
+        log::warn!("Failed to add user message to session: {}", e);
+    }
+
+    if let Err(e) =
+        session_manager.add_message(&session_id, "assistant".to_string(), answer.clone())
+    {
+        log::warn!("Failed to add assistant message to session: {}", e);
+    }
+
+    log::info!(
+        "Agent Query complete for session: {}. Made {} tool calls.",
+        session_id,
+        tool_calls.len()
+    );
+
+    Ok(ApiResponse::success_with_user(
+        AgentQueryHandlerResponse {
+            answer,
+            tool_calls,
             session_id,
         },
         user_hash,

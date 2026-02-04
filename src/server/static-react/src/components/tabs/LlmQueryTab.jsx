@@ -98,82 +98,92 @@ function LlmQueryTab({ onResult }) {
 
           addToLog('system', chatResponse.data.answer);
         } else {
-          // Needs new query - use AI-native index
+          // Needs new query - use AI agent with tool calling
           addToLog('system', `🔍 Need new data: ${analysis.reasoning}`);
-          addToLog('system', '🔍 Using AI-native index search...');
-          
-          const response = await fetch('/api/llm-query/native-index', {
+          addToLog('system', '🤖 Starting AI agent...');
+
+          const response = await fetch('/api/llm-query/agent', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               query: userInput,
-              session_id: sessionId
+              session_id: sessionId,
+              max_iterations: 10
             }),
           });
 
           if (!response.ok) {
             const errorData = await response.json();
-            addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI-native index query'}`);
+            addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI agent query'}`);
             return;
           }
 
           const result = await response.json();
-          addToLog('system', '✅ AI-native index search completed');
-          
+
           // Update session ID if returned from the server
           if (result.session_id) {
             dispatch(setSessionId(result.session_id));
           }
-          
-          // Display the AI's interpretation of the results in the conversation
-          addToLog('system', result.ai_interpretation);
-          
-          // Also add the raw results for detailed view
-          addToLog('results', 'Raw search results', result.raw_results);
-          // Only show results section if user has expanded details
-          if (showResults) {
-            onResult({ success: true, data: result.raw_results });
+
+          // Show tool calls if any were made
+          if (result.tool_calls && result.tool_calls.length > 0) {
+            addToLog('system', `🔧 Made ${result.tool_calls.length} tool call(s)`);
+            // Add tool calls as results for detailed view
+            addToLog('results', 'Tool execution trace', result.tool_calls);
+          }
+
+          // Display the AI's final answer
+          addToLog('system', result.answer);
+
+          // Show results section if user has expanded details
+          if (showResults && result.tool_calls) {
+            onResult({ success: true, data: result.tool_calls });
           }
         }
       } else {
-        // New query - use AI-native index
-        addToLog('system', '🔍 Using AI-native index search...');
-        
-        const response = await fetch('/api/llm-query/native-index', {
+        // New query - use AI agent with tool calling
+        addToLog('system', '🤖 Starting AI agent...');
+
+        const response = await fetch('/api/llm-query/agent', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             query: userInput,
-            session_id: sessionId
+            session_id: sessionId,
+            max_iterations: 10
           }),
         });
 
         if (!response.ok) {
           const errorData = await response.json();
-          addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI-native index query'}`);
+          addToLog('system', `❌ Error: ${errorData.error || 'Failed to run AI agent query'}`);
           return;
         }
 
         const result = await response.json();
-        addToLog('system', '✅ AI-native index search completed');
-        
+
         // Update session ID if returned from the server
         if (result.session_id) {
           dispatch(setSessionId(result.session_id));
         }
-        
-        // Display the AI's interpretation of the results in the conversation
-        addToLog('system', result.ai_interpretation);
-        
-        // Also add the raw results for detailed view
-        addToLog('results', 'Raw search results', result.raw_results);
-        // Only show results section if user has expanded details
-        if (showResults) {
-          onResult({ success: true, data: result.raw_results });
+
+        // Show tool calls if any were made
+        if (result.tool_calls && result.tool_calls.length > 0) {
+          addToLog('system', `🔧 Made ${result.tool_calls.length} tool call(s)`);
+          // Add tool calls as results for detailed view
+          addToLog('results', 'Tool execution trace', result.tool_calls);
+        }
+
+        // Display the AI's final answer
+        addToLog('system', result.answer);
+
+        // Show results section if user has expanded details
+        if (showResults && result.tool_calls) {
+          onResult({ success: true, data: result.tool_calls });
         }
       }
     } catch (error) {
@@ -219,10 +229,10 @@ function LlmQueryTab({ onResult }) {
       <div className="overflow-y-auto bg-gray-50 p-4 space-y-3" style={{ maxHeight: '60vh', minHeight: '400px' }}>
         {conversationLog.length === 0 ? (
           <div className="text-center text-gray-500 mt-20">
-            <div className="text-6xl mb-4">💬</div>
+            <div className="text-6xl mb-4">🤖</div>
             <p className="text-lg mb-2">Start a conversation</p>
             <p className="text-sm">
-              Try: "Find all blog posts from last month" or "Show me products over $100"
+              Try: "What schemas are available?" or "Find tweets mentioning rust" or "Search for blog posts about AI"
             </p>
           </div>
         ) : (
@@ -306,7 +316,7 @@ function LlmQueryTab({ onResult }) {
             placeholder={
               conversationLog.some(log => log.type === 'results')
                 ? "Ask a follow-up question or start a new query..."
-                : "Search the native index (e.g., 'Find posts about AI')..."
+                : "Ask anything (e.g., 'Find tweets about rust', 'What schemas exist?')..."
             }
             disabled={isProcessing}
             className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"

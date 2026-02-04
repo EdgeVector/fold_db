@@ -23,7 +23,10 @@ cargo test test_name                     # Specific test
 cargo test test_name -- --nocapture      # With output
 
 # Run the HTTP server (port 9001)
-./run.sh                                 # Cloud mode (kills existing processes, starts backend + Vite frontend)
+./run.sh                                 # Cloud mode (DynamoDB + global schema service)
+./run.sh --local                         # Local mode (Sled storage)
+./run.sh --local --local-schema          # Fully offline (local storage + local schema service)
+./run.sh --local --empty-db              # Local with fresh database
 cargo run --bin datafold_http_server -- --port 9001  # Backend only
 
 # Frontend (in src/server/static-react/)
@@ -127,7 +130,7 @@ log_feature!(LogFeature::HttpServer, info, "Server started on {}", addr);
 
 ## Manual Testing Workflow
 
-1. Run `./run.sh`
+1. Run `./run.sh --local --local-schema` (or `./run.sh` for cloud mode)
 2. Navigate to http://localhost:5173 (Vite dev server proxies to backend on 9001)
 3. Login with `test_user` if needed
 4. Press "Reset Database" button, confirm, wait for completion

@@ -3,6 +3,7 @@
 use crate::schema::types::DeclarativeSchemaDefinition;
 use crate::schema::types::Query;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::SystemTime;
 
 /// Request to analyze a natural language query
@@ -119,6 +120,52 @@ pub struct SessionContext {
     pub conversation_history: Vec<Message>,
     pub schema_created: Option<String>,
     pub ttl_seconds: u64,
+}
+
+// ============================================================================
+// Agent Query Types
+// ============================================================================
+
+/// Request for agent query - an autonomous LLM agent that can use tools
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AgentQueryRequest {
+    /// The natural language query or task for the agent
+    pub query: String,
+    /// Optional session ID for conversation continuity
+    pub session_id: Option<String>,
+    /// Maximum number of iterations before stopping (default: 10)
+    pub max_iterations: Option<usize>,
+}
+
+/// Response from agent query
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AgentQueryResponse {
+    /// The final answer from the agent
+    pub answer: String,
+    /// Record of all tool calls made during execution
+    pub tool_calls: Vec<ToolCallRecord>,
+    /// Session ID for follow-up queries
+    pub session_id: String,
+}
+
+/// Record of a single tool call made by the agent
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct ToolCallRecord {
+    /// Name of the tool called
+    pub tool: String,
+    /// Parameters passed to the tool
+    pub params: Value,
+    /// Result returned from the tool
+    pub result: Value,
+}
+
+/// Parsed LLM response - either a tool call or a final answer
+#[derive(Debug, Clone)]
+pub enum AgentAction {
+    /// The LLM wants to call a tool
+    ToolCall { tool: String, params: Value },
+    /// The LLM has a final answer
+    Answer(String),
 }
 
 impl SessionContext {

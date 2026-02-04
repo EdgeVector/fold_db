@@ -1,6 +1,8 @@
 //! LLM service for query analysis and summarization.
 
-use super::types::{FollowupAnalysis, Message, QueryPlan};
+use super::types::{AgentAction, FollowupAnalysis, Message, QueryPlan, ToolCallRecord};
+use crate::datafold_node::node::DataFoldNode;
+use crate::datafold_node::OperationProcessor;
 use crate::ingestion::{
     config::{AIProvider, IngestionConfig},
     ollama_service::OllamaService,
@@ -96,6 +98,288 @@ impl LlmQueryService {
         }
 
         Ok(query_plan)
+    }
+
+    // ========================================================================
+    // Agent Methods
+    // ========================================================================
+
+    /// Run an autonomous agent query that can use tools to accomplish tasks
+    ///
+    /// The agent will iteratively:
+    /// 1. Send the conversation to the LLM
+    /// 2. Parse the response for tool calls or final answer
+    /// 3. Execute tool calls and add results to conversation
+    /// 4. Repeat until a final answer is given or max_iterations reached
+    pub async fn run_agent_query(
+        &self,
+        user_query: &str,
+        schemas: &[SchemaWithState],
+        node: &DataFoldNode,
+        _user_hash: &str,
+        max_iterations: usize,
+    ) -> Result<(String, Vec<ToolCallRecord>), String> {
+        let mut tool_calls: Vec<ToolCallRecord> = Vec::new();
+        let mut conversation_context = String::new();
+
+        // Build the initial system prompt with tool definitions
+        let system_prompt = self.build_agent_system_prompt(schemas);
+
+        log::info!(
+            "Agent: Starting query with max {} iterations: {}",
+            max_iterations,
+            user_query
+        );
+
+        for iteration in 0..max_iterations {
+            // Build the full prompt with conversation history
+            let full_prompt = format!(
+                "{}\n\n{}\n\nUser Query: {}\n\nRespond with a JSON object. Either:\n- {{\"tool\": \"tool_name\", \"params\": {{...}}}} to use a tool\n- {{\"answer\": \"your final response\"}} when you have the answer",
+                system_prompt,
+                conversation_context,
+                user_query
+            );
+
+            log::debug!("Agent: Iteration {} - calling LLM", iteration + 1);
+
+            let response = self.call_llm(&full_prompt).await?;
+
+            log::debug!("Agent: LLM response: {}", &response[..response.len().min(200)]);
+
+            // Parse the response
+            let action = self.parse_agent_response(&response)?;
+
+            match action {
+                AgentAction::Answer(answer) => {
+                    log::info!(
+                        "Agent: Completed after {} iterations with {} tool calls",
+                        iteration + 1,
+                        tool_calls.len()
+                    );
+                    return Ok((answer, tool_calls));
+                }
+                AgentAction::ToolCall { tool, params } => {
+                    log::info!("Agent: Calling tool '{}' with params: {}", tool, params);
+
+                    // Execute the tool
+                    let result = self.execute_tool(&tool, &params, node).await?;
+
+                    log::debug!("Agent: Tool '{}' returned: {}", tool, &result.to_string()[..result.to_string().len().min(200)]);
+
+                    // Record the tool call
+                    tool_calls.push(ToolCallRecord {
+                        tool: tool.clone(),
+                        params: params.clone(),
+                        result: result.clone(),
+                    });
+
+                    // Add to conversation context
+                    conversation_context.push_str(&format!(
+                        "\n\nTool call: {}\nParameters: {}\nResult: {}\n",
+                        tool,
+                        serde_json::to_string_pretty(&params).unwrap_or_default(),
+                        serde_json::to_string_pretty(&result).unwrap_or_default()
+                    ));
+                }
+            }
+        }
+
+        Err(format!(
+            "Agent reached maximum iterations ({}) without providing a final answer",
+            max_iterations
+        ))
+    }
+
+    /// Build the system prompt with tool definitions for the agent
+    fn build_agent_system_prompt(&self, schemas: &[SchemaWithState]) -> String {
+        let mut prompt = String::from(
+            "You are a helpful database assistant with access to tools. Use the tools to query and manipulate data to answer the user's question.\n\n"
+        );
+
+        prompt.push_str("## Available Tools\n\n");
+
+        prompt.push_str("### query\n");
+        prompt.push_str("Query data from a schema.\n");
+        prompt.push_str("Parameters:\n");
+        prompt.push_str("- schema_name (string, required): Name of the schema to query\n");
+        prompt.push_str("- fields (array of strings, optional): Fields to return. If omitted, returns all fields.\n");
+        prompt.push_str("- filter (object, optional): Filter to apply. Examples:\n");
+        prompt.push_str("  - {\"HashKey\": \"value\"} - exact match on hash key\n");
+        prompt.push_str("  - {\"RangePrefix\": \"prefix\"} - prefix match on range key\n");
+        prompt.push_str("  - {\"SampleN\": 10} - random sample of N records\n");
+        prompt.push_str("  - null - no filter (all records)\n");
+        prompt.push_str("Example: {\"tool\": \"query\", \"params\": {\"schema_name\": \"Tweet\", \"fields\": [\"content\", \"author\"], \"filter\": {\"SampleN\": 5}}}\n\n");
+
+        prompt.push_str("### list_schemas\n");
+        prompt.push_str("List all available schemas.\n");
+        prompt.push_str("Parameters: none\n");
+        prompt.push_str("Example: {\"tool\": \"list_schemas\", \"params\": {}}\n\n");
+
+        prompt.push_str("### get_schema\n");
+        prompt.push_str("Get details of a specific schema including its fields and key configuration.\n");
+        prompt.push_str("Parameters:\n");
+        prompt.push_str("- name (string, required): Name of the schema\n");
+        prompt.push_str("Example: {\"tool\": \"get_schema\", \"params\": {\"name\": \"Tweet\"}}\n\n");
+
+        prompt.push_str("### search\n");
+        prompt.push_str("Full-text search across all indexed fields.\n");
+        prompt.push_str("Parameters:\n");
+        prompt.push_str("- terms (string, required): Search terms\n");
+        prompt.push_str("Example: {\"tool\": \"search\", \"params\": {\"terms\": \"rust programming\"}}\n\n");
+
+        prompt.push_str("## Available Schemas\n\n");
+        for schema in schemas {
+            prompt.push_str(&format!(
+                "- **{}** (Type: {:?}, State: {:?})\n",
+                schema.schema.name, schema.schema.schema_type, schema.state
+            ));
+
+            if let Some(ref key) = schema.schema.key {
+                if let Some(ref hash_field) = key.hash_field {
+                    prompt.push_str(&format!("  - Hash Key: {}\n", hash_field));
+                }
+                if let Some(ref range_field) = key.range_field {
+                    prompt.push_str(&format!("  - Range Key: {}\n", range_field));
+                }
+            }
+
+            prompt.push_str("  - Fields: ");
+            let field_names: Vec<String> = schema.schema.runtime_fields.keys().cloned().collect();
+            prompt.push_str(&field_names.join(", "));
+            prompt.push('\n');
+        }
+
+        prompt.push_str("\n## Instructions\n\n");
+        prompt.push_str("1. Analyze the user's request\n");
+        prompt.push_str("2. Use tools to gather information or perform actions\n");
+        prompt.push_str("3. When you have enough information to answer, provide your final response\n\n");
+        prompt.push_str("IMPORTANT: Always respond with valid JSON. Either:\n");
+        prompt.push_str("- {\"tool\": \"tool_name\", \"params\": {...}} to call a tool\n");
+        prompt.push_str("- {\"answer\": \"your response\"} to provide the final answer\n");
+
+        prompt
+    }
+
+    /// Parse an LLM response into an AgentAction
+    fn parse_agent_response(&self, response: &str) -> Result<AgentAction, String> {
+        // Try to extract JSON from the response
+        let json_str = if let Some(start) = response.find('{') {
+            if let Some(end) = response.rfind('}') {
+                &response[start..=end]
+            } else {
+                response
+            }
+        } else {
+            response
+        };
+
+        let parsed: Value = serde_json::from_str(json_str)
+            .map_err(|e| format!("Failed to parse agent response as JSON: {}. Response: {}", e, json_str))?;
+
+        // Check if it's a tool call
+        if let Some(tool) = parsed.get("tool").and_then(|t| t.as_str()) {
+            let params = parsed.get("params").cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+            return Ok(AgentAction::ToolCall {
+                tool: tool.to_string(),
+                params,
+            });
+        }
+
+        // Check if it's a final answer
+        if let Some(answer) = parsed.get("answer").and_then(|a| a.as_str()) {
+            return Ok(AgentAction::Answer(answer.to_string()));
+        }
+
+        Err(format!("Agent response must contain either 'tool' or 'answer' field. Got: {}", json_str))
+    }
+
+    /// Execute a tool call and return the result
+    async fn execute_tool(
+        &self,
+        tool: &str,
+        params: &Value,
+        node: &DataFoldNode,
+    ) -> Result<Value, String> {
+        let processor = OperationProcessor::new(node.clone());
+
+        match tool {
+            "query" => {
+                let schema_name = params
+                    .get("schema_name")
+                    .and_then(|s| s.as_str())
+                    .ok_or("query tool requires 'schema_name' parameter")?;
+
+                let fields: Vec<String> = params
+                    .get("fields")
+                    .and_then(|f| f.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let filter = params.get("filter").cloned();
+
+                let query = Query {
+                    schema_name: schema_name.to_string(),
+                    fields,
+                    filter: filter.and_then(|f| serde_json::from_value(f).ok()),
+                };
+
+                let results = processor
+                    .execute_query_json(query)
+                    .await
+                    .map_err(|e| format!("Query execution failed: {}", e))?;
+
+                Ok(Value::Array(results))
+            }
+
+            "list_schemas" => {
+                let schemas = processor
+                    .list_schemas()
+                    .await
+                    .map_err(|e| format!("Failed to list schemas: {}", e))?;
+
+                serde_json::to_value(&schemas)
+                    .map_err(|e| format!("Failed to serialize schemas: {}", e))
+            }
+
+            "get_schema" => {
+                let name = params
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .ok_or("get_schema tool requires 'name' parameter")?;
+
+                let schema = processor
+                    .get_schema(name)
+                    .await
+                    .map_err(|e| format!("Failed to get schema: {}", e))?;
+
+                match schema {
+                    Some(s) => serde_json::to_value(&s)
+                        .map_err(|e| format!("Failed to serialize schema: {}", e)),
+                    None => Ok(Value::Null),
+                }
+            }
+
+            "search" => {
+                let terms = params
+                    .get("terms")
+                    .and_then(|t| t.as_str())
+                    .ok_or("search tool requires 'terms' parameter")?;
+
+                let results = processor
+                    .native_index_search(terms)
+                    .await
+                    .map_err(|e| format!("Search failed: {}", e))?;
+
+                serde_json::to_value(&results)
+                    .map_err(|e| format!("Failed to serialize search results: {}", e))
+            }
+
+            _ => Err(format!("Unknown tool: {}", tool)),
+        }
     }
 
     /// Summarize query results

@@ -7,6 +7,7 @@ use super::service::LlmQueryService;
 use super::session::SessionManager;
 use super::types::*;
 use crate::handlers::llm as shared_handlers;
+use crate::handlers::llm::AgentQueryHandlerRequest;
 use crate::ingestion::IngestionConfig;
 use crate::server::http_server::AppState;
 use crate::server::routes::{handler_error_to_response, require_node};
@@ -398,6 +399,65 @@ pub async fn ai_native_index_query(
                     "query": data.query,
                     "session_id": data.session_id
                 }))
+            } else {
+                HttpResponse::InternalServerError().json(json!({"error": "Missing response data"}))
+            }
+        }
+        Err(e) => handler_error_to_response(e),
+    }
+}
+
+/// Execute an agent query - an autonomous LLM agent that can use tools
+#[utoipa::path(
+    post,
+    path = "/api/llm-query/agent",
+    tag = "llm-query",
+    request_body = AgentQueryRequest,
+    responses(
+        (status = 200, description = "Agent query result", body = AgentQueryResponse),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn agent_query(
+    request: web::Json<AgentQueryRequest>,
+    app_state: web::Data<AppState>,
+    llm_state: web::Data<LlmQueryState>,
+) -> impl Responder {
+    let service = match require_service(&llm_state) {
+        Ok(svc) => svc,
+        Err(response) => return response,
+    };
+
+    let (user_hash, node_arc) = match require_node(&app_state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let node = node_arc.lock().await;
+
+    // Convert the request to handler request type
+    let handler_request = AgentQueryHandlerRequest {
+        query: request.query.clone(),
+        session_id: request.session_id.clone(),
+        max_iterations: request.max_iterations,
+    };
+
+    match shared_handlers::agent_query(
+        handler_request,
+        &user_hash,
+        service.as_ref(),
+        llm_state.session_manager.as_ref(),
+        &node,
+    )
+    .await
+    {
+        Ok(response) => {
+            if let Some(data) = response.data {
+                HttpResponse::Ok().json(AgentQueryResponse {
+                    answer: data.answer,
+                    tool_calls: data.tool_calls,
+                    session_id: data.session_id,
+                })
             } else {
                 HttpResponse::InternalServerError().json(json!({"error": "Missing response data"}))
             }

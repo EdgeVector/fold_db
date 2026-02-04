@@ -418,6 +418,10 @@ impl DataFoldHttpServer {
         .route(
             "/llm-query/backfill/{hash}",
             web::get().to(llm_query::get_backfill_status),
+        )
+        .route(
+            "/llm-query/agent",
+            web::post().to(llm_query::agent_query),
         );
     }
 
