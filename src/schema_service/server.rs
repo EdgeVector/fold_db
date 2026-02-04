@@ -413,6 +413,38 @@ impl SchemaServiceState {
 
         Ok(SchemaAddOutcome::Added(schema, mutation_mappers))
     }
+
+    /// Get all schema names (public accessor for Lambda integration)
+    pub fn get_schema_names(&self) -> FoldDbResult<Vec<String>> {
+        let schemas = self
+            .schemas
+            .read()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
+        Ok(schemas.keys().cloned().collect())
+    }
+
+    /// Get all schemas (public accessor for Lambda integration)
+    pub fn get_all_schemas_cached(&self) -> FoldDbResult<Vec<Schema>> {
+        let schemas = self
+            .schemas
+            .read()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
+        Ok(schemas.values().cloned().collect())
+    }
+
+    /// Get a schema by name (public accessor for Lambda integration)
+    pub fn get_schema_by_name(&self, name: &str) -> FoldDbResult<Option<Schema>> {
+        let schemas = self
+            .schemas
+            .read()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
+        Ok(schemas.get(name).cloned())
+    }
+
+    /// Get schema count (public accessor for Lambda integration)
+    pub fn get_schema_count(&self) -> usize {
+        self.schemas.read().map(|s| s.len()).unwrap_or(0)
+    }
 }
 
 /// List all available schemas

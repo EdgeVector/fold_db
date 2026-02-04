@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/datafold.svg)](https://crates.io/crates/datafold)
 [![Documentation](https://docs.rs/datafold/badge.svg)](https://docs.rs/datafold)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/yourusername/datafold)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/shiba4life/fold_db)
 
 A Rust-based distributed data platform with schema-based storage, AI-powered ingestion, and real-time data processing capabilities. DataFold provides a complete solution for distributed data management with automatic schema generation, field mapping, and extensible ingestion pipelines.
 
@@ -365,7 +365,7 @@ See [S3 File Path Ingestion Guide](docs/S3_FILE_PATH_INGESTION.md) for complete 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/datafold.git
+git clone https://github.com/shiba4life/fold_db.git
 cd datafold
 
 # Install dependencies
@@ -601,8 +601,8 @@ at your option.
 
 ## 🌟 Community
 
-- **Issues** - Report bugs and request features on [GitHub Issues](https://github.com/yourusername/datafold/issues)
-- **Discussions** - Join discussions on [GitHub Discussions](https://github.com/yourusername/datafold/discussions)
+- **Issues** - Report bugs and request features on [GitHub Issues](https://github.com/shiba4life/fold_db/issues)
+- **Discussions** - Join discussions on [GitHub Discussions](https://github.com/shiba4life/fold_db/discussions)
 
 ---
 

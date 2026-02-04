@@ -1,85 +1,336 @@
 #!/bin/bash
 
 set -e
-# Function to kill existing datafold processes and clean up locks
-cleanup_locks() {
-    echo "Checking for existing datafold processes..."
-    
-    # Kill any existing datafold processes
+
+#######################################
+# FoldDB Development Server
+#
+# Usage:
+#   ./run.sh [OPTIONS]
+#
+# Options:
+#   --local          Use local Sled storage (default: cloud/DynamoDB)
+#   --local-schema   Run local schema service (for offline development)
+#   --dev            Use dev schema service (default: prod)
+#   --reset-db       Reset database from test_db template
+#   --empty-db       Start with empty database
+#   --region=REGION  AWS region for cloud mode (default: us-west-2)
+#
+# Examples:
+#   ./run.sh                           # Cloud mode with prod schema service
+#   ./run.sh --dev                     # Cloud mode with dev schema service
+#   ./run.sh --local                   # Local storage with global schema service
+#   ./run.sh --local --local-schema    # Fully offline development
+#   ./run.sh --local --empty-db        # Local with fresh database
+#######################################
+
+# ============================================================================
+# Shared Functions
+# ============================================================================
+
+cleanup_processes() {
+    echo "Checking for existing datafold/fold_db processes..."
+
+    # Kill any existing processes (try multiple patterns)
     pkill -f datafold_http_server 2>/dev/null || true
-    pkill -f "cargo run.*datafold_http_server" 2>/dev/null || true
+    pkill -f fold_db 2>/dev/null || true
+    pkill -f "cargo run.*datafold" 2>/dev/null || true
+    pkill -f "cargo run.*fold_db" 2>/dev/null || true
     pkill -f schema_service 2>/dev/null || true
-    pkill -f "cargo run.*schema_service" 2>/dev/null || true
-    
-    # Wait a moment for processes to terminate
+    pkill -f "cargo run.*schema" 2>/dev/null || true
+
+    # Kill by port if something is listening
+    lsof -ti:9001 | xargs kill -9 2>/dev/null || true
+    lsof -ti:9002 | xargs kill -9 2>/dev/null || true
+
+    # Wait for processes to terminate
     sleep 2
-    
+
     # Force kill if still running
     pkill -9 -f datafold_http_server 2>/dev/null || true
-    pkill -9 -f "cargo run.*datafold_http_server" 2>/dev/null || true
+    pkill -9 -f fold_db 2>/dev/null || true
+    pkill -9 -f "cargo run.*datafold" 2>/dev/null || true
+    pkill -9 -f "cargo run.*fold_db" 2>/dev/null || true
     pkill -9 -f schema_service 2>/dev/null || true
-    pkill -9 -f "cargo run.*schema_service" 2>/dev/null || true
-    
+    pkill -9 -f "cargo run.*schema" 2>/dev/null || true
+
+    # Give dying processes time to release locks
+    sleep 1
+
     echo "Cleaned up existing processes."
 }
 
-# Parse flags
-TABLE_NAME="DataFoldStorage"
+reset_db() {
+    echo "Resetting database from test_db template..."
+    rm -rf data
+    cp -R test_db data
+    echo "Database reset complete."
+}
+
+empty_db() {
+    echo "Initializing empty database directory..."
+    rm -rf data
+    mkdir -p data
+    echo "Empty database directory ready."
+}
+
+load_api_keys() {
+    # Load shell profile to get API keys
+    source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
+
+    # Ensure FOLD_OPENROUTER_API_KEY is set
+    if [ -z "$FOLD_OPENROUTER_API_KEY" ]; then
+        if [ -n "$OPENROUTER_API_KEY" ]; then
+            export FOLD_OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
+        fi
+    fi
+
+    if [ -z "$FOLD_OPENROUTER_API_KEY" ]; then
+        echo "WARNING: FOLD_OPENROUTER_API_KEY not set. AI ingestion will not work."
+        echo "         Set it in your shell profile: export FOLD_OPENROUTER_API_KEY=your_key"
+    else
+        export FOLD_OPENROUTER_API_KEY
+        echo "OpenRouter API key configured"
+    fi
+}
+
+check_schema_service() {
+    local url="$1"
+    echo "Checking schema service connectivity..."
+    if curl -s --connect-timeout 10 "$url/api/health" > /dev/null 2>&1; then
+        echo "Schema service is reachable."
+        return 0
+    else
+        return 1
+    fi
+}
+
+start_local_schema_service() {
+    echo "Starting LOCAL schema service on port 9002..."
+    nohup cargo run --bin schema_service -- --port 9002 --db-path schema_registry > schema_service.log 2>&1 &
+    SCHEMA_SERVICE_PID=$!
+
+    echo "Waiting for local schema service to be ready..."
+    for i in {1..30}; do
+        if kill -0 $SCHEMA_SERVICE_PID 2>/dev/null; then
+            if curl -s http://127.0.0.1:9002/api/health > /dev/null 2>&1; then
+                echo "Local schema service started successfully with PID: $SCHEMA_SERVICE_PID"
+                echo "Schema service logs: schema_service.log"
+                return 0
+            fi
+            sleep 1
+        else
+            echo "Schema service process died. Check schema_service.log for details."
+            exit 1
+        fi
+    done
+
+    echo "Local schema service failed to become healthy within 30 seconds."
+    kill $SCHEMA_SERVICE_PID 2>/dev/null || true
+    exit 1
+}
+
+build_project() {
+    local features="$1"
+    echo "Building the Rust project..."
+    if [ -n "$features" ]; then
+        cargo build --features "$features"
+    else
+        cargo build
+    fi
+
+    if [ $? -ne 0 ]; then
+        echo "Rust build failed. Exiting."
+        exit 1
+    fi
+}
+
+generate_openapi() {
+    local features="$1"
+    echo "Generating OpenAPI spec..."
+    mkdir -p target
+    if [ -n "$features" ]; then
+        cargo run --features "$features" --quiet --bin openapi_dump > target/openapi.json
+    else
+        cargo run --quiet --bin openapi_dump > target/openapi.json
+    fi
+
+    if [ $? -ne 0 ]; then
+        echo "Failed to generate OpenAPI spec. Exiting."
+        exit 1
+    fi
+}
+
+install_frontend_deps() {
+    cd src/server/static-react
+    if [ ! -d "node_modules" ]; then
+        echo "Installing frontend dependencies..."
+        npm install
+        if [ $? -ne 0 ]; then
+            echo "Failed to install frontend dependencies. Exiting."
+            exit 1
+        fi
+    fi
+    cd ../../..
+}
+
+start_http_server() {
+    local features="$1"
+    local schema_url="$2"
+    local timeout="$3"
+
+    echo "Starting the HTTP server on port 9001..."
+    if [ -n "$features" ]; then
+        RUST_LOG=debug nohup cargo run --features "$features" --bin datafold_http_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
+    else
+        RUST_LOG=debug nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
+    fi
+    SERVER_PID=$!
+
+    echo "Waiting for HTTP server to be ready..."
+    for i in $(seq 1 $timeout); do
+        if kill -0 $SERVER_PID 2>/dev/null; then
+            if curl -s http://127.0.0.1:9001/api/system/status > /dev/null 2>&1; then
+                echo "HTTP server started successfully with PID: $SERVER_PID"
+                echo "Server logs: server.log"
+                return 0
+            fi
+            sleep 1
+        else
+            echo "HTTP server process died. Check server.log for details."
+            return 1
+        fi
+    done
+
+    echo "HTTP server failed to become healthy within $timeout seconds."
+    kill $SERVER_PID 2>/dev/null || true
+    return 1
+}
+
+start_vite_dev() {
+    echo ""
+    echo "Starting Vite dev server with hot reload..."
+    echo "Access app at: http://localhost:5173"
+    echo ""
+
+    cd src/server/static-react
+    npm run dev
+}
+
+# ============================================================================
+# Parse Arguments
+# ============================================================================
+
+LOCAL_MODE=false
+LOCAL_SCHEMA=false
+DEV_MODE=false
+RESET_DB=false
+EMPTY_DB=false
 REGION="us-west-2"
-USER_ID=""
+TABLE_NAME="DataFoldStorage"
+
 for arg in "$@"; do
     case "$arg" in
-        # --table-name is deprecated/removed to prevent temporary table creation
-        # --table-name=*)
-        #     echo "WARNING: --table-name is disabled. Using default 'DataFoldStorage'."
-        #     shift
-        #     ;;
+        --local)
+            LOCAL_MODE=true
+            ;;
+        --local-schema)
+            LOCAL_SCHEMA=true
+            ;;
+        --dev)
+            DEV_MODE=true
+            ;;
+        --reset-db)
+            RESET_DB=true
+            ;;
+        --empty-db)
+            EMPTY_DB=true
+            ;;
         --region=*)
             REGION="${arg#*=}"
-            shift
             ;;
-        --user-id=*)
-            USER_ID="${arg#*=}"
-            shift
+        --help|-h)
+            head -30 "$0" | tail -25
+            exit 0
             ;;
         *)
             ;;
     esac
 done
 
-# Enforce strict table naming to prevent temporary table creation
-if [ "$TABLE_NAME" != "DataFoldStorage" ]; then
-    echo "WARNING: TABLE_NAME was modified. Resetting to 'DataFoldStorage' to prevent temporary table creation."
-    TABLE_NAME="DataFoldStorage"
+# ============================================================================
+# Main Script
+# ============================================================================
+
+# Cleanup existing processes
+cleanup_processes
+
+# Handle database reset options
+if [ "$RESET_DB" = true ]; then
+    reset_db
 fi
 
-# Clean up any existing locks and processes
-cleanup_locks
-
-# Backup existing config if it exists
-CONFIG_FILE="config/node_config.json"
-if [ -f "$CONFIG_FILE" ]; then
-    echo "Backing up existing node_config.json..."
-    cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
+if [ "$EMPTY_DB" = true ]; then
+    empty_db
 fi
 
 # Ensure config directory exists
 mkdir -p config
+CONFIG_FILE="config/node_config.json"
 
-echo "Ensuring node identity..."
-# Run ensure_identity to get the public key
-USER_ID=$(cargo run --quiet --bin ensure_identity)
-echo "Node Identity (User ID): $USER_ID"
-
-echo "Setting up Cloud configuration..."
-echo "Table name: $TABLE_NAME"
-echo "Region: $REGION"
-if [ -n "$USER_ID" ]; then
-    echo "User ID: $USER_ID"
+# Backup existing config
+if [ -f "$CONFIG_FILE" ]; then
+    cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
 fi
 
-# Create or update node_config.json with DynamoDB settings
-cat > "$CONFIG_FILE" <<EOF
+# Set up configuration based on mode
+if [ "$LOCAL_MODE" = true ]; then
+    echo "Setting up LOCAL configuration (Sled storage)..."
+    # Determine schema_service_url for config
+    if [ "$DEV_MODE" = true ]; then
+        CONFIG_SCHEMA_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
+    else
+        CONFIG_SCHEMA_URL="https://axo709qs11.execute-api.us-east-1.amazonaws.com"
+    fi
+
+    cat > "$CONFIG_FILE" <<EOF
+{
+  "database": {
+    "type": "local",
+    "path": "data"
+  },
+  "storage_path": "data",
+  "default_trust_distance": 1,
+  "network_listen_address": "/ip4/0.0.0.0/tcp/0",
+  "security_config": {
+    "require_tls": false,
+    "require_signatures": false,
+    "encrypt_at_rest": false
+  },
+  "schema_service_url": "$CONFIG_SCHEMA_URL"
+}
+EOF
+    CARGO_FEATURES=""
+    SERVER_TIMEOUT=60
+else
+    echo "Setting up CLOUD configuration (DynamoDB storage)..."
+
+    # Get node identity
+    echo "Ensuring node identity..."
+    USER_ID=$(cargo run --quiet --bin ensure_identity)
+    echo "Node Identity (User ID): $USER_ID"
+
+    echo "Region: $REGION"
+    echo "Table prefix: $TABLE_NAME"
+
+    # Determine schema_service_url for config
+    if [ "$DEV_MODE" = true ]; then
+        CONFIG_SCHEMA_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
+    else
+        CONFIG_SCHEMA_URL="https://axo709qs11.execute-api.us-east-1.amazonaws.com"
+    fi
+
+    cat > "$CONFIG_FILE" <<EOF
 {
   "database": {
     "type": "cloud",
@@ -99,7 +350,7 @@ cat > "$CONFIG_FILE" <<EOF
       "logs": "${TABLE_NAME}-logs"
     },
     "auto_create": true,
-    "user_id": $(if [ -n "$USER_ID" ]; then echo "\"$USER_ID\""; else echo "null"; fi)
+    "user_id": "$USER_ID"
   },
   "storage_path": "data",
   "default_trust_distance": 1,
@@ -109,126 +360,84 @@ cat > "$CONFIG_FILE" <<EOF
     "require_signatures": false,
     "encrypt_at_rest": false
   },
-  "schema_service_url": "https://schema.folddb.com"
+  "schema_service_url": "$CONFIG_SCHEMA_URL"
 }
 EOF
 
-echo "Cloud configuration saved to $CONFIG_FILE"
-
-# Build the Rust project first (needed to generate OpenAPI spec)
-echo "Building the Rust project..."
-cargo build --features aws-backend
-
-
-
-# Generate OpenAPI spec to a local file for the UI prebuild
-echo "Generating OpenAPI spec..."
-mkdir -p target
-cargo run --features aws-backend --quiet --bin openapi_dump > target/openapi.json
-
-
-
-# Ensure frontend dependencies are installed
-cd src/server/static-react
-if [ ! -d "node_modules" ]; then
-    echo "Installing frontend dependencies..."
-    npm install
-fi
-cd ../../..
-
-# Using the global schema service at schema.folddb.com
-SCHEMA_SERVICE_URL="https://schema.folddb.com"
-echo "Using global schema service at: $SCHEMA_SERVICE_URL"
-
-# Export DynamoDB config for ProgressStore (uses prefix to generate table names)
-export DATAFOLD_DYNAMODB_TABLE_PREFIX="$TABLE_NAME"
-export DATAFOLD_DYNAMODB_REGION="$REGION"
-if [ -n "$USER_ID" ]; then
+    # Export DynamoDB config for ProgressStore
+    export DATAFOLD_DYNAMODB_TABLE_PREFIX="$TABLE_NAME"
+    export DATAFOLD_DYNAMODB_REGION="$REGION"
     export DATAFOLD_DYNAMODB_USER_ID="$USER_ID"
+
+    CARGO_FEATURES="aws-backend"
+    SERVER_TIMEOUT=180
+
+    echo "Note: Ensure AWS credentials are configured"
 fi
 
-# Verify global schema service is reachable
-echo "Checking schema service connectivity..."
-if curl -s --connect-timeout 5 "$SCHEMA_SERVICE_URL" > /dev/null 2>&1; then
-    echo "Schema service is reachable."
+echo "Configuration saved to $CONFIG_FILE"
+
+# Build project
+build_project "$CARGO_FEATURES"
+
+# Generate OpenAPI spec
+generate_openapi "$CARGO_FEATURES"
+
+# Install frontend dependencies
+install_frontend_deps
+
+# Load API keys
+load_api_keys
+
+# Schema service setup
+# Prod: https://axo709qs11.execute-api.us-east-1.amazonaws.com (TODO: schema.folddb.com once DNS configured)
+# Dev:  https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com
+if [ "$DEV_MODE" = true ]; then
+    SCHEMA_SERVICE_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
 else
-    echo "WARNING: Global schema service at $SCHEMA_SERVICE_URL may not be reachable."
-    echo "         The server will still start, but schema operations may fail."
+    SCHEMA_SERVICE_URL="https://axo709qs11.execute-api.us-east-1.amazonaws.com"
 fi
+SCHEMA_SERVICE_PID=""
 
-# Run the HTTP server in the background with schema service URL
-echo "Starting the HTTP server on port 9001 with Cloud backend..."
-echo "Note: Cloud/DynamoDB tables will be created automatically if they don't exist."
-echo "Make sure AWS credentials are configured (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, or IAM role)"
-
-# Debug: Print AWS Credential Status
-
-# Load shell profile to get API keys
-source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
-
-# Ensure FOLD_OPENROUTER_API_KEY is set (check common variable names)
-if [ -z "$FOLD_OPENROUTER_API_KEY" ]; then
-    if [ -n "$OPENROUTER_API_KEY" ]; then
-        export FOLD_OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
-    fi
-fi
-
-if [ -z "$FOLD_OPENROUTER_API_KEY" ]; then
-    echo "WARNING: FOLD_OPENROUTER_API_KEY not set. Ingestion will not work."
-    echo "         Set it in your shell profile: export FOLD_OPENROUTER_API_KEY=your_key"
+if [ "$LOCAL_SCHEMA" = true ]; then
+    SCHEMA_SERVICE_URL="http://127.0.0.1:9002"
+    start_local_schema_service
 else
-    # Ensure it's exported for child processes
-    export FOLD_OPENROUTER_API_KEY
-    echo "OpenRouter API key configured"
-fi
-
-
-# Server is now stateless - user identity comes from X-User-Hash header per request
-RUST_LOG=debug nohup cargo run --features aws-backend --bin datafold_http_server -- --port 9001 --schema-service-url "$SCHEMA_SERVICE_URL" > server.log 2>&1 &
-
-# Get the process ID
-SERVER_PID=$!
-
-# Wait for HTTP server to be healthy with proper health check
-echo "Waiting for HTTP server to be ready..."
-HTTP_READY=false
-for i in {1..180}; do
-    if kill -0 $SERVER_PID 2>/dev/null; then
-        if curl -s http://127.0.0.1:9001/api/system/status > /dev/null 2>&1; then
-            HTTP_READY=true
-            break
-        fi
-        sleep 1
-    else
-        echo "HTTP server process died. Check server.log for details."
+    echo "Using global schema service at: $SCHEMA_SERVICE_URL"
+    if ! check_schema_service "$SCHEMA_SERVICE_URL"; then
+        echo ""
+        echo "ERROR: Global schema service at $SCHEMA_SERVICE_URL is not reachable."
+        echo ""
+        echo "The schema service is required for FoldDB to operate."
+        echo "Options:"
+        echo "  1. Check your internet connection"
+        echo "  2. Use --local-schema flag for offline development:"
+        echo "     ./run.sh --local --local-schema"
+        echo ""
         exit 1
     fi
-done
+fi
 
-if [ "$HTTP_READY" = true ]; then
-    echo "HTTP server started successfully with PID: $SERVER_PID"
-    echo "Server logs are being written to: server.log"
-    echo "Cloud configuration:"
-    echo "  Table name: $TABLE_NAME"
-    echo "  Region: $REGION"
-    if [ -n "$USER_ID" ]; then
-        echo "  User ID: $USER_ID"
-    fi
-    echo "  Schema Service: $SCHEMA_SERVICE_URL"
-    echo ""
-    echo "Starting Vite dev server with hot reload..."
-    echo "Access app at: http://localhost:5173"
-    echo ""
-
-    # Start Vite dev server (foreground for hot reload)
-    cd src/server/static-react
-    npm run dev
-
-    # Cleanup backend when Vite exits
-    kill $SERVER_PID 2>/dev/null || true
-else
-    echo "HTTP server failed to become healthy within 60 seconds. Check server.log for details."
-    kill $SERVER_PID 2>/dev/null
+# Start HTTP server
+if ! start_http_server "$CARGO_FEATURES" "$SCHEMA_SERVICE_URL" "$SERVER_TIMEOUT"; then
+    [ -n "$SCHEMA_SERVICE_PID" ] && kill $SCHEMA_SERVICE_PID 2>/dev/null || true
     exit 1
 fi
 
+# Print summary
+echo ""
+echo "=========================================="
+echo "FoldDB Development Server Running"
+echo "=========================================="
+echo "Storage: $([ "$LOCAL_MODE" = true ] && echo "LOCAL (Sled)" || echo "CLOUD (DynamoDB)")"
+echo "Schema Service: $([ "$DEV_MODE" = true ] && echo "DEV" || echo "PROD") - $SCHEMA_SERVICE_URL"
+[ "$LOCAL_MODE" = false ] && echo "AWS Region: $REGION"
+echo "=========================================="
+
+# Start Vite dev server (foreground)
+start_vite_dev
+
+# Cleanup on exit
+echo "Shutting down..."
+kill $SERVER_PID 2>/dev/null || true
+[ -n "$SCHEMA_SERVICE_PID" ] && kill $SCHEMA_SERVICE_PID 2>/dev/null || true
