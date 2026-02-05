@@ -61,7 +61,7 @@ impl Default for OllamaConfig {
     fn default() -> Self {
         Self {
             model: "llama3.3".to_string(),
-            base_url: "http://192.168.1.226:11434".to_string(),
+            base_url: "http://192.168.1.196:11434".to_string(),
         }
     }
 }
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(config.openrouter.model, "anthropic/claude-3.5-sonnet");
         assert_eq!(config.openrouter.base_url, "https://openrouter.ai/api/v1");
         assert_eq!(config.ollama.model, "llama3.3");
-        assert_eq!(config.ollama.base_url, "http://192.168.1.226:11434");
+        assert_eq!(config.ollama.base_url, "http://192.168.1.196:11434");
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.timeout_seconds, 300);
         assert!(config.auto_execute_mutations);
