@@ -365,6 +365,14 @@ impl DataFoldHttpServer {
         .route(
             "/ingestion/batch-folder",
             web::post().to(ingestion_routes::batch_folder_ingest),
+        )
+        .route(
+            "/ingestion/smart-folder/scan",
+            web::post().to(ingestion_routes::smart_folder_scan),
+        )
+        .route(
+            "/ingestion/smart-folder/ingest",
+            web::post().to(ingestion_routes::smart_folder_ingest),
         );
     }
 
