@@ -639,23 +639,13 @@ impl OperationProcessor {
     }
 
     /// Reset the database (destructive operation).
-    /// Handles schema service reset, closing DB, and clearing storage (Local or DynamoDB).
+    /// Handles closing DB and clearing storage (Local or DynamoDB).
+    /// Note: Schema service reset is NOT included - use reset_schema_service() separately if needed.
     pub async fn perform_database_reset(
         &self,
         #[allow(unused_variables)] user_id_override: Option<&str>,
     ) -> FoldDbResult<()> {
-        // 1. Reset Schema Service
-        if let Err(e) = self.reset_schema_service().await {
-            log::warn!(
-                "Failed to reset schema service during database reset: {}",
-                e
-            );
-            // Continue
-        } else {
-            log::info!("Schema service database reset successfully");
-        }
-
-        // 2. Get config and path before closing
+        // 1. Get config and path before closing
         let config = self.node.config.clone();
         let db_path = config.get_storage_path();
 
@@ -715,6 +705,96 @@ impl OperationProcessor {
         }
 
         Ok(())
+    }
+
+    /// Scan a folder using LLM to classify files and return recommendations.
+    pub async fn smart_folder_scan(
+        &self,
+        folder_path: &std::path::Path,
+        max_depth: usize,
+        max_files: usize,
+    ) -> FoldDbResult<crate::ingestion::smart_folder::SmartFolderScanResponse> {
+        crate::ingestion::smart_folder::perform_smart_folder_scan(folder_path, max_depth, max_files)
+            .await
+            .map_err(FoldDbError::Other)
+    }
+
+    /// Ingest a single file through the AI ingestion pipeline.
+    ///
+    /// Reads the file, converts to JSON (supports .json, .js, .csv, .txt, .md),
+    /// then runs it through the ingestion service.
+    pub async fn ingest_single_file(
+        &self,
+        file_path: &std::path::Path,
+        auto_execute: bool,
+    ) -> FoldDbResult<crate::ingestion::IngestionResponse> {
+        use crate::ingestion::core::IngestionRequest;
+        use crate::ingestion::progress::ProgressService;
+        use crate::ingestion::smart_folder;
+
+        let data = smart_folder::read_file_as_json(file_path).map_err(FoldDbError::Other)?;
+
+        let progress_id = uuid::Uuid::new_v4().to_string();
+        let pub_key = self.get_node_public_key();
+
+        let request = IngestionRequest {
+            data,
+            auto_execute: Some(auto_execute),
+            trust_distance: Some(0),
+            pub_key: Some(pub_key),
+            source_file_name: file_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string()),
+            progress_id: Some(progress_id.clone()),
+        };
+
+        let service = smart_folder::create_ingestion_service().map_err(FoldDbError::Other)?;
+
+        let progress_tracker = crate::ingestion::create_progress_tracker(None).await;
+        let progress_service = ProgressService::new(progress_tracker);
+        progress_service
+            .start_progress(progress_id.clone(), "cli".to_string())
+            .await;
+
+        let response = service
+            .process_json_with_node_and_progress(
+                request,
+                &self.node,
+                &progress_service,
+                progress_id,
+            )
+            .await
+            .map_err(|e| FoldDbError::Other(e.to_string()))?;
+
+        Ok(response)
+    }
+
+    /// Run an LLM agent query against the database.
+    ///
+    /// Creates an LlmQueryService, loads all schemas, and runs the agent
+    /// which can autonomously use tools (query, list_schemas, search) to answer.
+    pub async fn llm_query(
+        &self,
+        user_query: &str,
+        user_hash: &str,
+        max_iterations: usize,
+    ) -> FoldDbResult<(
+        String,
+        Vec<crate::datafold_node::llm_query::types::ToolCallRecord>,
+    )> {
+        use crate::datafold_node::llm_query::service::LlmQueryService;
+        use crate::ingestion::config::IngestionConfig;
+
+        let config = IngestionConfig::from_env_allow_empty();
+        let service = LlmQueryService::new(config).map_err(FoldDbError::Other)?;
+
+        let schemas = self.list_schemas().await?;
+
+        service
+            .run_agent_query(user_query, &schemas, &self.node, user_hash, max_iterations)
+            .await
+            .map_err(FoldDbError::Other)
     }
 
     /// Update database configuration and write to disk.

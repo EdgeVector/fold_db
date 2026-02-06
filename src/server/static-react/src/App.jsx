@@ -209,14 +209,15 @@ export function AppContent() {
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <main style={{ flex: 1, overflowY: 'auto' }}>
-          {/* Tab Navigation */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Tab Navigation - fixed at top */}
           <TabNavigation
             activeTab={activeTab}
             onTabChange={handleTabChange}
           />
 
-          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 40px' }}>
+          <main style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 40px' }}>
             {/* Schema Loading/Error States */}
             {schemasError && (
               <div style={{
@@ -283,6 +284,7 @@ export function AppContent() {
             )}
           </div>
         </main>
+        </div>
 
         <LogSidebar />
       </div>

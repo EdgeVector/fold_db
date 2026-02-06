@@ -204,9 +204,9 @@ pub async fn reset_database(
     tokio::spawn(async move {
         // Set user context for the background task
         crate::logging::core::run_with_user(&user_id_clone.clone(), async move {
-            // Update progress: Starting schema service reset
+            // Update progress: Clearing DynamoDB tables
             if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                job.update_progress(10, "Resetting schema service...".to_string());
+                job.update_progress(10, "Clearing user data from storage...".to_string());
                 let _ = tracker_clone.save(&job).await;
             }
 
@@ -231,17 +231,6 @@ pub async fn reset_database(
             // Create processor
             let temp_processor_node = node_arc.lock().await.clone();
             let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
-
-            // Step 1: Reset schema service
-            if let Err(e) = processor.reset_schema_service().await {
-                log::warn!("Schema service reset failed (continuing): {}", e);
-            }
-
-            // Update progress: Clearing DynamoDB tables
-            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                job.update_progress(30, "Clearing user data from storage...".to_string());
-                let _ = tracker_clone.save(&job).await;
-            }
 
             // Step 2: Perform the storage reset
             if let Err(e) = processor.perform_database_reset(Some(&user_id_clone)).await {

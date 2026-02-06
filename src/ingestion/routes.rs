@@ -4,6 +4,7 @@ use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::core::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
 use crate::ingestion::ingestion_service::IngestionService;
+use crate::ingestion::smart_folder;
 use crate::ingestion::IngestionResponse;
 use crate::ingestion::ProgressTracker;
 use crate::log_feature;
@@ -655,7 +656,7 @@ pub async fn batch_folder_ingest(
                     "json" => content,
                     "csv" => {
                         // Convert CSV to JSON array
-                        match csv_to_json(&content) {
+                        match smart_folder::csv_to_json(&content) {
                             Ok(json) => json,
                             Err(e) => {
                                 progress_service
@@ -765,47 +766,6 @@ pub async fn batch_folder_ingest(
     })
 }
 
-/// Convert CSV content to JSON array
-fn csv_to_json(csv_content: &str) -> Result<String, String> {
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(csv_content.as_bytes());
-
-    let headers: Vec<String> = reader
-        .headers()
-        .map_err(|e| format!("Failed to read CSV headers: {}", e))?
-        .iter()
-        .map(|h| h.to_string())
-        .collect();
-
-    let mut records: Vec<Value> = Vec::new();
-
-    for result in reader.records() {
-        let record = result.map_err(|e| format!("Failed to read CSV record: {}", e))?;
-        let mut obj = serde_json::Map::new();
-
-        for (i, field) in record.iter().enumerate() {
-            if let Some(header) = headers.get(i) {
-                // Try to parse as number or boolean, otherwise keep as string
-                let value = if let Ok(n) = field.parse::<f64>() {
-                    Value::Number(serde_json::Number::from_f64(n).unwrap_or_else(|| serde_json::Number::from(0)))
-                } else if field == "true" {
-                    Value::Bool(true)
-                } else if field == "false" {
-                    Value::Bool(false)
-                } else {
-                    Value::String(field.to_string())
-                };
-                obj.insert(header.clone(), value);
-            }
-        }
-
-        records.push(Value::Object(obj));
-    }
-
-    serde_json::to_string(&records).map_err(|e| format!("Failed to serialize JSON: {}", e))
-}
-
 // ============================================================================
 // Smart Folder Ingestion - LLM-powered file filtering
 // ============================================================================
@@ -819,44 +779,6 @@ pub struct SmartFolderScanRequest {
     pub max_depth: Option<usize>,
     /// Maximum files to analyze (default: 500)
     pub max_files: Option<usize>,
-}
-
-/// A file recommendation from the LLM
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileRecommendation {
-    /// File path relative to the scanned folder
-    pub path: String,
-    /// Whether the file should be ingested
-    pub should_ingest: bool,
-    /// Category: "personal_data", "media", "config", "website_scaffolding", "work", "unknown"
-    pub category: String,
-    /// Brief reason for the recommendation
-    pub reason: String,
-}
-
-/// Response from smart folder scanning
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SmartFolderScanResponse {
-    pub success: bool,
-    /// Total files scanned
-    pub total_files: usize,
-    /// Files recommended for ingestion
-    pub recommended_files: Vec<FileRecommendation>,
-    /// Files recommended to skip
-    pub skipped_files: Vec<FileRecommendation>,
-    /// Summary statistics
-    pub summary: SmartFolderSummary,
-}
-
-/// Summary of smart folder scan
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SmartFolderSummary {
-    pub personal_data_count: usize,
-    pub media_count: usize,
-    pub config_count: usize,
-    pub website_scaffolding_count: usize,
-    pub work_count: usize,
-    pub unknown_count: usize,
 }
 
 /// Request for smart folder ingestion (after user approval)
@@ -931,109 +853,14 @@ pub async fn smart_folder_scan(
     let max_depth = request.max_depth.unwrap_or(5);
     let max_files = request.max_files.unwrap_or(500);
 
-    // Recursively scan directory tree
-    let file_tree = match scan_directory_tree(&folder_path, max_depth, max_files) {
-        Ok(tree) => tree,
-        Err(e) => {
-            return HttpResponse::BadRequest().json(json!({
-                "success": false,
-                "error": format!("Failed to scan directory: {}", e)
-            }));
-        }
-    };
-
-    if file_tree.is_empty() {
-        return HttpResponse::Ok().json(SmartFolderScanResponse {
-            success: true,
-            total_files: 0,
-            recommended_files: vec![],
-            skipped_files: vec![],
-            summary: SmartFolderSummary {
-                personal_data_count: 0,
-                media_count: 0,
-                config_count: 0,
-                website_scaffolding_count: 0,
-                work_count: 0,
-                unknown_count: 0,
-            },
-        });
+    // Delegate to shared logic
+    match smart_folder::perform_smart_folder_scan(&folder_path, max_depth, max_files).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "error": e
+        })),
     }
-
-    // Create the LLM prompt with the file tree
-    let prompt = create_smart_folder_prompt(&file_tree);
-
-    // Call the LLM
-    let service = match create_ingestion_service().await {
-        Ok(s) => s,
-        Err(e) => {
-            return HttpResponse::ServiceUnavailable().json(json!({
-                "success": false,
-                "error": format!("AI service not available: {}", e)
-            }));
-        }
-    };
-
-    let llm_response = match call_llm_for_file_analysis(&service, &prompt).await {
-        Ok(response) => response,
-        Err(e) => {
-            return HttpResponse::ServiceUnavailable().json(json!({
-                "success": false,
-                "error": format!("LLM call failed: {}", e)
-            }));
-        }
-    };
-
-    // Parse LLM response
-    let recommendations = match parse_llm_file_recommendations(&llm_response, &file_tree) {
-        Ok(recs) => recs,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "Failed to parse LLM response, using heuristics: {}",
-                e
-            );
-            // Fall back to heuristic-based filtering
-            apply_heuristic_filtering(&file_tree)
-        }
-    };
-
-    // Split into recommended and skipped
-    let mut recommended_files = Vec::new();
-    let mut skipped_files = Vec::new();
-    let mut summary = SmartFolderSummary {
-        personal_data_count: 0,
-        media_count: 0,
-        config_count: 0,
-        website_scaffolding_count: 0,
-        work_count: 0,
-        unknown_count: 0,
-    };
-
-    for rec in recommendations {
-        match rec.category.as_str() {
-            "personal_data" => summary.personal_data_count += 1,
-            "media" => summary.media_count += 1,
-            "config" => summary.config_count += 1,
-            "website_scaffolding" => summary.website_scaffolding_count += 1,
-            "work" => summary.work_count += 1,
-            _ => summary.unknown_count += 1,
-        }
-
-        if rec.should_ingest {
-            recommended_files.push(rec);
-        } else {
-            skipped_files.push(rec);
-        }
-    }
-
-    HttpResponse::Ok().json(SmartFolderScanResponse {
-        success: true,
-        total_files: file_tree.len(),
-        recommended_files,
-        skipped_files,
-        summary,
-    })
 }
 
 /// Ingest files from a smart folder scan (after user approval)
@@ -1142,19 +969,17 @@ pub async fn smart_folder_ingest(
         let progress_tracker_clone = progress_tracker.get_ref().clone();
         let node_arc_clone = node_arc.clone();
         let user_id_clone = user_id_task.clone();
-        let user_id_inner = user_id_task.clone();
 
         tokio::spawn(async move {
             crate::logging::core::run_with_user(&user_id_clone, async move {
                 let progress_service = ProgressService::new(progress_tracker_clone);
 
-                // Process the file (reuse existing logic)
-                if let Err(e) = process_single_file_for_smart_ingest(
+                // Process the file using shared read_file_as_json
+                if let Err(e) = process_single_file_via_smart_folder(
                     &file_path,
                     &progress_id,
                     &progress_service,
                     &node_arc_clone,
-                    &user_id_inner,
                     auto_execute,
                 )
                 .await
@@ -1184,364 +1009,40 @@ pub async fn smart_folder_ingest(
     })
 }
 
-/// Recursively scan a directory tree up to max_depth
-fn scan_directory_tree(
-    root: &std::path::Path,
-    max_depth: usize,
-    max_files: usize,
-) -> Result<Vec<String>, String> {
-    let mut files = Vec::new();
-    scan_directory_recursive(root, root, 0, max_depth, max_files, &mut files)?;
-    Ok(files)
-}
-
-fn scan_directory_recursive(
-    root: &std::path::Path,
-    current: &std::path::Path,
-    depth: usize,
-    max_depth: usize,
-    max_files: usize,
-    files: &mut Vec<String>,
-) -> Result<(), String> {
-    if depth > max_depth || files.len() >= max_files {
-        return Ok(());
-    }
-
-    let entries = std::fs::read_dir(current)
-        .map_err(|e| format!("Failed to read directory {}: {}", current.display(), e))?;
-
-    for entry in entries.flatten() {
-        if files.len() >= max_files {
-            break;
-        }
-
-        let path = entry.path();
-        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        // Skip hidden files and common skip patterns
-        if file_name.starts_with('.') {
-            continue;
-        }
-
-        // Skip common non-data directories
-        let skip_dirs = [
-            "node_modules",
-            "__pycache__",
-            ".git",
-            ".svn",
-            "target",
-            "build",
-            "dist",
-            ".cache",
-            "venv",
-            ".venv",
-        ];
-        if path.is_dir() && skip_dirs.contains(&file_name) {
-            continue;
-        }
-
-        if path.is_dir() {
-            scan_directory_recursive(root, &path, depth + 1, max_depth, max_files, files)?;
-        } else if path.is_file() {
-            // Get relative path from root
-            if let Ok(relative) = path.strip_prefix(root) {
-                files.push(relative.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Create the LLM prompt for file analysis
-fn create_smart_folder_prompt(file_tree: &[String]) -> String {
-    let files_list = file_tree.join("\n");
-
-    format!(
-        r#"Analyze this directory listing and categorize each file for personal data ingestion.
-
-DIRECTORY LISTING:
-{}
-
-For each file, determine:
-1. Should it be ingested into a personal database?
-2. What category does it belong to?
-
-CATEGORIES:
-- personal_data: Personal documents, notes, journals, photos, messages, financial records, health data, creative work, personal projects
-- media: Images, videos, audio (user-created content, not UI assets)
-- config: Application configs, settings files, dotfiles
-- website_scaffolding: HTML templates, CSS, JS bundles, emoji assets, fonts, node_modules contents
-- work: Work/corporate files, professional documents
-- unknown: Cannot determine
-
-SKIP CRITERIA (should_ingest = false):
-- Application scaffolding (runtime.js, modules.js, twemoji/, fonts/)
-- Config files (.config, .env, settings.json unless personal)
-- Cache and temporary files
-- Binary executables
-- Downloaded installers/archives
-- Work/corporate documents (if identifiable)
-
-INGEST CRITERIA (should_ingest = true):
-- Personal documents (letters, notes, journals)
-- Photos and videos (user-created, not UI assets)
-- Messages and chat logs
-- Financial records (statements, budgets)
-- Health data
-- Creative work (writing, art, music)
-- Data exports from services (Twitter, Facebook, etc.)
-
-Respond with a JSON array of objects:
-```json
-[
-  {{"path": "file/path.ext", "should_ingest": true, "category": "personal_data", "reason": "Brief reason"}},
-  ...
-]
-```
-
-Only return the JSON array, no other text."#,
-        files_list
-    )
-}
-
-/// Call the LLM for file analysis
-async fn call_llm_for_file_analysis(
-    _service: &IngestionService,
-    prompt: &str,
-) -> Result<String, String> {
-    // Access the underlying service to make a raw LLM call
-    let config = IngestionConfig::from_env().map_err(|e| e.to_string())?;
-
-    match config.provider {
-        crate::ingestion::config::AIProvider::OpenRouter => {
-            let openrouter = crate::ingestion::openrouter_service::OpenRouterService::new(
-                config.openrouter,
-                config.timeout_seconds,
-                config.max_retries,
-            )
-            .map_err(|e| e.to_string())?;
-
-            openrouter
-                .call_openrouter_api(prompt)
-                .await
-                .map_err(|e| e.to_string())
-        }
-        crate::ingestion::config::AIProvider::Ollama => {
-            let ollama = crate::ingestion::ollama_service::OllamaService::new(
-                config.ollama,
-                config.timeout_seconds,
-                config.max_retries,
-            )
-            .map_err(|e| e.to_string())?;
-
-            ollama
-                .call_ollama_api(prompt)
-                .await
-                .map_err(|e| e.to_string())
-        }
-    }
-}
-
-/// Parse LLM response into file recommendations
-fn parse_llm_file_recommendations(
-    response: &str,
-    file_tree: &[String],
-) -> Result<Vec<FileRecommendation>, String> {
-    // Try to extract JSON from the response
-    let json_str = extract_json_from_response(response)?;
-
-    let parsed: Vec<FileRecommendation> =
-        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
-
-    // Validate that paths exist in our file tree
-    let file_set: std::collections::HashSet<&str> = file_tree.iter().map(|s| s.as_str()).collect();
-
-    let valid_recs: Vec<FileRecommendation> = parsed
-        .into_iter()
-        .filter(|rec| file_set.contains(rec.path.as_str()))
-        .collect();
-
-    Ok(valid_recs)
-}
-
-/// Extract JSON array from LLM response (may have markdown code blocks)
-fn extract_json_from_response(response: &str) -> Result<String, String> {
-    // Try to find JSON array in the response
-    let trimmed = response.trim();
-
-    // Check if it starts with [ directly
-    if trimmed.starts_with('[') {
-        if let Some(end) = trimmed.rfind(']') {
-            return Ok(trimmed[..=end].to_string());
-        }
-    }
-
-    // Try to extract from markdown code block
-    if let Some(start) = trimmed.find("```json") {
-        let after_marker = &trimmed[start + 7..];
-        if let Some(end) = after_marker.find("```") {
-            return Ok(after_marker[..end].trim().to_string());
-        }
-    }
-
-    // Try to extract from generic code block
-    if let Some(start) = trimmed.find("```") {
-        let after_marker = &trimmed[start + 3..];
-        // Skip language identifier if present
-        let content_start = after_marker.find('\n').unwrap_or(0);
-        let content = &after_marker[content_start..];
-        if let Some(end) = content.find("```") {
-            return Ok(content[..end].trim().to_string());
-        }
-    }
-
-    // Try to find [ and ] anywhere
-    if let Some(start) = trimmed.find('[') {
-        if let Some(end) = trimmed.rfind(']') {
-            return Ok(trimmed[start..=end].to_string());
-        }
-    }
-
-    Err("Could not extract JSON from response".to_string())
-}
-
-/// Apply heuristic-based filtering when LLM fails
-fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation> {
-    file_tree
-        .iter()
-        .map(|path| {
-            let lower = path.to_lowercase();
-            let ext = std::path::Path::new(path)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-
-            // Website scaffolding patterns
-            let is_scaffolding = lower.contains("node_modules")
-                || lower.contains("twemoji")
-                || lower.contains("/assets/")
-                || lower.contains("runtime.")
-                || lower.contains("modules.")
-                || ext == "woff"
-                || ext == "woff2"
-                || ext == "eot"
-                || ext == "ttf"
-                || (ext == "svg" && lower.contains("emoji"));
-
-            // Config patterns
-            let is_config = lower.starts_with(".")
-                || lower.contains(".config")
-                || lower.contains("config/")
-                || ext == "env"
-                || ext == "ini"
-                || ext == "yaml"
-                || ext == "yml";
-
-            // Personal data patterns
-            let is_personal = ext == "json"
-                || ext == "csv"
-                || ext == "txt"
-                || ext == "md"
-                || ext == "doc"
-                || ext == "docx"
-                || ext == "pdf"
-                || lower.contains("data/")
-                || lower.contains("export")
-                || lower.contains("backup");
-
-            // Media patterns
-            let is_media = ext == "jpg"
-                || ext == "jpeg"
-                || ext == "png"
-                || ext == "gif"
-                || ext == "mp4"
-                || ext == "mp3"
-                || ext == "wav";
-
-            let (should_ingest, category, reason) = if is_scaffolding {
-                (false, "website_scaffolding", "Appears to be website/app scaffolding")
-            } else if is_config {
-                (false, "config", "Appears to be configuration file")
-            } else if is_media && !lower.contains("twemoji") && !lower.contains("/assets/") {
-                (true, "media", "User media file")
-            } else if is_personal {
-                (true, "personal_data", "Potential personal data file")
-            } else {
-                (false, "unknown", "Unknown file type")
-            };
-
-            FileRecommendation {
-                path: path.clone(),
-                should_ingest,
-                category: category.to_string(),
-                reason: reason.to_string(),
-            }
-        })
-        .collect()
-}
-
-/// Process a single file for smart ingest (reuses existing logic)
-async fn process_single_file_for_smart_ingest(
+/// Process a single file for smart ingest using shared smart_folder module
+async fn process_single_file_via_smart_folder(
     file_path: &std::path::Path,
     progress_id: &str,
     progress_service: &ProgressService,
     node_arc: &std::sync::Arc<tokio::sync::Mutex<crate::datafold_node::DataFoldNode>>,
-    _user_id: &str,
     auto_execute: bool,
 ) -> Result<(), String> {
-    // Read file content
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let data = smart_folder::read_file_as_json(file_path)?;
 
-    let ext = file_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    // Convert to JSON based on file type
-    let json_content = match ext.as_str() {
-        "json" => content,
-        "csv" => csv_to_json(&content)?,
-        "txt" | "md" => {
-            let file_name = file_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown");
-            serde_json::to_string(&json!({
-                "content": content,
-                "source_file": file_name,
-                "file_type": ext
-            }))
-            .map_err(|e| format!("Failed to wrap text content: {}", e))?
-        }
-        _ => return Err(format!("Unsupported file type: {}", ext)),
-    };
-
-    // Parse JSON
-    let data: Value = serde_json::from_str(&json_content)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
-
-    // Create ingestion request
-    let request = crate::ingestion::core::IngestionRequest {
+    let request = IngestionRequest {
         data,
         auto_execute: Some(auto_execute),
         trust_distance: Some(0),
         pub_key: None,
-        source_file_name: file_path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string()),
+        source_file_name: file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string()),
         progress_id: Some(progress_id.to_string()),
     };
 
-    // Create service and process
     let service = create_ingestion_service()
         .await
         .map_err(|e| e.to_string())?;
 
     let node = node_arc.lock().await;
     service
-        .process_json_with_node_and_progress(request, &node, progress_service, progress_id.to_string())
+        .process_json_with_node_and_progress(
+            request,
+            &node,
+            progress_service,
+            progress_id.to_string(),
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1587,7 +1088,7 @@ mod tests {
     #[tokio::test]
     async fn test_csv_to_json_basic() {
         let csv_content = "name,age,active\nAlice,30,true\nBob,25,false";
-        let result = csv_to_json(csv_content).unwrap();
+        let result = smart_folder::csv_to_json(csv_content).unwrap();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap();
 
         assert_eq!(parsed.len(), 2);
@@ -1602,7 +1103,7 @@ mod tests {
     #[tokio::test]
     async fn test_csv_to_json_with_strings() {
         let csv_content = "product_id,name,price\nPROD001,Widget,19.99\nPROD002,Gadget,29.99";
-        let result = csv_to_json(csv_content).unwrap();
+        let result = smart_folder::csv_to_json(csv_content).unwrap();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap();
 
         assert_eq!(parsed.len(), 2);
@@ -1614,7 +1115,7 @@ mod tests {
     #[tokio::test]
     async fn test_csv_to_json_empty() {
         let csv_content = "name,age";
-        let result = csv_to_json(csv_content).unwrap();
+        let result = smart_folder::csv_to_json(csv_content).unwrap();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap();
 
         assert_eq!(parsed.len(), 0);

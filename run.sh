@@ -38,10 +38,14 @@ cleanup_processes() {
     pkill -f "cargo run.*fold_db" 2>/dev/null || true
     pkill -f schema_service 2>/dev/null || true
     pkill -f "cargo run.*schema" 2>/dev/null || true
+    # Kill Vite and related frontend processes
+    pkill -f "vite" 2>/dev/null || true
+    pkill -f "esbuild.*fold_db" 2>/dev/null || true
 
     # Kill by port if something is listening
     lsof -ti:9001 | xargs kill -9 2>/dev/null || true
     lsof -ti:9002 | xargs kill -9 2>/dev/null || true
+    lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 
     # Wait for processes to terminate
     sleep 2
@@ -53,6 +57,7 @@ cleanup_processes() {
     pkill -9 -f "cargo run.*fold_db" 2>/dev/null || true
     pkill -9 -f schema_service 2>/dev/null || true
     pkill -9 -f "cargo run.*schema" 2>/dev/null || true
+    pkill -9 -f "vite" 2>/dev/null || true
 
     # Give dying processes time to release locks
     sleep 1

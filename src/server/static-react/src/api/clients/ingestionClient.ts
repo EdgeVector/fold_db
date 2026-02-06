@@ -166,6 +166,31 @@ export class UnifiedIngestionClient {
   }
 
   /**
+   * Get progress for a specific job by ID
+   * UNPROTECTED - Progress status is public for monitoring
+   *
+   * @param jobId The job ID to get progress for
+   * @returns Promise resolving to the job progress
+   */
+  async getJobProgress(jobId: string): Promise<
+    EnhancedApiResponse<{
+      id: string;
+      status: string;
+      progress_percentage: number;
+      message: string;
+      error?: string;
+      result?: Record<string, unknown>;
+    }>
+  > {
+    return this.client.get(`/ingestion/progress/${jobId}`, {
+      requiresAuth: false,
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.STANDARD,
+      cacheable: false, // Progress should always be fresh
+    });
+  }
+
+  /**
    * Get ingestion configuration
    * UNPROTECTED - No authentication required
    *

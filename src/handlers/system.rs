@@ -245,22 +245,11 @@ pub async fn reset_database(
         crate::logging::core::run_with_user(&user_hash_clone, async move {
             // Update progress
             if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                job.update_progress(10, "Resetting schema service...".to_string());
+                job.update_progress(10, "Clearing user data from storage...".to_string());
                 let _ = tracker_clone.save(&job).await;
             }
 
             let processor = OperationProcessor::new(node_clone.clone());
-
-            // Step 1: Reset schema service
-            if let Err(e) = processor.reset_schema_service().await {
-                log::warn!("Schema service reset failed (continuing): {}", e);
-            }
-
-            // Update progress
-            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                job.update_progress(30, "Clearing user data from storage...".to_string());
-                let _ = tracker_clone.save(&job).await;
-            }
 
             // Step 2: Perform the storage reset
             if let Err(e) = processor

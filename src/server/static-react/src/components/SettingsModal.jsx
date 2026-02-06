@@ -32,7 +32,6 @@ function SettingsModal({ isOpen, onClose }) {
   const [s3LocalPath, setS3LocalPath] = useState('/tmp/folddb-data')
   
   // Database reset state
-  const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
   const [resetResult, setResetResult] = useState(null)
 
@@ -204,12 +203,45 @@ function SettingsModal({ isOpen, onClose }) {
 
       if (response.success && response.data) {
         if (response.data.job_id) {
+          const jobId = response.data.job_id
           setResetResult({ 
-            type: 'success', 
-            message: `Reset started (Job: ${response.data.job_id.substring(0, 8)}...). The database will be reset in the background.`
+            type: 'info', 
+            message: 'Resetting database...'
           })
-          setShowResetConfirm(false)
-          setIsResetting(false)
+          
+          // Poll for job completion
+          const pollInterval = setInterval(async () => {
+            try {
+              const progressResponse = await ingestionClient.getJobProgress(jobId)
+              if (progressResponse.success && progressResponse.data) {
+                const progressData = progressResponse.data
+                if (progressData.status === 'completed') {
+                  clearInterval(pollInterval)
+                  setResetResult({ type: 'success', message: 'Database reset complete. Reloading...' })
+                  setTimeout(() => {
+                    window.location.reload()
+                  }, 1000)
+                } else if (progressData.status === 'failed') {
+                  clearInterval(pollInterval)
+                  setResetResult({ type: 'error', message: progressData.error || 'Reset failed' })
+                  setIsResetting(false)
+                }
+              }
+            } catch {
+              // Continue polling on network errors
+            }
+          }, 1000)
+          
+          // Timeout after 60 seconds
+          setTimeout(() => {
+            clearInterval(pollInterval)
+            if (isResetting) {
+              setResetResult({ type: 'success', message: 'Reset likely complete. Reloading...' })
+              setTimeout(() => {
+                window.location.reload()
+              }, 1000)
+            }
+          }, 60000)
         } else {
           setResetResult({ type: 'success', message: response.data.message || 'Database reset successfully' })
           setTimeout(() => {
@@ -218,12 +250,10 @@ function SettingsModal({ isOpen, onClose }) {
         }
       } else {
         setResetResult({ type: 'error', message: response.error || 'Reset failed' })
-        setShowResetConfirm(false)
         setIsResetting(false)
       }
     } catch (error) {
       setResetResult({ type: 'error', message: `Network error: ${error.message}` })
-      setShowResetConfirm(false)
       setIsResetting(false)
     }
   }
@@ -693,48 +723,38 @@ function SettingsModal({ isOpen, onClose }) {
                       Permanently delete all data and restart the database. This action cannot be undone.
                     </p>
                     
-                    {!showResetConfirm ? (
+                    {!isResetting ? (
                       <button
-                        onClick={() => setShowResetConfirm(true)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 border border-red-300  hover:card-terminal hover:border-red-400 transition-colors"
+                        onClick={handleResetDatabase}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 border border-red-300 hover:bg-red-50 hover:border-red-400 transition-colors"
                       >
                         <TrashIcon className="w-4 h-4" />
                         Reset Database
                       </button>
                     ) : (
-                      <div className="p-4 card-terminal border border-terminal-red ">
-                        <p className="text-sm text-terminal-red mb-3">
-                          <strong>Are you sure?</strong> This will:
-                        </p>
-                        <ul className="list-disc list-inside text-sm text-red-700 mb-4 space-y-1">
-                          <li>Remove all schemas</li>
-                          <li>Delete all stored data</li>
-                          <li>Reset network connections</li>
-                        </ul>
-                        <div className="flex gap-3">
-                          <button
-                            onClick={handleResetDatabase}
-                            disabled={isResetting}
-                            className="px-4 py-2 text-sm font-medium text-white bg-red-600  hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          >
-                            {isResetting ? 'Resetting...' : 'Yes, Reset Database'}
-                          </button>
-                          <button
-                            onClick={() => setShowResetConfirm(false)}
-                            disabled={isResetting}
-                            className="px-4 py-2 text-sm font-medium text-terminal-dim bg-terminal border border-terminal  hover:bg-terminal transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                      <div className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-terminal-cyan border border-terminal-cyan">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Resetting Database...
                       </div>
                     )}
 
                     {resetResult && (
-                      <div className={`mt-4 p-3  text-sm ${resetResult.type === 'success'
+                      <div className={`mt-4 p-3 text-sm ${
+                        resetResult.type === 'success'
                           ? 'text-terminal-green border border-terminal-green'
-                          : 'card-terminal text-terminal-red border border-terminal-red'
+                          : resetResult.type === 'info'
+                            ? 'text-terminal-cyan border border-terminal-cyan'
+                            : 'card-terminal text-terminal-red border border-terminal-red'
                         }`}>
+                        {resetResult.type === 'info' && (
+                          <svg className="inline-block animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        )}
                         {resetResult.message}
                       </div>
                     )}

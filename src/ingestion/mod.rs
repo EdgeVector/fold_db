@@ -37,6 +37,7 @@ pub mod ollama_service;
 pub mod openrouter_service;
 pub mod progress;
 pub mod routes;
+pub mod smart_folder;
 
 pub mod ingestion_service;
 pub mod structure_analyzer;

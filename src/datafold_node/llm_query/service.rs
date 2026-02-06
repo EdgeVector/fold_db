@@ -161,8 +161,14 @@ impl LlmQueryService {
                 AgentAction::ToolCall { tool, params } => {
                     log::info!("Agent: Calling tool '{}' with params: {}", tool, params);
 
-                    // Execute the tool
-                    let result = self.execute_tool(&tool, &params, node).await?;
+                    // Execute the tool, capturing errors as results so the agent can retry
+                    let result = match self.execute_tool(&tool, &params, node).await {
+                        Ok(val) => val,
+                        Err(e) => {
+                            log::warn!("Agent: Tool '{}' failed: {}", tool, e);
+                            serde_json::json!({ "error": e })
+                        }
+                    };
 
                     log::debug!("Agent: Tool '{}' returned: {}", tool, &result.to_string()[..result.to_string().len().min(200)]);
 
@@ -270,11 +276,25 @@ impl LlmQueryService {
                 response
             }
         } else {
-            response
+            // No JSON object found - treat entire response as a plain-text answer
+            return Ok(AgentAction::Answer(response.trim().to_string()));
         };
 
-        let parsed: Value = serde_json::from_str(json_str)
-            .map_err(|e| format!("Failed to parse agent response as JSON: {}. Response: {}", e, json_str))?;
+        // Try parsing as-is first; if that fails, sanitize control characters
+        // inside string values (LLMs sometimes put raw newlines inside JSON strings)
+        let parsed: Value = match serde_json::from_str(json_str).or_else(|_| {
+            let sanitized = json_str
+                .replace('\n', "\\n")
+                .replace('\r', "\\r")
+                .replace('\t', "\\t");
+            serde_json::from_str::<Value>(&sanitized)
+        }) {
+            Ok(v) => v,
+            Err(_) => {
+                // JSON parsing failed entirely - treat response as plain-text answer
+                return Ok(AgentAction::Answer(response.trim().to_string()));
+            }
+        };
 
         // Check if it's a tool call
         if let Some(tool) = parsed.get("tool").and_then(|t| t.as_str()) {
