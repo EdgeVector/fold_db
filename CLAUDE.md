@@ -22,12 +22,12 @@ cargo test --lib                         # All library tests
 cargo test test_name                     # Specific test
 cargo test test_name -- --nocapture      # With output
 
-# Run the HTTP server (port 9001)
+# Run the HTTP server + frontend (port 9001 backend, port 5173 frontend)
+# IMPORTANT: Always use ./run.sh to start the UI - never start services manually
+./run.sh --local                         # Local mode (Sled storage + global schema service)
 ./run.sh                                 # Cloud mode (DynamoDB + global schema service)
-./run.sh --local                         # Local mode (Sled storage)
 ./run.sh --local --local-schema          # Fully offline (local storage + local schema service)
 ./run.sh --local --empty-db              # Local with fresh database
-cargo run --bin datafold_http_server -- --port 9001  # Backend only
 
 # Frontend (in src/server/static-react/)
 npm install

@@ -1019,11 +1019,18 @@ async fn process_single_file_via_smart_folder(
 ) -> Result<(), String> {
     let data = smart_folder::read_file_as_json(file_path)?;
 
+    let service = create_ingestion_service()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let node = node_arc.lock().await;
+    let pub_key = node.get_node_public_key().to_string();
+
     let request = IngestionRequest {
         data,
         auto_execute: Some(auto_execute),
         trust_distance: Some(0),
-        pub_key: None,
+        pub_key: Some(pub_key),
         source_file_name: file_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -1031,11 +1038,6 @@ async fn process_single_file_via_smart_folder(
         progress_id: Some(progress_id.to_string()),
     };
 
-    let service = create_ingestion_service()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let node = node_arc.lock().await;
     service
         .process_json_with_node_and_progress(
             request,
