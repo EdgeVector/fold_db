@@ -11,6 +11,7 @@ import MutationTab from './components/tabs/MutationTab'
 import IngestionTab from './components/tabs/IngestionTab'
 import FileUploadTab from './components/tabs/FileUploadTab'
 import NativeIndexTab from './components/tabs/NativeIndexTab'
+import SmartFolderTab from './components/tabs/SmartFolderTab'
 import SettingsModal from './components/SettingsModal'
 import LogSidebar from './components/LogSidebar'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
@@ -38,6 +39,7 @@ export function AppContent() {
       if (hash === 'file-upload') return 'file-upload';
       if (hash === 'native-index') return 'native-index';
       if (hash === 'llm-query' || hash === 'ai-query') return 'llm-query';
+      if (hash === 'smart-folder') return 'smart-folder';
     }
     return DEFAULT_TAB;
   };
@@ -61,6 +63,7 @@ export function AppContent() {
         else if (hash === 'file-upload') setActiveTab('file-upload');
         else if (hash === 'native-index') setActiveTab('native-index');
         else if (hash === 'llm-query' || hash === 'ai-query') setActiveTab('llm-query');
+        else if (hash === 'smart-folder') setActiveTab('smart-folder');
       }
     };
 
@@ -148,6 +151,8 @@ export function AppContent() {
             />
           </div>
         )
+      case 'smart-folder':
+        return <SmartFolderTab onResult={handleOperationResult} />
       case 'ingestion':
         return <IngestionTab onResult={handleOperationResult} />
       case 'file-upload':

@@ -114,4 +114,7 @@ export type {
   ValidationResponse,
   ProcessIngestionRequest,
   ProcessIngestionResponse,
+  FileRecommendation,
+  SmartFolderScanResponse,
+  SmartFolderIngestResponse,
 } from "./ingestionClient";

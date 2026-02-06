@@ -70,36 +70,43 @@ vi.mock('../../components/ResultsSection', () => ({
 vi.mock('../../components/TabNavigation', () => ({
   default: ({ activeTab, onTabChange }) => (
     <div data-testid="tab-navigation">
-      <button 
-        data-testid="tab-ingestion" 
+      <button
+        data-testid="tab-smart-folder"
+        onClick={() => onTabChange('smart-folder')}
+        className={activeTab === 'smart-folder' ? 'active' : ''}
+      >
+        Smart Folder
+      </button>
+      <button
+        data-testid="tab-ingestion"
         onClick={() => onTabChange('ingestion')}
         className={activeTab === 'ingestion' ? 'active' : ''}
       >
         Ingestion
       </button>
-      <button 
-        data-testid="tab-llm-query" 
+      <button
+        data-testid="tab-llm-query"
         onClick={() => onTabChange('llm-query')}
         className={activeTab === 'llm-query' ? 'active' : ''}
       >
         AI Query
       </button>
-      <button 
-        data-testid="tab-schemas" 
+      <button
+        data-testid="tab-schemas"
         onClick={() => onTabChange('schemas')}
         className={activeTab === 'schemas' ? 'active' : ''}
       >
         Schemas
       </button>
-      <button 
-        data-testid="tab-query" 
+      <button
+        data-testid="tab-query"
         onClick={() => onTabChange('query')}
         className={activeTab === 'query' ? 'active' : ''}
       >
         Query
       </button>
-      <button 
-        data-testid="tab-mutation" 
+      <button
+        data-testid="tab-mutation"
         onClick={() => onTabChange('mutation')}
         className={activeTab === 'mutation' ? 'active' : ''}
       >
@@ -175,11 +182,24 @@ vi.mock('../../components/tabs/IngestionTab', () => ({
 vi.mock('../../components/tabs/LlmQueryTab', () => ({
   default: ({ onResult }) => (
     <div data-testid="llm-query-tab">
-      <button 
-        data-testid="llm-query-action" 
+      <button
+        data-testid="llm-query-action"
         onClick={() => onResult({ type: 'llm-query', data: 'llm query result' })}
       >
         LLM Query Action
+      </button>
+    </div>
+  )
+}));
+
+vi.mock('../../components/tabs/SmartFolderTab', () => ({
+  default: ({ onResult }) => (
+    <div data-testid="smart-folder-tab">
+      <button
+        data-testid="smart-folder-action"
+        onClick={() => onResult({ type: 'smart-folder', data: 'smart folder result' })}
+      >
+        Smart Folder Action
       </button>
     </div>
   )
@@ -238,7 +258,7 @@ describe('App Component', () => {
         expect(screen.getByTestId('log-sidebar')).toBeInTheDocument();
       });
 
-      it('initializes with default tab (ingestion)', () => {
+      it('initializes with default tab (smart-folder)', () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: true,
@@ -256,7 +276,7 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.getByTestId('ingestion-tab')).toBeInTheDocument();
+        expect(screen.getByTestId('smart-folder-tab')).toBeInTheDocument();
         expect(screen.queryByTestId('schema-tab')).not.toBeInTheDocument();
       });
 
@@ -304,8 +324,8 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        // Default should be ingestion tab
-        expect(screen.getByTestId('ingestion-tab')).toBeInTheDocument();
+        // Default should be smart-folder tab
+        expect(screen.getByTestId('smart-folder-tab')).toBeInTheDocument();
 
         // Switch to schemas tab
         fireEvent.click(screen.getByTestId('tab-schemas'));

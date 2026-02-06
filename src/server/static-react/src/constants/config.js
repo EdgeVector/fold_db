@@ -13,7 +13,7 @@
  */
 export const APP_CONFIG = {
   // Default tab when application loads
-  DEFAULT_TAB: 'ingestion',
+  DEFAULT_TAB: 'smart-folder',
   
   // Authentication configuration
   AUTHENTICATION: {

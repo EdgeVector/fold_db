@@ -30,7 +30,7 @@ describe('TabNavigation', () => {
     render(<TabNavigation {...defaultProps} />)
 
     // Main group tabs with their actual labels
-    expect(screen.getByText('Ingestion')).toBeInTheDocument()
+    expect(screen.getByText('Smart Folder')).toBeInTheDocument()
     expect(screen.getByText('AI Query')).toBeInTheDocument()
     expect(screen.getByText('File Upload')).toBeInTheDocument()
   })
@@ -127,9 +127,9 @@ describe('TabNavigation', () => {
   it('has proper accessibility attributes', () => {
     render(<TabNavigation {...defaultProps} activeTab="ingestion" />)
 
-    const activeTab = screen.getByRole('button', { name: /ingestion tab/i })
+    const activeTab = screen.getByRole('button', { name: /json ingestion tab/i })
     expect(activeTab).toHaveAttribute('aria-current', 'page')
-    expect(activeTab).toHaveAttribute('aria-label', 'Ingestion tab')
+    expect(activeTab).toHaveAttribute('aria-label', 'JSON Ingestion tab')
 
     const inactiveTab = screen.getByRole('button', { name: /ai query tab/i })
     expect(inactiveTab).not.toHaveAttribute('aria-current')

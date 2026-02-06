@@ -73,6 +73,30 @@ export interface ProcessIngestionResponse {
   progress_id?: string; // ID for tracking progress
 }
 
+// Smart Folder types
+export interface FileRecommendation {
+  path: string;
+  should_ingest: boolean;
+  category: string;
+  reason: string;
+}
+
+export interface SmartFolderScanResponse {
+  success: boolean;
+  total_files: number;
+  recommended_files: FileRecommendation[];
+  skipped_files: FileRecommendation[];
+  summary: Record<string, number>;
+}
+
+export interface SmartFolderIngestResponse {
+  success: boolean;
+  batch_id: string;
+  files_found: number;
+  file_progress_ids: { file_name: string; progress_id: string }[];
+  message: string;
+}
+
 // Progress tracking types
 export interface IngestionProgress {
   id: string;
@@ -320,6 +344,52 @@ export class UnifiedIngestionClient {
       pub_key: options.pubKey ?? "default",
       progress_id: options.progressId ?? crypto.randomUUID(),
     };
+  }
+
+  /**
+   * Scan a folder for files to ingest
+   */
+  async smartFolderScan(
+    folderPath: string,
+    maxDepth = 5,
+    maxFiles = 500,
+  ): Promise<EnhancedApiResponse<SmartFolderScanResponse>> {
+    return this.client.post<SmartFolderScanResponse>(
+      "/ingestion/smart-folder/scan",
+      {
+        folder_path: folderPath,
+        max_depth: maxDepth,
+        max_files: maxFiles,
+      },
+      {
+        timeout: 60000,
+        retries: 0,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
+   * Ingest selected files from a smart folder scan
+   */
+  async smartFolderIngest(
+    folderPath: string,
+    files: string[],
+    autoExecute = true,
+  ): Promise<EnhancedApiResponse<SmartFolderIngestResponse>> {
+    return this.client.post<SmartFolderIngestResponse>(
+      "/ingestion/smart-folder/ingest",
+      {
+        folder_path: folderPath,
+        files_to_ingest: files,
+        auto_execute: autoExecute,
+      },
+      {
+        timeout: 60000,
+        retries: 0,
+        cacheable: false,
+      },
+    );
   }
 
   /**

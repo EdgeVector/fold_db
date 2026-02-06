@@ -14,10 +14,11 @@ export const FORM_FIELD_DEBOUNCE_MS = 300;
 // Tab Definitions
 export const DEFAULT_TABS = [
   // Main features
-  { id: "ingestion", label: "Ingestion", icon: "📥", group: "main" },
+  { id: "smart-folder", label: "Smart Folder", icon: "📂", group: "main" },
   { id: "file-upload", label: "File Upload", icon: "📄", group: "main" },
   { id: "llm-query", label: "AI Query", icon: "🤖", group: "main" },
   // Developer/Advanced features
+  { id: "ingestion", label: "JSON Ingestion", icon: "📥", group: "advanced" },
   {
     id: "native-index",
     label: "Native Index Query",
