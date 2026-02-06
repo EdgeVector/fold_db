@@ -9,7 +9,7 @@ permissions:
   contents: write  # Required for creating releases
 
 jobs:
-  # Build CLI binaries (server-only)
+  # Build CLI binaries (server + CLI tool)
   build-cli:
     name: Build CLI Binary
     strategy:
@@ -18,15 +18,30 @@ jobs:
           - os: macos-15-large  # Intel runner
             target: x86_64-apple-darwin
             artifact_name: datafold_http_server-macos-x86_64
+            binary: datafold_http_server
           - os: macos-latest  # Apple Silicon (ARM64)
             target: aarch64-apple-darwin
             artifact_name: datafold_http_server-macos-aarch64
+            binary: datafold_http_server
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: datafold_http_server-linux-x86_64
-    
+            binary: datafold_http_server
+          - os: macos-15-large  # Intel runner
+            target: x86_64-apple-darwin
+            artifact_name: folddb-macos-x86_64
+            binary: folddb
+          - os: macos-latest  # Apple Silicon (ARM64)
+            target: aarch64-apple-darwin
+            artifact_name: folddb-macos-aarch64
+            binary: folddb
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: folddb-linux-x86_64
+            binary: folddb
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -55,11 +70,11 @@ jobs:
           key: ${{ matrix.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release binary
-        run: cargo build --release --bin datafold_http_server --target ${{ matrix.target }}
+        run: cargo build --release --bin ${{ matrix.binary }} --target ${{ matrix.target }}
 
       - name: Strip binary (Unix)
         if: runner.os != 'Windows'
-        run: strip target/${{ matrix.target }}/release/datafold_http_server
+        run: strip target/${{ matrix.target }}/release/${{ matrix.binary }}
 
       - name: Get version from tag
         id: get_version
@@ -70,7 +85,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/datafold_http_server \
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} \
              dist/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
 
       - name: Upload binary to release
@@ -246,28 +261,50 @@ jobs:
             
             ---
             
-            ### 🖥️ CLI Binaries (Server Only)
-            
-            For running DataFold as a web server only:
+            ### 🖥️ HTTP Server Binaries
+
+            For running DataFold as a web server:
             - **macOS (Intel)**: [datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }})
             - **macOS (Apple Silicon)**: [datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }})
             - **Linux**: [datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }})
-            
+
             **Installation:**
             ```bash
             # Download the binary for your platform
             chmod +x datafold_http_server-*
-            
+
             # Move to your PATH (optional)
             sudo mv datafold_http_server-* /usr/local/bin/datafold_http_server
             ```
-            
+
             **Usage:**
             ```bash
             # Start the HTTP server
             datafold_http_server --port 9001
-            
+
             # Visit http://localhost:9001 for the web interface
+            ```
+
+            ---
+
+            ### ⌨️ CLI Tool Downloads
+
+            The `folddb` provides full control from your terminal:
+            - **macOS (Intel)**: [folddb-macos-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb-macos-x86_64-${{ steps.get_version.outputs.version }})
+            - **macOS (Apple Silicon)**: [folddb-macos-aarch64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb-macos-aarch64-${{ steps.get_version.outputs.version }})
+            - **Linux**: [folddb-linux-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb-linux-x86_64-${{ steps.get_version.outputs.version }})
+
+            **Installation:**
+            ```bash
+            chmod +x folddb-*
+            sudo mv folddb-* /usr/local/bin/folddb
+            ```
+
+            **Usage:**
+            ```bash
+            folddb status -p
+            folddb ingest data.json
+            folddb llm-query "Show me recent purchases over $50"
             ```
             
             ---

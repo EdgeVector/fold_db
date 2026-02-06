@@ -61,16 +61,16 @@ jobs:
             binary: datafold_http_server
           - os: macos-15-large
             target: x86_64-apple-darwin
-            artifact_name: datafold_cli-macos-x86_64
-            binary: datafold_cli
+            artifact_name: folddb-macos-x86_64
+            binary: folddb
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: datafold_cli-macos-aarch64
-            binary: datafold_cli
+            artifact_name: folddb-macos-aarch64
+            binary: folddb
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: datafold_cli-linux-x86_64
-            binary: datafold_cli
+            artifact_name: folddb-linux-x86_64
+            binary: folddb
 
     runs-on: ${{ matrix.os }}
 
@@ -181,9 +181,9 @@ jobs:
 
             | Platform | Download |
             |----------|----------|
-            | macOS (Intel) | [datafold_cli-macos-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/datafold_cli-macos-x86_64) |
-            | macOS (Apple Silicon) | [datafold_cli-macos-aarch64](https://github.com/shiba4life/fold_db/releases/download/nightly/datafold_cli-macos-aarch64) |
-            | Linux (x86_64) | [datafold_cli-linux-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/datafold_cli-linux-x86_64) |
+            | macOS (Intel) | [folddb-macos-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/folddb-macos-x86_64) |
+            | macOS (Apple Silicon) | [folddb-macos-aarch64](https://github.com/shiba4life/fold_db/releases/download/nightly/folddb-macos-aarch64) |
+            | Linux (x86_64) | [folddb-linux-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/folddb-linux-x86_64) |
 
             ---
 
@@ -191,8 +191,8 @@ jobs:
 
             ```bash
             # Download and make executable
-            chmod +x datafold_cli-*
-            sudo mv datafold_cli-* /usr/local/bin/datafold_cli
+            chmod +x folddb-*
+            sudo mv folddb-* /usr/local/bin/folddb
 
             # Or use the HTTP server
             chmod +x datafold_http_server-*

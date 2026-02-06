@@ -5,7 +5,7 @@
 set -e
 
 REPO="shiba4life/fold_db"
-BINARY_NAME="datafold_cli"
+BINARY_NAME="folddb"
 
 # Detect OS
 OS="$(uname -s)"
