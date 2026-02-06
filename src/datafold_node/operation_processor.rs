@@ -721,18 +721,26 @@ impl OperationProcessor {
 
     /// Ingest a single file through the AI ingestion pipeline.
     ///
-    /// Reads the file, converts to JSON (supports .json, .js, .csv, .txt, .md),
-    /// then runs it through the ingestion service.
+    /// Tries the native parser first for known formats (json, js/Twitter, csv, txt, md),
+    /// then falls back to file_to_json for everything else (images, PDFs, YAML, etc.).
     pub async fn ingest_single_file(
         &self,
         file_path: &std::path::Path,
         auto_execute: bool,
     ) -> FoldDbResult<crate::ingestion::IngestionResponse> {
         use crate::ingestion::core::IngestionRequest;
+        use crate::ingestion::json_processor::convert_file_to_json;
         use crate::ingestion::progress::ProgressService;
         use crate::ingestion::smart_folder;
 
-        let data = smart_folder::read_file_as_json(file_path).map_err(FoldDbError::Other)?;
+        // Try native parser first (handles json, js/Twitter, csv, txt, md without LLM),
+        // fall back to file_to_json for unsupported types (images, PDFs, etc.)
+        let data = match smart_folder::read_file_as_json(file_path) {
+            Ok(json) => json,
+            Err(_) => convert_file_to_json(&file_path.to_path_buf())
+                .await
+                .map_err(|e| FoldDbError::Other(e.to_string()))?,
+        };
 
         let progress_id = uuid::Uuid::new_v4().to_string();
         let pub_key = self.get_node_public_key();

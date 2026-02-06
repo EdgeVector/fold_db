@@ -36,6 +36,7 @@ pub mod mutation_generator;
 pub mod ollama_service;
 pub mod openrouter_service;
 pub mod progress;
+pub mod prompts;
 pub mod routes;
 pub mod smart_folder;
 
@@ -43,7 +44,6 @@ pub mod ingestion_service;
 pub mod structure_analyzer;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use utoipa::ToSchema;
 
 // Public re-exports
@@ -154,54 +154,3 @@ pub struct IngestionStatus {
     pub default_trust_distance: u32,
 }
 
-/// Simplified schema representation for AI analysis
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SimplifiedSchema {
-    /// Schema name
-    pub name: String,
-    /// Schema fields
-    pub fields: HashMap<String, serde_json::Value>,
-}
-
-/// Map of simplified schemas keyed by schema name
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SimplifiedSchemaMap {
-    /// Schemas keyed by name
-    pub schemas: HashMap<String, SimplifiedSchema>,
-}
-
-impl SimplifiedSchemaMap {
-    /// Create a new empty schema map
-    pub fn new() -> Self {
-        Self {
-            schemas: HashMap::new(),
-        }
-    }
-
-    /// Add a schema to the map
-    pub fn insert(&mut self, name: String, schema: SimplifiedSchema) {
-        self.schemas.insert(name, schema);
-    }
-
-    /// Get the number of schemas in the map
-    pub fn len(&self) -> usize {
-        self.schemas.len()
-    }
-
-    /// Check if the map is empty
-    pub fn is_empty(&self) -> bool {
-        self.schemas.is_empty()
-    }
-
-    /// Convert to JSON Value for AI API calls
-    pub fn to_json_value(&self) -> serde_json::Value {
-        serde_json::to_value(&self.schemas)
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()))
-    }
-}
-
-impl Default for SimplifiedSchemaMap {
-    fn default() -> Self {
-        Self::new()
-    }
-}

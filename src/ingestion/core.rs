@@ -9,7 +9,7 @@ use crate::ingestion::{
     openrouter_service::OpenRouterService,
     progress::{IngestionResults, IngestionStep, ProgressService},
     AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
-    IngestionStatus, SimplifiedSchema, SimplifiedSchemaMap,
+    IngestionStatus,
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -109,17 +109,7 @@ impl IngestionCore {
             .await;
         self.validate_configuration()?;
 
-        // Step 2: Prepare schemas
-        progress_service
-            .update_progress(
-                &progress_id,
-                IngestionStep::PreparingSchemas,
-                "Preparing available schemas...".to_string(),
-            )
-            .await;
-        let available_schemas = self.prepare_schemas().await?;
-
-        // Step 2.5: Flatten Twitter data structure for AI analysis
+        // Step 2: Flatten data structure for AI analysis
         progress_service
             .update_progress(
                 &progress_id,
@@ -138,7 +128,7 @@ impl IngestionCore {
             )
             .await;
         let ai_response = self
-            .get_ai_recommendation(&flattened_data, &available_schemas)
+            .get_ai_recommendation(&flattened_data)
             .await?;
 
         // Step 4: Determine and setup schema
@@ -269,26 +259,18 @@ impl IngestionCore {
         }
     }
 
-    /// Prepares available schemas for AI recommendation.
-    async fn prepare_schemas(&self) -> IngestionResult<SimplifiedSchemaMap> {
-        let available_schemas = self.get_stripped_available_schemas().await?;
-        Ok(available_schemas)
-    }
-
-    /// Gets AI recommendation for schema selection/creation.
+    /// Gets AI recommendation for schema creation.
     async fn get_ai_recommendation(
         &self,
         data: &Value,
-        available_schemas: &SimplifiedSchemaMap,
     ) -> IngestionResult<AISchemaResponse> {
-        let schemas_json = available_schemas.to_json_value();
         let ai_response = self
-            .get_ai_schema_recommendation(data, &schemas_json)
+            .get_ai_schema_recommendation(data)
             .await?;
         Ok(ai_response)
     }
 
-    /// Sets up the schema to use (existing or newly created).
+    /// Sets up the schema to use (always creates new).
     async fn setup_schema(
         &self,
         ai_response: &AISchemaResponse,
@@ -327,46 +309,10 @@ impl IngestionCore {
         // Completion logging removed to reduce verbosity
     }
 
-    /// Get available schemas from the schema service
-    async fn get_stripped_available_schemas(&self) -> IngestionResult<SimplifiedSchemaMap> {
-        // Fetch available schemas from the schema service
-        let schemas =
-            self.schema_service_client
-                .get_available_schemas()
-                .await
-                .map_err(|e| {
-                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                        format!("Failed to fetch schemas from schema service: {}", e),
-                    ))
-                })?;
-
-        // Create a simplified schema representation for AI analysis
-        let mut schema_map = SimplifiedSchemaMap::new();
-
-        for schema in schemas {
-            let fields = if let Ok(Value::Object(fields_obj)) = serde_json::to_value(&schema.fields)
-            {
-                fields_obj.into_iter().collect()
-            } else {
-                HashMap::new()
-            };
-
-            let simplified = SimplifiedSchema {
-                name: schema.name.clone(),
-                fields,
-            };
-
-            schema_map.insert(schema.name.clone(), simplified);
-        }
-
-        Ok(schema_map)
-    }
-
     /// Get AI schema recommendation
     async fn get_ai_schema_recommendation(
         &self,
         json_data: &Value,
-        available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
         match self.config.provider {
             AIProvider::OpenRouter => {
@@ -375,7 +321,7 @@ impl IngestionCore {
                     .ok_or_else(|| {
                         IngestionError::configuration_error("OpenRouter service not initialized")
                     })?
-                    .get_schema_recommendation(json_data, available_schemas)
+                    .get_schema_recommendation(json_data)
                     .await
             }
             AIProvider::Ollama => {
@@ -384,40 +330,19 @@ impl IngestionCore {
                     .ok_or_else(|| {
                         IngestionError::configuration_error("Ollama service not initialized")
                     })?
-                    .get_schema_recommendation(json_data, available_schemas)
+                    .get_schema_recommendation(json_data)
                     .await
             }
         }
     }
 
-    /// Determine which schema to use based on AI response
+    /// Determine which schema to use based on AI response (always creates new)
     async fn determine_schema_to_use(
         &self,
         ai_response: &AISchemaResponse,
         sample_data: &Value,
     ) -> IngestionResult<(String, HashMap<String, String>)> {
-        // If existing schemas were recommended, use the first one
-        if !ai_response.existing_schemas.is_empty() {
-            let schema_name = &ai_response.existing_schemas[0];
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Using existing schema: {}",
-                schema_name
-            );
-
-            // Ensure existing schema has topologies - add them if missing
-            self.ensure_schema_has_topologies(
-                schema_name,
-                sample_data,
-                &ai_response.mutation_mappers,
-            )
-            .await?;
-
-            return Ok((schema_name.clone(), ai_response.mutation_mappers.clone()));
-        }
-
-        // If a new schema was provided, create it
+        // Always create a new schema from the AI definition
         if let Some(new_schema_def) = &ai_response.new_schemas {
             log_feature!(
                 LogFeature::Ingestion,
@@ -437,11 +362,11 @@ impl IngestionCore {
         log_feature!(
             LogFeature::Ingestion,
             error,
-            "AI response did not provide any schema recommendation"
+            "AI response did not provide a new schema definition"
         );
 
         Err(IngestionError::ai_response_validation_error(
-            "AI response contains neither existing schemas nor new schema definition",
+            "AI response did not provide a new schema definition",
         ))
     }
 
@@ -561,121 +486,6 @@ impl IngestionCore {
             .map_err(IngestionError::SchemaSystemError)?;
 
         Ok((schema_name, returned_mutation_mappers))
-    }
-
-    /// Ensure existing schema has topologies for all fields, adding them if missing
-    async fn ensure_schema_has_topologies(
-        &self,
-        schema_name: &str,
-        sample_data: &Value,
-        mutation_mappers: &HashMap<String, String>,
-    ) -> IngestionResult<()> {
-        // Get the schema from the schema service
-        let mut schema = self
-            .schema_service_client
-            .get_schema(schema_name)
-            .await
-            .map_err(|e| {
-                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(format!(
-                    "Failed to fetch schema '{}' from schema service: {}",
-                    schema_name, e
-                )))
-            })?;
-
-        // Check if schema already has all required topologies
-        let fields_to_check: Vec<String> = mutation_mappers
-            .values()
-            .filter_map(|mapper| {
-                // Extract field name from mapper (format: SchemaName.field_name)
-                mapper.split('.').nth(1).map(|s| s.to_string())
-            })
-            .collect();
-
-        let mut needs_update = false;
-        for field_name in &fields_to_check {
-            if !schema.has_field_topology(field_name) {
-                needs_update = true;
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "Schema '{}' is missing topology for field '{}'",
-                    schema_name,
-                    field_name
-                );
-                break;
-            }
-        }
-
-        // If all fields have topologies, no update needed
-        if !needs_update {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Schema '{}' already has topologies for all required fields",
-                schema_name
-            );
-            return Ok(());
-        }
-
-        // Infer topologies from sample data
-        let sample_for_topology = if let Some(array) = sample_data.as_array() {
-            array.first().unwrap_or(sample_data)
-        } else {
-            sample_data
-        };
-
-        if let Some(sample_obj) = sample_for_topology.as_object() {
-            let sample_map: std::collections::HashMap<String, serde_json::Value> = sample_obj
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-
-            schema.infer_topologies_from_data(&sample_map);
-
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Inferred topologies for {} fields in schema '{}' from sample data",
-                sample_map.len(),
-                schema_name
-            );
-
-            // Update the schema in the schema service
-            let empty_mappers = HashMap::new();
-            self.schema_service_client
-                .add_schema(&schema, empty_mappers)
-                .await
-                .map_err(|e| {
-                    IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                        format!(
-                            "Failed to update schema '{}' with topologies: {}",
-                            schema_name, e
-                        ),
-                    ))
-                })?;
-
-            // Reload the schema in the local schema core
-            let json_str = serde_json::to_string(&schema).map_err(|error| {
-                IngestionError::schema_parsing_error(format!(
-                    "Failed to serialize updated schema: {}",
-                    error
-                ))
-            })?;
-
-            match self.schema_core.load_schema_from_json(&json_str).await {
-                Ok(_) => {}
-                Err(e) => return Err(IngestionError::SchemaSystemError(e)),
-            };
-
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Updated schema '{}' with inferred topologies",
-                schema_name
-            );
-        }
-
-        Ok(())
     }
 
     /// Extract key values from JSON data based on schema key fields

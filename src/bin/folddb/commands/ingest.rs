@@ -4,6 +4,7 @@ use crate::error::CliError;
 use crate::output::spinner;
 use crate::output::OutputMode;
 use fold_db::datafold_node::OperationProcessor;
+use fold_db::IngestionConfig;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -49,6 +50,15 @@ pub async fn run(
             no_execute,
         } => {
             let auto_execute = !no_execute;
+
+            // Pre-validate ingestion config before processing any files
+            IngestionConfig::from_env().map_err(|e| {
+                CliError::new(format!(
+                    "Ingestion not configured: {}. Set FOLD_OPENROUTER_API_KEY or configure via the UI.",
+                    e
+                ))
+            })?;
+
             let files_to_ingest = resolve_files(path, *all, files.as_ref(), processor, mode).await?;
 
             if files_to_ingest.is_empty() {

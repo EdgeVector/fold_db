@@ -6,158 +6,12 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use super::prompts::{PROMPT_ACTIONS, PROMPT_HEADER};
 use serde_json::Value;
 use std::time::Duration;
 
-/// Prompt header shared across requests
-const PROMPT_HEADER: &str = r#"Tell me which of these schemas to use for this sample json data. If none are available, then create a new one. Return the value in this format:
-{
-  "existing_schemas": [<list_of_schema_names visualized>],
-  "new_schemas": <single_schema_definition>,
-  "mutation_mappers": {json_field_name: schema_field_name}
-}
-
-Where:
-- existing_schemas is an array of schema names that match the input data
-- new_schemas is a single schema definition if no existing schemas match
-- mutation_mappers maps ONLY TOP-LEVEL JSON field names to schema field names (e.g., {"id": "id", "user": "user"})
-
-CRITICAL - Mutation Mappers:
-- ONLY use top-level field names in mutation_mappers (e.g., "user", "comments", "id")
-- DO NOT use nested paths (e.g., "user.name", "comments[*].content") - they will not work
-- Nested objects and arrays will be stored as-is in their top-level field
-- Example: if JSON has {"user": {"id": 1, "name": "Tom"}}, mapper should be {"user": "user"}, NOT {"user.id": "id"}
-
-IMPORTANT - Schema Types:
-- For storing MULTIPLE entities/records, use "key": {"range_field": "field_name"}
-- For storing ONE global value per field, omit the "key" field
-- If the user is providing an ARRAY of objects, you MUST use a Range schema with a "key"
-- The range_field should be a unique identifier field (like "name", "id", "email")
-
-IMPORTANT - Schema Name and Descriptive Name:
-- You MUST include "name": use any simple name like "Schema" (it will be replaced automatically)
-- ALWAYS include "descriptive_name": a clear, human-readable description of what this schema stores
-- Example: "descriptive_name": "User Profile Information" or "Customer Order Records"
-
-IMPORTANT - Field Topologies with Classifications:
-- EVERY Primitive leaf MUST include "classifications" array
-- Analyze field semantic meaning and assign appropriate classification types
-- Multiple classifications per field are encouraged (e.g., ["name:person", "word"])
-- ALWAYS include "word" classification for any string field that contains searchable text
-- Available classification types:
-  * "word" - general text, split into words for search (MANDATORY for searchable text)
-  * "name:person" - person names (kept whole: "Jennifer Liu")
-  * "name:company" - company/organization names
-  * "name:place" - location names (cities, countries, places)
-  * "email" - email addresses
-  * "phone" - phone numbers
-  * "url" - URLs or domains
-  * "date" - dates and timestamps
-  * "hashtag" - hashtags (from social media)
-  * "username" - usernames/handles
-- Topology structure:
-  * Primitives: {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}
-  * Objects: {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}
-  * Arrays of Primitives: {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}
-  * Arrays of Objects: {"type": "Array", "value": {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}
-
-CRITICAL - Using Flattened Path Structure:
-- The superset structure now uses flattened dot-separated paths instead of nested structures
-- Each path represents a field with its type (e.g., "entities.user_mentions[0].id": "string")
-- Convert these flattened paths into proper nested topology structures
-- For arrays of objects, paths like "user_mentions[0].field" mean:
-  * user_mentions is an Array
-  * Each array element is an Object  
-  * Each object has the field "field"
-  * Create topology: {"type": "Array", "value": {"type": "Object", "value": {"field": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}
-- Group paths by their base path and create proper nested structures
-- IMPORTANT: When you see paths like "user_mentions[0].id", "user_mentions[0].name", etc., this means:
-  * user_mentions is an Array (not an Object)
-  * Each array element is an Object with fields: id, name, etc.
-  * The topology should be: {"type": "Array", "value": {"type": "Object", "value": {"id": {...}, "name": {...}}}}
-- NEVER create an object with field names like "[0].id" - this is wrong!
-- NEVER use generic "Object" types without specifying the exact fields inside
-- ALWAYS specify the complete structure with all nested fields and their types
-- For example, instead of {"type": "Object"}, use {"type": "Object", "value": {"field1": {"type": "Primitive", "value": "String"}, "field2": {"type": "Array", "value": {...}}}}
-
-Example Range schema (for multiple records):
-{
-  "name": "Schema",
-  "descriptive_name": "User Profile Information",
-  "key": {"range_field": "id"},
-  "fields": ["id", "name", "age"],
-  "field_topologies": {
-    "id": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
-    "name": {"root": {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}},
-    "age": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}}
-  }
-}
-
-Example Single schema (for one global value):
-{
-  "name": "Schema",
-  "descriptive_name": "Global Counter Statistics",
-  "fields": ["count", "total"],
-  "field_topologies": {
-    "count": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}},
-    "total": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}}
-  }
-}
-
-Example with Arrays and Objects:
-{
-  "name": "Schema",
-  "descriptive_name": "Social Media Post",
-  "key": {"range_field": "post_id"},
-  "fields": ["post_id", "content", "hashtags", "media"],
-  "field_topologies": {
-    "post_id": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
-    "content": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
-    "hashtags": {"root": {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}},
-    "media": {"root": {"type": "Array", "value": {"type": "Object", "value": {"url": {"type": "Primitive", "value": "String", "classifications": ["url", "word"]}, "type": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}}
-  }
-}
-
-IMPORTANT - Transform Fields (DSL):
-- You can add a "transform_fields" map to the schema to derive new fields from existing ones.
-- SYNTAX: "SourceField.function().function()"
-- IMPLICIT CARDINALITY:
-  * The system automatically iterates over every record in the schema (1:N). You do NOT need a .map() token.
-  * Iterator Functions (like split_by_word, split_array) INCREASE depth/cardinality (one row -> many rows).
-  * Reducer Functions (like count, join, sum) DECREASE depth/cardinality (many rows -> one row).
-- DEPRECATION: The ".map()" token is DEPRECATED. Do not use it.
-- Examples:
-  * Word Count: "content.split_by_word().count()" (Iterates content -> splits into words -> counts words per row)
-  * Character Count: "content.slugify().len()"
-  * Array Join: "hashtags.join(', ')" (Joins array elements into a string)
-"#;
-
-/// Instructions appended to every prompt
-const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and either:
-1. If existing schemas can handle this data EXACTLY (with perfect topology match), return their names in existing_schemas and provide mutation_mappers
-2. If no existing schemas match PERFECTLY, create a new schema definition in new_schemas and provide mutation_mappers
-
-IMPORTANT: Only recommend existing schemas if they have EXACTLY the same topology structure as the input data. If there are any differences in nested structures, array types, or field types, create a new schema instead.
-
-CRITICAL: When in doubt, ALWAYS create a new schema rather than trying to match an existing one. It's better to have multiple schemas than to use an incorrect one.
-
-FORCE NEW SCHEMA: For Twitter data with user_mentions arrays, ALWAYS create a new schema. Do not use existing schemas even if they seem to match.
-
-CRITICAL RULES:
-- If the original input was a JSON array (multiple objects), you MUST create a NEW Range schema with "key": {"range_field": "unique_field"}
-- NEVER recommend a Single-type schema for array inputs - they will overwrite data
-- When user provides an array, ignore any existing Single schemas and create a new Range schema with the "key" field
-- NEVER use generic "Object" types - always specify the complete field structure with exact types and classifications
-- ALWAYS provide complete topology definitions with all nested fields explicitly defined
-
-The response must be valid JSON."#;
-
 fn pretty_json(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| "Invalid JSON".to_string())
-}
-
-fn pretty_json_or_empty(value: &Value) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// Ollama API service
@@ -208,10 +62,9 @@ impl OllamaService {
     pub async fn get_schema_recommendation(
         &self,
         sample_json: &Value,
-        available_schemas: &Value,
     ) -> IngestionResult<AISchemaResponse> {
-        // Create superset structure from all top-level elements
-        let superset_structure = StructureAnalyzer::create_superset_structure(sample_json);
+        // Extract minimal structure skeleton (flattened paths, no data values)
+        let superset_structure = StructureAnalyzer::extract_structure_skeleton(sample_json);
 
         // Get analysis statistics for logging
         let stats = StructureAnalyzer::get_analysis_stats(sample_json);
@@ -268,15 +121,9 @@ impl OllamaService {
             "Superset structure: {}",
             pretty_json(&superset_structure)
         );
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Available schemas: {}",
-            pretty_json_or_empty(available_schemas)
-        );
 
         let is_array_input = sample_json.is_array();
-        let prompt = self.create_prompt(&superset_structure, available_schemas, is_array_input);
+        let prompt = self.create_prompt(&superset_structure, is_array_input);
 
         log_feature!(
             LogFeature::Ingestion,
@@ -309,20 +156,18 @@ impl OllamaService {
     fn create_prompt(
         &self,
         sample_json: &Value,
-        available_schemas: &Value,
         is_array_input: bool,
     ) -> String {
         let array_note = if is_array_input {
-            "\n\nIMPORTANT: The user provided a JSON ARRAY of multiple objects. You MUST create or use a Range schema with a range_key to store multiple entities."
+            "\n\nIMPORTANT: The user provided a JSON ARRAY of multiple objects. You MUST create a Range schema with a range_key to store multiple entities."
         } else {
             ""
         };
 
         format!(
-            "{header}\n\nSample JSON Data:\n{sample}\n\nAvailable Schemas:\n{schemas}{array_note}\n\n{actions}",
+            "{header}\n\nSample JSON Data:\n{sample}{array_note}\n\n{actions}",
             header = PROMPT_HEADER,
             sample = pretty_json(sample_json),
-            schemas = pretty_json_or_empty(available_schemas),
             array_note = array_note,
             actions = PROMPT_ACTIONS
         )
@@ -445,12 +290,6 @@ impl OllamaService {
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "Existing schemas: {:?}",
-            result.existing_schemas
-        );
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
             "New schemas: {}",
             result
                 .new_schemas
@@ -531,22 +370,6 @@ impl OllamaService {
             IngestionError::ai_response_validation_error("Response must be a JSON object")
         })?;
 
-        // Parse existing_schemas
-        let existing_schemas = match obj.get("existing_schemas") {
-            Some(Value::Array(arr)) => arr
-                .iter()
-                .map(|v| v.as_str().unwrap_or("").to_string())
-                .filter(|s| !s.is_empty())
-                .collect(),
-            Some(Value::String(s)) => vec![s.clone()],
-            Some(Value::Null) | None => vec![],
-            _ => {
-                return Err(IngestionError::ai_response_validation_error(
-                    "existing_schemas must be an array of strings or null",
-                ))
-            }
-        };
-
         // Parse new_schemas
         let new_schemas = obj.get("new_schemas").cloned();
 
@@ -570,7 +393,6 @@ impl OllamaService {
         };
 
         Ok(AISchemaResponse {
-            existing_schemas,
             new_schemas,
             mutation_mappers,
         })
@@ -589,17 +411,17 @@ mod tests {
         // Test with JSON block markers
         let response_with_markers = r###"Here's the analysis:
 ```json
-{"existing_schemas": ["test"], "new_schemas": null, "mutation_mappers": {}}
+{"new_schemas": {"name": "test"}, "mutation_mappers": {}}
 ```
 That should work."###;
 
         let result = service.extract_json_from_response(response_with_markers);
         assert!(result.is_ok());
-        assert!(result.unwrap().contains("existing_schemas"));
+        assert!(result.unwrap().contains("new_schemas"));
 
         // Test with direct JSON
         let response_direct =
-            r###"{"existing_schemas": ["test"], "new_schemas": null, "mutation_mappers": {}}"###;
+            r###"{"new_schemas": null, "mutation_mappers": {}}"###;
         let result = service.extract_json_from_response(response_direct);
         assert!(result.is_ok());
     }
@@ -610,7 +432,6 @@ That should work."###;
 
         let response_trailing = r###"
         {
-            "existing_schemas": ["test"],
             "new_schemas": null,
             "mutation_mappers": {}
         }
@@ -622,7 +443,7 @@ That should work."###;
         let json = result.unwrap();
         // Should be parseable
         let parsed: Value = serde_json::from_str(&json).unwrap();
-        assert!(parsed.get("existing_schemas").is_some());
+        assert!(parsed.get("new_schemas").is_some());
     }
 
     #[test]
@@ -630,7 +451,6 @@ That should work."###;
         let service = create_test_service();
 
         let test_json = serde_json::json!({
-            "existing_schemas": ["schema1", "schema2"],
             "new_schemas": null,
             "mutation_mappers": {
                 "field1": "schema.field1",
@@ -642,21 +462,18 @@ That should work."###;
         assert!(result.is_ok());
 
         let response = result.unwrap();
-        assert_eq!(response.existing_schemas.len(), 2);
         assert_eq!(response.mutation_mappers.len(), 2);
     }
 
     #[test]
-    fn test_create_prompt_includes_sample_and_schemas() {
+    fn test_create_prompt_includes_sample() {
         let service = create_test_service();
         let sample = serde_json::json!({"a": 1});
-        let schemas = serde_json::json!({"test": {"field": "string"}});
 
-        let prompt = service.create_prompt(&sample, &schemas, false);
+        let prompt = service.create_prompt(&sample, false);
         assert!(prompt.contains("Sample JSON Data:"));
         assert!(prompt.contains("\"a\": 1"));
-        assert!(prompt.contains("Available Schemas:"));
-        assert!(prompt.contains("\"test\""));
+        assert!(!prompt.contains("Available Schemas:"));
         assert!(prompt.contains(PROMPT_HEADER));
         assert!(prompt.contains(PROMPT_ACTIONS));
     }
@@ -665,7 +482,6 @@ That should work."###;
     fn test_pretty_json_helpers() {
         let value = serde_json::json!({"x": 1});
         assert!(pretty_json(&value).contains("\"x\": 1"));
-        assert!(pretty_json_or_empty(&value).contains("\"x\": 1"));
     }
 
     fn create_test_service() -> OllamaService {
