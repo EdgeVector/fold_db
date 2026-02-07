@@ -43,7 +43,7 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Use shared handler
     match query_handlers::execute_query(query_inner, &user_hash, &node).await {
@@ -108,7 +108,7 @@ pub async fn execute_mutation(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     log::info!("🚀 Executing mutation via shared handler");
     match crate::handlers::mutation::execute_mutation_from_components(
@@ -152,7 +152,7 @@ pub async fn execute_mutations_batch(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::mutation::execute_mutations_batch_from_json(
         mutations_data.into_inner(),
@@ -180,7 +180,7 @@ pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::list_transforms(&user_hash, &node).await {
         Ok(response) => {
@@ -211,7 +211,7 @@ pub async fn add_to_transform_queue(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::add_to_transform_queue(&transform_id, &user_hash, &node).await
     {
@@ -241,7 +241,7 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_transform_queue(&user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(json!({
@@ -266,7 +266,7 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_all_backfills(&user_hash, &node).await {
         Ok(response) => {
@@ -290,7 +290,7 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_active_backfills(&user_hash, &node).await {
         Ok(response) => {
@@ -319,7 +319,7 @@ pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_backfill(&transform_id, &user_hash, &node).await {
         Ok(response) => {
@@ -343,7 +343,7 @@ pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Respon
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_transform_statistics(&user_hash, &node).await {
         Ok(response) => {
@@ -392,7 +392,7 @@ pub async fn native_index_search(
         term, user_hash
     );
 
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Use shared handler
     debug!("API: Acquired database, calling native_index_search via shared handler");
@@ -425,7 +425,7 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_backfill_statistics(&user_hash, &node).await {
         Ok(response) => {
@@ -450,7 +450,7 @@ pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::system::get_indexing_status(&user_hash, &node).await {
         Ok(response) => {

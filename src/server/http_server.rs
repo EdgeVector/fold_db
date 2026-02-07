@@ -18,7 +18,7 @@ use actix_files::Files;
 
 use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 /// HTTP server for the DataFold node.
 ///
@@ -452,7 +452,7 @@ impl DataFoldHttpServer {
 pub async fn get_node_for_request(
     app_state: &web::Data<AppState>,
     user_id: &str,
-) -> Result<Arc<Mutex<DataFoldNode>>, FoldDbError> {
+) -> Result<Arc<RwLock<DataFoldNode>>, FoldDbError> {
     app_state
         .node_manager
         .get_node(user_id)

@@ -27,7 +27,7 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
         Err(response) => return response,
     };
 
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::list_schemas(&user_hash, &node).await {
@@ -57,7 +57,7 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
         Err(response) => return response,
     };
 
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::get_schema(&name, &user_hash, &node).await {
@@ -86,7 +86,7 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
         Err(response) => return response,
     };
 
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::approve_schema(&schema_name, &user_hash, &node).await {
@@ -115,7 +115,7 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
         Err(response) => return response,
     };
 
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::block_schema(&schema_name, &user_hash, &node).await {
@@ -148,7 +148,7 @@ pub async fn get_backfill_status(
         Err(response) => return response,
     };
     let _user_hash = user_hash; // For logging/context if needed
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
     let processor = crate::datafold_node::OperationProcessor::new((*node).clone());
 
     match processor.get_backfill(&backfill_hash).await {
@@ -175,7 +175,7 @@ pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
         Err(response) => return response,
     };
 
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::load_schemas(&user_hash, &node).await {

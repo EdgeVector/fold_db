@@ -41,7 +41,7 @@ pub async fn list_logs(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::logs::list_logs(query.since, &user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(json!({
@@ -95,7 +95,7 @@ pub async fn get_config(state: web::Data<AppState>) -> Result<impl Responder> {
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::logs::get_log_config(&user_hash, &node).await {
         Ok(response) => Ok(HttpResponse::Ok().json(json!({
@@ -132,7 +132,7 @@ pub async fn update_feature_level(
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::logs::update_log_feature_level(
         &level_update.feature,
@@ -162,7 +162,7 @@ pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder>
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::logs::reload_log_config("config/logging.toml", &user_hash, &node).await {
         Ok(response) => Ok(HttpResponse::Ok().json(json!({
@@ -185,7 +185,7 @@ pub async fn get_features(state: web::Data<AppState>) -> Result<impl Responder> 
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::logs::get_log_features(&user_hash, &node).await {
         Ok(response) => Ok(HttpResponse::Ok().json(json!({

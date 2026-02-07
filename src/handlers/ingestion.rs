@@ -8,6 +8,7 @@ use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::progress::{IngestionProgress, ProgressService, ProgressTracker};
 use crate::ingestion::ingestion_service::IngestionService;
+use crate::ingestion::IngestionRequest;
 use crate::progress::JobType;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,36 +20,9 @@ use ts_rs::TS;
 // Request/Response Types
 // ============================================================================
 
-/// Request for JSON ingestion
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(
-    feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
-)]
-pub struct ProcessJsonRequest {
-    /// The JSON data to ingest
-    pub data: Value,
-    /// Whether to auto-execute mutations
-    #[serde(default = "default_true")]
-    pub auto_execute: bool,
-    /// Trust distance for mutations
-    #[serde(default)]
-    pub trust_distance: u32,
-    /// Public key for the operation
-    #[serde(default = "default_pub_key")]
-    pub pub_key: String,
-    /// Progress tracking ID (optional, generated if not provided)
-    pub progress_id: Option<String>,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_pub_key() -> String {
-    "default".to_string()
-}
+/// Re-export IngestionRequest as ProcessJsonRequest for backward compatibility
+/// with Lambda handlers in exemem-infra.
+pub type ProcessJsonRequest = IngestionRequest;
 
 /// Response for process_json (immediate response)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,13 +260,11 @@ pub async fn save_config(
 /// # Returns
 /// * `HandlerResult<ProcessJsonResponse>` - Response with progress_id
 pub async fn process_json(
-    request: ProcessJsonRequest,
+    request: IngestionRequest,
     user_hash: &str,
     tracker: &ProgressTracker,
     node: &DataFoldNode,
 ) -> HandlerResult<ProcessJsonResponse> {
-    use crate::ingestion::IngestionRequest;
-
     // Validate data is not empty
     if request.data.is_null() {
         return Err(HandlerError::BadRequest("Data cannot be null".to_string()));
@@ -307,6 +279,7 @@ pub async fn process_json(
     // Generate or use provided progress_id
     let progress_id = request
         .progress_id
+        .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // Start progress tracking
@@ -329,16 +302,6 @@ pub async fn process_json(
         }
     };
 
-    // Build ingestion request
-    let ingestion_request = IngestionRequest {
-        data: request.data.clone(),
-        auto_execute: Some(request.auto_execute),
-        trust_distance: Some(request.trust_distance),
-        pub_key: Some(request.pub_key.clone()),
-        source_file_name: None,
-        progress_id: Some(progress_id.clone()),
-    };
-
     // Clone what we need for the background task
     let node_clone = node.clone();
     let progress_id_clone = progress_id.clone();
@@ -352,7 +315,7 @@ pub async fn process_json(
 
             match service
                 .process_json_with_node_and_progress(
-                    ingestion_request,
+                    request,
                     &node_clone,
                     &progress_service,
                     progress_id_clone.clone(),

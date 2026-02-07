@@ -1,11 +1,10 @@
 //! HTTP route handlers for the ingestion API
 
-use crate::ingestion::config::{IngestionConfig, SavedConfig};
+use crate::ingestion::config::SavedConfig;
 use crate::ingestion::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::smart_folder;
-use crate::ingestion::IngestionResponse;
 use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -74,7 +73,7 @@ fn validate_folder(path: &Path) -> Result<(), HttpResponse> {
 fn spawn_file_ingestion_tasks(
     files_with_progress: impl IntoIterator<Item = (std::path::PathBuf, String)>,
     progress_tracker: &ProgressTracker,
-    node_arc: &std::sync::Arc<tokio::sync::Mutex<crate::datafold_node::DataFoldNode>>,
+    node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::datafold_node::DataFoldNode>>,
     user_id: &str,
     auto_execute: bool,
 ) {
@@ -141,6 +140,18 @@ pub struct FileProgressInfo {
     pub progress_id: String,
 }
 
+/// Convert a HandlerError to an HttpResponse, mapping status codes.
+fn handler_error_to_response(e: crate::handlers::response::HandlerError) -> HttpResponse {
+    let status_code = match e.status_code() {
+        400 => actix_web::http::StatusCode::BAD_REQUEST,
+        401 => actix_web::http::StatusCode::UNAUTHORIZED,
+        404 => actix_web::http::StatusCode::NOT_FOUND,
+        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    HttpResponse::build(status_code).json(e.to_response())
+}
+
 /// Process JSON ingestion request
 #[utoipa::path(
     post,
@@ -160,122 +171,30 @@ pub async fn process_json(
         "Received JSON ingestion request"
     );
 
-    // Use client-provided progress_id if available, otherwise generate one
-    let progress_id = request
-        .progress_id
-        .clone()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-
-    // Start progress tracking
     let user_id = match require_user_context() {
         Ok(hash) => hash,
         Err(response) => return response,
     };
 
-    let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    progress_service
-        .start_progress(progress_id.clone(), user_id)
-        .await;
-
-    // Try to create a simple ingestion service
-    let service = match IngestionService::from_env() {
-        Ok(service) => service,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to initialize ingestion service: {}",
-                e
-            );
-            progress_service
-                .fail_progress(
-                    &progress_id,
-                    format!("Ingestion service not available: {}", e),
-                )
-                .await;
-            return HttpResponse::ServiceUnavailable().json(IngestionResponse::failure(vec![
-                format!("Ingestion service not available: {}", e),
-            ]));
-        }
-    };
-
-    // Get user and node from NodeManager
-    let (user_id_for_task, node_arc) = match require_node(&state).await {
+    let (_, node_arc) = match require_node(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
 
-    let request_data = request.into_inner();
-    let progress_id_clone = progress_id.clone();
+    // Lock briefly — handler clones the node and spawns a background task
+    let node = node_arc.read().await;
 
-    tokio::spawn(async move {
-        // Wrap in run_with_user to propagate user context for progress tracking
-        crate::logging::core::run_with_user(&user_id_for_task, async move {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Starting background ingestion with progress_id: {}",
-                progress_id_clone
-            );
-
-            // Acquire lock on the node
-            let node_guard = node_arc.lock().await;
-
-            match service
-                .process_json_with_node_and_progress(
-                    request_data,
-                    &node_guard,
-                    &progress_service,
-                    progress_id_clone.clone(),
-                )
-                .await
-            {
-                Ok(response) => {
-                    if response.success {
-                        log_feature!(
-                            LogFeature::Ingestion,
-                            info,
-                            "Background ingestion completed successfully: {}",
-                            progress_id_clone
-                        );
-                    } else {
-                        log_feature!(
-                            LogFeature::Ingestion,
-                            error,
-                            "Background ingestion failed: {:?}",
-                            response.errors
-                        );
-                    }
-                }
-                Err(e) => {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        error,
-                        "Background ingestion processing failed: {}",
-                        e
-                    );
-                    progress_service
-                        .fail_progress(&progress_id_clone, format!("Processing failed: {}", e))
-                        .await;
-                }
-            }
-        })
-        .await
-    });
-
-    // Return immediately with the progress_id so frontend can start polling
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Returning progress_id to client: {}",
-        progress_id
-    );
-
-    HttpResponse::Accepted().json(serde_json::json!({
-        "success": true,
-        "progress_id": progress_id,
-        "message": "Ingestion started. Use progress_id to track status."
-    }))
+    match crate::handlers::ingestion::process_json(
+        request.into_inner(),
+        &user_id,
+        progress_tracker.get_ref(),
+        &node,
+    )
+    .await
+    {
+        Ok(api_response) => HttpResponse::Accepted().json(api_response.data),
+        Err(e) => handler_error_to_response(e),
+    }
 }
 
 /// Get ingestion status
@@ -295,31 +214,15 @@ pub async fn get_status() -> impl Responder {
     match IngestionService::from_env() {
         Ok(service) => match service.get_status() {
             Ok(status) => HttpResponse::Ok().json(status),
-            Err(e) => {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    error,
-                    "Failed to get ingestion status: {}",
-                    e
-                );
-                HttpResponse::InternalServerError().json(json!({
-                    "error": format!("Failed to get status: {}", e)
-                }))
-            }
+            Err(e) => HttpResponse::InternalServerError().json(json!({
+                "error": format!("Failed to get status: {}", e)
+            })),
         },
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "Ingestion service not available: {}",
-                e
-            );
-            HttpResponse::ServiceUnavailable().json(json!({
-                "error": format!("Ingestion service not available: {}", e),
-                "enabled": false,
-                "configured": false
-            }))
-        }
+        Err(e) => HttpResponse::ServiceUnavailable().json(json!({
+            "error": format!("Ingestion service not available: {}", e),
+            "enabled": false,
+            "configured": false
+        })),
     }
 }
 
@@ -370,8 +273,7 @@ pub async fn get_ingestion_config() -> impl Responder {
         "Received ingestion config request"
     );
 
-    let config = IngestionConfig::from_env_allow_empty();
-
+    let config = crate::ingestion::config::IngestionConfig::from_env_allow_empty();
     HttpResponse::Ok().json(config.redacted())
 }
 
@@ -390,32 +292,15 @@ pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Resp
         "Received ingestion config save request"
     );
 
-    let config = request.into_inner();
-
-    match IngestionConfig::save_to_file(&config) {
-        Ok(()) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Ingestion configuration saved successfully"
-            );
-            HttpResponse::Ok().json(json!({
-                "success": true,
-                "message": "Configuration saved successfully"
-            }))
-        }
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to save ingestion config: {}",
-                e
-            );
-            HttpResponse::InternalServerError().json(json!({
-                "success": false,
-                "error": format!("Failed to save configuration: {}", e)
-            }))
-        }
+    match crate::ingestion::config::IngestionConfig::save_to_file(&request.into_inner()) {
+        Ok(()) => HttpResponse::Ok().json(json!({
+            "success": true,
+            "message": "Configuration saved successfully"
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "success": false,
+            "error": format!("Failed to save configuration: {}", e)
+        })),
     }
 }
 
@@ -440,23 +325,16 @@ pub async fn get_progress(
         id
     );
 
-    // Get progress tracker from data
-    let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
+    let user_hash = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
 
-    match progress_service.get_progress(&id).await {
-        Some(progress) => HttpResponse::Ok().json(progress),
-        None => {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "Progress not found for ID: {}",
-                id
-            );
-            HttpResponse::NotFound().json(json!({
-                "error": "Progress not found",
-                "id": id
-            }))
-        }
+    match crate::handlers::ingestion::get_progress(&id, &user_hash, progress_tracker.get_ref())
+        .await
+    {
+        Ok(api_response) => HttpResponse::Ok().json(api_response.data),
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -788,7 +666,7 @@ async fn process_single_file_via_smart_folder(
     file_path: &std::path::Path,
     progress_id: &str,
     progress_service: &ProgressService,
-    node_arc: &std::sync::Arc<tokio::sync::Mutex<crate::datafold_node::DataFoldNode>>,
+    node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::datafold_node::DataFoldNode>>,
     auto_execute: bool,
 ) -> Result<(), String> {
     let data = smart_folder::read_file_as_json(file_path)?;
@@ -796,14 +674,14 @@ async fn process_single_file_via_smart_folder(
     let service = IngestionService::from_env()
         .map_err(|e| e.to_string())?;
 
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
     let pub_key = node.get_node_public_key().to_string();
 
     let request = IngestionRequest {
         data,
-        auto_execute: Some(auto_execute),
-        trust_distance: Some(0),
-        pub_key: Some(pub_key),
+        auto_execute,
+        trust_distance: 0,
+        pub_key,
         source_file_name: file_path
             .file_name()
             .and_then(|n| n.to_str())

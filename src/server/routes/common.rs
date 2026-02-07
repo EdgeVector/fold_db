@@ -5,7 +5,7 @@ use crate::server::http_server::AppState;
 use actix_web::{http::StatusCode, web, HttpResponse};
 use serde_json::json;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 /// Convert a HandlerError to an appropriate HTTP response.
 ///
@@ -44,7 +44,7 @@ pub fn require_user_context() -> Result<String, HttpResponse> {
 pub async fn get_node_for_user(
     state: &web::Data<AppState>,
     user_id: &str,
-) -> Result<Arc<Mutex<DataFoldNode>>, HttpResponse> {
+) -> Result<Arc<RwLock<DataFoldNode>>, HttpResponse> {
     state.node_manager.get_node(user_id).await.map_err(|e| {
         log::error!("Failed to get node for user {}: {}", user_id, e);
         HttpResponse::InternalServerError().json(json!({
@@ -58,7 +58,7 @@ pub async fn get_node_for_user(
 /// Helper macro-like pattern to get node for current user context
 pub async fn require_node(
     state: &web::Data<AppState>,
-) -> Result<(String, Arc<Mutex<DataFoldNode>>), HttpResponse> {
+) -> Result<(String, Arc<RwLock<DataFoldNode>>), HttpResponse> {
     let user_hash = require_user_context()?;
     let node = get_node_for_user(state, &user_hash).await?;
     Ok((user_hash, node))

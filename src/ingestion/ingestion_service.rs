@@ -248,12 +248,8 @@ impl IngestionService {
         };
 
         // Extract common mutation parameters
-        let trust_distance = request
-            .trust_distance
-            .unwrap_or(self.config.default_trust_distance);
-        let pub_key = request.pub_key.clone().ok_or_else(|| {
-            IngestionError::invalid_input("Missing pub_key for mutation generation")
-        })?;
+        let trust_distance = request.trust_distance;
+        let pub_key = request.pub_key.clone();
 
         // Collect items to process — normalize single object to a one-element slice
         let items: Vec<&serde_json::Map<String, Value>> = if let Some(array) = flattened_data.as_array() {
@@ -325,10 +321,7 @@ impl IngestionService {
 
         let mutations_len = mutations.len();
 
-        let mutations_executed = if request
-            .auto_execute
-            .unwrap_or(self.config.auto_execute_mutations)
-        {
+        let mutations_executed = if request.auto_execute {
             self.execute_mutations_with_node_and_progress(
                 mutations,
                 node,
@@ -360,11 +353,11 @@ impl IngestionService {
         ))
     }
 
-    /// Get AI schema recommendation
-    async fn get_ai_recommendation(
-        &self,
-        json_data: &Value,
-    ) -> IngestionResult<AISchemaResponse> {
+    /// Call the underlying AI API with a raw prompt string.
+    ///
+    /// This is the low-level API used by smart_folder scanning and other
+    /// components that need raw AI text completion without schema parsing.
+    pub async fn call_ai_raw(&self, prompt: &str) -> IngestionResult<String> {
         match self.config.provider {
             AIProvider::OpenRouter => {
                 self.openrouter_service
@@ -372,7 +365,7 @@ impl IngestionService {
                     .ok_or_else(|| {
                         IngestionError::configuration_error("OpenRouter service not initialized")
                     })?
-                    .get_schema_recommendation(json_data)
+                    .call_openrouter_api(prompt)
                     .await
             }
             AIProvider::Ollama => {
@@ -381,10 +374,55 @@ impl IngestionService {
                     .ok_or_else(|| {
                         IngestionError::configuration_error("Ollama service not initialized")
                     })?
-                    .get_schema_recommendation(json_data)
+                    .call_ollama_api(prompt)
                     .await
             }
         }
+    }
+
+    /// Get AI schema recommendation with validation retries.
+    ///
+    /// Builds the prompt once, then retries the AI call if response parsing fails
+    /// (e.g., malformed JSON, missing required fields). Network-level retries are
+    /// handled separately inside `call_ai_raw`.
+    async fn get_ai_recommendation(
+        &self,
+        json_data: &Value,
+    ) -> IngestionResult<AISchemaResponse> {
+        use super::ai_helpers::{analyze_and_build_prompt, parse_ai_response};
+
+        let prompt = analyze_and_build_prompt(json_data)?;
+        let max_validation_attempts = self.config.max_retries.clamp(1, 3);
+        let mut last_error = None;
+
+        for attempt in 1..=max_validation_attempts {
+            let raw_response = self.call_ai_raw(&prompt).await?;
+
+            match parse_ai_response(&raw_response) {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "AI response validation failed on attempt {}/{}: {}",
+                        attempt,
+                        max_validation_attempts,
+                        e
+                    );
+                    last_error = Some(e);
+
+                    if attempt < max_validation_attempts {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            IngestionError::ai_response_validation_error(
+                "All AI attempts returned invalid responses",
+            )
+        }))
     }
 
     /// Validate JSON input

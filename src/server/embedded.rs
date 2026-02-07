@@ -117,18 +117,18 @@ pub async fn start_embedded_server(
 ///
 /// # Arguments
 ///
-/// * `node` - Arc-wrapped Mutex-wrapped DataFoldNode
+/// * `node` - Arc-wrapped RwLock-wrapped DataFoldNode
 /// * `port` - The port to bind to
 ///
 /// # Returns
 ///
 /// Returns an `EmbeddedServerHandle` that can be used to manage the server.
 pub async fn start_embedded_server_shared(
-    node: Arc<tokio::sync::Mutex<DataFoldNode>>,
+    node: Arc<tokio::sync::RwLock<DataFoldNode>>,
     port: u16,
 ) -> FoldDbResult<EmbeddedServerHandle> {
     let node_instance = {
-        let guard = node.lock().await;
+        let guard = node.read().await;
         // Clone the node since DataFoldNode implements Clone
         guard.clone()
     };

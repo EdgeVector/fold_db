@@ -81,7 +81,7 @@ pub async fn analyze_query(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match shared_handlers::analyze_query(
         request.into_inner(),
@@ -128,7 +128,7 @@ pub async fn execute_query_plan(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match shared_handlers::execute_query_plan(
         request.into_inner(),
@@ -181,7 +181,7 @@ pub async fn analyze_followup(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match shared_handlers::analyze_followup(
         request.into_inner(),
@@ -233,7 +233,7 @@ pub async fn chat(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match shared_handlers::chat(
         request.into_inner(),
@@ -281,7 +281,7 @@ pub async fn get_backfill_status(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match shared_handlers::get_backfill_status(&backfill_hash, &user_hash, &node).await {
         Ok(response) => {
@@ -327,7 +327,7 @@ pub async fn run_query(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match shared_handlers::run_query(
         request.into_inner(),
@@ -380,7 +380,7 @@ pub async fn ai_native_index_query(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match shared_handlers::ai_native_index_query(
         request.into_inner(),
@@ -433,7 +433,7 @@ pub async fn agent_query(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     // Convert the request to handler request type
     let handler_request = AgentQueryHandlerRequest {

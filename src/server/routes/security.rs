@@ -19,7 +19,7 @@ pub async fn get_system_public_key(data: web::Data<AppState>) -> ActixResult<Htt
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
     let security_manager: Arc<SecurityManager> = node.get_security_manager().clone();
 
     match security_manager.get_system_public_key() {

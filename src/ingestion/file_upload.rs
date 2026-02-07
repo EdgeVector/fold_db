@@ -1,11 +1,10 @@
 //! File upload and conversion module for ingestion
 
-use crate::ingestion::ingestion_spawner::{spawn_background_ingestion, IngestionSpawnConfig};
 use crate::ingestion::json_processor::{
     convert_file_to_json_http, flatten_root_layers, save_json_to_temp_file,
 };
 use crate::ingestion::multipart_parser::parse_multipart;
-use crate::ingestion::{IngestionConfig, ProgressTracker};
+use crate::ingestion::{IngestionRequest, ProgressTracker};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
@@ -80,38 +79,12 @@ pub async fn upload_file(
     // Save JSON to a temporary file for testing/debugging
     let temp_json_path = save_json_debug_file(&flattened_json);
 
-    // Load ingestion config
-    let ingestion_config = match IngestionConfig::from_env() {
-        Ok(config) => config,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to load ingestion config: {}",
-                e
-            );
-            return HttpResponse::ServiceUnavailable().json(json!({
-                "error": format!("Failed to load configuration: {}", e)
-            }));
-        }
-    };
-
-    // Spawn background ingestion and get progress_id
     log_feature!(
         LogFeature::Ingestion,
         info,
         "Creating mutations with source_file_name: {}",
         form_data.original_filename
     );
-
-    let spawn_config = IngestionSpawnConfig {
-        json_data: flattened_json,
-        auto_execute: form_data.auto_execute,
-        trust_distance: form_data.trust_distance,
-        pub_key: form_data.pub_key,
-        source_file_name: Some(form_data.original_filename.clone()),
-        ingestion_config,
-    };
 
     // Use client-provided progress_id if available, otherwise generate one
     let progress_id = form_data
@@ -124,24 +97,52 @@ pub async fn upload_file(
         Err(response) => return response,
     };
 
-    let progress_id = spawn_background_ingestion(
-        spawn_config,
+    // Build ingestion request and delegate to the shared handler
+    let request = IngestionRequest {
+        data: flattened_json,
+        auto_execute: form_data.auto_execute,
+        trust_distance: form_data.trust_distance,
+        pub_key: form_data.pub_key,
+        source_file_name: Some(form_data.original_filename.clone()),
+        progress_id: Some(progress_id),
+    };
+
+    // Lock briefly — the handler clones the node and spawns a background task
+    let node = node_arc.read().await;
+
+    match crate::handlers::ingestion::process_json(
+        request,
+        &user_id,
         progress_tracker.get_ref(),
-        node_arc,
-        progress_id,
-        user_id,
+        &node,
     )
-    .await;
+    .await
+    {
+        Ok(api_response) => {
+            let progress_id = api_response
+                .data
+                .as_ref()
+                .map(|d| d.progress_id.clone())
+                .unwrap_or_default();
 
-    // Return immediately with the progress_id
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Returning progress_id to client for file upload: {}",
-        progress_id
-    );
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "Returning progress_id to client for file upload: {}",
+                progress_id
+            );
 
-    build_upload_response(progress_id, &form_data.file_path, temp_json_path)
+            build_upload_response(progress_id, &form_data.file_path, temp_json_path)
+        }
+        Err(e) => {
+            let status_code = match e.status_code() {
+                400 => actix_web::http::StatusCode::BAD_REQUEST,
+                503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+                _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            HttpResponse::build(status_code).json(e.to_response())
+        }
+    }
 }
 
 /// Save JSON to debug file and return path

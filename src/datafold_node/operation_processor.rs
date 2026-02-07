@@ -748,9 +748,9 @@ impl OperationProcessor {
 
         let request = IngestionRequest {
             data,
-            auto_execute: Some(auto_execute),
-            trust_distance: Some(0),
-            pub_key: Some(pub_key),
+            auto_execute,
+            trust_distance: 0,
+            pub_key,
             source_file_name: file_path
                 .file_name()
                 .and_then(|n| n.to_str())

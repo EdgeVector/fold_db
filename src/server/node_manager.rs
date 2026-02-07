@@ -18,7 +18,7 @@ use crate::storage::config::DatabaseConfig;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 /// Error type for node manager operations
 #[derive(Debug, thiserror::Error)]
@@ -45,10 +45,10 @@ pub struct NodeManager {
     /// Configuration for creating new nodes
     config: NodeManagerConfig,
     /// Cache of active nodes (user_id -> Node)
-    nodes: Arc<Mutex<HashMap<String, Arc<Mutex<DataFoldNode>>>>>,
+    nodes: Arc<Mutex<HashMap<String, Arc<RwLock<DataFoldNode>>>>>,
     /// Shared node for local mode (single-tenant)
     /// In local Sled mode, we share one node to avoid lock conflicts
-    shared_local_node: Arc<Mutex<Option<Arc<Mutex<DataFoldNode>>>>>,
+    shared_local_node: Arc<Mutex<Option<Arc<RwLock<DataFoldNode>>>>>,
     /// Whether we're in local mode
     is_local_mode: bool,
 }
@@ -72,7 +72,7 @@ impl NodeManager {
     pub async fn get_node(
         &self,
         user_id: &str,
-    ) -> Result<Arc<Mutex<DataFoldNode>>, NodeManagerError> {
+    ) -> Result<Arc<RwLock<DataFoldNode>>, NodeManagerError> {
         // Local mode: use shared single node to avoid Sled lock conflicts
         if self.is_local_mode {
             return self.get_shared_local_node(user_id).await;
@@ -106,7 +106,7 @@ impl NodeManager {
     async fn get_shared_local_node(
         &self,
         user_id: &str,
-    ) -> Result<Arc<Mutex<DataFoldNode>>, NodeManagerError> {
+    ) -> Result<Arc<RwLock<DataFoldNode>>, NodeManagerError> {
         // Hold the lock for the entire check-and-create operation to avoid races
         let mut shared = self.shared_local_node.lock().await;
 
@@ -129,7 +129,7 @@ impl NodeManager {
     async fn create_node(
         &self,
         user_id: &str,
-    ) -> Result<Arc<Mutex<DataFoldNode>>, NodeManagerError> {
+    ) -> Result<Arc<RwLock<DataFoldNode>>, NodeManagerError> {
         // Clone the base config and set user_id
         let mut node_config = self.config.base_config.clone();
 
@@ -172,7 +172,7 @@ impl NodeManager {
         .await
         .map_err(|e| NodeManagerError::NodeCreationError(e.to_string()))?;
 
-        Ok(Arc::new(Mutex::new(node)))
+        Ok(Arc::new(RwLock::new(node)))
     }
 
     /// Invalidate (remove) a node from the cache
@@ -186,7 +186,7 @@ impl NodeManager {
     /// Set a pre-existing node in the cache
     /// This is useful for embedded scenarios where the node is created externally
     pub async fn set_node(&self, user_id: &str, node: DataFoldNode) {
-        let node_arc = Arc::new(Mutex::new(node));
+        let node_arc = Arc::new(RwLock::new(node));
 
         // In local mode, also set the shared_local_node so get_node finds it
         if self.is_local_mode {

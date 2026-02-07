@@ -3,7 +3,6 @@
 //! These functions are framework-agnostic and used by both
 //! HTTP handlers (`routes.rs`) and the CLI (`datafold_cli`).
 
-use crate::ingestion::config::IngestionConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -174,38 +173,11 @@ Only return the JSON array, no other text."#,
     )
 }
 
-/// Call the LLM for file analysis
+/// Call the LLM for file analysis using the centralized IngestionService
 pub async fn call_llm_for_file_analysis(prompt: &str) -> Result<String, String> {
-    let config = IngestionConfig::from_env().map_err(|e| e.to_string())?;
-
-    match config.provider {
-        crate::ingestion::config::AIProvider::OpenRouter => {
-            let openrouter = crate::ingestion::openrouter_service::OpenRouterService::new(
-                config.openrouter,
-                config.timeout_seconds,
-                config.max_retries,
-            )
-            .map_err(|e| e.to_string())?;
-
-            openrouter
-                .call_openrouter_api(prompt)
-                .await
-                .map_err(|e| e.to_string())
-        }
-        crate::ingestion::config::AIProvider::Ollama => {
-            let ollama = crate::ingestion::ollama_service::OllamaService::new(
-                config.ollama,
-                config.timeout_seconds,
-                config.max_retries,
-            )
-            .map_err(|e| e.to_string())?;
-
-            ollama
-                .call_ollama_api(prompt)
-                .await
-                .map_err(|e| e.to_string())
-        }
-    }
+    let service = crate::ingestion::ingestion_service::IngestionService::from_env()
+        .map_err(|e| e.to_string())?;
+    service.call_ai_raw(prompt).await.map_err(|e| e.to_string())
 }
 
 /// Parse LLM response into file recommendations

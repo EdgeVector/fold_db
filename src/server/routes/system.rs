@@ -21,7 +21,7 @@ pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::system::get_system_status(&user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),
@@ -46,7 +46,7 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::system::get_node_private_key(&user_hash, &node).await {
         Ok(response) => {
@@ -82,7 +82,7 @@ pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
 
     match crate::handlers::system::get_node_public_key(&user_hash, &node).await {
         Ok(response) => {
@@ -229,7 +229,7 @@ pub async fn reset_database(
             };
 
             // Create processor
-            let temp_processor_node = node_arc.lock().await.clone();
+            let temp_processor_node = node_arc.read().await.clone();
             let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
 
             // Step 2: Perform the storage reset
@@ -310,7 +310,7 @@ pub async fn reset_schema_service(
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.lock().await;
+    let node = node_arc.read().await;
     let schema_client = node.get_schema_client();
 
     // Call the schema service reset endpoint
