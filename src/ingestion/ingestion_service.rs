@@ -116,6 +116,12 @@ pub struct IngestionService {
 }
 
 impl IngestionService {
+    /// Create an ingestion service from environment configuration
+    pub fn from_env() -> IngestionResult<Self> {
+        let config = IngestionConfig::from_env()?;
+        Self::new(config)
+    }
+
     /// Create a new ingestion service
     pub fn new(config: IngestionConfig) -> IngestionResult<Self> {
         let openrouter_service = if config.provider == AIProvider::OpenRouter {
@@ -194,7 +200,7 @@ impl IngestionService {
                 "Processing and flattening data structure...".to_string(),
             )
             .await;
-        let flattened_data = self.flatten_twitter_data(&request.data);
+        let flattened_data = crate::ingestion::json_processor::flatten_root_layers(request.data.clone());
 
         // Step 3: Get AI recommendation
         progress_service
@@ -374,152 +380,6 @@ impl IngestionService {
 
         Ok(IngestionResponse::success_with_progress(
             progress_id,
-            schema_name,
-            new_schema_created,
-            mutations_len,
-            mutations_executed,
-        ))
-    }
-
-    /// Process JSON ingestion using a DataFoldNode (original method for backward compatibility)
-    pub async fn process_json_with_node(
-        &self,
-        request: IngestionRequest,
-        node: &DataFoldNode,
-    ) -> IngestionResult<IngestionResponse> {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Starting JSON ingestion process with DataFoldNode"
-        );
-
-        if !self.config.is_ready() {
-            return Ok(IngestionResponse::failure(vec![
-                "Ingestion module is not properly configured or disabled".to_string(),
-            ]));
-        }
-
-        // Step 1: Validate input
-        self.validate_input(&request.data)?;
-
-        // Step 2: Flatten Twitter data
-        let flattened_data = self.flatten_twitter_data(&request.data);
-
-        // Step 3: Get AI recommendation
-        let ai_response = self
-            .get_ai_recommendation(&flattened_data)
-            .await?;
-
-        // Step 4: Determine schema to use
-        let schema_name = self
-            .determine_schema_to_use(&ai_response, &request.data, node)
-            .await?;
-        let new_schema_created = ai_response.new_schemas.is_some();
-
-        // Step 5: Generate mutations
-        // Get schema manager for key extraction
-        let schema_manager = {
-            let db_guard = node
-                .get_fold_db()
-                .await
-                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
-            let manager = db_guard.schema_manager.clone();
-            drop(db_guard);
-            manager
-        };
-
-        // Handle both single objects and arrays of objects
-        let mutations = if let Some(array) = flattened_data.as_array() {
-            // Generate a mutation for each element in the array
-            let mut all_mutations = Vec::new();
-            for (idx, item) in array.iter().enumerate() {
-                let fields_and_values = if let Some(obj) = item.as_object() {
-                    obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                } else {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        warn,
-                        "Array item {} is not an object, skipping",
-                        idx
-                    );
-                    continue;
-                };
-
-                let keys_and_values = extract_key_values_from_data(
-                    &fields_and_values,
-                    &schema_name,
-                    &schema_manager,
-                )
-                .await?;
-
-                let mutations = self.mutation_generator.generate_mutations(
-                    &schema_name,
-                    &keys_and_values,
-                    &fields_and_values,
-                    &ai_response.mutation_mappers,
-                    request
-                        .trust_distance
-                        .unwrap_or(self.config.default_trust_distance),
-                    request.pub_key.clone().ok_or_else(|| {
-                        IngestionError::invalid_input("Missing pub_key for mutation generation")
-                    })?,
-                    request.source_file_name.clone(),
-                )?;
-
-                all_mutations.extend(mutations);
-            }
-
-            all_mutations
-        } else {
-            // Handle single object
-            let fields_and_values = if let Some(obj) = flattened_data.as_object() {
-                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-            } else {
-                HashMap::new()
-            };
-
-            let keys_and_values = extract_key_values_from_data(
-                &fields_and_values,
-                &schema_name,
-                &schema_manager,
-            )
-            .await?;
-
-            self.mutation_generator.generate_mutations(
-                &schema_name,
-                &keys_and_values,
-                &fields_and_values,
-                &ai_response.mutation_mappers,
-                request
-                    .trust_distance
-                    .unwrap_or(self.config.default_trust_distance),
-                request.pub_key.clone().ok_or_else(|| {
-                    IngestionError::invalid_input("Missing pub_key for mutation generation")
-                })?,
-                request.source_file_name.clone(),
-            )?
-        };
-
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Generated {} mutations",
-            mutations.len()
-        );
-
-        let mutations_len = mutations.len();
-
-        // Step 7: Execute mutations if requested
-        let mutations_executed = if request
-            .auto_execute
-            .unwrap_or(self.config.auto_execute_mutations)
-        {
-            self.execute_mutations_with_node(mutations, node).await?
-        } else {
-            0
-        };
-
-        Ok(IngestionResponse::success(
             schema_name,
             new_schema_created,
             mutations_len,
@@ -814,78 +674,4 @@ impl IngestionService {
             })
     }
 
-    /// Execute mutations without progress tracking (for backward compatibility)
-    async fn execute_mutations_with_node(
-        &self,
-        mutations: Vec<Mutation>,
-        node: &DataFoldNode,
-    ) -> IngestionResult<usize> {
-        if mutations.is_empty() {
-            return Ok(0);
-        }
-
-        // Execute all mutations in a batch using DataFoldNode directly
-        // Use mutate_batch which publishes MutationExecuted events for the IndexOrchestrator
-        node.mutate_batch(mutations)
-            .await
-            .map(|mutation_ids| mutation_ids.len())
-            .map_err(|e| {
-                IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
-                    e.to_string(),
-                ))
-            })
-    }
-
-    /// Flatten Twitter data structure for AI analysis
-    /// Converts nested structures like [{"like": {"tweetId": "...", "fullText": "..."}}]
-    /// to flattened structures like [{"tweetId": "...", "fullText": "..."}]
-    fn flatten_twitter_data(&self, data: &Value) -> Value {
-        if let Some(array) = data.as_array() {
-            let flattened_items: Vec<Value> = array
-                .iter()
-                .map(|item| {
-                    if let Some(obj) = item.as_object() {
-                        // Handle nested Twitter data structure (e.g., {"like": {...}} or {"following": {...}})
-                        if obj.len() == 1 {
-                            // If there's only one key, assume it's a wrapper and extract the inner object
-                            let (_wrapper_key, inner_value) = obj.iter().next().unwrap();
-                            if let Some(inner_obj) = inner_value.as_object() {
-                                Value::Object(inner_obj.clone())
-                            } else {
-                                // Fallback to original structure if inner value is not an object
-                                Value::Object(obj.clone())
-                            }
-                        } else {
-                            // Multiple keys, use as-is
-                            Value::Object(obj.clone())
-                        }
-                    } else {
-                        item.clone()
-                    }
-                })
-                .collect();
-
-            Value::Array(flattened_items)
-        } else if let Some(obj) = data.as_object() {
-            // Handle single object case
-            if obj.len() == 1 {
-                let (wrapper_key, inner_value) = obj.iter().next().unwrap();
-                if let Some(inner_obj) = inner_value.as_object() {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Flattening Twitter data: extracting inner object from wrapper '{}'",
-                        wrapper_key
-                    );
-                    Value::Object(inner_obj.clone())
-                } else {
-                    Value::Object(obj.clone())
-                }
-            } else {
-                Value::Object(obj.clone())
-            }
-        } else {
-            data.clone()
-        }
-    }
 }

@@ -125,13 +125,10 @@ pub fn extract_ingestion_data(payload: &Value) -> Result<(Value, Option<String>)
     Ok((payload.clone(), None))
 }
 
-/// Create ingestion service from config
-async fn create_ingestion_service() -> Result<IngestionService, HandlerError> {
-    let config = IngestionConfig::from_env().map_err(|e| {
-        HandlerError::ServiceUnavailable(format!("Ingestion not configured: {}", e))
-    })?;
-    IngestionService::new(config).map_err(|e| {
-        HandlerError::ServiceUnavailable(format!("Failed to create ingestion service: {}", e))
+/// Create ingestion service from environment config
+fn create_ingestion_service() -> Result<IngestionService, HandlerError> {
+    IngestionService::from_env().map_err(|e| {
+        HandlerError::ServiceUnavailable(format!("Ingestion service not available: {}", e))
     })
 }
 
@@ -201,7 +198,7 @@ pub async fn get_progress(
 /// # Returns
 /// * `HandlerResult<IngestionStatusResponse>` - Status wrapped in standard envelope
 pub async fn get_status(user_hash: &str) -> HandlerResult<IngestionStatusResponse> {
-    match create_ingestion_service().await {
+    match create_ingestion_service() {
         Ok(service) => match service.get_status() {
             Ok(status) => Ok(ApiResponse::success_with_user(
                 IngestionStatusResponse {
@@ -324,7 +321,7 @@ pub async fn process_json(
         .await;
 
     // Create ingestion service
-    let service = match create_ingestion_service().await {
+    let service = match create_ingestion_service() {
         Ok(s) => s,
         Err(e) => {
             progress_service

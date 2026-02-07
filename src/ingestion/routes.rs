@@ -10,11 +10,21 @@ use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
-use crate::server::routes::require_node;
+use crate::server::routes::{require_node, require_user_context};
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Resolve a folder path — absolute paths pass through, relative paths
+/// are resolved against the current working directory.
+fn resolve_folder_path(path: &str) -> PathBuf {
+    if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    }
+}
 
 /// Request for batch folder ingestion
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,14 +80,9 @@ pub async fn process_json(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // Start progress tracking
-    // Start progress tracking
-    let user_id = match crate::logging::core::get_current_user_id() {
-        Some(uid) => uid,
-        None => {
-            return HttpResponse::Unauthorized().json(IngestionResponse::failure(vec![
-                "User not authenticated".to_string(),
-            ]))
-        }
+    let user_id = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
     };
 
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
@@ -86,7 +91,7 @@ pub async fn process_json(
         .await;
 
     // Try to create a simple ingestion service
-    let service = match create_ingestion_service().await {
+    let service = match IngestionService::from_env() {
         Ok(service) => service,
         Err(e) => {
             log_feature!(
@@ -200,7 +205,7 @@ pub async fn get_status() -> impl Responder {
         "Received ingestion status request"
     );
 
-    match create_ingestion_service().await {
+    match IngestionService::from_env() {
         Ok(service) => match service.get_status() {
             Ok(status) => HttpResponse::Ok().json(status),
             Err(e) => {
@@ -239,7 +244,7 @@ pub async fn get_status() -> impl Responder {
     responses((status = 200, description = "Health OK", body = Value), (status = 503, description = "Health not OK", body = Value))
 )]
 pub async fn health_check() -> impl Responder {
-    match create_ingestion_service().await {
+    match IngestionService::from_env() {
         Ok(service) => {
             let status = service.get_status();
 
@@ -291,7 +296,7 @@ pub async fn validate_json(request: web::Json<Value>) -> impl Responder {
         "Received JSON validation request"
     );
 
-    match create_ingestion_service().await {
+    match IngestionService::from_env() {
         Ok(service) => match service.validate_input(&request.into_inner()) {
             Ok(()) => HttpResponse::Ok().json(json!({
                 "valid": true,
@@ -377,12 +382,6 @@ pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Resp
     }
 }
 
-/// Create a simple ingestion service with potentially updated config
-async fn create_ingestion_service(
-) -> Result<IngestionService, crate::ingestion::IngestionError> {
-    let config = IngestionConfig::from_env()?;
-    IngestionService::new(config)
-}
 
 /// Get ingestion progress by ID
 #[utoipa::path(
@@ -482,25 +481,13 @@ pub async fn batch_folder_ingest(
     );
 
     // Get user context
-    let user_id = match crate::logging::core::get_current_user_id() {
-        Some(uid) => uid,
-        None => {
-            return HttpResponse::Unauthorized().json(json!({
-                "success": false,
-                "error": "User not authenticated"
-            }))
-        }
+    let user_id = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
     };
 
     // Resolve folder path - support both absolute and relative paths
-    let folder_path = if Path::new(&request.folder_path).is_absolute() {
-        std::path::PathBuf::from(&request.folder_path)
-    } else {
-        // Relative to project root
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(&request.folder_path)
-    };
+    let folder_path = resolve_folder_path(&request.folder_path);
 
     // Validate folder exists
     if !folder_path.exists() {
@@ -575,7 +562,7 @@ pub async fn batch_folder_ingest(
     }
 
     // Try to create ingestion service
-    let service = match create_ingestion_service().await {
+    let service = match IngestionService::from_env() {
         Ok(service) => service,
         Err(e) => {
             log_feature!(
@@ -816,24 +803,13 @@ pub async fn smart_folder_scan(
     );
 
     // Get user context
-    let _user_id = match crate::logging::core::get_current_user_id() {
-        Some(uid) => uid,
-        None => {
-            return HttpResponse::Unauthorized().json(json!({
-                "success": false,
-                "error": "User not authenticated"
-            }))
-        }
+    let _user_id = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
     };
 
     // Resolve folder path
-    let folder_path = if Path::new(&request.folder_path).is_absolute() {
-        std::path::PathBuf::from(&request.folder_path)
-    } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(&request.folder_path)
-    };
+    let folder_path = resolve_folder_path(&request.folder_path);
 
     // Validate folder exists
     if !folder_path.exists() {
@@ -888,23 +864,12 @@ pub async fn smart_folder_ingest(
 
     // Convert to batch folder request format
     // We'll process each approved file
-    let folder_path = if Path::new(&request.folder_path).is_absolute() {
-        std::path::PathBuf::from(&request.folder_path)
-    } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(&request.folder_path)
-    };
+    let folder_path = resolve_folder_path(&request.folder_path);
 
     // Get user context
-    let user_id = match crate::logging::core::get_current_user_id() {
-        Some(uid) => uid,
-        None => {
-            return HttpResponse::Unauthorized().json(json!({
-                "success": false,
-                "error": "User not authenticated"
-            }))
-        }
+    let user_id = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
     };
 
     // Validate files exist and build full paths
@@ -1019,8 +984,7 @@ async fn process_single_file_via_smart_folder(
 ) -> Result<(), String> {
     let data = smart_folder::read_file_as_json(file_path)?;
 
-    let service = create_ingestion_service()
-        .await
+    let service = IngestionService::from_env()
         .map_err(|e| e.to_string())?;
 
     let node = node_arc.lock().await;

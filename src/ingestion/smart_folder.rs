@@ -4,7 +4,6 @@
 //! HTTP handlers (`routes.rs`) and the CLI (`datafold_cli`).
 
 use crate::ingestion::config::IngestionConfig;
-use crate::ingestion::ingestion_service::IngestionService;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -535,11 +534,6 @@ pub async fn perform_smart_folder_scan(
     })
 }
 
-/// Create an IngestionService from the current environment configuration.
-pub fn create_ingestion_service() -> Result<IngestionService, String> {
-    let config = IngestionConfig::from_env().map_err(|e| e.to_string())?;
-    IngestionService::new(config).map_err(|e| e.to_string())
-}
 
 #[cfg(test)]
 mod tests {

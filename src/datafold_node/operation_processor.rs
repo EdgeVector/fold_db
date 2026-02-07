@@ -1,4 +1,5 @@
 use crate::error::{FoldDbError, FoldDbResult};
+use crate::ingestion::ingestion_service::IngestionService;
 use crate::schema::types::{KeyValue, Mutation, Query};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -757,7 +758,7 @@ impl OperationProcessor {
             progress_id: Some(progress_id.clone()),
         };
 
-        let service = smart_folder::create_ingestion_service().map_err(FoldDbError::Other)?;
+        let service = IngestionService::from_env().map_err(|e| FoldDbError::Other(e.to_string()))?;
 
         let progress_tracker = crate::ingestion::create_progress_tracker(None).await;
         let progress_service = ProgressService::new(progress_tracker);
