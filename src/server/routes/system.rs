@@ -1,11 +1,13 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::security::Ed25519KeyPair;
 use crate::server::http_server::AppState;
 use crate::server::routes::{handler_error_to_response, require_node, require_user_context};
 use crate::storage::config::DatabaseConfig;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 /// Get system status information
 #[utoipa::path(
@@ -436,6 +438,45 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
     };
 
     HttpResponse::Ok().json(db_config)
+}
+
+/// Get a default auto-generated identity for local development.
+///
+/// This endpoint returns a deterministic identity derived from the node's
+/// public key. It does NOT require authentication, allowing the frontend
+/// to auto-authenticate without a login step.
+#[utoipa::path(
+    get,
+    path = "/api/system/auto-identity",
+    tag = "system",
+    responses(
+        (status = 200, description = "Default identity for auto-login", body = serde_json::Value)
+    )
+)]
+pub async fn auto_identity() -> impl Responder {
+    // Generate a deterministic keypair from a fixed seed
+    let seed = Sha256::digest(b"local_default_user");
+    let keypair = match Ed25519KeyPair::from_secret_key(seed.as_slice()) {
+        Ok(kp) => kp,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(json!({
+                "ok": false,
+                "error": format!("Failed to generate identity: {}", e)
+            }));
+        }
+    };
+
+    let public_key = keypair.public_key_base64();
+
+    // Derive user_hash = SHA256(public_key)[0:32] (same algorithm as frontend)
+    let hash = Sha256::digest(public_key.as_bytes());
+    let user_hash: String = hash.iter().map(|b| format!("{:02x}", b)).collect::<String>()[..32].to_string();
+
+    HttpResponse::Ok().json(json!({
+        "user_id": public_key,
+        "user_hash": user_hash,
+        "public_key": public_key,
+    }))
 }
 
 /// Update database configuration

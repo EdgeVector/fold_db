@@ -408,6 +408,10 @@ impl DataFoldHttpServer {
             web::post().to(system_routes::reset_database),
         )
         .route(
+            "/system/auto-identity",
+            web::get().to(system_routes::auto_identity),
+        )
+        .route(
             "/system/database-config",
             web::get().to(system_routes::get_database_config),
         )

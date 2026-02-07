@@ -80,11 +80,24 @@ export function AppContent() {
   const { isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
 
   // Restore session on mount FIRST - this must run before other effects
+  // If no saved credentials, auto-authenticate using the node's public key
   useEffect(() => {
     const userId = localStorage.getItem('fold_user_id')
     const userHash = localStorage.getItem('fold_user_hash')
     if (userId && userHash) {
       dispatch(restoreSession({ id: userId, hash: userHash }))
+    } else {
+      // Auto-authenticate: fetch default identity from backend
+      fetch('/api/system/auto-identity')
+        .then(res => res.json())
+        .then(data => {
+          if (data.user_id && data.user_hash) {
+            localStorage.setItem('fold_user_id', data.user_id)
+            localStorage.setItem('fold_user_hash', data.user_hash)
+            dispatch(restoreSession({ id: data.user_id, hash: data.user_hash }))
+          }
+        })
+        .catch(err => console.error('Auto-identity failed:', err))
     }
   }, [dispatch])
 
