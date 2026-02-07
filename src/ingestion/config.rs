@@ -119,6 +119,15 @@ impl Default for IngestionConfig {
 }
 
 impl IngestionConfig {
+    /// Return a copy with sensitive values (API keys) masked for safe display.
+    pub fn redacted(&self) -> Self {
+        let mut copy = self.clone();
+        if !copy.openrouter.api_key.is_empty() {
+            copy.openrouter.api_key = "***configured***".to_string();
+        }
+        copy
+    }
+
     /// Create a new ingestion config from environment variables and saved config file.
     pub fn from_env() -> Result<Self, crate::ingestion::IngestionError> {
         let config = Self::from_env_allow_empty();

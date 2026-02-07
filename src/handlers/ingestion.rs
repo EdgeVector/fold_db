@@ -237,14 +237,9 @@ pub async fn get_status(user_hash: &str) -> HandlerResult<IngestionStatusRespons
 /// # Returns
 /// * `HandlerResult<IngestionConfig>` - Config wrapped in standard envelope
 pub async fn get_config(user_hash: &str) -> HandlerResult<IngestionConfig> {
-    let mut config = IngestionConfig::from_env_allow_empty();
+    let config = IngestionConfig::from_env_allow_empty();
 
-    // Don't return the actual API key for security, just indicate if it's set
-    if !config.openrouter.api_key.is_empty() {
-        config.openrouter.api_key = "***configured***".to_string();
-    }
-
-    Ok(ApiResponse::success_with_user(config, user_hash))
+    Ok(ApiResponse::success_with_user(config.redacted(), user_hash))
 }
 
 /// Save ingestion configuration

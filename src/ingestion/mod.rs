@@ -97,24 +97,6 @@ pub struct IngestionResponse {
 }
 
 impl IngestionResponse {
-    /// Create a successful ingestion response
-    pub fn success(
-        schema_used: String,
-        new_schema_created: bool,
-        mutations_generated: usize,
-        mutations_executed: usize,
-    ) -> Self {
-        Self {
-            success: true,
-            progress_id: None,
-            schema_used: Some(schema_used),
-            new_schema_created,
-            mutations_generated,
-            mutations_executed,
-            errors: Vec::new(),
-        }
-    }
-
     /// Create a successful ingestion response with progress tracking
     pub fn success_with_progress(
         progress_id: String,
@@ -147,11 +129,6 @@ impl IngestionResponse {
         }
     }
 
-    /// Add an error to the response
-    pub fn add_error(&mut self, error: String) {
-        self.errors.push(error);
-        self.success = false;
-    }
 }
 
 /// Status information for the ingestion service

@@ -328,14 +328,9 @@ pub async fn get_ingestion_config() -> impl Responder {
         "Received ingestion config request"
     );
 
-    let mut config = IngestionConfig::from_env_allow_empty();
+    let config = IngestionConfig::from_env_allow_empty();
 
-    // Don't return the actual API key for security, just indicate if it's set
-    if !config.openrouter.api_key.is_empty() {
-        config.openrouter.api_key = "***configured***".to_string();
-    }
-
-    HttpResponse::Ok().json(config)
+    HttpResponse::Ok().json(config.redacted())
 }
 
 /// Save Ingestion configuration
@@ -621,65 +616,12 @@ pub async fn batch_folder_ingest(
                     progress_id
                 );
 
-                // Read file content
-                let content = match std::fs::read_to_string(&file_path) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        progress_service
-                            .fail_progress(&progress_id, format!("Failed to read file: {}", e))
-                            .await;
-                        return;
-                    }
-                };
-
-                // Determine file type and convert to JSON if needed
-                let ext = file_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-
-                let json_content = match ext.as_str() {
-                    "json" => content,
-                    "csv" => {
-                        // Convert CSV to JSON array
-                        match smart_folder::csv_to_json(&content) {
-                            Ok(json) => json,
-                            Err(e) => {
-                                progress_service
-                                    .fail_progress(&progress_id, format!("Failed to parse CSV: {}", e))
-                                    .await;
-                                return;
-                            }
-                        }
-                    }
-                    "txt" | "md" => {
-                        // Wrap text content in a JSON structure
-                        let file_name = file_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("unknown");
-                        serde_json::json!({
-                            "content": content,
-                            "source_file": file_name,
-                            "file_type": ext
-                        })
-                        .to_string()
-                    }
-                    _ => {
-                        progress_service
-                            .fail_progress(&progress_id, format!("Unsupported file type: {}", ext))
-                            .await;
-                        return;
-                    }
-                };
-
-                // Parse JSON content
-                let json_data: Value = match serde_json::from_str(&json_content) {
+                // Read and convert file to JSON
+                let json_data = match smart_folder::read_file_as_json(&file_path) {
                     Ok(v) => v,
                     Err(e) => {
                         progress_service
-                            .fail_progress(&progress_id, format!("Invalid JSON: {}", e))
+                            .fail_progress(&progress_id, e)
                             .await;
                         return;
                     }
@@ -1049,42 +991,6 @@ mod tests {
         let req = test::TestRequest::get().uri("/config").to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
-    }
-
-    #[tokio::test]
-    async fn test_csv_to_json_basic() {
-        let csv_content = "name,age,active\nAlice,30,true\nBob,25,false";
-        let result = smart_folder::csv_to_json(csv_content).unwrap();
-        let parsed: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap();
-
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0]["name"], "Alice");
-        assert_eq!(parsed[0]["age"], 30.0);
-        assert_eq!(parsed[0]["active"], true);
-        assert_eq!(parsed[1]["name"], "Bob");
-        assert_eq!(parsed[1]["age"], 25.0);
-        assert_eq!(parsed[1]["active"], false);
-    }
-
-    #[tokio::test]
-    async fn test_csv_to_json_with_strings() {
-        let csv_content = "product_id,name,price\nPROD001,Widget,19.99\nPROD002,Gadget,29.99";
-        let result = smart_folder::csv_to_json(csv_content).unwrap();
-        let parsed: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap();
-
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0]["product_id"], "PROD001");
-        assert_eq!(parsed[0]["name"], "Widget");
-        assert_eq!(parsed[0]["price"], 19.99);
-    }
-
-    #[tokio::test]
-    async fn test_csv_to_json_empty() {
-        let csv_content = "name,age";
-        let result = smart_folder::csv_to_json(csv_content).unwrap();
-        let parsed: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap();
-
-        assert_eq!(parsed.len(), 0);
     }
 
     #[tokio::test]
