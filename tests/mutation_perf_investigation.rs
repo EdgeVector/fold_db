@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use fold_db::datafold_node::{DataFoldNode, NodeConfig};
-use fold_db::ingestion::mutation_generator::MutationGenerator;
+use fold_db::ingestion::mutation_generator;
 
 mod common;
 use common::create_test_mutation;
@@ -31,7 +31,6 @@ async fn test_mutation_performance_investigation() {
 async fn _test_mutation_generation_performance() {
     println!("\n--- Phase 1: Mutation Generation Performance ---");
 
-    let generator = MutationGenerator::new();
     let schema_name = "PerformanceTestSchema";
 
     // Prepare sample data (1000 items)
@@ -76,8 +75,7 @@ async fn _test_mutation_generation_performance() {
             fields.get("id").unwrap().as_str().unwrap().to_string(),
         )]);
 
-        let mutations = generator
-            .generate_mutations(
+        let mutations = mutation_generator::generate_mutations(
                 schema_name,
                 &keys_values,
                 fields,
