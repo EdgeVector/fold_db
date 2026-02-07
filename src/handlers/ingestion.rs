@@ -12,6 +12,7 @@ use crate::ingestion::IngestionRequest;
 use crate::progress::JobType;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 #[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
@@ -99,13 +100,6 @@ pub fn extract_ingestion_data(payload: &Value) -> Result<(Value, Option<String>)
     Ok((payload.clone(), None))
 }
 
-/// Create ingestion service from environment config
-fn create_ingestion_service() -> Result<IngestionService, HandlerError> {
-    IngestionService::from_env().map_err(|e| {
-        HandlerError::ServiceUnavailable(format!("Ingestion service not available: {}", e))
-    })
-}
-
 // ============================================================================
 // Handler Functions
 // ============================================================================
@@ -171,9 +165,12 @@ pub async fn get_progress(
 ///
 /// # Returns
 /// * `HandlerResult<IngestionStatusResponse>` - Status wrapped in standard envelope
-pub async fn get_status(user_hash: &str) -> HandlerResult<IngestionStatusResponse> {
-    match create_ingestion_service() {
-        Ok(service) => match service.get_status() {
+pub async fn get_status(
+    user_hash: &str,
+    service: Option<&IngestionService>,
+) -> HandlerResult<IngestionStatusResponse> {
+    match service {
+        Some(service) => match service.get_status() {
             Ok(status) => Ok(ApiResponse::success_with_user(
                 IngestionStatusResponse {
                     enabled: status.enabled,
@@ -188,7 +185,7 @@ pub async fn get_status(user_hash: &str) -> HandlerResult<IngestionStatusRespons
                 e
             ))),
         },
-        Err(_e) => {
+        None => {
             // Return a disabled status rather than an error
             Ok(ApiResponse::success_with_user(
                 IngestionStatusResponse {
@@ -264,6 +261,7 @@ pub async fn process_json(
     user_hash: &str,
     tracker: &ProgressTracker,
     node: &DataFoldNode,
+    service: Arc<IngestionService>,
 ) -> HandlerResult<ProcessJsonResponse> {
     // Validate data is not empty
     if request.data.is_null() {
@@ -287,20 +285,6 @@ pub async fn process_json(
     progress_service
         .start_progress(progress_id.clone(), user_hash.to_string())
         .await;
-
-    // Create ingestion service
-    let service = match create_ingestion_service() {
-        Ok(s) => s,
-        Err(e) => {
-            progress_service
-                .fail_progress(
-                    &progress_id,
-                    format!("Ingestion service not available: {}", e),
-                )
-                .await;
-            return Err(e);
-        }
-    };
 
     // Clone what we need for the background task
     let node_clone = node.clone();

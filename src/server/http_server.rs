@@ -146,6 +146,14 @@ impl DataFoldHttpServer {
         // Create LLM query state (gracefully handles missing configuration)
         let llm_query_state = web::Data::new(llm_query::LlmQueryState::new());
 
+        // Create IngestionService singleton (gracefully handles missing configuration)
+        let ingestion_service: Option<Arc<crate::ingestion::ingestion_service::IngestionService>> =
+            crate::ingestion::ingestion_service::IngestionService::from_env()
+                .ok()
+                .map(Arc::new);
+        let ingestion_service_data = web::Data::new(ingestion_service);
+
+
         // Create progress tracker based on database config
         let progress_tracker = {
             #[cfg(feature = "aws-backend")]
@@ -189,6 +197,7 @@ impl DataFoldHttpServer {
                 .app_data(llm_query_state.clone())
                 .app_data(upload_storage_data.clone())
                 .app_data(progress_tracker_data.clone())
+                .app_data(ingestion_service_data.clone())
                 .app_data(json_config)
                 .configure(Self::configure_api)
                 // Serve static files from the React app build directory

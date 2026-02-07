@@ -16,7 +16,6 @@ pub use crate::progress::{
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub enum IngestionStep {
     ValidatingConfig,
-    PreparingSchemas,
     FlatteningData,
     GettingAIRecommendation,
     SettingUpSchema,
@@ -112,7 +111,9 @@ impl ProgressService {
         job.progress_percentage = 5;
         job.message = "Starting ingestion process...".to_string();
 
-        let _ = self.tracker.save(&job).await;
+        if let Err(e) = self.tracker.save(&job).await {
+            log::warn!("Failed to save progress: {}", e);
+        }
         job.into()
     }
 
@@ -134,7 +135,9 @@ impl ProgressService {
                 }
             }
 
-            let _ = self.tracker.save(&job).await;
+            if let Err(e) = self.tracker.save(&job).await {
+            log::warn!("Failed to save progress: {}", e);
+        }
             Some(job.into())
         } else {
             None
@@ -160,7 +163,9 @@ impl ProgressService {
                 }
             }
 
-            let _ = self.tracker.save(&job).await;
+            if let Err(e) = self.tracker.save(&job).await {
+            log::warn!("Failed to save progress: {}", e);
+        }
             Some(job.into())
         } else {
             None
@@ -186,7 +191,9 @@ impl ProgressService {
                 }
             }
 
-            let _ = self.tracker.save(&job).await;
+            if let Err(e) = self.tracker.save(&job).await {
+            log::warn!("Failed to save progress: {}", e);
+        }
             Some(job.into())
         } else {
             None
@@ -211,7 +218,9 @@ impl ProgressService {
                 }
             }
 
-            let _ = self.tracker.save(&job).await;
+            if let Err(e) = self.tracker.save(&job).await {
+            log::warn!("Failed to save progress: {}", e);
+        }
             Some(job.into())
         } else {
             None
@@ -250,7 +259,6 @@ impl ProgressService {
     fn step_to_percentage(step: &IngestionStep) -> u8 {
         match step {
             IngestionStep::ValidatingConfig => 5,
-            IngestionStep::PreparingSchemas => 15,
             IngestionStep::FlatteningData => 25,
             IngestionStep::GettingAIRecommendation => 40,
             IngestionStep::SettingUpSchema => 55,

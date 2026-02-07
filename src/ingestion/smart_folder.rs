@@ -3,6 +3,8 @@
 //! These functions are framework-agnostic and used by both
 //! HTTP handlers (`routes.rs`) and the CLI (`datafold_cli`).
 
+use crate::ingestion::error::IngestionError;
+use crate::ingestion::IngestionResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -55,7 +57,7 @@ pub fn scan_directory_tree(
     root: &Path,
     max_depth: usize,
     max_files: usize,
-) -> Result<Vec<String>, String> {
+) -> IngestionResult<Vec<String>> {
     let mut files = Vec::new();
     scan_directory_recursive(root, root, 0, max_depth, max_files, &mut files)?;
     Ok(files)
@@ -68,13 +70,13 @@ fn scan_directory_recursive(
     max_depth: usize,
     max_files: usize,
     files: &mut Vec<String>,
-) -> Result<(), String> {
+) -> IngestionResult<()> {
     if depth > max_depth || files.len() >= max_files {
         return Ok(());
     }
 
     let entries = std::fs::read_dir(current)
-        .map_err(|e| format!("Failed to read directory {}: {}", current.display(), e))?;
+        .map_err(|e| IngestionError::InvalidInput(format!("Failed to read directory {}: {}", current.display(), e)))?;
 
     for entry in entries.flatten() {
         if files.len() >= max_files {
@@ -173,23 +175,23 @@ Only return the JSON array, no other text."#,
     )
 }
 
-/// Call the LLM for file analysis using the centralized IngestionService
-pub async fn call_llm_for_file_analysis(prompt: &str) -> Result<String, String> {
-    let service = crate::ingestion::ingestion_service::IngestionService::from_env()
-        .map_err(|e| e.to_string())?;
-    service.call_ai_raw(prompt).await.map_err(|e| e.to_string())
+/// Call the LLM for file analysis using the provided IngestionService
+pub async fn call_llm_for_file_analysis(
+    prompt: &str,
+    service: &crate::ingestion::ingestion_service::IngestionService,
+) -> IngestionResult<String> {
+    service.call_ai_raw(prompt).await
 }
 
 /// Parse LLM response into file recommendations
 pub fn parse_llm_file_recommendations(
     response: &str,
     file_tree: &[String],
-) -> Result<Vec<FileRecommendation>, String> {
-    let json_str = crate::ingestion::ai_helpers::extract_json_from_response(response)
-        .map_err(|e| e.to_string())?;
+) -> IngestionResult<Vec<FileRecommendation>> {
+    let json_str = crate::ingestion::ai_helpers::extract_json_from_response(response)?;
 
     let parsed: Vec<FileRecommendation> =
-        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        serde_json::from_str(&json_str).map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
 
     // Validate that paths exist in our file tree
     let file_set: HashSet<&str> = file_tree.iter().map(|s| s.as_str()).collect();
@@ -288,14 +290,14 @@ pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation
 // ---- File conversion ----
 
 /// Convert CSV content to JSON array
-pub fn csv_to_json(csv_content: &str) -> Result<String, String> {
+pub fn csv_to_json(csv_content: &str) -> IngestionResult<String> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .from_reader(csv_content.as_bytes());
 
     let headers: Vec<String> = reader
         .headers()
-        .map_err(|e| format!("Failed to read CSV headers: {}", e))?
+        .map_err(|e| IngestionError::InvalidInput(format!("Failed to read CSV headers: {}", e)))?
         .iter()
         .map(|h| h.to_string())
         .collect();
@@ -303,7 +305,7 @@ pub fn csv_to_json(csv_content: &str) -> Result<String, String> {
     let mut records: Vec<Value> = Vec::new();
 
     for result in reader.records() {
-        let record = result.map_err(|e| format!("Failed to read CSV record: {}", e))?;
+        let record = result.map_err(|e| IngestionError::InvalidInput(format!("Failed to read CSV record: {}", e)))?;
         let mut obj = serde_json::Map::new();
 
         for (i, field) in record.iter().enumerate() {
@@ -327,22 +329,22 @@ pub fn csv_to_json(csv_content: &str) -> Result<String, String> {
         records.push(Value::Object(obj));
     }
 
-    serde_json::to_string(&records).map_err(|e| format!("Failed to serialize JSON: {}", e))
+    serde_json::to_string(&records).map_err(|e| IngestionError::InvalidInput(format!("Failed to serialize JSON: {}", e)))
 }
 
 /// Convert a Twitter data export `.js` file to JSON.
 ///
 /// Twitter data exports use files like `window.YTD.tweet.part0 = [...]`.
 /// This strips the variable assignment prefix and returns the pure JSON.
-pub fn twitter_js_to_json(content: &str) -> Result<String, String> {
+pub fn twitter_js_to_json(content: &str) -> IngestionResult<String> {
     if let Some(eq_pos) = content.find('=') {
         let json_part = content[eq_pos + 1..].trim();
         // Validate it parses as JSON
         serde_json::from_str::<Value>(json_part)
-            .map_err(|e| format!("Invalid JSON in .js file: {}", e))?;
+            .map_err(|e| IngestionError::InvalidInput(format!("Invalid JSON in .js file: {}", e)))?;
         Ok(json_part.to_string())
     } else {
-        Err("Not a Twitter data export .js file (no '=' found)".to_string())
+        Err(IngestionError::InvalidInput("Not a Twitter data export .js file (no '=' found)".to_string()))
     }
 }
 
@@ -351,9 +353,9 @@ pub fn twitter_js_to_json(content: &str) -> Result<String, String> {
 /// Read a file and convert it to a JSON Value regardless of format.
 ///
 /// Supported extensions: `.json`, `.js` (Twitter export), `.csv`, `.txt`, `.md`
-pub fn read_file_as_json(file_path: &Path) -> Result<Value, String> {
+pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
     let content =
-        std::fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+        std::fs::read_to_string(file_path).map_err(|e| IngestionError::InvalidInput(format!("Failed to read file: {}", e)))?;
 
     let ext = file_path
         .extension()
@@ -375,12 +377,12 @@ pub fn read_file_as_json(file_path: &Path) -> Result<Value, String> {
                 "source_file": file_name,
                 "file_type": ext
             }))
-            .map_err(|e| format!("Failed to wrap text content: {}", e))?
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to wrap text content: {}", e)))?
         }
-        _ => return Err(format!("Unsupported file type: {}", ext)),
+        _ => return Err(IngestionError::InvalidInput(format!("Unsupported file type: {}", ext))),
     };
 
-    serde_json::from_str(&json_string).map_err(|e| format!("Failed to parse JSON: {}", e))
+    serde_json::from_str(&json_string).map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
 }
 
 // ---- Scan orchestration ----
@@ -388,11 +390,13 @@ pub fn read_file_as_json(file_path: &Path) -> Result<Value, String> {
 /// Perform a smart folder scan: directory walk → LLM classification → recommendations.
 ///
 /// This is the core logic shared between the HTTP handler and the CLI.
+/// If `service` is `None`, an `IngestionService` is created from the environment.
 pub async fn perform_smart_folder_scan(
     folder_path: &Path,
     max_depth: usize,
     max_files: usize,
-) -> Result<SmartFolderScanResponse, String> {
+    service: Option<&crate::ingestion::ingestion_service::IngestionService>,
+) -> IngestionResult<SmartFolderScanResponse> {
     let file_tree = scan_directory_tree(folder_path, max_depth, max_files)?;
 
     if file_tree.is_empty() {
@@ -415,8 +419,18 @@ pub async fn perform_smart_folder_scan(
     // Create the LLM prompt with the file tree
     let prompt = create_smart_folder_prompt(&file_tree);
 
+    // Create service from env if not provided
+    let owned_service;
+    let svc = match service {
+        Some(s) => s,
+        None => {
+            owned_service = crate::ingestion::ingestion_service::IngestionService::from_env()?;
+            &owned_service
+        }
+    };
+
     // Call the LLM
-    let recommendations = match call_llm_for_file_analysis(&prompt).await {
+    let recommendations = match call_llm_for_file_analysis(&prompt, svc).await {
         Ok(llm_response) => match parse_llm_file_recommendations(&llm_response, &file_tree) {
             Ok(recs) => recs,
             Err(e) => {

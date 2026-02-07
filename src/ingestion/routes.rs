@@ -14,6 +14,7 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Resolve a folder path — absolute paths pass through, relative paths
 /// are resolved against the current working directory.
@@ -76,11 +77,13 @@ fn spawn_file_ingestion_tasks(
     node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::datafold_node::DataFoldNode>>,
     user_id: &str,
     auto_execute: bool,
+    ingestion_service: Arc<IngestionService>,
 ) {
     for (file_path, progress_id) in files_with_progress {
         let progress_tracker_clone = progress_tracker.clone();
         let node_arc_clone = node_arc.clone();
         let user_id_clone = user_id.to_string();
+        let service_clone = ingestion_service.clone();
 
         tokio::spawn(async move {
             crate::logging::core::run_with_user(&user_id_clone, async move {
@@ -92,6 +95,7 @@ fn spawn_file_ingestion_tasks(
                     &progress_service,
                     &node_arc_clone,
                     auto_execute,
+                    &service_clone,
                 )
                 .await
                 {
@@ -164,6 +168,7 @@ pub async fn process_json(
     request: web::Json<IngestionRequest>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
+    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -181,6 +186,15 @@ pub async fn process_json(
         Err(response) => return response,
     };
 
+    let service = match ingestion_service.get_ref() {
+        Some(s) => s.clone(),
+        None => {
+            return HttpResponse::ServiceUnavailable().json(json!({
+                "error": "Ingestion service not available"
+            }));
+        }
+    };
+
     // Lock briefly — handler clones the node and spawns a background task
     let node = node_arc.read().await;
 
@@ -189,6 +203,7 @@ pub async fn process_json(
         &user_id,
         progress_tracker.get_ref(),
         &node,
+        service,
     )
     .await
     {
@@ -204,22 +219,24 @@ pub async fn process_json(
     tag = "ingestion",
     responses((status = 200, description = "Ingestion status", body = crate::ingestion::IngestionStatus))
 )]
-pub async fn get_status() -> impl Responder {
+pub async fn get_status(
+    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         debug,
         "Received ingestion status request"
     );
 
-    match IngestionService::from_env() {
-        Ok(service) => match service.get_status() {
+    match ingestion_service.get_ref() {
+        Some(service) => match service.get_status() {
             Ok(status) => HttpResponse::Ok().json(status),
             Err(e) => HttpResponse::InternalServerError().json(json!({
                 "error": format!("Failed to get status: {}", e)
             })),
         },
-        Err(e) => HttpResponse::ServiceUnavailable().json(json!({
-            "error": format!("Ingestion service not available: {}", e),
+        None => HttpResponse::ServiceUnavailable().json(json!({
+            "error": "Ingestion service not available",
             "enabled": false,
             "configured": false
         })),
@@ -234,15 +251,18 @@ pub async fn get_status() -> impl Responder {
     request_body = Value,
     responses((status = 200, description = "Validation result", body = Value), (status = 400, description = "Invalid"))
 )]
-pub async fn validate_json(request: web::Json<Value>) -> impl Responder {
+pub async fn validate_json(
+    request: web::Json<Value>,
+    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
         "Received JSON validation request"
     );
 
-    match IngestionService::from_env() {
-        Ok(service) => match service.validate_input(&request.into_inner()) {
+    match ingestion_service.get_ref() {
+        Some(service) => match service.validate_input(&request.into_inner()) {
             Ok(()) => HttpResponse::Ok().json(json!({
                 "valid": true,
                 "message": "JSON data is valid for ingestion"
@@ -252,9 +272,9 @@ pub async fn validate_json(request: web::Json<Value>) -> impl Responder {
                 "error": format!("Validation failed: {}", e)
             })),
         },
-        Err(e) => HttpResponse::ServiceUnavailable().json(json!({
+        None => HttpResponse::ServiceUnavailable().json(json!({
             "valid": false,
-            "error": format!("Ingestion service not available: {}", e)
+            "error": "Ingestion service not available"
         })),
     }
 }
@@ -362,16 +382,7 @@ pub async fn get_all_progress(progress_tracker: web::Data<ProgressTracker>) -> i
     match crate::handlers::ingestion::get_all_progress(&user_hash, progress_tracker.get_ref()).await
     {
         Ok(response) => HttpResponse::Ok().json(response),
-        Err(e) => {
-            let status_code = match e.status_code() {
-                400 => actix_web::http::StatusCode::BAD_REQUEST,
-                401 => actix_web::http::StatusCode::UNAUTHORIZED,
-                404 => actix_web::http::StatusCode::NOT_FOUND,
-                503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
-                _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            HttpResponse::build(status_code).json(e.to_response())
-        }
+        Err(e) => handler_error_to_response(e),
     }
 }
 
@@ -387,6 +398,7 @@ pub async fn batch_folder_ingest(
     request: web::Json<BatchFolderRequest>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
+    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -448,23 +460,25 @@ pub async fn batch_folder_ingest(
     let file_progress_ids = start_file_progress(&files_to_ingest, &user_id, &progress_service).await;
 
     // Validate ingestion service is available before spawning tasks
-    if let Err(e) = IngestionService::from_env() {
-        log_feature!(
-            LogFeature::Ingestion,
-            error,
-            "Failed to initialize ingestion service: {}",
-            e
-        );
-        for info in &file_progress_ids {
-            progress_service
-                .fail_progress(&info.progress_id, format!("Ingestion service not available: {}", e))
-                .await;
+    let service = match ingestion_service.get_ref() {
+        Some(s) => s.clone(),
+        None => {
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Ingestion service not available"
+            );
+            for info in &file_progress_ids {
+                progress_service
+                    .fail_progress(&info.progress_id, "Ingestion service not available".to_string())
+                    .await;
+            }
+            return HttpResponse::ServiceUnavailable().json(json!({
+                "success": false,
+                "error": "Ingestion service not available"
+            }));
         }
-        return HttpResponse::ServiceUnavailable().json(json!({
-            "success": false,
-            "error": format!("Ingestion service not available: {}", e)
-        }));
-    }
+    };
 
     // Get node for processing
     let (user_id_for_task, node_arc) = match require_node(&state).await {
@@ -483,6 +497,7 @@ pub async fn batch_folder_ingest(
         &node_arc,
         &user_id_for_task,
         auto_execute,
+        service,
     );
 
     // Return immediately with batch info
@@ -536,6 +551,7 @@ pub struct SmartFolderIngestRequest {
 pub async fn smart_folder_scan(
     request: web::Json<SmartFolderScanRequest>,
     _state: web::Data<AppState>,
+    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -561,11 +577,12 @@ pub async fn smart_folder_scan(
     let max_files = request.max_files.unwrap_or(500);
 
     // Delegate to shared logic
-    match smart_folder::perform_smart_folder_scan(&folder_path, max_depth, max_files).await {
+    let service_ref = ingestion_service.get_ref().as_deref();
+    match smart_folder::perform_smart_folder_scan(&folder_path, max_depth, max_files, service_ref).await {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(e) => HttpResponse::BadRequest().json(json!({
             "success": false,
-            "error": e
+            "error": e.to_string()
         })),
     }
 }
@@ -585,6 +602,7 @@ pub async fn smart_folder_ingest(
     request: web::Json<SmartFolderIngestRequest>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
+    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -626,6 +644,17 @@ pub async fn smart_folder_ingest(
         }));
     }
 
+    // Validate ingestion service is available
+    let service = match ingestion_service.get_ref() {
+        Some(s) => s.clone(),
+        None => {
+            return HttpResponse::ServiceUnavailable().json(json!({
+                "success": false,
+                "error": "Ingestion service not available"
+            }));
+        }
+    };
+
     // Generate batch ID
     let batch_id = uuid::Uuid::new_v4().to_string();
 
@@ -650,6 +679,7 @@ pub async fn smart_folder_ingest(
         &node_arc,
         &user_id_task,
         auto_execute,
+        service,
     );
 
     HttpResponse::Accepted().json(BatchFolderResponse {
@@ -668,10 +698,9 @@ async fn process_single_file_via_smart_folder(
     progress_service: &ProgressService,
     node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::datafold_node::DataFoldNode>>,
     auto_execute: bool,
+    service: &IngestionService,
 ) -> Result<(), String> {
-    let data = smart_folder::read_file_as_json(file_path)?;
-
-    let service = IngestionService::from_env()
+    let data = smart_folder::read_file_as_json(file_path)
         .map_err(|e| e.to_string())?;
 
     let node = node_arc.read().await;
@@ -709,7 +738,13 @@ mod tests {
 
     #[actix_web::test]
     async fn test_get_status() {
-        let app = test::init_service(App::new().route("/status", web::get().to(get_status))).await;
+        let ingestion_service: Option<Arc<IngestionService>> = None;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(ingestion_service))
+                .route("/status", web::get().to(get_status)),
+        )
+        .await;
 
         let req = test::TestRequest::get().uri("/status").to_request();
         let resp = test::call_service(&app, req).await;

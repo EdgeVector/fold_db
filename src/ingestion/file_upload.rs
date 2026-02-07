@@ -1,8 +1,7 @@
 //! File upload and conversion module for ingestion
 
-use crate::ingestion::json_processor::{
-    convert_file_to_json_http, flatten_root_layers, save_json_to_temp_file,
-};
+use crate::ingestion::ingestion_service::IngestionService;
+use crate::ingestion::json_processor::{convert_file_to_json_http, save_json_to_temp_file};
 use crate::ingestion::multipart_parser::parse_multipart;
 use crate::ingestion::{IngestionRequest, ProgressTracker};
 use crate::log_feature;
@@ -13,6 +12,7 @@ use crate::storage::UploadStorage;
 use actix_multipart::Multipart;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
+use std::sync::Arc;
 
 /// Process file upload and ingestion
 ///
@@ -42,6 +42,7 @@ pub async fn upload_file(
     upload_storage: web::Data<UploadStorage>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
+    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
 ) -> impl Responder {
     log_feature!(LogFeature::Ingestion, info, "Received file upload request");
 
@@ -67,9 +68,6 @@ pub async fn upload_file(
         Err(response) => return response,
     };
 
-    // Flatten unnecessary root layers if pattern is root->array or root->root->array
-    let flattened_json = flatten_root_layers(json_value);
-
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -77,7 +75,7 @@ pub async fn upload_file(
     );
 
     // Save JSON to a temporary file for testing/debugging
-    let temp_json_path = save_json_debug_file(&flattened_json);
+    let temp_json_path = save_json_debug_file(&json_value);
 
     log_feature!(
         LogFeature::Ingestion,
@@ -99,12 +97,22 @@ pub async fn upload_file(
 
     // Build ingestion request and delegate to the shared handler
     let request = IngestionRequest {
-        data: flattened_json,
+        data: json_value,
         auto_execute: form_data.auto_execute,
         trust_distance: form_data.trust_distance,
         pub_key: form_data.pub_key,
         source_file_name: Some(form_data.original_filename.clone()),
         progress_id: Some(progress_id),
+    };
+
+    // Extract ingestion service
+    let service = match ingestion_service.get_ref() {
+        Some(s) => s.clone(),
+        None => {
+            return HttpResponse::ServiceUnavailable().json(json!({
+                "error": "Ingestion service not available"
+            }));
+        }
     };
 
     // Lock briefly — the handler clones the node and spawns a background task
@@ -115,6 +123,7 @@ pub async fn upload_file(
         &user_id,
         progress_tracker.get_ref(),
         &node,
+        service,
     )
     .await
     {

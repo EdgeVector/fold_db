@@ -6,7 +6,7 @@
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::IngestionRequest;
-use crate::ingestion::mutation_generator::MutationGenerator;
+use crate::ingestion::mutation_generator;
 use crate::ingestion::ollama_service::OllamaService;
 use crate::ingestion::openrouter_service::OpenRouterService;
 use crate::ingestion::progress::{IngestionResults, IngestionStep, ProgressService};
@@ -112,7 +112,6 @@ pub struct IngestionService {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,
     ollama_service: Option<OllamaService>,
-    mutation_generator: MutationGenerator,
 }
 
 impl IngestionService {
@@ -144,13 +143,10 @@ impl IngestionService {
             None
         };
 
-        let mutation_generator = MutationGenerator::new();
-
         Ok(Self {
             config,
             openrouter_service,
             ollama_service,
-            mutation_generator,
         })
     }
 
@@ -276,7 +272,7 @@ impl IngestionService {
             )
             .await?;
 
-            let item_mutations = self.mutation_generator.generate_mutations(
+            let item_mutations = mutation_generator::generate_mutations(
                 &schema_name,
                 &keys_and_values,
                 &fields_and_values,
@@ -653,36 +649,38 @@ impl IngestionService {
 
         let total_mutations = mutations.len();
 
-        // Convert mutations to operation format for batch processing
-        // Update progress for every 5 items to ensure visibility
-        for (idx, _) in mutations.iter().enumerate() {
-            // Update progress more frequently (every 5 items) to ensure frontend catches updates
-            if (idx + 1) % 5 == 0 || idx + 1 == total_mutations {
-                // Calculate progress: 90% base + up to 5% for this step (max 95%, not 100%)
-                // 100% is reserved for the Completed step
-                let percent_of_step = ((idx + 1) as f32 / total_mutations as f32 * 5.0) as u8;
-                let progress_percent = 90 + percent_of_step;
-                progress_service
-                    .update_progress_with_percentage(
-                        progress_id,
-                        IngestionStep::ExecutingMutations,
-                        format!("Executing mutations... ({}/{})", idx + 1, total_mutations),
-                        progress_percent,
-                    )
-                    .await;
-            }
-        }
+        progress_service
+            .update_progress_with_percentage(
+                progress_id,
+                IngestionStep::ExecutingMutations,
+                format!("Submitting {} mutations...", total_mutations),
+                90,
+            )
+            .await;
 
         // Execute all mutations in a batch using DataFoldNode directly
         // Use mutate_batch which publishes MutationExecuted events for the IndexOrchestrator
-        node.mutate_batch(mutations)
+        let result = node.mutate_batch(mutations)
             .await
             .map(|mutation_ids| mutation_ids.len())
             .map_err(|e| {
                 IngestionError::SchemaSystemError(crate::schema::SchemaError::InvalidData(
                     e.to_string(),
                 ))
-            })
+            });
+
+        if let Ok(count) = &result {
+            progress_service
+                .update_progress_with_percentage(
+                    progress_id,
+                    IngestionStep::ExecutingMutations,
+                    format!("Completed {} mutations", count),
+                    95,
+                )
+                .await;
+        }
+
+        result
     }
 
 }

@@ -1,13 +1,11 @@
 // OpenRouter API service for AI-powered schema analysis
 
-use super::ai_helpers::parse_ai_response;
 use crate::ingestion::config::OpenRouterConfig;
-use crate::ingestion::{AISchemaResponse, IngestionError, IngestionResult};
+use crate::ingestion::{IngestionError, IngestionResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::time::Duration;
 
 /// OpenRouter API service
@@ -81,25 +79,6 @@ impl OpenRouterService {
             config,
             max_retries,
         })
-    }
-
-    /// Get schema recommendation from AI
-    pub async fn get_schema_recommendation(
-        &self,
-        sample_json: &Value,
-    ) -> IngestionResult<AISchemaResponse> {
-        let prompt = super::ai_helpers::analyze_and_build_prompt(sample_json)?;
-
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "Sending request to OpenRouter API with model: {}",
-            self.config.model
-        );
-
-        let response = self.call_openrouter_api(&prompt).await?;
-
-        parse_ai_response(&response)
     }
 
     /// Call the OpenRouter API

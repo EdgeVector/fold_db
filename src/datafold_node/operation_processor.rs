@@ -715,9 +715,14 @@ impl OperationProcessor {
         max_depth: usize,
         max_files: usize,
     ) -> FoldDbResult<crate::ingestion::smart_folder::SmartFolderScanResponse> {
-        crate::ingestion::smart_folder::perform_smart_folder_scan(folder_path, max_depth, max_files)
-            .await
-            .map_err(FoldDbError::Other)
+        crate::ingestion::smart_folder::perform_smart_folder_scan(
+            folder_path,
+            max_depth,
+            max_files,
+            None,
+        )
+        .await
+        .map_err(|e| FoldDbError::Other(e.to_string()))
     }
 
     /// Ingest a single file through the AI ingestion pipeline.
