@@ -94,7 +94,9 @@ yarn-error.log
 *~
 logs
 src/server/static-react/node_modules/
+src/server/static-react/node_modules_corrupt/
 src/server/static-react/dist/
+src/server/static-react/.vite/
 
 # Debug files
 *.pdb
